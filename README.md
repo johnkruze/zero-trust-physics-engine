@@ -86,7 +86,7 @@ About seven minutes in all on a recent laptop, most of it the gateway's. Some te
 
 ## Two things to know
 
-- **Proofs and processors.** Build it on your machine and every model gives the proof the open address gives. A field solver's last digits, and so its proof, can differ between one kind of processor and another.
+- **Proofs and machines.** Build it on your machine and every model gives the proof the open address gives. A field solver's last digits, and so its proof, can differ between one system and another.
 - **Paths that are not here.** Comments and some descriptions name files under `evidence/`, and `REFERENCE.md`, `AGENTS.md` and `HOSTING.md`. Those are the company's own records and are not part of this repository.
 
 ## Credit
