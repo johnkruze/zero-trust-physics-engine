@@ -1,0 +1,11 @@
+[workspace]
+members = [
+    "genesis_kernel",
+    "genesis_solvers",
+    "genesis_seal",
+    "protocol_mcp_gateway",
+]
+exclude = [
+    "genesis_seal_parquet",
+]
+resolver = "2"

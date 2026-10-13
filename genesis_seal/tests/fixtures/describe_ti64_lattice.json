@@ -1,0 +1,351 @@
+{
+ "domain": "materials",
+ "card": "ti64_lattice",
+ "specimen": "An annealed Ti-6Al-4V lattice column under nodal force, torque, and temperature.",
+ "validation": {
+  "object": "An annealed Ti-6Al-4V lattice column under nodal force, torque, and temperature. A generic specimen, not a named real object.",
+  "data": "none",
+  "pass_line": "none",
+  "result": "not compared with a measurement",
+  "limits": "The run obeys the card's own equations and its conservation ledger; that has been checked by an outside recomputation in arithmetic of 50 digits or more. Nothing is stated about how closely it matches any real object."
+ },
+ "phase_fields": [
+  {
+   "name": "position_m",
+   "unit": "m",
+   "components": 3,
+   "minimum": -0.0001620790934973638,
+   "minimum_exclusive": false,
+   "maximum": 0.00032235729349736384,
+   "maximum_exclusive": false,
+   "bound": "each component from -1.620790934973638e-4 to 3.2235729349736384e-4 m, both inclusive. The bound is the specimen's yield over the card's temperatures: a node above 3.2235729349736384e-4 m stretches its ligament past 880 MPa at every temperature up to the beta transus, 1268.15 K, and a node below -1.620790934973638e-4 m compresses it past 880 MPa at every temperature down to 250 K, and the card refuses either as YieldReached. Inside the bound the first step tests yield on the incoming state at its start_temperature_k: at the reference temperature, 293.15 K, a ligament whose node stands further out than 1.546572934973638e-4 m either way is past 880 MPa, and that start is refused as YieldReached on the first step"
+  },
+  {
+   "name": "velocity_m_s",
+   "unit": "m/s",
+   "components": 3,
+   "minimum": -66.08538179239645,
+   "minimum_exclusive": false,
+   "maximum": 66.08538179239645,
+   "maximum_exclusive": false,
+   "bound": "each component from -6.608538179239645e1 to 6.608538179239645e1 m/s, both inclusive. The bound is the highest speed along a ligament that a run under forces and temperatures inside their ranges can approach, from rest or from a turning point, before that ligament passes 880 MPa: 2 omega sqrt(x_y (x_y + g)), with omega the highest natural frequency, x_y = 1.546572934973638e-4 m the yield position at 293.15 K and g = 1.7512180000000003e-4 m the growth of a ligament heated from 250 K to 1268.15 K. It is approached with the largest force pulling and the ligament heated as the node moves, so that its stretch stays at yield in compression up to the beta transus and then runs out to yield in tension. With the temperature held, the highest is 2 omega x_y, 4.5256300174207134e1 m/s; a run of the largest force from -x_y lands 45.2537 m/s. A faster node cannot come to rest before that ligament passes 880 MPa under any force and temperature in the range, and the card refuses it as YieldReached. A position and a velocity each inside its range can together still carry a ligament past yield during a run: that step is refused as YieldReached, on the incoming state, at a turning point of the motion inside the step, or on the landing, and the run is sealed as refused"
+  },
+  {
+   "name": "start_t_s",
+   "unit": "s",
+   "components": 1,
+   "minimum": 0.0,
+   "minimum_exclusive": false,
+   "maximum": null,
+   "maximum_exclusive": false,
+   "bound": "from 0 s up, inclusive: the clock of the start. A new start states 0. A state the card returned is handed back with its t_s as start_t_s, and the clock runs on from it as a running sum, t_s += dt_s. A clock below zero is refused as StartNotWritten. With start_force_n, start_temperature_k, start_energy_anchor_j and start_boundary_work_j it carries the run across a restart: a run handed back its own returned state with these five values steps on exactly as the run straight through, bit for bit in every field but torque_nm, which is the applied couple of the last step, and its ledger is weighed against the conservation limit over the whole of it. The card cannot tell the values a run returned from values a caller states: any start whose start_energy_anchor_j and start_boundary_work_j leave a defect inside the conservation limit is accepted and weighed from that defect, a returned state restated as new (start_t_s 0, start_boundary_work_j 0, start_energy_anchor_j its own energy) among them, and its proof carries the values stated. The ledger is weighed over a whole chain only when each start hands back the values the card returned."
+  },
+  {
+   "name": "start_force_n",
+   "unit": "N",
+   "components": 3,
+   "minimum": -3520.0,
+   "minimum_exclusive": false,
+   "maximum": 3520.0,
+   "maximum_exclusive": false,
+   "bound": "each component from -3.52e3 to 3.52e3 N, both inclusive, the range of force_n: the force the start stands under, which a returned state gives as applied_force_n. A new start states the force its start_energy_anchor_j is taken under; the card's rest has none. It enters only the ledger: the first step books the change from it to the step's own force_n as boundary work"
+  },
+  {
+   "name": "start_temperature_k",
+   "unit": "K",
+   "components": 1,
+   "minimum": 250.0,
+   "minimum_exclusive": false,
+   "maximum": 1268.15,
+   "maximum_exclusive": false,
+   "bound": "inclusive [2.5e2, 1.26815e3] K, the range of temperature_k: the temperature the start stands at, which a returned state gives as temperature_k. Yield is tested on the incoming state at it, and the first step books the change from it to the step's own temperature_k as boundary work. The card's rest is at the reference temperature, 293.15 K. A value outside is refused as TemperatureOutsideCard"
+  },
+  {
+   "name": "start_energy_anchor_j",
+   "unit": "J",
+   "components": 1,
+   "minimum": null,
+   "minimum_exclusive": false,
+   "maximum": null,
+   "maximum_exclusive": false,
+   "bound": "no bound of its own: the energy the start's ledger is anchored at, which a returned state gives as energy_anchor_j. A new start states its own mechanical energy under start_force_n and start_temperature_k: 1/2 m |v|^2 plus, over the three ligaments, 1/2 k (x_i - alpha (T - 293.15 K) L)^2 - F_i x_i, with m = 1.0632e-3 kg, k = 2.276e7 N/m, L = 0.02 m and alpha = 8.6e-6 /K. At rest at 293.15 K with no force it is 0. The ledger's defect is the start's mechanical energy less start_energy_anchor_j and start_boundary_work_j; a start whose defect is past the conservation limit, 1e-6 of the yield energy of 8.165905096660809e-1 J, could not have been written by the card and is refused as StartNotWritten"
+  },
+  {
+   "name": "start_boundary_work_j",
+   "unit": "J",
+   "components": 1,
+   "minimum": null,
+   "minimum_exclusive": false,
+   "maximum": null,
+   "maximum_exclusive": false,
+   "bound": "no bound of its own: the boundary work booked since the anchor, which a returned state gives as boundary_work_j. A new start states 0. A start with start_t_s 0 and any other value is refused as StartNotWritten: no step has landed to book it"
+  }
+ ],
+ "load_fields": [
+  {
+   "name": "force_n",
+   "unit": "N",
+   "components": 3,
+   "minimum": -3520.0,
+   "minimum_exclusive": false,
+   "maximum": 3520.0,
+   "maximum_exclusive": false,
+   "bound": "each component from -3.52e3 to 3.52e3 N, both inclusive. The bound is the specimen's yield: the yield strength, 880 MPa, times the section of a ligament, the force that holds a ligament at yield at rest. The load rule of dt_s also holds; at every step the card accepts it allows more than this maximum, so the maximum is reached first. A force inside the range, held from rest, carries the node out to twice its rest deflection: above half the maximum that excursion passes yield, the step that holds it is refused as YieldReached, at its turning point if no landing is past yield first, and the run is sealed as refused"
+  },
+  {
+   "name": "torque_nm",
+   "unit": "N*m",
+   "components": 3,
+   "minimum": null,
+   "minimum_exclusive": false,
+   "maximum": null,
+   "maximum_exclusive": false,
+   "bound": "no bound. The specimen is concentric: the torque is reported in the state and does not enter the motion, the stress or the ledger. Any number the number rule admits is accepted and returned"
+  },
+  {
+   "name": "temperature_k",
+   "unit": "K",
+   "components": 1,
+   "minimum": 250.0,
+   "minimum_exclusive": false,
+   "maximum": 1268.15,
+   "maximum_exclusive": false,
+   "bound": "inclusive [2.5e2, 1.26815e3] K. Yield is tested on the incoming state at its start_temperature_k and again at the instant this temperature is applied. From the rest position the cell yields from heat alone above about 1192.32 K, so a higher temperature is refused as YieldReached unless the start position is part of the way out. The published maximum is inclusive and is answered, but never from rest with no force: a step at exactly 1268.15 K lands from a start position of 3e-5 m in each component, where the ligaments are already stretched, and from the rest position the largest temperature that lands is 1192.3203110311847 K. A start position that is at rest only when hot is past yield at 293.15 K: stated with a start_temperature_k of 293.15 K it is refused on the first step, and stated with its own hot start_temperature_k it lands"
+  }
+ ],
+ "dt_s": {
+  "unit": "s",
+  "floor_s": 1.3036212689556054e-13,
+  "floor_from": "the ceiling divided by 2^20: a step that changes the state by two parts in a hundred million. Under it a step is mostly rounding",
+  "ceiling_s": 1.3669459757163928e-07,
+  "ceiling_from": "0.02 rad on its highest natural frequency",
+  "nyquist_s": 2.1471937175823757e-05,
+  "rule": "dt_s is in [1.3036212689556054e-13, 1.3669459757163928e-7] s. The floor is this card's own floor_dt_s: the ceiling divided by 2^20: a step that changes the state by two parts in a hundred million. Under it a step is mostly rounding. The ceiling is this card's own gate_dt_s: 0.02 rad on its highest natural frequency. pi/omega is 2.1471937175823757e-5 s. |force_n component| * dt_s <= C, with C = omega * shortest ligament * mass = 3.11116904073051e0. The product |force_n component| * dt_s is one multiplication in 64-bit arithmetic, rounded once to the nearest 64-bit number (no fused multiply-add), and that product is compared with C: a load whose product is at most C is accepted, any other is refused. omega is max_natural_frequency_rad_s, the shortest ligament and the mass are the cell's, and each of the three components of force_n is held to the rule alone"
+ },
+ "number_rule": "Every request number must be a finite, normal 64-bit number whose copy in a 32-bit frame slot is finite, and a number written as non-zero must not read as zero in 64 bits, as 1e-400 does. This rule stands beside each field's range and refuses some values inside it: a subnormal such as 1e-310 is refused wherever zero and larger numbers are accepted. A normal 64-bit number under about 1.2e-38 is accepted by this rule and kept exactly in the state; its copy in a 32-bit frame slot reads as a subnormal or as zero.",
+ "rejects": [
+  {
+   "name": "NonFiniteInput",
+   "meaning": "Force, torque, temperature, or `dt` was NaN or infinite."
+  },
+  {
+   "name": "NonFiniteState",
+   "meaning": "The incoming state was already non-finite."
+  },
+  {
+   "name": "NonPositiveDt",
+   "meaning": "`dt` was zero or negative."
+  },
+  {
+   "name": "TemperatureOutsideCard",
+   "meaning": "Temperature is outside the annealed constant-CTE card."
+  },
+  {
+   "name": "InvalidCell",
+   "meaning": "Length, area, hardening, or mass cannot support the card."
+  },
+  {
+   "name": "YieldReached",
+   "meaning": "A ligament is past 880 MPa on the incoming state, at the instant the step's temperature is applied, at a turning point of the motion inside the step, or on the landing."
+  },
+  {
+   "name": "SpontaneousGeneration",
+   "meaning": "Mechanical energy is above the anchor plus the booked boundary work by more than the limit."
+  },
+  {
+   "name": "FirstLawBreach",
+   "meaning": "Mechanical energy is below the anchor plus the booked boundary work by more than the limit."
+  },
+  {
+   "name": "StartNotWritten",
+   "meaning": "A handed-in start states what no run of the card writes: a clock below zero, boundary work booked at a clock of zero, or a ledger whose residual is already past the limit."
+  }
+ ],
+ "example_verify_step": {
+  "domain": "materials",
+  "card": "ti64_lattice",
+  "parameters": {
+   "position_m": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "start_t_s": 0.0,
+   "start_force_n": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "start_temperature_k": 293.15,
+   "start_energy_anchor_j": 0.0,
+   "start_boundary_work_j": 0.0,
+   "force_n": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "torque_nm": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "temperature_k": 293.15,
+   "dt_s": 1.3669459757163928e-07
+  }
+ },
+ "example_run_trajectory": {
+  "domain": "materials",
+  "card": "ti64_lattice",
+  "initial": {
+   "position_m": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "velocity_m_s": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "start_t_s": 0.0,
+   "start_force_n": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "start_temperature_k": 293.15,
+   "start_energy_anchor_j": 0.0,
+   "start_boundary_work_j": 0.0
+  },
+  "dt_s": 1.3669459757163928e-07,
+  "segments": [
+   {
+    "steps": 4,
+    "load": {
+     "force_n": [
+      0.0,
+      0.0,
+      0.0
+     ],
+     "torque_nm": [
+      0.0,
+      0.0,
+      0.0
+     ],
+     "temperature_k": 293.15
+    }
+   }
+  ],
+  "record_every": 1
+ },
+ "advisory_flags": [],
+ "frame_slots": [
+  {
+   "slot": "t",
+   "offset": 0,
+   "width": 8,
+   "type": "f64",
+   "state": "t_s",
+   "unit": "s",
+   "holds": "The clock: the start's t_s plus the steps since, in seconds."
+  },
+  {
+   "slot": "pos[0]",
+   "offset": 8,
+   "width": 4,
+   "type": "f32",
+   "state": "position_m[0]",
+   "unit": "m",
+   "holds": "position_m[0]"
+  },
+  {
+   "slot": "pos[1]",
+   "offset": 12,
+   "width": 4,
+   "type": "f32",
+   "state": "position_m[1]",
+   "unit": "m",
+   "holds": "position_m[1]"
+  },
+  {
+   "slot": "pos[2]",
+   "offset": 16,
+   "width": 4,
+   "type": "f32",
+   "state": "position_m[2]",
+   "unit": "m",
+   "holds": "position_m[2]"
+  },
+  {
+   "slot": "vel[0]",
+   "offset": 20,
+   "width": 4,
+   "type": "f32",
+   "state": "velocity_m_s[0]",
+   "unit": "m/s",
+   "holds": "velocity_m_s[0]"
+  },
+  {
+   "slot": "vel[1]",
+   "offset": 24,
+   "width": 4,
+   "type": "f32",
+   "state": "velocity_m_s[1]",
+   "unit": "m/s",
+   "holds": "velocity_m_s[1]"
+  },
+  {
+   "slot": "vel[2]",
+   "offset": 28,
+   "width": 4,
+   "type": "f32",
+   "state": "velocity_m_s[2]",
+   "unit": "m/s",
+   "holds": "velocity_m_s[2]"
+  },
+  {
+   "slot": "force_torque",
+   "offset": 32,
+   "width": 4,
+   "type": "f32",
+   "state": "tension_n",
+   "unit": "N",
+   "holds": "Dominant ligament tension, in newtons."
+  },
+  {
+   "slot": "residual",
+   "offset": 36,
+   "width": 4,
+   "type": "f32",
+   "state": "residual_conservation_error",
+   "unit": "1",
+   "holds": "Conservation residual."
+  },
+  {
+   "slot": "flags",
+   "offset": 40,
+   "width": 8,
+   "type": "u64",
+   "state": "",
+   "unit": "",
+   "holds": "Always zero. The card has no advisory condition: yield and a residual past the limit are refusals.",
+   "bits": []
+  },
+  {
+   "slot": "proof",
+   "offset": 48,
+   "width": 16,
+   "type": "bytes",
+   "state": "",
+   "unit": "",
+   "holds": "Not written by the step."
+  }
+ ],
+ "frame_rule": "The 64 frame bytes are little-endian: t in bytes 0 to 7 as a 64-bit number, pos[0] in bytes 8 to 11 as a 32-bit number, pos[1] in bytes 12 to 15 as a 32-bit number, pos[2] in bytes 16 to 19 as a 32-bit number, vel[0] in bytes 20 to 23 as a 32-bit number, vel[1] in bytes 24 to 27 as a 32-bit number, vel[2] in bytes 28 to 31 as a 32-bit number, force_torque in bytes 32 to 35 as a 32-bit number, residual in bytes 36 to 39 as a 32-bit number, flags in bytes 40 to 47 as a 64-bit unsigned integer, proof in bytes 48 to 63 as bytes. Each 32-bit slot is the 64-bit value of the quantity named in frame_slots, rounded to the nearest 32-bit number, in the unit given there, unless its row says otherwise. This card sets no flag bit; flags is always zero. The proof slot is 16 bytes. The step does not write it. In a recorded frame it holds the first 16 bytes of the link before that frame (the link of the request for the first frame), as the gateway writes it. A frame slot is a 32-bit copy of a 64-bit value and can round to the other side of a limit that the exact value respects (for example a rotor angle just under π/2 stored as a value just over it). The exact values are the `_hex` fields of the answer, and the limits are enforced on the exact values.",
+ "time_label": "The time label t_s is the running sum of the steps taken, t_s += dt_s in 64-bit arithmetic, not the step count times the step: ten steps of 0.1 s read 0.9999999999999999 s. The t slot of the frame and every hash over the frame carry this sum."
+}
