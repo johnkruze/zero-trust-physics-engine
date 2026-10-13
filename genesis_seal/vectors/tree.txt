@@ -1,0 +1,12 @@
+# RFC 6962 trees over the leaves 'leaf 0', 'leaf 1', ... as ASCII text.
+# root <count of leaves> <root>
+# path_7_4 <one sibling hash of leaf 4 in the tree of 7, lowest first>
+root 1 1bb97dcc21635d47e2663efdfd0a174686d98dd701352dd2cd06e8b43fd3d305
+root 2 fc5f6b88ff8554f75bb2f9e6f39c31b1936d44b69276edf7b1205a955b9761e3
+root 3 d4f92c8fbb89720eb3b55677c7d7efaddfeb10d11a1a84a0ba8f1a23337faa95
+root 5 341515982d650e23520dbd54d7fcf0afa1b70cc3a16a411d464dc9c1ac96c301
+root 7 5a61fc2b54f9cfa71774f2432143dd40c6cb2b11947faf65a7d3da5cb65199c8
+root 8 c5c2c820ed342fdda8ce896b6b9cf5b8c00a21cc4b20714cc6e5d3c05c35240b
+path_7_4 95adf15b7ef5db67386a8bafbefee4d145662afa450740e1868553e8348ed3a0
+path_7_4 fb7f869ce8b7b51fdf719fc8c21a4736c98cc160a825606a81f78a7f4d2261d9
+path_7_4 4f631084a157c54f54fcfb23ff5eb8650c4ba160c295bb13a9832b109d52677e

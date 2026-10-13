@@ -1,0 +1,7 @@
+target/
+# Git is for code: source, tests, build files, the licence, data the code needs,
+# and one README. Maps and notes stay beside the code on the disk, where agents
+# read them, and out of its history.
+*.md
+!README.md
+.DS_Store

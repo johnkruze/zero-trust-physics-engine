@@ -1,0 +1,11 @@
+protocol_mcp_gateway
+Copyright 2026 Protocol Company
+
+Licensed under the Apache License, Version 2.0 (see LICENSE).
+
+This software is part of the engine of Zero-Trust Physics. If you use it,
+please cite the paper:
+
+  Kruze, J., with Super Intelligence (2026). Zero-Trust Physics: a verifier
+  for the physical answers of Super Intelligence (version 1.0). Protocol
+  Company. Zenodo. https://doi.org/10.5281/zenodo.23305697

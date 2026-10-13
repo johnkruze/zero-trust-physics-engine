@@ -1,0 +1,24 @@
+[package]
+name = "genesis_seal_parquet"
+version = "0.2.0"
+edition = "2024"
+license = "Apache-2.0"
+rust-version = "1.88"
+description = "Converts a sealed dataset to Parquet, after its seal has been checked."
+
+[lib]
+name = "genesis_seal_parquet"
+path = "src/lib.rs"
+
+[[bin]]
+name = "genesis_seal_parquet"
+path = "src/bin/genesis_seal_parquet.rs"
+
+[dependencies]
+genesis_seal = { path = "../genesis_seal" }
+parquet = { version = "60", default-features = false, features = ["arrow"] }
+arrow-array = "60"
+arrow-schema = "60"
+serde_json = { version = "1.0", features = ["preserve_order", "float_roundtrip"] }
+sha2 = "0.10.9"
+hex = "0.4.3"

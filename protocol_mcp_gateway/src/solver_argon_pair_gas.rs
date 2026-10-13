@@ -1,0 +1,444 @@
+//! The entry for `argon_pair_gas`: argon gas at low density from one pair
+//! potential. The numbers come from `genesis_solvers` constants.
+
+use genesis_solvers::argon_pair_gas::{self as argon, ArgonGas, ArgonReject, Question};
+use serde_json::{Value, json};
+
+use crate::solvers::{
+    Answer, Given, Input, Kind, Output, Published, Refusal, Refused, Sections, Shape, Solved,
+    Solver,
+};
+
+const fn number(name: &'static str, unit: &'static str, note: &'static str) -> Output {
+    Output {
+        name,
+        unit,
+        shape: Shape::Number,
+        each: &[],
+        note,
+        asked_by: None,
+    }
+}
+
+pub const ARGON_PAIR_GAS: Solver = Solver {
+    name: "argon_pair_gas",
+    summary: "Argon gas at low density from one Lennard-Jones pair potential whose two constants are fitted to the measured speed of sound in argon: second virial coefficient, speed of sound and viscosity at zero density. Each property is answered where it was compared: the speed of sound from 250 K to 349.868 K at 30.5 kPa to 467.2 kPa, the viscosity from 291.09 K to 681.96 K at zero pressure; elsewhere the solver refuses by name.",
+    inputs: &[
+        Input {
+            name: "temperature_k",
+            kind: Kind::Number {
+                minimum: argon::TEMPERATURE_MIN_K,
+                maximum: argon::TEMPERATURE_MAX_K,
+                unit: "K",
+            },
+            refusal: Some("TemperatureOutOfRange"),
+            bound: "Temperature of the gas. The range is the union of the spans of the measurements the solver was compared with: speed of sound from 250 K to 349.868 K, viscosity from 291.09 K to 681.96 K. Each property is answered only in its own span, as pressure_kpa says.",
+            only_when: None,
+            asked_by_check: false,
+        },
+        Input {
+            name: "pressure_kpa",
+            kind: Kind::Number {
+                minimum: argon::PRESSURE_MIN_KPA,
+                maximum: argon::PRESSURE_MAX_KPA,
+                unit: "kPa",
+            },
+            refusal: Some("PressureOutOfRange"),
+            bound: "Pressure of the gas. It says which property a question asks. From 30.5 kPa to 467.2 kPa, the span of the measured speeds of sound the solver was compared with, it asks the speed of sound, which is answered from 250 K to 349.868 K and refused above as SoundSpeedNotCompared. Zero asks the gas at zero density, where the viscosity was compared: it is answered from 291.09 K to 681.96 K and refused below as ViscosityNotCompared, and the speed of sound returned there is the ideal gas's. Any other pressure from 0 kPa to 500 kPa, where neither property was compared, is refused as PressureNotCompared, and one below 0 kPa or above 500 kPa, where the pressure series is not written, as PressureOutOfRange. The viscosity and the second virial coefficient do not depend on the pressure: every pressure answered gives the same ones, and a question of the speed of sound below 291.09 K returns a viscosity that no measurement here has checked.",
+            only_when: None,
+            asked_by_check: true,
+        },
+    ],
+    kept_inside: "The two constants of the pair potential, the molar mass, the quadrature rules and their tolerances stay inside the solver.",
+    result: &[
+        number("reduced_temperature", "1", "Temperature over the well depth of the pair potential."),
+        number("second_virial_cm3_per_mol", "cm3/mol", "B(T). Not compared with a measurement of B directly."),
+        number("second_virial_first_derivative_cm3_per_mol", "cm3/mol", "T dB/dT."),
+        number("second_virial_second_derivative_cm3_per_mol", "cm3/mol", "T² d²B/dT²."),
+        number("acoustic_virial_cm3_per_mol", "cm3/mol", "2B + (4/3) T dB/dT + (4/15) T² d²B/dT²."),
+        number("sound_speed_m_per_s", "m/s", "At the asked pressure, the pressure series cut after its first term. Compared with measurement from 250 K to 349.868 K at 30.5 kPa to 467.2 kPa; at zero pressure it is the ideal gas's."),
+        number("ideal_gas_sound_speed_m_per_s", "m/s", "The same gas with no forces between its atoms."),
+        number("collision_integral_22", "1", "Reduced collision integral Ω(2,2)*."),
+        number("collision_integral_23", "1", "Reduced collision integral Ω(2,3)*."),
+        number("viscosity_second_approximation_factor", "1", "Kihara's factor, 1 + (3/196)(8 Ω(2,3)*/Ω(2,2)* − 7)²."),
+        number("viscosity_pa_s", "Pa s", "In the limit of zero density; it does not depend on the asked pressure. Compared with measurement from 291.09 K to 681.96 K, asked at zero pressure; below 291.09 K it is returned only with a question of the speed of sound and was never compared."),
+    ],
+    invariants: &[
+        number("virial_forms_residual_cm3_per_mol", "cm3/mol", ""),
+        number("least_turning_point_margin", "1", ""),
+        number("collision_integral_rule_gap", "1", ""),
+    ],
+    iterations: "Panels halved in the second virial integrals and in the thermal average of the cross-section, together. On a refusal it is the number of times the open panel had been halved, for the three refusals that carry it, and null otherwise.",
+    field: field_words,
+    answer: "a settled gas",
+    refusals: REFUSALS,
+    sections,
+    validation: Some(validation),
+    example,
+    further_examples: &[],
+    parts: &[],
+    check,
+    solve,
+};
+
+/// Each `ArgonReject` variant with the sentence from its doc comment. The
+/// request itself shows a temperature or a pressure outside the range, so
+/// those five are not sealed.
+const REFUSALS: &[Refusal] = &[
+    Refusal {
+        name: "TemperatureOutOfRange",
+        meaning: "`temperature_k` is outside `TEMPERATURE_MIN_K`..=`TEMPERATURE_MAX_K`.",
+        sealed: false,
+    },
+    Refusal {
+        name: "PressureOutOfRange",
+        meaning: "`pressure_kpa` is outside `PRESSURE_MIN_KPA`..=`PRESSURE_MAX_KPA`.",
+        sealed: false,
+    },
+    Refusal {
+        name: "PressureNotCompared",
+        meaning: "`pressure_kpa` is above zero and outside `PRESSURE_COMPARED_MIN_KPA`..=`PRESSURE_COMPARED_MAX_KPA`, the pressures at which the speed of sound was compared with measurement; the viscosity was compared at zero pressure only.",
+        sealed: false,
+    },
+    Refusal {
+        name: "SoundSpeedNotCompared",
+        meaning: "`pressure_kpa` asks the speed of sound and `temperature_k` is above `SOUND_SPEED_COMPARED_MAX_K`, the highest temperature at which the speed of sound was compared with measurement.",
+        sealed: false,
+    },
+    Refusal {
+        name: "ViscosityNotCompared",
+        meaning: "`pressure_kpa` is zero, which asks the gas at zero density, and `temperature_k` is below `VISCOSITY_COMPARED_MIN_K`, the lowest temperature at which the viscosity was compared with measurement.",
+        sealed: false,
+    },
+    Refusal {
+        name: "NonFiniteValue",
+        meaning: "An intermediate value was NaN or infinite.",
+        sealed: true,
+    },
+    Refusal {
+        name: "VirialNotSettled",
+        meaning: "A second virial integral was still open after a panel had been halved `MAX_REFINEMENTS` times over.",
+        sealed: true,
+    },
+    Refusal {
+        name: "VirialFormsDisagree",
+        meaning: "The Mayer form and the force form of the second virial coefficient differ by more than `VIRIAL_FORMS_TOLERANCE_CM3_PER_MOL`.",
+        sealed: true,
+    },
+    Refusal {
+        name: "TurningPointNotOutermost",
+        meaning: "A collision was asked at a closest approach that the atoms do not reach first.",
+        sealed: true,
+    },
+    Refusal {
+        name: "DeflectionNotSettled",
+        meaning: "A deflection angle was still open after a panel had been halved `MAX_REFINEMENTS` times over.",
+        sealed: true,
+    },
+    Refusal {
+        name: "CrossSectionNotSettled",
+        meaning: "A cross-section was still open after a panel had been halved `MAX_REFINEMENTS` times over.",
+        sealed: true,
+    },
+    Refusal {
+        name: "CollisionIntegralNotSettled",
+        meaning: "A collision integral was still open after a panel of the thermal average had been halved `MAX_ENERGY_REFINEMENTS` times over.",
+        sealed: true,
+    },
+];
+
+/// The `ArgonReject` variant name, without its fields.
+pub fn reject_name(reject: &ArgonReject) -> &'static str {
+    match reject {
+        ArgonReject::TemperatureOutOfRange { .. } => "TemperatureOutOfRange",
+        ArgonReject::PressureOutOfRange { .. } => "PressureOutOfRange",
+        ArgonReject::PressureNotCompared { .. } => "PressureNotCompared",
+        ArgonReject::SoundSpeedNotCompared { .. } => "SoundSpeedNotCompared",
+        ArgonReject::ViscosityNotCompared { .. } => "ViscosityNotCompared",
+        ArgonReject::NonFiniteValue => "NonFiniteValue",
+        ArgonReject::VirialNotSettled { .. } => "VirialNotSettled",
+        ArgonReject::VirialFormsDisagree { .. } => "VirialFormsDisagree",
+        ArgonReject::TurningPointNotOutermost { .. } => "TurningPointNotOutermost",
+        ArgonReject::DeflectionNotSettled { .. } => "DeflectionNotSettled",
+        ArgonReject::CrossSectionNotSettled { .. } => "CrossSectionNotSettled",
+        ArgonReject::CollisionIntegralNotSettled { .. } => "CollisionIntegralNotSettled",
+    }
+}
+
+fn field_words() -> String {
+    "SHA-256 of the count of the numbers that follow as 8 little-endian bytes, which is twice the number of collision energies of the settled thermal average, then each reduced collision energy in rising order, then the reduced viscosity cross-section Q(2)* at each of those energies, all as little-endian f64 bytes.".to_string()
+}
+
+fn sections() -> Sections {
+    Sections {
+        locked: json!({
+            "pair_potential": "Lennard-Jones 12-6: u(r) = 4 ε [(σ/r)^12 − (σ/r)^6]. Classical mechanics and statistics, no quantum correction, no three-body force.",
+            "well_depth_k": argon::WELL_DEPTH_K,
+            "zero_distance_angstrom": argon::ZERO_DISTANCE_ANGSTROM,
+            "fitted": "Both constants of the pair potential, by least squares on the measured speed of sound of this same gas: 42 points at or below 500 kPa on eleven isotherms from 250 K to 300.117 K (Goodwin and Hill 2009).",
+            "molar_mass_kg_per_mol": argon::MOLAR_MASS_KG_PER_MOL,
+            "gas_constant_j_per_mol_k": argon::GAS_CONSTANT_J_PER_MOL_K,
+            "boltzmann_j_per_k": argon::BOLTZMANN_J_PER_K,
+            "avogadro_per_mol": argon::AVOGADRO_PER_MOL,
+            "heat_capacity_ratio": argon::HEAT_CAPACITY_RATIO,
+            "sound_speed": "u² = (γ/M)(R T + β p), β the second acoustic virial coefficient.",
+            "viscosity": "η = (5/16) sqrt(π m k T) / (π σ² Ω(2,2)*) × Kihara's factor.",
+            "max_refinements": argon::MAX_REFINEMENTS,
+            "max_energy_refinements": argon::MAX_ENERGY_REFINEMENTS,
+        }),
+        invariants: json!([
+            {
+                "name": "virial_forms_residual_cm3_per_mol",
+                "rule": "The second virial coefficient from the Mayer integral and from the force integral, which are one another's integration by parts, are the same number.",
+                "tolerance": argon::VIRIAL_FORMS_TOLERANCE_CM3_PER_MOL,
+                "unit": "cm3/mol",
+                "checked": "at acceptance",
+                "refusal": "VirialFormsDisagree",
+            },
+            {
+                "name": "least_turning_point_margin",
+                "rule": "Every collision is computed at the closest approach the two atoms reach first: the margin is positive for every deflection angle.",
+                "tolerance": 0.0,
+                "unit": "1",
+                "checked": "every deflection angle",
+                "refusal": "TurningPointNotOutermost",
+            },
+            {
+                "name": "collision_integral_rule_gap",
+                "rule": "Over the settled thermal average, the fifteen-point and the seven-point quadrature rules give each collision integral to the same fraction.",
+                "tolerance": argon::COLLISION_INTEGRAL_SETTLE_TOLERANCE,
+                "unit": "1",
+                "checked": "every panel of the thermal average",
+                "refusal": "CollisionIntegralNotSettled",
+            },
+        ]),
+        convergence: json!({
+            "virial_settle_tolerance": argon::VIRIAL_SETTLE_TOLERANCE,
+            "deflection_settle_tolerance": argon::DEFLECTION_SETTLE_TOLERANCE,
+            "cross_section_settle_tolerance": argon::CROSS_SECTION_SETTLE_TOLERANCE,
+            "collision_integral_settle_tolerance": argon::COLLISION_INTEGRAL_SETTLE_TOLERANCE,
+            "rule": "Every integral is taken panel by panel with a fifteen-point and a seven-point rule. A panel on which the two differ by more than its share of the tolerance is halved, and halved again, up to the cap. A result is returned only when every panel of every integral has closed: the four second virial integrals, each deflection angle, each cross-section, and the thermal average.",
+            "refusal": "VirialNotSettled, DeflectionNotSettled, CrossSectionNotSettled or CollisionIntegralNotSettled",
+        }),
+        reference: json!({
+            "name": argon::REFERENCE_NAME,
+            "url": argon::REFERENCE_URL,
+            "url_collision_integrals": argon::REFERENCE_URL_COLLISION,
+            "retrieved": argon::REFERENCE_RETRIEVED,
+            "tolerance_second_virial_reduced": argon::REFERENCE_TOLERANCE_VIRIAL,
+            "tolerance_collision_integral_fraction": argon::REFERENCE_TOLERANCE_COLLISION,
+            "test": "nbs_tables_inside_the_served_range",
+            "covers": "The reduced second virial coefficient, Ω(2,2)* and Ω(2,3)* at the thirteen tabulated reduced temperatures inside the temperature range, 2.2 to 5.5. Found: the second virial coefficient to the table's last printed digit, the collision integrals within three parts in ten thousand.",
+            "kind": "Reference calculations for the 12-6 potential. They are not measurements, and they say nothing about argon.",
+        }),
+    }
+}
+
+fn validation() -> [String; 5] {
+    let object = "Argon gas, 99.999 percent pure, at low density. Two atoms are given one Lennard-Jones 12-6 pair potential. Its two constants are fitted to this gas's own measured speed of sound. Everything else follows from the potential with no further constant: the second virial coefficient and the speed of sound by statistical mechanics, the viscosity by the kinetic theory of Chapman and Enskog.".to_string();
+    let data = "Speed of sound: Goodwin and Hill, J. Chem. Eng. Data 54 (2009) 2758, two spherical resonators, 15 isotherms from 250 K to 349.868 K, stated expanded uncertainty under 0.03 m/s; the archive's compiler gives its own 95 percent uncertainty beside it, 0.50 to 0.59 m/s. Fitted on the 42 points at or below 500 kPa of the eleven isotherms up to 300.117 K. Held back: the 24 points at or below 500 kPa of the four isotherms at 310 K, 320 K, 325.046 K and 349.868 K; they are 17 distinct states, seven of them printed twice with different speeds. Viscosity, never fitted: Vogel, Int. J. Thermophys. 31 (2010) 447, oscillating-disk viscometer, 49 points from 291.09 K to 681.96 K, stated uncertainty 0.15 to 0.2 percent; the archive's compiler gives 0.30 to 0.31 percent at 95 percent. The viscosity is at a density of 1.1 kg/m3, not at zero density. Vogel's instrument is relative: what is measured is the ratio of the viscosity to its value at 298.15 K, and the absolute level of all 49 values rests on that one value, which was calculated from an ab initio potential, not measured. Both sets are from the NIST ThermoML Archive, doi 10.18434/mds2-2422. NIST's licence asks that the National Institute of Standards and Technology be acknowledged as the source of the data: it is the source of both sets, as read here from its archive.".to_string();
+    let pass_line = "Fixed on 2026-10-09, before any model was run on any measurement. Held-back speed of sound: root mean square error at most 0.030 m/s; largest error at most 0.060 m/s; root mean square error at most a quarter of the ideal gas's. Viscosity: mean error at most 2.0 percent; largest at most 4.0 percent. The viscosity lines are an allowance for a two-constant potential, about ten times the measurement's uncertainty. They were drawn knowing that textbook constants give about 2 percent, so meeting them is not evidence of agreement with the measurement. Rows of both data sets were seen before the split. The solver passes only if all five are met.".to_string();
+    let result = RESULT.to_string();
+    let limits = "The held-back speed of sound tests extrapolation in temperature by up to 50 K, on the same property and instruments as the fit. The viscosity tests a different property from a different laboratory, up to 382 K above the highest fitted temperature. Not tested, and refused by name: a pressure above zero outside 30.5 to 467.2 kPa; temperatures below 250 K or above 681.96 K; the speed of sound above 349.868 K; the gas at zero pressure below 291.09 K. Not tested and returned: the viscosity below 291.09 K, which a question of the speed of sound returns beside it; the second virial coefficient itself, of which no measurement was used; the liquid; any mixture. The returned second virial coefficient is shifted: the fitted constants absorb the higher pressure term the series drops, so B is higher by roughly 0.1 to 0.4 cm3/mol at 300 K, -15.05 cm3/mol here against -15.18 from the reference equation of state. The 12-6 potential is not the true potential of argon: its constants are fitted and stand in for what the form leaves out. A proof shows that an answer was not changed, not that the model matches the gas.".to_string();
+    [object, data, pass_line, result, limits]
+}
+
+/// The outcome of the comparison with the held-back measurements.
+const RESULT: &str = "Compared once, on 2026-10-09, through the gateway. All five lines were met. Held-back speed of sound, 24 points: root mean square error 0.0074 m/s, largest 0.0146 m/s, 0.023 of the ideal gas's 0.327 m/s. Viscosity, 49 points: mean error 1.47 percent, largest 2.97 percent. The solver's viscosity is above the measurement at all 49 points, by 2.95 percent at 291 K falling to 0.28 percent at 682 K: 1.4 to 20 times the measurement's uncertainty, 9 on average, and no point is within it. The lines were an allowance, and the solver's viscosity does not change with temperature as argon's does. The 12-6 form can follow this viscosity with other constants: 143.84 K and 3.3379 angstrom fit all 49 points within 0.11 percent. What fails is one pair of constants for both properties: that pair misses the held-back speed of sound by 0.22 m/s. The held-back speed of sound does not distinguish the 12-6 form from a square well, van der Waals' second virial coefficient, a hard sphere with an r^-6 attraction, or Mie potentials from 9-6 to 30-6: each, fitted on the same opened points, meets the same lines, at 0.0073 to 0.0107 m/s. The floor is about 0.007 m/s: the reference equation of state scores 0.0076, and repeated states differ by up to 0.016 m/s. What the test shows is that the second acoustic virial coefficient fitted at 250 to 300 K extrapolates 50 K. The fit added nothing on the held-back data: the textbook constants of argon (119.8 K, 3.405 angstrom), fitted by no one here, give 0.0068 m/s and 0.0136 m/s on the same speed-of-sound points and 0.80 percent and 2.05 percent on the viscosity. On the 42 fitted points the solver gives 0.0042 m/s root mean square and 0.0122 m/s largest, the textbook constants 0.0061 and 0.0196, the ideal gas 0.149 and 0.377. The binary that made the scored run (SHA-256 90dfab953a94d199db146cfad89a4ce4bf750288c3b33b299fb2fed49e722066) was overwritten by a later build, which returned all 115 saved answers byte for byte; engine 0.7.0 answers all 115, the 49 viscosity answers asked at zero pressure among them, the same in every field but the engine version and the receipt. A second scoring of 2026-10-09, on the same machine, found the same numbers: evidence/checks/second_party/V-34/.";
+
+fn example() -> Value {
+    json!({ "temperature_k": 300.0, "pressure_kpa": 101.325 })
+}
+
+/// The temperature's bounds are in the field list. The pressure has two
+/// limits with two names, the pressure series' range and the span compared
+/// with measurement, so the solver's own check asks them, in its order,
+/// before a permit is taken.
+fn check(given: &Given) -> Result<(), String> {
+    let question = Question {
+        temperature_k: given.number("temperature_k")?,
+        pressure_kpa: given.number("pressure_kpa")?,
+    };
+    argon::check(question)
+        .map_err(|reject| format!("Physical Violation: {reject} ({}).", reject_name(&reject)))
+}
+
+fn solve(given: &Given) -> Result<Solved, String> {
+    let question = Question {
+        temperature_k: given.number("temperature_k")?,
+        pressure_kpa: given.number("pressure_kpa")?,
+    };
+    Ok(solved(argon::solve(question)))
+}
+
+/// What the solver returned, in the words every solver shares.
+pub fn solved(returned: Result<ArgonGas, ArgonReject>) -> Solved {
+    let gas = match returned {
+        Ok(gas) => gas,
+        Err(reject) => {
+            return Solved::Refused(Refused {
+                name: reject_name(&reject),
+                sentence: reject.to_string(),
+                iterations: match reject {
+                    ArgonReject::VirialNotSettled { refinements }
+                    | ArgonReject::CollisionIntegralNotSettled { refinements } => {
+                        Some(u64::from(refinements))
+                    }
+                    _ => None,
+                },
+            });
+        }
+    };
+    let one = |name: &str, value: f64| (name.to_string(), Published::Number(value));
+    let mut field = Vec::with_capacity(2 * gas.collision_energies.len());
+    field.extend_from_slice(&gas.collision_energies);
+    field.extend_from_slice(&gas.cross_sections);
+    Solved::Answer(Answer {
+        iterations: u64::from(gas.refinements),
+        result: vec![
+            one("reduced_temperature", gas.reduced_temperature),
+            one("second_virial_cm3_per_mol", gas.second_virial_cm3_per_mol),
+            one(
+                "second_virial_first_derivative_cm3_per_mol",
+                gas.second_virial_first_derivative_cm3_per_mol,
+            ),
+            one(
+                "second_virial_second_derivative_cm3_per_mol",
+                gas.second_virial_second_derivative_cm3_per_mol,
+            ),
+            one("acoustic_virial_cm3_per_mol", gas.acoustic_virial_cm3_per_mol),
+            one("sound_speed_m_per_s", gas.sound_speed_m_per_s),
+            one("ideal_gas_sound_speed_m_per_s", gas.ideal_gas_sound_speed_m_per_s),
+            one("collision_integral_22", gas.collision_integral_22),
+            one("collision_integral_23", gas.collision_integral_23),
+            one(
+                "viscosity_second_approximation_factor",
+                gas.viscosity_second_approximation_factor,
+            ),
+            one("viscosity_pa_s", gas.viscosity_pa_s),
+        ],
+        invariants: vec![
+            one(
+                "virial_forms_residual_cm3_per_mol",
+                gas.virial_forms_residual_cm3_per_mol,
+            ),
+            one("least_turning_point_margin", gas.least_turning_point_margin),
+            one("collision_integral_rule_gap", gas.collision_integral_rule_gap),
+        ],
+        field,
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::solvers::describe_value;
+
+    const SOLVER_SOURCE: &str = include_str!("../../genesis_solvers/src/argon_pair_gas.rs");
+
+    /// `(variant, doc sentence)` for every variant of `ArgonReject`, read from
+    /// the solver's source. An intra-doc link is written as its bare code span.
+    fn documented_rejects() -> Vec<(String, String)> {
+        let start = SOLVER_SOURCE
+            .find("pub enum ArgonReject {")
+            .expect("ArgonReject is in the solver");
+        let body = &SOLVER_SOURCE[start..];
+        let mut found = Vec::new();
+        let mut doc = String::new();
+        for line in body.lines().skip(1) {
+            if line == "}" {
+                break;
+            }
+            let Some(text) = line.strip_prefix("    ") else {
+                continue;
+            };
+            if let Some(sentence) = text.strip_prefix("/// ") {
+                if !doc.is_empty() {
+                    doc.push(' ');
+                }
+                doc.push_str(sentence);
+            } else if text.starts_with(|first: char| first.is_ascii_uppercase()) {
+                let name: String = text
+                    .chars()
+                    .take_while(|letter| letter.is_ascii_alphanumeric())
+                    .collect();
+                found.push((name, doc.replace("[`", "`").replace("`]", "`")));
+                doc.clear();
+            }
+        }
+        found
+    }
+
+    #[test]
+    fn every_refusal_carries_the_sentence_from_its_doc_comment() {
+        let documented = documented_rejects();
+        assert_eq!(documented.len(), REFUSALS.len());
+        for ((variant, sentence), refusal) in documented.iter().zip(REFUSALS) {
+            assert_eq!(variant, refusal.name);
+            assert_eq!(sentence, refusal.meaning, "{}", refusal.name);
+        }
+        let body = describe_value(ARGON_PAIR_GAS.name).expect("described");
+        let refusals = body["refusals"].as_array().expect("refusals");
+        assert_eq!(refusals.len(), documented.len());
+        // Only the five refusals the request itself shows are answered with no seal.
+        for refusal in refusals {
+            let at_the_door = refusal["name"] == "TemperatureOutOfRange"
+                || refusal["name"] == "PressureOutOfRange"
+                || refusal["name"] == "PressureNotCompared"
+                || refusal["name"] == "SoundSpeedNotCompared"
+                || refusal["name"] == "ViscosityNotCompared";
+            let reported = if at_the_door { "422, no seal" } else { "200, outcome refused, sealed" };
+            assert_eq!(refusal["reported_as"], reported, "{}", refusal["name"]);
+        }
+    }
+
+    #[test]
+    fn the_references_are_the_ones_stored_in_the_solver_test() {
+        let body = describe_value(ARGON_PAIR_GAS.name).expect("described");
+        for key in ["url", "url_collision_integrals"] {
+            let url = body["reference"][key].as_str().expect("url");
+            assert!(url.starts_with("https://nvlpubs.nist.gov/"), "{url}");
+            assert!(SOLVER_SOURCE.contains(&format!("<{url}>")), "{url}");
+        }
+        let retrieved = body["reference"]["retrieved"].as_str().expect("retrieved");
+        assert!(SOLVER_SOURCE.contains(&format!("Retrieved {retrieved}")), "{retrieved}");
+        let test = body["reference"]["test"].as_str().expect("test");
+        assert!(SOLVER_SOURCE.contains(&format!("fn {test}()")), "{test}");
+    }
+
+    /// The list an agent reads first says that the constants are fitted to
+    /// the gas's own measurements, and the description says what the
+    /// held-back data does and does not test.
+    #[test]
+    fn the_summary_says_the_constants_are_fitted() {
+        assert!(ARGON_PAIR_GAS.summary.contains("fitted to the measured speed of sound in argon"));
+        let body = describe_value(ARGON_PAIR_GAS.name).expect("described");
+        let limits = body["validation"]["limits"].as_str().expect("limits");
+        assert!(limits.contains("extrapolation in temperature"));
+        assert!(limits.contains("Not tested"));
+        assert_eq!(body["locked"]["well_depth_k"], 119.33);
+        assert_eq!(body["locked"]["zero_distance_angstrom"], 3.3918);
+    }
+
+    #[test]
+    fn every_published_name_is_in_the_entry() {
+        let gas = match solved(argon::solve(Question {
+            temperature_k: 300.0,
+            pressure_kpa: 101.325,
+        })) {
+            Solved::Answer(answer) => answer,
+            Solved::Refused(refused) => panic!("{}", refused.sentence),
+        };
+        assert_eq!(gas.result.len(), ARGON_PAIR_GAS.result.len());
+        for ((name, value), output) in gas.result.iter().zip(ARGON_PAIR_GAS.result) {
+            assert_eq!(name, output.name);
+            assert_eq!(value.shape(), output.shape);
+        }
+        assert_eq!(gas.invariants.len(), ARGON_PAIR_GAS.invariants.len());
+        for ((name, _), output) in gas.invariants.iter().zip(ARGON_PAIR_GAS.invariants) {
+            assert_eq!(name, output.name);
+        }
+        assert_eq!(gas.field.len() % 2, 0);
+        assert!(!gas.field.is_empty());
+    }
+}
