@@ -1,6 +1,8 @@
 //! `argon_pair_gas` through `POST /solve`, against a direct call to
 //! `genesis_solvers`, with its refusals at the door and its description.
 
+mod answer_text;
+
 use std::time::Duration;
 
 use genesis_solvers::argon_pair_gas::{self as argon, Question};
@@ -23,7 +25,7 @@ async fn spawn_app() -> String {
 async fn post(base: &str, path: &str, body: &Value) -> (u16, String) {
     let client = Client::new();
     let url = format!("{base}{path}");
-    let text = serde_json::to_string(body).unwrap();
+    let text = answer_text::as_sent(body);
     let mut last_error = None;
     for _ in 0..20 {
         match client
@@ -35,7 +37,9 @@ async fn post(base: &str, path: &str, body: &Value) -> (u16, String) {
         {
             Ok(response) => {
                 let status = response.status().as_u16();
-                return (status, response.text().await.unwrap());
+                let text = response.text().await.unwrap();
+                answer_text::remember(&text);
+                return (status, text);
             }
             Err(error) => {
                 last_error = Some(error);
@@ -132,7 +136,7 @@ async fn a_held_back_point_matches_the_solver_bit_for_bit_and_its_proof_holds() 
     // The proof holds, and an edit of any number breaks it by name.
     let (status, text) = post(&base, "/verify_solution", &body).await;
     assert_eq!(status, 200, "{text}");
-    assert_eq!(serde_json::from_str::<Value>(&text).unwrap(), json!({ "holds": true, "cause": null, "checked": protocol_mcp_gateway::WHOLE_SOLUTION_CHECKED }));
+    assert_eq!(serde_json::from_str::<Value>(&text).unwrap(), json!({ "holds": true, "values_hold": true, "cause": null, "compared": protocol_mcp_gateway::WHOLE_SOLUTION_COMPUTED }));
     let mut edits = 0;
     for section in ["result", "invariants"] {
         let keys: Vec<String> = body[section].as_object().unwrap().keys().cloned().collect();
@@ -164,24 +168,11 @@ async fn a_question_outside_the_range_is_422_with_its_name_and_no_seal() {
     let base = spawn_app().await;
     let cases = [
         (gas(249.9, 100.0), "TemperatureOutOfRange"),
-        (gas(681.97, 100.0), "TemperatureOutOfRange"),
+        (gas(6000.000000000001, 100.0), "TemperatureOutOfRange"),
         (gas(1.0e9, 100.0), "TemperatureOutOfRange"),
         (gas(300.0, 500.001), "PressureOutOfRange"),
         (gas(300.0, -1.0), "PressureOutOfRange"),
         (gas(300.0, 6595.8), "PressureOutOfRange"),
-        // Above zero and outside the pressures compared with measurement:
-        // no proof is given there.
-        (gas(300.0, 1.0), "PressureNotCompared"),
-        (gas(300.0, 30.4), "PressureNotCompared"),
-        (gas(300.0, 467.3), "PressureNotCompared"),
-        (gas(300.0, 500.0), "PressureNotCompared"),
-        (gas(681.96, 500.0), "PressureNotCompared"),
-        // The speed of sound above its compared temperatures.
-        (gas(349.87, 101.325), "SoundSpeedNotCompared"),
-        (gas(681.96, 467.2), "SoundSpeedNotCompared"),
-        // The gas at zero density below the viscosity's compared temperatures.
-        (gas(250.0, 0.0), "ViscosityNotCompared"),
-        (gas(291.08, -0.0), "ViscosityNotCompared"),
         // The temperature is asked first, as the solver asks it.
         (gas(249.9, 0.0), "TemperatureOutOfRange"),
     ];
@@ -192,25 +183,45 @@ async fn a_question_outside_the_range_is_422_with_its_name_and_no_seal() {
         assert!(text.ends_with(&format!("({name}).")), "{request}: {text}");
         assert!(!text.contains("solution_seal"), "{text}");
     }
-    let (_, text) = post(&base, "/solve", &gas(300.0, 500.0)).await;
-    assert_eq!(
-        text,
-        "Physical Violation: pressure 500 kPa is above zero and outside 30.5..=467.2 kPa, the pressures at which the speed of sound was compared with measurement; the viscosity was compared at zero pressure only (PressureNotCompared)."
-    );
     let (_, text) = post(&base, "/solve", &gas(300.0, 500.001)).await;
-    assert_eq!(text, "Physical Violation: pressure 500.001 kPa is outside 0..=500 kPa (PressureOutOfRange).");
+    assert_eq!(text, "Physical Violation: pressure 500.001 kPa is outside 0 to 500 kPa, where the pressure series cut after its first term is written (PressureOutOfRange).");
     // The ends of both compared regions are answered: the speed of sound at
     // its pressures, the viscosity at zero pressure, as the scored run asked
-    // all 49 of its points.
-    for request in [gas(250.0, 30.5), gas(349.868, 467.2), gas(291.09, 0.0), gas(681.96, 0.0), gas(500.0, -0.0)] {
+    // all 49 of its points. And so is every question past them where engine
+    // 0.8.0 refused by name, each with a seal that holds: pressures above
+    // zero outside 30.5 to 467.2 kPa, the speed of sound above 349.868 K,
+    // the gas at zero density below 291.09 K, and every property up to 6000 K.
+    for request in [
+        gas(250.0, 30.5),
+        gas(349.868, 467.2),
+        gas(291.09, 0.0),
+        gas(681.96, 0.0),
+        gas(500.0, -0.0),
+        gas(300.0, 1.0),
+        gas(300.0, 30.4),
+        gas(300.0, 467.3),
+        gas(300.0, 500.0),
+        gas(681.96, 500.0),
+        gas(349.87, 101.325),
+        gas(681.96, 467.2),
+        gas(250.0, 0.0),
+        gas(291.08, -0.0),
+        gas(681.97, 100.0),
+        gas(2000.0, 0.0),
+        gas(6000.0, 500.0),
+    ] {
         let (status, text) = post(&base, "/solve", &request).await;
         assert_eq!(status, 200, "{request} {text}");
         assert!(text.contains("\"outcome\":\"converged\""), "{text}");
+        let body: Value = serde_json::from_str(&text).unwrap();
+        let (status, checked) = post(&base, "/verify_solution", &body).await;
+        assert_eq!(status, 200, "{checked}");
+        assert_eq!(serde_json::from_str::<Value>(&checked).unwrap()["holds"], true, "{checked}");
     }
     let others = [
         (
             json!({ "solver": "argon_pair_gas", "parameters": { "temperature_k": 300.0 } }),
-            "Missing required parameter: 'pressure_kpa'".to_string(),
+            "Missing required parameter: 'pressure_kpa' (InputMissing).".to_string(),
         ),
         (
             json!({ "solver": "argon_pair_gas", "parameters": { "temperature_k": 300.0, "pressure_kpa": 100.0, "well_depth_k": 150.0 } }),
@@ -259,7 +270,7 @@ async fn the_description_says_what_is_fitted_and_its_example_runs_unchanged() {
     // Sentences held in the one line of the list and in each part of the
     // record.
     assert!(summary.ends_with(
-        "Each property is answered where it was compared: the speed of sound from 250 K to 349.868 K at 30.5 kPa to 467.2 kPa, the viscosity from 291.09 K to 681.96 K at zero pressure; elsewhere the solver refuses by name."
+        "Every property is answered from 250 K to 6000 K, where argon begins to ionize, at 0 to 500 kPa, where the pressure series cut after its first term is written. Compared with measurement, all five lines met: the speed of sound from 250 K to 349.868 K at 30.5 kPa to 467.2 kPa (held-back rms 0.0074 m/s), the viscosity from 291.09 K to 681.96 K at zero pressure (mean 1.47 percent high)."
     ), "{summary}");
     let data = described["validation"]["data"].as_str().unwrap();
     for words in [
@@ -276,7 +287,8 @@ async fn the_description_says_what_is_fitted_and_its_example_runs_unchanged() {
     let pass_line = described["validation"]["pass_line"].as_str().unwrap();
     for words in [
         "They were drawn knowing that textbook constants give about 2 percent, so meeting them is not evidence of agreement with the measurement",
-        "Rows of both data sets were seen before the split",
+        "The comparison is not blind: before the split was chosen and these lines were fixed, a sampled listing of both files was printed and read",
+        "29 of the 163 speed-of-sound rows, from all 15 isotherms including the four held back, and 11 of the 49 viscosity rows, all of which are scored",
     ] {
         assert!(pass_line.contains(words), "{words}: {pass_line}");
     }
@@ -293,7 +305,7 @@ async fn the_description_says_what_is_fitted_and_its_example_runs_unchanged() {
         "the reference equation of state scores 0.0076, and repeated states differ by up to 0.016 m/s",
         "the second acoustic virial coefficient fitted at 250 to 300 K extrapolates 50 K",
         "SHA-256 90dfab953a94d199db146cfad89a4ce4bf750288c3b33b299fb2fed49e722066) was overwritten by a later build, which returned all 115 saved answers byte for byte; engine 0.7.0 answers all 115, the 49 viscosity answers asked at zero pressure among them, the same in every field but the engine version and the receipt",
-        "evidence/checks/second_party/V-34/",
+        "evidence/verification/second_party/V-34/",
     ] {
         assert!(result.contains(words), "{words}: {result}");
     }
@@ -308,27 +320,30 @@ async fn the_description_says_what_is_fitted_and_its_example_runs_unchanged() {
     assert_eq!(inputs.len(), 2);
     assert_eq!(inputs[0]["minimum"], argon::TEMPERATURE_MIN_K);
     assert_eq!(inputs[0]["maximum"], argon::TEMPERATURE_MAX_K);
-    // The pressure says which property is asked, and each is answered where
-    // it was compared.
+    assert_eq!(inputs[0]["maximum"], 6000.0);
+    // Every property is answered at every pressure the series is written
+    // for; the compared spans are stated in words.
     assert_eq!(inputs[1]["minimum"], argon::PRESSURE_MIN_KPA);
     assert_eq!(inputs[1]["maximum"], argon::PRESSURE_MAX_KPA);
     assert_eq!(inputs[1]["refusal"], "PressureOutOfRange");
     let bound = inputs[1]["bound"].as_str().unwrap();
     for words in [
-        "From 30.5 kPa to 467.2 kPa, the span of the measured speeds of sound the solver was compared with, it asks the speed of sound, which is answered from 250 K to 349.868 K and refused above as SoundSpeedNotCompared.",
-        "Zero asks the gas at zero density, where the viscosity was compared: it is answered from 291.09 K to 681.96 K and refused below as ViscosityNotCompared",
-        "is refused as PressureNotCompared",
+        "The speed of sound was compared at 30.5 kPa to 467.2 kPa, and the viscosity at zero pressure",
+        "Every property is returned at every pressure",
     ] {
         assert!(bound.contains(words), "{words}: {bound}");
     }
-    assert!(!bound.contains("Zero gives the ideal gas"), "{bound}");
+    assert!(!bound.contains("NotCompared"), "{bound}");
     let limits = described["validation"]["limits"].as_str().unwrap();
-    assert!(limits.contains("Not tested, and refused by name: a pressure above zero outside 30.5 to 467.2 kPa; temperatures below 250 K or above 681.96 K; the speed of sound above 349.868 K; the gas at zero pressure below 291.09 K."), "{limits}");
+    assert!(limits.contains("Not tested, and answered: a pressure above zero outside 30.5 to 467.2 kPa; the speed of sound above 349.868 K; the viscosity below 291.09 K; every property above 681.96 K up to 6000 K"), "{limits}");
     assert!(!limits.contains("pressures above 500 kPa, where the solver refuses"), "{limits}");
-    assert!(summary.contains("the speed of sound from 250 K to 349.868 K at 30.5 kPa to 467.2 kPa, the viscosity from 291.09 K to 681.96 K at zero pressure"), "{summary}");
+    assert!(summary.contains("the speed of sound from 250 K to 349.868 K at 30.5 kPa to 467.2 kPa (held-back rms 0.0074 m/s), the viscosity from 291.09 K to 681.96 K at zero pressure"), "{summary}");
     let result = described["validation"]["result"].as_str().unwrap();
     assert!(result.contains("engine 0.7.0 answers all 115, the 49 viscosity answers asked at zero pressure among them, the same in every field but the engine version and the receipt."), "{result}");
-    assert_eq!(described["refusals"].as_array().expect("refusals").len(), 12);
+    assert_eq!(described["refusals"].as_array().expect("refusals").len(), 9);
+    for refusal in described["refusals"].as_array().unwrap() {
+        assert!(!refusal["meaning"].as_str().unwrap().contains("..="), "{refusal}");
+    }
 
     let example = described["example_solve"].clone();
     let (status, text) = post(&base, "/solve", &example).await;

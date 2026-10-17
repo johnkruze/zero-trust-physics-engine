@@ -7,9 +7,9 @@
 //! `solve` uses and sealed with the `solution_seal` it carries alone. The
 //! rows are sealed under one dataset seal by the rules of `genesis_seal`: the
 //! plan hash is SHA-256 of the sealed form of the request, the leaf of a row
-//! is the compact JSON of `row`, `request_sha256`, `outcome` and the row's
-//! seal, the leaves form the row tree of RFC 6962, and `dataset_seal` is
-//! SHA-256 of the plan hash, the root and the compact JSON of the counts.
+//! is the compact JSON of `row`, `request_sha256`, `outcome`, the row's
+//! seal and `reject_detail_sha256`, the leaves form the row tree of RFC
+//! 6962, and `dataset_seal` is SHA-256 of the plan hash, the root and the compact JSON of the counts.
 //!
 //! The comparison (`validate_series` given `solves`) runs such a plan and
 //! compares one published number of each solve's result with the caller's
@@ -39,10 +39,10 @@ pub const MAX_SOLVES: u64 = 64;
 /// The sentence for the three parts of a dataset of solves sent to
 /// `verify_dataset`: its rows are solutions, which the check by parts does
 /// not read.
-pub(crate) const CHECK_SOLVES_BY_REQUEST: &str = "Physical Violation: the head is that of a plan of solves, whose rows are solutions and are not checked by parts. Check it by sending its run_dataset request as 'request' with its 'dataset_seal': the solves are solved again and the seal compared.";
+pub(crate) const VERIFY_SOLVES_BY_REQUEST: &str = "Physical Violation: the head is that of a plan of solves, whose rows are solutions and are not verified by parts. Verify it by sending its run_dataset request as 'request' with its 'dataset_seal': the solves are solved again and the seal compared.";
 
 /// What a summary answer of a plan of solves says of itself.
-pub(crate) const SOLVES_SUMMARY_ABOUT: &str = "One summary row per solve: its solution_seal, outcome, refusal name and every single number of its result in decimals, and for a grid the values the row sets. The head and the dataset_seal are those of the full rows. Send the request again with \"answer\": \"full\" for every solution whole, or check the seal with verify_dataset given this request and the dataset_seal.";
+pub(crate) const SOLVES_SUMMARY_ABOUT: &str = "One summary row per solve: its solution_seal, outcome, refusal name and every single number of its result in decimals, and for a grid the values the row sets. The head and the dataset_seal are those of the full rows. Send the request again with \"answer\": \"full\" for every solution whole, or verify the seal with verify_dataset given this request and the dataset_seal.";
 
 /// How the seal of a comparison of solves is taken, said in its answer.
 pub(crate) const SOLVES_SEALED_AS: &str = "validation_seal is the validation seal of genesis_seal, taken with the dataset_seal of the solves in the place of a run seal, each measured row number in the place of a step, outcome \"solves\", steps_landed the count of solves that converged and reject null. The statistics and measurements_sha256 follow the rules of a run's comparison. A measured row whose solve did not converge is not compared and is counted in not_reached. genesis_seal verify-validation reads this comparison as it reads a run's, from the answer alone; the same request sent again gives the same seal.";
@@ -54,7 +54,7 @@ fn violation(text: impl std::fmt::Display) -> DoorError {
 }
 
 fn missing(key: &str) -> DoorError {
-    DoorError::Unprocessable(format!("Missing required parameter: '{key}'"))
+    DoorError::Unprocessable(format!("Missing required parameter: '{key}' (InputMissing)."))
 }
 
 /// A plan of solves, read and held to its solver's input list.
@@ -105,7 +105,7 @@ pub(crate) fn read(view: &View, request: Value) -> Result<SolvePlan, DoorError> 
     let solver = Some(name)
         .filter(|name| view.sees_solver(name))
         .and_then(crate::solvers::find)
-        .ok_or_else(|| DoorError::NotFound("Solver not recognized".to_string()))?;
+        .ok_or_else(|| DoorError::NotFound(crate::SOLVER_NOT_RECOGNIZED.to_string()))?;
     let plan = object
         .get("plan")
         .ok_or_else(|| missing("plan"))?
@@ -254,14 +254,21 @@ struct Sealed {
     solutions: Vec<Option<SolutionResponse>>,
 }
 
-/// The leaf of a row: the compact JSON of `row`, `request_sha256`, `outcome`
-/// and `solution_seal`, in that order.
-fn leaf_of(row: u64, request: &Value, outcome: &str, seal: Option<&str>) -> Value {
+/// The leaf of a row: the compact JSON of `row`, `request_sha256`, `outcome`,
+/// `solution_seal` and `reject_detail_sha256`, in that order. The last is the
+/// SHA-256 of the row's refusal sentence, or null when it has none, as in the
+/// leaf of a row of runs: the sentence of a row turned away before solving is
+/// covered by no solution seal, and is sealed here.
+fn leaf_of(row: u64, request: &Value, outcome: &str, seal: Option<&str>, reject_detail: Option<&str>) -> Value {
     let mut leaf = Map::new();
     leaf.insert("row".to_string(), Value::from(row));
     leaf.insert("request_sha256".to_string(), Value::from(digest_hex(sealed_form(request).as_bytes())));
     leaf.insert("outcome".to_string(), Value::from(outcome));
     leaf.insert("solution_seal".to_string(), seal.map_or(Value::Null, Value::from));
+    leaf.insert(
+        "reject_detail_sha256".to_string(),
+        reject_detail.map_or(Value::Null, |sentence| Value::from(digest_hex(sentence.as_bytes()))),
+    );
     Value::Object(leaf)
 }
 
@@ -308,11 +315,7 @@ fn execute(view: &View, plan: &SolvePlan) -> Result<Sealed, DoorError> {
         let mut row = Map::new();
         row.insert("row".to_string(), Value::from(index));
         row.insert("request".to_string(), request.clone());
-        let mut brief = Map::new();
-        brief.insert("row".to_string(), Value::from(index));
-        if let Some(set) = dataset::set_of(&plan.paths, request) {
-            brief.insert("set".to_string(), set);
-        }
+        let set = dataset::set_of(&plan.paths, request);
         let leaf = match &solved {
             Ok(response) => {
                 let document = serde_json::to_value(&response.document).map_err(encode_failed)?;
@@ -329,14 +332,21 @@ fn execute(view: &View, plan: &SolvePlan) -> Result<Sealed, DoorError> {
                     "converged" => counts.completed += 1,
                     _ => counts.refused += 1,
                 }
-                brief.insert("outcome".to_string(), Value::from(outcome));
-                brief.insert("reject".to_string(), response.document.reject.clone().map_or(Value::Null, Value::from));
-                brief.insert("solution_seal".to_string(), Value::from(response.document.solution_seal.as_str()));
-                brief.insert(
-                    "result".to_string(),
+                summary.push(brief_of(
+                    index,
+                    set,
+                    outcome,
+                    response.document.reject.as_deref(),
+                    Some(&response.document.solution_seal),
                     response.document.result.as_ref().map_or(Value::Null, numbers_of),
-                );
-                leaf_of(index, request, outcome, Some(&response.document.solution_seal))
+                ));
+                leaf_of(
+                    index,
+                    request,
+                    outcome,
+                    Some(&response.document.solution_seal),
+                    response.document.reject_detail.as_deref(),
+                )
             }
             Err(sentence) => {
                 counts.unadmitted += 1;
@@ -345,11 +355,8 @@ fn execute(view: &View, plan: &SolvePlan) -> Result<Sealed, DoorError> {
                 }
                 row.insert("outcome".to_string(), Value::from("unadmitted"));
                 row.insert("reject_detail".to_string(), Value::from(sentence.as_str()));
-                brief.insert("outcome".to_string(), Value::from("unadmitted"));
-                brief.insert("reject".to_string(), dataset::name_in_brackets(sentence).map_or(Value::Null, Value::from));
-                brief.insert("solution_seal".to_string(), Value::Null);
-                brief.insert("result".to_string(), Value::Null);
-                leaf_of(index, request, "unadmitted", None)
+                summary.push(brief_of(index, set, "unadmitted", dataset::name_in_brackets(sentence).as_deref(), None, Value::Null));
+                leaf_of(index, request, "unadmitted", None, Some(sentence.as_str()))
             }
         };
         let leaf_text = serde_json::to_string(&leaf).map_err(encode_failed)?;
@@ -359,7 +366,6 @@ fn execute(view: &View, plan: &SolvePlan) -> Result<Sealed, DoorError> {
         rows_text.extend_from_slice(serde_json::to_string(&row).map_err(encode_failed)?.as_bytes());
         rows_text.push(b'\n');
         rows.push(row);
-        summary.push(Value::Object(brief));
         solutions.push(solved.ok());
     }
     let plan_sha256 = digest_hex(sealed_form(&plan.request).as_bytes());
@@ -398,25 +404,123 @@ async fn solve_and_seal(state: &AppState, plan: SolvePlan) -> Result<(SolvePlan,
     })
 }
 
-/// The characters a summary of `plan` can come to, counted before anything
-/// is solved: the head with the whole request, and for each row its fixed
-/// part, the values it sets and every single number the solver publishes in
-/// its result.
-fn summary_chars(plan: &SolvePlan) -> u64 {
-    let request_chars = plan.request.to_string().len() as u64;
-    let numbers: u64 = plan
-        .solver
-        .result
-        .iter()
-        .filter(|output| matches!(output.shape, Shape::Number))
-        .map(|output| (output.each.len().max(1) as u64) * (output.name.len() as u64 + 16 + 28))
-        .sum();
-    let mut counted = request_chars + 900 + SOLVES_SUMMARY_ABOUT.len() as u64;
-    for row in &plan.rows {
-        let set = dataset::set_of(&plan.paths, row).map_or(0, |set| set.to_string().len() as u64 + 8);
-        counted = counted.saturating_add(300 + numbers + set);
+/// The summary row of one solve: `row`, `set` for a grid, `outcome`,
+/// `reject`, `solution_seal` and `result`, every single number of the result
+/// in decimals. The rows of an answer and the count before solving are both
+/// written by this.
+fn brief_of(index: u64, set: Option<Value>, outcome: &str, reject: Option<&str>, seal: Option<&str>, result: Value) -> Value {
+    let mut brief = Map::new();
+    brief.insert("row".to_string(), Value::from(index));
+    if let Some(set) = set {
+        brief.insert("set".to_string(), set);
     }
-    counted
+    brief.insert("outcome".to_string(), Value::from(outcome));
+    brief.insert("reject".to_string(), reject.map_or(Value::Null, Value::from));
+    brief.insert("solution_seal".to_string(), seal.map_or(Value::Null, Value::from));
+    brief.insert("result".to_string(), result);
+    Value::Object(brief)
+}
+
+/// A number written in the most characters a decimal of a 64-bit number
+/// takes: a sign, seventeen digits, a point and an exponent of three digits
+/// with its sign, 24 in all.
+const DECIMAL_MOST: f64 = -1.2345678901234567e-308;
+
+/// The longest refusal name a row turned away can carry where its sentence
+/// names no more than the engine's own names: every name a solver lists is
+/// shorter (`a_plan_of_solves_is_counted_between_its_least_and_its_most`).
+const REFUSAL_NAME_MOST: usize = 64;
+
+fn chars_of(value: &Value) -> u64 {
+    serde_json::to_string(value).map_or(u64::MAX, |text| text.len() as u64)
+}
+
+/// The least and the most characters the summary answer of `plan` can come
+/// to, counted before anything is solved: the head with the whole request,
+/// what the answer says of itself and the paths a grid replaced, and for each
+/// row its fixed part, the values it sets and each single number its solver
+/// publishes. At the most, a row converged with every number the solver can
+/// publish in 24 characters, or was refused or turned away under the longest
+/// name it can carry; at the least, a row turned away with no name, or
+/// converged with the numbers every solution holds in one character each.
+/// The answer itself is counted again once it is made.
+fn summary_bounds(plan: &SolvePlan, replaced: &[String]) -> (u64, u64) {
+    let rows = plan.rows.len() as u64;
+    let head = |most: bool| {
+        let counted = if most { rows } else { 0 };
+        let counts = Counts {
+            engine_version: crate::ENGINE_VERSION.to_string(),
+            rows,
+            completed: counted,
+            ended: 0,
+            refused: counted,
+            unadmitted: counted,
+            frames: 0,
+        };
+        let hash = "0".repeat(64);
+        Head {
+            request: plan.request.clone(),
+            counts,
+            plan_sha256: hash.clone(),
+            merkle_root: hash.clone(),
+            dataset_seal: hash.clone(),
+            rows_sha256: Some(hash),
+            frames_sha256: None,
+        }
+        .wire()
+        .len() as u64
+    };
+    let mut body = Map::new();
+    body.insert("head".to_string(), Value::Null);
+    body.insert("summary".to_string(), Value::Array(Vec::new()));
+    body.insert("about".to_string(), Value::from(SOLVES_SUMMARY_ABOUT));
+    dataset::note_replaced(&mut body, replaced);
+    // The body less its head's `null`, and a comma between two rows.
+    let around = chars_of(&Value::Object(body)) - 4 + rows.saturating_sub(1);
+    let numbers = |most: bool| {
+        let mut result = Map::new();
+        for output in plan.solver.result.iter().filter(|output| matches!(output.shape, Shape::Number)) {
+            let written = if most { Value::from(DECIMAL_MOST) } else { Value::from(0_u64) };
+            match output.family_ends() {
+                None if most || output.asked_by.is_none() => {
+                    result.insert(output.name.to_string(), written);
+                }
+                None => {}
+                Some((before, after)) => {
+                    if most {
+                        for label in output.each {
+                            result.insert(format!("{before}{label}{after}"), written.clone());
+                        }
+                    }
+                }
+            }
+        }
+        Value::Object(result)
+    };
+    let (most_numbers, least_numbers) = (numbers(true), numbers(false));
+    let sealed: Vec<&str> = plan.solver.refusals.iter().filter(|refusal| refusal.sealed).map(|refusal| refusal.name).collect();
+    let seal = "0".repeat(64);
+    let (mut least, mut most) = (head(false) + around, head(true) + around);
+    for (index, request) in plan.rows.iter().enumerate() {
+        let index = index as u64;
+        let set = || dataset::set_of(&plan.paths, request);
+        let turned_away_name = "A".repeat(REFUSAL_NAME_MOST.max(chars_of(request) as usize));
+        let mut row_most = vec![
+            chars_of(&brief_of(index, set(), "converged", None, Some(&seal), most_numbers.clone())),
+            chars_of(&brief_of(index, set(), "unadmitted", Some(&turned_away_name), None, Value::Null)),
+        ];
+        let mut row_least = vec![
+            chars_of(&brief_of(index, set(), "converged", None, Some(&seal), least_numbers.clone())),
+            chars_of(&brief_of(index, set(), "unadmitted", None, None, Value::Null)),
+        ];
+        if let (Some(longest), Some(shortest)) = (sealed.iter().max_by_key(|name| name.len()), sealed.iter().min_by_key(|name| name.len())) {
+            row_most.push(chars_of(&brief_of(index, set(), "refused", Some(longest), Some(&seal), Value::Null)));
+            row_least.push(chars_of(&brief_of(index, set(), "refused", Some(shortest), Some(&seal), Value::Null)));
+        }
+        most = most.saturating_add(row_most.into_iter().max().unwrap_or(u64::MAX));
+        least = least.saturating_add(row_least.into_iter().min().unwrap_or(0));
+    }
+    (least, most)
 }
 
 /// `run_dataset` given a plan of solves.
@@ -428,11 +532,21 @@ pub(crate) async fn run(state: &AppState, normalized: Normalized) -> Result<Stri
         ));
     }
     let plan = read(state.view(), request)?;
-    let counted = summary_chars(&plan);
-    if counted > MAX_INLINE_ANSWER_CHARS {
-        return Err(DoorError::Unprocessable(too_large(counted, form, true)));
+    let (least, most) = summary_bounds(&plan, &replaced);
+    if least > MAX_INLINE_ANSWER_CHARS {
+        return Err(DoorError::Unprocessable(too_large_before(least, most, form)));
     }
     let (_, sealed) = solve_and_seal(state, plan).await?;
+    let text = answer_text(sealed, form, &replaced)?;
+    if text.len() as u64 > MAX_INLINE_ANSWER_CHARS {
+        return Err(DoorError::Unprocessable(too_large_after(text.len() as u64, form)));
+    }
+    Ok(text)
+}
+
+/// The answer of a solved plan in `form`: the head, then the summary rows
+/// and what they are, or every row whole.
+fn answer_text(sealed: Sealed, form: Form, replaced: &[String]) -> Result<String, DoorError> {
     let head = serde_json::from_str::<Value>(&sealed.head.wire()).map_err(encode_failed)?;
     let mut body = Map::new();
     body.insert("head".to_string(), head);
@@ -445,41 +559,139 @@ pub(crate) async fn run(state: &AppState, normalized: Normalized) -> Result<Stri
             body.insert("rows".to_string(), Value::Array(sealed.rows));
         }
     }
-    dataset::note_replaced(&mut body, &replaced);
-    let text = serde_json::to_string(&Value::Object(body)).map_err(encode_failed)?;
-    if form == Form::Full && text.len() as u64 > MAX_INLINE_ANSWER_CHARS {
-        return Err(DoorError::Unprocessable(too_large(text.len() as u64, form, false)));
-    }
-    Ok(text)
+    dataset::note_replaced(&mut body, replaced);
+    serde_json::to_string(&Value::Object(body)).map_err(encode_failed)
 }
 
-/// The refusal of an answer of a plan of solves above the limit, with what
-/// to change. A summary is counted before anything is solved. The whole
-/// solutions of a solver that publishes arrays are not known in length until
-/// they are solved, so a full answer is counted when it is made.
-fn too_large(counted: u64, form: Form, before: bool) -> String {
+/// The refusal of a plan of solves whose answer cannot be under the limit,
+/// before anything is solved: the least its summary can come to is above it.
+/// A summary is said with the most it can come to; the whole rows are longer.
+fn too_large_before(least: u64, most: u64, form: Form) -> String {
+    let most = if form == Form::Full { String::new() } else { format!(" and at most {most}") };
     let mut text = format!(
-        "Physical Violation: the answer would come to about {counted} characters, more than the {MAX_INLINE_ANSWER_CHARS} one inline answer may have."
+        "Physical Violation: the answer would come to at least {least} characters{most}, more than the {MAX_INLINE_ANSWER_CHARS} one inline answer may have. It is counted from the plan before anything is solved, and nothing was solved. To make it smaller:"
     );
-    if before {
-        text.push_str(" It is counted from the plan before anything is solved, and nothing was solved.");
-    } else {
+    to_make_it_smaller(&mut text, form);
+    text
+}
+
+/// The refusal of an answer of a plan of solves above the limit, counted
+/// once it is made: the decimals of a solution are not known in length
+/// until it is solved.
+fn too_large_after(counted: u64, form: Form) -> String {
+    let mut text = format!(
+        "Physical Violation: the answer comes to {counted} characters, more than the {MAX_INLINE_ANSWER_CHARS} one inline answer may have."
+    );
+    if form == Form::Full {
         text.push_str(" The whole solutions were counted once they were solved, and none is returned.");
+    } else {
+        text.push_str(" Its summary was counted once the plan was solved, and none is returned.");
     }
     text.push_str(" To make it smaller:");
-    if form == Form::Full {
-        text.push_str(" leave out 'answer' for one summary row per solve, with its seal, outcome and every single number of its result in decimals;");
-    }
-    text.push_str(" or send fewer solves.");
+    to_make_it_smaller(&mut text, form);
     text
+}
+
+fn to_make_it_smaller(text: &mut String, form: Form) {
+    if form == Form::Full {
+        text.push_str(" leave out 'answer' for one summary row per solve, with its seal, outcome and every single number of its result in decimals; or send fewer solves.");
+    } else {
+        text.push_str(" send fewer solves.");
+    }
 }
 
 /// The dataset seal a plan of solves comes to, worked out again for a check
 /// by request. Nothing is stored or read from storage.
-pub(crate) async fn recompute_seal(state: &AppState, normalized: Normalized) -> Result<String, DoorError> {
+pub(crate) async fn recompute_seal(state: &AppState, normalized: Normalized, given: &str) -> Result<(String, Option<String>), DoorError> {
     let plan = read(state.view(), normalized.request)?;
-    let (_, sealed) = solve_and_seal(state, plan).await?;
-    Ok(sealed.head.dataset_seal)
+    let (plan, sealed) = solve_and_seal(state, plan).await?;
+    let words = (sealed.head.dataset_seal != given).then(|| version_words(&plan, &sealed, given));
+    Ok((sealed.head.dataset_seal, words))
+}
+
+/// The dataset seal of a solved plan with `kernel` in its counts and each
+/// solution sealed under `solvers`: what the same plan solved by another
+/// version comes to. A row turned away has no solution and keeps its leaf.
+fn seal_under(plan: &SolvePlan, sealed: &Sealed, kernel: &str, solvers: &str) -> Option<String> {
+    let mut leaves = Vec::with_capacity(plan.rows.len());
+    for (index, ((request, solution), row)) in plan.rows.iter().zip(&sealed.solutions).zip(&sealed.rows).enumerate() {
+        let leaf = match solution {
+            Some(response) => {
+                let seal = crate::solution::seal_with_version(&response.document, solvers)?;
+                leaf_of(index as u64, request, &response.document.outcome, Some(&seal), response.document.reject_detail.as_deref())
+            }
+            None => row.get("leaf")?.clone(),
+        };
+        leaves.push(tree::leaf_hash(serde_json::to_string(&leaf).ok()?.as_bytes()));
+    }
+    let root = hex::encode(tree::root(&leaves)?);
+    let counts = Counts { engine_version: kernel.to_string(), ..sealed.head.counts.clone() };
+    Some(dataset_seal(&sealed.head.plan_sha256, &root, &counts))
+}
+
+/// What a check by request of a plan of solves says when the seal given is
+/// not the one computed: the dataset seal covers `engine_version` through its
+/// counts and through each row's solution seal, and, when the seal given is
+/// this plan's under another version's names, those beside this engine's
+/// (the red team of 0.13.0, D4). Tried: each earlier kernel with the solvers
+/// one minor version before it, as the engine's releases paired them through
+/// 0.13.x, each with this engine's other half, and the pairs a release made
+/// otherwise (`PAIRS_OFF_THE_RULE`: 0.14.0's kernel 0.12.0 with solvers
+/// 0.12.0).
+fn version_words(plan: &SolvePlan, sealed: &Sealed, given: &str) -> String {
+    let ours_kernel = sealed.head.counts.engine_version.clone();
+    let ours_solvers = crate::solvers::engine_version();
+    version_words_of(plan, sealed, given, &ours_kernel, &ours_solvers)
+}
+
+/// `version_words` for an engine that writes `ours_kernel` and
+/// `ours_solvers`: a test reads it as a later engine would.
+fn version_words_of(plan: &SolvePlan, sealed: &Sealed, given: &str, ours_kernel: &str, ours_solvers: &str) -> String {
+    let (ours_kernel, ours_solvers) = (ours_kernel.to_string(), ours_solvers.to_string());
+    let theirs = version_pairs(&ours_kernel, &ours_solvers)
+        .into_iter()
+        .filter(|(kernel, solvers)| !(kernel == &ours_kernel && solvers == &ours_solvers))
+        .find(|(kernel, solvers)| seal_under(plan, sealed, kernel, solvers).as_deref() == Some(given));
+    match theirs {
+        Some((kernel, solvers)) => format!(
+            "The dataset_seal covers engine_version, through its counts and each row's solution_seal: the seal given is this plan's dataset seal with engine_version {kernel} in its counts and {solvers} in its solution seals, another engine version's, and this engine writes {ours_kernel} and {ours_solvers}, so it does not hold here."
+        ),
+        None => format!(
+            "The dataset_seal covers engine_version, through its counts ({ours_kernel} on this engine) and each row's solution_seal ({ours_solvers}): the seal of a plan another engine version solved does not hold here."
+        ),
+    }
+}
+
+/// The kernel and solvers versions an engine release paired otherwise than
+/// each kernel with the solvers one minor version before it. Engine 0.14.0
+/// moved the solvers to 0.12.0 (canonical math) and kept the kernel at
+/// 0.12.0. The pairs of every earlier release follow the rule: 0.8.0 with
+/// 0.7.0 (0.8.1 to 0.9.3), 0.9.0 with 0.8.0 (0.10.x), 0.12.0 with 0.11.0
+/// (0.13.x). A release whose pair breaks the rule adds it here; a test holds
+/// this engine's own pair to the pairs a later engine tries.
+const PAIRS_OFF_THE_RULE: &[(&str, &str)] = &[("genesis_kernel_v0.12.0", "genesis_solvers_v0.12.0")];
+
+/// The kernel and solvers versions a plan's seal is tried under, for an
+/// engine that writes `ours_kernel` and `ours_solvers`: each kernel with the
+/// solvers one minor version before it, each with this engine's other half,
+/// and the pairs of `PAIRS_OFF_THE_RULE`.
+fn version_pairs(ours_kernel: &str, ours_solvers: &str) -> Vec<(String, String)> {
+    let mut pairs = Vec::new();
+    for minor in 0..=30_u32 {
+        let kernel = format!("genesis_kernel_v0.{minor}.0");
+        if let Some(before) = minor.checked_sub(1) {
+            pairs.push((kernel.clone(), format!("genesis_solvers_v0.{before}.0")));
+        }
+        pairs.push((kernel, ours_solvers.to_string()));
+        pairs.push((ours_kernel.to_string(), format!("genesis_solvers_v0.{minor}.0")));
+    }
+    for (kernel, solvers) in PAIRS_OFF_THE_RULE {
+        let pair = (kernel.to_string(), solvers.to_string());
+        if !pairs.contains(&pair) {
+            pairs.push(pair);
+        }
+    }
+    pairs
 }
 
 /// The keys of a comparison of solves.
@@ -509,7 +721,13 @@ struct Comparison<'a> {
     max_abs_error_row: Option<u64>,
     model_values: Vec<crate::readout::Exact>,
     model_values_hex: &'a [String],
+    /// Present only when a measurement carries an instrument's signature.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    measurement_source: Option<Value>,
     measurements_sha256: &'a str,
+    /// Present only when the request opened a commitment.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    commitment_opened: Option<&'static str>,
     validation_seal: &'a str,
     sealed_as: &'static str,
     does_not_show: &'static str,
@@ -522,9 +740,9 @@ pub(crate) async fn validate(state: &AppState, request: Value) -> Result<String,
         .as_object()
         .ok_or_else(|| violation("the request must be a JSON object."))?;
     for key in object.keys() {
-        if !COMPARISON_KEYS.contains(&key.as_str()) {
+        if !COMPARISON_KEYS.contains(&key.as_str()) && key != genesis_seal::commitment::COMMITMENT {
             return Err(violation(format!(
-                "'{key}' is not a field of a comparison of solves. Its fields are solves, quantity and measurements."
+                "'{key}' is not a field of a comparison of solves. Its fields are solves, quantity and measurements, and commitment when the measurements were committed."
             )));
         }
     }
@@ -577,9 +795,9 @@ pub(crate) async fn validate(state: &AppState, request: Value) -> Result<String,
             .as_object()
             .ok_or_else(|| violation(format!("'{label}' must be a JSON object.")))?;
         for key in item.keys() {
-            if key != "row" && key != "value" {
+            if key != "row" && key != "value" && key != crate::signed_load::SIGNED {
                 return Err(violation(format!(
-                    "'{label}.{key}' is not a field of a measurement of solves. Its fields are row and value."
+                    "'{label}.{key}' is not a field of a measurement of solves. Its fields are row and value, and signed when an instrument signed it."
                 )));
             }
         }
@@ -609,6 +827,12 @@ pub(crate) async fn validate(state: &AppState, request: Value) -> Result<String,
         values.push(value);
     }
     let measurements = object["measurements"].clone();
+    // A commitment is opened by the measurements as sent, before a permit.
+    let commitment = crate::validation::open_commitment(object, &quantity, &measurements)?;
+    // A signed measurement is verified before the solves take a permit.
+    let readings = crate::signed_load::verify_measurements(&measurements)?;
+    let measurement_source =
+        (!readings.is_empty()).then(|| crate::signed_load::measurement_source(&measurements, &readings));
     let (_, sealed) = solve_and_seal(state, plan).await?;
 
     let hex_key = format!("{quantity}_hex");
@@ -651,6 +875,7 @@ pub(crate) async fn validate(state: &AppState, request: Value) -> Result<String,
         not_reached: not_reached_rows.len() as u64,
         statistics: stats.as_ref(),
         model_values_hex: &model_values_hex,
+        commitment: commitment.as_ref(),
     });
     let document = serde_json::to_string(&Comparison {
         inputs: &request,
@@ -672,7 +897,9 @@ pub(crate) async fn validate(state: &AppState, request: Value) -> Result<String,
         max_abs_error_row: stats.map(|s| s.max_abs_error_step),
         model_values: model.iter().map(|value| crate::readout::Exact(*value)).collect(),
         model_values_hex: &model_values_hex,
+        measurement_source,
         measurements_sha256: &hash,
+        commitment_opened: commitment.as_ref().map(|_| genesis_seal::commitment::OPENED),
         validation_seal: &seal,
         sealed_as: SOLVES_SEALED_AS,
         does_not_show: DOES_NOT_SHOW,
@@ -696,4 +923,125 @@ pub(crate) fn worked_plan_in(view: &View) -> Option<Value> {
         "solver": solver.name,
         "plan": { "kind": "list", "solves": [{ "parameters": example["parameters"] }] }
     }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn list(solver: &str, rows: Vec<Value>) -> Value {
+        let solves: Vec<Value> = rows.into_iter().map(|parameters| json!({ "parameters": parameters })).collect();
+        json!({ "solver": solver, "plan": { "kind": "list", "solves": solves } })
+    }
+
+    /// The least and the most counted before solving, and the answer made.
+    fn counted_and_made(view: &View, request: Value, form: Form) -> (u64, u64, u64) {
+        let plan = read(view, request).expect("a plan");
+        let (least, most) = summary_bounds(&plan, &[]);
+        let sealed = execute(view, &plan).expect("solved");
+        let made = answer_text(sealed, form, &[]).expect("encoded").len() as u64;
+        (least, made, most)
+    }
+
+    /// The red team of 0.13.0, D3: the count before solving is a floor and
+    /// a ceiling of the answer, and is never below it. For every solver: its
+    /// worked example alone and twice beside a row turned away, in the
+    /// summary; and every refusal name a solver lists is under the longest
+    /// name the count allows a row turned away.
+    #[test]
+    fn a_plan_of_solves_is_counted_between_its_least_and_its_most() {
+        let view = View::full();
+        for solver in view.solvers() {
+            for refusal in solver.listed_refusals() {
+                assert!(refusal.name.len() <= REFUSAL_NAME_MOST, "{} {}", solver.name, refusal.name);
+            }
+            let example = (solver.example)();
+            for rows in [vec![example.clone()], vec![example.clone(), json!({}), example.clone()]] {
+                let (least, made, most) = counted_and_made(&view, list(solver.name, rows.clone()), Form::Summary);
+                assert!(least <= made && made <= most, "{}: {least} <= {made} <= {most}", solver.name);
+                let (_, whole, _) = counted_and_made(&view, list(solver.name, rows), Form::Full);
+                assert!(least <= whole, "{}: {least} <= {whole} whole", solver.name);
+            }
+        }
+    }
+
+    /// The red team's plans: 50 solves of the elastic plate, the open
+    /// connection's count of it, come to about 36,750 characters and are
+    /// answered; 64 of propeller_apc_10x7e, the engine's own count on every
+    /// connection, come to about 32,000 and are answered; and 64 of
+    /// blast_wave_tnt_air come to more than the limit, counted once solved.
+    /// Each made answer lies between the least and the most counted before.
+    #[test]
+    fn the_open_connections_counts_are_answered_and_a_plan_over_the_limit_is_counted_once_made() {
+        let view = View::full();
+        let elastic: Vec<Value> =
+            (0..50).map(|i| json!({ "traction_mpa": 106.26 + f64::from(i) * 0.01, "points_x_mm": [], "points_y_mm": [] })).collect();
+        let propeller = vec![(view.solvers().into_iter().find(|s| s.name == "propeller_apc_10x7e").unwrap().example)(); 64];
+        let blast = vec![(view.solvers().into_iter().find(|s| s.name == "blast_wave_tnt_air").unwrap().example)(); 64];
+        for (solver, rows, fits) in [
+            ("stress_plate_hole_s235_elastic", elastic, true),
+            ("propeller_apc_10x7e", propeller, true),
+            ("blast_wave_tnt_air", blast, false),
+        ] {
+            let (least, made, most) = counted_and_made(&view, list(solver, rows), Form::Summary);
+            assert!(least <= made && made <= most, "{solver}: {least} <= {made} <= {most}");
+            assert!(least <= MAX_INLINE_ANSWER_CHARS, "{solver}: {least}");
+            assert_eq!(made <= MAX_INLINE_ANSWER_CHARS, fits, "{solver}: {made}");
+        }
+    }
+
+    /// The fix pass of 0.14.0 (INTEGRATION_0.14.md, note 3): engine 0.14.0
+    /// pairs kernel 0.12.0 with solvers 0.12.0, not with the solvers one
+    /// minor version before, so a later engine that moves both crates must
+    /// still name 0.14.0's pair for a plan's seal of 0.14.0. Read here as an
+    /// engine writing kernel 0.13.0 and solvers 0.13.0 would read it; and
+    /// every pair this engine and the served ones wrote is named.
+    #[test]
+    fn a_later_engine_names_the_version_pair_of_0_14_0_for_a_plan_seal() {
+        let view = View::full();
+        let example = (view.solvers().into_iter().find(|s| s.name == "propeller_apc_10x7e").unwrap().example)();
+        let plan = read(&view, list("propeller_apc_10x7e", vec![example])).expect("a plan");
+        let sealed = execute(&view, &plan).expect("solved");
+        let (later_kernel, later_solvers) = ("genesis_kernel_v0.13.0", "genesis_solvers_v0.13.0");
+        for (kernel, solvers) in [
+            ("genesis_kernel_v0.12.0", "genesis_solvers_v0.12.0"),
+            ("genesis_kernel_v0.12.0", "genesis_solvers_v0.11.0"),
+            ("genesis_kernel_v0.9.0", "genesis_solvers_v0.8.0"),
+            ("genesis_kernel_v0.8.0", "genesis_solvers_v0.7.0"),
+        ] {
+            let given = seal_under(&plan, &sealed, kernel, solvers).expect("a seal under that pair");
+            let said = version_words_of(&plan, &sealed, &given, later_kernel, later_solvers);
+            assert!(
+                said.contains(&format!("with engine_version {kernel} in its counts and {solvers} in its solution seals, another engine version's, and this engine writes {later_kernel} and {later_solvers}")),
+                "{kernel} {solvers}: {said}"
+            );
+        }
+        // This engine's own pair is one a later engine tries.
+        let ours = (crate::ENGINE_VERSION.to_string(), crate::solvers::engine_version());
+        assert!(version_pairs(later_kernel, later_solvers).contains(&ours), "{ours:?}");
+        // The seals this engine writes are as before: its own pair holds.
+        assert_eq!(seal_under(&plan, &sealed, &ours.0, &ours.1).as_deref(), Some(sealed.head.dataset_seal.as_str()));
+    }
+
+    /// A plan whose request alone is longer than the limit is refused before
+    /// anything is solved, with the least and the most it can come to.
+    #[test]
+    fn a_plan_whose_least_is_over_the_limit_is_refused_before_solving() {
+        let view = View::full();
+        let ends: Vec<f64> = (1..=32).map(|i| f64::from(i) * 9.7 + 0.1).collect();
+        let row = json!({
+            "biomass_g_per_l": 0.9, "glucose_g_per_l": 20.8, "galacturonate_g_per_l": 4.6, "yeast_extract_g_per_l": 2.0,
+            "ph": 3.5, "feed_glucose_g_per_l": 32.0, "feed_galacturonate_g_per_l": 94.0,
+            "segment_end_h": ends, "feed_ml": vec![0.1; 32], "water_ml": vec![-0.1; 32], "sample_ml": vec![0.3; 32],
+        });
+        let plan = read(&view, list("culture_trichoderma_atp", vec![row; 64])).expect("a plan");
+        let (least, most) = summary_bounds(&plan, &[]);
+        assert!(least > MAX_INLINE_ANSWER_CHARS && least < most, "{least} {most}");
+        let sentence = too_large_before(least, most, Form::Summary);
+        assert!(sentence.contains(&format!("at least {least} characters and at most {most}, more than the 40000")), "{sentence}");
+        assert!(sentence.ends_with("nothing was solved. To make it smaller: send fewer solves."), "{sentence}");
+        let whole = too_large_before(least, most, Form::Full);
+        assert!(whole.contains(&format!("at least {least} characters, more than")) && whole.ends_with("or send fewer solves."), "{whole}");
+    }
 }

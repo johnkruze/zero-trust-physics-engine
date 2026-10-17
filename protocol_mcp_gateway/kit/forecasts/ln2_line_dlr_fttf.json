@@ -1,0 +1,27 @@
+{
+ "model": "ln2_line_dlr_fttf",
+ "verdict": "missed",
+ "protocol": {
+  "path": "evidence/research/hydraulics_robotics/dlr_ln2_line/validation_protocol.md",
+  "sha256": "9742e60eb828783056b423e960c65b1d62bcc4142fdb5324a5fcfb24dd4cdf99",
+  "committed": {
+   "crate": "genesis_solvers",
+   "commit": "2469bfbd66f1810aafa612d876fd161355737aa0",
+   "utc": "2026-10-15T02:52:52Z",
+   "how": "'ln2_line_dlr_fttf: the validation protocol's fingerprint, 9742e60e...cdf99, posted before any held-back trace is downloaded ...': the message carries the full SHA-256 and the diff adds it to the solver's source as PROTOCOL_SHA256."
+  }
+ },
+ "held_back": [
+  {
+   "path": "evidence/research/hydraulics_robotics/dlr_ln2_line/raw/dlr_held_back/SHA256SUMS",
+   "sha256": "a32a20aa55bfecfb28fd70e3be0f88ab173a88a484b299c18c998900afec1edd"
+  }
+ ],
+ "scored": {
+  "utc": "2026-10-15T03:07:03Z",
+  "evidence": "Birth time of evidence/research/hydraulics_robotics/dlr_ln2_line/scored.txt (20:07:03 PDT; scored.json 03:07:06Z); RESULT.md: 'Scored once, 2026-10-15 03:07 UTC, by analysis/score.py', with the held-back archive downloaded from 03:04 to 03:06 and copied to raw/dlr_held_back/ at 03:06:46Z."
+ },
+ "forecast_first": "held",
+ "registered_by": "backfill from the record, 2026-10-15",
+ "notes": "Committed about 12 min before the held-back archive was downloaded and 14 min 11 s before the score; validation_protocol.md on disk still has the committed hash. Outside Git: validation_protocol.sha256 (541c08d7..., born 02:52:52Z, the commit's second) gives the protocol and the scoring and forecast files (score_rules.py, score.py, to_npz.py, forecast.py, forecast/forecast.json, forecast/calibration_measured.json), all unchanged on disk. The forecast of every quantity for the six held-back tests is in the protocol and forecast/forecast.json. The three traced tests were opened before the protocol to fix three constants; the protocol says page 2's Figure 2 of the overview PDF may show the nine tests' PS408 traces and was not viewed by this session but may have been by earlier ones. The solver as forecast is genesis_solvers 279c776, before this commit. after_the_fact.txt (03:07:46Z) is after the scoring. Later commits carrying the hash: protocol_mcp_gateway 62597303834b91c236f3ab14b6b156f769e81337 (03:12:53Z). Commit times are the committer's clock. No mark for it in the local copy of the public pass-marks repository (command-center/sales/github/pass-marks/, posted 2026-10-13)."
+}

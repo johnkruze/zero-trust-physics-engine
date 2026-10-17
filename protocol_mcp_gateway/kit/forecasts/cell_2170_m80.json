@@ -1,0 +1,21 @@
+{
+ "model": "cell_2170_m80",
+ "verdict": "missed",
+ "protocol": {
+  "path": "evidence/research/tesla_model3_2170/validation_protocol.md",
+  "sha256": "488fe0af60bbb68be465106ae5fe368b7780f331e8ea5c87e8ac523e6ab984fa",
+  "committed": {
+   "crate": "protocol_mcp_gateway",
+   "commit": "f78bbd949955d3964972e1e1c2be5867a55cc295",
+   "utc": "2026-10-09T08:06:19Z",
+   "how": "The diff of 'Serve the cell_2170_m80 card ...' adds the pass line 'Fixed before any constant was fitted (protocol SHA-256 488fe0af...ab984fa, with its Amendment 1)'; the commit's author time is 2026-10-08T15:35:18Z but it entered this history at its committer time, the same second as a267fc4e, which states the result."
+  }
+ },
+ "scored": {
+  "utc": "2026-10-08T19:24:17Z",
+  "evidence": "evidence/research/tesla_model3_2170/card/SCRIPTS_FINGERPRINT.txt: 2026-10-08T19:24:17Z the director said to open the sealed set; card/sealed_output.txt born 19:24:18Z; card/sealed_result.json fingerprinted 19:27:10Z (60 runs, 27 passed)."
+ },
+ "forecast_first": "not held",
+ "registered_by": "backfill from the record, 2026-10-15",
+ "notes": "The first crate commit carrying the hash is 12 h 42 min after the sealed set was opened. Before the scoring, outside the crates: PREREG_FINGERPRINT.txt (lines only added) records validation_protocol.md as 0a23fb55... at 2026-10-08T14:23:05Z and, with Amendment 1 appended, as 488fe0af... at 14:31:01Z, which is the file on disk now, and analysis/prereg.json as 320b2d54... at both times (unchanged now); card/SEALED_RUN_DECLARATION.txt (fingerprinted 19:16:29Z) names 488fe0af; and card/protocol_mcp_gateway_card-cell-2170-m80.patch (file born 2026-10-08T18:30:39Z) carries the hash inside a commit of a scratch repository, 21bedcdb..., dated 15:35:18Z, which is not in any crate. None of these is a committed fingerprint. analysis/prereg.json lists the 104 sealed files with their SHA-256 under files.sealed. A second scoring by a second scorer ran at 19:41:09Z with the same 27 of 60; a third, through engine 0.6.0 on 2026-10-10, again 27 of 60. Posted to the public pass-marks repository in GitHub-signed commit 5ad488199b63f56520d75320440765a22f8895f3 at 2026-10-13T17:54:57Z."
+}

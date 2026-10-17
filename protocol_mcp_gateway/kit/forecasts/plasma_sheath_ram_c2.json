@@ -1,0 +1,27 @@
+{
+ "model": "plasma_sheath_ram_c2",
+ "verdict": "missed",
+ "protocol": {
+  "path": "evidence/research/hgv_plasma_ramc2/validation_protocol.md",
+  "sha256": "9f8580902488f60b806ba73f55722d15f35eb080cfb43968af16394231508c17",
+  "committed": {
+   "crate": "genesis_solvers",
+   "commit": "36c069bd2a7ad90524b11c949c23a347d065935b",
+   "utc": "2026-10-15T03:21:59Z",
+   "how": "The commit that adds the solver and air11 carries in its message 'Forecast fixed before the held-back table: evidence/research/hgv_plasma_ramc2/validation_protocol.md, SHA-256 9f858090...508c17'; author and committer time are the same."
+  }
+ },
+ "held_back": [
+  {
+   "path": "evidence/research/scout_2026-10-14/hgv_plasma/transcribed/grantham_1970_tableX_reflectometer_onset_decay.csv",
+   "sha256": "d44b024acd034819fbe7ad5ac2a9e8c0ce28d68e5f2e6132b56384d145527709"
+  }
+ ],
+ "scored": {
+  "utc": "2026-10-15T03:22:03Z",
+  "evidence": "evidence/research/hgv_plasma_ramc2/analysis/out/03_score_time.txt: 'scoring started 2026-10-15 03:22:03 UTC'; 03_scored.json born 03:22:06Z."
+ },
+ "forecast_first": "held",
+ "registered_by": "backfill from the record, 2026-10-15",
+ "notes": "Committed 4 s before the scoring started; validation_protocol.md on disk still has the committed hash. Outside Git: FINGERPRINT.txt, written 2026-10-15T03:21:46Z 'before the held-back table was read', fingerprints the protocol, the forecast and scoring scripts, the forecast outputs, the solver's sources and the held-back file 'as held (not read)', which still matches (above). The held-back file is the scout's hand transcription of Table X (born 2026-10-14T23:19:11Z), so it was read by the scout before the protocol; the protocol lists what of it the scout's dossier had passed on (the span of onset and decay altitudes, the bands, which rows are reported and flagged). Later commits carrying the hash: genesis_solvers 668660cb6ee954c28f4f0b24f08ec967a7ecc541 (03:26:14Z, 8-hex prefix) and protocol_mcp_gateway 2970f2c67710848eefa26028ba2680b9e9bf2e33 (03:48:12Z). Commit times are the committer's clock. No mark for it in the local copy of the public pass-marks repository (command-center/sales/github/pass-marks/, posted 2026-10-13)."
+}

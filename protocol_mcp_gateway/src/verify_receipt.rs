@@ -17,6 +17,15 @@ const DOES_NOT_SHOW: &str = "who produced the response or when. The receipt has 
 #[derive(Serialize)]
 pub struct ReceiptReport {
     pub matches: bool,
+    /// The `engine_version` the response names, when it names one: a run's,
+    /// a step's, a solve's, a comparison's or a dataset head's. The receipt
+    /// covers it as it covers every byte, whichever version it is.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub engine_version: Option<String>,
+    /// Whether that version is one this engine writes: `genesis_kernel_v…`
+    /// on a card's answer and a dataset head, `genesis_solvers_v…` on a solve.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub engine_version_is_this_engines: Option<bool>,
     pub receipt_sha256: String,
     pub recomputed_sha256: String,
     pub covers: &'static str,
@@ -24,7 +33,7 @@ pub struct ReceiptReport {
 }
 
 /// `{"response_text": "<the exact text of a response>"}` to the report.
-pub fn check(body: &Value) -> Result<ReceiptReport, DoorError> {
+pub fn verify(body: &Value) -> Result<ReceiptReport, DoorError> {
     let object = body.as_object().ok_or_else(|| {
         DoorError::Unprocessable("Physical Violation: the request must be a JSON object.".into())
     })?;
@@ -36,7 +45,7 @@ pub fn check(body: &Value) -> Result<ReceiptReport, DoorError> {
     let text = match object.get("response_text") {
         None => {
             return Err(DoorError::Unprocessable(
-                "Missing required parameter: 'response_text'".to_string(),
+                "Missing required parameter: 'response_text' (InputMissing).".to_string(),
             ));
         }
         Some(Value::String(text)) => text,
@@ -48,12 +57,20 @@ pub fn check(body: &Value) -> Result<ReceiptReport, DoorError> {
     };
     let read = read_receipt(text.as_bytes()).ok_or_else(|| {
         DoorError::Unprocessable(
-            "Physical Violation: the text does not end with a receipt as this gateway writes one."
+            "Physical Violation: the text does not end with a receipt as this verifier writes one."
                 .to_string(),
         )
     })?;
+    let engine_version = serde_json::from_str::<Value>(text)
+        .ok()
+        .and_then(|answer| answer.get("engine_version").and_then(Value::as_str).map(str::to_string));
+    let engine_version_is_this_engines = engine_version
+        .as_deref()
+        .map(|version| version == crate::ENGINE_VERSION || version == crate::solvers::engine_version());
     Ok(ReceiptReport {
         matches: read.matches(),
+        engine_version,
+        engine_version_is_this_engines,
         receipt_sha256: read.stated,
         recomputed_sha256: read.recomputed,
         covers: COVERS,
@@ -72,7 +89,7 @@ pub fn schema() -> serde_json::Map<String, Value> {
         },
         "required": ["response_text"],
         "additionalProperties": false,
-        "description": "The text of one response from verify_step, run_trajectory or solve, or the head of a dataset written as its JSON text."
+        "description": "The text of one response from compute_step, run_trajectory or solve, or the head of a dataset written as its JSON text."
     }) {
         Value::Object(map) => map,
         _ => unreachable!(),

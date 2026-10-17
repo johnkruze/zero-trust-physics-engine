@@ -1,0 +1,31 @@
+{
+ "model": "culture_trichoderma_atp",
+ "protocol": {
+  "path": "evidence/research/bioreactor_trichoderma_ambr250/companion_atp/validation_protocol.md",
+  "sha256": "af5c49e15cf9236922ebe9fc2bde272b10b06bd294d1d5372ce56629e695fa33",
+  "committed": null
+ },
+ "held_back": [
+  {
+   "path": "evidence/research/bioreactor_trichoderma_ambr250/raw/Tamminen2022_ambr_online_offline_data.xlsx",
+   "sha256": "3e069c5c32010031ab8f9c9fe2632b947451e422ba876cf93b95107fc5a7287a"
+  }
+ ],
+ "registered": {
+  "utc": "2026-10-16T03:30:43Z"
+ },
+ "opened": [
+  {
+   "path": "evidence/research/bioreactor_trichoderma_ambr250/raw/Tamminen2022_ambr_online_offline_data.xlsx",
+   "utc": "2026-10-16T03:50:21Z"
+  }
+ ],
+ "scored": {
+  "utc": "2026-10-16T03:50:46Z",
+  "output": "evidence/research/bioreactor_trichoderma_ambr250/companion_atp/out/scored/RESULTS.json",
+  "output_sha256": "0b3392abd486d62491dac9bdc1fc39417713d49156eb4621975c1ce26ad80c93",
+  "program": "evidence/research/bioreactor_trichoderma_ambr250/companion_atp/analysis/04_score.py",
+  "program_sha256": "89a33f3bf347592c24a312dd7cd87040c347b25a5324ef510c90242809bed8d4"
+ },
+ "registered_by": "forecast.py register"
+}

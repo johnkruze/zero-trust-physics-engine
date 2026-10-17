@@ -1,4 +1,4 @@
-//! The conversion, end to end through the program, and the check that comes first.
+//! The conversion, end to end through the program, and the verification that comes first.
 
 mod support;
 
@@ -6,7 +6,7 @@ use arrow_array::cast::AsArray;
 use arrow_array::types::{Float64Type, UInt64Type};
 use arrow_array::{Array, RecordBatch};
 use genesis_seal::dataset::{Cause, check_dataset};
-use genesis_seal_parquet::{Failure, check};
+use genesis_seal_parquet::{Failure, verify};
 use serde_json::{Value, json};
 use support::*;
 
@@ -158,17 +158,26 @@ fn a_float_is_taken_from_the_hex_and_never_from_the_decimal() {
     assert_eq!(ran.code, 3, "{}{}", ran.stdout, ran.stderr);
     assert_eq!(contents(&dir.join("out")), None);
 
-    // Head names the changed file: it converts, and the column is the hex value.
+    // Head names the changed file: every seal holds and every file is the one
+    // named, and a decimal is not the value of the hex beside it. The row is
+    // named, as verify-dataset names it, and nothing is converted. Exit 3.
     let head = head_naming(&files.head, &changed, files.frames.as_deref());
     let dir = folder("decimal_b");
     let ran = convert(&dir, &head, &changed, files.frames.as_deref(), &dir.join("out"));
+    assert_eq!(ran.code, 3, "{}{}", ran.stdout, ran.stderr);
+    assert!(ran.stdout.starts_with("holds: true\ncause: none\nrow: 2\n"), "{}", ran.stdout);
+    assert!(ran.stdout.contains("fault: A decimal was changed in row 2: final_state.position_m reads [9.0,9.0,9.0]"), "{}", ran.stdout);
+    assert_eq!(contents(&dir.join("out")), None);
+
+    // Converted from the rows the engine wrote, each float column is the hex value.
+    let dir = folder("decimal_c");
+    let ran = convert(&dir, &files.head, &files.rows, files.frames.as_deref(), &dir.join("out"));
     assert_eq!(ran.code, 0, "{}{}", ran.stdout, ran.stderr);
     let (batches, _) = read_parquet(&dir.join("out/rows.parquet"));
     let radius = floats(&batches, "radius_m")[2].unwrap();
-    assert_ne!(radius, 1.5);
     let original = row_values(&files.rows)[2]["final_state"]["radius_m_hex"].as_str().unwrap().to_string();
     assert_eq!(radius.to_bits(), bits_of(&original));
-    assert_exact(&changed, &batches);
+    assert_exact(&files.rows, &batches);
 }
 
 #[test]
@@ -210,11 +219,20 @@ fn a_swapped_row_is_exit_1_and_nothing_is_written() {
 fn a_rows_file_that_is_not_the_one_the_head_names_is_exit_3_and_nothing_is_written() {
     needs_saved_runs!();
     let files = capsule_with_unadmitted("frames");
-    // The sentence of an unadmitted row is covered by no seal. Only the hash of the file covers it.
+    // The sentence of an unadmitted row is sealed by its leaf: changed, it is exit 1.
     let changed = edit_row(&files.rows, 3, |row| row["reject_detail"] = json!("another sentence"));
     let dir = folder("rows_hash");
     let out = dir.join("out");
     let ran = convert(&dir, &files.head, &changed, files.frames.as_deref(), &out);
+    assert_eq!(ran.code, 1, "{}{}", ran.stdout, ran.stderr);
+    assert!(ran.stdout.starts_with("holds: false\ncause: leaf\nrow: 3\n"), "{}", ran.stdout);
+    assert_eq!(contents(&out), None);
+    // The same rows written with a space more: every seal holds and the file
+    // is not the one the head names. Exit 3.
+    let mut lines = split_lines(&files.rows);
+    lines[3].splice(1..1, *b" ");
+    let spaced = join_lines(&lines);
+    let ran = convert(&dir, &files.head, &spaced, files.frames.as_deref(), &out);
     assert_eq!(ran.code, 3, "{}{}", ran.stdout, ran.stderr);
     assert!(ran.stdout.contains("holds: true\n") && ran.stdout.contains("rows_file: does not match the hash in the head"));
     assert_eq!(contents(&out), None);
@@ -341,6 +359,11 @@ fn the_row_count_and_the_frame_count_in_parquet_equal_the_heads() {
         assert_eq!(ran.code, 0);
         let (rows, rows_meta) = read_parquet(&out.join("rows.parquet"));
         let (frames, frames_meta) = read_parquet(&out.join("frames.parquet"));
+        // Each file names its writer by this crate's own version.
+        for file in ["rows.parquet", "frames.parquet"] {
+            let writer = format!("genesis_seal_parquet {} (Protocol Company)", env!("CARGO_PKG_VERSION"));
+            assert_eq!(created_by(&out.join(file)).as_deref(), Some(writer.as_str()), "{file}");
+        }
         assert_eq!(rows.iter().map(|b| b.num_rows() as u64).sum::<u64>(), counts.rows);
         assert_eq!(frames.iter().map(|b| b.num_rows() as u64).sum::<u64>(), counts.frames);
         // the frames column of the rows adds up to the same number
@@ -396,7 +419,7 @@ fn a_row_whose_state_disagrees_with_the_first_is_refused_by_name_and_nothing_is_
 }
 
 #[test]
-fn a_failure_after_the_check_leaves_nothing_and_no_new_folder() {
+fn a_failure_after_the_verification_leaves_nothing_and_no_new_folder() {
     needs_saved_runs!();
     // An output path that cannot be a folder: a file stands where the folder should be.
     let files = capsule_with_unadmitted("frames");
@@ -408,7 +431,7 @@ fn a_failure_after_the_check_leaves_nothing_and_no_new_folder() {
 }
 
 #[test]
-fn the_check_names_what_check_dataset_names_given_the_whole_frame_file() {
+fn the_verification_names_what_check_dataset_names_given_the_whole_frame_file() {
     needs_saved_runs!();
     let files = dataset_of(&eight_short_runs(), "frames");
     let frames = files.frames.clone().unwrap();
@@ -452,8 +475,8 @@ fn the_check_names_what_check_dataset_names_given_the_whole_frame_file() {
     for (name, head, rows, frames) in cases {
         let theirs = check_dataset(&head, &rows, Some(&frames)).unwrap();
         let path = write(&dir, "frames.bin", &frames);
-        let ours = match check(&head, &rows, Some(std::path::Path::new(&path))) {
-            Ok(checked) => checked.report,
+        let ours = match verify(&head, &rows, Some(std::path::Path::new(&path))) {
+            Ok(verified) => verified.report,
             Err(Failure::Report { report, .. }) => *report,
             Err(Failure::Refused(reason)) => panic!("{name}: refused: {reason}"),
         };
@@ -469,34 +492,34 @@ fn flip(hex: &str) -> String {
 }
 
 #[test]
-fn a_frame_file_that_changed_after_the_check_is_not_converted() {
+fn a_frame_file_that_changed_after_the_verification_is_not_converted() {
     needs_saved_runs!();
     let files = dataset_of(&eight_short_runs(), "frames");
     let frames = files.frames.clone().unwrap();
     let head = head_naming(&files.head, &files.rows, Some(&frames));
-    let dir = folder("changed_after_check");
-    let checked_path = write(&dir, "checked.bin", &frames);
-    let checked = check(&head, &files.rows, Some(std::path::Path::new(&checked_path))).unwrap();
-    // The same length, one byte changed in the last frame, after the check.
+    let dir = folder("changed_after_verification");
+    let verified_path = write(&dir, "verified.bin", &frames);
+    let verified = verify(&head, &files.rows, Some(std::path::Path::new(&verified_path))).unwrap();
+    // The same length, one byte changed in the last frame, after the verification.
     let mut changed = frames.clone();
     let last = changed.len() - 1;
     changed[last] ^= 1;
     let changed_path = write(&dir, "changed.bin", &changed);
     let out = dir.join("out");
     let refusal = genesis_seal_parquet::convert::convert(
-        &checked,
+        &verified,
         &files.rows,
         Some(std::path::Path::new(&changed_path)),
         &out,
     )
     .unwrap_err();
-    assert!(refusal.contains("changed between the check and the conversion"), "{refusal}");
+    assert!(refusal.contains("changed between the verification and the conversion"), "{refusal}");
     assert!(!out.exists(), "nothing is left behind");
-    // The file that was checked converts.
+    // The file that was verified converts.
     let written = genesis_seal_parquet::convert::convert(
-        &checked,
+        &verified,
         &files.rows,
-        Some(std::path::Path::new(&checked_path)),
+        Some(std::path::Path::new(&verified_path)),
         &out,
     )
     .unwrap();
@@ -594,10 +617,10 @@ fn a_stale_partial_file_from_a_stopped_run_is_removed_at_the_next_run_into_the_f
 
 /// A dataset that holds an ended run: the row converts with its outcome and
 /// the end's name, the head's ended count is carried into both files, and the
-/// count is checked: the row's outcome changed to refused, or the head's
+/// count is verified: the row's outcome changed to refused, or the head's
 /// count changed, is not converted.
 #[test]
-fn an_ended_run_converts_and_its_count_is_carried_and_checked() {
+fn an_ended_run_converts_and_its_count_is_carried_and_verified() {
     needs_saved_runs!();
     let mut request = without_pair(&eight_short_runs()[0]["inputs"]);
     request["record_every"] = json!(1);

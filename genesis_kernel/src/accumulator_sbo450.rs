@@ -21,7 +21,7 @@
 //! agree with the card read that way and not read as gauge.
 //!
 //! This card was scored on 2026-10-09, failed, was scored a second time by
-//! another party (`evidence/checks/second_party/V-39/`), and was amended the
+//! another party (`evidence/verification/second_party/V-39/`), and was amended the
 //! same day. The amendment is a correction made after every one of the 399
 //! runs had been opened. It is not a new test of the card.
 //!
@@ -56,27 +56,39 @@
 //! and 60 bar is that ratio and [`THERMAL_TIME_CONSTANT_S`]. The nitrogen
 //! constants are from Span et al. 2000 and CODATA and are not fitted.
 //!
-//! The range. The card holds its own marks on the measured runs (median
-//! error of the swing at most 2 percent in each record, every run within
-//! 5 percent and 3 degrees) at the two measured charges, each at the gas
-//! pressures it was measured at, and for motion at 0.2 Hz and faster. Outside that it
-//! now refuses by name. The pressure is held to 37 to 86 bar
-//! ([`StepReject::PressureOutsideCard`]), and inside that to the bands in
-//! which each charge was compared with measurement
-//! ([`StepReject::PressureOutsideChargeBands`]): 37 to 43 and 55 to 67 bar
-//! for the 20 bar charge ([`PRESSURE_BANDS_20_BAR_PA`]), 57 to 64 and 75 to
-//! 86 bar for the 40 bar charge ([`PRESSURE_BANDS_40_BAR_PA`]). Each band is
-//! the whole bars outside the gas pressures measured in one record whose runs
-//! the card answers; between the bands and beyond them that charge was never
-//! measured. The bands lie above both precharges, so inside them the vessel
-//! always holds oil. The gas mass is held to the two
-//! charges measured, each within a thousandth
-//! ([`StepReject::GasMassOutsideCard`]): no charge between them was measured.
-//! The card is never told a frequency, so slow motion is refused on what the
-//! card carries, the share of heat in the work
-//! ([`StepReject::HeatShareAboveCard`], below). The flag that marked
-//! pressures outside the fitted 57 to 63 bar is gone: it followed neither the
-//! runs that failed nor the ones that held.
+//! The compared range. The card holds its own marks on the measured runs
+//! (median error of the swing at most 2 percent in each record, every run
+//! within 5 percent and 3 degrees) at the two measured charges, each at the
+//! gas pressures it was measured at, and for motion at 0.2 Hz and faster:
+//! 37 to 43 and 55 to 67 bar for the 20 bar charge
+//! ([`PRESSURE_BANDS_20_BAR_PA`]), 57 to 64 and 75 to 86 bar for the 40 bar
+//! charge ([`PRESSURE_BANDS_40_BAR_PA`]), each the whole bars outside the
+//! gas pressures measured in one record; the gas mass at those two charges,
+//! each within a thousandth; the wall at room temperature, 293.4 to 293.7 K;
+//! the gas from 285.9 to 301.8 K; the piston to 0.7 m/s. At 109 to 132 bar,
+//! the record at 40 bar precharge and 120 bar load, the card as scored was
+//! compared and missed: the error of the swing was 2.72 percent in the
+//! median against the line of 2.0, and three runs above 130 bar went
+//! unanswered. Through engine 0.9.0 each edge of that range was a refusal.
+//! It is now the range the card was compared on: the Peng-Robinson gas, the
+//! one time constant and the ledger are the same outside it, and a step
+//! there lands with [`FLAG_OUTSIDE_COMPARED_RUNS`]. The flag that marked
+//! pressures outside the fitted 57 to 63 bar is gone: it followed neither
+//! the runs that failed nor the ones that held.
+//!
+//! What stops the card is physical. The gas mass must be above zero
+//! ([`StepReject::GasMassNotPositive`]) and the wall above absolute zero
+//! ([`StepReject::WallTemperatureNotPositive`]). At or below nitrogen's
+//! critical temperature, 126.192 K, the gas can condense and one phase of
+//! the equation of state is not this charge
+//! ([`StepReject::GasBelowCriticalTemperature`]). Above the vessel's rated
+//! working pressure, 330 bar ([`PRESSURE_RATED_PA`]), the vessel is outside
+//! its rating ([`StepReject::PressureAboveRated`]). A gas volume larger than
+//! the vessel's leaves no oil to draw out
+//! ([`StepReject::OilSideEmpty`]), which also ends the card below the
+//! precharge. The card is never told a frequency, so slow motion is refused
+//! on what the card carries, the share of heat in the work
+//! ([`StepReject::HeatShareAboveCard`], below).
 //!
 //! The amended card on the measured runs, run after the fact on 2026-10-09
 //! (amendment SHA-256
@@ -128,7 +140,7 @@
 //! times the vessel volume, about 5.06 kJ. A positive defect is energy from
 //! nowhere and is [`StepReject::SpontaneousGeneration`]; a negative one is
 //! [`StepReject::FirstLawBreach`]. The ledger closes for any time constant
-//! and any vessel volume: it checks that the pressure, the heat capacity and
+//! and any vessel volume: it shows that the pressure, the heat capacity and
 //! the energy are one equation of state and that the step integrates them,
 //! and it does not check that the constants are this accumulator's. The gas
 //! mass is a number the step never changes; that it is conserved is not a
@@ -144,7 +156,7 @@
 //! the same way. A start whose sums are already above the share is refused as
 //! [`StepReject::HeatShareAboveCard`]; a sum below zero is
 //! [`StepReject::NegativeMovedSum`]. The card cannot see motion before its
-//! start, so it holds the sums it is given and cannot check them. The time,
+//! start, so it holds the sums it is given and cannot confirm them. The time,
 //! the work `W`, the heat `Q` and the energy at the start are the anchor of
 //! the ledger and begin again at each start; the ledger's conservation check
 //! is held from each start, and no limit of the card's range depends on them.
@@ -179,14 +191,15 @@
 //! load are `Copy`. An accepted step writes time, gas pressure, gas
 //! temperature, gas volume, the work, the heat, the gas mass, the force of
 //! the gas pressure on the piston area and the conservation residual into
-//! [`LastStateFrame64`]. The frame's flags are always zero. The 16-byte frame
-//! proof is not touched.
+//! [`LastStateFrame64`], with [`FLAG_OUTSIDE_COMPARED_RUNS`]. The 16-byte
+//! frame proof is not touched.
 
 extern crate core;
 
 use core::prelude::v1::*;
 
 use crate::frame::LastStateFrame64;
+use crate::normal::normal_or_zero;
 
 /// Molar gas constant, J/(mol K). CODATA 2018, exact.
 pub const GAS_CONSTANT_J_MOL_K: f64 = 8.314_462_618;
@@ -222,17 +235,26 @@ pub const VESSEL_GAS_VOLUME_M3: f64 = 5.887_921_461_524_661e-4;
 /// Time constant of the exchange of heat between the gas and the wall at
 /// constant volume, s. Fitted to this accumulator's opened runs.
 pub const THERMAL_TIME_CONSTANT_S: f64 = 17.52;
-/// Lowest gas pressure the card accepts, Pa: 37 bar. The lowest gas
+/// Lowest gas pressure of the compared range, Pa: 37 bar. The lowest gas
 /// pressure measured in the four conditions in which the card met its marks
 /// is 37.76 bar (20 bar precharge, 40 bar load, 5 mm); 37 bar is the whole
-/// bar under it.
+/// bar under it. An edge of the compared range, not a limit.
 pub const PRESSURE_FLOOR_PA: f64 = 3.7e6;
-/// Highest gas pressure the card accepts, Pa: 86 bar. The highest gas
+/// Highest gas pressure of the compared range, Pa: 86 bar. The highest gas
 /// pressure measured in the four conditions in which the card met its marks
 /// is 85.56 bar (40 bar precharge, 80 bar load, 5 mm); 86 bar is the whole
 /// bar over it. The next measured condition, 109 to 132 bar, missed its mark
-/// at every frequency, and between the two there is no measurement.
+/// at every frequency, and between the two there is no measurement. An edge
+/// of the compared range, not a limit; it also sets the ledger's scale.
 pub const PRESSURE_CEILING_PA: f64 = 8.6e6;
+/// The vessel's rated maximum working pressure, Pa: 330 bar. HYDAC,
+/// Diaphragm Accumulators SBO (USA catalogue): its dimension table gives
+/// 4700 psi (330 bar) for the type SBO450-0.6, while the two 0.6 l parts
+/// listed, 2121077 and 3042074, are rated 3600 psi (250 bar). Which version
+/// the rig carried is not on disk; the higher rating of the type is taken
+/// (John Kruze, 14 October 2026), so that no part's lower rating stops a
+/// run the type itself is rated for.
+pub const PRESSURE_RATED_PA: f64 = 3.3e7;
 /// The gas pressures compared with measurement for the 20 bar charge, Pa:
 /// 37 to 43 bar and 55 to 67 bar. The answered runs of that charge measured
 /// 37.76 to 42.71 bar (20 / 40) and 55.26 to 66.37 bar (20 / 60); each band
@@ -244,18 +266,18 @@ pub const PRESSURE_BANDS_20_BAR_PA: [[f64; 2]; 2] = [[3.7e6, 4.3e6], [5.5e6, 6.7
 /// 57.36 to 63.14 bar (40 / 60) and 75.31 to 85.55 bar (40 / 80), drawn by the
 /// same rule.
 pub const PRESSURE_BANDS_40_BAR_PA: [[f64; 2]; 2] = [[5.7e6, 6.4e6], [7.5e6, 8.6e6]];
-/// Lowest gas temperature the card accepts, K, at the start and at every
-/// landing. The compared runs reached 285.97 to 301.78 K over every step they
-/// landed; the range is the next tenth of a kelvin outside that.
+/// Lowest gas temperature of the compared range, K. The compared runs
+/// reached 285.97 to 301.78 K over every step they landed; the range is the
+/// next tenth of a kelvin outside that.
 pub const GAS_TEMPERATURE_FLOOR_K: f64 = 285.9;
-/// Highest gas temperature the card accepts, K.
+/// Highest gas temperature of the compared range, K.
 pub const GAS_TEMPERATURE_CEILING_K: f64 = 301.8;
-/// Lowest wall temperature the card accepts, K. The wall of every compared
+/// Lowest wall temperature of the compared range, K. The wall of every compared
 /// run, the mean room temperature of its record, was 293.46 to 293.60 K; the
 /// range is the next tenth of a kelvin outside that. No other wall
 /// temperature was measured.
 pub const WALL_TEMPERATURE_FLOOR_K: f64 = 293.4;
-/// Highest wall temperature the card accepts, K.
+/// Highest wall temperature of the compared range, K.
 pub const WALL_TEMPERATURE_CEILING_K: f64 = 293.7;
 /// The charge of a 20 bar precharge, kg: the vessel's gas volume full of
 /// nitrogen at 20 bar absolute and 293.15 K by the card's own equation of
@@ -264,18 +286,18 @@ pub const CHARGE_20_BAR_KG: f64 = 0.013_652_934_755_883_66;
 /// The charge of a 40 bar precharge, kg: the same at 40 bar absolute. The
 /// other charge measured.
 pub const CHARGE_40_BAR_KG: f64 = 0.027_467_339_693_405_615;
-/// Smallest gas mass the card accepts as the 20 bar charge, kg: a thousandth
+/// Smallest gas mass compared as the 20 bar charge, kg: a thousandth
 /// under [`CHARGE_20_BAR_KG`]. No charge but the two was measured; the band
 /// lets a charge typed to four figures in, and the pressure swing moves by
 /// the same share as the mass, a tenth of a percent at most.
 pub const GAS_MASS_20_BAR_FLOOR_KG: f64 = 0.013_639;
-/// Largest gas mass the card accepts as the 20 bar charge, kg.
+/// Largest gas mass compared as the 20 bar charge, kg.
 pub const GAS_MASS_20_BAR_CEILING_KG: f64 = 0.013_667;
-/// Smallest gas mass the card accepts as the 40 bar charge, kg.
+/// Smallest gas mass compared as the 40 bar charge, kg.
 pub const GAS_MASS_40_BAR_FLOOR_KG: f64 = 0.027_44;
-/// Largest gas mass the card accepts as the 40 bar charge, kg.
+/// Largest gas mass compared as the 40 bar charge, kg.
 pub const GAS_MASS_40_BAR_CEILING_KG: f64 = 0.027_495;
-/// Largest piston speed the card accepts, m/s, either way. The fastest
+/// Largest piston speed compared, m/s, either way. The fastest
 /// compared run, 5 mm at 20 Hz, reached 0.69999 m/s as the mean over a step.
 pub const PISTON_SPEED_CEILING_M_S: f64 = 0.7;
 /// Largest piston travel in one step, m: 1 mm.
@@ -310,6 +332,14 @@ pub const GATE_OVER_FLOOR: f64 = 1_048_576.0;
 /// under this.
 pub const RESIDUAL_CONSERVATION_LIMIT: f64 = 1.0e-9;
 
+/// The step lies outside the range compared with measurement: a gas mass
+/// other than the two charges, a wall outside 293.4 to 293.7 K, a piston
+/// faster than 0.7 m/s, a gas temperature outside 285.9 to 301.8 K, or a gas
+/// pressure outside its charge's compared bands, 109 to 132 bar among them,
+/// where the card as scored missed (2.72 percent median against 2.0). The
+/// step lands.
+pub const FLAG_OUTSIDE_COMPARED_RUNS: u64 = 1 << 0;
+
 /// Why a start was refused or a step did not advance the gas or the frame.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum StepReject {
@@ -321,20 +351,16 @@ pub enum StepReject {
     NonPositiveDt,
     /// A recorded constant is not this accumulator's.
     InvalidAccumulator,
-    /// The gas mass is neither of the two charges measured: 0.013639 to 0.013667 kg, a precharge of 20 bar, or 0.02744 to 0.027495 kg, a precharge of 40 bar.
-    GasMassOutsideCard,
-    /// The wall temperature is below 293.4 K or above 293.7 K: no other wall temperature was compared with measurement.
-    WallTemperatureOutsideCard,
-    /// The piston speed is above 0.7 m/s, either way: no faster motion was compared with measurement.
-    PistonSpeedOutsideCard,
+    /// The gas mass is zero or less.
+    GasMassNotPositive,
+    /// The wall temperature is at or below absolute zero.
+    WallTemperatureNotPositive,
     /// The piston would travel more than 1 mm in the step.
     PistonTravelAboveStep,
-    /// The gas temperature, incoming or landing, is below 285.9 K or above 301.8 K: no other gas temperature was compared with measurement.
-    GasTemperatureOutsideCard,
-    /// The gas pressure, incoming or landing, is below 37 bar or above 86 bar.
-    PressureOutsideCard,
-    /// The gas pressure, incoming or landing, is inside 37 to 86 bar and outside the bands compared with measurement for the charge given: 37 to 43 or 55 to 67 bar for the 20 bar charge, 57 to 64 or 75 to 86 bar for the 40 bar charge.
-    PressureOutsideChargeBands,
+    /// The gas temperature, incoming or landing, is at or below 126.192 K, nitrogen's critical temperature: the gas can condense, and one phase of the equation of state is not this charge.
+    GasBelowCriticalTemperature,
+    /// The gas pressure, incoming or landing, is above 330 bar, the vessel's rated maximum working pressure.
+    PressureAboveRated,
     /// The work moved or the heat moved carried into a start is below zero.
     NegativeMovedSum,
     /// The gas volume, incoming or landing, is above the vessel's 0.58879 l: there is no oil left to draw out.
@@ -381,6 +407,7 @@ pub struct AccumulatorSbo450 {
     pub pressure_floor_pa: f64,
     /// Recorded copy of [`PRESSURE_CEILING_PA`].
     pub pressure_ceiling_pa: f64,
+    pub pressure_rated_pa: f64,
     /// Recorded copy of [`PRESSURE_BANDS_20_BAR_PA`].
     pub pressure_bands_20_bar_pa: [[f64; 2]; 2],
     /// Recorded copy of [`PRESSURE_BANDS_40_BAR_PA`].
@@ -504,7 +531,40 @@ impl Gas {
     /// temperature, by Newton's method from the ideal-gas volume. `None` if
     /// forty passes do not land within 1e-13 of the pressure.
     fn volume_m3_kg(&self, temperature_k: f64, pressure_pa: f64) -> Option<f64> {
-        let mut v = self.gas_constant * temperature_k / pressure_pa;
+        let ideal = self.gas_constant * temperature_k / pressure_pa;
+        if let Some(v) = self.newton_volume(temperature_k, pressure_pa, ideal) {
+            return Some(v);
+        }
+        // Dense gas near the critical point, where Newton's method from the
+        // ideal-gas volume does not land: above the critical temperature the
+        // pressure falls with the volume on every isotherm, so the volume is
+        // bracketed between the covolume and the ideal-gas volume plus the
+        // covolume, halved down, and polished by Newton's method.
+        if !(temperature_k > self.critical_temperature_k) {
+            return None;
+        }
+        let mut low = self.covolume;
+        let mut high = ideal + self.covolume;
+        let mut pass = 0;
+        while pass < 200 {
+            let middle = 0.5 * (low + high);
+            if !(middle > low && middle < high) {
+                break;
+            }
+            if self.pressure_pa(temperature_k, middle) > pressure_pa {
+                low = middle;
+            } else {
+                high = middle;
+            }
+            pass += 1;
+        }
+        self.newton_volume(temperature_k, pressure_pa, 0.5 * (low + high))
+    }
+
+    /// Newton's method on the pressure from `start`; `None` if it leaves the
+    /// gas or does not meet the pressure to one part in 1e13.
+    fn newton_volume(&self, temperature_k: f64, pressure_pa: f64, start: f64) -> Option<f64> {
+        let mut v = start;
         let mut pass = 0;
         while pass < 40 {
             let slope = self.pressure_per_volume(temperature_k, v);
@@ -543,6 +603,7 @@ impl AccumulatorSbo450 {
             thermal_time_constant_s: THERMAL_TIME_CONSTANT_S,
             pressure_floor_pa: PRESSURE_FLOOR_PA,
             pressure_ceiling_pa: PRESSURE_CEILING_PA,
+            pressure_rated_pa: PRESSURE_RATED_PA,
             pressure_bands_20_bar_pa: PRESSURE_BANDS_20_BAR_PA,
             pressure_bands_40_bar_pa: PRESSURE_BANDS_40_BAR_PA,
             gas_temperature_floor_k: GAS_TEMPERATURE_FLOOR_K,
@@ -583,6 +644,7 @@ impl AccumulatorSbo450 {
             && self.thermal_time_constant_s.to_bits() == THERMAL_TIME_CONSTANT_S.to_bits()
             && self.pressure_floor_pa.to_bits() == PRESSURE_FLOOR_PA.to_bits()
             && self.pressure_ceiling_pa.to_bits() == PRESSURE_CEILING_PA.to_bits()
+            && self.pressure_rated_pa.to_bits() == PRESSURE_RATED_PA.to_bits()
             && bands_are(&self.pressure_bands_20_bar_pa, &PRESSURE_BANDS_20_BAR_PA)
             && bands_are(&self.pressure_bands_40_bar_pa, &PRESSURE_BANDS_40_BAR_PA)
             && self.gas_temperature_floor_k.to_bits() == GAS_TEMPERATURE_FLOOR_K.to_bits()
@@ -751,26 +813,20 @@ impl GasState {
         if !accumulator.is_valid() {
             return Err(StepReject::InvalidAccumulator);
         }
-        if !mass_is_a_measured_charge(accumulator, gas_mass_kg) {
-            return Err(StepReject::GasMassOutsideCard);
+        if !(gas_mass_kg > 0.0) {
+            return Err(StepReject::GasMassNotPositive);
         }
-        if !(wall_temperature_k >= accumulator.wall_temperature_floor_k
-            && wall_temperature_k <= accumulator.wall_temperature_ceiling_k)
-        {
-            return Err(StepReject::WallTemperatureOutsideCard);
+        if !(wall_temperature_k > 0.0) {
+            return Err(StepReject::WallTemperatureNotPositive);
         }
-        if !(gas_temperature_k >= accumulator.gas_temperature_floor_k
-            && gas_temperature_k <= accumulator.gas_temperature_ceiling_k)
-        {
-            return Err(StepReject::GasTemperatureOutsideCard);
+        if !(gas_temperature_k > accumulator.critical_temperature_k) {
+            return Err(StepReject::GasBelowCriticalTemperature);
         }
-        if !(gas_pressure_pa >= accumulator.pressure_floor_pa
-            && gas_pressure_pa <= accumulator.pressure_ceiling_pa)
-        {
-            return Err(StepReject::PressureOutsideCard);
+        if !(gas_pressure_pa > 0.0) {
+            return Err(StepReject::OilSideEmpty);
         }
-        if !pressure_in_charge_bands(accumulator, gas_mass_kg, gas_pressure_pa, 0.0) {
-            return Err(StepReject::PressureOutsideChargeBands);
+        if !(gas_pressure_pa <= accumulator.pressure_rated_pa) {
+            return Err(StepReject::PressureAboveRated);
         }
         let gas = accumulator.gas();
         let v = match gas.volume_m3_kg(gas_temperature_k, gas_pressure_pa) {
@@ -815,10 +871,28 @@ fn volume_in_vessel(accumulator: &AccumulatorSbo450, gas_volume_m3: f64) -> bool
             <= accumulator.vessel_gas_volume_m3 * (1.0 + accumulator.computed_limit_allowance)
 }
 
-fn pressure_in_card(accumulator: &AccumulatorSbo450, pressure_pa: f64) -> bool {
-    pressure_pa >= accumulator.pressure_floor_pa * (1.0 - accumulator.computed_limit_allowance)
-        && pressure_pa
-            <= accumulator.pressure_ceiling_pa * (1.0 + accumulator.computed_limit_allowance)
+fn pressure_in_rating(accumulator: &AccumulatorSbo450, pressure_pa: f64) -> bool {
+    pressure_pa <= accumulator.pressure_rated_pa * (1.0 + accumulator.computed_limit_allowance)
+}
+
+/// The step lies inside the range compared with measurement: the charge,
+/// the wall, the speed, the gas temperature and the pressure in its
+/// charge's bands.
+fn inside_compared_runs(
+    accumulator: &AccumulatorSbo450,
+    gas_mass_kg: f64,
+    wall_temperature_k: f64,
+    piston_speed_m_s: f64,
+    gas_temperature_k: f64,
+    pressure_pa: f64,
+) -> bool {
+    mass_is_a_measured_charge(accumulator, gas_mass_kg)
+        && wall_temperature_k >= accumulator.wall_temperature_floor_k
+        && wall_temperature_k <= accumulator.wall_temperature_ceiling_k
+        && piston_speed_m_s.abs() <= accumulator.piston_speed_ceiling_m_s
+        && gas_temperature_k >= accumulator.gas_temperature_floor_k
+        && gas_temperature_k <= accumulator.gas_temperature_ceiling_k
+        && pressure_in_charge_bands(accumulator, gas_mass_kg, pressure_pa, accumulator.computed_limit_allowance)
 }
 
 fn bands_are(recorded: &[[f64; 2]; 2], constant: &[[f64; 2]; 2]) -> bool {
@@ -829,8 +903,7 @@ fn bands_are(recorded: &[[f64; 2]; 2], constant: &[[f64; 2]; 2]) -> bool {
 }
 
 /// The pressure lies in one of the bands compared with measurement for the
-/// charge this mass is, each end widened by `allowance`, relative. The mass
-/// has already been held to one of the two charges.
+/// charge this mass is nearer, each end widened by `allowance`, relative.
 fn pressure_in_charge_bands(
     accumulator: &AccumulatorSbo450,
     gas_mass_kg: f64,
@@ -963,6 +1036,9 @@ fn runge_kutta(
 /// Hold the piston speed for one step and write the frame.
 ///
 /// A rejected step leaves `state` and `frame` as they were.
+///
+/// A value of the landed state below the normal range is written as zero
+/// with its sign ([`crate::normal`]).
 #[must_use]
 pub fn step(
     accumulator: &AccumulatorSbo450,
@@ -971,9 +1047,57 @@ pub fn step(
     load: AccumulatorLoad,
     dt_s: f64,
 ) -> Result<(), StepReject> {
+    step_as_computed(accumulator, state, frame, load, dt_s)?;
+    normal_or_zero_state(state);
+    Ok(())
+}
+
+/// The step as its equations compute it, before a value of the landed
+/// state below the normal range is written as zero.
+fn step_as_computed(
+    accumulator: &AccumulatorSbo450,
+    state: &mut GasState,
+    frame: &mut LastStateFrame64,
+    load: AccumulatorLoad,
+    dt_s: f64,
+) -> Result<(), StepReject> {
     validate(accumulator, state, load, dt_s)?;
     let trial = runge_kutta(accumulator, state, load, dt_s);
-    commit(accumulator, state, frame, dt_s, trial)
+    commit(accumulator, state, frame, dt_s, trial)?;
+    // The step has landed: the flag reports where it lies against the range
+    // compared with measurement.
+    if !inside_compared_runs(
+        accumulator,
+        state.gas_mass_kg,
+        state.wall_temperature_k,
+        load.piston_speed_m_s,
+        state.gas_temperature_k,
+        state.gas_pressure_pa,
+    ) {
+        frame.flags = FLAG_OUTSIDE_COMPARED_RUNS;
+    }
+    Ok(())
+}
+
+/// Each value of a landed state below the normal range written as zero
+/// with its sign ([`crate::normal`]): the state carried to the next step
+/// and published holds no subnormal number.
+fn normal_or_zero_state(state: &mut GasState) {
+    state.t_s = normal_or_zero(state.t_s);
+    state.gas_mass_kg = normal_or_zero(state.gas_mass_kg);
+    state.wall_temperature_k = normal_or_zero(state.wall_temperature_k);
+    state.gas_temperature_k = normal_or_zero(state.gas_temperature_k);
+    state.gas_volume_m3 = normal_or_zero(state.gas_volume_m3);
+    state.gas_pressure_pa = normal_or_zero(state.gas_pressure_pa);
+    state.gas_force_n = normal_or_zero(state.gas_force_n);
+    state.work_on_gas_j = normal_or_zero(state.work_on_gas_j);
+    state.heat_to_wall_j = normal_or_zero(state.heat_to_wall_j);
+    state.start_energy_j = normal_or_zero(state.start_energy_j);
+    state.energy_defect_j = normal_or_zero(state.energy_defect_j);
+    state.residual_conservation_error = normal_or_zero(state.residual_conservation_error);
+    state.work_moved_j = normal_or_zero(state.work_moved_j);
+    state.heat_moved_j = normal_or_zero(state.heat_moved_j);
+    state.heat_share = normal_or_zero(state.heat_share);
 }
 
 fn validate(
@@ -994,18 +1118,13 @@ fn validate(
     if !accumulator.is_valid() {
         return Err(StepReject::InvalidAccumulator);
     }
-    if !mass_is_a_measured_charge(accumulator, state.gas_mass_kg) {
-        return Err(StepReject::GasMassOutsideCard);
+    if !(state.gas_mass_kg > 0.0) {
+        return Err(StepReject::GasMassNotPositive);
     }
-    if !(state.wall_temperature_k >= accumulator.wall_temperature_floor_k
-        && state.wall_temperature_k <= accumulator.wall_temperature_ceiling_k)
-    {
-        return Err(StepReject::WallTemperatureOutsideCard);
+    if !(state.wall_temperature_k > 0.0) {
+        return Err(StepReject::WallTemperatureNotPositive);
     }
     let speed = load.piston_speed_m_s.abs();
-    if !(speed <= accumulator.piston_speed_ceiling_m_s) {
-        return Err(StepReject::PistonSpeedOutsideCard);
-    }
     if !(speed * dt_s
         <= accumulator.piston_travel_per_step_m * (1.0 + accumulator.computed_limit_allowance))
     {
@@ -1034,10 +1153,8 @@ fn landing_in_card(
     gas_temperature_k: f64,
     gas_volume_m3: f64,
 ) -> Result<f64, StepReject> {
-    if !(gas_temperature_k >= accumulator.gas_temperature_floor_k
-        && gas_temperature_k <= accumulator.gas_temperature_ceiling_k)
-    {
-        return Err(StepReject::GasTemperatureOutsideCard);
+    if !(gas_temperature_k > accumulator.critical_temperature_k) {
+        return Err(StepReject::GasBelowCriticalTemperature);
     }
     if !volume_in_vessel(accumulator, gas_volume_m3) {
         return Err(StepReject::OilSideEmpty);
@@ -1046,16 +1163,11 @@ fn landing_in_card(
     if !pressure.is_finite() {
         return Err(StepReject::NonFiniteState);
     }
-    if !pressure_in_card(accumulator, pressure) {
-        return Err(StepReject::PressureOutsideCard);
+    if !(pressure > 0.0) {
+        return Err(StepReject::NonFiniteState);
     }
-    if !pressure_in_charge_bands(
-        accumulator,
-        gas_mass_kg,
-        pressure,
-        accumulator.computed_limit_allowance,
-    ) {
-        return Err(StepReject::PressureOutsideChargeBands);
+    if !pressure_in_rating(accumulator, pressure) {
+        return Err(StepReject::PressureAboveRated);
     }
     Ok(pressure)
 }
@@ -1167,7 +1279,7 @@ mod tests {
     use std::assert_eq;
 
     use super::{
-        AccumulatorLoad, AccumulatorSbo450, CHARGE_20_BAR_KG, CHARGE_40_BAR_KG,
+        AccumulatorLoad, AccumulatorSbo450, CHARGE_20_BAR_KG, CHARGE_40_BAR_KG, CRITICAL_TEMPERATURE_K, FLAG_OUTSIDE_COMPARED_RUNS, PRESSURE_RATED_PA,
         COMPUTED_LIMIT_ALLOWANCE, FITTED_AREA_OVER_VOLUME_PER_M, GAS_MASS_20_BAR_CEILING_KG,
         GAS_MASS_20_BAR_FLOOR_KG, GAS_MASS_40_BAR_CEILING_KG, GAS_MASS_40_BAR_FLOOR_KG, GasState,
         HEAT_SHARE_LIMIT, HEAT_SHARE_WORK_FLOOR_J, PISTON_AREA_M2, PISTON_BORE_M,
@@ -1275,8 +1387,9 @@ mod tests {
     }
 
     /// The two charges are the vessel full of nitrogen at 20 and 40 bar and
-    /// 293.15 K. Each is accepted with the exact ends of its band, and a mass
-    /// a little outside either band, or between the two, is named.
+    /// 293.15 K. Each lands with no flag at the exact ends of its band, and a
+    /// mass a little outside either band, or between the two, lands with the
+    /// flag and closes the ledger.
     #[test]
     fn the_gas_mass_is_one_of_the_two_measured_charges() {
         let card = card();
@@ -1293,23 +1406,30 @@ mod tests {
                 step(&card, &mut state, &mut blank(), push(0.01), 0.001).unwrap();
             }
             for mass in [f64::from_bits(floor.to_bits() - 1), f64::from_bits(ceiling.to_bits() + 1), floor * 0.999, ceiling * 1.001] {
-                assert_eq!(
-                    unmoved(&card, mass, 6.0e6, ROOM_K, ROOM_K),
-                    Err(StepReject::GasMassOutsideCard)
-                );
+                let mut state = unmoved(&card, mass, 6.0e6, ROOM_K, ROOM_K).unwrap();
+                let mut frame = blank();
+                step(&card, &mut state, &mut frame, push(0.01), 0.001).unwrap();
+                assert_eq!(frame.flags, FLAG_OUTSIDE_COMPARED_RUNS);
             }
         }
-        // The charges as the card was scored, and the charges between the two measured.
+        // The charges as the card was scored, and the charges between the two measured, land
+        // with the flag; a mass of zero or less is no charge.
         for mass in [0.01336, 0.02688, 0.015, 0.02, 0.025, 0.013, 0.027, 0.028] {
-            assert_eq!(
-                unmoved(&card, mass, 6.0e6, ROOM_K, ROOM_K),
-                Err(StepReject::GasMassOutsideCard)
-            );
+            let mut state = unmoved(&card, mass, 6.0e6, ROOM_K, ROOM_K).unwrap();
+            let mut frame = blank();
+            for _ in 0..100 {
+                step(&card, &mut state, &mut frame, push(0.1), 0.001).unwrap();
+                assert_eq!(frame.flags, FLAG_OUTSIDE_COMPARED_RUNS);
+                assert!(state.residual_conservation_error <= RESIDUAL_CONSERVATION_LIMIT);
+            }
+        }
+        for mass in [0.0, -0.0, -0.01] {
+            assert_eq!(unmoved(&card, mass, 6.0e6, ROOM_K, ROOM_K), Err(StepReject::GasMassNotPositive));
         }
     }
 
     /// The equation of state against Python mpmath at 50 digits from the same
-    /// constants as 64-bit numbers (`evidence/checks/crosscheck/
+    /// constants as 64-bit numbers (`evidence/verification/crosscheck/
     /// accumulator_sbo450/reference_values_amended.txt`): the volume at 20,
     /// 40, 60 and 86 bar at 293.15 K, and the heat capacity and the energy
     /// there.
@@ -1436,15 +1556,6 @@ mod tests {
                     0.001_034_897_663_938_292_7, 0.089_204_550_814_216_381, 97.115_786_056_407_109,
                     0.089_204_550_814_216_381],
             },
-            // At the floor of dt and 0.8 m/s, faster than any compared run: refused before the first step.
-            Case {
-                mass: CHARGE_40_BAR_KG, pressure: 8.0e6, temperature: ROOM_K, wall: ROOM_K,
-                dt: 0.3504 / 1_048_576.0,
-                segments: &[(5, 0.8)], sine: None,
-                start_volume: 0.000_293_814_542_592_066_97, start_energy: 5_487.890_115_592_784_0,
-                landed: 0, refusal: Some(StepReject::PistonSpeedOutsideCard),
-                end: [ROOM_K, 0.000_293_814_542_592_066_97, 8.0e6, 0.0, 0.0, 0.0, 0.0],
-            },
             // A measured run at 0.2 Hz as the scoring asks it (record 15478932, 5 mm): two periods land.
             Case {
                 mass: CHARGE_40_BAR_KG, pressure: 5_775_825.720_407_209, temperature: 290.379_543_337_863_65,
@@ -1466,16 +1577,6 @@ mod tests {
                 end: [291.408_736_093_848_16, 0.000_400_164_999_968_188_27, 5_827_748.778_894_198_7,
                     11.408_756_827_041_802, -6.486_140_273_482_238_3, 11.408_756_827_041_802,
                     6.486_140_273_482_238_3],
-            },
-            // A push from 85.5 bar is refused at the step that would land above 86 bar.
-            Case {
-                mass: CHARGE_40_BAR_KG, pressure: 8.55e6, temperature: ROOM_K, wall: ROOM_K, dt: 0.001,
-                segments: &[(400, 0.1)], sine: None,
-                start_volume: 0.000_275_001_312_463_938_99, start_energy: 5_456.195_948_113_725_3,
-                landed: 5, refusal: Some(StepReject::PressureOutsideCard),
-                end: [294.031_016_462_540_60, 0.000_274_019_564_759_692_18, 8_597_847.154_706_583_8,
-                    8.417_392_554_019_179_8, 0.001_398_612_397_798_520_8, 8.417_392_554_019_179_8,
-                    0.001_398_612_397_798_520_8],
             },
         ];
         for (index, case) in cases.iter().enumerate() {
@@ -1585,88 +1686,83 @@ mod tests {
         assert_eq!(level.gas_temperature_k, ROOM_K);
     }
 
-    /// A start or a step stated exactly at a limit is inside it, and one a
-    /// thousandth beyond is named.
+    /// The edges of the compared range: a start or a step exactly on one
+    /// lands with no flag, and one a thousandth beyond lands with the flag.
+    /// What stops the card is physical: nitrogen's critical temperature, the
+    /// vessel's rated 330 bar, the oil side empty, and the piston's millimetre
+    /// a step.
     #[test]
-    fn the_exact_ends_of_the_ranges_are_inside() {
+    fn the_edges_of_the_compared_range_flag_and_the_physical_limits_refuse() {
         let card = card();
         let mut frame = blank();
         assert_eq!(PRESSURE_FLOOR_PA, 3.7e6);
         assert_eq!(PRESSURE_CEILING_PA, 8.6e6);
+        assert_eq!(PRESSURE_RATED_PA, 3.3e7);
         assert_eq!(PRESSURE_BANDS_20_BAR_PA, [[3.7e6, 4.3e6], [5.5e6, 6.7e6]]);
         assert_eq!(PRESSURE_BANDS_40_BAR_PA, [[5.7e6, 6.4e6], [7.5e6, 8.6e6]]);
         for (mass, bands) in [(CHARGE_20_BAR_KG, PRESSURE_BANDS_20_BAR_PA), (CHARGE_40_BAR_KG, PRESSURE_BANDS_40_BAR_PA)] {
             for band in bands {
                 for pressure in band {
                     let mut state = unmoved(&card, mass, pressure, ROOM_K, ROOM_K).unwrap();
-                    // A run that ends exactly on the limit keeps its steps.
                     assert_eq!(run(&mut state, &mut frame, 0.01, &[(3, 0.0)]), (3, None));
+                    assert_eq!(frame.flags, 0);
                     assert!(relative(state.gas_pressure_pa, pressure) < 1.0e-13);
-                }
-                // A thousandth outside either end of a band is named, unless it is in the other band.
-                for pressure in [band[0] * 0.999, band[1] * 1.001] {
-                    let named = if pressure < PRESSURE_FLOOR_PA || pressure > PRESSURE_CEILING_PA {
-                        StepReject::PressureOutsideCard
-                    } else {
-                        StepReject::PressureOutsideChargeBands
-                    };
-                    assert_eq!(unmoved(&card, mass, pressure, ROOM_K, ROOM_K), Err(named), "{mass} {pressure}");
                 }
             }
         }
-        for (pressure, mass) in [(PRESSURE_FLOOR_PA * 0.999, CHARGE_20_BAR_KG), (PRESSURE_CEILING_PA * 1.001, CHARGE_40_BAR_KG), (8.7e6, CHARGE_20_BAR_KG), (1.2e7, CHARGE_40_BAR_KG), (3.0e6, CHARGE_20_BAR_KG)] {
-            assert_eq!(
-                unmoved(&card, mass, pressure, ROOM_K, ROOM_K),
-                Err(StepReject::PressureOutsideCard)
-            );
-        }
-        // Never measured for the charge given: 80 bar on the 20 bar charge and 45 and 70 bar on the
-        // 40 bar charge, then the gaps and the far side.
+        // Never measured for the charge given, the gaps, the far side and the
+        // record at 120 bar that missed: each lands with the flag.
         for (pressure, mass) in [
             (8.0e6, CHARGE_20_BAR_KG), (4.5e6, CHARGE_40_BAR_KG), (7.0e6, CHARGE_40_BAR_KG),
             (5.0e6, CHARGE_20_BAR_KG), (7.5e6, CHARGE_20_BAR_KG), (8.6e6, CHARGE_20_BAR_KG),
-            (3.7e6, CHARGE_40_BAR_KG), (4.0e6, CHARGE_40_BAR_KG), (5.6e6, CHARGE_40_BAR_KG),
+            (4.2e6, CHARGE_40_BAR_KG), (5.6e6, CHARGE_40_BAR_KG),
+            (8.7e6, CHARGE_20_BAR_KG), (1.09e7, CHARGE_40_BAR_KG), (1.32e7, CHARGE_40_BAR_KG),
+            (2.0e7, CHARGE_40_BAR_KG), (3.0e6, CHARGE_20_BAR_KG), (2.4e7, CHARGE_20_BAR_KG),
         ] {
-            assert_eq!(
-                unmoved(&card, mass, pressure, ROOM_K, ROOM_K),
-                Err(StepReject::PressureOutsideChargeBands),
-                "{mass} {pressure}"
-            );
+            let mut state = unmoved(&card, mass, pressure, ROOM_K, ROOM_K).unwrap();
+            step(&card, &mut state, &mut frame, push(0.0), 0.01).unwrap();
+            assert_eq!(frame.flags, FLAG_OUTSIDE_COMPARED_RUNS, "{mass} {pressure}");
         }
-        // The gas and the wall temperatures reached by the compared runs, to the next tenth of a kelvin.
+        // Above the rated 330 bar, and at or below nothing, is refused;
+        // between 250 and 330 bar, the lower rating of two listed parts, a
+        // start lands, flagged.
+        for pressure in [2.6e7, 3.0e7, 3.29e7] {
+            let mut state = unmoved(&card, CHARGE_40_BAR_KG, pressure, ROOM_K, ROOM_K).unwrap();
+            step(&card, &mut state, &mut frame, push(0.0), 0.01).unwrap();
+            assert_eq!(frame.flags, FLAG_OUTSIDE_COMPARED_RUNS, "{pressure}");
+        }
+        for pressure in [3.3e7 * 1.001, 3.5e7, 4.5e7] {
+            assert_eq!(unmoved(&card, CHARGE_40_BAR_KG, pressure, ROOM_K, ROOM_K), Err(StepReject::PressureAboveRated));
+        }
+        // The gas and the wall temperatures compared, to the next tenth of a kelvin.
         assert_eq!((GAS_TEMPERATURE_FLOOR_K, GAS_TEMPERATURE_CEILING_K), (285.9, 301.8));
         assert_eq!((WALL_TEMPERATURE_FLOOR_K, WALL_TEMPERATURE_CEILING_K), (293.4, 293.7));
         assert_eq!(PISTON_SPEED_CEILING_M_S, 0.7);
-        for temperature in [285.9, 285.97, 301.78, 301.8] {
-            unmoved(&card, CHARGE_40_BAR_KG, 6.0e6, temperature, ROOM_K).unwrap();
+        for temperature in [285.0, 302.5, 283.15, 303.15, 200.0, 400.0, 130.0] {
+            let mut state = unmoved(&card, CHARGE_40_BAR_KG, 6.0e6, temperature, ROOM_K).unwrap();
+            step(&card, &mut state, &mut frame, push(0.0), 0.01).unwrap();
+            assert_eq!(frame.flags, FLAG_OUTSIDE_COMPARED_RUNS, "{temperature}");
         }
-        for temperature in [285.899, 301.801, 283.15, 303.15] {
+        for temperature in [CRITICAL_TEMPERATURE_K, 120.0, 77.0, 0.0, -1.0] {
             assert_eq!(
                 unmoved(&card, CHARGE_40_BAR_KG, 6.0e6, temperature, ROOM_K),
-                Err(StepReject::GasTemperatureOutsideCard),
+                Err(StepReject::GasBelowCriticalTemperature),
                 "{temperature}"
             );
         }
-        for wall in [293.4, 293.46, 293.6, 293.7] {
-            unmoved(&card, CHARGE_40_BAR_KG, 6.0e6, ROOM_K, wall).unwrap();
+        for wall in [293.399, 293.701, 288.15, 293.15, 298.15, 350.0] {
+            let mut state = unmoved(&card, CHARGE_40_BAR_KG, 6.0e6, ROOM_K, wall).unwrap();
+            step(&card, &mut state, &mut frame, push(0.0), 0.01).unwrap();
+            assert_eq!(frame.flags, FLAG_OUTSIDE_COMPARED_RUNS, "{wall}");
         }
-        // The wall of every compared run was 293.46 to 293.60 K: the old ends 288.15 and 298.15 K are named.
-        for wall in [293.399, 293.701, 288.15, 293.15, 298.15] {
-            assert_eq!(
-                unmoved(&card, CHARGE_40_BAR_KG, 6.0e6, ROOM_K, wall),
-                Err(StepReject::WallTemperatureOutsideCard),
-                "{wall}"
-            );
+        for wall in [0.0, -1.0] {
+            assert_eq!(unmoved(&card, CHARGE_40_BAR_KG, 6.0e6, ROOM_K, wall), Err(StepReject::WallTemperatureNotPositive));
         }
-        // The bands lie above both precharges: inside them the vessel always holds oil.
-        for (mass, lowest) in [(CHARGE_20_BAR_KG, PRESSURE_BANDS_20_BAR_PA[0][0]), (CHARGE_40_BAR_KG, PRESSURE_BANDS_40_BAR_PA[0][0])] {
-            let state = unmoved(&card, mass, lowest, GAS_TEMPERATURE_CEILING_K, ROOM_K).unwrap();
-            assert!(state.gas_volume_m3 < 0.97 * VESSEL_GAS_VOLUME_M3, "{}", state.gas_volume_m3);
-        }
-        // One millimetre in a step, stated four ways, and the fastest speed.
+        // One millimetre in a step, stated four ways, and the fastest compared speed.
         for (speed, dt) in [(0.5, 0.002), (0.25, 0.004), (0.1, 0.01), (-0.004, 0.25), (0.7, 1.0e-4), (-0.7, 1.0e-4)] {
             let mut state = start(CHARGE_40_BAR_KG, 8.0e6, ROOM_K);
             step(&card, &mut state, &mut frame, push(speed), dt).unwrap();
+            assert_eq!(frame.flags, 0);
         }
         let mut state = start(CHARGE_40_BAR_KG, 8.0e6, ROOM_K);
         let saved = state;
@@ -1674,19 +1770,59 @@ mod tests {
             step(&card, &mut state, &mut frame, push(0.5), 0.002_002),
             Err(StepReject::PistonTravelAboveStep)
         );
-        assert_eq!(
-            step(&card, &mut state, &mut frame, push(0.7007), 1.0e-4),
-            Err(StepReject::PistonSpeedOutsideCard)
-        );
-        // 0.7 to 0.8 m/s was answered by engine 0.6.0 and never compared: named now.
-        for speed in [0.75, -0.75, 0.8, -0.8] {
-            assert_eq!(
-                step(&card, &mut state, &mut frame, push(speed), 1.0e-4),
-                Err(StepReject::PistonSpeedOutsideCard),
-                "{speed}"
-            );
-        }
         assert_eq!(state, saved);
+        // Faster than any compared run lands with the flag, within the millimetre.
+        for speed in [0.7007, 0.75, -0.75, 0.8, -0.8, 5.0] {
+            let mut state = start(CHARGE_40_BAR_KG, 8.0e6, ROOM_K);
+            step(&card, &mut state, &mut frame, push(speed), 1.0e-4).unwrap();
+            assert_eq!(frame.flags, FLAG_OUTSIDE_COMPARED_RUNS, "{speed}");
+        }
+    }
+
+    /// The record at 109 to 132 bar, compared and missed, and pressures far
+    /// beyond it: a push from 85.5 bar runs on through 109 and 132 bar, every
+    /// step flagged above 86 bar and the ledger closing, until the vessel's
+    /// rated 330 bar stops it by name with nothing moved. A draw from 40 bar
+    /// on the 40 bar charge ends where the oil side empties.
+    #[test]
+    fn a_push_past_the_compared_pressures_runs_to_the_rated_pressure() {
+        let card = card();
+        let mut state = start(CHARGE_40_BAR_KG, 8.55e6, ROOM_K);
+        let mut frame = blank();
+        let mut landed = 0u32;
+        let mut worst = 0.0_f64;
+        let mut passed_132_bar = false;
+        let reject = loop {
+            let before = state;
+            match step(&card, &mut state, &mut frame, push(0.1), 0.001) {
+                Ok(()) => {
+                    landed += 1;
+                    worst = worst.max(state.residual_conservation_error);
+                    if state.gas_pressure_pa > 8.6e6 * (1.0 + 1.0e-9) {
+                        assert_eq!(frame.flags, FLAG_OUTSIDE_COMPARED_RUNS);
+                    }
+                    passed_132_bar |= state.gas_pressure_pa > 1.32e7;
+                }
+                Err(reject) => {
+                    assert_eq!(state, before);
+                    break reject;
+                }
+            }
+            assert!(landed < 100_000);
+        };
+        assert!(passed_132_bar);
+        assert_eq!(reject, StepReject::PressureAboveRated);
+        assert!(state.gas_pressure_pa <= 3.3e7 && state.gas_pressure_pa > 3.2e7, "{}", state.gas_pressure_pa);
+        assert!(worst <= RESIDUAL_CONSERVATION_LIMIT, "{worst:e}");
+        // A draw ends where the oil side empties.
+        let mut state = start(CHARGE_40_BAR_KG, 4.2e6, ROOM_K);
+        let reject = loop {
+            match step(&card, &mut state, &mut frame, push(-0.1), 0.001) {
+                Ok(()) => assert!(state.residual_conservation_error <= RESIDUAL_CONSERVATION_LIMIT),
+                Err(reject) => break reject,
+            }
+        };
+        assert_eq!(reject, StepReject::OilSideEmpty);
     }
 
     /// The heat share at its exact end is inside, under the work floor and
@@ -1827,42 +1963,19 @@ mod tests {
         let mut other = card;
         other.pressure_bands_40_bar_pa[0][0] = 4.0e6;
         assert_eq!(refused(fresh, &other, 0.01, 0.01), Err(StepReject::InvalidAccumulator));
-        let mut heavy = fresh;
-        heavy.gas_mass_kg = 0.03;
-        assert_eq!(refused(heavy, &card, 0.01, 0.01), Err(StepReject::GasMassOutsideCard));
-        let mut between = fresh;
-        between.gas_mass_kg = 0.02;
-        assert_eq!(refused(between, &card, 0.01, 0.01), Err(StepReject::GasMassOutsideCard));
-        let mut hot_wall = fresh;
-        hot_wall.wall_temperature_k = 320.0;
-        assert_eq!(refused(hot_wall, &card, 0.01, 0.01), Err(StepReject::WallTemperatureOutsideCard));
-        assert_eq!(refused(fresh, &card, 0.9, 1.0e-4), Err(StepReject::PistonSpeedOutsideCard));
+        let mut weightless = fresh;
+        weightless.gas_mass_kg = 0.0;
+        assert_eq!(refused(weightless, &card, 0.01, 0.01), Err(StepReject::GasMassNotPositive));
+        let mut cold_wall = fresh;
+        cold_wall.wall_temperature_k = 0.0;
+        assert_eq!(refused(cold_wall, &card, 0.01, 0.01), Err(StepReject::WallTemperatureNotPositive));
         assert_eq!(refused(fresh, &card, 0.5, 0.01), Err(StepReject::PistonTravelAboveStep));
-        let mut hot = fresh;
-        hot.gas_temperature_k = 310.0;
-        assert_eq!(refused(hot, &card, 0.0, 0.01), Err(StepReject::GasTemperatureOutsideCard));
-        // A quick push from 301.7 K lands above 301.8 K; a quick pull from 286.0 K lands below 285.9 K.
-        let warm = start(CHARGE_40_BAR_KG, 6.0e6, 301.7);
-        assert_eq!(refused(warm, &card, 0.7, 0.001_25), Err(StepReject::GasTemperatureOutsideCard));
-        let cool = start(CHARGE_40_BAR_KG, 6.0e6, 286.0);
-        assert_eq!(refused(cool, &card, -0.7, 0.001_25), Err(StepReject::GasTemperatureOutsideCard));
-        // Near the ceiling a push lands above 86 bar; near the floor a pull lands below 37 bar.
-        let high = start(CHARGE_40_BAR_KG, 8.599e6, ROOM_K);
-        assert_eq!(refused(high, &card, 0.7, 0.001_25), Err(StepReject::PressureOutsideCard));
-        let low = start(CHARGE_20_BAR_KG, 3.701e6, ROOM_K);
-        assert_eq!(refused(low, &card, -0.7, 0.001_25), Err(StepReject::PressureOutsideCard));
-        // Inside 37 to 86 bar, a step that leaves the bands of its charge.
-        for (mass, pressure, speed) in [
-            (CHARGE_20_BAR_KG, 4.299e6, 0.7),
-            (CHARGE_20_BAR_KG, 5.501e6, -0.7),
-            (CHARGE_20_BAR_KG, 6.699e6, 0.7),
-            (CHARGE_40_BAR_KG, 5.701e6, -0.7),
-            (CHARGE_40_BAR_KG, 6.399e6, 0.7),
-            (CHARGE_40_BAR_KG, 7.501e6, -0.7),
-        ] {
-            let edge = start(mass, pressure, ROOM_K);
-            assert_eq!(refused(edge, &card, speed, 0.001_25), Err(StepReject::PressureOutsideChargeBands), "{mass} {pressure}");
-        }
+        let mut condensing = fresh;
+        condensing.gas_temperature_k = 120.0;
+        assert_eq!(refused(condensing, &card, 0.0, 0.01), Err(StepReject::GasBelowCriticalTemperature));
+        // Near the rated pressure a push lands above 330 bar.
+        let high = start(CHARGE_40_BAR_KG, 3.299e7, ROOM_K);
+        assert_eq!(refused(high, &card, 0.7, 0.001_25), Err(StepReject::PressureAboveRated));
         // A state written with more gas than the vessel holds: a pull has no oil to draw.
         let mut brim = fresh;
         brim.gas_volume_m3 = VESSEL_GAS_VOLUME_M3 * 1.001;
@@ -1873,11 +1986,11 @@ mod tests {
         assert_eq!(refused(spent, &card, 0.0, 0.3504), Err(StepReject::HeatShareAboveCard));
         for (mass, pressure, temperature, wall, name) in [
             (f64::NAN, 6.0e6, ROOM_K, ROOM_K, StepReject::NonFiniteInput),
-            (CHARGE_40_BAR_KG, 6.0e6, 320.0, ROOM_K, StepReject::GasTemperatureOutsideCard),
-            (CHARGE_40_BAR_KG, 6.0e6, ROOM_K, 280.0, StepReject::WallTemperatureOutsideCard),
-            (CHARGE_40_BAR_KG, 2.0e6, ROOM_K, ROOM_K, StepReject::PressureOutsideCard),
-            (CHARGE_40_BAR_KG, 3.8e6, ROOM_K, ROOM_K, StepReject::PressureOutsideChargeBands),
-            (0.02, 6.0e6, ROOM_K, ROOM_K, StepReject::GasMassOutsideCard),
+            (CHARGE_40_BAR_KG, 6.0e6, 100.0, ROOM_K, StepReject::GasBelowCriticalTemperature),
+            (CHARGE_40_BAR_KG, 6.0e6, ROOM_K, -5.0, StepReject::WallTemperatureNotPositive),
+            (CHARGE_40_BAR_KG, 3.4e7, ROOM_K, ROOM_K, StepReject::PressureAboveRated),
+            (CHARGE_40_BAR_KG, 2.0e6, ROOM_K, ROOM_K, StepReject::OilSideEmpty),
+            (-0.02, 6.0e6, ROOM_K, ROOM_K, StepReject::GasMassNotPositive),
         ] {
             assert_eq!(unmoved(&card, mass, pressure, temperature, wall), Err(name));
         }

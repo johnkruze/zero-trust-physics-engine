@@ -28,6 +28,8 @@ pub const PROOF_LEN: usize = 16;
 pub enum TapeCause {
     /// A frame does not carry the previous link, or does not hash to its stored link.
     Chain,
+    /// A signed reading in the request does not verify, or is not well formed.
+    LoadSignature,
     /// The state digest rebuilt from the final state is not the stored one.
     State,
     /// The frames and the state digest match and the run seal does not.
@@ -38,6 +40,7 @@ impl TapeCause {
     pub fn as_str(self) -> &'static str {
         match self {
             TapeCause::Chain => "chain",
+            TapeCause::LoadSignature => "load_signature",
             TapeCause::State => "state",
             TapeCause::RunSeal => "run_seal",
         }
@@ -58,6 +61,25 @@ pub struct TapeReport {
     /// count on a run seal failure, and nothing otherwise.
     pub broken_link: Option<u64>,
     pub cause: Option<TapeCause>,
+    /// With `load_signature`: where the reading that does not hold is
+    /// (`initial`, `segments[i]`), and the sentence of why.
+    pub broken_place: Option<String>,
+    pub load_fault: Option<String>,
+    /// When the tape holds: every signed reading of its request, verified,
+    /// in place order. Empty for a run none of whose loads is signed.
+    pub signed_loads: Vec<crate::attest::Verified>,
+}
+
+impl TapeReport {
+    /// A report of a tape that does not hold, at `cause`.
+    pub fn broken(cause: TapeCause, broken_link: Option<u64>) -> Self {
+        Self { holds: false, broken_link, cause: Some(cause), broken_place: None, load_fault: None, signed_loads: Vec::new() }
+    }
+
+    /// A report of a tape that holds, with its verified signed readings.
+    pub fn holds(signed_loads: Vec<crate::attest::Verified>) -> Self {
+        Self { holds: true, broken_link: None, cause: None, broken_place: None, load_fault: None, signed_loads }
+    }
 }
 
 /// `link_0` of a run: SHA-256 of the sealed form of the whole request.
@@ -219,7 +241,8 @@ pub fn check_tape_text(bytes: &[u8]) -> Result<TapeReport, Refusal> {
 /// The tape carries `inputs`, `frames`, `outcome`, `steps_landed`, `reject`,
 /// `run_seal`, `final_state`, the two residual hex fields and `state_digest`.
 /// Other fields are ignored, so a trajectory response can be given as it is.
-/// The chain is checked first, then the state digest, then the run seal.
+/// The chain is checked first, then every signed reading of the request
+/// (`crate::attest`), then the state digest, then the run seal.
 pub fn check_tape(body: &Value) -> Result<TapeReport, Refusal> {
     let object = body.as_object().ok_or(Refusal::NotAnObject)?;
     let inputs = required(object, "inputs")?;
@@ -258,20 +281,20 @@ pub fn check_tape(body: &Value) -> Result<TapeReport, Refusal> {
     for (index, frame) in frames.iter().enumerate() {
         match follow_recorded(&link, frame) {
             Some(next) => link = next,
-            None => {
-                return Ok(TapeReport {
-                    holds: false,
-                    broken_link: Some(index as u64),
-                    cause: Some(TapeCause::Chain),
-                });
-            }
+            None => return Ok(TapeReport::broken(TapeCause::Chain, Some(index as u64))),
         }
     }
-    let state_broken = TapeReport {
-        holds: false,
-        broken_link: None,
-        cause: Some(TapeCause::State),
+    let signed_loads = match crate::attest::verify_run(inputs) {
+        Ok(verified) => verified,
+        Err(fault) => {
+            return Ok(TapeReport {
+                broken_place: Some(fault.place().label()),
+                load_fault: Some(fault.to_string()),
+                ..TapeReport::broken(TapeCause::LoadSignature, None)
+            });
+        }
     };
+    let state_broken = TapeReport::broken(TapeCause::State, None);
     let Some(expected) = expected_state_digest(
         steps_landed,
         final_state,
@@ -291,17 +314,9 @@ pub fn check_tape(body: &Value) -> Result<TapeReport, Refusal> {
         expected.as_deref(),
     );
     if rebuilt != run_seal {
-        return Ok(TapeReport {
-            holds: false,
-            broken_link: Some(frames.len() as u64),
-            cause: Some(TapeCause::RunSeal),
-        });
+        return Ok(TapeReport::broken(TapeCause::RunSeal, Some(frames.len() as u64)));
     }
-    Ok(TapeReport {
-        holds: true,
-        broken_link: None,
-        cause: None,
-    })
+    Ok(TapeReport::holds(signed_loads))
 }
 
 /// A frame's `frame_hex` and `link` written with capital letters are refused

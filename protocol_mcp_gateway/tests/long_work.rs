@@ -117,9 +117,10 @@ fn long_work_is_stopped_at_the_limit_and_its_permit_and_place_come_back() {
     let hello = json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"t","version":"1"}}}).to_string();
     let said: Value = serde_json::from_str(&parse_reply(&raw(open.port, &request_bytes(None, &hello), 30)).body).unwrap();
     let said = said["result"]["instructions"].as_str().unwrap();
-    assert!(said.contains("An answer is waited for 2 seconds (OPEN_REQUEST_SECONDS)"), "{said}");
-    assert!(said.contains("Long work is stopped at that time, and its permit and its place come back"), "{said}");
-    assert!(!said.contains("send it again, or a smaller one"), "{said}");
+    // Since 0.10.1 the instructions stay inside the length a client shows:
+    // the constant's name is in the refusal above, and not here.
+    assert!(said.contains("An answer is waited for 2 seconds; long work is stopped then and frees its permit and place."), "{said}");
+    assert!(!said.contains("send it again"), "{said}");
 }
 
 #[test]
@@ -205,7 +206,8 @@ fn a_call_made_without_a_permit_is_answered_as_a_full_pool_answers() {
     let busy = one_call("solve", &atom, false);
     assert_eq!((busy["isError"].as_bool(), busy["content"][0]["text"].as_str()), (Some(true), Some("Too many concurrent physics tasks.")));
     let stopped = one_call("solve", &json!({ "solver": "atom_dft", "parameters": { "atomic_number": 40 } }), false);
-    assert_eq!(stopped["content"][0]["text"], "Physical Violation: atomic number 40 is outside 1..=18.");
+    // Re-pinned for 0.10.1: an atomic number outside the range carries the name AtomicNumberOutOfRange, and the entry writes the range in words.
+    assert_eq!(stopped["content"][0]["text"], "Physical Violation: atomic number 40 is outside 1 to 18 (AtomicNumberOutOfRange).");
     let busy = one_call("run_trajectory", &a_short_long_run(), false);
     assert_eq!(busy["content"][0]["text"], "Too many concurrent physics tasks.");
 }
@@ -263,15 +265,14 @@ fn a_vanishing_boron_density_gets_the_solvers_own_refusal_alike_on_the_open_and_
     assert!(found["high"]["solution_seal"].is_string(), "{searched}");
     let (low, high) = (found["low"]["value"].as_f64().unwrap(), found["high"]["value"].as_f64().unwrap());
     assert!(0.04 <= low && low < floor && floor <= high && high <= 0.06, "{low} {high}");
-    if found["neighbours"] == json!(true) {
-        // The search ended on the floor itself: the last density refused and the first answered.
-        assert_eq!((low, high), (f64::from_bits(floor.to_bits() - 1), floor));
-        assert_eq!(found["stopped_by"], Value::Null);
-    } else {
-        // On a slow machine it stops at its own time for computing, and says so.
-        assert!(found["stopped_by"].as_str().unwrap().contains("FLIP_MAX_SECONDS"), "{searched}");
-    }
-    // The search computes for at most 20 s (FLIP_MAX_SECONDS) and was answered, not ended at the time for an answer.
+    // The search ends on the floor itself, the last density refused and the
+    // first answered, on any machine: its caps are counts, and a solve of
+    // fusion_pb11_lhd is counted at 0.2 s, so FLIP_MAX_SECONDS leaves it
+    // FLIP_MAX_SOLVES, more than the halvings to neighbours.
+    assert_eq!(found["neighbours"], json!(true), "{searched}");
+    assert_eq!((low, high), (f64::from_bits(floor.to_bits() - 1), floor));
+    assert_eq!(found["stopped_by"], Value::Null);
+    // It was answered, not ended at the time for an answer.
     assert!(took < Duration::from_secs(45), "{took:?}");
     assert_eq!(open.children(), Vec::<String>::new());
 
@@ -283,11 +284,20 @@ fn a_vanishing_boron_density_gets_the_solvers_own_refusal_alike_on_the_open_and_
         assert!(!through.0 && through.1.contains("\"outcome\":\"converged\""), "{boron}: {}", through.1);
         assert_eq!(through, local.tool("solve", &request), "{boron}");
     }
-    // The limits an agent reads when the connection opens name the limit on a plan and no floor of the connection's own.
+    // The limits an agent reads name the limit on a plan and no floor of the connection's own. Since 0.10.1
+    // the limit on a plan is in the description of each tool that takes one, and not in the instructions.
     let hello = json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"t","version":"1"}}}).to_string();
     let said: Value = serde_json::from_str(&parse_reply(&raw(open.port, &request_bytes(None, &hello), 30)).body).unwrap();
-    let said = said["result"]["instructions"].as_str().unwrap();
-    assert!(said.contains("holds no more than 15 s of them (OPEN_PLAN_SECONDS)"), "{said}");
+    let listed = parse_reply(&raw(open.port, &request_bytes(None, &json!({"jsonrpc":"2.0","id":2,"method":"tools/list"}).to_string()), 30)).body;
+    let tools: Value = serde_json::from_str(&listed).unwrap();
+    for tool in ["run_dataset", "verify_dataset", "validate_series"] {
+        let described = tools["result"]["tools"].as_array().unwrap().iter().find(|listed| listed["name"] == tool).unwrap()["description"].as_str().unwrap();
+        assert!(described.contains("a plan of solves holds the engine's own 64 and at most 15 s of them, or one, at each solver's measured time, which describe_solver states with the count (OPEN_PLAN_SECONDS)"), "{tool}: {described}");
+        for solver in ["tokamak_dt_beam_target", "junction_nist_b7_s2", "icf_hotspot_burn", "stress_plate_hole_s235", "blast_wave_tnt_air", "plasma_sheath_ram_c2"] {
+            assert!(!described.contains(solver), "{tool} names {solver}: {described}");
+        }
+    }
+    let said = format!("{} {listed}", said["result"]["instructions"].as_str().unwrap());
     for gone in ["OPEN_FUSION_BORON_DENSITY_FLOOR_PER_M3", "OPEN_ABLATOR_HISTORY_SPAN_FLOOR_S", "below anything physical"] {
         assert!(!said.contains(gone), "{gone}: {said}");
     }

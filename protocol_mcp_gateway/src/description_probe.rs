@@ -4,7 +4,9 @@
 //! plan is written, how a dataset returned in the answer is checked, how
 //! large an answer a request makes, what a check means when it holds and the
 //! rows do not match, and how a refusal comes back. Each is said in a
-//! description or in the answer. This probe sends every worked plan as it is
+//! description, at the input it is about, or in the answer: a description
+//! says what a tool does inside the length a client shows, and the input
+//! schema says the rest. This probe sends every worked plan as it is
 //! written, measures every size that is stated, and makes every refusal that
 //! is described.
 
@@ -61,6 +63,18 @@ fn description_of(view: &View, tool: &str) -> String {
         .description
         .expect("a description")
         .to_string()
+}
+
+/// What the tool list says at one input of a tool, or of its request as a
+/// whole when no input is named.
+fn said_at(view: &View, tool: &str, input: Option<&str>) -> String {
+    let tools = tools_in(view);
+    let schema = &tools.iter().find(|item| item.name == tool).expect("tool").input_schema;
+    let words = match input {
+        Some(name) => schema["properties"][name]["description"].as_str(),
+        None => schema["description"].as_str(),
+    };
+    words.unwrap_or_else(|| panic!("{tool} says nothing at {input:?}")).to_string()
 }
 
 /// The JSON object that follows ` {kind}: ` in a description, exactly as it is
@@ -140,7 +154,7 @@ fn a_card_is_named_only_by_its_whole_name() {
     assert!(!names_card("", "thermal"));
 }
 
-/// The description of `run_dataset` carries one worked plan of each kind.
+/// The `plan` input of `run_dataset` carries one worked plan of each kind.
 /// Each is sent exactly as it is written, in the full view and in the view
 /// of every single card, and each gives a sealed dataset whose check holds.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -160,7 +174,9 @@ async fn each_worked_plan_in_the_description_runs_as_written_and_is_a_sealed_dat
     ));
     let mut sent = 0;
     for (label, view) in &views {
-        let description = description_of(view, "run_dataset");
+        // The description sends the reader to the input schema for them.
+        assert!(description_of(view, "run_dataset").contains("The input schema says how each input is written, with a worked plan of each kind."), "{label}");
+        let description = said_at(view, "run_dataset", Some("plan"));
         assert!(description.contains("One worked plan of each kind, each a whole request:"), "{label}");
         // How a path is written, what a varied value replaces, and what
         // cannot vary are said.
@@ -203,10 +219,10 @@ async fn each_worked_plan_in_the_description_runs_as_written_and_is_a_sealed_dat
             sent += 1;
         }
     }
-    assert_eq!(sent, 3 * 33);
+    assert_eq!(sent, 3 * 39);
     // The full view and the cold plate's own view show the cold plate, with both kinds of path.
     for view in [View::full(), one_card("energy", "thermal")] {
-        let description = description_of(&view, "run_dataset");
+        let description = said_at(&view, "run_dataset", Some("plan"));
         let grid = written_plan(&description, "grid");
         assert!(grid.contains("\"path\":\"initial.temperature_k\"") && grid.contains("\"path\":\"segments[0].load.heat_power_w\""), "{grid}");
         let request: Value = serde_json::from_str(&grid).unwrap();
@@ -218,7 +234,8 @@ async fn each_worked_plan_in_the_description_runs_as_written_and_is_a_sealed_dat
     }
     // A view of one card says nothing of another card.
     for item in descriptor::all() {
-        let description = description_of(&one_card(item.domain, item.card), "run_dataset");
+        let view = one_card(item.domain, item.card);
+        let description = format!("{} {}", description_of(&view, "run_dataset"), said_at(&view, "run_dataset", Some("plan")));
         for other in descriptor::all() {
             if other.card != item.card {
                 assert!(!names_card(&description, other.card), "{} names {}", item.card, other.card);
@@ -226,21 +243,22 @@ async fn each_worked_plan_in_the_description_runs_as_written_and_is_a_sealed_dat
         }
     }
     // A view with no card has no plan to show, and says the rest.
-    let none = description_of(&View::limited([], []), "run_dataset");
+    let none = said_at(&View::limited([], []), "run_dataset", Some("plan"));
     assert!(!none.contains("One worked plan"), "{none}");
     assert!(none.contains("A path names one number"), "{none}");
 }
 
-/// The descriptions of `run_trajectory` and `run_dataset` say how large an
-/// answer a request makes. Measured on the worked run of each of the thirty
-/// cards, recorded at every step and recorded once.
+/// The `record_every` input of `run_trajectory` and the `answer` input of
+/// `run_dataset` say how large an answer a request makes. Measured on the
+/// worked run of every card, recorded at every step and recorded once.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn an_answer_is_as_large_as_the_descriptions_say() {
     let state = new_gateway_state();
-    let run_words = description_of(&View::full(), "run_trajectory");
+    assert!(description_of(&View::full(), "run_trajectory").contains("record_every sets which steps are recorded, about 230 characters each"));
+    let run_words = said_at(&View::full(), "run_trajectory", Some("record_every"));
     assert!(run_words.contains("about 230 characters for each recorded state, plus the request as it was sent, plus up to 8000 characters for the final state and the seals"), "{run_words}");
     assert!(run_words.contains("What keeps it small: a larger record_every; the final state is returned in full whatever is recorded."), "{run_words}");
-    let set_words = description_of(&View::full(), "run_dataset");
+    let set_words = said_at(&View::full(), "run_dataset", Some("answer"));
     assert!(set_words.contains("a whole row counts its own request and 1900 characters, and for each number twice its name and 60 characters (150 for a 3-vector, 9 for a flag); store \"frames\" adds 128 characters for each recorded state to a full answer; the head repeats the request."), "{set_words}");
     assert!(set_words.contains("one above 40000 characters is refused with what to change"), "{set_words}");
     assert_eq!(dataset::REST_OF_AN_ANSWER_CHARS, 8000);
@@ -314,7 +332,7 @@ async fn a_check_by_seal_of_a_dataset_that_is_not_stored_says_how_a_returned_one
     let folder = Folder::new();
     let with_directory = new_gateway_state().with_dataset_dir(Some(folder.0.clone()));
     let without = new_gateway_state();
-    let plan = serde_json::from_str::<Value>(&written_plan(&description_of(&View::full(), "run_dataset"), "list")).unwrap();
+    let plan = serde_json::from_str::<Value>(&written_plan(&said_at(&View::full(), "run_dataset", Some("plan")), "list")).unwrap();
     assert_eq!(plan["return"], "inline");
     let summary = answer(&with_directory, "run_dataset", &plan).await;
     assert!(summary["summary"].is_array(), "{summary}");
@@ -324,19 +342,19 @@ async fn a_check_by_seal_of_a_dataset_that_is_not_stored_says_how_a_returned_one
     assert_eq!(made["head"], summary["head"]);
     let seal = made["head"]["dataset_seal"].clone();
 
-    let how = "A dataset returned in the answer (return \"inline\") is not stored: check it by sending its run_dataset request as 'request' with its 'dataset_seal', which runs the plan again, or by sending back the head, rows and frames_hex of its full answer (answer \"full\").";
+    let how = "A dataset returned in the answer (return \"inline\") is not stored: verify it by sending its run_dataset request as 'request' with its 'dataset_seal', which runs the plan again, or by sending back the head, rows and frames_hex of its full answer (answer \"full\").";
     let (is_error, text) = call(&with_directory, "verify_dataset", &json!({ "dataset_seal": seal })).await;
     assert!(is_error);
     assert_eq!(text, format!("no dataset is stored under that seal. {how}"));
     let (is_error, text) = call(&without, "verify_dataset", &json!({ "dataset_seal": seal })).await;
     assert!(is_error);
-    assert_eq!(text, format!("the gateway was started without a directory for dataset files. {how}"));
+    assert_eq!(text, format!("this connection was started without a directory for dataset files. {how}"));
     // A file job on a gateway without a directory keeps its own sentence: it was not asking for a check.
     let mut to_file = plan.clone();
     to_file["return"] = json!("file");
     let (is_error, text) = call(&without, "run_dataset", &to_file).await;
     assert!(is_error);
-    assert_eq!(text, "the gateway was started without a directory for dataset files.");
+    assert_eq!(text, "this connection was started without a directory for dataset files.");
 
     // What the sentence says to do.
     for state in [&with_directory, &without] {
@@ -353,7 +371,7 @@ async fn a_check_by_seal_of_a_dataset_that_is_not_stored_says_how_a_returned_one
     let tools = tools_in(&View::full());
     let tool = tools.iter().find(|item| item.name == "verify_dataset").unwrap();
     let words = tool.input_schema["properties"]["dataset_seal"]["description"].as_str().unwrap();
-    assert!(words.contains("A dataset returned in the answer is not stored: send it with its request, or send its head, rows and frames_hex."), "{words}");
+    assert!(words.contains("A dataset returned in the answer is not stored: it is verified with its request, or by its head, rows and frames_hex."), "{words}");
     // A dataset that was stored is still found by its seal.
     let stored = answer(&with_directory, "run_dataset", &to_file).await;
     let report = answer(&with_directory, "verify_dataset", &json!({ "dataset_seal": stored["head"]["dataset_seal"] })).await;
@@ -361,56 +379,74 @@ async fn a_check_by_seal_of_a_dataset_that_is_not_stored_says_how_a_returned_one
 }
 
 /// When every seal holds and the rows sent back are not, byte for byte, the
-/// rows the head names, the answer carries one sentence that says what each
-/// of the two means and which to report. In every other case the answer is
-/// as it was.
+/// rows the engine writes for them, the long form does not hold: the cause is
+/// answer_text, and differs_at and difference name the first place, with its
+/// row. In every other case the answer is as it was.
 #[tokio::test]
-async fn a_check_that_holds_over_rows_that_do_not_match_says_what_each_means_and_which_to_report() {
+async fn a_check_whose_seals_hold_over_rows_the_engine_did_not_write_does_not_hold_and_names_the_place() {
     let state = new_gateway_state();
-    let mut plan = serde_json::from_str::<Value>(&written_plan(&description_of(&View::full(), "run_dataset"), "grid")).unwrap();
+    let mut plan = serde_json::from_str::<Value>(&written_plan(&said_at(&View::full(), "run_dataset", Some("plan")), "grid")).unwrap();
     plan["answer"] = json!("full");
     let made = answer(&state, "run_dataset", &plan).await;
     let check = |rows: Value, frames: Value| json!({ "head": made["head"], "rows": rows, "frames_hex": frames });
-    const KEYS: [&str; 10] =
-        ["holds", "cause", "row", "broken_link", "chains", "merkle_root", "dataset_seal", "receipt", "rows_file", "frames_file"];
+    const KEYS: [&str; 11] =
+        ["holds", "values_hold", "cause", "row", "broken_link", "chains", "merkle_root", "dataset_seal", "receipt", "rows_file", "frames_file"];
     let keys_of = |report: &Value| -> Vec<String> { report.as_object().unwrap().keys().cloned().collect() };
+    let with_difference = || {
+        let mut keys = KEYS.map(String::from).to_vec();
+        keys.extend(["differs_at".to_string(), "difference".to_string()]);
+        keys
+    };
 
-    // As returned: holds, the rows match, and the answer has its ten keys.
+    // As returned: holds, the rows match, and the answer has its eleven keys.
     let report = answer(&state, "verify_dataset", &check(made["rows"].clone(), made["frames_hex"].clone())).await;
     assert_eq!(report["holds"], true);
     assert_eq!(report["rows_file"], "matches the hash in the head");
     assert_eq!(keys_of(&report), KEYS);
 
-    // Three ways an agent miscopies a row without touching a sealed value.
+    // A decimal that is not the value of its hex: the seals hold, the text is
+    // not the engine's, and the row and the field are named.
     let mut decimal = made["rows"].clone();
     let exact = decimal[1]["final_state"]["temperature_k_hex"].clone();
     decimal[1]["final_state"]["temperature_k"] = json!(293.0);
     assert_eq!(decimal[1]["final_state"]["temperature_k_hex"], exact);
+    let report = answer(&state, "verify_dataset", &check(decimal, made["frames_hex"].clone())).await;
+    assert_eq!((report["holds"].clone(), report["cause"].clone(), report["row"].clone()), (json!(false), json!("answer_text"), json!(1)), "{report}");
+    assert_eq!(report["differs_at"], "rows[1].final_state.temperature_k", "{report}");
+    assert!(report["merkle_root"].is_null() && report["dataset_seal"].is_null(), "{report}");
+    assert_eq!(keys_of(&report), with_difference());
+    // A decimal taken out, and one added that the card does not publish.
+    let mut taken = made["rows"].clone();
+    taken[2]["final_state"].as_object_mut().unwrap().shift_remove("temperature_k");
+    let report = answer(&state, "verify_dataset", &check(taken, made["frames_hex"].clone())).await;
+    assert_eq!((report["holds"].clone(), report["cause"].clone(), report["differs_at"].clone()), (json!(false), json!("answer_text"), json!("rows[2].final_state.temperature_k")), "{report}");
+    // A refusal sentence is sealed by its leaf.
     let mut sentence = made["rows"].clone();
     sentence[0]["reject_detail"] = json!("copied by hand");
+    let report = answer(&state, "verify_dataset", &check(sentence, made["frames_hex"].clone())).await;
+    assert_eq!((report["holds"].clone(), report["cause"].clone(), report["row"].clone()), (json!(false), json!("leaf"), json!(0)), "{report}");
+    assert!(report["fault"].as_str().unwrap().contains("its run_seal and its reject_detail give"), "{report}");
+    // The keys of a row in another order: every value is the engine's, the
+    // rows sent do not hash to the head's rows_sha256, and the plan run again
+    // names the first key out of the engine's order.
     let mut reordered = made["rows"].clone();
     let first = reordered[2].as_object().unwrap().clone();
     let mut backwards = Map::new();
     for (key, value) in first.iter().rev() {
         backwards.insert(key.clone(), value.clone());
     }
+    let last_key = first.keys().last().unwrap().clone();
     reordered[2] = Value::Object(backwards);
-    for (label, rows) in [("a decimal", decimal), ("a sentence", sentence), ("the order of keys", reordered)] {
-        let report = answer(&state, "verify_dataset", &check(rows, made["frames_hex"].clone())).await;
-        assert_eq!(report["holds"], true, "{label}: {report}");
-        assert_eq!(report["cause"], Value::Null, "{label}");
-        assert_eq!(report["rows_file"], "does not match the hash in the head", "{label}");
-        let words = report["what_to_report"].as_str().unwrap_or_else(|| panic!("{label}: {report}"));
-        // One sentence: what holds means, what the mismatch means, and which to report.
-        assert_eq!(words, dataset::HOLDS_AND_ROWS_DIFFER);
-        assert_eq!(words.matches(". ").count(), 0, "{words}");
-        assert!(words.starts_with("holds is true because every seal was rebuilt from the exact values of the rows as they were sent"), "{words}");
-        assert!(words.contains("rows_file does not match because the text of the rows sent is not byte for byte the text the engine wrote"), "{words}");
-        assert!(words.ends_with("report that the dataset holds, and say that the copy checked was not byte-identical."), "{words}");
-        let mut keys = KEYS.map(String::from).to_vec();
-        keys.push("what_to_report".to_string());
-        assert_eq!(keys_of(&report), keys, "{label}");
-    }
+    let report = answer(&state, "verify_dataset", &check(reordered, made["frames_hex"].clone())).await;
+    assert_eq!((report["holds"].clone(), report["cause"].clone(), report["differs_at"].clone()), (json!(false), json!("answer_text"), json!(format!("rows[2].{last_key}"))), "{report}");
+    assert_eq!(report["rows_file"], "does not match the hash in the head");
+    assert_eq!(keys_of(&report), with_difference());
+    // A head of another engine version is named as such.
+    let mut other = made["head"].clone();
+    other["engine_version"] = json!("genesis_kernel_v0.9.0");
+    let report = answer(&state, "verify_dataset", &json!({ "head": other, "rows": made["rows"], "frames_hex": made["frames_hex"] })).await;
+    assert_eq!((report["holds"].clone(), report["cause"].clone(), report["differs_at"].clone()), (json!(false), json!("engine_version"), json!("head.engine_version")), "{report}");
+    assert!(report["difference"].as_str().unwrap().starts_with("The dataset names engine_version genesis_kernel_v0.9.0, and this engine is genesis_kernel_v0.12.0."), "{report}");
 
     // A sealed value changed: the check does not hold, and no such sentence is given.
     let mut broken = made["rows"].clone();
@@ -419,30 +455,46 @@ async fn a_check_that_holds_over_rows_that_do_not_match_says_what_each_means_and
     assert_eq!(report["holds"], false);
     assert_eq!(report["cause"], "state");
     assert_eq!(report["rows_file"], "does not match the hash in the head");
-    assert_eq!(keys_of(&report), KEYS);
+    // An answer that does not hold says the kind of fault in words after its eleven keys.
+    let mut keys = KEYS.map(String::from).to_vec();
+    keys.push("fault".to_string());
+    assert_eq!(keys_of(&report), keys);
+    assert!(report["fault"].as_str().unwrap().starts_with("A row was changed: a sealed value of row 1 was altered."), "{report}");
 }
 
-/// The description of `run_trajectory` says how each of the two kinds of
-/// refused run comes back and what the two openings of a refusal sentence
-/// mean; the description of `run_dataset` says what a refused row and an
-/// unadmitted row carry. Each is made here and is as described.
+/// The description of `run_trajectory` says in short how a run comes back,
+/// and its input schema says in full how each of the two kinds of refused
+/// run comes back and what the two openings of a refusal sentence mean; the
+/// `answer` input of `run_dataset` says what a refused row and an unadmitted
+/// row carry. Each is made here and is as described.
 #[tokio::test]
 async fn the_two_kinds_of_refusal_come_back_as_the_descriptions_say() {
     let state = new_gateway_state();
     let run_words = description_of(&View::full(), "run_trajectory");
-    assert!(run_words.ends_with(REFUSAL_WORDS), "{run_words}");
     for part in [
-        "A request the door turns away before computing is an error, not a result: its text is one sentence, nothing is sealed, and when the sentence gives the card's name for the refusal the name is in round brackets.",
+        "A run comes back in one of four ways.",
+        "outcome \"ended\": the run reached an end its card declares, which describe_card lists under declared_ends; reject holds the end's name.",
+        "outcome \"refused\": a step part way was refused; reject holds the name (null when the cause has none) and reject_detail the sentence.",
+        "An ended or a refused run is sealed up to its last landed step, steps_landed.",
+        "An error, not a result: the request was turned away before computing, in one sentence with the refusal's name in round brackets when it has one, and nothing is sealed.",
+        "A sentence that begins \"Physical Failure\" says the state asked for or reached is outside the card; one that begins \"Physical Violation\" says the request, or a number in it or computed from it, is not one the engine takes.",
+    ] {
+        assert!(run_words.contains(part), "{part}");
+    }
+    assert!(said_at(&View::full(), "run_trajectory", None).ends_with(REFUSAL_WORDS));
+    for part in [
+        "A request turned away before computing is an error, not a result: its text is one sentence, nothing is sealed, and when the sentence gives the card's name for the refusal the name is in round brackets.",
         "A run that starts and is refused part way is a result: outcome is \"refused\", reject holds the name (null when the cause has none), reject_detail holds the sentence, which ends \"The run is sealed to step N. The state at step N+1 was refused and is not sealed.\", and the run is sealed up to that last landed step N: steps_landed is N, the count of steps that landed, so the step that was refused is steps_landed + 1.",
-        "A run that reaches an end its card declares (the first maximum of power of a reactor burst, a capsule's flown parachute deployment, a mission's last day, the end of a record's clock or track) is not refused: outcome is \"ended\", reject holds the end's name, reject_detail a sentence beginning \"Ended\" that names the end, and the run is sealed up to its last landed step; describe_card lists a card's declared ends under declared_ends.",
+        "A run that reaches an end its card declares (the first maximum of power of a reactor burst, a capsule's flown parachute deployment, a crater that stops growing, a cell's runaway once every reactant is consumed) is not refused: outcome is \"ended\", reject holds the end's name, reject_detail a sentence beginning \"Ended\" that names the end, and the run is sealed up to its last landed step; describe_card lists a card's declared ends under declared_ends.",
         "A sentence that begins \"Physical Failure\" says the state asked for or reached is outside the card: past a published bound, a limit of the specimen, or the conservation ledger.",
         "A sentence that begins \"Physical Violation\" says the request, or a number in it or computed from it, is not one the engine takes: its shape, a missing or unknown key, the number rule, the step floor or ceiling, a load rule, a size limit, or a value that is not finite.",
     ] {
         assert!(REFUSAL_WORDS.contains(part), "{part}");
     }
-    let set_words = description_of(&View::full(), "run_dataset");
+    assert!(description_of(&View::full(), "run_dataset").contains("A row is completed, ended, refused or unadmitted: an ended or a refused row is a run sealed up to its last landed step, and an unadmitted row is a request turned away before computing, with no seal."));
+    let set_words = said_at(&View::full(), "run_dataset", Some("answer"));
     assert!(set_words.contains("A refused row is a run the card refused part way: it has a run seal, the refusal's name in reject and its sentence in reject_detail."), "{set_words}");
-    assert!(set_words.contains("An unadmitted row is a request the door turned away before computing: it has no run seal, and its sentence, with the refusal's name in round brackets when the sentence gives one, is its reject_detail; its summary row gives that name in reject."), "{set_words}");
+    assert!(set_words.contains("An unadmitted row is a request turned away before computing: it has no run seal, and its sentence, with the refusal's name in round brackets when the sentence gives one, is its reject_detail; its summary row gives that name in reject."), "{set_words}");
     assert!(set_words.contains("What a sentence that begins \"Physical Failure\" or \"Physical Violation\" means is in the description of run_trajectory."), "{set_words}");
 
     let plate = |temperature_k: f64, power_w: f64, steps: u64| {
@@ -525,4 +577,211 @@ async fn the_two_kinds_of_refusal_come_back_as_the_descriptions_say() {
 /// The `reject_detail` of the run a row's request makes alone.
 async fn body_detail(state: &AppState, request: &Value) -> Value {
     answer(state, "run_trajectory", request).await["reject_detail"].clone()
+}
+
+/// The connections an agent reads a tool list on: the local connection and
+/// a hosted connection with a key, in the full view, in the view of every
+/// single card and of every single solver and in a view of nothing; and the
+/// open connection as it starts by default, as a router is made in a test,
+/// and with every limit that is read at start at the greatest value its
+/// argument takes, where the numbers it states are longest.
+fn every_connection() -> Vec<(String, View, Option<crate::open_door::OpenRules>)> {
+    use std::time::Duration;
+
+    let mut views: Vec<(String, View)> = vec![("full".to_string(), View::full()), ("nothing".to_string(), View::limited([], []))];
+    for item in descriptor::all() {
+        views.push((item.card.to_string(), one_card(item.domain, item.card)));
+    }
+    for solver in View::full().solver_names() {
+        views.push((solver.to_string(), View::limited([], [solver.to_string()])));
+    }
+    let mut connections: Vec<_> = views.into_iter().map(|(label, view)| (format!("keyed or local, {label}"), view, None)).collect();
+    let as_started = crate::open_door::OpenRules { worker: Some(std::path::PathBuf::from("hosted_door")), ..crate::open_door::OpenRules::for_this_machine() };
+    let greatest = crate::open_door::OpenRules {
+        requests_per_minute: 1_000_000,
+        max_in_flight: 10_000,
+        max_in_flight_per_address: 10_000,
+        physics_permits: 32,
+        permits_per_address: 32,
+        request: Duration::from_secs(3600),
+        ..as_started.clone()
+    };
+    let one_core = crate::open_door::OpenRules { physics_permits: 2, ..as_started.clone() };
+    for (label, rules) in [
+        ("open, as started", as_started),
+        ("open, one core", one_core),
+        ("open, every argument at its greatest", greatest),
+        ("open, a router with no binary to start", crate::open_door::OpenRules::for_this_machine()),
+    ] {
+        connections.push((label.to_string(), View::full(), Some(rules)));
+    }
+    connections
+}
+
+/// verify_dataset's description, which on the open connection carries that
+/// connection's dataset limits and its words for a call that finds no
+/// permit, keeps room for a sentence on every connection: at least
+/// `VERIFY_DATASET_ROOM` bytes under the limit, with every limit read at
+/// start at its greatest.
+const VERIFY_DATASET_ROOM: usize = 64;
+
+#[test]
+fn verify_datasets_description_keeps_room_for_a_sentence_on_every_connection() {
+    for (label, view, open) in every_connection() {
+        let tools = crate::mcp_server::tools_for(&view, open.as_ref());
+        let tool = tools.iter().find(|tool| tool.name == "verify_dataset").expect("verify_dataset is served");
+        let length = tool.description.as_deref().unwrap_or("").len();
+        assert!(length + VERIFY_DATASET_ROOM <= crate::identity::MOST_CHARS_SAID, "{label}: {length} bytes");
+    }
+}
+
+/// What a client shows of a description and of the instructions. Claude Code
+/// cuts each at 2,048 characters, so nothing an agent needs may lie past it.
+const CLIENT_CUT: usize = 2_048;
+
+/// The word each description opens with: what the tool does.
+const OPENS_WITH: [(&str, &str); 18] = [
+    ("list_cards", "Lists"),
+    ("describe_card", "Describes"),
+    ("compute_step", "Computes"),
+    ("run_trajectory", "Runs"),
+    ("verify_tape", "Verifies"),
+    ("list_solvers", "Lists"),
+    ("describe_solver", "Describes"),
+    ("solve", "Solves"),
+    ("verify_solution", "Verifies"),
+    ("run_dataset", "Runs"),
+    ("verify_dataset", "Verifies"),
+    ("verify_receipt", "Verifies"),
+    ("validate_series", "Runs"),
+    ("cite", "Gives"),
+    ("find_model", "Finds"),
+    ("find_flip", "Finds"),
+    ("design_run", "Designs"),
+    ("verify_step", "Computes"),
+];
+
+/// Every sentence an input schema says: the words under each `description`,
+/// one after another.
+fn said_in(schema: &Value) -> String {
+    match schema {
+        Value::Object(map) => map
+            .iter()
+            .map(|(key, value)| match value {
+                Value::String(words) if key == "description" => format!("{words} "),
+                other => said_in(other),
+            })
+            .collect(),
+        Value::Array(items) => items.iter().map(said_in).collect(),
+        _ => String::new(),
+    }
+}
+
+/// A sentence written as a command to the agent that reads it: it opens with
+/// a bare verb, or tells the agent to send or read something after a colon
+/// or a semicolon. A description states what is so.
+fn commands_in(text: &str) -> Vec<String> {
+    const VERBS: [&str; 18] = [
+        "Send", "Read", "Use", "Call", "See", "List", "Take", "Run", "Check", "Solve", "Do", "Leave", "Set", "Add", "Map", "Write", "Note", "Wait",
+    ];
+    let mut found = Vec::new();
+    for sentence in text.split(". ") {
+        let first = sentence.trim_start().split(' ').next().unwrap_or("");
+        if VERBS.contains(&first) || first == "To" {
+            found.push(sentence.to_string());
+        }
+    }
+    for told in [": send ", "; send ", ", send ", ": read ", "; read ", "is sent again", "send it again", "do not send", "need be read"] {
+        if text.contains(told) {
+            found.push(told.to_string());
+        }
+    }
+    found
+}
+
+/// Every tool's description and the instructions, on every connection, fit
+/// inside what a client shows; each description opens with what its tool
+/// does and carries a title; none names a route of the web connection, which
+/// no MCP connection serves; none uses a word of the engine's own code for
+/// the agent or the verifier; and none is written as a command. On the open
+/// connection the limits of each tool that computes, and what a call that
+/// finds no permit is answered, are inside its description.
+#[test]
+fn what_every_connection_says_fits_what_a_client_shows_and_states_what_is_so() {
+    let said_wrong = |label: &str, what: &str, text: &str| {
+        // Bytes, the largest of the ways a client may count a length.
+        assert!(text.len() <= crate::identity::MOST_CHARS_SAID, "{label}, {what}: {} characters", text.len());
+        assert!(crate::identity::MOST_CHARS_SAID < CLIENT_CUT);
+        assert!(!text.contains("POST /") && !text.contains("GET /"), "{label}, {what} names a route of the web connection: {text}");
+        let lower = text.to_ascii_lowercase();
+        for word in ["caller", "the door", "the gateway"] {
+            assert!(!lower.contains(word), "{label}, {what} says \"{word}\": {text}");
+        }
+        // Super Intelligence, never the two letters.
+        assert!(!text.split(|c: char| !c.is_ascii_alphanumeric()).any(|word| word == "AI"), "{label}, {what}: {text}");
+        assert_eq!(commands_in(text), Vec::<String>::new(), "{label}, {what}: {text}");
+    };
+    // The check finds a command: each of these told the agent what to do.
+    for command in [
+        "With form \"short\" the answer is a page. Read the full form, the answer when form is left out, when a request is refused.",
+        "It does not show the engine made it: send a row's request to run_trajectory and compare run seals.",
+        "The receipt covers the request. To check a solution later, send this request and its solution_seal to verify_solution.",
+        "No new run after 20 seconds of computing (FLIP_MAX_SECONDS); send the pair back as the span to narrow it.",
+        "A call that finds no permit is answered \"Too many concurrent physics tasks.\" and is sent again; nothing waits.",
+        "The names it gives are the names every other tool takes, so no list need be read after it.",
+        "A model is described by describe_card. List the domain/card pairs, read one pair, take a step.",
+    ] {
+        assert!(!commands_in(command).is_empty(), "{command}");
+    }
+    let mut longest = 0;
+    for (label, view, open) in every_connection() {
+        let tools = crate::mcp_server::tools_for(&view, open.as_ref());
+        assert_eq!(tools.iter().map(|tool| tool.name.as_ref()).collect::<Vec<_>>(), OPENS_WITH.map(|(name, _)| name), "{label}");
+        for (tool, (name, opening)) in tools.iter().zip(OPENS_WITH) {
+            let text = tool.description.as_deref().unwrap_or("");
+            said_wrong(&label, name, text);
+            longest = longest.max(text.len());
+            assert_eq!(text.split(' ').next(), Some(opening), "{label}, {name}: {text}");
+            // The input schema is read by the same agent: it names no route
+            // of the web connection and uses none of the engine's own words.
+            let declared = said_in(&Value::Object(tool.input_schema.as_ref().clone())).to_ascii_lowercase();
+            for word in ["post /", "get /", "caller", "the door", "the gateway"] {
+                assert!(!declared.contains(word), "{label}, the input schema of {name} says \"{word}\"");
+            }
+            // The title, at the top of the tool as revision 2025-06-18 has it.
+            assert_eq!(tool.title.as_deref(), Some(crate::mcp_server::title_of(name).as_str()), "{label}, {name}");
+            let computes = ["compute_step", "verify_step", "run_trajectory", "solve", "validate_series", "verify_tape", "verify_solution", "run_dataset", "verify_dataset", "find_flip", "design_run"].contains(&name);
+            match &open {
+                Some(rules) => {
+                    let hints = tool.annotations.as_ref().unwrap_or_else(|| panic!("{label}, {name} has no hints"));
+                    assert_eq!(hints.title.as_deref(), tool.title.as_deref(), "{label}, {name}");
+                    assert_eq!((hints.read_only_hint, hints.destructive_hint), (Some(true), Some(false)), "{label}, {name}");
+                    // Nothing is stored there, and nothing of a stored dataset is described.
+                    assert!(!text.contains("\"file\"") && !text.contains("stored as files") && !text.contains("dataset_seal alone"), "{label}, {name}: {text}");
+                    assert_eq!(text.contains(" On this open connection "), computes, "{label}, {name}: {text}");
+                    if computes {
+                        let permits = rules.permits_per_address;
+                        let held = if permits == 1 { "1 physics permit".to_string() } else { format!("{permits} physics permits") };
+                        assert!(text.contains(&format!("ne address holds at most {held} at a time")), "{label}, {name}: {text}");
+                        assert!(text.contains("is answered \"Too many concurrent physics tasks.\" and nothing waits: the same call sent later is answered once one is free."), "{label}, {name}: {text}");
+                        assert!(text.contains(&format!("An answer is waited for {} seconds", rules.request.as_secs())), "{label}, {name}: {text}");
+                    }
+                }
+                None => assert!(tool.annotations.is_none() && !text.contains("open connection"), "{label}, {name}: {text}"),
+            }
+        }
+        let mut instructions = crate::identity::instructions();
+        if let Some(rules) = &open {
+            let mut info = json!({ "instructions": instructions });
+            rules.state_in_instructions(&mut info);
+            instructions = info["instructions"].as_str().unwrap().to_string();
+            assert!(instructions.contains(&format!("One address holds at most {} of the {} physics permits:", rules.permits_per_address, rules.physics_permits)), "{label}: {instructions}");
+            // Both limits on a body, with the six tools that take the larger (since 0.14.0 rc2; RT3 W5).
+            assert!(instructions.contains(&format!("a body of at most {} bytes to {} or {} and {} to any other tool, then HTTP 413", rules.max_body_bytes, crate::guard::WIDE_TOOLS[..5].join(", "), crate::guard::WIDE_TOOLS[5], crate::guard::NARROW_LIMIT)), "{label}: {instructions}");
+        }
+        said_wrong(&label, "the instructions", &instructions);
+        longest = longest.max(instructions.len());
+    }
+    // The check reads real text: the longest is past half of what a client shows.
+    assert!(longest > CLIENT_CUT / 2, "{longest}");
 }

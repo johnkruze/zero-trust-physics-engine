@@ -142,8 +142,11 @@ fn the_dataset_of_two_saved_runs_has_the_seal_worked_out_outside_this_crate() {
     needs_saved_runs!();
     // `outside_check.py` builds this dataset from the design document with
     // no code of this crate, and prints these three hashes. The counts gained
-    // `ended` in 0.7.0; the seal is SHA-256 of the plan hash, the root and the
-    // counts text below, worked out again with Python's hashlib.
+    // `ended` in 0.7.0, and the leaf `reject_detail_sha256` in the version
+    // after 0.3.0; the root and the seal were worked out again with Python's
+    // hashlib from that program's own functions, with the leaf of five keys
+    // (the leaf of four keys still gives the earlier root, 217411ee…f233,
+    // and seal, 6c462cdb…4c1e).
     let tapes = vec![
         read_tape("satellite_lageos1_validation/sealed_lageos1_260912_d6_1356_steps.json"),
         read_tape("satellite_lageos1_validation/sealed_lageos1_260919_d6_1356_steps.json"),
@@ -156,11 +159,11 @@ fn the_dataset_of_two_saved_runs_has_the_seal_worked_out_outside_this_crate() {
     );
     assert_eq!(
         head.merkle_root,
-        "217411ee29b9554aba049482d13704d6809f5eada74d680686db1b0732fef233"
+        "ca46864f6fe87a854f75918ee8c951cbd68c544eed587f3507078323e6c7b10c"
     );
     assert_eq!(
         head.dataset_seal,
-        "6c462cdb4b814d396948055eac70e99e726a3102399d1db9d400268b740e4c1e"
+        "8bdda680378ecf727a433b5e6dba2160e4086696cd7318eeebfc4d5c411735a6"
     );
     assert_eq!(
         head.counts.text(),
@@ -289,11 +292,19 @@ fn a_refused_run_and_a_row_that_was_not_admitted_are_rows() {
         first_break(&files.head, &rows, files.frames.as_deref()),
         (Cause::Leaf, Some(3), None)
     );
-    // Its sentence is not sealed. Only the hash of the rows file covers it.
+    // Its sentence is sealed by its leaf: the sentence rewritten, removed, or
+    // given to a row that had none breaks the leaf of that row.
     let rows = edit_row(&files.rows, 3, |row| row["reject_detail"] = json!("another sentence"));
-    let report = check(&files.head, &rows, files.frames.as_deref());
-    assert!(report.holds);
-    assert_eq!(report.rows_file, FileCheck::DoesNotMatch);
+    assert_eq!(first_break(&files.head, &rows, files.frames.as_deref()), (Cause::Leaf, Some(3), None));
+    let rows = edit_row(&files.rows, 3, |row| row["reject_detail"] = Value::Null);
+    assert_eq!(first_break(&files.head, &rows, files.frames.as_deref()), (Cause::Leaf, Some(3), None));
+    let rows = edit_row(&files.rows, 2, |row| row["reject_detail"] = json!("Physical Violation: another sentence."));
+    assert_eq!(first_break(&files.head, &rows, files.frames.as_deref()), (Cause::Leaf, Some(2), None));
+    let rows = edit_row(&files.rows, 0, |row| row["reject_detail"] = json!("a note"));
+    assert_eq!(first_break(&files.head, &rows, files.frames.as_deref()), (Cause::Leaf, Some(0), None));
+    // The leaf carries the hash of the sentence, not the sentence.
+    assert_eq!(unadmitted.leaf["reject_detail_sha256"], json!(genesis_seal::sealed_form::digest_hex(sentence.as_bytes())));
+    assert_eq!(files.assembled.rows[0].leaf["reject_detail_sha256"], Value::Null);
 }
 
 #[test]

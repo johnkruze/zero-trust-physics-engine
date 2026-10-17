@@ -8,7 +8,7 @@
 use genesis_kernel::reactor_spert3;
 use serde_json::{Value, json};
 
-use super::{AppState, DoorError, acquire_physics_permit, trajectory, verify_step};
+use super::{AppState, DoorError, acquire_physics_permit, compute_step, trajectory};
 
 fn below(x: f64) -> f64 {
     f64::from_bits(x.to_bits() - 1)
@@ -57,6 +57,7 @@ async fn each_bound_is_refused_by_name_before_a_permit_at_the_last_number_on_eac
     let reactor = reactor_spert3::ReactorSpert3::e_core_cold_startup();
     let dt = reactor.gate_dt_s().unwrap();
     let floor = reactor.floor_dt_s().unwrap();
+    let (water_min, water_max) = (reactor_spert3::WATER_FREEZING_K, reactor_spert3::WATER_CRITICAL_K);
     let (cold_min, cold_max) = (
         reactor_spert3::COOLANT_TEMPERATURE_MIN_K,
         reactor_spert3::COOLANT_TEMPERATURE_MAX_K,
@@ -68,103 +69,92 @@ async fn each_bound_is_refused_by_name_before_a_permit_at_the_last_number_on_eac
     let state = AppState::new(1);
     let held = acquire_physics_permit(&state).expect("the one permit");
 
-    // Inside the bounds the request needs the permit, so the held pool says 429.
+    // Inside the bounds the request needs the permit, so the held pool says 429: the
+    // tested span, the old walls past it, and liquid water to its two ends.
     for inside in [
         step(cold_min, 1.0, dt),
         step(cold_max, 1.0, dt),
         step(cold_min, rho_min, dt),
         step(cold_max, rho_max, dt),
         step(cold_min, 1.0, floor),
+        step(water_min, 1.0, dt),
+        step(water_max, 1.0, dt),
+        step(cold_min, below(rho_min), dt),
+        step(cold_min, above(rho_max), dt),
+        step(cold_min, f64::MIN_POSITIVE, dt),
+        step(cold_min, 50.0, dt),
     ] {
-        match verify_step(&state, inside.clone()).await {
+        match compute_step(&state, inside.clone()).await {
             Err(DoorError::TooMany(_)) => {}
             Err(other) => panic!("{inside}: {}", other.message()),
             Ok(_) => panic!("{inside}: sealed with the pool held"),
         }
     }
-    // A run of several segments under one reactivity, at each end of the span.
-    for rho in [rho_min, rho_max] {
-        match trajectory::run(&state, run(cold_min, &[rho, rho, rho], dt)).await {
+    // A run of several segments, under one reactivity or each under its own, a later one at
+    // zero or below included: it needs the permit.
+    for reactivities in [
+        [rho_min, rho_min, rho_min],
+        [rho_max, rho_max, rho_max],
+        [rho_min, rho_max, 2.0],
+        [1.0, above(1.0), below(1.0)],
+        [1.1, 0.0, -3.0],
+    ] {
+        match trajectory::run(&state, run(cold_min, &reactivities, dt)).await {
             Err(DoorError::TooMany(_)) => {}
-            Err(other) => panic!("{}", other.message()),
+            Err(other) => panic!("{reactivities:?}: {}", other.message()),
             Ok(_) => panic!("a run sealed with the pool held"),
         }
     }
-    // A run is one burst: a later segment with another reactivity, inside the
-    // span, refuses the whole run by name before a permit and before its
-    // first step. One bit apart is another reactivity.
-    for (first, later) in [(rho_min, rho_max), (rho_max, rho_min), (1.0, above(1.0)), (1.0, below(1.0))] {
-        let changed = message(
-            trajectory::run(&state, run(cold_min, &[first, first, later], dt))
-                .await
-                .err()
-                .expect("refused"),
-        );
-        assert_eq!(
-            changed,
-            format!(
-                "Physical Failure: 'reactivity_inserted_dollar' {} dollar is not the {} dollar of the first segment: a run of the reactor_spert3 card is one burst with one reactivity, stepped in at time zero and then held (ReactivityChangedDuringBurst). That state is not sealed.",
-                crate::message_number(later),
-                crate::message_number(first),
-            )
-        );
-    }
 
     // The sentence names the field, the value, the bound and the refusal.
-    let say = |field: &str, unit: &str, value: f64, bound: f64, upper: bool, name: &str| {
+    let cool = |value: f64, bound: f64, upper: bool| {
         format!(
-            "Physical Failure: '{field}' {}{unit} is {} {}{unit}, the inclusive {} of the reactor_spert3 card ({name}). That state is not sealed.",
+            "Physical Failure: 'coolant_temperature_k' {} K is {} {} K, the inclusive {} of the reactor_spert3 card (CoolantTemperatureNotLiquidWater). That state is not sealed.",
             crate::message_number(value),
             if upper { "above" } else { "below" },
             crate::message_number(bound),
             if upper { "maximum" } else { "minimum" },
         )
     };
-    let cool = |value: f64, bound: f64, upper: bool| {
-        say("coolant_temperature_k", " K", value, bound, upper, "CoolantTemperatureOutsideCard")
-    };
-    let react = |value: f64, bound: f64, upper: bool| {
-        say("reactivity_inserted_dollar", " dollar", value, bound, upper, "ReactivityOutsideCard")
-    };
     for (request, run_request, expected) in [
-        (step(below(cold_min), 1.0, dt), run(below(cold_min), &[1.0], dt), cool(below(cold_min), cold_min, false)),
-        (step(above(cold_max), 1.0, dt), run(above(cold_max), &[1.0], dt), cool(above(cold_max), cold_max, true)),
-        (step(cold_min, below(rho_min), dt), run(cold_min, &[below(rho_min)], dt), react(below(rho_min), rho_min, false)),
-        (step(cold_min, above(rho_max), dt), run(cold_min, &[above(rho_max)], dt), react(above(rho_max), rho_max, true)),
-        // A later segment out of the span refuses the whole run before its first step.
-        (
-            step(cold_min, above(rho_max), dt),
-            run(cold_min, &[1.0, 1.0, above(rho_max)], dt),
-            react(above(rho_max), rho_max, true),
-        ),
-        (
-            step(cold_min, below(rho_min), dt),
-            run(cold_min, &[1.0, below(rho_min)], dt),
-            react(below(rho_min), rho_min, false),
-        ),
+        (step(below(water_min), 1.0, dt), run(below(water_min), &[1.0], dt), cool(below(water_min), water_min, false)),
+        (step(above(water_max), 1.0, dt), run(above(water_max), &[1.0], dt), cool(above(water_max), water_max, true)),
     ] {
-        assert_eq!(message(verify_step(&state, request).await.unwrap_err()), expected);
+        assert_eq!(message(compute_step(&state, request).await.unwrap_err()), expected);
         assert_eq!(
             message(trajectory::run(&state, run_request).await.err().expect("refused")),
             expected
         );
     }
+    // The step in reactivity of the first segment must insert some: refused by name before a
+    // permit, on a step and on a run, at zero, at its other sign and below.
+    for rho in [0.0, -0.0, -f64::MIN_POSITIVE, -1.0] {
+        let expected = "Physical Failure: the reactivity of the first step is zero or less: no step in reactivity is inserted, and there is no burst (ReactivityNotPositive). That state is not sealed.";
+        assert_eq!(message(compute_step(&state, step(cold_min, rho, dt)).await.unwrap_err()), expected, "{rho}");
+        assert_eq!(
+            message(trajectory::run(&state, run(cold_min, &[rho, 1.0], dt)).await.err().expect("refused")),
+            expected,
+            "{rho}"
+        );
+    }
 
     // The clock: the number under the floor and the number over the ceiling.
-    let under = message(verify_step(&state, step(cold_min, 1.0, below(floor))).await.unwrap_err());
+    let under = message(compute_step(&state, step(cold_min, 1.0, below(floor))).await.unwrap_err());
     assert_eq!(
         under,
         format!(
-            "Physical Violation: 'dt_s' {} is below {} s, the step floor of the reactor_spert3 card.",
+            // Re-pinned for 0.10.1: a step below the floor carries the name DtBelowFloor.
+            "Physical Violation: 'dt_s' {} is below {} s, the step floor of the reactor_spert3 card (DtBelowFloor).",
             crate::message_number(below(floor)),
             crate::message_number(floor)
         )
     );
-    let over = message(verify_step(&state, step(cold_min, 1.0, above(dt))).await.unwrap_err());
+    let over = message(compute_step(&state, step(cold_min, 1.0, above(dt))).await.unwrap_err());
     assert_eq!(
         over,
         format!(
-            "Physical Violation: 'dt_s' {} is above {} s, the step ceiling of the reactor_spert3 card.",
+            // Re-pinned for 0.10.1: a step above the ceiling carries the name DtAboveCeiling.
+            "Physical Violation: 'dt_s' {} is above {} s, the step ceiling of the reactor_spert3 card (DtAboveCeiling).",
             crate::message_number(above(dt)),
             crate::message_number(dt)
         )
@@ -206,10 +196,11 @@ fn fuel_run(inlet_k: f64, loads: &[(f64, f64)], dt_s: f64) -> Value {
     })
 }
 
-/// The fuel-temperature reactor has three bands, and the span of the
-/// reactivity and of the flow is the band's own. Every end of every band, of
-/// each of the three fields, is refused by name before a permit at the next
-/// number outside, and needs the permit at the last number inside.
+/// The fuel-temperature reactor has three bands. Its inlet temperature is refused by name
+/// before a permit at the next number outside each band, and needs the permit at the last
+/// number inside. Its reactivity and flow are held only to the physical limits, a reactivity
+/// above zero and a flow of zero or more, in every band; a later segment may carry another
+/// flow, and not another reactivity.
 #[tokio::test]
 async fn each_band_of_the_fuel_reactor_is_refused_by_name_before_a_permit_at_the_last_number_on_each_side() {
     let reactor = reactor_spert3_fuel::ReactorSpert3Fuel::e_core_low_initial_power();
@@ -221,10 +212,20 @@ async fn each_band_of_the_fuel_reactor_is_refused_by_name_before_a_permit_at_the
     let needs_the_permit = |request: Value| {
         let state = &state;
         async move {
-            match verify_step(state, request.clone()).await {
+            match compute_step(state, request.clone()).await {
                 Err(DoorError::TooMany(_)) => {}
                 Err(other) => panic!("{request}: {}", other.message()),
                 Ok(_) => panic!("{request}: sealed with the pool held"),
+            }
+        }
+    };
+    let run_needs_the_permit = |request: Value| {
+        let state = &state;
+        async move {
+            match trajectory::run(state, request.clone()).await {
+                Err(DoorError::TooMany(_)) => {}
+                Err(other) => panic!("{request}: {}", other.message()),
+                Ok(_) => panic!("a run sealed with the pool held"),
             }
         }
     };
@@ -232,7 +233,7 @@ async fn each_band_of_the_fuel_reactor_is_refused_by_name_before_a_permit_at_the
     let refused = |step: Value, run: Value| {
         let state = &state;
         async move {
-            let on_step = message(verify_step(state, step.clone()).await.unwrap_err());
+            let on_step = message(compute_step(state, step.clone()).await.unwrap_err());
             let on_run = message(trajectory::run(state, run).await.err().expect("refused"));
             assert_eq!(on_step, on_run, "{step}");
             assert!(on_step.starts_with("Physical Failure: '"), "{on_step}");
@@ -250,45 +251,37 @@ async fn each_band_of_the_fuel_reactor_is_refused_by_name_before_a_permit_at_the
         );
         let (v_min, v_max) = (reactor.band_flow_min_m_per_s[band], reactor.band_flow_max_m_per_s[band]);
         let rho_mid = 0.5 * (rho_min + rho_max);
-        let name = crate::descriptor::REACTOR_FUEL_BAND_DEGF[band];
 
-        // Inside: every end of the band, and the floor of the clock.
+        // Inside: every end of the band, the old walls of reactivity and flow and past them,
+        // and the floor of the clock.
         for inside in [
             fuel_step(t_min, rho_min, v_min, dt),
             fuel_step(t_max, rho_max, v_max, dt),
             fuel_step(t_min, rho_max, v_min, dt),
             fuel_step(t_max, rho_min, v_max, floor),
+            fuel_step(t_min, below(rho_min), v_min, dt),
+            fuel_step(t_min, above(rho_max), v_max, dt),
+            fuel_step(t_min, 1.0e-300, 0.0, dt),
+            fuel_step(t_max, 5.0, 100.0, dt),
+            fuel_step(t_min, rho_mid, 0.0, dt),
+            fuel_step(t_min, rho_mid, if v_max == 0.0 { 1.0e-30 } else { above(v_max) }, dt),
         ] {
             needs_the_permit(inside).await;
         }
-        // A run of several segments under one load, at each end of the spans.
-        for (rho, v) in [(rho_min, v_min), (rho_max, v_max)] {
-            match trajectory::run(&state, fuel_run(t_min, &[(rho, v), (rho, v), (rho, v)], dt)).await {
-                Err(DoorError::TooMany(_)) => {}
-                Err(other) => panic!("{}", other.message()),
-                Ok(_) => panic!("a run sealed with the pool held"),
-            }
+        // A run of several segments under one load, at each end of the spans, and one whose
+        // later segments carry other flows.
+        for loads in [
+            [(rho_min, v_min), (rho_min, v_min), (rho_min, v_min)],
+            [(rho_max, v_max), (rho_max, v_max), (rho_max, v_max)],
+            [(rho_mid, v_max), (rho_mid, v_min), (rho_mid, 50.0)],
+        ] {
+            run_needs_the_permit(fuel_run(t_min, &loads, dt)).await;
         }
-        // A run is one burst: a later segment with another reactivity, or with
-        // another flow, each inside the band's span, refuses the whole run by
-        // name before a permit and before its first step.
-        let changed = message(
-            trajectory::run(&state, fuel_run(t_min, &[(rho_min, v_min), (rho_min, v_min), (rho_max, v_min)], dt))
-                .await
-                .err()
-                .expect("refused"),
-        );
-        assert_eq!(
-            changed,
-            format!(
-                "Physical Failure: 'reactivity_inserted_dollar' {} dollar is not the {} dollar of the first segment: a run of the reactor_spert3_fuel card is one burst with one reactivity, ramped in and then held (ReactivityChangedDuringBurst). That state is not sealed.",
-                crate::message_number(rho_max),
-                crate::message_number(rho_min),
-            )
-        );
-        if v_min != v_max {
+        // A run is one burst: a later segment with another reactivity refuses the whole run by
+        // name before a permit and before its first step, whatever its flow.
+        for later_flow in [v_min, v_max] {
             let changed = message(
-                trajectory::run(&state, fuel_run(t_min, &[(rho_mid, v_max), (rho_mid, v_min)], dt))
+                trajectory::run(&state, fuel_run(t_min, &[(rho_min, v_min), (rho_min, v_min), (rho_max, later_flow)], dt))
                     .await
                     .err()
                     .expect("refused"),
@@ -296,19 +289,11 @@ async fn each_band_of_the_fuel_reactor_is_refused_by_name_before_a_permit_at_the
             assert_eq!(
                 changed,
                 format!(
-                    "Physical Failure: 'coolant_flow_m_per_s' {} m/s is not the {} m/s of the first segment: a run of the reactor_spert3_fuel card is one burst with one flow rate, and no tested burst changed its flow (FlowChangedDuringBurst). That state is not sealed.",
-                    crate::message_number(v_min),
-                    crate::message_number(v_max),
+                    "Physical Failure: 'reactivity_inserted_dollar' {} dollar is not the {} dollar of the first segment: a run of the reactor_spert3_fuel card is one burst with one reactivity, ramped in and then held (ReactivityChangedDuringBurst). That state is not sealed.",
+                    crate::message_number(rho_max),
+                    crate::message_number(rho_min),
                 )
             );
-            // Both changed: the reactivity is named.
-            let both = message(
-                trajectory::run(&state, fuel_run(t_min, &[(rho_min, v_max), (rho_max, v_min)], dt))
-                    .await
-                    .err()
-                    .expect("refused"),
-            );
-            assert!(both.ends_with("(ReactivityChangedDuringBurst). That state is not sealed."), "{both}");
         }
 
         // The inlet temperature, one number outside each end of the band.
@@ -323,30 +308,20 @@ async fn each_band_of_the_fuel_reactor_is_refused_by_name_before_a_permit_at_the
             ends += 1;
         }
 
-        // The reactivity, one number outside each end of the band's own span.
-        for outside in [below(rho_min), above(rho_max)] {
+        // A reactivity of zero or less, on the first segment and on a later one.
+        for outside in [0.0, -f64::MIN_POSITIVE, -1.0] {
             let sentence = refused(
                 fuel_step(t_min, outside, v_min, dt),
                 fuel_run(t_min, &[(outside, v_min)], dt),
             )
             .await;
-            assert!(sentence.contains("'reactivity_inserted_dollar'"), "{sentence}");
-            assert!(sentence.contains("(ReactivityOutsideCard)"), "{sentence}");
-            // Inside the widest published span the sentence names the band.
-            let widest_min = reactor.band_reactivity_min_dollar.iter().copied().fold(f64::INFINITY, f64::min);
-            let widest_max = reactor.band_reactivity_max_dollar.iter().copied().fold(f64::NEG_INFINITY, f64::max);
-            if outside >= widest_min && outside <= widest_max {
-                assert_eq!(
-                    sentence,
-                    format!(
-                        "Physical Failure: 'reactivity_inserted_dollar' {} dollar is outside [{}, {}] dollars, the span tested in the {name} degF band of the reactor_spert3_fuel card (ReactivityOutsideCard). That state is not sealed.",
-                        crate::message_number(outside),
-                        crate::message_number(rho_min),
-                        crate::message_number(rho_max),
-                    )
-                );
-            }
-            // A later segment out of the span refuses the whole run before its first step.
+            assert_eq!(
+                sentence,
+                format!(
+                    "Physical Failure: 'reactivity_inserted_dollar' {} dollar is at or below 0 dollar, the exclusive minimum of the reactor_spert3_fuel card (ReactivityNotPositive). That state is not sealed.",
+                    crate::message_number(outside),
+                )
+            );
             let later = message(
                 trajectory::run(&state, fuel_run(t_min, &[(rho_mid, v_min), (rho_mid, v_min), (outside, v_min)], dt))
                     .await
@@ -357,20 +332,22 @@ async fn each_band_of_the_fuel_reactor_is_refused_by_name_before_a_permit_at_the
             ends += 1;
         }
 
-        // The flow, one number outside each end of the band's own span. The
-        // numbers next to zero are refused by the number rule before any
-        // bound is read, so the cold band's one value is tried at a small
-        // flow that a 32-bit slot still holds, on each side of its zero.
-        let under = if v_min == 0.0 { -1.0e-30 } else { below(v_min) };
-        let over = if v_max == 0.0 { 1.0e-30 } else { above(v_max) };
-        for outside in [under, over] {
+        // A flow below zero, on the first segment and on a later one. The numbers next to zero
+        // are refused by the number rule before any bound is read, so a small flow that a
+        // 32-bit slot still holds is tried.
+        for outside in [-1.0e-30, -1.0] {
             let sentence = refused(
                 fuel_step(t_min, rho_mid, outside, dt),
                 fuel_run(t_min, &[(rho_mid, outside)], dt),
             )
             .await;
-            assert!(sentence.contains("'coolant_flow_m_per_s'"), "{sentence}");
-            assert!(sentence.contains("(FlowOutsideCard)"), "{sentence}");
+            assert_eq!(
+                sentence,
+                format!(
+                    "Physical Failure: 'coolant_flow_m_per_s' {} m/s is below 0 m/s, the inclusive minimum of the reactor_spert3_fuel card (NegativeFlow). That state is not sealed.",
+                    crate::message_number(outside),
+                )
+            );
             let later = message(
                 trajectory::run(&state, fuel_run(t_min, &[(rho_mid, v_min), (rho_mid, outside)], dt))
                     .await
@@ -381,32 +358,20 @@ async fn each_band_of_the_fuel_reactor_is_refused_by_name_before_a_permit_at_the
             ends += 1;
         }
     }
-    assert_eq!(ends, 18);
+    assert_eq!(ends, 21);
 
-    // A flow of one band is refused in another: the hot bands' smallest flow
-    // in the cold band, and no flow in a hot band.
+    // A flow of one band is taken in another: the hot bands' smallest flow in the cold band,
+    // and no flow in a hot band.
     let cold = reactor.band_inlet_min_k[0];
     let hot = reactor.band_inlet_min_k[2];
     let hot_flow = reactor.band_flow_min_m_per_s[2];
-    let sentence = message(verify_step(&state, fuel_step(cold, 1.0, hot_flow, dt)).await.unwrap_err());
-    assert_eq!(
-        sentence,
-        format!(
-            "Physical Failure: 'coolant_flow_m_per_s' {} m/s is outside [{}, {}] m/s, the span tested in the {} degF band of the reactor_spert3_fuel card (FlowOutsideCard). That state is not sealed.",
-            crate::message_number(hot_flow),
-            crate::message_number(reactor.band_flow_min_m_per_s[0]),
-            crate::message_number(reactor.band_flow_max_m_per_s[0]),
-            crate::descriptor::REACTOR_FUEL_BAND_DEGF[0],
-        )
-    );
-    let sentence = message(verify_step(&state, fuel_step(hot, 1.0, 0.0, dt)).await.unwrap_err());
-    assert!(sentence.contains("'coolant_flow_m_per_s' 0 m/s is outside ["), "{sentence}");
-    assert!(sentence.contains("(FlowOutsideCard)"), "{sentence}");
+    needs_the_permit(fuel_step(cold, 1.0, hot_flow, dt)).await;
+    needs_the_permit(fuel_step(hot, 1.0, 0.0, dt)).await;
 
     // Between two bands: 300 degF.
     let between = (300.0 - 32.0) / 1.8 + 273.15;
     assert!(reactor.band_of(between).is_none());
-    let sentence = message(verify_step(&state, fuel_step(between, 1.0, hot_flow, dt)).await.unwrap_err());
+    let sentence = message(compute_step(&state, fuel_step(between, 1.0, hot_flow, dt)).await.unwrap_err());
     assert!(
         sentence.starts_with(&format!(
             "Physical Failure: 'inlet_temperature_k' {} K is in none of the three tested bands of the reactor_spert3_fuel card: ",
@@ -418,20 +383,22 @@ async fn each_band_of_the_fuel_reactor_is_refused_by_name_before_a_permit_at_the
 
     // The clock: the number under the floor and the number over the ceiling.
     let mid = (reactor.band_inlet_min_k[0], 1.0, reactor.band_flow_min_m_per_s[0]);
-    let under = message(verify_step(&state, fuel_step(mid.0, mid.1, mid.2, below(floor))).await.unwrap_err());
+    let under = message(compute_step(&state, fuel_step(mid.0, mid.1, mid.2, below(floor))).await.unwrap_err());
     assert_eq!(
         under,
         format!(
-            "Physical Violation: 'dt_s' {} is below {} s, the step floor of the reactor_spert3_fuel card.",
+            // Re-pinned for 0.10.1: a step below the floor carries the name DtBelowFloor.
+            "Physical Violation: 'dt_s' {} is below {} s, the step floor of the reactor_spert3_fuel card (DtBelowFloor).",
             crate::message_number(below(floor)),
             crate::message_number(floor)
         )
     );
-    let over = message(verify_step(&state, fuel_step(mid.0, mid.1, mid.2, above(dt))).await.unwrap_err());
+    let over = message(compute_step(&state, fuel_step(mid.0, mid.1, mid.2, above(dt))).await.unwrap_err());
     assert_eq!(
         over,
         format!(
-            "Physical Violation: 'dt_s' {} is above {} s, the step ceiling of the reactor_spert3_fuel card.",
+            // Re-pinned for 0.10.1: a step above the ceiling carries the name DtAboveCeiling.
+            "Physical Violation: 'dt_s' {} is above {} s, the step ceiling of the reactor_spert3_fuel card (DtAboveCeiling).",
             crate::message_number(above(dt)),
             crate::message_number(dt)
         )

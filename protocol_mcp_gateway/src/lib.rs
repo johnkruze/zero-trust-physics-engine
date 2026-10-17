@@ -17,6 +17,7 @@ use genesis_kernel::{
     reactor_triga_jsi,
     reactor_spert3_ccore,
     creep_cmsx6,
+    runaway_18650_lco,
     capsule_insight,
     crater_ryugu_sci,
     link_gothenburg_10010,
@@ -26,6 +27,7 @@ use genesis_kernel::{
     accumulator_sbo450,
     los_jwst_fine_guide,
     tokamak_jet_dte1,
+    tokamak_vde_mast,
     fingerpad_p02_glass,
 };
 use serde::{Deserialize, Serialize};
@@ -37,37 +39,55 @@ use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 const PHYSICS_PERMIT_CAP: usize = 32;
 
 
-pub const ENGINE_VERSION: &str = "genesis_kernel_v0.9.0";
+pub const ENGINE_VERSION: &str = "genesis_kernel_v0.12.0";
 
 pub mod dataset;
 mod descriptor;
 pub mod json_text;
 mod live;
+mod card_generator_mmrtg_seebeck;
+mod card_momentum_jwst_dihedral;
+mod card_grasp_lift_glass_4tu;
+mod card_momentum_jwst_srp;
 pub mod framing;
 pub mod guard;
 pub mod hosted;
 pub mod keys;
 pub mod mcp_server;
-mod check_by_request;
+mod verify_by_request;
+mod rebuild;
 mod cite;
 mod find_model;
 mod flip;
+mod design;
 pub mod identity;
 pub mod long_work;
 mod open_plan;
 mod chain;
 mod couplings;
 mod fresh_start;
-mod receipt_check;
+mod verify_receipt;
 mod solution;
 mod solve_plan;
 /// What the check of a whole solution says it compared, in every answer.
-pub use solution::WHOLE_SOLUTION_CHECKED;
+pub use solution::{WHOLE_SOLUTION_COMPARED, WHOLE_SOLUTION_COMPUTED};
+pub use trajectory::{LONG_FORM_COMPARED, LONG_FORM_COMPUTED};
 mod solver_ablator_slab;
 mod solver_ablator_slab_stardust;
 mod solver_argon_pair_gas;
 mod solver_step_flow_armaly;
 mod solver_pipe_flow_superpipe;
+mod solver_culture_trichoderma_atp;
+mod solver_junction_nist_b7_s2;
+mod solver_water_hammer_oil_line;
+mod solver_orifice_air_chamber;
+mod solver_pneumatic_hose_resonance;
+mod solver_blast_wave_tnt_air;
+mod solver_stress_plate_hole_s235;
+mod solver_stress_plate_hole_s235_elastic;
+mod solver_icf_hotspot_burn;
+mod solver_ln2_line_dlr_fttf;
+mod solver_plasma_sheath_ram_c2;
 mod solver_culture_trichoderma_ambr250;
 mod solver_atom_dft;
 mod solver_journal_bearing_sheffield;
@@ -80,6 +100,7 @@ mod solver_fusion_pb11_shared;
 mod solver_fusion_pb11_thermal;
 mod solvers;
 mod trajectory;
+mod signed_load;
 mod readout;
 mod ends;
 mod validation;
@@ -116,7 +137,7 @@ pub struct AppState {
     /// the rows file whole and its parsed rows with it: about 7 times the
     /// size of the rows file, 1.2 GB at the 100,000-row limit. One runs at a
     /// time.
-    stored_checks: Arc<Semaphore>,
+    stored_verifications: Arc<Semaphore>,
     /// What the caller may see. The stdio door and the plain HTTP door hold
     /// the full view.
     view: Arc<view::View>,
@@ -140,7 +161,7 @@ impl AppState {
             share: None,
             dataset_permits: Arc::new(Semaphore::new(dataset_permit_count(permits))),
             dataset_dir: None,
-            stored_checks: Arc::new(Semaphore::new(1)),
+            stored_verifications: Arc::new(Semaphore::new(1)),
             view: Arc::new(view::View::full()),
             #[cfg(test)]
             row_hook: None,
@@ -190,7 +211,7 @@ impl AppState {
             share: None,
             dataset_permits: Arc::new(Semaphore::new(dataset_permit_count(permits))),
             dataset_dir: None,
-            stored_checks: Arc::new(Semaphore::new(1)),
+            stored_verifications: Arc::new(Semaphore::new(1)),
             view: Arc::new(view::View::full()),
             row_hook: None,
             window_high_water: Arc::default(),
@@ -381,17 +402,10 @@ fn cell_current_changed(current_a: f64, held: f64) -> String {
     ))
 }
 
-/// The sentence for a current outside the compared span.
-fn cell_current_not_compared() -> String {
+/// The sentence for a current that is not a discharge.
+fn cell_current_not_discharging() -> String {
     unsealed(
-        "current is outside [2.89817, 2.90065] A, the 1C currents compared with measurement widened by 0.83 mA; the held 0.87 A was compared and failed (CurrentNotCompared).",
-    )
-}
-
-/// The sentence for a state below full charge that carries no held current.
-fn cell_start_not_at_full_charge() -> String {
-    unsealed(
-        "state of charge is below 1 and the state carries no held current: every compared discharge started at full charge, and a state below it is taken only as the continuation of a 1C discharge, with that discharge's held current (StartNotAtFullCharge).",
+        "current is zero or negative, a rest or a charge: the card is a held discharge, with no charging limit at 4.2 V and no relaxation after a change of load (CurrentNotDischarging).",
     )
 }
 
@@ -422,10 +436,6 @@ struct Cell2170Model3Call {
     state: cell_2170_model3::CellState,
     load: cell_2170_model3::CellLoad,
     dt_s: f64,
-    /// The least and the most case temperature of every load read for this
-    /// run, so that a span the request shows is refused before its first step.
-    planned_least_c: f64,
-    planned_most_c: f64,
 }
 
 struct GeneratorCall {
@@ -489,18 +499,6 @@ struct GridGbCall {
     state: grid_gb::GridState,
     load: grid_gb::GridLoad,
     dt_s: f64,
-    /// The loss the specimen was opened with: the one loss of the run. A
-    /// segment that carries another is refused.
-    run_loss_mw: f64,
-}
-
-/// The sentence for a segment whose loss is not the first segment's.
-fn grid_gb_loss_changed(loss_mw: f64, first: f64) -> String {
-    unsealed(&format!(
-        "'loss_mw' {} MW is not the {} MW of the first segment: a run of the grid_gb card is one loss at time zero, held for the 60 seconds (LossChangedDuringRun).",
-        message_number(loss_mw),
-        message_number(first),
-    ))
 }
 
 struct TireCall {
@@ -535,9 +533,6 @@ struct ReactorCall {
     reactor: reactor_spert3::ReactorSpert3,
     state: reactor_spert3::ReactorState,
     load: reactor_spert3::ReactorLoad,
-    /// The reactivity the specimen was opened with: the one reactivity of the
-    /// burst. A segment that carries another is refused.
-    burst_reactivity_dollar: f64,
     dt_s: f64,
 }
 
@@ -555,9 +550,17 @@ struct ReactorCcoreCall {
     reactor: reactor_spert3_ccore::ReactorSpert3Ccore,
     state: reactor_spert3_ccore::ReactorState,
     load: reactor_spert3_ccore::ReactorLoad,
-    /// The load the run was opened with: the one reactivity and the one flow
-    /// of the transient. A segment that carries another is refused.
+    /// The load the run was opened with. Its reactivity is the one reactivity
+    /// of the transient: a segment that carries another is refused. A segment
+    /// may carry another flow.
     run_load: reactor_spert3_ccore::ReactorLoad,
+    dt_s: f64,
+}
+
+struct RunawayCall {
+    cell: runaway_18650_lco::Runaway18650Lco,
+    state: runaway_18650_lco::RunawayState,
+    load: runaway_18650_lco::RunawayLoad,
     dt_s: f64,
 }
 
@@ -565,8 +568,9 @@ struct ReactorFuelCall {
     reactor: reactor_spert3_fuel::ReactorSpert3Fuel,
     state: reactor_spert3_fuel::ReactorState,
     load: reactor_spert3_fuel::ReactorLoad,
-    /// The load the specimen was opened with: the one reactivity and the one
-    /// flow rate of the burst. A segment that carries another is refused.
+    /// The load the specimen was opened with: the one reactivity of the burst.
+    /// A segment that carries another reactivity is refused; each segment may
+    /// carry its own flow rate.
     burst_load: reactor_spert3_fuel::ReactorLoad,
     dt_s: f64,
 }
@@ -599,7 +603,7 @@ pub(crate) fn kind_of_value(value: &serde_json::Value) -> &'static str {
 
 fn required_f64(params: &serde_json::Value, key: &str) -> Result<f64, String> {
     let value = match params.get(key) {
-        None => return Err(format!("Missing required parameter: '{key}'")),
+        None => return Err(format!("Missing required parameter: '{key}' (InputMissing).")),
         Some(value) => value
             .as_f64()
             .ok_or_else(|| format!("Physical Violation: '{key}' must be a number; this request has {}.", kind_of_value(value)))?,
@@ -628,7 +632,7 @@ fn accept_f64(key: &str, value: f64) -> Result<(), String> {
 
 fn required_vec3(params: &serde_json::Value, key: &str) -> Result<[f64; 3], String> {
     let values = match params.get(key) {
-        None => return Err(format!("Missing required parameter: '{key}'")),
+        None => return Err(format!("Missing required parameter: '{key}' (InputMissing).")),
         Some(serde_json::Value::Array(values)) => values,
         Some(other) => {
             return Err(format!(
@@ -657,11 +661,21 @@ fn required_vec3(params: &serde_json::Value, key: &str) -> Result<[f64; 3], Stri
     Ok(out)
 }
 
+/// The number rule and the sign rules over every number of a request that
+/// names no card, or whose card is not known yet.
+#[cfg(test)]
 fn validate_physics(params: &serde_json::Value) -> Result<(), String> {
-    walk_physics(params, None)
+    walk_physics(params, None, None)
 }
 
-fn walk_physics(value: &serde_json::Value, key: Option<&str>) -> Result<(), String> {
+/// The same over a request to `card`: a value a sign rule refuses is a value
+/// of one of the card's own fields below what the card takes, and the
+/// sentence carries the card's name for it.
+pub(crate) fn validate_physics_of(card: Option<&str>, params: &serde_json::Value) -> Result<(), String> {
+    walk_physics(params, None, card)
+}
+
+fn walk_physics(value: &serde_json::Value, key: Option<&str>, card: Option<&str>) -> Result<(), String> {
     match value {
         serde_json::Value::Number(number) => {
             let label = key.unwrap_or("value");
@@ -670,7 +684,7 @@ fn walk_physics(value: &serde_json::Value, key: Option<&str>) -> Result<(), Stri
             })?;
             accept_f64(label, parsed)?;
             if let Some(name) = key {
-                apply_sign_rules(name, parsed)?;
+                apply_sign_rules(name, parsed, card)?;
             }
             Ok(())
         }
@@ -680,13 +694,13 @@ fn walk_physics(value: &serde_json::Value, key: Option<&str>) -> Result<(), Stri
                     Some(name) => format!("{name}[{index}]"),
                     None => format!("[{index}]"),
                 };
-                walk_physics(item, Some(&path))?;
+                walk_physics(item, Some(&path), card)?;
             }
             Ok(())
         }
         serde_json::Value::Object(map) => {
             for (child, child_value) in map {
-                walk_physics(child_value, Some(child))?;
+                walk_physics(child_value, Some(child), card)?;
             }
             Ok(())
         }
@@ -694,29 +708,49 @@ fn walk_physics(value: &serde_json::Value, key: Option<&str>) -> Result<(), Stri
     }
 }
 
-fn apply_sign_rules(key: &str, val: f64) -> Result<(), String> {
+/// The name `card` lists for a value of `key` below what it takes, in round
+/// brackets with a space before it, or nothing when the card has none: a key
+/// of a request that names no card, or a field the card publishes no minimum
+/// for. `key` is a field's name, or `name[i]` for one component.
+fn sign_rule_name(card: Option<&str>, key: &str) -> String {
+    let field = key.split('[').next().unwrap_or(key);
+    match card.and_then(|card| published_reject(card, field, false)) {
+        Some(name) => format!(" ({name})"),
+        None => String::new(),
+    }
+}
+
+fn apply_sign_rules(key: &str, val: f64, card: Option<&str>) -> Result<(), String> {
     let lower = key.to_lowercase();
     // A key that ends in `_c` is a temperature in degrees Celsius, which is
     // below zero for a cold cell. Its card bounds it.
     let celsius = lower.ends_with("_c");
     if (lower.contains("kelvin") || lower.contains("temp")) && !celsius && val < 0.0 {
-        return Err(format!(
-            "Physical Violation: Temperature '{key}' cannot be below absolute zero (negative Kelvin)."
-        ));
+        return Err(match sign_rule_name(card, key) {
+            name if name.is_empty() => format!(
+                "Physical Violation: Temperature '{key}' cannot be below absolute zero (negative Kelvin)."
+            ),
+            name => format!(
+                "Physical Violation: Temperature '{key}' cannot be below absolute zero, a negative number of kelvin{name}."
+            ),
+        });
     }
     if lower.contains("mass") && val < 0.0 {
         return Err(format!(
-            "Physical Violation: Mass '{key}' cannot be negative."
+            "Physical Violation: Mass '{key}' cannot be negative{}.",
+            sign_rule_name(card, key)
         ));
     }
     if lower.contains("density") && val < 0.0 {
         return Err(format!(
-            "Physical Violation: Density '{key}' cannot be negative."
+            "Physical Violation: Density '{key}' cannot be negative{}.",
+            sign_rule_name(card, key)
         ));
     }
     if lower.contains("volume") && val < 0.0 {
         return Err(format!(
-            "Physical Violation: Volume '{key}' cannot be negative."
+            "Physical Violation: Volume '{key}' cannot be negative{}.",
+            sign_rule_name(card, key)
         ));
     }
     Ok(())
@@ -743,6 +777,20 @@ fn published_reject(card: &str, field: &str, upper: bool) -> Option<&'static str
         ("ti64_lattice", "position_m" | "velocity_m_s", _) => "YieldReached",
         ("ti64_lattice", "start_temperature_k", _) => "TemperatureOutsideCard",
         ("ti64_lattice", "start_t_s", _) => "StartNotWritten",
+        // The bound of the force is the force that holds a ligament at yield
+        // at rest. A start that says it stood under more is one no run of the
+        // card writes, since no step takes such a force.
+        ("ti64_lattice", "force_n", _) => "YieldReached",
+        ("ti64_lattice", "start_force_n", _) => "StartNotWritten",
+        // The bounds a landed step is held to, held at the start and in the
+        // load under the same names.
+        ("grid_node", "current_a" | "load_current_a", _) => "CurrentOutsideCard",
+        ("grid_node", "voltage_v" | "upstream_voltage_v", _) => "VoltageOutsideCard",
+        ("tesseract", "displacement_m" | "velocity_m_s", _) => "AmplitudeOutsideCard",
+        // A stated ledger defect past the limit every step is held to: energy
+        // above the anchor and the booked work, or below them.
+        ("tesseract", "energy_defect_j", true) => "SpontaneousGeneration",
+        ("tesseract", "energy_defect_j", false) => "FirstLawBreach",
         ("swing", "delta_rad", _) => "LossOfSynchronism",
         ("cable_stretch", "elongation_m", false) => "Slack",
         ("cable_stretch", "elongation_m", true) => "TensileFailure",
@@ -753,88 +801,105 @@ fn published_reject(card: &str, field: &str, upper: bool) -> Option<&'static str
         ("battery_sag" | "cell_18650pf", "soc", true) | ("cell_18650pf", "soc", false) => {
             "StateOfChargeOutsideCard"
         }
-        ("cell_18650pf", "current_a" | "held_current_a", _) => "CurrentNotCompared",
+        ("cell_18650pf", "current_a" | "held_current_a", _) => "CurrentNotDischarging",
         ("cell_2170_m80", "block_chamber_c", _) => "BlockNotRecognized",
         ("cell_2170_m80", "charge_removed_ah", _) => "ChargeOutsideTables",
         ("cell_2170_m80", "current_a", _) => "CurrentOutsideCard",
         ("cell_2170_m80", "case_temperature_c", _) => "CaseTemperatureOutsideCard",
-        ("crater_ryugu_sci", "radius_m", false) => "RadiusBelowCard",
+        ("crater_ryugu_sci", "radius_m", false) => "RadiusBelowLedgerResolution",
         ("crater_ryugu_sci", "radius_m", true) => "RadiusAboveFinal",
+        ("generator_mmrtg_seebeck", "mission_time_s", false) => "MissionTimeBeforeLanding",
+        ("generator_mmrtg_seebeck", "mission_time_s", true) => "DecayHeatBelowLedgerResolution",
+        ("momentum_jwst_dihedral", "q1" | "q2" | "q3" | "q4", _) => "QuaternionNotUnit",
+        ("momentum_jwst_dihedral", "sun_x" | "sun_y" | "sun_z", _) => "SunDirectionNotUnit",
+        ("momentum_jwst_dihedral", "sun_distance_au", false) => "SunDistanceNotPositive",
+        ("grasp_lift_glass_4tu", "grip_force_n", false) => "NoContact",
+        ("momentum_jwst_srp", "q1" | "q2" | "q3" | "q4", _) => "QuaternionNotUnit",
+        ("momentum_jwst_srp", "sun_x" | "sun_y" | "sun_z", _) => "SunDirectionNotUnit",
+        ("momentum_jwst_srp", "sun_distance_au", false) => "SunDistanceNotPositive",
         ("cell_2170_model3", "cell_number", _) => "CellNotRecognized",
         ("cell_2170_model3", "state_of_charge", _) => "StateOfChargeOutsideCard",
-        ("cell_2170_model3", "capacity_ah", _) => "CapacityOutsideCard",
-        ("cell_2170_model3", "current_a", _) => "CurrentOutsideCard",
-        ("cell_2170_model3", "case_temperature_c", _) => "CaseTemperatureOutsideCard",
+        ("cell_2170_model3", "capacity_ah", _) => "CapacityNotPositive",
+        ("cell_2170_model3", "case_temperature_c", _) => "CaseTemperatureBelowAbsoluteZero",
         ("cell_2170_model3", "case_temperature_least_c" | "case_temperature_most_c", _) => {
-            "CaseTemperatureOutsideCard"
+            "CaseTemperatureBelowAbsoluteZero"
         }
-        ("resonance", "displacement_m" | "velocity_m_s", _) => "AmplitudeAboveCard",
+        ("resonance", "displacement_m" | "velocity_m_s", _) => "EnergyAboveCard",
         ("resonance", "t_s", _) => "StartTimeOutsideCard",
         ("resonance", "energy_anchor_j", _) => "LedgerNotOfThisState",
-        ("cantilever_eth", "deflection_m" | "velocity_m_s", _) => "DeflectionAboveCard",
-        ("creep_cmsx6", "creep_extension_percent", false) => "CreepExtensionBelowCard",
+        ("cantilever_eth", "deflection_m" | "velocity_m_s", _) => "EnvelopeAboveCard",
+        ("creep_cmsx6", "creep_extension_percent", false) => "CreepExtensionBelowZero",
         ("creep_cmsx6", "creep_extension_percent", true) => "CreepExtensionOutsideCard",
         ("creep_cmsx6", "stress_mpa", _) => "StressOutsideCard",
         ("capsule_insight", "lift_over_drag", _) => "LiftOutsideCard",
-        ("link_gothenburg_10010", "dry_path_loss_db", _) => "DryPathLossOutsideCard",
+        ("link_gothenburg_10010", "dry_path_loss_db", _) => "DryPathLossBelowFreeSpace",
         ("link_gothenburg_10010", "antenna_water_db", _) => "AntennaWaterOutsideCard",
         ("link_gothenburg_10010", "rain_rate_mm_h" | "gauge_minute_rain_mm_h", _) => {
-            "RainRateOutsideCard"
+            "NegativeRainRate"
         }
         ("link_gothenburg_10010", "gauge_minute_elapsed_s", _) => "GaugeMinuteOutsideCard",
-        ("tire_eve_r19_ice", "distance_m", _) => "TravelBeyondTrack",
-        ("tire_eve_r19_ice", "slip_held_s", false) => "SlipNotSettled",
-        ("tire_eve_r19_ice", "slip_held_s", true) => "HoldBeyondMeasured",
-        ("tire_eve_r19_ice", "normal_load_n", _) => "NormalLoadOutsideCard",
-        ("tire_eve_r19_ice", "inflation_pressure_pa", _) => "InflationPressureOutsideCard",
+        ("tire_eve_r19_ice", "distance_m", _) => "DistanceBelowZero",
+        ("tire_eve_r19_ice", "slip_held_s", _) => "SlipHeldBelowZero",
+        ("tire_eve_r19_ice", "normal_load_n", _) => "NoContact",
+        ("tire_eve_r19_ice", "inflation_pressure_pa", _) => "TyreFlat",
         ("tire_eve_r19_ice", "slip_ratio", _) => "SlipOutsideCard",
         ("tire_eve_r19_ice", "carriage_speed_m_s", _) => "CarriageSpeedOutsideCard",
-        ("accumulator_sbo450", "gas_mass_kg", _) => "GasMassOutsideCard",
-        ("accumulator_sbo450", "gas_pressure_pa", _) => "PressureOutsideCard",
-        ("accumulator_sbo450", "gas_temperature_k", _) => "GasTemperatureOutsideCard",
-        ("accumulator_sbo450", "wall_temperature_k", _) => "WallTemperatureOutsideCard",
-        ("accumulator_sbo450", "piston_speed_m_s", _) => "PistonSpeedOutsideCard",
+        ("accumulator_sbo450", "gas_mass_kg", _) => "GasMassNotPositive",
+        ("accumulator_sbo450", "gas_pressure_pa", false) => "OilSideEmpty",
+        ("accumulator_sbo450", "gas_pressure_pa", true) => "PressureAboveRated",
+        ("accumulator_sbo450", "gas_temperature_k", _) => "GasBelowCriticalTemperature",
+        ("accumulator_sbo450", "wall_temperature_k", _) => "WallTemperatureNotPositive",
         ("accumulator_sbo450", "work_moved_j" | "heat_moved_j", _) => "NegativeMovedSum",
-        ("los_jwst_fine_guide", "lock_x_arcsec" | "lock_y_arcsec", _) => "LockOutsideCard",
-        ("los_jwst_fine_guide", "quiet_before_start_s", _) => "RecoveryNotElapsed",
+        ("los_jwst_fine_guide", "lock_x_arcsec" | "lock_y_arcsec", _) => "LockOutsideSensorField",
+        ("los_jwst_fine_guide", "quiet_before_start_s", _) => "QuietBeforeStartBelowZero",
         ("los_jwst_fine_guide", "measured", _) => "MeasuredNotZeroOrOne",
-        ("los_jwst_fine_guide", "counts_per_s", _) => "CountRateOutsideCard",
+        ("los_jwst_fine_guide", "counts_per_s", _) => "CountRateNotPositive",
         ("hydraulic_fluid", "pressure_pa", false) => "Cavitation",
         ("hydraulic_fluid", "pressure_pa", true) => "PressureAboveCard",
         ("hydraulic_fluid", "flow_m3_s", _) => "FlowAboveAcoustic",
-        ("generator_mmrtg_f1", "mission_time_s", _) => "MissionTimeOutsideCard",
-        ("satellite_lageos1", "epoch_utc_s", _) => "EpochOutsideCard",
-        ("satellite_lageos1", "forecast_elapsed_s", _) => "HorizonOutsideCard",
-        ("grid_gb", "frequency_hz", _) => "StartFrequencyOutsideCard",
-        ("grid_gb", "inertia_mw_s", _) => "InertiaOutsideCard",
-        ("grid_gb", "demand_mw", _) => "DemandOutsideCard",
-        ("grid_gb", "loss_mw", _) => "LossOutsideCard",
-        ("reactor_spert3", "coolant_temperature_k", _) => "CoolantTemperatureOutsideCard",
-        ("reactor_spert3", "reactivity_inserted_dollar", _) => "ReactivityOutsideCard",
-        ("reactor_triga_jsi", "start_temperature_k", _) => "StartTemperatureOutsideCard",
+        ("generator_mmrtg_f1", "mission_time_s", false) => "MissionTimeBeforeLanding",
+        ("generator_mmrtg_f1", "mission_time_s", true) => "DecayHeatBelowLedgerResolution",
+        ("satellite_lageos1", "epoch_utc_s", _) => "EpochOutsideLeapSecondSpan",
+        ("satellite_lageos1", "forecast_elapsed_s", _) => "ForecastElapsedBelowZero",
+        ("grid_gb", "frequency_hz", false) => "LowFrequencyDemandDisconnection",
+        ("grid_gb", "frequency_hz", true) => "FrequencyAboveCard",
+        ("grid_gb", "inertia_mw_s", _) => "InertiaNotPositive",
+        ("grid_gb", "demand_mw", _) => "DemandNegative",
+        ("reactor_spert3", "coolant_temperature_k", _) => "CoolantTemperatureNotLiquidWater",
+        ("reactor_triga_jsi", "start_temperature_k", _) => "StartTemperatureNotLiquidWater",
         ("reactor_triga_jsi", "rod_table_core", _) => "RodTableOutsideCard",
-        ("reactor_triga_jsi", "reactivity_inserted_dollar", _) => "ReactivityOutsideCard",
+        ("reactor_triga_jsi", "reactivity_inserted_dollar", false) => "ReactivityNotPositive",
+        ("reactor_triga_jsi", "reactivity_inserted_dollar", true) => "ReactivityAboveRodWorth",
         ("reactor_triga_jsi", "rods_dropped", _) => "ScramValueOutsideCard",
-        ("reactor_spert3_ccore", "initial_temperature_k", _) => "InitialTemperatureOutsideCard",
-        ("reactor_spert3_ccore", "system_pressure_psig", _) => "PressureOutsideCard",
-        ("reactor_spert3_ccore", "reactivity_inserted_dollar", _) => "ReactivityOutsideCard",
-        ("reactor_spert3_ccore", "coolant_flow_m_per_s", _) => "FlowOutsideCard",
+        ("reactor_spert3_ccore", "initial_temperature_k", _) => "InitialTemperatureNotLiquidWater",
+        ("reactor_spert3_ccore", "system_pressure_psig", _) => "PressureNotPositive",
+        ("reactor_spert3_ccore", "reactivity_inserted_dollar", _) => "ReactivityNotPositive",
+        ("reactor_spert3_ccore", "coolant_flow_m_per_s", _) => "NegativeFlow",
+        ("runaway_18650_lco", "temperature_k", false) => "TemperatureNotPositive",
+        ("runaway_18650_lco", "temperature_k", true) => "CanMelting",
+        ("runaway_18650_lco", "sei_fraction", _) => "SeiFractionOutsideCell",
+        ("runaway_18650_lco", "anode_lithium_fraction", _) => "AnodeLithiumOutsideCell",
+        ("runaway_18650_lco", "cathode_unreacted_fraction", _) => "CathodeUnreactedOutsideCell",
+        ("runaway_18650_lco", "electrolyte_fraction", _) => "ElectrolyteOutsideCell",
+        ("runaway_18650_lco", "oven_temperature_k", _) => "OvenTemperatureNotPositive",
+        ("runaway_18650_lco", "heater_power_w", _) => "HeaterPowerNegative",
+        ("runaway_18650_lco", "adiabatic", _) => "AdiabaticNotZeroOrOne",
         ("reactor_spert3_fuel", "inlet_temperature_k", _) => "InletTemperatureOutsideCard",
-        ("reactor_spert3_fuel", "reactivity_inserted_dollar", _) => "ReactivityOutsideCard",
-        ("reactor_spert3_fuel", "coolant_flow_m_per_s", _) => "FlowOutsideCard",
+        ("reactor_spert3_fuel", "reactivity_inserted_dollar", false) => "ReactivityNotPositive",
+        ("reactor_spert3_fuel", "coolant_flow_m_per_s", false) => "NegativeFlow",
         ("fingerpad_p02_glass", "twist_deg", _) => "TwistNotStartedFromZero",
-        ("fingerpad_p02_glass", "normal_force_n", _) => "NormalForceOutsideCard",
-        ("fingerpad_p02_glass", "twist_rate_deg_s", _) => "TwistRateOutsideCard",
-        ("tokamak_jet_dte1", "thermal_energy_j" | "fast_ion_energy_j", _) => "EnergyOutsideComparison",
-        ("tokamak_jet_dte1", "elapsed_time_s", _) => "TimeBeyondCard",
-        ("tokamak_jet_dte1", "heating_power_w", _) => "HeatingPowerOutsideCard",
-        ("tokamak_jet_dte1", "ohmic_power_w", _) => "OhmicPowerOutsideCard",
-        ("tokamak_jet_dte1", "plasma_current_a", _) => "PlasmaCurrentOutsideCard",
-        ("tokamak_jet_dte1", "toroidal_field_t", _) => "ToroidalFieldOutsideCard",
-        ("tokamak_jet_dte1", "tritium_fraction", false) => "FuelMixOutsideCard",
-        ("tokamak_jet_dte1", "tritium_fraction", true) => "FuelMixOutsideComparison",
-        ("tokamak_jet_dte1", "line_density_per_m3", false) => "DensityBelowCard",
-        ("tokamak_jet_dte1", "line_density_per_m3", true) => "DensityAboveComparison",
+        ("fingerpad_p02_glass", "normal_force_n", _) => "NoContact",
+        ("fingerpad_p02_glass", "twist_rate_deg_s", _) => "TwistRateNotPositive",
+        ("tokamak_jet_dte1", "thermal_energy_j" | "fast_ion_energy_j", _) => "EnergyOutsideCard",
+        ("tokamak_jet_dte1", "elapsed_time_s", _) => "NegativeTime",
+        ("tokamak_jet_dte1", "heating_power_w", _) => "HeatingPowerNegative",
+        ("tokamak_jet_dte1", "ohmic_power_w", _) => "OhmicPowerNegative",
+        ("tokamak_jet_dte1", "plasma_current_a", _) => "PlasmaCurrentNotPositive",
+        ("tokamak_jet_dte1", "toroidal_field_t", _) => "ToroidalFieldNotPositive",
+        ("tokamak_jet_dte1", "tritium_fraction", _) => "FuelMixOutsideCard",
+        ("tokamak_jet_dte1", "line_density_per_m3", _) => "DensityNotPositive",
+        ("tokamak_vde_mast", "displacement_m", _) => "StartOutsideVessel",
+        ("tokamak_vde_mast", "velocity_m_s", _) => "SpeedAtAlfvenSpeed",
         _ => return None,
     })
 }
@@ -881,8 +946,16 @@ fn published_outside_as(
             Some(name) => format!(" ({name})"),
             None => String::new(),
         };
+        // A range that runs the same distance either side of zero under one
+        // name that speaks of size ("...Above..."): below its minimum a value
+        // is above the card in size, and the sentence says so.
+        let of_size = !upper
+            && bound < 0.0
+            && published_reject(card, field.name, false) == published_reject(card, field.name, true)
+            && published_reject(card, field.name, false).is_some_and(|name| name.contains("Above"));
+        let in_size = if of_size { ": larger in size than the card takes" } else { "" };
         unsealed(&format!(
-            "'{label}' {}{unit} is {side} {}{unit}, the {how} {kind} of the {card} card{name}.",
+            "'{label}' {}{unit} is {side} {}{unit}, the {how} {kind} of the {card} card{in_size}{name}.",
             message_number(value),
             message_number(bound),
         ))
@@ -892,12 +965,11 @@ fn published_outside_as(
             return Some(outside(false, field.minimum_exclusive, minimum));
         }
     }
-    // The time axes of the generator and the satellite publish the last start
-    // from which a step can land. The last day or date of the card itself is
+    // The time axis of the satellite publishes the last start from which a
+    // step can land. The last date of the card itself is
     // still a legal start; the step from it leaves the card and the run is
     // sealed as refused. A value is held here to the end of the card.
     let end_of_card = match (card, field.name) {
-        ("generator_mmrtg_f1", "mission_time_s") => Some(generator_mmrtg_f1::MISSION_TIME_MAX_S),
         ("satellite_lageos1", "epoch_utc_s") => Some(satellite_lageos1::EPOCH_MAX_S),
         _ => None,
     };
@@ -991,11 +1063,45 @@ fn enforce_published_fields(
     Ok(())
 }
 
+/// The name of a step below the card's own step floor.
+/// The name of a required input absent from a request, on every tool: nothing
+/// is filled in.
+pub const INPUT_MISSING: &str = "InputMissing";
+
+/// The answer to a request that names a card the engine does not serve, and,
+/// on the hosted connection, a card outside the key's list.
+pub const CARD_NOT_RECOGNIZED: &str = "Card not recognized (UnknownCard).";
+
+/// The answer to a request that names a solver the engine does not serve, and,
+/// on the hosted connection, a solver outside the key's list.
+pub const SOLVER_NOT_RECOGNIZED: &str = "Solver not recognized (UnknownSolver).";
+/// The name of a solver's input given with a choice it does not go with: an
+/// input taken only when another input holds one word.
+pub const INPUT_NOT_WITH_CHOICE: &str = "InputNotWithChoice";
+
+pub(crate) const DT_BELOW_FLOOR: &str = "DtBelowFloor";
+/// The name of a step above the card's own step ceiling.
+pub(crate) const DT_ABOVE_CEILING: &str = "DtAboveCeiling";
+/// The name of a step above `π/ω` on a card whose ceiling lies above it.
+pub(crate) const DT_ABOVE_NYQUIST: &str = "DtAboveNyquist";
+
+/// The name a card gives a step outside its floor (`above` false) or its
+/// ceiling (`above` true). The 2170 cell takes one step, 1 s, and its kernel
+/// names every other step `StepNotOneSecond`, on either side.
+pub(crate) fn step_outside_name(card: &str, above: bool) -> &'static str {
+    match (card, above) {
+        ("cell_2170_m80", _) => "StepNotOneSecond",
+        (_, false) => DT_BELOW_FLOOR,
+        (_, true) => DT_ABOVE_CEILING,
+    }
+}
+
 /// `dt_s` must sit at or above the card's own step floor and at or under its
 /// own step ceiling, `floor_dt_s` and `gate_dt_s` in `genesis_kernel`. The
 /// gateway has no limit of its own. A card that states no floor or no ceiling
 /// is refused. A card with a natural frequency or a pole also keeps `dt_s` at
-/// or under `π/ω`. `omega_rad_s` is `None` for a card that has neither.
+/// or under `π/ω`. `omega_rad_s` is `None` for a card that has neither. A
+/// step outside any of them is refused by name.
 fn card_clock(
     dt_s: f64,
     omega_rad_s: Option<f64>,
@@ -1028,16 +1134,18 @@ fn card_clock(
     }
     if dt_s < floor_dt_s {
         return Err(format!(
-            "Physical Violation: 'dt_s' {} is below {} s, the step floor of the {card} card.",
+            "Physical Violation: 'dt_s' {} is below {} s, the step floor of the {card} card ({}).",
             message_number(dt_s),
-            message_number(floor_dt_s)
+            message_number(floor_dt_s),
+            step_outside_name(card, false)
         ));
     }
     if dt_s > ceiling_dt_s {
         return Err(format!(
-            "Physical Violation: 'dt_s' {} is above {} s, the step ceiling of the {card} card.",
+            "Physical Violation: 'dt_s' {} is above {} s, the step ceiling of the {card} card ({}).",
             message_number(dt_s),
-            message_number(ceiling_dt_s)
+            message_number(ceiling_dt_s),
+            step_outside_name(card, true)
         ));
     }
     if let Some(omega_rad_s) = omega_rad_s {
@@ -1049,7 +1157,7 @@ fn card_clock(
         let nyquist_dt_s = nyquist_limit_s(omega_rad_s);
         if dt_s > nyquist_dt_s {
             return Err(format!(
-                "Physical Violation: 'dt_s' {} exceeds the Nyquist limit {} s of the {card} card.",
+                "Physical Violation: 'dt_s' {} exceeds the Nyquist limit {} s of the {card} card ({DT_ABOVE_NYQUIST}).",
                 message_number(dt_s),
                 message_number(nyquist_dt_s)
             ));
@@ -1205,8 +1313,8 @@ fn resonance_reject(reject: resonance::StepReject) -> String {
         resonance::StepReject::FirstLawBreach => unsealed(
             "the mechanical energy is below the anchor plus the booked work by more than the conservation limit: a wrong step, or the step method's own error summed over the run since its anchor (FirstLawBreach).",
         ),
-        resonance::StepReject::AmplitudeAboveCard => unsealed(
-            "the mount's mechanical energy is above that of a free ring of twice the stroke (AmplitudeAboveCard).",
+        resonance::StepReject::EnergyAboveCard => unsealed(
+            "the mount's mechanical energy is above that of a free ring of twice the stroke, four stroke energies: a displacement or a velocity of either sign larger than the card takes (EnergyAboveCard).",
         ),
         other => refused("resonance", other),
     }
@@ -1287,17 +1395,36 @@ fn cable_reject(reject: cable_stretch::StepReject) -> String {
     }
 }
 
+/// A load rule's sentence with the name its card lists for the rule, in
+/// round brackets at the end.
+fn named(sentence: String, name: &str) -> String {
+    format!("{} ({name}).", sentence.trim_end_matches('.'))
+}
+
+/// The load rule of a card with one scalar load, refused under the name the
+/// card lists for it: `|value| * dt_s` at or under the card's constant.
+fn load_nyquist(
+    name: &str,
+    key: &str,
+    value: f64,
+    dt_s: f64,
+    impulse: f64,
+    limit: Option<f64>,
+) -> Result<(), String> {
+    enforce_abs_nyquist(key, value, dt_s, impulse, limit).map_err(|text| named(text, name))
+}
+
 /// The current Nyquist limit of the pack at the door, refused under the
 /// name the card lists for it.
 fn battery_nyquist(pack: &battery_sag::LiIonPack, current_a: f64, dt_s: f64) -> Result<(), String> {
-    enforce_abs_nyquist(
+    load_nyquist(
+        "CurrentAboveNyquist",
         "current_a",
         current_a,
         dt_s,
         pack.charge_impulse_c(),
         pack.current_nyquist_a(dt_s),
     )
-    .map_err(|text| format!("{} (CurrentAboveNyquist).", text.trim_end_matches('.')))
 }
 
 fn battery_reject(reject: battery_sag::StepReject) -> String {
@@ -1329,11 +1456,10 @@ fn cell_reject(reject: cell_18650pf::StepReject) -> String {
         cell_18650pf::StepReject::StateOfChargeOutsideCard => {
             unsealed("state of charge left [0.03, 1] (StateOfChargeOutsideCard).")
         }
-        cell_18650pf::StepReject::CurrentNotCompared => cell_current_not_compared(),
+        cell_18650pf::StepReject::CurrentNotDischarging => cell_current_not_discharging(),
         cell_18650pf::StepReject::CurrentChangedDuringDischarge => unsealed(
             "the current is more than 0.83 mA from the held current of this run (CurrentChangedDuringDischarge).",
         ),
-        cell_18650pf::StepReject::StartNotAtFullCharge => cell_start_not_at_full_charge(),
         cell_18650pf::StepReject::SpontaneousGeneration => {
             unsealed("the cell created chemical energy (SpontaneousGeneration).")
         }
@@ -1352,20 +1478,19 @@ fn cell_2170_block_not_recognized(block_chamber_c: f64) -> String {
     ))
 }
 
-/// Whether a start lies on the tables of its block, or past an end of them
-/// by no more than the rounding allowance of a start.
+/// Whether a start lies on the tables of its block, both ends included. A
+/// start one 64-bit number past an end is refused: no start is read at an
+/// end point it is not at.
 fn cell_2170_start_on_tables(charge_removed_ah: f64, block: usize) -> bool {
     let cell = cell_2170();
-    let allowance_ah = cell.charge_end_allowance_ah(0.0);
-    charge_removed_ah >= cell.charge_top_ah[block] - allowance_ah
-        && charge_removed_ah <= cell.charge_deep_ah[block] + allowance_ah
+    charge_removed_ah >= cell.charge_top_ah[block] && charge_removed_ah <= cell.charge_deep_ah[block]
 }
 
 /// The sentence for a start outside the tables of its own block.
 fn cell_2170_charge_outside_block(charge_removed_ah: f64, block: usize) -> String {
     let cell = cell_2170();
     unsealed(&format!(
-        "'charge_removed_ah' {} Ah is outside [{}, {}] Ah, the tables of the {} degC block of the cell_2170_m80 card, by more than the rounding allowance of a start, 2^-49 Ah (ChargeOutsideTables).",
+        "'charge_removed_ah' {} Ah is outside [{}, {}] Ah, the tables of the {} degC block of the cell_2170_m80 card, both ends included, and no voltage is read outside them (ChargeOutsideTables).",
         message_number(charge_removed_ah),
         message_number(cell.charge_top_ah[block]),
         message_number(cell.charge_deep_ah[block]),
@@ -1373,45 +1498,10 @@ fn cell_2170_charge_outside_block(charge_removed_ah: f64, block: usize) -> Strin
     ))
 }
 
-/// The sentence for a chamber setting that names a block the comparison
-/// with measurement showed wrong.
-fn cell_2170_block_shown_wrong(block_chamber_c: f64) -> String {
-    unsealed(&format!(
-        "'block_chamber_c' {} degC names a block of the cell_2170_m80 card that the comparison with measurement showed wrong: no held-back test of the -10 or the -20 degC block met its marks (BlockShownWrong).",
-        message_number(block_chamber_c)
-    ))
-}
-
-/// The sentence for a case temperature outside the band at which the run's
-/// block was compared with measurement.
-fn cell_2170_case_outside_block(case_temperature_c: f64, block: usize) -> String {
-    let cell = cell_2170();
-    unsealed(&format!(
-        "'case_temperature_c' {} degC is outside [{}, {}] degC, the case temperatures at which the {} degC block of the cell_2170_m80 card was compared with measurement (CaseTemperatureOutsideBlock).",
-        message_number(case_temperature_c),
-        message_number(cell.block_case_min_c[block]),
-        message_number(cell.block_case_max_c[block]),
-        message_number(cell.block_chamber_c[block]),
-    ))
-}
-
-/// The sentence for a current outside the currents at which the run's block
-/// was compared with measurement.
-fn cell_2170_current_outside_block(current_a: f64, block: usize) -> String {
-    let cell = cell_2170();
-    unsealed(&format!(
-        "'current_a' {} A is outside [{}, {}] A, the currents at which the {} degC block of the cell_2170_m80 card was compared with measurement (CurrentOutsideBlock).",
-        message_number(current_a),
-        message_number(-cell.block_current_discharge_max_a[block]),
-        message_number(cell.block_current_charge_max_a[block]),
-        message_number(cell.block_chamber_c[block]),
-    ))
-}
-
 const CELL_2170_CURRENT_OUTSIDE_CARD: &str =
-    "the current is above 9.737 A charging or above 11.375 A discharging, the largest currents compared with measurement (CurrentOutsideCard).";
+    "the current is above 13.5 A charging or discharging, the end of the ten-second table's current axis (CurrentOutsideCard).";
 const CELL_2170_CASE_OUTSIDE_CARD: &str =
-    "case temperature is outside [0.808, 45.535] degC (CaseTemperatureOutsideCard).";
+    "case temperature is outside [-21.898, 45.535] degC, beyond the coldest and the warmest block's own tests, where the tables would hold their end values (CaseTemperatureOutsideCard).";
 
 fn cell_2170_reject(reject: cell_2170_m80::StepReject) -> String {
     match reject {
@@ -1433,15 +1523,6 @@ fn cell_2170_reject(reject: cell_2170_m80::StepReject) -> String {
         }
         cell_2170_m80::StepReject::BlockNotRecognized => unsealed(
             "the block is not one of the six chamber settings 40, 25, 10, 0, -10 and -20 degC (BlockNotRecognized).",
-        ),
-        cell_2170_m80::StepReject::BlockShownWrong => unsealed(
-            "the block is the -10 or the -20 degC block, which the comparison with measurement showed wrong (BlockShownWrong).",
-        ),
-        cell_2170_m80::StepReject::CaseTemperatureOutsideBlock => unsealed(
-            "case temperature is outside the band at which the block was compared with measurement (CaseTemperatureOutsideBlock).",
-        ),
-        cell_2170_m80::StepReject::CurrentOutsideBlock => unsealed(
-            "the current is outside the currents at which the block was compared with measurement (CurrentOutsideBlock).",
         ),
         cell_2170_m80::StepReject::SpontaneousGeneration => {
             unsealed("the cell created energy (SpontaneousGeneration).")
@@ -1475,25 +1556,13 @@ fn cell_2170_model3_cell_not_recognized(cell_number: f64) -> String {
     ))
 }
 
-const CELL_2170_MODEL3_CURRENT_OUTSIDE_CARD: &str =
-    "the current is above 13.524 A discharging or above 13.984 A charging (CurrentOutsideCard).";
-const CELL_2170_MODEL3_CASE_OUTSIDE_CARD: &str =
-    "case temperature is outside [-12.9, 45.9] degC (CaseTemperatureOutsideCard).";
+const CELL_2170_MODEL3_BELOW_ABSOLUTE_ZERO: &str =
+    "case temperature is at or below absolute zero, -273.15 degC, where the temperature laws have no value (CaseTemperatureBelowAbsoluteZero).";
 
-/// The sentence for a capacity that no block of tests measured at the case
-/// temperature of a step or a segment.
-fn cell_2170_model3_capacity_not_compared(capacity_ah: f64, case_temperature_c: f64) -> String {
+/// The sentence for a start whose least case temperature is above its most.
+fn cell_2170_model3_span_inverted(least_c: f64, most_c: f64) -> String {
     unsealed(&format!(
-        "capacity_ah {} Ah was not compared at a case temperature of {} degC: no block of tests of the cell_2170_model3 card holds both (CapacityOutsideCardAtTemperature).",
-        message_number(capacity_ah),
-        message_number(case_temperature_c)
-    ))
-}
-
-/// The sentence for a span of case temperature past the card's, found before the first step.
-fn cell_2170_model3_span_above_card(least_c: f64, most_c: f64, what: &str) -> String {
-    unsealed(&format!(
-        "{what} {} to {} degC of case temperature, which is not a span of at most 19.2 K from the least to the most (CaseTemperatureSpanAboveCard).",
+        "the start carries {} to {} degC of case temperature, a least above its most (CaseTemperatureSpanInverted).",
         message_number(least_c),
         message_number(most_c)
     ))
@@ -1509,27 +1578,17 @@ fn cell_2170_model3_reject(reject: cell_2170_model3::StepReject) -> String {
             "the cell's voltage would rise above the 4.242 V upper limit (OvervoltageLimit).",
         ),
         StepReject::StateOfChargeOutsideCard => unsealed(
-            "the state of charge would leave [0, 1.02] by more than the rounding allowance of its running sum (StateOfChargeOutsideCard).",
+            "the state of charge would leave [-0.05, 1.05], the ends of the card's rest-voltage curves, outside which it has no rest voltage, by more than the rounding allowance of its running sum (StateOfChargeOutsideCard).",
         ),
-        StepReject::CapacityOutsideCardAtTemperature => unsealed(
-            "the capacity was not compared at this case temperature: no block of tests holds both (CapacityOutsideCardAtTemperature).",
-        ),
-        StepReject::CaseTemperatureChangeAboveCard => unsealed(
-            "the case temperature would differ from the last step's by more than 5.4 K (CaseTemperatureChangeAboveCard).",
-        ),
-        StepReject::CaseTemperatureSpanAboveCard => unsealed(
-            "the case temperature would span more than 19.2 K since the rested start, counting the least and most case temperature the start carried (CaseTemperatureSpanAboveCard).",
+        StepReject::CaseTemperatureSpanInverted => unsealed(
+            "the least case temperature the state carries is above the most it carries (CaseTemperatureSpanInverted).",
         ),
         StepReject::SurfaceOutsideCurve => unsealed(
-            "the state of charge at the particle surface would leave [-0.05, 1.05], the ends of the measured curves (SurfaceOutsideCurve).",
+            "the state of charge at the particle surface would leave [-0.05, 1.05], the ends of the card's rest-voltage curves, outside which it has no rest voltage (SurfaceOutsideCurve).",
         ),
-        StepReject::SustainedCurrentOutsideCard => unsealed(
-            "the running mean of the current, with its 60 s time constant, would pass 8.722 A discharging or 2.993 A charging (SustainedCurrentOutsideCard).",
-        ),
-        StepReject::CaseTemperatureOutsideCard => unsealed(CELL_2170_MODEL3_CASE_OUTSIDE_CARD),
-        StepReject::CurrentOutsideCard => unsealed(CELL_2170_MODEL3_CURRENT_OUTSIDE_CARD),
-        StepReject::CapacityOutsideCard => {
-            unsealed("the capacity is outside [4.16, 4.7] Ah (CapacityOutsideCard).")
+        StepReject::CaseTemperatureBelowAbsoluteZero => unsealed(CELL_2170_MODEL3_BELOW_ABSOLUTE_ZERO),
+        StepReject::CapacityNotPositive => {
+            unsealed("the capacity is zero or less (CapacityNotPositive).")
         }
         StepReject::CellNotRecognized => unsealed(&format!(
             "the cell number is not one of {} (CellNotRecognized).",
@@ -1545,8 +1604,8 @@ fn cell_2170_model3_reject(reject: cell_2170_model3::StepReject) -> String {
 
 fn crater_reject(reject: crater_ryugu_sci::StepReject) -> String {
     match reject {
-        crater_ryugu_sci::StepReject::RadiusBelowCard => {
-            unsealed("the crater's radius is under 1.75 m (RadiusBelowCard).")
+        crater_ryugu_sci::StepReject::RadiusBelowLedgerResolution => {
+            unsealed("the crater's radius is under 0.1622 m, where one rounding of the energy the wall has yet to give up passes a tenth of the ledger's limit (RadiusBelowLedgerResolution).")
         }
         crater_ryugu_sci::StepReject::RadiusAboveFinal => unsealed(
             "the crater's radius is above 8.571304329477922 m, where this crater stops (RadiusAboveFinal).",
@@ -1566,8 +1625,11 @@ fn crater_reject(reject: crater_ryugu_sci::StepReject) -> String {
 
 fn generator_reject(reject: generator_mmrtg_f1::StepReject) -> String {
     match reject {
-        generator_mmrtg_f1::StepReject::MissionTimeOutsideCard => unsealed(
-            "mission time is before landing or after mission day 4,087 (MissionTimeOutsideCard).",
+        generator_mmrtg_f1::StepReject::MissionTimeBeforeLanding => unsealed(
+            "mission time is before landing on Mars (MissionTimeBeforeLanding).",
+        ),
+        generator_mmrtg_f1::StepReject::DecayHeatBelowLedgerResolution => unsealed(
+            "the decay heat the fuel still holds is under the ledger's resolution, about 2,070 years after landing (DecayHeatBelowLedgerResolution).",
         ),
         generator_mmrtg_f1::StepReject::SpontaneousGeneration => {
             unsealed("the generator created energy (SpontaneousGeneration).")
@@ -1582,21 +1644,19 @@ fn generator_reject(reject: generator_mmrtg_f1::StepReject) -> String {
     }
 }
 
-/// The sentence for a reactivity outside the card, from the card's own bounds.
-fn reactor_reactivity_outside_card() -> String {
-    unsealed(&format!(
-        "the reactivity inserted is below {} dollar or above {} dollars (ReactivityOutsideCard).",
-        reactor_spert3::REACTIVITY_MIN_DOLLAR,
-        reactor_spert3::REACTIVITY_MAX_DOLLAR
-    ))
+/// The sentence for a first step in reactivity of zero or less.
+fn reactor_reactivity_not_positive() -> String {
+    unsealed(
+        "the reactivity of the first step is zero or less: no step in reactivity is inserted, and there is no burst (ReactivityNotPositive).",
+    )
 }
 
-/// The sentence for a coolant temperature outside the card, from the card's own bounds.
-fn reactor_coolant_outside_card() -> String {
+/// The sentence for a coolant that is not liquid water, from the card's own bounds.
+fn reactor_coolant_not_liquid_water() -> String {
     unsealed(&format!(
-        "the primary coolant temperature is outside [{}, {}] K, 56 to 92 degF (CoolantTemperatureOutsideCard).",
-        reactor_spert3::COOLANT_TEMPERATURE_MIN_K,
-        reactor_spert3::COOLANT_TEMPERATURE_MAX_K
+        "the primary coolant temperature is outside [{}, {}] K: below it water freezes, and above it, the critical point of water, there is no liquid at any pressure (CoolantTemperatureNotLiquidWater).",
+        reactor_spert3::WATER_FREEZING_K,
+        reactor_spert3::WATER_CRITICAL_K
     ))
 }
 
@@ -1609,29 +1669,25 @@ fn creep_stress_outside_card() -> String {
     ))
 }
 
-/// The sentence for a creep extension below the creep card.
-fn creep_extension_below_card() -> String {
-    unsealed(&format!(
-        "the creep extension is below {} percent, where the card's law is slow to start against every measured curve (CreepExtensionBelowCard).",
-        creep_cmsx6::CREEP_EXTENSION_MIN_PERCENT
-    ))
-}
-
-/// The limits of creep extension by stress, as every sentence about them says it.
-fn creep_extension_limits() -> String {
-    format!(
-        "{} percent below {} MPa, {} percent from {} MPa",
-        creep_cmsx6::CREEP_EXTENSION_MAX_BELOW_FULL_REACH_PERCENT,
-        creep_cmsx6::FULL_REACH_STRESS_MIN_MPA,
-        creep_cmsx6::CREEP_EXTENSION_MAX_PERCENT,
-        creep_cmsx6::FULL_REACH_STRESS_MIN_MPA
+/// The sentence for a creep extension below zero.
+fn creep_extension_below_zero() -> String {
+    unsealed(
+        "the creep extension is below zero: a test piece in tension does not shorten by creep (CreepExtensionBelowZero).",
     )
 }
 
-/// The sentence for a starting creep extension above the limit for its stress.
+/// The upper limit of creep extension, as every sentence about it says it.
+fn creep_extension_limits() -> String {
+    format!(
+        "{} percent, the largest level of the protocol",
+        creep_cmsx6::CREEP_EXTENSION_MAX_PERCENT
+    )
+}
+
+/// The sentence for a starting creep extension above the limit.
 fn creep_extension_outside_card() -> String {
     unsealed(&format!(
-        "the creep extension is above the limit for the held stress, {} (CreepExtensionOutsideCard).",
+        "the creep extension is above {} (CreepExtensionOutsideCard).",
         creep_extension_limits()
     ))
 }
@@ -1647,10 +1703,10 @@ fn creep_reject(reject: creep_cmsx6::StepReject) -> String {
     match reject {
         creep_cmsx6::StepReject::StressOutsideCard => creep_stress_outside_card(),
         creep_cmsx6::StepReject::CreepExtensionOutsideCard => creep_extension_outside_card(),
-        creep_cmsx6::StepReject::CreepExtensionBelowCard => creep_extension_below_card(),
+        creep_cmsx6::StepReject::CreepExtensionBelowZero => creep_extension_below_zero(),
         creep_cmsx6::StepReject::StressNotHeld => creep_stress_not_held(),
         creep_cmsx6::StepReject::CreepExtensionBeyondCard => unsealed(&format!(
-            "the step would pass the limit of creep extension for the held stress, {} (CreepExtensionBeyondCard).",
+            "the step would pass the limit of creep extension, {} (CreepExtensionBeyondCard).",
             creep_extension_limits()
         )),
         creep_cmsx6::StepReject::StepTooSmallToResolve => unsealed(
@@ -1693,9 +1749,9 @@ fn tokamak_reject(
     reject: tokamak_jet_dte1::StepReject,
     tokamak: &tokamak_jet_dte1::TokamakJetDte1,
     load: tokamak_jet_dte1::TokamakLoad,
-    thermal_energy_j: f64,
+    start: (f64, f64),
+    dt_s: f64,
 ) -> String {
-    let confinement_time_s = tokamak.confinement_time_s(thermal_energy_j, load);
     match reject {
         tokamak_jet_dte1::StepReject::DensityAboveGreenwald => tokamak_density_above_greenwald(
             load.line_density_per_m3,
@@ -1715,21 +1771,22 @@ fn tokamak_reject(
         tokamak_jet_dte1::StepReject::EnergyOutsideCard => unsealed(
             "the thermal energy is zero or negative, or the fast-ion energy is negative (EnergyOutsideCard).",
         ),
-        tokamak_jet_dte1::StepReject::TimeBeyondCard => {
-            unsealed("the step would end after 5.475 s from the start of the heated window, the longest compared window (TimeBeyondCard).")
+        tokamak_jet_dte1::StepReject::DtAboveStateCeiling => {
+            let (thermal_energy_j, fast_ion_energy_j) = start;
+            let ceiling_s = tokamak.state_ceiling_dt_s(thermal_energy_j, fast_ion_energy_j, load);
+            let where_s = if dt_s > ceiling_s {
+                format!("the step ceiling of the state it starts from, {} s", message_number(ceiling_s))
+            } else {
+                format!(
+                    "the step ceiling of the state where its trial step lands; at the state it starts from the ceiling is {} s",
+                    message_number(ceiling_s)
+                )
+            };
+            unsealed(&format!(
+                "the step of {} s is above {where_s}: the smallest of an eighteenth of the slowing-down time, a forty-sixth of 0.31 times the confinement time and a forty-eighth of the coupling time of the fast ions and the thermal plasma (DtAboveStateCeiling).",
+                message_number(dt_s),
+            ))
         }
-        tokamak_jet_dte1::StepReject::ConfinementTimeOutsideComparison => unsealed(&format!(
-            "the confinement time of the thermal energy under this load is {} s, outside 0.150 to 5.72 s, the span of the nine compared runs of the card's regime (ConfinementTimeOutsideComparison).",
-            message_number(confinement_time_s),
-        )),
-        tokamak_jet_dte1::StepReject::TemperatureOutsideComparison => unsealed(&format!(
-            "the plasma temperature under this load is {} keV, outside 0.777 to 4.30 keV, the span of the nine compared runs of the card's regime (TemperatureOutsideComparison).",
-            message_number(tokamak.temperature_kev(thermal_energy_j, load.line_density_per_m3)),
-        )),
-        tokamak_jet_dte1::StepReject::SafetyFactorOutsideComparison => unsealed(&format!(
-            "the edge safety factor of the plasma current and the toroidal field is {}, outside 3.66 to 4.14, the span of the nine compared pulses of the card's regime (SafetyFactorOutsideComparison).",
-            message_number(tokamak.safety_factor(load.plasma_current_a, load.toroidal_field_t)),
-        )),
         tokamak_jet_dte1::StepReject::SpontaneousGeneration => {
             unsealed("the plasma created energy (SpontaneousGeneration).")
         }
@@ -1740,36 +1797,20 @@ fn tokamak_reject(
     }
 }
 
-/// The sentence for a segment whose reactivity is not the first segment's.
-fn reactor_reactivity_changed(reactivity_inserted_dollar: f64, first: f64) -> String {
-    unsealed(&format!(
-        "'reactivity_inserted_dollar' {} dollar is not the {} dollar of the first segment: a run of the reactor_spert3 card is one burst with one reactivity, stepped in at time zero and then held (ReactivityChangedDuringBurst).",
-        message_number(reactivity_inserted_dollar),
-        message_number(first),
-    ))
-}
-
 fn reactor_reject(reject: reactor_spert3::StepReject) -> String {
     match reject {
-        reactor_spert3::StepReject::ReactivityChangedDuringBurst => unsealed(
-            "the reactivity of the load is not the one of the first step of this burst (ReactivityChangedDuringBurst).",
-        ),
-        reactor_spert3::StepReject::ReactivityOutsideCard => reactor_reactivity_outside_card(),
-        reactor_spert3::StepReject::CoolantTemperatureOutsideCard => {
-            reactor_coolant_outside_card()
+        reactor_spert3::StepReject::ReactivityNotPositive => reactor_reactivity_not_positive(),
+        reactor_spert3::StepReject::CoolantTemperatureNotLiquidWater => {
+            reactor_coolant_not_liquid_water()
         }
         reactor_spert3::StepReject::PastFirstMaximum => unsealed(
             "the reactor is past the first maximum of power; nothing after it is on the card (PastFirstMaximum).",
         ),
-        reactor_spert3::StepReject::TimeBeyondCard => {
-            unsealed("the step would end after 20 s (TimeBeyondCard).")
-        }
-        reactor_spert3::StepReject::EnergyBeyondCard => {
-            unsealed("the step released more than 10 MW s (EnergyBeyondCard).")
-        }
-        reactor_spert3::StepReject::PowerBeyondCard => {
-            unsealed("the step reached more than 1000 MW (PowerBeyondCard).")
-        }
+        reactor_spert3::StepReject::DtAboveStateCeiling => unsealed(&format!(
+            "the step is longer than {} of the time constant of the fastest pole at the state it starts from or would land on, or {} of it for a growing pole: the prompt pole |1 - net reactivity| / l* or the feedback pole, the square root of a P / l* (DtAboveStateCeiling).",
+            reactor_spert3::GATE_PHASE_STEP,
+            reactor_spert3::GROWTH_PHASE_STEP
+        )),
         reactor_spert3::StepReject::SpontaneousGeneration => {
             unsealed("the reactor created neutron population (SpontaneousGeneration).")
         }
@@ -1822,7 +1863,7 @@ fn reactor_triga_table_outside_card(rod_table_core: f64) -> String {
     ))
 }
 
-/// The starts compared on each rod table, in words: "24.00 to 27.94 degC on core 215, ...".
+/// The starts compared on each rod table, in words: "297.15 to 301.09 K (24.00 to 27.94 degC) on core 215, ...".
 pub(crate) fn reactor_triga_start_spans_in_words() -> String {
     reactor_triga_jsi::ROD_TABLE_CORE
         .iter()
@@ -1841,17 +1882,6 @@ pub(crate) fn reactor_triga_start_spans_in_words() -> String {
         .join(", ")
 }
 
-/// The sentence for a start inside the published span but outside the starts compared on its
-/// own rod table.
-fn reactor_triga_start_outside_table(start_temperature_k: f64, rod_table_core: f64) -> String {
-    unsealed(&format!(
-        "'start_temperature_k' {} K was never compared on the rod table of core {}: the reactor_triga_jsi card accepts only the starts compared on each table at 2.0 printed dollars and above, {} (StartTemperatureOutsideCard).",
-        message_number(start_temperature_k),
-        message_number(rod_table_core),
-        reactor_triga_start_spans_in_words()
-    ))
-}
-
 /// The sentence for a segment whose reactivity is not the first segment's.
 fn reactor_triga_reactivity_changed(reactivity_inserted_dollar: f64, first: f64) -> String {
     unsealed(&format!(
@@ -1863,18 +1893,21 @@ fn reactor_triga_reactivity_changed(reactivity_inserted_dollar: f64, first: f64)
 
 fn reactor_triga_reject(reject: reactor_triga_jsi::StepReject) -> String {
     match reject {
-        reactor_triga_jsi::StepReject::StartTemperatureOutsideCard => unsealed(&format!(
-            "the starting fuel temperature is outside the starts compared on its rod table, {} (StartTemperatureOutsideCard).",
-            reactor_triga_start_spans_in_words()
+        reactor_triga_jsi::StepReject::StartTemperatureNotLiquidWater => unsealed(&format!(
+            "the starting temperature, which is also the pool water's, is below {} K, where water freezes, or above {} K, where it boils at one standard atmosphere (StartTemperatureNotLiquidWater).",
+            message_number(reactor_triga_jsi::WATER_FREEZING_K),
+            message_number(reactor_triga_jsi::WATER_BOILING_K)
         )),
         reactor_triga_jsi::StepReject::RodTableOutsideCard => unsealed(&format!(
             "the rod-worth table is not that of core {} (RodTableOutsideCard).",
             reactor_triga_tables_in_words().replace(" and ", " or ")
         )),
-        reactor_triga_jsi::StepReject::ReactivityOutsideCard => unsealed(&format!(
-            "the reactivity inserted is below {} or above {} printed dollars (ReactivityOutsideCard).",
-            reactor_triga_jsi::REACTIVITY_MIN_DOLLAR,
-            reactor_triga_jsi::REACTIVITY_MAX_DOLLAR
+        reactor_triga_jsi::StepReject::ReactivityNotPositive => unsealed(
+            "the reactivity inserted is zero or less: no step in reactivity is inserted (ReactivityNotPositive).",
+        ),
+        reactor_triga_jsi::StepReject::ReactivityAboveRodWorth => unsealed(&format!(
+            "the reactivity inserted is above {} printed dollars, the transient rod's whole worth (ReactivityAboveRodWorth).",
+            message_number(reactor_triga_jsi::ROD_WORTH_DOLLAR)
         )),
         reactor_triga_jsi::StepReject::ScramValueOutsideCard => unsealed(
             "rods_dropped is neither 0 (rods held) nor 1 (rods dropped) (ScramValueOutsideCard).",
@@ -1882,35 +1915,16 @@ fn reactor_triga_reject(reject: reactor_triga_jsi::StepReject) -> String {
         reactor_triga_jsi::StepReject::ReactivityChangedDuringRun => unsealed(
             "the reactivity inserted differs from the one this run started with; the model defines no change of it but the scram (ReactivityChangedDuringRun).",
         ),
-        reactor_triga_jsi::StepReject::ScramBeforeRodStopped => unsealed(
-            "the rods were dropped while the transient rod was still moving (ScramBeforeRodStopped).",
-        ),
-        reactor_triga_jsi::StepReject::ScramBeforeCompared => unsealed(&format!(
-            "the rods were dropped earlier than {} s after the peak power, earlier than any scram compared with a measurement (ScramBeforeCompared).",
-            reactor_triga_jsi::SCRAM_AFTER_PEAK_MIN_S
-        )),
-        reactor_triga_jsi::StepReject::RodsHeldBeyondCompared => unsealed(&format!(
-            "the step would end with the rods still held more than {} s after the peak power, beyond what was compared with a measurement (RodsHeldBeyondCompared).",
-            reactor_triga_jsi::SCRAM_AFTER_PEAK_MAX_S
-        )),
         reactor_triga_jsi::StepReject::RodsRaisedAfterScram => {
             unsealed("the rods were raised after the scram (RodsRaisedAfterScram).")
         }
-        reactor_triga_jsi::StepReject::TimeBeyondCard => unsealed(&format!(
-            "the step would end after {} s (TimeBeyondCard).",
-            reactor_triga_jsi::TIME_MAX_S
+        reactor_triga_jsi::StepReject::FuelTemperatureAboveFuelLimit => unsealed(&format!(
+            "the core-average fuel temperature is above {} K (1150 degC), the temperature limit of U-ZrH1.6 fuel in stainless clad (FuelTemperatureAboveFuelLimit).",
+            reactor_triga_jsi::FUEL_TEMPERATURE_LIMIT_K
         )),
-        reactor_triga_jsi::StepReject::EnergyBeyondCard => unsealed(&format!(
-            "the step released more than {} MW s (EnergyBeyondCard).",
-            reactor_triga_jsi::ENERGY_MAX_MWS
-        )),
-        reactor_triga_jsi::StepReject::PowerBeyondCard => unsealed(&format!(
-            "the step reached more than {} MW (PowerBeyondCard).",
-            reactor_triga_jsi::POWER_MAX_MW
-        )),
-        reactor_triga_jsi::StepReject::FuelTemperatureBeyondCard => unsealed(&format!(
-            "the step took the core-average fuel temperature above {} K, beyond what was compared with a measurement (FuelTemperatureBeyondCard).",
-            reactor_triga_jsi::FUEL_TEMPERATURE_MAX_K
+        reactor_triga_jsi::StepReject::DtAboveStateCeiling => unsealed(&format!(
+            "the step is longer than {} of the time constant of the fastest pole at the state it starts from or where it lands (DtAboveStateCeiling).",
+            message_number(reactor_triga_jsi::STATE_PHASE_STEP)
         )),
         reactor_triga_jsi::StepReject::SpontaneousGeneration => {
             unsealed("the reactor created neutron population (SpontaneousGeneration).")
@@ -1922,27 +1936,19 @@ fn reactor_triga_reject(reject: reactor_triga_jsi::StepReject) -> String {
     }
 }
 
-/// The sentence for a reactivity outside the span of the run's own band.
-fn reactor_fuel_reactivity_outside_band(reactivity_inserted_dollar: f64, band: usize) -> String {
-    let reactor = reactor_spert3_fuel::ReactorSpert3Fuel::e_core_low_initial_power();
+/// The sentence for a reactivity of zero or less.
+fn reactor_fuel_reactivity_not_positive(reactivity_inserted_dollar: f64) -> String {
     unsealed(&format!(
-        "'reactivity_inserted_dollar' {} dollar is outside [{}, {}] dollars, the span tested in the {} degF band of the reactor_spert3_fuel card (ReactivityOutsideCard).",
+        "'reactivity_inserted_dollar' {} dollar is zero or less: the transient rod inserts no reactivity, and there is no burst (ReactivityNotPositive).",
         message_number(reactivity_inserted_dollar),
-        message_number(reactor.band_reactivity_min_dollar[band]),
-        message_number(reactor.band_reactivity_max_dollar[band]),
-        descriptor::REACTOR_FUEL_BAND_DEGF[band],
     ))
 }
 
-/// The sentence for a coolant flow outside the span of the run's own band.
-fn reactor_fuel_flow_outside_band(coolant_flow_m_per_s: f64, band: usize) -> String {
-    let reactor = reactor_spert3_fuel::ReactorSpert3Fuel::e_core_low_initial_power();
+/// The sentence for a coolant flow below zero.
+fn reactor_fuel_flow_negative(coolant_flow_m_per_s: f64) -> String {
     unsealed(&format!(
-        "'coolant_flow_m_per_s' {} m/s is outside [{}, {}] m/s, the span tested in the {} degF band of the reactor_spert3_fuel card (FlowOutsideCard).",
+        "'coolant_flow_m_per_s' {} m/s is below zero: the flow runs through the core from the inlet (NegativeFlow).",
         message_number(coolant_flow_m_per_s),
-        message_number(reactor.band_flow_min_m_per_s[band]),
-        message_number(reactor.band_flow_max_m_per_s[band]),
-        descriptor::REACTOR_FUEL_BAND_DEGF[band],
     ))
 }
 
@@ -1955,58 +1961,44 @@ fn reactor_fuel_reactivity_changed(reactivity_inserted_dollar: f64, first: f64) 
     ))
 }
 
-/// The sentence for a segment whose coolant flow is not the first segment's.
-fn reactor_fuel_flow_changed(coolant_flow_m_per_s: f64, first: f64) -> String {
+
+/// The sentence for a coolant flow below zero on the C-core card.
+fn reactor_ccore_negative_flow(coolant_flow_m_per_s: f64) -> String {
     unsealed(&format!(
-        "'coolant_flow_m_per_s' {} m/s is not the {} m/s of the first segment: a run of the reactor_spert3_fuel card is one burst with one flow rate, and no tested burst changed its flow (FlowChangedDuringBurst).",
+        "'coolant_flow_m_per_s' {} m/s is below zero on the reactor_spert3_ccore card (NegativeFlow).",
         message_number(coolant_flow_m_per_s),
-        message_number(first),
     ))
 }
 
-/// The sentence for a coolant flow the C-core card did not compare at this pressure.
-fn reactor_ccore_flow_outside_card(coolant_flow_m_per_s: f64, system_pressure_psig: f64) -> String {
+/// The sentence for a reactivity of zero or less on the C-core card.
+fn reactor_ccore_reactivity_not_positive(reactivity_inserted_dollar: f64) -> String {
     unsealed(&format!(
-        "'coolant_flow_m_per_s' {} m/s at {} psig was not compared on the reactor_spert3_ccore card: it takes no flow at 0 to {} psig, or [{}, {}] m/s (200 to 20,000 gpm) at {} psig only (FlowOutsideCard).",
-        message_number(coolant_flow_m_per_s),
-        message_number(system_pressure_psig),
-        message_number(reactor_spert3_ccore::PRESSURE_MAX_PSIG),
-        message_number(reactor_spert3_ccore::FLOW_MIN_M_PER_S),
-        message_number(reactor_spert3_ccore::FLOW_MAX_M_PER_S),
-        message_number(reactor_spert3_ccore::FLOW_PRESSURE_MIN_PSIG),
-    ))
-}
-
-/// The sentence for a reactivity outside the span compared with the run's flow.
-fn reactor_ccore_reactivity_outside_card(reactivity_inserted_dollar: f64, coolant_flow_m_per_s: f64) -> String {
-    let (least, with) = if coolant_flow_m_per_s == 0.0 {
-        (reactor_spert3_ccore::REACTIVITY_MIN_NO_FLOW_DOLLAR, "with no flow")
-    } else {
-        (reactor_spert3_ccore::REACTIVITY_MIN_FLOW_DOLLAR, "with flow")
-    };
-    unsealed(&format!(
-        "'reactivity_inserted_dollar' {} dollar is outside [{}, {}] dollars, the span compared {with} on the reactor_spert3_ccore card (ReactivityOutsideCard).",
+        "'reactivity_inserted_dollar' {} dollar is zero or less on the reactor_spert3_ccore card: no step in reactivity is inserted, and there is no burst (ReactivityNotPositive).",
         message_number(reactivity_inserted_dollar),
-        message_number(least),
-        message_number(reactor_spert3_ccore::REACTIVITY_MAX_DOLLAR),
     ))
 }
 
-/// The sentence for a start outside the compared temperatures or pressures.
-fn reactor_ccore_start_outside_card(initial_temperature_k: f64, system_pressure_psig: f64) -> String {
+/// The sentence for a start at a pressure at or below absolute zero, or one that is not liquid water.
+fn reactor_ccore_start_not_liquid(initial_temperature_k: f64, system_pressure_psig: f64) -> String {
     let reactor = reactor_spert3_ccore::ReactorSpert3Ccore::c_core_step_transients();
-    if !reactor.initial_temperature_on_card(initial_temperature_k) {
+    if !reactor.pressure_is_positive(system_pressure_psig) {
         unsealed(&format!(
-            "'initial_temperature_k' {} K is outside [{}, {}] K, the 21 to 36 degC compared on the reactor_spert3_ccore card (InitialTemperatureOutsideCard).",
-            message_number(initial_temperature_k),
-            message_number(reactor_spert3_ccore::INITIAL_TEMPERATURE_MIN_K),
-            message_number(reactor_spert3_ccore::INITIAL_TEMPERATURE_MAX_K),
+            "'system_pressure_psig' {} psig is at or below absolute zero, -{} psig, on the reactor_spert3_ccore card (PressureNotPositive).",
+            message_number(system_pressure_psig),
+            message_number(reactor_spert3_ccore::ATMOSPHERE_PSI),
         ))
     } else {
+        let boiling = reactor.saturation_temperature_k(system_pressure_psig);
+        let upper = if boiling.is_finite() && boiling > reactor_spert3_ccore::FREEZING_K {
+            format!("{} K, the saturation temperature of water at {} psig (IAPWS-IF97 region 4; the critical temperature above the critical pressure)", message_number(boiling), message_number(system_pressure_psig))
+        } else {
+            format!("the freezing point: at {} psig water boils below 273.15 K, so no start is liquid", message_number(system_pressure_psig))
+        };
         unsealed(&format!(
-            "'system_pressure_psig' {} psig is outside [0, {}] psig, the span compared on the reactor_spert3_ccore card (PressureOutsideCard).",
-            message_number(system_pressure_psig),
-            message_number(reactor_spert3_ccore::PRESSURE_MAX_PSIG),
+            "'initial_temperature_k' {} K is not liquid water on the reactor_spert3_ccore card: a start is at or above {} K and below {} (InitialTemperatureNotLiquidWater).",
+            message_number(initial_temperature_k),
+            message_number(reactor_spert3_ccore::FREEZING_K),
+            upper,
         ))
     }
 }
@@ -2020,13 +2012,42 @@ fn reactor_ccore_reactivity_changed(reactivity_inserted_dollar: f64, first: f64)
     ))
 }
 
-/// The sentence for a segment whose coolant flow is not the first segment's.
-fn reactor_ccore_flow_changed(coolant_flow_m_per_s: f64, first: f64) -> String {
+/// The sentence for a step longer than the state ceiling, with the longest step the state the
+/// step started from allows.
+fn reactor_ccore_state_ceiling(dt_s: f64, longest_s: Option<f64>) -> String {
+    let longest = match longest_s {
+        Some(longest) if longest >= dt_s => format!(
+            "the state the step started from allows {} s, and its trial end less",
+            message_number(longest)
+        ),
+        Some(longest) => format!("the state the step started from allows {} s", message_number(longest)),
+        None => "the state the step started from allows no step".to_string(),
+    };
     unsealed(&format!(
-        "'coolant_flow_m_per_s' {} m/s is not the {} m/s of the first segment: a run of the reactor_spert3_ccore card carries one flow, and no compared test changed its flow (FlowChangedDuringRun).",
-        message_number(coolant_flow_m_per_s),
-        message_number(first),
+        "the step of {} s is longer than the state lets it be: {longest}. Past the compared range the step ceiling follows the state, the growing prompt pole held to 0.0611, the decaying prompt pole to 0.5 and the plate and water heat transfer and sweep to 0.0184 of a step (DtAboveStateCeiling).",
+        message_number(dt_s),
     ))
+}
+
+fn runaway_reject(reject: runaway_18650_lco::StepReject) -> String {
+    match reject {
+        runaway_18650_lco::StepReject::EveryReactantConsumed => unsealed(
+            "the step would carry the cell to every reactant consumed: the heat the lithium in the SEI and in the graphite, the unreacted cathode and the electrolyte still hold falls to 1e-6 of the cell's chemical heat or under, 0.0205 J, and the runaway has finished (EveryReactantConsumed).",
+        ),
+        runaway_18650_lco::StepReject::CanMelting => unsealed(
+            "the cell temperature, incoming or in a substep, is at or above 1811 K, the melting point of iron: the steel can melts (CanMelting).",
+        ),
+        runaway_18650_lco::StepReject::SubstepsAboveBudget => unsealed(
+            "the step would need more than 1,048,576 substeps to follow its fastest reaction (SubstepsAboveBudget).",
+        ),
+        runaway_18650_lco::StepReject::SpontaneousGeneration => unsealed(
+            "the heat stored in the cell rose above the heat released, plus the heater's, less the heat lost (SpontaneousGeneration).",
+        ),
+        runaway_18650_lco::StepReject::FirstLawBreach => unsealed(
+            "the heat stored in the cell fell below the heat released, plus the heater's, less the heat lost (FirstLawBreach).",
+        ),
+        other => refused("runaway_18650_lco", other),
+    }
 }
 
 fn reactor_ccore_reject(reject: reactor_spert3_ccore::StepReject) -> String {
@@ -2034,18 +2055,6 @@ fn reactor_ccore_reject(reject: reactor_spert3_ccore::StepReject) -> String {
         reactor_spert3_ccore::StepReject::PastPlateTemperatureMaximum => unsealed(
             "the reactor is past the first maximum of the hot-spot plate temperature after the power peak; nothing after it is on the card (PastPlateTemperatureMaximum).",
         ),
-        reactor_spert3_ccore::StepReject::TimeBeyondCard => unsealed(&format!(
-            "the step would end after {} s (TimeBeyondCard).",
-            reactor_spert3_ccore::TIME_MAX_S
-        )),
-        reactor_spert3_ccore::StepReject::EnergyBeyondCard => unsealed(&format!(
-            "the step released more than {} MW s (EnergyBeyondCard).",
-            reactor_spert3_ccore::ENERGY_MAX_MWS
-        )),
-        reactor_spert3_ccore::StepReject::PowerBeyondCard => unsealed(&format!(
-            "the step reached more than {} MW (PowerBeyondCard).",
-            reactor_spert3_ccore::POWER_MAX_MW
-        )),
         reactor_spert3_ccore::StepReject::SpontaneousGeneration => {
             unsealed("the reactor created neutrons or energy beyond what its ledger supplies (SpontaneousGeneration).")
         }
@@ -2061,26 +2070,19 @@ fn reactor_fuel_reject(reject: reactor_spert3_fuel::StepReject) -> String {
         reactor_spert3_fuel::StepReject::InletTemperatureOutsideCard => unsealed(
             "the inlet temperature is in none of the three tested bands: 56 to 92, 251 to 259, 498 to 501 degF (InletTemperatureOutsideCard).",
         ),
-        reactor_spert3_fuel::StepReject::ReactivityOutsideCard => unsealed(
-            "the reactivity inserted is outside the span tested in this band (ReactivityOutsideCard).",
+        reactor_spert3_fuel::StepReject::ReactivityNotPositive => unsealed(
+            "the reactivity inserted is zero or less: the transient rod inserts no reactivity, and there is no burst (ReactivityNotPositive).",
         ),
-        reactor_spert3_fuel::StepReject::FlowOutsideCard => unsealed(
-            "the coolant flow rate is outside the span tested in this band: none in the cold band, 2.4 to 22 ft/s at 260 degF and 4.8 to 24 ft/s at 500 degF (FlowOutsideCard).",
+        reactor_spert3_fuel::StepReject::NegativeFlow => unsealed(
+            "the coolant flow rate is below zero: the flow runs through the core from the inlet (NegativeFlow).",
         ),
         reactor_spert3_fuel::StepReject::PastFirstMaximum => unsealed(
             "the reactor is past the first maximum of power; nothing after it is on the card (PastFirstMaximum).",
         ),
-        reactor_spert3_fuel::StepReject::TimeBeyondCard => unsealed(&format!(
-            "the step would end after {} s (TimeBeyondCard).",
-            reactor_spert3_fuel::TIME_MAX_S
-        )),
-        reactor_spert3_fuel::StepReject::EnergyBeyondCard => unsealed(&format!(
-            "the step released more than {} MW s (EnergyBeyondCard).",
-            reactor_spert3_fuel::ENERGY_MAX_MWS
-        )),
-        reactor_spert3_fuel::StepReject::PowerBeyondCard => unsealed(&format!(
-            "the step reached more than {} MW (PowerBeyondCard).",
-            reactor_spert3_fuel::POWER_MAX_MW
+        reactor_spert3_fuel::StepReject::DtAboveStateCeiling => unsealed(&format!(
+            "the step is longer than {} of the time constant of the fastest pole at the state it starts from or would land on, or {} of it for a growing pole: the prompt pole |1 - net reactivity| / l*, the feedback pole of the fuel and the water temperature, or the sweep 2 v / L of the water (DtAboveStateCeiling).",
+            reactor_spert3_fuel::GATE_PHASE_STEP,
+            reactor_spert3_fuel::GROWTH_PHASE_STEP
         )),
         reactor_spert3_fuel::StepReject::SpontaneousGeneration => {
             unsealed("the reactor created neutron population (SpontaneousGeneration).")
@@ -2093,40 +2095,21 @@ fn reactor_fuel_reject(reject: reactor_spert3_fuel::StepReject) -> String {
 }
 
 /// The sentence for a loss outside the card, from the card's own bound.
-fn grid_gb_loss_outside_card() -> String {
-    unsealed(&format!(
-        "the power lost is outside {} to {} MW, the losses compared with measurement (LossOutsideCard).",
-        grid_gb::LOSS_MIN_MW,
-        grid_gb::LOSS_MAX_MW
-    ))
-}
-
 fn grid_gb_reject(reject: grid_gb::StepReject) -> String {
     match reject {
-        grid_gb::StepReject::LossOutsideCard => grid_gb_loss_outside_card(),
-        grid_gb::StepReject::LossChangedDuringRun => unsealed(
-            "the power lost is not the loss of the first step of this run (LossChangedDuringRun).",
+        grid_gb::StepReject::InertiaNotPositive => unsealed(
+            "the stored kinetic energy at 50 Hz is zero or less (InertiaNotPositive).",
         ),
-        grid_gb::StepReject::StartFrequencyOutsideCard => unsealed(
-            "the starting frequency is outside 49.85 to 50.15 Hz (StartFrequencyOutsideCard).",
+        grid_gb::StepReject::DemandNegative => unsealed("the demand is below zero (DemandNegative)."),
+        grid_gb::StepReject::LossLargerThanDemand => unsealed(
+            "the power lost is larger in size than the demand the area carries (LossLargerThanDemand).",
         ),
-        grid_gb::StepReject::InertiaOutsideCard => unsealed(
-            "the stored kinetic energy at 50 Hz is outside 111,000 to 337,000 MW s (InertiaOutsideCard).",
-        ),
-        grid_gb::StepReject::DemandOutsideCard => {
-            unsealed("the demand is outside 18,163 to 40,829 MW (DemandOutsideCard).")
-        }
-        grid_gb::StepReject::TimeBeyondCard => {
-            unsealed("the step would end later than 60 s after the start (TimeBeyondCard).")
-        }
+        grid_gb::StepReject::NegativeTime => unsealed("the clock is below zero (NegativeTime)."),
         grid_gb::StepReject::LowFrequencyDemandDisconnection => unsealed(
             "the frequency is at or below 48.8 Hz, where low-frequency demand disconnection begins (LowFrequencyDemandDisconnection).",
         ),
-        grid_gb::StepReject::FrequencyBelowCompared => unsealed(
-            "the frequency is below 49.55 Hz, the lowest frequency compared with measurement (FrequencyBelowCompared).",
-        ),
         grid_gb::StepReject::FrequencyAboveCard => unsealed(
-            "the frequency is above 50.5 Hz, the upper statutory limit (FrequencyAboveCard).",
+            "the frequency is above 50.5 Hz, the upper statutory limit, where the card holds no over-frequency response (FrequencyAboveCard).",
         ),
         grid_gb::StepReject::SpontaneousGeneration => {
             unsealed("the area created kinetic energy (SpontaneousGeneration).")
@@ -2139,11 +2122,11 @@ fn grid_gb_reject(reject: grid_gb::StepReject) -> String {
 }
 
 const CAPSULE_ALTITUDE_OUTSIDE_CARD: &str =
-    "altitude is above 134.7 km or below 30 km (AltitudeOutsideCard).";
-const CAPSULE_MACH_OUTSIDE_CARD: &str = "the Mach number is below 1.0, or is above 40 below 68.96 km, where the drag table by Mach number ends (MachOutsideCard).";
-const CAPSULE_AIR_SPEED_OUTSIDE_CARD: &str = "above 68.96 km the speed through the air is below 11900 m/s or above 12575 m/s, outside the speeds the entry compared with the flight passed through there (AirSpeedOutsideCard).";
+    "altitude is above 134.7 km, the top of the drag table read by altitude (AltitudeOutsideCard).";
+const CAPSULE_BELOW_STANDARD_SEA_LEVEL: &str = "altitude is below 0 m, the sea level of the 1976 standard's air and the ellipsoid under the path: the capsule is on or under the ground (BelowStandardSeaLevel).";
+const CAPSULE_MACH_OUTSIDE_CARD: &str = "the Mach number is below 0.16, the first entry of the drag table read by Mach number, or is above 40 below 68.96 km, where that table ends (MachOutsideCard).";
+const CAPSULE_AIR_SPEED_OUTSIDE_CARD: &str = "above 68.96 km the speed through the air is below 11900 m/s or above 12620 m/s, the highest speed the drag table by altitude was computed at (AirSpeedOutsideCard).";
 const CAPSULE_PAST_FLIGHT_DEPLOYMENT: &str = "the state is under 31030 m and under Mach 1.23 at once, past the flown drogue deployment, where the capsule flew on a parachute (PastFlightDeployment).";
-const CAPSULE_OFF_COMPARED_CORRIDOR: &str = "the state is off the corridor the entry compared with the flight flew from the locked entry state: below 68.96 km, or moving upward above it, it is under 31 km or above 69 km, or its speed through the air or its path angle is outside the corridor at its altitude (OffComparedCorridor).";
 
 fn capsule_reject(reject: capsule_stardust::StepReject) -> String {
     match reject {
@@ -2157,8 +2140,8 @@ fn capsule_reject(reject: capsule_stardust::StepReject) -> String {
         capsule_stardust::StepReject::PastFlightDeployment => {
             unsealed(CAPSULE_PAST_FLIGHT_DEPLOYMENT)
         }
-        capsule_stardust::StepReject::OffComparedCorridor => {
-            unsealed(CAPSULE_OFF_COMPARED_CORRIDOR)
+        capsule_stardust::StepReject::BelowStandardSeaLevel => {
+            unsealed(CAPSULE_BELOW_STANDARD_SEA_LEVEL)
         }
         capsule_stardust::StepReject::SpontaneousGeneration => unsealed(
             "the capsule gained energy that drag did not account for (SpontaneousGeneration).",
@@ -2171,14 +2154,14 @@ fn capsule_reject(reject: capsule_stardust::StepReject) -> String {
 }
 
 const CAPSULE_INSIGHT_ALTITUDE_OUTSIDE_CARD: &str =
-    "altitude is above 128 km or below 4 km (AltitudeOutsideCard).";
-const CAPSULE_INSIGHT_MACH_OUTSIDE_CARD: &str = "the Mach number is below 1.0 (MachOutsideCard).";
+    "altitude is above 128 km (AltitudeOutsideCard).";
+const CAPSULE_INSIGHT_BELOW_LANDING_SITE: &str = "altitude is below -2634.5 m, the landing site's radius of 3393079.5 m: the capsule is at or under the ground there (BelowLandingSite).";
+const CAPSULE_INSIGHT_MACH_OUTSIDE_CARD: &str = "the Mach number is below 0.9, the first entry of the drag table read by Mach number (MachOutsideCard).";
 const CAPSULE_INSIGHT_AIR_SPEED_OUTSIDE_CARD: &str =
     "the speed through the air is above 5850 m/s (AirSpeedOutsideCard).";
 const CAPSULE_INSIGHT_LIFT_OUTSIDE_CARD: &str =
     "the lift over drag is above 0.08 or below -0.08 (LiftOutsideCard).";
-const CAPSULE_INSIGHT_PAST_COMPARED_FLIGHT: &str = "altitude is below 5700 m or the Mach number is below 1.46, past the lowest state the run compared with the flight reached; the flight record ends at parachute deployment, 6164.6 m above the datum (PastComparedFlight).";
-const CAPSULE_INSIGHT_OFF_COMPARED_CORRIDOR: &str = "the state is off the corridor the runs compared with the flight flew from the locked entry state: above 126.5 km, or its speed through the air or its path angle is outside the corridor at its altitude (OffComparedCorridor).";
+const CAPSULE_INSIGHT_PAST_FLIGHT_DEPLOYMENT: &str = "the state is under 6164.62 m and under 352.1169 m/s through the air at once, past the flown parachute deployment, the last row of the flight's record, where the capsule flew on its parachute (PastFlightDeployment).";
 
 fn capsule_insight_reject(reject: capsule_insight::StepReject) -> String {
     match reject {
@@ -2194,11 +2177,11 @@ fn capsule_insight_reject(reject: capsule_insight::StepReject) -> String {
         capsule_insight::StepReject::AirSpeedOutsideCard => {
             unsealed(CAPSULE_INSIGHT_AIR_SPEED_OUTSIDE_CARD)
         }
-        capsule_insight::StepReject::PastComparedFlight => {
-            unsealed(CAPSULE_INSIGHT_PAST_COMPARED_FLIGHT)
+        capsule_insight::StepReject::PastFlightDeployment => {
+            unsealed(CAPSULE_INSIGHT_PAST_FLIGHT_DEPLOYMENT)
         }
-        capsule_insight::StepReject::OffComparedCorridor => {
-            unsealed(CAPSULE_INSIGHT_OFF_COMPARED_CORRIDOR)
+        capsule_insight::StepReject::BelowLandingSite => {
+            unsealed(CAPSULE_INSIGHT_BELOW_LANDING_SITE)
         }
         capsule_insight::StepReject::SpontaneousGeneration => unsealed(
             "the capsule gained energy that drag did not account for (SpontaneousGeneration).",
@@ -2210,31 +2193,24 @@ fn capsule_insight_reject(reject: capsule_insight::StepReject) -> String {
     }
 }
 
-const CANTILEVER_DEFLECTION_ABOVE_CARD: &str = "the deflection envelope, sqrt(deflection_m^2 + (velocity_m_s / omega0)^2), is above 0.01579 m, the largest the compared run held (DeflectionAboveCard).";
-const CANTILEVER_DEFLECTION_BELOW_CARD: &str = "the deflection envelope, sqrt(deflection_m^2 + (velocity_m_s / omega0)^2), is below 5.8e-5 m, the smallest the card was compared at (DeflectionBelowCard).";
+const CANTILEVER_ENVELOPE_ABOVE_CARD: &str = "the deflection envelope, sqrt(deflection_m^2 + (velocity_m_s / omega0)^2), a size, is above 0.01875 m: a deflection or a speed of either sign larger than the card takes. 0.01875 m is 3.119 V x 0.006012 m/V, the largest amplitude the softening and the damping were fitted on; above it those laws were not fitted, and the strip's own limit, its yield at the clamp, needs its alloy, which the dataset does not state (EnvelopeAboveCard).";
 
-const LOS_COUNT_RATE_OUTSIDE_CARD: &str = "the guide star's count rate is below 22900 or above 2820000 counts per second, the range the constants were fitted on (CountRateOutsideCard).";
+const LOS_COUNT_RATE_NOT_POSITIVE: &str = "the guide star's count rate on a measured frame is zero or below, or under about 7e-237 counts per second, where the noise variance of its centroid passes the largest 64-bit number: the noise law has no value at zero, and a centroid with no light holds no position (CountRateNotPositive).";
 const LOS_OFFSET_OUTSIDE_CARD: &str = "the centroid is more than 250 mas from the lock point on x or on y (OffsetOutsideCard).";
-const LOS_RECOVERY_NOT_ELAPSED: &str = "the run starts less than 30 s after the last centroid the caller states was refused as a disturbance or was more than 5 mas from the lock point (RecoveryNotElapsed).";
-const LOS_POINTING_DISTURBANCE: &str = "a measured centroid is more than 5 mas from the lock point on x or on y: the pointing is disturbed, and there the card is worse than taking the last centroid. A new run may start no earlier than 30 s after this centroid and after any later one more than 5 mas from the lock point (PointingDisturbance).";
-const LOS_INNOVATION_BEYOND_FOUR_SIGMA: &str = "a measured centroid is more than four stated standard deviations from where it was expected, on x or on y. A new run may start no earlier than 30 s after this centroid (InnovationBeyondFourSigma).";
-const LOS_MEASUREMENT_GAP_OUTSIDE_CARD: &str = "the frame has no measurement and would make more than 10 frames in a row with none, the longest run of them the comparison crossed. A new run may start at the next measured frame (MeasurementGapOutsideCard).";
+const LOS_QUIET_BELOW_ZERO: &str = "the stated quiet_before_start_s, the time since the last disturbed centroid before the run, is below zero (QuietBeforeStartBelowZero).";
+const LOS_LOCK_OUTSIDE_SENSOR_FIELD: &str = "the lock point is more than 70 arcsec from the centre of the sensor's ideal frame on x or on y: the guider's field is 2.3 by 2.3 arcmin, and no star can be held beyond it (LockOutsideSensorField).";
 const LOS_MEASURED_NOT_ZERO_OR_ONE: &str = "Physical Violation: 'measured' is neither 0 nor 1 (MeasuredNotZeroOrOne) on the los_jwst_fine_guide card.";
 const LOS_UNMEASURED_CARRIES_NUMBERS: &str = "Physical Violation: a frame with 'measured' 0 carries a centroid or a count rate that is not zero (UnmeasuredFrameCarriesNumbers) on the los_jwst_fine_guide card.";
 
 fn los_reject(reject: los_jwst_fine_guide::StepReject) -> String {
     match reject {
-        los_jwst_fine_guide::StepReject::CountRateOutsideCard => {
-            unsealed(LOS_COUNT_RATE_OUTSIDE_CARD)
+        los_jwst_fine_guide::StepReject::CountRateNotPositive => {
+            unsealed(LOS_COUNT_RATE_NOT_POSITIVE)
         }
         los_jwst_fine_guide::StepReject::OffsetOutsideCard => unsealed(LOS_OFFSET_OUTSIDE_CARD),
-        los_jwst_fine_guide::StepReject::RecoveryNotElapsed => unsealed(LOS_RECOVERY_NOT_ELAPSED),
-        los_jwst_fine_guide::StepReject::PointingDisturbance => unsealed(LOS_POINTING_DISTURBANCE),
-        los_jwst_fine_guide::StepReject::InnovationBeyondFourSigma => {
-            unsealed(LOS_INNOVATION_BEYOND_FOUR_SIGMA)
-        }
-        los_jwst_fine_guide::StepReject::MeasurementGapOutsideCard => {
-            unsealed(LOS_MEASUREMENT_GAP_OUTSIDE_CARD)
+        los_jwst_fine_guide::StepReject::QuietBeforeStartBelowZero => unsealed(LOS_QUIET_BELOW_ZERO),
+        los_jwst_fine_guide::StepReject::LockOutsideSensorField => {
+            unsealed(LOS_LOCK_OUTSIDE_SENSOR_FIELD)
         }
         los_jwst_fine_guide::StepReject::MeasuredNotZeroOrOne => {
             LOS_MEASURED_NOT_ZERO_OR_ONE.to_string()
@@ -2254,8 +2230,8 @@ fn los_reject(reject: los_jwst_fine_guide::StepReject) -> String {
 
 /// One frame of the table, read from a request and held to what the request
 /// itself shows: `measured` is 0 or 1, a frame with no measurement carries
-/// zeros, a measured frame has its count rate on the card and its centroid
-/// within the card's reach of the lock point.
+/// zeros, a measured frame has a count rate above zero whose noise variance
+/// is a number and its centroid within the card's reach of the lock point.
 fn los_load(
     card: &los_jwst_fine_guide::LosJwstFineGuide,
     lock_x_arcsec: f64,
@@ -2271,8 +2247,8 @@ fn los_load(
             return Err(LOS_UNMEASURED_CARRIES_NUMBERS.to_string());
         }
     } else if measured == 1.0 {
-        if !(counts_per_s >= card.counts_min_per_s && counts_per_s <= card.counts_max_per_s) {
-            return Err(unsealed(LOS_COUNT_RATE_OUTSIDE_CARD));
+        if !card.count_rate_has_noise(counts_per_s) {
+            return Err(unsealed(LOS_COUNT_RATE_NOT_POSITIVE));
         }
         let offset_x_mas =
             (centroid_x_arcsec - lock_x_arcsec) * los_jwst_fine_guide::MAS_PER_ARCSEC;
@@ -2295,11 +2271,8 @@ fn los_load(
 
 fn cantilever_reject(reject: cantilever_eth::StepReject) -> String {
     match reject {
-        cantilever_eth::StepReject::DeflectionAboveCard => {
-            unsealed(CANTILEVER_DEFLECTION_ABOVE_CARD)
-        }
-        cantilever_eth::StepReject::DeflectionBelowCard => {
-            unsealed(CANTILEVER_DEFLECTION_BELOW_CARD)
+        cantilever_eth::StepReject::EnvelopeAboveCard => {
+            unsealed(CANTILEVER_ENVELOPE_ABOVE_CARD)
         }
         cantilever_eth::StepReject::SpontaneousGeneration => {
             unsealed("the beam created mechanical energy (SpontaneousGeneration).")
@@ -2313,21 +2286,15 @@ fn cantilever_reject(reject: cantilever_eth::StepReject) -> String {
 
 fn link_reject(reject: link_gothenburg_10010::StepReject) -> String {
     match reject {
-        link_gothenburg_10010::StepReject::RainRateOutsideCard => {
-            unsealed("the rain rate is outside 0 to 84 mm/h (RainRateOutsideCard).")
+        link_gothenburg_10010::StepReject::NegativeRainRate => {
+            unsealed("the rain rate is below zero: rain does not fall upward (NegativeRainRate).")
         }
-        link_gothenburg_10010::StepReject::RainRateBelowGaugeCount => unsealed(
-            "the rain rate is above zero and below 6 mm/h, one count of the gauge in a minute: the gauge gives no such one-minute rate, and none was compared with the link (RainRateBelowGaugeCount).",
-        ),
-        link_gothenburg_10010::StepReject::RainNotHeldForGaugeMinute => unsealed(
-            "the rain rate changed inside a gauge minute: it is not the rate held since the minute began, and only rain held through whole gauge minutes was compared with the link (RainNotHeldForGaugeMinute).",
-        ),
         link_gothenburg_10010::StepReject::GaugeMinuteOutsideCard => unsealed(
             "the seconds already spent in the current gauge minute are below zero or not below 60 s (GaugeMinuteOutsideCard).",
         ),
-        link_gothenburg_10010::StepReject::DryPathLossOutsideCard => {
-            unsealed("the dry level is outside 50 to 54 dB (DryPathLossOutsideCard).")
-        }
+        link_gothenburg_10010::StepReject::DryPathLossBelowFreeSpace => unsealed(
+            "the dry level is below 44.32 dB, the free-space loss of this path less the gain of two ideal 0.3 m apertures: no pair of these antennas has that much gain (DryPathLossBelowFreeSpace).",
+        ),
         link_gothenburg_10010::StepReject::AntennaWaterOutsideCard => unsealed(
             "the attenuation of the water on the antennas is outside 0 to 2.13 dB (AntennaWaterOutsideCard).",
         ),
@@ -2346,26 +2313,29 @@ fn link_reject(reject: link_gothenburg_10010::StepReject) -> String {
 
 const TIRE_SLIP_OUTSIDE_CARD: &str =
     "the slip magnitude is below 0.05 or above 0.20, the slips the constants cover (SlipOutsideCard).";
-const TIRE_TRAVEL_BEYOND_TRACK: &str = "the distance along the track is below zero, or the step ends beyond 6 m, the length rolled in a run (TravelBeyondTrack).";
-const TIRE_SLIP_NOT_SETTLED: &str = "the slip has been held less than 5 s at the start of the step: a start stated less, or the slip changed; the force in the first 5 s after a slip is set failed the comparison with the measurements (SlipNotSettled).";
-const TIRE_HOLD_BEYOND_MEASURED: &str = "the step ends more than 21 s after the slip was set; no scored slip was compared beyond one 21 s stage (HoldBeyondMeasured).";
+const TIRE_DISTANCE_BELOW_ZERO: &str = "the distance along the track is below zero (DistanceBelowZero).";
+const TIRE_SLIP_HELD_BELOW_ZERO: &str = "the time the slip has been held, stated at the start or carried in the state, is below zero: a slip is held from the instant it is set (SlipHeldBelowZero).";
+const TIRE_STEP_TOO_SMALL: &str = "the step does not move the time held at the slip, or the distance, in 64-bit arithmetic (StepTooSmallToResolve).";
 
-const FINGERPAD_TWIST_BEYOND_MEASURED: &str = "the twist is below zero, or the step ends beyond 75 degrees, the end of the twist compared with measurement, past which the measured plate slowed to a stop at 80 (TwistBeyondMeasured).";
-const FINGERPAD_TWIST_NOT_FROM_ZERO: &str = "the twist at the start is not zero; every measured twist began with the pad untwisted, and the card cannot see the load a pad already twisted was brought there under (TwistNotStartedFromZero).";
-const FINGERPAD_LOAD_CHANGED: &str = "the normal force or the twist rate differs from the one this twist began with; no measured twist changed either (LoadChangedDuringTwist).";
+const FINGERPAD_TWIST_BELOW_ZERO: &str = "the twist is below zero: the twist is of the plate turning forward from the untwisted pad (TwistBelowZero).";
+const FINGERPAD_TWIST_NOT_FROM_ZERO: &str = "the twist at the start is not zero: the card's closed forms are of a pad twisted from zero under the load it holds, and a pad already twisted holds springs set by the load and the path it was brought there under, which a start does not carry (TwistNotStartedFromZero).";
+const FINGERPAD_LOAD_CHANGED: &str = "the normal force or the twist rate differs from the one this twist began with: the torque, the stuck fraction and the stored energy are closed forms of the twist under one load held from the untwisted pad, and under a changed load the bed's springs hold a state set by the path, which the card's state does not carry (LoadChangedDuringTwist).";
 
 fn fingerpad_reject(reject: fingerpad_p02_glass::StepReject) -> String {
     use fingerpad_p02_glass::StepReject;
     match reject {
-        StepReject::NormalForceOutsideCard => unsealed(
-            "the normal force is below 1.93 N or above 2.07 N: the card holds its mark only in the block of trials at 2 N, within the spread of the robot's force controller (NormalForceOutsideCard).",
+        StepReject::NoContact => unsealed(
+            "the normal force is zero or below, or under the smallest normal 64-bit number: the plate does not press on the pad (NoContact).",
         ),
-        StepReject::TwistRateOutsideCard => unsealed(
-            "the twist rate is below 5 or above 50 degrees a second: the card holds its mark at 2 N only at those rates (TwistRateOutsideCard).",
+        StepReject::TwistRateNotPositive => unsealed(
+            "the twist rate is zero or below, or under the smallest normal 64-bit number: the plate does not turn forward, and the characteristic twists, powers of the rate, have no value (TwistRateNotPositive).",
+        ),
+        StepReject::TwistStepAboveQuadrature => unsealed(
+            "the step turns the plate by more than 0.05 of the characteristic twist of the torque, past which the four-point rule that sums the plate work and the heat is not exact to rounding: take a shorter step (TwistStepAboveQuadrature).",
         ),
         StepReject::LoadChangedDuringTwist => unsealed(FINGERPAD_LOAD_CHANGED),
         StepReject::TwistNotStartedFromZero => unsealed(FINGERPAD_TWIST_NOT_FROM_ZERO),
-        StepReject::TwistBeyondMeasured => unsealed(FINGERPAD_TWIST_BEYOND_MEASURED),
+        StepReject::TwistBelowZero => unsealed(FINGERPAD_TWIST_BELOW_ZERO),
         StepReject::SpontaneousGeneration => unsealed(
             "the stored energy plus the friction heat rose above the plate work (SpontaneousGeneration).",
         ),
@@ -2379,19 +2349,19 @@ fn fingerpad_reject(reject: fingerpad_p02_glass::StepReject) -> String {
 fn tire_reject(reject: tire_eve_r19_ice::StepReject) -> String {
     use tire_eve_r19_ice::StepReject;
     match reject {
-        StepReject::NormalLoadOutsideCard => unsealed(
-            "the normal load is below 3 500 N or above 6 500 N, the loads measured (NormalLoadOutsideCard).",
+        StepReject::NoContact => unsealed(
+            "the normal load is zero or below, or under the smallest normal 64-bit number: the tyre does not press on the ice (NoContact).",
         ),
-        StepReject::InflationPressureOutsideCard => unsealed(
-            "the inflation pressure is below 150 kPa or above 350 kPa, the pressures measured (InflationPressureOutsideCard).",
+        StepReject::TyreFlat => unsealed(
+            "the inflation pressure, gauge, is zero or below: the tyre is flat (TyreFlat).",
         ),
         StepReject::SlipOutsideCard => unsealed(TIRE_SLIP_OUTSIDE_CARD),
         StepReject::CarriageSpeedOutsideCard => unsealed(
             "the carriage speed is below 0.05 m/s or above 0.07 m/s, the creep of the rig (CarriageSpeedOutsideCard).",
         ),
-        StepReject::TravelBeyondTrack => unsealed(TIRE_TRAVEL_BEYOND_TRACK),
-        StepReject::SlipNotSettled => unsealed(TIRE_SLIP_NOT_SETTLED),
-        StepReject::HoldBeyondMeasured => unsealed(TIRE_HOLD_BEYOND_MEASURED),
+        StepReject::DistanceBelowZero => unsealed(TIRE_DISTANCE_BELOW_ZERO),
+        StepReject::SlipHeldBelowZero => unsealed(TIRE_SLIP_HELD_BELOW_ZERO),
+        StepReject::StepTooSmallToResolve => unsealed(TIRE_STEP_TOO_SMALL),
         StepReject::SpontaneousGeneration => unsealed(
             "the drawbar work plus the slip heat rose above the wheel work (SpontaneousGeneration).",
         ),
@@ -2405,26 +2375,18 @@ fn tire_reject(reject: tire_eve_r19_ice::StepReject) -> String {
 fn accumulator_reject(reject: accumulator_sbo450::StepReject) -> String {
     use accumulator_sbo450::StepReject;
     match reject {
-        StepReject::GasMassOutsideCard => unsealed(
-            "the gas mass is neither of the two charges measured: 0.013639 to 0.013667 kg, a precharge of 20 bar, or 0.02744 to 0.027495 kg, a precharge of 40 bar (GasMassOutsideCard).",
-        ),
-        StepReject::WallTemperatureOutsideCard => unsealed(
-            "the wall temperature is below 293.4 K or above 293.7 K: no other wall temperature was compared with measurement (WallTemperatureOutsideCard).",
-        ),
-        StepReject::PistonSpeedOutsideCard => unsealed(
-            "the piston speed is above 0.7 m/s, either way: no faster motion was compared with measurement (PistonSpeedOutsideCard).",
+        StepReject::GasMassNotPositive => unsealed("the gas mass is zero or less (GasMassNotPositive)."),
+        StepReject::WallTemperatureNotPositive => unsealed(
+            "the wall temperature is at or below absolute zero (WallTemperatureNotPositive).",
         ),
         StepReject::PistonTravelAboveStep => unsealed(
             "the piston would travel more than 1 mm in the step (PistonTravelAboveStep).",
         ),
-        StepReject::GasTemperatureOutsideCard => unsealed(
-            "the gas temperature, incoming or landing, is below 285.9 K or above 301.8 K: no other gas temperature was compared with measurement (GasTemperatureOutsideCard).",
+        StepReject::GasBelowCriticalTemperature => unsealed(
+            "the gas temperature, incoming or landing, is at or below 126.192 K, nitrogen's critical temperature, where it can condense (GasBelowCriticalTemperature).",
         ),
-        StepReject::PressureOutsideCard => unsealed(
-            "the gas pressure, incoming or landing, is below 37 bar or above 86 bar (PressureOutsideCard).",
-        ),
-        StepReject::PressureOutsideChargeBands => unsealed(
-            "the gas pressure, incoming or landing, is inside 37 to 86 bar and outside the bands compared with measurement for the charge given: 37 to 43 or 55 to 67 bar for the 20 bar charge, 57 to 64 or 75 to 86 bar for the 40 bar charge (PressureOutsideChargeBands).",
+        StepReject::PressureAboveRated => unsealed(
+            "the gas pressure, incoming or landing, is above 330 bar, the vessel's rated maximum working pressure (PressureAboveRated).",
         ),
         StepReject::NegativeMovedSum => unsealed(
             "the work moved or the heat moved carried into a start is below zero (NegativeMovedSum).",
@@ -2445,12 +2407,12 @@ fn accumulator_reject(reject: accumulator_sbo450::StepReject) -> String {
     }
 }
 
-const SATELLITE_RADIUS_OUTSIDE_CARD: &str =
-    "distance from the Earth's centre is below 11 997 km or above 12 327 km, the radii the compared runs reached (RadiusOutsideCard).";
-const SATELLITE_ORBIT_OUTSIDE_CARD: &str = "the orbit is not closed, or is in neither of the two compared orbits: LAGEOS-1, semi-major axis 12 265 to 12 275 km, eccentricity 0.0034 to 0.0044 and inclination 109.80 to 109.83 degrees, and LAGEOS-2, 12 158 to 12 166 km, 0.0132 to 0.0138 and 52.63 to 52.66 degrees; no other orbit was compared (OrbitOutsideCard).";
-const SATELLITE_EPOCH_OUTSIDE_CARD: &str =
-    "the time is before 2026-08-23 00:00 or after 2026-09-20 00:00 UTC, the dates of the compared runs (EpochOutsideCard).";
-const SATELLITE_HORIZON_OUTSIDE_CARD: &str = "the forecast would end more than seven days, 604800 s, from the state taken from a published orbit, counted as forecast_elapsed_s at the start plus t_s, or the stated forecast_elapsed_s is below zero; the compared runs were seven days long (HorizonOutsideCard).";
+const SATELLITE_RADIUS_BELOW_EARTH_RADIUS: &str =
+    "distance from the Earth's centre is below 6 378.1363 km, the Earth's equatorial radius, to which the field is scaled: the satellite is under the sphere of the Earth's equator, where the card's field, the series of the Earth's field outside the Earth, is not the field (RadiusBelowEarthRadius).";
+const SATELLITE_EPOCH_OUTSIDE_SPAN: &str =
+    "the time is before 2017-01-01 00:00 UTC, the last leap second, or after 2027-06-28 00:00 UTC, when the IERS leap-second file of Bulletin C 72 expires: outside that span TT - UTC is not the card's 69.184 s, or is not yet known (EpochOutsideLeapSecondSpan).";
+const SATELLITE_FORECAST_BELOW_ZERO: &str =
+    "the stated forecast_elapsed_s, the time since the state was taken from a published orbit, is below zero (ForecastElapsedBelowZero).";
 
 const SOLAR_SYSTEM_DISTANCE_OUTSIDE_CARD: &str =
     "a body's distance from its primary is outside that body's band (DistanceOutsideCard).";
@@ -2458,9 +2420,6 @@ const SOLAR_SYSTEM_ORBIT_OUTSIDE_CARD: &str = "the semi-major axis of a body's o
 const SOLAR_SYSTEM_FRAME_OUTSIDE_CARD: &str =
     "the centre of mass of the thirteen bodies moves faster than 0.01 m/s (FrameOutsideCard).";
 const SOLAR_SYSTEM_BODIES_COINCIDE: &str = "two bodies are at exactly one point, where the attraction between them has no value (BodiesCoincide).";
-const SOLAR_SYSTEM_DISTANCE_OUTSIDE_COMPARED_RUN: &str = "a body's distance from its primary is outside the distances the compared run went through up to the last range compared with measurement, 16.2 years after the 1999 state: Mercury 0.30 to 0.47 au, Venus 0.71 to 0.73, the Earth 0.98 to 1.02, the Moon 356 000 to 407 000 km, Mars 1.38 to 1.67, Jupiter 4.94 to 5.46, Saturn 9.03 to 9.97, Uranus 19.88 to 20.10, Neptune 29.96 to 30.14, Ceres 2.54 to 2.99, Pallas 2.13 to 3.42, Vesta 2.14 to 2.58 au (DistanceOutsideComparedRun).";
-const SOLAR_SYSTEM_BODIES_TOO_CLOSE: &str = "two bodies other than the Earth and the Moon are closer than 0.26 au, or two of the three asteroids closer than 0.38 au: closer than any pair in the compared run (BodiesTooClose).";
-const SOLAR_SYSTEM_ORIGIN_OUTSIDE_CARD: &str = "the centre of mass of the thirteen bodies is more than 120000 m from the origin; the positions are from the barycentre of the Solar System (OriginOutsideCard).";
 const SOLAR_SYSTEM_AXES_OUTSIDE_CARD: &str = "the orbit of the Earth-Moon barycentre about the Sun is not inclined 21 to 27 degrees to the z axis, as the ecliptic is to the ICRF equator: the axes are not those of the ICRF (AxesOutsideCard).";
 
 fn solar_system_reject(reject: solar_system::StepReject) -> String {
@@ -2471,11 +2430,6 @@ fn solar_system_reject(reject: solar_system::StepReject) -> String {
         solar_system::StepReject::OrbitOutsideCard => unsealed(SOLAR_SYSTEM_ORBIT_OUTSIDE_CARD),
         solar_system::StepReject::FrameOutsideCard => unsealed(SOLAR_SYSTEM_FRAME_OUTSIDE_CARD),
         solar_system::StepReject::BodiesCoincide => unsealed(SOLAR_SYSTEM_BODIES_COINCIDE),
-        solar_system::StepReject::DistanceOutsideComparedRun => {
-            unsealed(SOLAR_SYSTEM_DISTANCE_OUTSIDE_COMPARED_RUN)
-        }
-        solar_system::StepReject::BodiesTooClose => unsealed(SOLAR_SYSTEM_BODIES_TOO_CLOSE),
-        solar_system::StepReject::OriginOutsideCard => unsealed(SOLAR_SYSTEM_ORIGIN_OUTSIDE_CARD),
         solar_system::StepReject::AxesOutsideCard => unsealed(SOLAR_SYSTEM_AXES_OUTSIDE_CARD),
         solar_system::StepReject::SpontaneousGeneration => unsealed(
             "the carried ledger, or the step, gained energy that the work of relativity and of the Earth's oblateness does not account for (SpontaneousGeneration).",
@@ -2492,19 +2446,23 @@ fn solar_system_reject(reject: solar_system::StepReject) -> String {
 
 fn satellite_reject(reject: satellite_lageos1::StepReject) -> String {
     match reject {
-        satellite_lageos1::StepReject::RadiusOutsideCard => {
-            unsealed(SATELLITE_RADIUS_OUTSIDE_CARD)
+        satellite_lageos1::StepReject::RadiusBelowEarthRadius => {
+            unsealed(SATELLITE_RADIUS_BELOW_EARTH_RADIUS)
         }
-        satellite_lageos1::StepReject::OrbitOutsideCard => unsealed(SATELLITE_ORBIT_OUTSIDE_CARD),
-        satellite_lageos1::StepReject::EpochOutsideCard => unsealed(SATELLITE_EPOCH_OUTSIDE_CARD),
-        satellite_lageos1::StepReject::HorizonOutsideCard => {
-            unsealed(SATELLITE_HORIZON_OUTSIDE_CARD)
+        satellite_lageos1::StepReject::EpochOutsideLeapSecondSpan => {
+            unsealed(SATELLITE_EPOCH_OUTSIDE_SPAN)
+        }
+        satellite_lageos1::StepReject::ForecastElapsedBelowZero => {
+            unsealed(SATELLITE_FORECAST_BELOW_ZERO)
         }
         satellite_lageos1::StepReject::SpontaneousGeneration => unsealed(
             "the satellite gained energy that the work of the other forces does not account for (SpontaneousGeneration).",
         ),
         satellite_lageos1::StepReject::FirstLawBreach => unsealed(
             "the satellite lost energy that the work of the other forces does not account for (FirstLawBreach).",
+        ),
+        satellite_lageos1::StepReject::AngularMomentumBreach => unsealed(
+            "the satellite's angular momentum about the Earth's axis changed by more than the torque of the field and the other forces accounts for (AngularMomentumBreach).",
         ),
         other => refused("satellite_lageos1", other),
     }
@@ -3585,6 +3543,7 @@ fn tire_with<T>(
             "load_above_fitted",
             StateField::Bool(state.load_above_fitted),
         ),
+        ("beyond_compared", StateField::Bool(state.beyond_compared)),
     ])
 }
 
@@ -3635,6 +3594,10 @@ fn los_with<T>(
         (
             "quiet_before_start_s",
             StateField::F64(state.quiet_before_start_s),
+        ),
+        (
+            "since_disturbance_s",
+            StateField::F64(state.since_disturbance_s),
         ),
         ("slow_x_mas", StateField::F64(state.x.slow_mas)),
         ("fast_x_mas", StateField::F64(state.x.fast_mas)),
@@ -3694,6 +3657,9 @@ fn los_with<T>(
         ),
         ("unmeasured_in_row", StateField::F64(state.unmeasured_in_row)),
         ("no_measurement", StateField::Bool(state.no_measurement)),
+        ("pointing_disturbed", StateField::Bool(state.pointing_disturbed)),
+        ("beyond_four_sigma", StateField::Bool(state.beyond_four_sigma)),
+        ("recovering", StateField::Bool(state.recovering)),
     ]);
     finish(&fields)
 }
@@ -3737,6 +3703,10 @@ fn cantilever_with<T>(
         (
             "residual_conservation_error",
             StateField::F64(state.residual_conservation_error),
+        ),
+        (
+            "envelope_below_compared",
+            StateField::Bool(state.envelope_below_compared),
         ),
     ])
 }
@@ -3888,6 +3858,22 @@ fn satellite_with<T>(
             StateField::F64(state.energy_defect_j_per_kg),
         ),
         (
+            "angular_momentum_m2_s",
+            StateField::F64(state.angular_momentum_m2_s),
+        ),
+        (
+            "angular_momentum_anchor_m2_s",
+            StateField::F64(state.angular_momentum_anchor_m2_s),
+        ),
+        (
+            "external_torque_m2_s",
+            StateField::F64(state.external_torque_m2_s),
+        ),
+        (
+            "angular_momentum_defect_m2_s",
+            StateField::F64(state.angular_momentum_defect_m2_s),
+        ),
+        (
             "residual_conservation_error",
             StateField::F64(state.residual_conservation_error),
         ),
@@ -3999,6 +3985,7 @@ fn creep_with<T>(
             StateField::F64(state.residual_conservation_error),
         ),
         ("creep_rate_rising", StateField::Bool(state.creep_rate_rising)),
+        ("outside_met_range", StateField::Bool(state.outside_met_range)),
     ])
 }
 
@@ -4094,6 +4081,7 @@ fn fingerpad_with<T>(
             StateField::F64(state.stored_energy_at_start_j),
         ),
         ("full_slip", StateField::Bool(state.full_slip)),
+        ("beyond_compared", StateField::Bool(state.beyond_compared)),
     ])
 }
 
@@ -4261,6 +4249,45 @@ fn reactor_triga_with<T>(
         ("prompt_supercritical", StateField::Bool(state.prompt_supercritical)),
         ("rod_moving", StateField::Bool(state.rod_moving)),
         ("rods_dropped", StateField::Bool(state.rods_dropped)),
+    ])
+}
+
+fn runaway_state(state: &runaway_18650_lco::RunawayState) -> Result<serde_json::Value, String> {
+    runaway_with(state, state_object)
+}
+
+pub(crate) fn runaway_published_is_finite(state: &runaway_18650_lco::RunawayState) -> Result<(), String> {
+    runaway_with(state, fields_are_finite)
+}
+
+fn runaway_with<T>(
+    state: &runaway_18650_lco::RunawayState,
+    finish: impl FnOnce(&[(&str, StateField)]) -> T,
+) -> T {
+    finish(&[
+        ("t_s", StateField::F64(state.t_s)),
+        ("temperature_k", StateField::F64(state.temperature_k)),
+        ("sei_fraction", StateField::F64(state.sei_fraction)),
+        ("anode_lithium_fraction", StateField::F64(state.anode_lithium_fraction)),
+        ("cathode_unreacted_fraction", StateField::F64(state.cathode_unreacted_fraction)),
+        ("electrolyte_fraction", StateField::F64(state.electrolyte_fraction)),
+        ("sei_thickness", StateField::F64(state.sei_thickness)),
+        ("start_temperature_k", StateField::F64(state.start_temperature_k)),
+        ("heat_sei_j", StateField::F64(state.heat_sei_j)),
+        ("heat_anode_j", StateField::F64(state.heat_anode_j)),
+        ("heat_cathode_j", StateField::F64(state.heat_cathode_j)),
+        ("heat_electrolyte_j", StateField::F64(state.heat_electrolyte_j)),
+        ("heat_released_j", StateField::F64(state.heat_released_j)),
+        ("heater_heat_j", StateField::F64(state.heater_heat_j)),
+        ("heat_lost_j", StateField::F64(state.heat_lost_j)),
+        ("heat_stored_j", StateField::F64(state.heat_stored_j)),
+        ("chemical_heat_w", StateField::F64(state.chemical_heat_w)),
+        ("chemical_heating_k_s", StateField::F64(state.chemical_heating_k_s)),
+        ("energy_defect_j", StateField::F64(state.energy_defect_j)),
+        ("residual_conservation_error", StateField::F64(state.residual_conservation_error)),
+        ("substeps", StateField::F64(state.substeps)),
+        ("self_heating", StateField::Bool(state.self_heating)),
+        ("runaway", StateField::Bool(state.runaway)),
     ])
 }
 
@@ -4568,11 +4595,17 @@ fn with_rest_entries<T>(
             let reactor = reactor_triga_jsi::ReactorTrigaJsi::core_56_pulse_mode();
             let state = reactor_triga_jsi::ReactorState::try_start(
                 &reactor,
-                reactor.start_temperature_k_by_table[0].0,
+                reactor_triga_jsi::START_TEMPERATURE_K_BY_TABLE[0].0,
                 reactor_triga_jsi::ROD_TABLE_CORE[0],
             )
-            .expect("the reactor starts at the low end of its first table's starting temperatures");
+            .expect("the reactor starts at the low end of the starts compared on its first table");
             Some(reactor_triga_with(&state, finish))
+        }
+        ("energy", "runaway_18650_lco") => {
+            let cell = runaway_18650_lco::Runaway18650Lco::hatchard_kim();
+            let state = runaway_18650_lco::RunawayState::try_fresh(&cell, 298.15)
+                .expect("a fresh cell starts at 298.15 K");
+            Some(runaway_with(&state, finish))
         }
         ("energy", "reactor_spert3_ccore") => {
             let reactor = reactor_spert3_ccore::ReactorSpert3Ccore::c_core_step_transients();
@@ -4593,13 +4626,17 @@ fn with_rest_entries<T>(
             .expect("the reactor starts in the cold band");
             Some(reactor_fuel_with(&state, finish))
         }
+        ("materials", "grasp_lift_glass_4tu") => Some(card_grasp_lift_glass_4tu::rest(finish)),
+        ("aerospace", "momentum_jwst_srp") => Some(card_momentum_jwst_srp::rest(finish)),
+        ("aerospace", "momentum_jwst_dihedral") => Some(card_momentum_jwst_dihedral::rest(finish)),
+        ("energy", "generator_mmrtg_seebeck") => Some(card_generator_mmrtg_seebeck::rest(finish)),
         ("aerospace", "crater_ryugu_sci") => {
             let crater = crater_ryugu_sci::CraterRyuguSci::sci_impact();
             let state = crater_ryugu_sci::CraterState::try_radius(
                 &crater,
-                crater_ryugu_sci::RADIUS_FLOOR_M,
+                descriptor::CRATER_EXAMPLE_START_M,
             )
-            .expect("the crater starts at its smallest radius");
+            .expect("the crater starts at its worked example's radius");
             Some(crater_with(&state, finish))
         }
         ("materials", "tire_eve_r19_ice") => {
@@ -4637,6 +4674,12 @@ fn with_rest_entries<T>(
             let state = tokamak_jet_dte1::TokamakState::try_start(&tokamak, 1.0e6, 0.0)
                 .expect("the plasma starts");
             Some(tokamak_with(&state, finish))
+        }
+        ("energy", "tokamak_vde_mast") => {
+            let card = tokamak_vde_mast::TokamakVdeMast::mast_15045();
+            let state = tokamak_vde_mast::VdeState::try_start(&card, 0.0, 0.0, 0.0, 0.0)
+                .expect("the plasma rests at its equilibrium");
+            Some(vde_with(&state, finish))
         }
         _ => None,
     }
@@ -4806,7 +4849,7 @@ impl Ti64Call {
         let cell = ti64_lattice::Ti64LatticeCell::annealed_column();
         let omega = cell.max_natural_frequency_rad_s();
         card_clock(dt_s, Some(omega), cell.floor_dt_s(), cell.gate_dt_s(), "ti64_lattice")?;
-        enforce_force_nyquist(force_n, dt_s, &cell)?;
+        enforce_force_nyquist(force_n, dt_s, &cell).map_err(|text| named(text, "ForceAboveNyquist"))?;
         enforce_published_fields("materials", "ti64_lattice", Published::Step, params, |name| {
             name == "force_n"
         })?;
@@ -4837,7 +4880,8 @@ impl Ti64Call {
         let force_n = required_vec3(params, "force_n")?;
         let torque_nm = required_vec3(params, "torque_nm")?;
         let temperature_k = required_f64(params, "temperature_k")?;
-        enforce_force_nyquist(force_n, self.dt_s, &self.cell)?;
+        enforce_force_nyquist(force_n, self.dt_s, &self.cell)
+            .map_err(|text| named(text, "ForceAboveNyquist"))?;
         enforce_published_fields("materials", "ti64_lattice", Published::Load, params, |name| {
             name == "force_n"
         })?;
@@ -4931,11 +4975,11 @@ impl GridCall {
                         "Physical Failure: the grid step destroyed energy (FirstLawBreach). That state is not sealed.".to_string()
                     }
                     grid_node::StepReject::CurrentOutsideCard => format!(
-                        "Physical Failure: the grid step landed with |current_a| above {} A, the inclusive maximum of the grid_node card (CurrentOutsideCard). That state is not sealed.",
+                        "Physical Failure: the grid step landed with |current_a| above {} A, the energy bound of the grid_node card: the feeder holds more energy than the link takes as heat to its melting point (CurrentOutsideCard). That state is not sealed.",
                         descriptor::grid_melt_current_a(&self.node)
                     ),
                     grid_node::StepReject::VoltageOutsideCard => format!(
-                        "Physical Failure: the grid step landed with |voltage_v| above {} V, the inclusive maximum of the grid_node card (VoltageOutsideCard). That state is not sealed.",
+                        "Physical Failure: the grid step landed with |voltage_v| above {} V, the energy bound of the grid_node card: the shunt holds more energy than the link takes as heat to its melting point (VoltageOutsideCard). That state is not sealed.",
                         descriptor::grid_melt_voltage_v(&self.node)
                     ),
                     other => refused("grid_node", other),
@@ -5043,7 +5087,8 @@ impl ResonanceCall {
             oscillator.gate_dt_s(),
             "resonance",
         )?;
-        enforce_abs_nyquist(
+        load_nyquist(
+            "ForceAboveNyquist",
             "accel_m_s2",
             accel_m_s2,
             dt_s,
@@ -5078,7 +5123,8 @@ impl ResonanceCall {
         reject_unknown_load(params, descriptor::load_names("signal", "resonance"))?;
         enforce_published("signal", "resonance", Published::Load, params)?;
         let accel_m_s2 = required_f64(params, "accel_m_s2")?;
-        enforce_abs_nyquist(
+        load_nyquist(
+            "ForceAboveNyquist",
             "accel_m_s2",
             accel_m_s2,
             self.dt_s,
@@ -5214,7 +5260,8 @@ impl TesseractCall {
             resonator.gate_dt_s(),
             "tesseract",
         )?;
-        enforce_abs_nyquist(
+        load_nyquist(
+            "ForceAboveNyquist",
             "accel_m_s2",
             accel_m_s2,
             dt_s,
@@ -5246,7 +5293,8 @@ impl TesseractCall {
         let accel_m_s2 = required_f64(params, "accel_m_s2")?;
         let omega_ext_rad_s = required_f64(params, "omega_ext_rad_s")?;
         let sense_velocity_m_s = required_f64(params, "sense_velocity_m_s")?;
-        enforce_abs_nyquist(
+        load_nyquist(
+            "ForceAboveNyquist",
             "accel_m_s2",
             accel_m_s2,
             self.dt_s,
@@ -5309,7 +5357,8 @@ impl HydraulicCall {
             column.gate_dt_s(),
             "hydraulic_fluid",
         )?;
-        enforce_abs_nyquist(
+        load_nyquist(
+            "FlowAboveNyquist",
             "flow_m3_s",
             flow_m3_s,
             dt_s,
@@ -5338,7 +5387,8 @@ impl HydraulicCall {
             descriptor::load_names("materials", "hydraulic_fluid"),
         )?;
         let flow_m3_s = required_f64(params, "flow_m3_s")?;
-        enforce_abs_nyquist(
+        load_nyquist(
+            "FlowAboveNyquist",
             "flow_m3_s",
             flow_m3_s,
             self.dt_s,
@@ -5390,7 +5440,8 @@ impl CableCall {
             tendon.gate_dt_s(),
             "cable_stretch",
         )?;
-        enforce_abs_nyquist(
+        load_nyquist(
+            "ForceAboveNyquist",
             "force_n",
             force_n,
             dt_s,
@@ -5426,7 +5477,8 @@ impl CableCall {
         )?;
         enforce_published("materials", "cable_stretch", Published::Load, params)?;
         let force_n = required_f64(params, "force_n")?;
-        enforce_abs_nyquist(
+        load_nyquist(
+            "ForceAboveNyquist",
             "force_n",
             force_n,
             self.dt_s,
@@ -5521,26 +5573,23 @@ impl CellCall {
         )?;
         enforce_published("energy", "cell_18650pf", Published::Step, params)?;
         let soc = required_f64(params, "soc")?;
-        // The held current of the 1C discharge this run belongs to: for a run
-        // from full charge its own current, for a continuation the earlier
-        // run's. A state below full charge is taken only with it.
+        // The held current of the discharge this run belongs to: for a run
+        // from a rested cell its own current, for a continuation the earlier
+        // run's.
         let held_current_a = required_f64(params, "held_current_a")?;
         let current_a = required_f64(params, "current_a")?;
         let dt_s = required_f64(params, "dt_s")?;
         let cell = cell_18650pf::Cell18650Pf::cell();
+        if !(current_a > 0.0 && held_current_a > 0.0) {
+            return Err(cell_current_not_discharging());
+        }
         // The cell has no pole. Its ceiling is the time to cross one table
-        // interval at 3.0 A.
-        card_clock(dt_s, None, cell.floor_dt_s(), cell.gate_dt_s(), "cell_18650pf")?;
+        // interval at the larger of the held current and 3.0 A.
+        card_clock(dt_s, None, cell.floor_dt_s(), cell.gate_dt_s_at(held_current_a), "cell_18650pf")?;
         if !(soc >= cell_18650pf::SOC_MIN && soc <= 1.0) {
             return Err(unsealed(
                 "state of charge left [0.03, 1] (StateOfChargeOutsideCard).",
             ));
-        }
-        if !cell_18650pf::current_was_compared(current_a) {
-            return Err(cell_current_not_compared());
-        }
-        if !cell_18650pf::current_was_compared(held_current_a) {
-            return Err(cell_current_not_compared());
         }
         if !cell_18650pf::held_current_within_band(current_a, held_current_a) {
             return Err(cell_current_changed(current_a, held_current_a));
@@ -5566,8 +5615,8 @@ impl CellCall {
         reject_unknown_load(params, descriptor::load_names("energy", "cell_18650pf"))?;
         enforce_published("energy", "cell_18650pf", Published::Load, params)?;
         let current_a = required_f64(params, "current_a")?;
-        if !cell_18650pf::current_was_compared(current_a) {
-            return Err(cell_current_not_compared());
+        if !(current_a > 0.0) {
+            return Err(cell_current_not_discharging());
         }
         if !cell_18650pf::held_current_within_band(current_a, self.held_current_a) {
             return Err(cell_current_changed(current_a, self.held_current_a));
@@ -5599,10 +5648,11 @@ impl CellCall {
 
 impl Cell2170Call {
     /// The current and the case temperature of a step or of a segment, held
-    /// to the card's own bounds and to the bands of the run's block.
+    /// to the card's own bounds, where its tables end. A load outside the
+    /// run's block's own tests is the step's flag, not a refusal.
     fn read_load(
         params: &serde_json::Value,
-        block: usize,
+        _block: usize,
     ) -> Result<cell_2170_m80::CellLoad, String> {
         let current_a = required_f64(params, "current_a")?;
         let case_temperature_c = required_f64(params, "case_temperature_c")?;
@@ -5616,16 +5666,6 @@ impl Cell2170Call {
         {
             return Err(unsealed(CELL_2170_CASE_OUTSIDE_CARD));
         }
-        if !(case_temperature_c >= cell.block_case_min_c[block]
-            && case_temperature_c <= cell.block_case_max_c[block])
-        {
-            return Err(cell_2170_case_outside_block(case_temperature_c, block));
-        }
-        if !(current_a >= -cell.block_current_discharge_max_a[block]
-            && current_a <= cell.block_current_charge_max_a[block])
-        {
-            return Err(cell_2170_current_outside_block(current_a, block));
-        }
         Ok(cell_2170_m80::CellLoad {
             current_a,
             case_temperature_c,
@@ -5638,20 +5678,10 @@ impl Cell2170Call {
             descriptor::parameter_names("energy", "cell_2170_m80"),
         )?;
         let cell = cell_2170();
-        // A block the comparison showed wrong is named before the published
-        // bounds, which no longer reach it.
         let named = params.get("block_chamber_c").and_then(serde_json::Value::as_f64);
-        if let Some(block_chamber_c) = named {
-            if cell.block_of(block_chamber_c).is_some()
-                && cell.served_block_of(block_chamber_c).is_none()
-            {
-                return Err(cell_2170_block_shown_wrong(block_chamber_c));
-            }
-        }
-        // A start past an end of its block's tables by no more than the
-        // rounding allowance of a start, as a run that ended on the end can
-        // return it, is taken; the published bounds of the charge are the
-        // ends themselves, so that field is held to the block's tables below.
+        // The published bounds of the charge are the widest ends of the six
+        // blocks' tables: a start inside them is held to its own block's
+        // tables below, both ends included.
         let charge = params.get("charge_removed_ah").and_then(serde_json::Value::as_f64);
         let on_tables = match (named.and_then(|chamber| cell.served_block_of(chamber)), charge) {
             (Some(block), Some(charge)) => cell_2170_start_on_tables(charge, block),
@@ -5774,19 +5804,14 @@ impl CraterCall {
 
 impl Cell2170Model3Call {
     /// The current and the case temperature of a step or of a segment, held
-    /// to the card's own bounds.
+    /// to the card's own limits. A load outside the compared range is the
+    /// step's flag, not a refusal.
     fn read_load(params: &serde_json::Value) -> Result<cell_2170_model3::CellLoad, String> {
         let current_a = required_f64(params, "current_a")?;
         let case_temperature_c = required_f64(params, "case_temperature_c")?;
         let cell = cell_2170_model3_type();
-        if !(current_a >= -cell.charge_current_max_a && current_a <= cell.discharge_current_max_a)
-        {
-            return Err(unsealed(CELL_2170_MODEL3_CURRENT_OUTSIDE_CARD));
-        }
-        if !(case_temperature_c >= cell.case_temperature_min_c
-            && case_temperature_c <= cell.case_temperature_max_c)
-        {
-            return Err(unsealed(CELL_2170_MODEL3_CASE_OUTSIDE_CARD));
+        if !(case_temperature_c + cell.kelvin_offset > 0.0) {
+            return Err(unsealed(CELL_2170_MODEL3_BELOW_ABSOLUTE_ZERO));
         }
         Ok(cell_2170_model3::CellLoad {
             current_a,
@@ -5827,41 +5852,26 @@ impl Cell2170Model3Call {
         let state =
             cell_2170_model3::CellState::try_rested(cell, cell_number, state_of_charge, capacity_ah)
                 .ok_or_else(|| phase_not_valid("cell_2170_model3"))?;
-        if !(least_c <= most_c && most_c - least_c <= cell.case_temperature_span_max_k) {
-            return Err(cell_2170_model3_span_above_card(least_c, most_c, "the start carries"));
+        if !(least_c <= most_c) {
+            return Err(cell_2170_model3_span_inverted(least_c, most_c));
+        }
+        if !(least_c + cell.kelvin_offset > 0.0) {
+            return Err(unsealed(CELL_2170_MODEL3_BELOW_ABSOLUTE_ZERO));
         }
         let state = state
             .with_case_span(cell, least_c, most_c)
             .ok_or_else(|| phase_not_valid("cell_2170_model3"))?;
-        let planned_least_c = least_c.min(load.case_temperature_c);
-        let planned_most_c = most_c.max(load.case_temperature_c);
-        if !(planned_most_c - planned_least_c <= cell.case_temperature_span_max_k) {
-            return Err(cell_2170_model3_span_above_card(
-                planned_least_c,
-                planned_most_c,
-                "the start's carried span and the run's segments span",
-            ));
-        }
-        if !cell.capacity_compared_at(capacity_ah, load.case_temperature_c) {
-            return Err(cell_2170_model3_capacity_not_compared(
-                capacity_ah,
-                load.case_temperature_c,
-            ));
-        }
         Ok(Self {
             cell,
             state,
             load,
             dt_s,
-            planned_least_c,
-            planned_most_c,
         })
     }
 
-    /// A later segment's load: its own bounds, the capacity paired with its
-    /// case temperature, and the span of case temperature over every load of
-    /// the run read so far. The change between two segments depends on their
-    /// order and is refused by the card's step where it falls.
+    /// A later segment's load, held to the card's own limits. Where it lies
+    /// against the compared range, the capacity at its case temperature, the
+    /// jump and the span of case temperature, is the step's flag.
     fn replace_load(&mut self, params: &serde_json::Value) -> Result<(), String> {
         reject_unknown_load(
             params,
@@ -5869,26 +5879,6 @@ impl Cell2170Model3Call {
         )?;
         enforce_published("energy", "cell_2170_model3", Published::Load, params)?;
         let load = Self::read_load(params)?;
-        if !self
-            .cell
-            .capacity_compared_at(self.state.capacity_ah, load.case_temperature_c)
-        {
-            return Err(cell_2170_model3_capacity_not_compared(
-                self.state.capacity_ah,
-                load.case_temperature_c,
-            ));
-        }
-        let least = self.planned_least_c.min(load.case_temperature_c);
-        let most = self.planned_most_c.max(load.case_temperature_c);
-        if !(most - least <= self.cell.case_temperature_span_max_k) {
-            return Err(cell_2170_model3_span_above_card(
-                least,
-                most,
-                "the start's carried span and the run's segments span",
-            ));
-        }
-        self.planned_least_c = least;
-        self.planned_most_c = most;
         self.load = load;
         Ok(())
     }
@@ -6091,10 +6081,8 @@ impl GeneratorCall {
             generator.gate_dt_s(),
             "generator_mmrtg_f1",
         )?;
-        if !(mission_time_s >= 0.0 && mission_time_s <= generator_mmrtg_f1::MISSION_TIME_MAX_S) {
-            return Err(unsealed(
-                "mission time is before landing or after mission day 4,087 (MissionTimeOutsideCard).",
-            ));
+        if !(mission_time_s >= 0.0) {
+            return Err(unsealed("mission time is before landing on Mars (MissionTimeBeforeLanding)."));
         }
         // Thermal power and the fading fraction are the generator's at this
         // mission time. The caller does not set them.
@@ -6165,10 +6153,10 @@ impl CreepCall {
         if !(stress_mpa >= alloy.stress_min_mpa && stress_mpa <= alloy.stress_max_mpa) {
             return Err(creep_stress_outside_card());
         }
-        // The lower end is the same at every stress; the upper end is the
-        // card's own function of the stress.
-        if !(creep_extension_percent >= alloy.creep_extension_min_percent) {
-            return Err(creep_extension_below_card());
+        // The lower end is zero, the moment the full load is applied; the
+        // upper end is the card's own function of the stress.
+        if !(creep_extension_percent >= 0.0) {
+            return Err(creep_extension_below_zero());
         }
         if !(creep_extension_percent <= alloy.creep_extension_max_percent(stress_mpa)) {
             return Err(creep_extension_outside_card());
@@ -6230,11 +6218,15 @@ impl GridGbCall {
         let dt_s = required_f64(params, "dt_s")?;
         let card = grid_gb::GridGb::interconnector_loss();
         // The ceiling is a fiftieth of the fastest time scale the card can
-        // reach, so the clock applies no `π/ω` of its own.
-        card_clock(dt_s, None, card.floor_dt_s(), card.gate_dt_s(), "grid_gb")?;
-        if !(loss_mw >= card.loss_min_mw && loss_mw <= card.loss_max_mw) {
-            return Err(grid_gb_loss_outside_card());
-        }
+        // reach with this run's inertia and demand, so the clock applies no
+        // `π/ω` of its own. At an inertia not above zero or a demand below
+        // zero the published bounds have refused the request already.
+        // The published ceiling, or the run's own where that is smaller.
+        let ceiling = match (card.gate_dt_s(), card.gate_dt_s_at(inertia_mw_s, demand_mw)) {
+            (Some(published), Some(own)) => Some(published.min(own)),
+            (published, _) => published,
+        };
+        card_clock(dt_s, None, card.floor_dt_s(), ceiling, "grid_gb")?;
         let state = grid_gb::GridState::try_start(&card, frequency_hz, inertia_mw_s, demand_mw)
             .ok_or_else(|| phase_not_valid("grid_gb"))?;
         Ok(Self {
@@ -6242,25 +6234,16 @@ impl GridGbCall {
             state,
             load: grid_gb::GridLoad { loss_mw },
             dt_s,
-            run_loss_mw: loss_mw,
         })
     }
 
-    /// The load of a segment. It is held to the card's span, and then to the
-    /// loss the run was opened with: a run is one loss, and the card's step
-    /// refuses another once the first step has landed. `run_trajectory` reads
-    /// every segment through here before the first step, so a run that would
-    /// change its loss is refused whole and nothing of it is sealed.
+    /// The load of a segment. A segment may carry another loss than the
+    /// first: the card's step books each step's own loss, and flags a loss
+    /// that is not the run's first as outside the compared trips.
     fn replace_load(&mut self, params: &serde_json::Value) -> Result<(), String> {
         reject_unknown_load(params, descriptor::load_names("energy", "grid_gb"))?;
         enforce_published("energy", "grid_gb", Published::Load, params)?;
         let loss_mw = required_f64(params, "loss_mw")?;
-        if !(loss_mw >= self.card.loss_min_mw && loss_mw <= self.card.loss_max_mw) {
-            return Err(grid_gb_loss_outside_card());
-        }
-        if loss_mw != self.run_loss_mw {
-            return Err(grid_gb_loss_changed(loss_mw, self.run_loss_mw));
-        }
         self.load = grid_gb::GridLoad { loss_mw };
         Ok(())
     }
@@ -6306,15 +6289,15 @@ impl ReactorCall {
             reactor.gate_dt_s(),
             "reactor_spert3",
         )?;
-        if !(coolant_temperature_k >= reactor.coolant_temperature_min_k
-            && coolant_temperature_k <= reactor.coolant_temperature_max_k)
+        if !(coolant_temperature_k >= reactor.water_freezing_k
+            && coolant_temperature_k <= reactor.water_critical_k)
         {
-            return Err(reactor_coolant_outside_card());
+            return Err(reactor_coolant_not_liquid_water());
         }
-        if !(reactivity_inserted_dollar >= reactor.reactivity_min_dollar
-            && reactivity_inserted_dollar <= reactor.reactivity_max_dollar)
-        {
-            return Err(reactor_reactivity_outside_card());
+        // The load opened with is the first step's: the step in reactivity, which must insert
+        // some.
+        if !(reactivity_inserted_dollar > 0.0) {
+            return Err(reactor_reactivity_not_positive());
         }
         let state = reactor_spert3::ReactorState::try_cold_start(&reactor, coolant_temperature_k)
             .ok_or_else(|| phase_not_valid("reactor_spert3"))?;
@@ -6324,32 +6307,18 @@ impl ReactorCall {
             load: reactor_spert3::ReactorLoad {
                 reactivity_inserted_dollar,
             },
-            burst_reactivity_dollar: reactivity_inserted_dollar,
             dt_s,
         })
     }
 
-    /// The load of a segment. It is held to the card's span, and then to the
-    /// reactivity the run was opened with: a run is one burst, and the card's
-    /// step refuses another reactivity once the first step has landed.
-    /// `run_trajectory` reads every segment through here before the first
-    /// step, so a run that would change its reactivity is refused whole and
-    /// nothing of it is sealed.
+    /// The load of a segment. A later segment may carry any reactivity: each
+    /// step is held at its own, and the card's ledger books each step at the
+    /// reactivity it held. One at zero or less turns the power down, and the
+    /// run ends there at the first maximum.
     fn replace_load(&mut self, params: &serde_json::Value) -> Result<(), String> {
         reject_unknown_load(params, descriptor::load_names("energy", "reactor_spert3"))?;
         enforce_published("energy", "reactor_spert3", Published::Load, params)?;
         let reactivity_inserted_dollar = required_f64(params, "reactivity_inserted_dollar")?;
-        if !(reactivity_inserted_dollar >= self.reactor.reactivity_min_dollar
-            && reactivity_inserted_dollar <= self.reactor.reactivity_max_dollar)
-        {
-            return Err(reactor_reactivity_outside_card());
-        }
-        if reactivity_inserted_dollar != self.burst_reactivity_dollar {
-            return Err(reactor_reactivity_changed(
-                reactivity_inserted_dollar,
-                self.burst_reactivity_dollar,
-            ));
-        }
         self.load = reactor_spert3::ReactorLoad {
             reactivity_inserted_dollar,
         };
@@ -6398,7 +6367,8 @@ impl ReactorTrigaCall {
         let dt_s = required_f64(params, "dt_s")?;
         let reactor = reactor_triga_jsi::ReactorTrigaJsi::core_56_pulse_mode();
         // The reactor has no frequency. Its ceiling is a fifth of the time
-        // constant of its prompt pole after the scram.
+        // constant of its prompt pole after the scram; the card's own step
+        // holds the ceiling that follows the state.
         card_clock(
             dt_s,
             None,
@@ -6408,13 +6378,8 @@ impl ReactorTrigaCall {
         )?;
         // The published span of rod_table_core holds 215 to 231; only three
         // numbers in it are tables.
-        let Some(table) = reactor.table_of(rod_table_core) else {
+        if reactor.table_of(rod_table_core).is_none() {
             return Err(reactor_triga_table_outside_card(rod_table_core));
-        };
-        // The published span is the union of the three tables' spans; each table accepts only
-        // the starts compared on it.
-        if start_temperature_k.is_finite() && !reactor.start_compared_on(table, start_temperature_k) {
-            return Err(reactor_triga_start_outside_table(start_temperature_k, rod_table_core));
         }
         let state =
             reactor_triga_jsi::ReactorState::try_start(&reactor, start_temperature_k, rod_table_core)
@@ -6470,23 +6435,93 @@ impl ReactorTrigaCall {
     }
 }
 
+impl RunawayCall {
+    /// The load of a step or a segment. `run_trajectory` reads every segment
+    /// through here before the first step, so an adiabatic switch between 0
+    /// and 1 in any segment refuses the whole run.
+    fn read_load(params: &serde_json::Value) -> Result<runaway_18650_lco::RunawayLoad, String> {
+        let adiabatic = required_f64(params, "adiabatic")?;
+        if adiabatic.is_finite() && adiabatic != 0.0 && adiabatic != 1.0 {
+            return Err(runaway_reject(runaway_18650_lco::StepReject::AdiabaticNotZeroOrOne));
+        }
+        let oven_temperature_k = required_f64(params, "oven_temperature_k")?;
+        // The oven temperature enters only where heat crosses the can.
+        if adiabatic == 0.0 && oven_temperature_k.is_finite() && !(oven_temperature_k > 0.0) {
+            return Err(unsealed(&format!(
+                "'oven_temperature_k' {} K is at or below 0 K, the exclusive minimum of the runaway_18650_lco card where the cell loses heat to the oven, adiabatic 0 (OvenTemperatureNotPositive).",
+                message_number(oven_temperature_k)
+            )));
+        }
+        Ok(runaway_18650_lco::RunawayLoad {
+            oven_temperature_k,
+            heater_power_w: required_f64(params, "heater_power_w")?,
+            adiabatic,
+        })
+    }
+
+    fn from_parameters(params: &serde_json::Value) -> Result<Self, String> {
+        reject_unknown_load(params, descriptor::parameter_names("energy", "runaway_18650_lco"))?;
+        enforce_published("energy", "runaway_18650_lco", Published::Step, params)?;
+        let temperature_k = required_f64(params, "temperature_k")?;
+        let sei_fraction = required_f64(params, "sei_fraction")?;
+        let anode_lithium_fraction = required_f64(params, "anode_lithium_fraction")?;
+        let cathode_unreacted_fraction = required_f64(params, "cathode_unreacted_fraction")?;
+        let electrolyte_fraction = required_f64(params, "electrolyte_fraction")?;
+        let load = Self::read_load(params)?;
+        let dt_s = required_f64(params, "dt_s")?;
+        let cell = runaway_18650_lco::Runaway18650Lco::hatchard_kim();
+        // The ceiling comes from the cell's convective time constant; the
+        // substeps inside a step follow the reactions, so no `π/ω` applies.
+        card_clock(dt_s, None, cell.floor_dt_s(), cell.gate_dt_s(), "runaway_18650_lco")?;
+        let state = runaway_18650_lco::RunawayState::try_start(
+            &cell,
+            temperature_k,
+            sei_fraction,
+            anode_lithium_fraction,
+            cathode_unreacted_fraction,
+            electrolyte_fraction,
+        )
+        .map_err(runaway_reject)?;
+        Ok(Self { cell, state, load, dt_s })
+    }
+
+    fn replace_load(&mut self, params: &serde_json::Value) -> Result<(), String> {
+        reject_unknown_load(params, descriptor::load_names("energy", "runaway_18650_lco"))?;
+        enforce_published("energy", "runaway_18650_lco", Published::Load, params)?;
+        self.load = Self::read_load(params)?;
+        Ok(())
+    }
+
+    fn step_into(&mut self, frame: &mut LastStateFrame64) -> Result<(), StepFailure> {
+        runaway_18650_lco::step(&self.cell, &mut self.state, frame, self.load, self.dt_s).map_err(|reject| {
+            let detail = runaway_reject(reject);
+            StepFailure::from_reject(reject, detail)
+        })
+    }
+
+    fn run(mut self, proof: [u8; 16]) -> Result<IntegratedFrame, String> {
+        let mut frame = blank_frame(proof);
+        self.step_into(&mut frame).map_err(|failure| failure.detail)?;
+        Ok(IntegratedFrame {
+            frame,
+            residual_conservation_error: self.state.residual_conservation_error,
+            state: runaway_state(&self.state)?,
+        })
+    }
+}
+
 impl ReactorCcoreCall {
-    /// The reactivity and the flow of a load, held to what was compared at the run's pressure.
+    /// The reactivity and the flow of a load: a reactivity above zero and a flow of zero or more.
     fn read_load(
-        reactor: &reactor_spert3_ccore::ReactorSpert3Ccore,
-        system_pressure_psig: f64,
         params: &serde_json::Value,
     ) -> Result<reactor_spert3_ccore::ReactorLoad, String> {
         let reactivity_inserted_dollar = required_f64(params, "reactivity_inserted_dollar")?;
         let coolant_flow_m_per_s = required_f64(params, "coolant_flow_m_per_s")?;
-        if !reactor.flow_on_card(system_pressure_psig, coolant_flow_m_per_s) {
-            return Err(reactor_ccore_flow_outside_card(coolant_flow_m_per_s, system_pressure_psig));
+        if coolant_flow_m_per_s < 0.0 {
+            return Err(reactor_ccore_negative_flow(coolant_flow_m_per_s));
         }
-        if !reactor.reactivity_on_card(coolant_flow_m_per_s, reactivity_inserted_dollar) {
-            return Err(reactor_ccore_reactivity_outside_card(
-                reactivity_inserted_dollar,
-                coolant_flow_m_per_s,
-            ));
+        if !(reactivity_inserted_dollar > 0.0) {
+            return Err(reactor_ccore_reactivity_not_positive(reactivity_inserted_dollar));
         }
         Ok(reactor_spert3_ccore::ReactorLoad {
             reactivity_inserted_dollar,
@@ -6518,8 +6553,8 @@ impl ReactorCcoreCall {
             initial_temperature_k,
             system_pressure_psig,
         )
-        .ok_or_else(|| reactor_ccore_start_outside_card(initial_temperature_k, system_pressure_psig))?;
-        let load = Self::read_load(&reactor, system_pressure_psig, params)?;
+        .ok_or_else(|| reactor_ccore_start_not_liquid(initial_temperature_k, system_pressure_psig))?;
+        let load = Self::read_load(params)?;
         Ok(Self {
             reactor,
             state,
@@ -6529,26 +6564,21 @@ impl ReactorCcoreCall {
         })
     }
 
-    /// The load of a segment, held to what was compared and then to the load the run was
-    /// opened with. `run_trajectory` reads every segment through here before the first step,
-    /// so a run that would change its load is refused whole.
+    /// The load of a segment, held to its limits and to the reactivity the run was opened with.
+    /// `run_trajectory` reads every segment through here before the first step, so a run that
+    /// would change its reactivity is refused whole. A segment may carry another flow: each
+    /// step is taken at its own.
     fn replace_load(&mut self, params: &serde_json::Value) -> Result<(), String> {
         reject_unknown_load(
             params,
             descriptor::load_names("energy", "reactor_spert3_ccore"),
         )?;
         enforce_published("energy", "reactor_spert3_ccore", Published::Load, params)?;
-        let load = Self::read_load(&self.reactor, self.state.system_pressure_psig, params)?;
+        let load = Self::read_load(params)?;
         if load.reactivity_inserted_dollar != self.run_load.reactivity_inserted_dollar {
             return Err(reactor_ccore_reactivity_changed(
                 load.reactivity_inserted_dollar,
                 self.run_load.reactivity_inserted_dollar,
-            ));
-        }
-        if load.coolant_flow_m_per_s != self.run_load.coolant_flow_m_per_s {
-            return Err(reactor_ccore_flow_changed(
-                load.coolant_flow_m_per_s,
-                self.run_load.coolant_flow_m_per_s,
             ));
         }
         self.load = load;
@@ -6556,9 +6586,17 @@ impl ReactorCcoreCall {
     }
 
     fn step_into(&mut self, frame: &mut LastStateFrame64) -> Result<(), StepFailure> {
+        let before = self.state;
         reactor_spert3_ccore::step(&self.reactor, &mut self.state, frame, self.load, self.dt_s)
             .map_err(|reject| {
-                let detail = reactor_ccore_reject(reject);
+                let detail = if reject == reactor_spert3_ccore::StepReject::DtAboveStateCeiling {
+                    reactor_ccore_state_ceiling(
+                        self.dt_s,
+                        reactor_spert3_ccore::state_dt_ceiling_s(&self.reactor, &before, self.load),
+                    )
+                } else {
+                    reactor_ccore_reject(reject)
+                };
                 StepFailure::from_reject(reject, detail)
             })
     }
@@ -6576,27 +6614,16 @@ impl ReactorCcoreCall {
 }
 
 impl ReactorFuelCall {
-    /// The reactivity and the flow of a load, each held to the span of the
-    /// band the run started in.
-    fn read_load(
-        reactor: &reactor_spert3_fuel::ReactorSpert3Fuel,
-        band: usize,
-        params: &serde_json::Value,
-    ) -> Result<reactor_spert3_fuel::ReactorLoad, String> {
+    /// The reactivity and the flow of a load: a reactivity above zero and a
+    /// flow of zero or more, in any band.
+    fn read_load(params: &serde_json::Value) -> Result<reactor_spert3_fuel::ReactorLoad, String> {
         let reactivity_inserted_dollar = required_f64(params, "reactivity_inserted_dollar")?;
         let coolant_flow_m_per_s = required_f64(params, "coolant_flow_m_per_s")?;
-        if !(reactivity_inserted_dollar >= reactor.band_reactivity_min_dollar[band]
-            && reactivity_inserted_dollar <= reactor.band_reactivity_max_dollar[band])
-        {
-            return Err(reactor_fuel_reactivity_outside_band(
-                reactivity_inserted_dollar,
-                band,
-            ));
+        if !(reactivity_inserted_dollar > 0.0) {
+            return Err(reactor_fuel_reactivity_not_positive(reactivity_inserted_dollar));
         }
-        if !(coolant_flow_m_per_s >= reactor.band_flow_min_m_per_s[band]
-            && coolant_flow_m_per_s <= reactor.band_flow_max_m_per_s[band])
-        {
-            return Err(reactor_fuel_flow_outside_band(coolant_flow_m_per_s, band));
+        if coolant_flow_m_per_s < 0.0 {
+            return Err(reactor_fuel_flow_negative(coolant_flow_m_per_s));
         }
         Ok(reactor_spert3_fuel::ReactorLoad {
             reactivity_inserted_dollar,
@@ -6625,11 +6652,11 @@ impl ReactorFuelCall {
             reactor.gate_dt_s(),
             "reactor_spert3_fuel",
         )?;
-        // The band of the inlet temperature sets the spans of the load.
-        let band = reactor
+        // The band of the inlet temperature sets the card's constants.
+        reactor
             .band_of(inlet_temperature_k)
             .ok_or_else(|| reactor_fuel_inlet_outside_card(inlet_temperature_k))?;
-        let load = Self::read_load(&reactor, band, params)?;
+        let load = Self::read_load(params)?;
         let state = reactor_spert3_fuel::ReactorState::try_start(&reactor, inlet_temperature_k)
             .ok_or_else(|| phase_not_valid("reactor_spert3_fuel"))?;
         Ok(Self {
@@ -6641,33 +6668,27 @@ impl ReactorFuelCall {
         })
     }
 
-    /// The load of a segment. It is held to the span of the band, and then to
-    /// the load the run was opened with: a run is one burst, and the card's
-    /// step refuses another reactivity or another flow rate once the first
-    /// step has landed. `run_trajectory` reads every segment through here
-    /// before the first step, so a run that would change its load is refused
-    /// whole and nothing of it is sealed.
+    /// The load of a segment. Its reactivity is held to the one the run was
+    /// opened with: a run is one burst, and the card's step refuses another
+    /// reactivity once the first step has landed. `run_trajectory` reads every
+    /// segment through here before the first step, so a run that would change
+    /// its reactivity is refused whole and nothing of it is sealed. Each
+    /// segment may carry its own flow rate: the card books the sweep of the
+    /// water per step at that step's flow.
     fn replace_load(&mut self, params: &serde_json::Value) -> Result<(), String> {
         reject_unknown_load(
             params,
             descriptor::load_names("energy", "reactor_spert3_fuel"),
         )?;
         enforce_published("energy", "reactor_spert3_fuel", Published::Load, params)?;
-        let band = self
-            .reactor
+        self.reactor
             .band_of(self.state.inlet_temperature_k)
             .ok_or_else(|| reactor_fuel_inlet_outside_card(self.state.inlet_temperature_k))?;
-        let load = Self::read_load(&self.reactor, band, params)?;
+        let load = Self::read_load(params)?;
         if load.reactivity_inserted_dollar != self.burst_load.reactivity_inserted_dollar {
             return Err(reactor_fuel_reactivity_changed(
                 load.reactivity_inserted_dollar,
                 self.burst_load.reactivity_inserted_dollar,
-            ));
-        }
-        if load.coolant_flow_m_per_s != self.burst_load.coolant_flow_m_per_s {
-            return Err(reactor_fuel_flow_changed(
-                load.coolant_flow_m_per_s,
-                self.burst_load.coolant_flow_m_per_s,
             ));
         }
         self.load = load;
@@ -6695,6 +6716,19 @@ impl ReactorFuelCall {
 }
 
 impl CapsuleCall {
+    /// The landed state is past the flown drogue deployment: the step that
+    /// first crossed both conditions landed, and the card's next step would
+    /// be refused there as its declared end. Read by the card's own start
+    /// rule, which tests the state as the next step's would, with no step.
+    pub(crate) fn past_flight_deployment(&self) -> bool {
+        capsule_stardust::CapsuleState::anchor(
+            &self.capsule,
+            self.state.radius_m,
+            self.state.radial_speed_m_s,
+            self.state.transverse_speed_m_s,
+        ) == Err(capsule_stardust::StepReject::PastFlightDeployment)
+    }
+
     fn from_parameters(params: &serde_json::Value) -> Result<Self, String> {
         reject_unknown_load(
             params,
@@ -6708,12 +6742,8 @@ impl CapsuleCall {
         let capsule = capsule_stardust::CapsuleStardust::sample_return_capsule();
         // The capsule has no pole. Its ceiling is a locked constant of the card.
         card_clock(dt_s, None, capsule.floor_dt_s(), capsule.gate_dt_s(), "capsule_stardust")?;
-        let altitude_m = radius_m - capsule.local_earth_radius_m;
-        if !(altitude_m >= capsule.altitude_floor_m && altitude_m <= capsule.altitude_ceiling_m) {
-            return Err(unsealed(CAPSULE_ALTITUDE_OUTSIDE_CARD));
-        }
-        // Inside its altitudes the card refuses a start by the name its step
-        // would refuse it by.
+        // The card refuses a start by the name its step would refuse it by:
+        // above the ceiling, under sea level, and every other limit.
         let state = capsule_stardust::CapsuleState::anchor(
             &capsule,
             radius_m,
@@ -6761,6 +6791,22 @@ impl CapsuleCall {
 }
 
 impl CapsuleInsightCall {
+    /// The landed state is past the flown parachute deployment: the step
+    /// that first crossed both conditions landed, and the card's next step
+    /// would be refused there as its declared end. Read by the card's own
+    /// start rule, which tests the state as the next step's would, with no
+    /// step.
+    pub(crate) fn past_flight_deployment(&self) -> bool {
+        capsule_insight::CapsuleState::start(
+            &self.capsule,
+            self.state.radius_m,
+            self.state.radial_speed_m_s,
+            self.state.transverse_speed_m_s,
+        )
+        .err()
+            == Some(capsule_insight::StepReject::PastFlightDeployment)
+    }
+
     fn lift_from(
         capsule: &capsule_insight::CapsuleInsight,
         params: &serde_json::Value,
@@ -6923,11 +6969,9 @@ impl TokamakCall {
         };
         // Each value is inside its own published bound here. The card's own
         // test then holds the density to the Greenwald density of this
-        // current and to 0.834 of it, the current and the field to the
-        // safety factor and to its compared span, and the tritium fraction to
-        // the two spans where the fusion power was compared.
+        // current and the current and the field to a safety factor of 2.
         tokamak_jet_dte1::load_in_card(tokamak, load)
-            .map_err(|reject| tokamak_reject(reject, tokamak, load, f64::NAN))?;
+            .map_err(|reject| tokamak_reject(reject, tokamak, load, (f64::NAN, f64::NAN), f64::NAN))?;
         Ok(load)
     }
 
@@ -6939,13 +6983,14 @@ impl TokamakCall {
         enforce_published("energy", "tokamak_jet_dte1", Published::Step, params)?;
         let thermal_energy_j = required_f64(params, "thermal_energy_j")?;
         let fast_ion_energy_j = required_f64(params, "fast_ion_energy_j")?;
-        // The time since the start of the heated window: the end of the card
-        // is counted from it, so a run continued from a returned state states
-        // that state's t_s, and a start without it is refused.
+        // The time since the start of the heated window: a run continued from
+        // a returned state states that state's t_s, and a start without it is
+        // refused.
         let elapsed_time_s = required_f64(params, "elapsed_time_s")?;
         let dt_s = required_f64(params, "dt_s")?;
         let tokamak = tokamak_jet_dte1::TokamakJetDte1::elmy_h_mode();
-        // The step ceiling is a locked constant of the card.
+        // The static step ceiling is a locked constant of the card; the
+        // card's own step holds dt to the ceiling of each state.
         card_clock(
             dt_s,
             None,
@@ -6954,11 +6999,22 @@ impl TokamakCall {
             "tokamak_jet_dte1",
         )?;
         let load = Self::read_load(&tokamak, params)?;
-        // The start is held by the card's own test under the first load: the
-        // temperature range of the reactivity fit, the Troyon limit, and the
-        // envelope of the comparison.
+        // The start is held by the card's own test under the first load: a
+        // thermal energy above zero, the temperature range of the reactivity
+        // fit and the Troyon limit.
         tokamak_jet_dte1::state_in_card(&tokamak, thermal_energy_j, fast_ion_energy_j, load)
-            .map_err(|reject| tokamak_reject(reject, &tokamak, load, thermal_energy_j))?;
+            .map_err(|reject| tokamak_reject(reject, &tokamak, load, (thermal_energy_j, fast_ion_energy_j), dt_s))?;
+        // The ceiling of the start's own state under the first load is a
+        // limit the request shows, so it is held here, before any step.
+        if !(dt_s <= tokamak.state_ceiling_dt_s(thermal_energy_j, fast_ion_energy_j, load)) {
+            return Err(tokamak_reject(
+                tokamak_jet_dte1::StepReject::DtAboveStateCeiling,
+                &tokamak,
+                load,
+                (thermal_energy_j, fast_ion_energy_j),
+                dt_s,
+            ));
+        }
         let state = tokamak_jet_dte1::TokamakState::try_continue(
             &tokamak,
             elapsed_time_s,
@@ -6982,11 +7038,11 @@ impl TokamakCall {
     }
 
     fn step_into(&mut self, frame: &mut LastStateFrame64) -> Result<(), StepFailure> {
-        let (tokamak, load) = (self.tokamak, self.load);
-        let thermal_energy_j = self.state.thermal_energy_j;
+        let (tokamak, load, dt_s) = (self.tokamak, self.load, self.dt_s);
+        let start = (self.state.thermal_energy_j, self.state.fast_ion_energy_j);
         tokamak_jet_dte1::step(&self.tokamak, &mut self.state, frame, self.load, self.dt_s).map_err(
             |reject| {
-                let detail = tokamak_reject(reject, &tokamak, load, thermal_energy_j);
+                let detail = tokamak_reject(reject, &tokamak, load, start, dt_s);
                 StepFailure::from_reject(reject, detail)
             },
         )
@@ -7004,18 +7060,6 @@ impl TokamakCall {
     }
 }
 
-/// A rain rate above zero and under one gauge count a minute is refused at
-/// the door, in any segment, before any step. The published bounds have
-/// already held it to 0 to 84 mm/h.
-fn link_rain_on_card(rain_rate_mm_h: f64) -> Result<(), String> {
-    if rain_rate_mm_h > 0.0 && rain_rate_mm_h < link_gothenburg_10010::RAIN_RATE_ONE_COUNT_MM_H {
-        return Err(link_reject(
-            link_gothenburg_10010::StepReject::RainRateBelowGaugeCount,
-        ));
-    }
-    Ok(())
-}
-
 impl LinkCall {
     fn from_parameters(params: &serde_json::Value) -> Result<Self, String> {
         reject_unknown_load(
@@ -7030,8 +7074,9 @@ impl LinkCall {
         let rain_rate_mm_h = required_f64(params, "rain_rate_mm_h")?;
         let dt_s = required_f64(params, "dt_s")?;
         let link = link_gothenburg_10010::LinkGothenburg10010::sublink_587();
-        // The step ceiling is the gauge's minute, a locked constant of the
-        // card, so the clock applies no `π/ω` of its own.
+        // The step ceiling is a locked constant of the card, set by the
+        // rounding of the water built in one step, so the clock applies no
+        // `π/ω` of its own.
         card_clock(dt_s, None, link.floor_dt_s(), link.gate_dt_s(), "link_gothenburg_10010")?;
         let state = link_gothenburg_10010::LinkState::try_continue(
             &link,
@@ -7041,12 +7086,6 @@ impl LinkCall {
             gauge_minute_rain_mm_h,
         )
         .map_err(link_reject)?;
-        link_rain_on_card(rain_rate_mm_h)?;
-        if state.gauge_minute_elapsed_s > 0.0 && rain_rate_mm_h != state.gauge_minute_rain_mm_h {
-            return Err(link_reject(
-                link_gothenburg_10010::StepReject::RainNotHeldForGaugeMinute,
-            ));
-        }
         Ok(Self {
             link,
             state,
@@ -7062,7 +7101,6 @@ impl LinkCall {
         )?;
         enforce_published("signal", "link_gothenburg_10010", Published::Load, params)?;
         let rain_rate_mm_h = required_f64(params, "rain_rate_mm_h")?;
-        link_rain_on_card(rain_rate_mm_h)?;
         self.load = link_gothenburg_10010::LinkLoad { rain_rate_mm_h };
         Ok(())
     }
@@ -7102,8 +7140,8 @@ impl LosCall {
         // The step is one frame of the sensor: the card's own floor and
         // ceiling, and no `π/ω` beside them.
         card_clock(dt_s, None, card.floor_dt_s(), card.gate_dt_s(), "los_jwst_fine_guide")?;
-        if !card.recovery_has_elapsed(quiet_before_start_s) {
-            return Err(unsealed(LOS_RECOVERY_NOT_ELAPSED));
+        if !(quiet_before_start_s >= 0.0) {
+            return Err(unsealed(LOS_QUIET_BELOW_ZERO));
         }
         let load = los_load(&card, lock_x_arcsec, lock_y_arcsec, params)?;
         let state = los_jwst_fine_guide::LosState::try_lock(
@@ -7173,14 +7211,10 @@ impl CantileverCall {
         card_clock(dt_s, None, beam.floor_dt_s(), beam.gate_dt_s(), "cantilever_eth")?;
         // The deflection and the speed are each inside their own bound here.
         // Together they must keep the card's own envelope at or under its
-        // ceiling and at or over its floor. The envelope is the card's
-        // function.
+        // ceiling. The envelope is the card's function.
         let envelope_m = beam.envelope_m(deflection_m, velocity_m_s);
         if !(envelope_m <= beam.amplitude_ceiling_m) {
-            return Err(unsealed(CANTILEVER_DEFLECTION_ABOVE_CARD));
-        }
-        if !(envelope_m >= beam.amplitude_floor_m) {
-            return Err(unsealed(CANTILEVER_DEFLECTION_BELOW_CARD));
+            return Err(unsealed(CANTILEVER_ENVELOPE_ABOVE_CARD));
         }
         let state = cantilever_eth::CantileverState::try_phase(&beam, deflection_m, velocity_m_s)
             .ok_or_else(|| phase_not_valid("cantilever_eth"))?;
@@ -7252,9 +7286,8 @@ impl SolarSystemCall {
         card_clock(dt_s, None, system.floor_dt_s(), system.gate_dt_s(), "solar_system")?;
         enforce_published("aerospace", "solar_system", Published::Step, params)?;
         // The card itself says why it will not start a run, in its own order:
-        // a distance, then an orbit, then where the compared run went, then
-        // two bodies at one point or too close, then the frame, then the
-        // origin, then the axes, then the carried ledger.
+        // a distance, then an orbit, then two bodies at one point, then the
+        // frame, then the axes, then the carried ledger.
         let state = solar_system::SolarSystemState::try_continue(
             &system,
             position_m,
@@ -7264,11 +7297,8 @@ impl SolarSystemCall {
         .map_err(|reject| match reject {
             solar_system::StepReject::DistanceOutsideCard
             | solar_system::StepReject::OrbitOutsideCard
-            | solar_system::StepReject::DistanceOutsideComparedRun
             | solar_system::StepReject::BodiesCoincide
-            | solar_system::StepReject::BodiesTooClose
             | solar_system::StepReject::FrameOutsideCard
-            | solar_system::StepReject::OriginOutsideCard
             | solar_system::StepReject::AxesOutsideCard
             | solar_system::StepReject::SpontaneousGeneration
             | solar_system::StepReject::FirstLawBreach
@@ -7322,8 +7352,8 @@ impl SatelliteCall {
             descriptor::parameter_names("aerospace", "satellite_lageos1"),
         )?;
         let epoch_utc_s = required_f64(params, "epoch_utc_s")?;
-        // The time since the published state is required: without it a
-        // restart from a returned state would begin a new seven days.
+        // The time since the published state is required: it is reported
+        // with every state, counted over every run a forecast went through.
         let forecast_elapsed_s = required_f64(params, "forecast_elapsed_s")?;
         let position_m = required_vec3(params, "position_m")?;
         let velocity_m_s = required_vec3(params, "velocity_m_s")?;
@@ -7347,9 +7377,9 @@ impl SatelliteCall {
         .ok_or_else(|| {
             satellite_off_card(&satellite, epoch_utc_s, forecast_elapsed_s, position_m, velocity_m_s)
         })?;
-        // The card names the radius before the orbit, the orbit before the
-        // date and the date before the forecast. The date and the forecast
-        // are held to the spans `describe_card` publishes after.
+        // The card names the radius before the date and the date before the
+        // forecast. The date and the forecast are held to the spans
+        // `describe_card` publishes after.
         enforce_published("aerospace", "satellite_lageos1", Published::Step, params)?;
         Ok(Self {
             satellite,
@@ -7378,7 +7408,7 @@ impl SatelliteCall {
         if self.state.t_s == 0.0
             && !(self.state.epoch_utc_s() + self.dt_s <= satellite_lageos1::EPOCH_MAX_S)
         {
-            let reject = satellite_lageos1::StepReject::EpochOutsideCard;
+            let reject = satellite_lageos1::StepReject::EpochOutsideLeapSecondSpan;
             return Err(StepFailure::from_reject(reject, satellite_reject(reject)));
         }
         satellite_lageos1::step(
@@ -7407,45 +7437,33 @@ impl SatelliteCall {
 }
 
 /// Why the card will not anchor this state, in the order the card decides:
-/// the radius, then the orbit, then the date, then the forecast. The radius
-/// is the length of the position. The orbit is asked of the card itself, at a
-/// date and a forecast it accepts, so the gateway works out no orbit of its
-/// own.
+/// the radius, then the date, then the forecast. The radius is the length of
+/// the position.
 fn satellite_off_card(
     satellite: &satellite_lageos1::SatelliteLageos1,
     epoch_utc_s: f64,
     forecast_elapsed_s: f64,
     position_m: [f64; 3],
-    velocity_m_s: [f64; 3],
+    _velocity_m_s: [f64; 3],
 ) -> String {
     let radius_m = (position_m[0] * position_m[0]
         + position_m[1] * position_m[1]
         + position_m[2] * position_m[2])
         .sqrt();
-    if !(radius_m >= satellite.radius_min_m && radius_m <= satellite.radius_max_m) {
-        return unsealed(SATELLITE_RADIUS_OUTSIDE_CARD);
-    }
-    let at_an_accepted_date = satellite_lageos1::SatelliteState::try_state(
-        satellite,
-        satellite.epoch_min_s,
-        0.0,
-        position_m,
-        velocity_m_s,
-    );
-    if at_an_accepted_date.is_none() {
-        return unsealed(SATELLITE_ORBIT_OUTSIDE_CARD);
+    if !(radius_m >= satellite.radius_min_m) {
+        return unsealed(SATELLITE_RADIUS_BELOW_EARTH_RADIUS);
     }
     if !(epoch_utc_s >= satellite.epoch_min_s && epoch_utc_s <= satellite.epoch_max_s) {
         let published = descriptor::find("aerospace", "satellite_lageos1")
             .and_then(|spec| spec.fields.iter().find(|field| field.name == "epoch_utc_s"))
             .and_then(|field| published_outside("satellite_lageos1", field, epoch_utc_s));
-        return published.unwrap_or_else(|| unsealed(SATELLITE_EPOCH_OUTSIDE_CARD));
+        return published.unwrap_or_else(|| unsealed(SATELLITE_EPOCH_OUTSIDE_SPAN));
     }
-    if !(forecast_elapsed_s >= 0.0 && forecast_elapsed_s <= satellite.forecast_horizon_s) {
+    if !(forecast_elapsed_s >= 0.0) {
         let published = descriptor::find("aerospace", "satellite_lageos1")
             .and_then(|spec| spec.fields.iter().find(|field| field.name == "forecast_elapsed_s"))
             .and_then(|field| published_outside("satellite_lageos1", field, forecast_elapsed_s));
-        return published.unwrap_or_else(|| unsealed(SATELLITE_HORIZON_OUTSIDE_CARD));
+        return published.unwrap_or_else(|| unsealed(SATELLITE_FORECAST_BELOW_ZERO));
     }
     phase_not_valid("satellite_lageos1")
 }
@@ -7527,19 +7545,48 @@ fn advisory_flags(domain: &str, card: &str) -> u64 {
             cable_stretch::FLAG_TRACKING_DEGRADE | cable_stretch::FLAG_CONTROL_LIMIT
         }
         ("energy", "battery_sag") => battery_sag::FLAG_SAG_WARNING,
-        ("energy", "cell_18650pf") => cell_18650pf::FLAG_SAG_WARNING,
-        ("energy", "generator_mmrtg_f1") => generator_mmrtg_f1::FLAG_PAST_FITTING_SPAN,
+        ("energy", "cell_18650pf") => {
+            cell_18650pf::FLAG_SAG_WARNING | cell_18650pf::FLAG_CURRENT_OUTSIDE_PASSED_SPAN
+        }
+        ("energy", "generator_mmrtg_f1") => {
+            generator_mmrtg_f1::FLAG_PAST_FITTING_SPAN | generator_mmrtg_f1::FLAG_PAST_RECORD
+        }
+        ("energy", "grid_gb") => {
+            grid_gb::FLAG_OUTSIDE_COMPARED_TRIPS
+                | grid_gb::FLAG_PAST_COMPARED_MINUTE
+                | grid_gb::FLAG_BELOW_COMPARED_FREQUENCY
+        }
+        ("energy", "cell_2170_m80") => {
+            cell_2170_m80::FLAG_BLOCK_MET_NO_MARK | cell_2170_m80::FLAG_OUTSIDE_COMPARED_TESTS
+        }
+        ("energy", "accumulator_sbo450") => accumulator_sbo450::FLAG_OUTSIDE_COMPARED_RUNS,
         ("aerospace", "capsule_stardust") => capsule_stardust::FLAG_DROGUE_MACH_WINDOW,
-        ("aerospace", "satellite_lageos1") => satellite_lageos1::FLAG_EARTH_SHADOW,
+        ("aerospace", "satellite_lageos1") => {
+            satellite_lageos1::FLAG_EARTH_SHADOW | satellite_lageos1::FLAG_BELOW_COMPARED_RADIUS
+        }
         ("energy", "reactor_spert3") => reactor_spert3::FLAG_PROMPT_SUPERCRITICAL,
         ("signal", "link_gothenburg_10010") => link_gothenburg_10010::FLAG_RAINING,
-        ("aerospace", "los_jwst_fine_guide") => los_jwst_fine_guide::FLAG_NO_MEASUREMENT,
-        ("energy", "cell_2170_model3") => cell_2170_model3::FLAG_SUSTAINED_ABOVE_1C,
-        ("materials", "creep_cmsx6") => creep_cmsx6::FLAG_CREEP_RATE_RISING,
+        ("aerospace", "los_jwst_fine_guide") => {
+            los_jwst_fine_guide::FLAG_NO_MEASUREMENT
+                | los_jwst_fine_guide::FLAG_POINTING_DISTURBED
+                | los_jwst_fine_guide::FLAG_BEYOND_FOUR_SIGMA
+                | los_jwst_fine_guide::FLAG_RECOVERING
+                | los_jwst_fine_guide::FLAG_COUNT_RATE_BEYOND_COMPARED
+        }
+        ("energy", "cell_2170_model3") => {
+            cell_2170_model3::FLAG_SUSTAINED_ABOVE_1C | cell_2170_model3::FLAG_OUTSIDE_COMPARED_RUNS
+        }
+        ("materials", "creep_cmsx6") => {
+            creep_cmsx6::FLAG_CREEP_RATE_RISING | creep_cmsx6::FLAG_OUTSIDE_MET_RANGE
+        }
+        ("signal", "cantilever_eth") => {
+            cantilever_eth::FLAG_ENVELOPE_BELOW_COMPARED | cantilever_eth::FLAG_ENVELOPE_ABOVE_COMPARED
+        }
         ("aerospace", "capsule_insight") => capsule_insight::FLAG_LIFT_ACTING,
         ("energy", "reactor_spert3_fuel") => {
             reactor_spert3_fuel::FLAG_PROMPT_SUPERCRITICAL | reactor_spert3_fuel::FLAG_ROD_MOVING
         }
+        ("energy", "runaway_18650_lco") => runaway_18650_lco::FLAG_SELF_HEATING | runaway_18650_lco::FLAG_RUNAWAY,
         ("energy", "reactor_spert3_ccore") => {
             reactor_spert3_ccore::FLAG_PROMPT_SUPERCRITICAL | reactor_spert3_ccore::FLAG_PAST_POWER_PEAK
         }
@@ -7549,9 +7596,20 @@ fn advisory_flags(domain: &str, card: &str) -> u64 {
                 | reactor_triga_jsi::FLAG_RODS_DROPPED
         }
         ("aerospace", "crater_ryugu_sci") => crater_ryugu_sci::FLAG_STOPPED,
-        ("materials", "tire_eve_r19_ice") => tire_eve_r19_ice::FLAG_LOAD_ABOVE_FITTED,
+        ("energy", "generator_mmrtg_seebeck") => card_generator_mmrtg_seebeck::FLAGS,
+        ("aerospace", "momentum_jwst_dihedral") => card_momentum_jwst_dihedral::FLAGS,
+        ("aerospace", "momentum_jwst_srp") => card_momentum_jwst_srp::FLAGS,
+        ("materials", "grasp_lift_glass_4tu") => card_grasp_lift_glass_4tu::FLAGS,
+        ("materials", "tire_eve_r19_ice") => {
+            tire_eve_r19_ice::FLAG_LOAD_ABOVE_FITTED
+                | tire_eve_r19_ice::FLAG_BEYOND_COMPARED
+                | tire_eve_r19_ice::FLAG_SLIP_SETTLING
+        }
         ("energy", "tokamak_jet_dte1") => tokamak_jet_dte1::FLAG_NEAR_DENSITY_LIMIT,
-        ("materials", "fingerpad_p02_glass") => fingerpad_p02_glass::FLAG_FULL_SLIP,
+        ("energy", "tokamak_vde_mast") => tokamak_vde_mast::FLAG_PAST_IDEAL_WALL_LIMIT,
+        ("materials", "fingerpad_p02_glass") => {
+            fingerpad_p02_glass::FLAG_FULL_SLIP | fingerpad_p02_glass::FLAG_BEYOND_COMPARED
+        }
         _ => 0,
     }
 }
@@ -7584,7 +7642,7 @@ fn parse_step_request(value: serde_json::Value) -> Result<VerifyPhysicsRequest, 
     let text = |key: &str| -> Result<String, DoorError> {
         match object.get(key) {
             None => Err(DoorError::Unprocessable(format!(
-                "Missing required parameter: '{key}'"
+                "Missing required parameter: '{key}' (InputMissing)."
             ))),
             Some(serde_json::Value::String(text)) => Ok(text.clone()),
             Some(other) => Err(DoorError::Unprocessable(format!(
@@ -7596,9 +7654,14 @@ fn parse_step_request(value: serde_json::Value) -> Result<VerifyPhysicsRequest, 
     let domain = text("domain")?;
     let card = text("card")?;
     let parameters = object.get("parameters").cloned().ok_or_else(|| {
-        DoorError::Unprocessable("Missing required parameter: 'parameters'".to_string())
+        DoorError::Unprocessable("Missing required parameter: 'parameters' (InputMissing).".to_string())
     })?;
     Ok(VerifyPhysicsRequest { domain, card, parameters })
+}
+
+/// The card a step request names, when this connection's view holds it.
+fn known_card(state: &AppState, payload: &VerifyPhysicsRequest) -> Option<&'static str> {
+    state.view.find(&payload.domain, &payload.card).map(|spec| spec.card)
 }
 
 /// One anchored step. `request` is the whole request as received. It is
@@ -7606,7 +7669,7 @@ fn parse_step_request(value: serde_json::Value) -> Result<VerifyPhysicsRequest, 
 /// starts from a sealed upstream run (`src/chain.rs`): the upstream is
 /// computed again and checked, `from` is taken out, and the step is the same
 /// step as the request typed by hand, with `chain` beside it.
-pub async fn verify_step(
+pub async fn compute_step(
     state: &AppState,
     request: serde_json::Value,
 ) -> Result<VerifyPhysicsResponse, DoorError> {
@@ -7614,7 +7677,7 @@ pub async fn verify_step(
     // The plain step's future is large; it is boxed so that this one, which
     // may hold it twice, is not.
     let Some(from) = from else {
-        return Box::pin(verify_step_plain(state, request, fresh_start::Carried::Nothing)).await;
+        return Box::pin(compute_step_plain(state, request, fresh_start::Carried::Nothing)).await;
     };
     // The step's own shape is named first.
     let payload = parse_step_request(request.clone())?;
@@ -7625,16 +7688,61 @@ pub async fn verify_step(
         )
         .map_err(DoorError::Unprocessable)?;
     }
-    validate_physics(&payload.parameters).map_err(DoorError::Unprocessable)?;
+    validate_physics_of(known_card(state, &payload), &payload.parameters).map_err(DoorError::Unprocessable)?;
     let plan = chain::read(state.view(), &request, from, chain::Target::Step, 1)?;
     let carried = plan.carried();
+    // The fresh-start rule of this start, before the upstream is computed
+    // (REFERENCE.md, "A chain"). A start the card itself turns away is named
+    // where it was, after the chain is checked.
+    if let Err(StartTurned::FreshStart(error)) =
+        step_start_rules(state, &payload.domain, &payload.card, &payload.parameters, &carried)
+    {
+        return Err(error);
+    }
     let (settled, request) = on_pool(state, move || plan.settle()).await?;
-    let mut response = Box::pin(verify_step_plain(state, request, carried)).await?;
+    let mut response = Box::pin(compute_step_plain(state, request, carried)).await?;
     response.chain = Some(settled.chain_value(&response.sha256_seal));
     seal_response(response).map_err(|(_, message)| DoorError::Internal(message))
 }
 
-async fn verify_step_plain(
+/// Why a step's start was turned away: by the card's own start rules, or
+/// by the fresh-start rule (rule 14), read after them.
+enum StartTurned {
+    Card(DoorError),
+    FreshStart(DoorError),
+}
+
+/// The start rules of a step's parameters. The card's own start rules are
+/// named first: the start is opened, with no physics, when it is not fresh,
+/// and to hold its anchors to the card's own values.
+fn step_start_rules(
+    state: &AppState,
+    domain: &str,
+    card: &str,
+    parameters: &serde_json::Value,
+    carried: &fresh_start::Carried,
+) -> Result<(), StartTurned> {
+    if state.view.find(domain, card).is_none() {
+        return Ok(());
+    }
+    let Some(object) = parameters.as_object() else {
+        return Ok(());
+    };
+    let (domain, card) = state.view.resolve(domain, card);
+    let card_turned = |sentence: String| StartTurned::Card(DoorError::Unprocessable(sentence));
+    if let Err(sentence) = fresh_start::check(card, object, object, "parameters", "parameters", carried) {
+        Live::open(domain, card, parameters).map_err(card_turned)?;
+        return Err(StartTurned::FreshStart(DoorError::Unprocessable(sentence)));
+    }
+    if fresh_start::has_anchors(card) {
+        let live = Live::open(domain, card, parameters).map_err(card_turned)?;
+        fresh_start::check_anchors(card, &live, "parameters", carried)
+            .map_err(|sentence| StartTurned::FreshStart(DoorError::Unprocessable(sentence)))?;
+    }
+    Ok(())
+}
+
+async fn compute_step_plain(
     state: &AppState,
     request: serde_json::Value,
     carried: fresh_start::Carried,
@@ -7651,24 +7759,12 @@ async fn verify_step_plain(
         )
         .map_err(DoorError::Unprocessable)?;
     }
-    validate_physics(&payload.parameters).map_err(DoorError::Unprocessable)?;
+    validate_physics_of(known_card(state, &payload), &payload.parameters).map_err(DoorError::Unprocessable)?;
     // A start that carries a run on arrives with `from`, and the fields
-    // `from` carries are the upstream's. The card's own start rules are
-    // named first: the start is opened, with no physics, when it is not
-    // fresh, and to hold its anchors to the card's own values.
-    if state.view.find(&payload.domain, &payload.card).is_some() {
-        if let Some(parameters) = payload.parameters.as_object() {
-            let (domain, card) = state.view.resolve(payload.domain.as_str(), payload.card.as_str());
-            if let Err(sentence) = fresh_start::check(card, parameters, parameters, "parameters", "parameters", &carried) {
-                Live::open(domain, card, &payload.parameters).map_err(DoorError::Unprocessable)?;
-                return Err(DoorError::Unprocessable(sentence));
-            }
-            if fresh_start::has_anchors(card) {
-                let live = Live::open(domain, card, &payload.parameters).map_err(DoorError::Unprocessable)?;
-                fresh_start::check_anchors(card, &live, "parameters", &carried).map_err(DoorError::Unprocessable)?;
-            }
-        }
-    }
+    // `from` carries are the upstream's.
+    step_start_rules(state, &payload.domain, &payload.card, &payload.parameters, &carried).map_err(|turned| match turned {
+        StartTurned::Card(error) | StartTurned::FreshStart(error) => error,
+    })?;
     let proof = commit_request_proof(&request);
 
     let domain = payload.domain.clone();
@@ -7794,6 +7890,10 @@ async fn verify_step_plain(
                 .map_err(DoorError::Unprocessable)?;
             on_pool(state, move || call.run(proof)).await?
         }
+        ("energy", "runaway_18650_lco") => {
+            let call = RunawayCall::from_parameters(&payload.parameters).map_err(DoorError::Unprocessable)?;
+            on_pool(state, move || call.run(proof)).await?
+        }
         ("energy", "reactor_spert3_ccore") => {
             let call = ReactorCcoreCall::from_parameters(&payload.parameters)
                 .map_err(DoorError::Unprocessable)?;
@@ -7801,6 +7901,26 @@ async fn verify_step_plain(
         }
         ("energy", "reactor_triga_jsi") => {
             let call = ReactorTrigaCall::from_parameters(&payload.parameters)
+                .map_err(DoorError::Unprocessable)?;
+            on_pool(state, move || call.run(proof)).await?
+        }
+        ("materials", "grasp_lift_glass_4tu") => {
+            let call = card_grasp_lift_glass_4tu::GraspLiftGlass4tuCall::from_parameters(&payload.parameters)
+                .map_err(DoorError::Unprocessable)?;
+            on_pool(state, move || call.run(proof)).await?
+        }
+        ("aerospace", "momentum_jwst_srp") => {
+            let call = card_momentum_jwst_srp::MomentumJwstSrpCall::from_parameters(&payload.parameters)
+                .map_err(DoorError::Unprocessable)?;
+            on_pool(state, move || call.run(proof)).await?
+        }
+        ("aerospace", "momentum_jwst_dihedral") => {
+            let call = card_momentum_jwst_dihedral::MomentumJwstDihedralCall::from_parameters(&payload.parameters)
+                .map_err(DoorError::Unprocessable)?;
+            on_pool(state, move || call.run(proof)).await?
+        }
+        ("energy", "generator_mmrtg_seebeck") => {
+            let call = card_generator_mmrtg_seebeck::GeneratorMmrtgSeebeckCall::from_parameters(&payload.parameters)
                 .map_err(DoorError::Unprocessable)?;
             on_pool(state, move || call.run(proof)).await?
         }
@@ -7824,6 +7944,11 @@ async fn verify_step_plain(
                 .map_err(DoorError::Unprocessable)?;
             on_pool(state, move || call.run(proof)).await?
         }
+        ("energy", "tokamak_vde_mast") => {
+            let call = VdeCall::from_parameters(&payload.parameters)
+                .map_err(DoorError::Unprocessable)?;
+            on_pool(state, move || call.run(proof)).await?
+        }
         ("materials", "fingerpad_p02_glass") => {
             let call = FingerPadCall::from_parameters(&payload.parameters)
                 .map_err(DoorError::Unprocessable)?;
@@ -7831,7 +7956,7 @@ async fn verify_step_plain(
         }
         _ => {
             return Err(DoorError::NotFound(
-                "Card not recognized".to_string(),
+                crate::CARD_NOT_RECOGNIZED.to_string(),
             ));
         }
     };
@@ -7873,9 +7998,9 @@ async fn verify_step_plain(
 
 pub(crate) async fn verify_physics(
     State(state): State<AppState>,
-    JsonBody(payload): JsonBody,
+    JsonBody(payload, _): JsonBody,
 ) -> Result<Json<VerifyPhysicsResponse>, (StatusCode, String)> {
-    verify_step(&state, payload)
+    compute_step(&state, payload)
         .await
         .map(Json)
         .map_err(door_status)
@@ -7883,7 +8008,7 @@ pub(crate) async fn verify_physics(
 
 async fn run_trajectory_http(
     State(state): State<AppState>,
-    JsonBody(payload): JsonBody,
+    JsonBody(payload, _): JsonBody,
 ) -> Result<Json<trajectory::TrajectoryResponse>, (StatusCode, String)> {
     trajectory::run(&state, payload)
         .await
@@ -7893,7 +8018,7 @@ async fn run_trajectory_http(
 
 async fn run_dataset_http(
     State(state): State<AppState>,
-    JsonBody(payload): JsonBody,
+    JsonBody(payload, _): JsonBody,
 ) -> Result<([(axum::http::HeaderName, &'static str); 1], String), (StatusCode, String)> {
     dataset::run(&state, payload)
         .await
@@ -7903,9 +8028,9 @@ async fn run_dataset_http(
 
 async fn verify_dataset_http(
     State(state): State<AppState>,
-    JsonBody(payload): JsonBody,
+    body: JsonBody,
 ) -> Result<([(axum::http::HeaderName, &'static str); 1], String), (StatusCode, String)> {
-    dataset::check(&state, &payload)
+    dataset::verify(&state, &body.0, body.text())
         .await
         .map(json_text_response)
         .map_err(door_status)
@@ -7918,7 +8043,7 @@ fn json_text_response(text: String) -> ([(axum::http::HeaderName, &'static str);
 
 async fn validate_series_http(
     State(state): State<AppState>,
-    JsonBody(payload): JsonBody,
+    JsonBody(payload, _): JsonBody,
 ) -> Result<([(axum::http::HeaderName, &'static str); 1], String), (StatusCode, String)> {
     validation::run(&state, payload)
         .await
@@ -7928,9 +8053,9 @@ async fn validate_series_http(
 
 async fn verify_tape_http(
     State(state): State<AppState>,
-    JsonBody(payload): JsonBody,
+    body: JsonBody,
 ) -> Result<([(axum::http::HeaderName, &'static str); 1], String), (StatusCode, String)> {
-    trajectory::verify(&state, &payload)
+    trajectory::verify(&state, &body.0, body.text())
         .await
         .map(json_text_response)
         .map_err(door_status)
@@ -7938,7 +8063,7 @@ async fn verify_tape_http(
 
 async fn solve_http(
     State(state): State<AppState>,
-    JsonBody(payload): JsonBody,
+    JsonBody(payload, _): JsonBody,
 ) -> Result<Json<solution::SolutionResponse>, (StatusCode, String)> {
     solution::run(&state, payload)
         .await
@@ -7948,9 +8073,9 @@ async fn solve_http(
 
 async fn verify_solution_http(
     State(state): State<AppState>,
-    JsonBody(payload): JsonBody,
+    body: JsonBody,
 ) -> Result<([(axum::http::HeaderName, &'static str); 1], String), (StatusCode, String)> {
-    solution::verify(&state, &payload)
+    solution::verify(&state, &body.0, body.text())
         .await
         .map(json_text_response)
         .map_err(door_status)
@@ -7961,7 +8086,7 @@ async fn list_solvers_http() -> Json<serde_json::Value> {
 }
 
 async fn describe_solver_http(
-    JsonBody(payload): JsonBody,
+    JsonBody(payload, _): JsonBody,
 ) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
     solvers::describe_request(&payload)
         .map(Json)
@@ -7973,7 +8098,7 @@ async fn list_cards_http() -> Json<serde_json::Value> {
 }
 
 async fn describe_card_http(
-    JsonBody(payload): JsonBody,
+    JsonBody(payload, _): JsonBody,
 ) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
     descriptor::describe_request(&payload)
         .map(Json)
@@ -7981,28 +8106,35 @@ async fn describe_card_http(
 }
 
 async fn verify_receipt_http(
-    JsonBody(payload): JsonBody,
-) -> Result<Json<receipt_check::ReceiptReport>, (StatusCode, String)> {
-    receipt_check::check(&payload).map(Json).map_err(door_status)
+    JsonBody(payload, _): JsonBody,
+) -> Result<Json<verify_receipt::ReceiptReport>, (StatusCode, String)> {
+    verify_receipt::verify(&payload).map(Json).map_err(door_status)
 }
 
 async fn cite_http(
     State(state): State<AppState>,
-    JsonBody(payload): JsonBody,
+    JsonBody(payload, _): JsonBody,
 ) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
     cite::cite_in(state.view(), &payload).map(Json).map_err(door_status)
 }
 
 async fn find_flip_http(
     State(state): State<AppState>,
-    JsonBody(payload): JsonBody,
+    JsonBody(payload, _): JsonBody,
 ) -> Result<([(axum::http::HeaderName, &'static str); 1], String), (StatusCode, String)> {
     flip::find(&state, payload).await.map(json_text_response).map_err(door_status)
 }
 
+async fn design_run_http(
+    State(state): State<AppState>,
+    JsonBody(payload, _): JsonBody,
+) -> Result<([(axum::http::HeaderName, &'static str); 1], String), (StatusCode, String)> {
+    design::design(&state, payload).await.map(json_text_response).map_err(door_status)
+}
+
 async fn find_model_http(
     State(state): State<AppState>,
-    JsonBody(payload): JsonBody,
+    JsonBody(payload, _): JsonBody,
 ) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
     find_model::find_in(state.view(), &payload).map(Json).map_err(door_status)
 }
@@ -8019,6 +8151,142 @@ pub fn app() -> Router {
 /// has been through [`prepare_dataset_dir`].
 pub fn app_with_dataset_dir(dir: Option<PathBuf>) -> Router {
     router(AppState::new(physics_permit_count()).with_dataset_dir(dir))
+}
+
+// ---- tokamak_vde_mast: the MAST tokamak's vertical displacement event ----
+
+struct VdeCall {
+    card: tokamak_vde_mast::TokamakVdeMast,
+    state: tokamak_vde_mast::VdeState,
+    load: tokamak_vde_mast::VdeLoad,
+    dt_s: f64,
+}
+
+/// The sentence for each of the MAST VDE card's own limits, with the number
+/// the state reached where there is one.
+fn vde_reject(reject: tokamak_vde_mast::StepReject, state: &tokamak_vde_mast::VdeState) -> String {
+    match reject {
+        tokamak_vde_mast::StepReject::StartOutsideVessel => unsealed(&format!(
+            "the displacement {} m is at or beyond a contact height, {} m or {} m, where EFIT's boundary, shifted bodily, meets the limiter: the plasma is not inside the vessel (StartOutsideVessel).",
+            message_number(state.displacement_m),
+            message_number(tokamak_vde_mast::LOWER_CONTACT_M),
+            message_number(tokamak_vde_mast::UPPER_CONTACT_M),
+        )),
+        tokamak_vde_mast::StepReject::SpeedAtAlfvenSpeed => unsealed(&format!(
+            "the plasma's vertical speed is at or above its Alfven speed, {} m/s, at the start or at a stage of a substep, where the wall is tested too: the plasma cannot move as one body faster (SpeedAtAlfvenSpeed).",
+            message_number(tokamak_vde_mast::ALFVEN_SPEED_M_S),
+        )),
+        tokamak_vde_mast::StepReject::PlasmaAtWall => unsealed(&format!(
+            "the step carries EFIT's boundary to the limiter, at {} m or {} m: the plasma reaches the wall and the vertical displacement event ends (PlasmaAtWall).",
+            message_number(tokamak_vde_mast::UPPER_CONTACT_M),
+            message_number(tokamak_vde_mast::LOWER_CONTACT_M),
+        )),
+        tokamak_vde_mast::StepReject::SubstepsAboveBudget => unsealed(&format!(
+            "the step would take more than {} substeps, each 0.02 of the inverse of the bound on its fastest pole (SubstepsAboveBudget).",
+            tokamak_vde_mast::MAX_SUBSTEPS,
+        )),
+        tokamak_vde_mast::StepReject::SpontaneousGeneration => {
+            unsealed("the plasma and the two circuits created energy beyond the amplifier's work (SpontaneousGeneration).")
+        }
+        tokamak_vde_mast::StepReject::FirstLawBreach => {
+            unsealed("the plasma and the two circuits lost energy beyond the resistive losses (FirstLawBreach).")
+        }
+        other => refused("tokamak_vde_mast", other),
+    }
+}
+
+impl VdeCall {
+    fn read_load(params: &serde_json::Value) -> Result<tokamak_vde_mast::VdeLoad, String> {
+        Ok(tokamak_vde_mast::VdeLoad {
+            p6_voltage_v: required_f64(params, "p6_voltage_v")?,
+        })
+    }
+
+    fn from_parameters(params: &serde_json::Value) -> Result<Self, String> {
+        reject_unknown_load(params, descriptor::parameter_names("energy", "tokamak_vde_mast"))?;
+        enforce_published("energy", "tokamak_vde_mast", Published::Step, params)?;
+        let displacement_m = required_f64(params, "displacement_m")?;
+        let velocity_m_s = required_f64(params, "velocity_m_s")?;
+        let wall_current_a = required_f64(params, "wall_current_a")?;
+        let p6_current_a = required_f64(params, "p6_current_a")?;
+        let dt_s = required_f64(params, "dt_s")?;
+        let card = tokamak_vde_mast::TokamakVdeMast::mast_15045();
+        // The step ceiling and floor are locked constants of the card; its
+        // fastest pole is resolved inside each step by substeps.
+        card_clock(dt_s, None, card.floor_dt_s(), card.gate_dt_s(), "tokamak_vde_mast")?;
+        let load = Self::read_load(params)?;
+        tokamak_vde_mast::start_in_card(&card, displacement_m, velocity_m_s).map_err(|reject| {
+            let mut shown = tokamak_vde_mast::VdeState::try_start(&card, 0.0, 0.0, 0.0, 0.0)
+                .expect("the plasma rests at its equilibrium");
+            shown.displacement_m = displacement_m;
+            vde_reject(reject, &shown)
+        })?;
+        let state = tokamak_vde_mast::VdeState::try_start(&card, displacement_m, velocity_m_s, wall_current_a, p6_current_a)
+            .ok_or_else(|| phase_not_valid("tokamak_vde_mast"))?;
+        Ok(Self { card, state, load, dt_s })
+    }
+
+    fn replace_load(&mut self, params: &serde_json::Value) -> Result<(), String> {
+        reject_unknown_load(params, descriptor::load_names("energy", "tokamak_vde_mast"))?;
+        enforce_published("energy", "tokamak_vde_mast", Published::Load, params)?;
+        self.load = Self::read_load(params)?;
+        Ok(())
+    }
+
+    fn step_into(&mut self, frame: &mut LastStateFrame64) -> Result<(), StepFailure> {
+        let before = self.state;
+        tokamak_vde_mast::step(&self.card, &mut self.state, frame, self.load, self.dt_s).map_err(|reject| {
+            let detail = vde_reject(reject, &before);
+            StepFailure::from_reject(reject, detail)
+        })
+    }
+
+    fn run(mut self, proof: [u8; 16]) -> Result<IntegratedFrame, String> {
+        let mut frame = blank_frame(proof);
+        self.step_into(&mut frame).map_err(|failure| failure.detail)?;
+        Ok(IntegratedFrame {
+            frame,
+            residual_conservation_error: self.state.residual_conservation_error,
+            state: vde_state(&self.state)?,
+        })
+    }
+}
+
+fn vde_state(state: &tokamak_vde_mast::VdeState) -> Result<serde_json::Value, String> {
+    vde_with(state, state_object)
+}
+
+pub(crate) fn vde_published_is_finite(state: &tokamak_vde_mast::VdeState) -> Result<(), String> {
+    vde_with(state, fields_are_finite)
+}
+
+fn vde_with<T>(state: &tokamak_vde_mast::VdeState, finish: impl FnOnce(&[(&str, StateField)]) -> T) -> T {
+    finish(&[
+        ("t_s", StateField::F64(state.t_s)),
+        ("displacement_m", StateField::F64(state.displacement_m)),
+        ("velocity_m_s", StateField::F64(state.velocity_m_s)),
+        ("wall_current_a", StateField::F64(state.wall_current_a)),
+        ("p6_current_a", StateField::F64(state.p6_current_a)),
+        ("field_force_n", StateField::F64(state.field_force_n)),
+        ("wall_force_n", StateField::F64(state.wall_force_n)),
+        ("p6_force_n", StateField::F64(state.p6_force_n)),
+        ("wall_power_w", StateField::F64(state.wall_power_w)),
+        ("p6_power_w", StateField::F64(state.p6_power_w)),
+        ("supply_power_w", StateField::F64(state.supply_power_w)),
+        ("kinetic_energy_j", StateField::F64(state.kinetic_energy_j)),
+        ("potential_energy_j", StateField::F64(state.potential_energy_j)),
+        ("magnetic_energy_j", StateField::F64(state.magnetic_energy_j)),
+        ("energy_j", StateField::F64(state.energy_j)),
+        ("energy_anchor_j", StateField::F64(state.energy_anchor_j)),
+        ("stored_scale_anchor_j", StateField::F64(state.stored_scale_anchor_j)),
+        ("energy_supplied_j", StateField::F64(state.energy_supplied_j)),
+        ("energy_dissipated_j", StateField::F64(state.energy_dissipated_j)),
+        ("energy_defect_j", StateField::F64(state.energy_defect_j)),
+        ("residual_conservation_error", StateField::F64(state.residual_conservation_error)),
+        ("gap_to_wall_m", StateField::F64(state.gap_to_wall_m)),
+        ("substeps", StateField::F64(f64::from(state.substeps))),
+        ("past_ideal_wall_limit", StateField::Bool(state.past_ideal_wall_limit)),
+    ])
 }
 
 /// Test-only router. The sleep exists solely so a unit test can fill
@@ -8040,7 +8308,17 @@ const TRAJECTORY_BODY_LIMIT: usize = 16 * 1024 * 1024;
 
 /// A JSON body that refuses a repeated object key before `serde_json` drops
 /// it, and a non-zero number before `serde_json` reads it as zero.
-struct JsonBody(serde_json::Value);
+/// The bytes of the body are kept beside its value: a verification's long
+/// form holds the answer sent byte for byte.
+struct JsonBody(serde_json::Value, Bytes);
+
+impl JsonBody {
+    /// The body's text as it came, when it is UTF-8 (a JSON body that read
+    /// is).
+    fn text(&self) -> Option<&str> {
+        std::str::from_utf8(&self.1).ok()
+    }
+}
 
 #[async_trait]
 impl<S> FromRequest<S> for JsonBody
@@ -8076,7 +8354,7 @@ where
             json_text::Scan::Clean | json_text::Scan::Unreadable(_) => {}
         }
         match serde_json::from_slice::<serde_json::Value>(&bytes) {
-            Ok(value) => Ok(JsonBody(value)),
+            Ok(value) => Ok(JsonBody(value, bytes)),
             Err(error) => {
                 let (status, prefix) = match error.classify() {
                     serde_json::error::Category::Data => (
@@ -8115,9 +8393,10 @@ fn router(state: AppState) -> Router {
         .route("/verify_receipt", post(verify_receipt_http))
         .route("/validate_series", post(validate_series_http))
         .layer(DefaultBodyLimit::max(TRAJECTORY_BODY_LIMIT));
-    Router::new()
+    let routes = Router::new()
         .route("/health", get(health_check))
         .route("/verify_physics", post(verify_physics))
+        .route("/compute_step", post(verify_physics))
         .route("/cards", get(list_cards_http))
         .route("/describe_card", post(describe_card_http))
         .route("/solvers", get(list_solvers_http))
@@ -8127,8 +8406,29 @@ fn router(state: AppState) -> Router {
         .route("/cite", post(cite_http))
         .route("/find_model", post(find_model_http))
         .route("/find_flip", post(find_flip_http))
-        .merge(wide)
-        .with_state(state)
+        .route("/design_run", post(design_run_http))
+        .merge(wide);
+    #[cfg(test)]
+    let routes = routes.route("/panic_for_test", post(panic_for_test_http));
+    routes.layer(axum::middleware::from_fn(answer_a_panic)).with_state(state)
+}
+
+/// A test's way to make a handler of the HTTP door panic.
+#[cfg(test)]
+async fn panic_for_test_http() -> StatusCode {
+    panic!("a fault injected by a test inside a handler")
+}
+
+/// Every request of the HTTP door runs as a task of its own: a panic in its
+/// handler ends that task alone, the request is answered 500 with
+/// [`mcp_server::internal_fault`], and the door goes on serving.
+async fn answer_a_panic(request: Request<Body>, next: axum::middleware::Next) -> axum::response::Response {
+    use axum::response::IntoResponse;
+    let path = request.uri().path().trim_start_matches('/').to_string();
+    match tokio::spawn(next.run(request)).await {
+        Ok(response) => response,
+        Err(_) => (StatusCode::INTERNAL_SERVER_ERROR, mcp_server::internal_fault(&path)).into_response(),
+    }
 }
 
 #[cfg(test)]
@@ -8358,7 +8658,8 @@ mod armor {
         assert_eq!(
             card_clock(above, Some(omega), Some(floor), Some(gate), "ti64_lattice").unwrap_err(),
             format!(
-                "Physical Violation: 'dt_s' {} is above {} s, the step ceiling of the ti64_lattice card.",
+                // Re-pinned for 0.10.1: a step above the ceiling carries the name DtAboveCeiling.
+                "Physical Violation: 'dt_s' {} is above {} s, the step ceiling of the ti64_lattice card (DtAboveCeiling).",
                 crate::message_number(above),
                 crate::message_number(gate)
             )
@@ -8373,7 +8674,8 @@ mod armor {
         assert_eq!(
             card_clock(below, Some(omega), Some(floor), Some(gate), "ti64_lattice").unwrap_err(),
             format!(
-                "Physical Violation: 'dt_s' {} is below {} s, the step floor of the ti64_lattice card.",
+                // Re-pinned for 0.10.1: a step below the floor carries the name DtBelowFloor.
+                "Physical Violation: 'dt_s' {} is below {} s, the step floor of the ti64_lattice card (DtBelowFloor).",
                 crate::message_number(below),
                 crate::message_number(floor)
             )
@@ -8459,11 +8761,204 @@ mod armor {
             assert_eq!(
                 card_clock(above, omega, Some(floor), Some(ceiling), card).unwrap_err(),
                 format!(
-                    "Physical Violation: 'dt_s' {} is above {} s, the step ceiling of the {card} card.",
+                    // Re-pinned for 0.10.1: a step above the ceiling carries the name DtAboveCeiling.
+                    "Physical Violation: 'dt_s' {} is above {} s, the step ceiling of the {card} card (DtAboveCeiling).",
                     crate::message_number(above),
                     crate::message_number(ceiling)
                 )
             );
+        }
+    }
+
+    /// A step under a card's floor and one over its ceiling are refused by
+    /// name. The 2170 cell, which takes 1 s and nothing else, gives its
+    /// kernel's one name on both sides. A step over `π/ω` has a name of its
+    /// own, on a card whose ceiling lies above it.
+    #[test]
+    fn a_step_outside_the_floor_the_ceiling_or_the_nyquist_limit_is_refused_by_name() {
+        assert_eq!(
+            card_clock(0.5, None, Some(1.0), Some(50.0), "creep_cmsx6").unwrap_err(),
+            "Physical Violation: 'dt_s' 0.5 is below 1 s, the step floor of the creep_cmsx6 card (DtBelowFloor)."
+        );
+        assert_eq!(
+            card_clock(60.0, None, Some(1.0), Some(50.0), "creep_cmsx6").unwrap_err(),
+            "Physical Violation: 'dt_s' 60 is above 50 s, the step ceiling of the creep_cmsx6 card (DtAboveCeiling)."
+        );
+        assert_eq!(
+            card_clock(0.5, None, Some(1.0), Some(1.0), "cell_2170_m80").unwrap_err(),
+            "Physical Violation: 'dt_s' 0.5 is below 1 s, the step floor of the cell_2170_m80 card (StepNotOneSecond)."
+        );
+        assert_eq!(
+            card_clock(2.0, None, Some(1.0), Some(1.0), "cell_2170_m80").unwrap_err(),
+            "Physical Violation: 'dt_s' 2 is above 1 s, the step ceiling of the cell_2170_m80 card (StepNotOneSecond)."
+        );
+        // The other card that takes 1 s alone has no kernel name for it.
+        assert_eq!(step_outside_name("cell_2170_model3", false), DT_BELOW_FLOOR);
+        assert_eq!(step_outside_name("cell_2170_model3", true), DT_ABOVE_CEILING);
+        // Zero and below keep the name every kernel has for them.
+        assert_eq!(
+            card_clock(0.0, None, Some(1.0), Some(50.0), "creep_cmsx6").unwrap_err(),
+            "Physical Violation: 'dt_s' 0 is zero or negative (NonPositiveDt) on the creep_cmsx6 card."
+        );
+        // A ceiling above pi over omega: omega 1 rad/s puts the limit at pi.
+        let nyquist = nyquist_limit_s(1.0);
+        assert_eq!(
+            card_clock(4.0, Some(1.0), Some(0.5), Some(10.0), "a_card").unwrap_err(),
+            format!("Physical Violation: 'dt_s' 4 exceeds the Nyquist limit {} s of the a_card card (DtAboveNyquist).", message_number(nyquist))
+        );
+        card_clock(3.0, Some(1.0), Some(0.5), Some(10.0), "a_card").unwrap();
+        // No served card's ceiling lies above its limit, so none gives that name or lists it.
+        for item in descriptor::all() {
+            assert!(item.nyquist_s.is_none_or(|nyquist_s| nyquist_s >= item.ceiling_s), "{}", item.card);
+            assert!(!descriptor::door_rejects(item).contains(&DT_ABOVE_NYQUIST), "{}", item.card);
+        }
+    }
+
+    /// Every side of every bound a card publishes has a name, and the card's
+    /// description lists it: among its kernel's names or among the gateway's
+    /// own for that card.
+    #[test]
+    fn every_published_bound_of_every_card_has_a_name_the_card_lists() {
+        let mut sides = 0;
+        for item in descriptor::all() {
+            let own = descriptor::door_rejects(item);
+            for field in &item.fields {
+                for (bound, upper) in [(field.minimum, false), (field.maximum, true)] {
+                    if bound.is_none() {
+                        continue;
+                    }
+                    let name = published_reject(item.card, field.name, upper)
+                        .unwrap_or_else(|| panic!("{} {} {}: no name", item.card, field.name, if upper { "maximum" } else { "minimum" }));
+                    assert!(item.rejects.contains(&name) || own.contains(&name), "{} {}: {name} is not listed", item.card, field.name);
+                    assert!(descriptor::reject_meaning(item.card, name).is_some(), "{} {name}", item.card);
+                    sides += 1;
+                }
+            }
+            // Each of the gateway's own names has a meaning, and none repeats a kernel name.
+            for name in &own {
+                assert!(descriptor::reject_meaning(item.card, name).is_some_and(|meaning| meaning.ends_with('.')), "{} {name}", item.card);
+                assert!(!item.rejects.contains(name), "{} lists {name} twice", item.card);
+            }
+        }
+        assert!(sides > 150, "{sides}");
+        // The names given to the bounds that carried none.
+        for (card, field, upper, name) in [
+            ("grid_node", "current_a", true, "CurrentOutsideCard"),
+            ("grid_node", "load_current_a", false, "CurrentOutsideCard"),
+            ("grid_node", "voltage_v", false, "VoltageOutsideCard"),
+            ("grid_node", "upstream_voltage_v", true, "VoltageOutsideCard"),
+            ("tesseract", "displacement_m", false, "AmplitudeOutsideCard"),
+            ("tesseract", "velocity_m_s", true, "AmplitudeOutsideCard"),
+            ("tesseract", "energy_defect_j", true, "SpontaneousGeneration"),
+            ("tesseract", "energy_defect_j", false, "FirstLawBreach"),
+            ("ti64_lattice", "force_n", true, "YieldReached"),
+            ("ti64_lattice", "start_force_n", false, "StartNotWritten"),
+        ] {
+            assert_eq!(published_reject(card, field, upper), Some(name), "{card} {field}");
+        }
+    }
+
+    /// A negative temperature in kelvin, mass, density or volume of a card's
+    /// own field is a value below what the card takes, and the sign rule's
+    /// sentence carries the card's own name for it. With no card it carries
+    /// none, as before.
+    #[test]
+    fn a_sign_rule_carries_the_cards_own_name_for_the_field() {
+        assert_eq!(
+            validate_physics_of(Some("thermal"), &serde_json::json!({ "temperature_k": -50.0 })).unwrap_err(),
+            "Physical Violation: Temperature 'temperature_k' cannot be below absolute zero, a negative number of kelvin (TemperatureOutsideCard)."
+        );
+        assert_eq!(
+            validate_physics_of(Some("accumulator_sbo450"), &serde_json::json!({ "initial": { "gas_mass_kg": -1.0 } })).unwrap_err(),
+            "Physical Violation: Mass 'gas_mass_kg' cannot be negative (GasMassNotPositive)."
+        );
+        assert_eq!(
+            validate_physics_of(Some("tokamak_jet_dte1"), &serde_json::json!({ "segments": [{ "load": { "line_density_per_m3": -1.0 } }] })).unwrap_err(),
+            "Physical Violation: Density 'line_density_per_m3' cannot be negative (DensityNotPositive)."
+        );
+        assert_eq!(
+            validate_physics(&serde_json::json!({ "temperature_k": -50.0 })).unwrap_err(),
+            "Physical Violation: Temperature 'temperature_k' cannot be below absolute zero (negative Kelvin)."
+        );
+        assert_eq!(
+            validate_physics_of(None, &serde_json::json!({ "volume_m3": -1.0 })).unwrap_err(),
+            "Physical Violation: Volume 'volume_m3' cannot be negative."
+        );
+        // Every field of every card that a sign rule reads has such a name.
+        let mut fields = 0;
+        for item in descriptor::all() {
+            for field in &item.fields {
+                let value = if field.components == 1 { serde_json::json!(-1.0) } else { serde_json::json!([-1.0, 0.0, 0.0]) };
+                let request = serde_json::json!({ field.name: value });
+                let Err(sentence) = validate_physics_of(Some(item.card), &request) else {
+                    continue;
+                };
+                let name = published_reject(item.card, field.name, false)
+                    .unwrap_or_else(|| panic!("{} {}: the sign rule refuses it with no name", item.card, field.name));
+                assert!(sentence.ends_with(&format!(" ({name}).")), "{sentence}");
+                assert!(item.rejects.contains(&name), "{} {name}", item.card);
+                fields += 1;
+            }
+        }
+        assert!(fields >= 12, "{fields}");
+    }
+
+    /// A load rule's sentence ends with the name its card lists for the rule.
+    #[test]
+    fn a_load_rule_is_refused_under_the_name_its_card_lists() {
+        let sentence = load_nyquist("FlowAboveNyquist", "flow_m3_s", 2.0, 1.0, 1.0, Some(1.0)).unwrap_err();
+        assert_eq!(
+            sentence,
+            "Physical Violation: 'flow_m3_s' 2 is larger in size than 1, the largest the card accepts at this dt_s (the Nyquist limit of the RK4 step: |flow_m3_s| * dt_s may not exceed the card's impulse limit 1) (FlowAboveNyquist)."
+        );
+        load_nyquist("FlowAboveNyquist", "flow_m3_s", 1.0, 1.0, 1.0, Some(1.0)).unwrap();
+        let cell = ti64_lattice::Ti64LatticeCell::annealed_column();
+        let dt_s = cell.gate_dt_s().unwrap();
+        let sentence = enforce_force_nyquist([0.0, 1.0e30, 0.0], dt_s, &cell)
+            .map_err(|text| named(text, "ForceAboveNyquist"))
+            .unwrap_err();
+        assert!(sentence.starts_with("Physical Violation: 'force_n[1]' 1e30 N is larger in size than ") && sentence.ends_with(" N*s) (ForceAboveNyquist)."), "{sentence}");
+        // The titanium card's kernel has no such name, so the gateway lists it; the four whose kernels do list it themselves.
+        let listed = |card: &str, name: &str| {
+            let item = descriptor::all().iter().find(|item| item.card == card).unwrap();
+            (item.rejects.contains(&name), descriptor::door_rejects(item).contains(&name))
+        };
+        assert_eq!(listed("ti64_lattice", "ForceAboveNyquist"), (false, true));
+        for (card, name) in [
+            ("resonance", "ForceAboveNyquist"),
+            ("tesseract", "ForceAboveNyquist"),
+            ("cable_stretch", "ForceAboveNyquist"),
+            ("hydraulic_fluid", "FlowAboveNyquist"),
+            ("battery_sag", "CurrentAboveNyquist"),
+        ] {
+            assert_eq!(listed(card, name), (true, false), "{card}");
+        }
+    }
+
+    /// Below the negative end of a range that one name of size covers either
+    /// way, the sentence says the value is larger in size than the card takes.
+    #[test]
+    fn below_the_negative_end_of_a_range_named_for_size_the_sentence_says_so() {
+        let field = |card: &str, name: &str| {
+            let item = descriptor::all().iter().find(|item| item.card == card).unwrap();
+            item.fields.iter().find(|field| field.name == name).unwrap()
+        };
+        assert_eq!(
+            published_outside("cantilever_eth", field("cantilever_eth", "deflection_m"), -0.02).unwrap(),
+            "Physical Failure: 'deflection_m' -0.02 m is below -0.01875 m, the inclusive minimum of the cantilever_eth card: larger in size than the card takes (EnvelopeAboveCard). That state is not sealed."
+        );
+        assert_eq!(
+            published_outside("cantilever_eth", field("cantilever_eth", "deflection_m"), 0.02).unwrap(),
+            "Physical Failure: 'deflection_m' 0.02 m is above 0.01875 m, the inclusive maximum of the cantilever_eth card (EnvelopeAboveCard). That state is not sealed."
+        );
+        for (card, name) in [("resonance", "displacement_m"), ("resonance", "velocity_m_s"), ("hydraulic_fluid", "flow_m3_s"), ("cantilever_eth", "velocity_m_s")] {
+            let sentence = published_outside(card, field(card, name), -1.0e9).unwrap();
+            assert!(sentence.contains(&format!("the inclusive minimum of the {card} card: larger in size than the card takes (")), "{sentence}");
+        }
+        // A name that speaks of no side, and a bound whose two sides have two names, are left as they read.
+        for (card, name) in [("tesseract", "displacement_m"), ("grid_node", "current_a"), ("cell_2170_model3", "case_temperature_least_c"), ("cell_18650pf", "held_current_a")] {
+            let sentence = published_outside(card, field(card, name), -1.0e9).unwrap();
+            assert!(!sentence.contains("larger in size"), "{sentence}");
         }
     }
 
@@ -8497,11 +8992,11 @@ mod armor {
         );
         assert_eq!(
             advisory_flags("energy", "cell_18650pf"),
-            cell_18650pf::FLAG_SAG_WARNING
+            cell_18650pf::FLAG_SAG_WARNING | cell_18650pf::FLAG_CURRENT_OUTSIDE_PASSED_SPAN
         );
         assert_eq!(
             advisory_flags("energy", "generator_mmrtg_f1"),
-            generator_mmrtg_f1::FLAG_PAST_FITTING_SPAN
+            generator_mmrtg_f1::FLAG_PAST_FITTING_SPAN | generator_mmrtg_f1::FLAG_PAST_RECORD
         );
         assert_eq!(
             advisory_flags("aerospace", "capsule_stardust"),
@@ -8513,14 +9008,18 @@ mod armor {
         );
         assert_eq!(
             advisory_flags("aerospace", "satellite_lageos1"),
-            satellite_lageos1::FLAG_EARTH_SHADOW
+            satellite_lageos1::FLAG_EARTH_SHADOW | satellite_lageos1::FLAG_BELOW_COMPARED_RADIUS
         );
         assert_eq!(
             advisory_flags("energy", "reactor_spert3"),
             reactor_spert3::FLAG_PROMPT_SUPERCRITICAL
         );
-        assert_eq!(advisory_flags("energy", "grid_gb"), 0);
-        assert_eq!(advisory_flags("signal", "cantilever_eth"), 0);
+        assert_eq!(
+            advisory_flags("energy", "grid_gb"),
+            grid_gb::FLAG_OUTSIDE_COMPARED_TRIPS
+                | grid_gb::FLAG_PAST_COMPARED_MINUTE
+                | grid_gb::FLAG_BELOW_COMPARED_FREQUENCY
+        );
         assert_eq!(
             advisory_flags("signal", "link_gothenburg_10010"),
             link_gothenburg_10010::FLAG_RAINING
@@ -8528,10 +9027,14 @@ mod armor {
         assert_eq!(
             advisory_flags("aerospace", "los_jwst_fine_guide"),
             los_jwst_fine_guide::FLAG_NO_MEASUREMENT
+                | los_jwst_fine_guide::FLAG_POINTING_DISTURBED
+                | los_jwst_fine_guide::FLAG_BEYOND_FOUR_SIGMA
+                | los_jwst_fine_guide::FLAG_RECOVERING
+                | los_jwst_fine_guide::FLAG_COUNT_RATE_BEYOND_COMPARED
         );
         assert_eq!(
             advisory_flags("energy", "cell_2170_model3"),
-            cell_2170_model3::FLAG_SUSTAINED_ABOVE_1C
+            cell_2170_model3::FLAG_SUSTAINED_ABOVE_1C | cell_2170_model3::FLAG_OUTSIDE_COMPARED_RUNS
         );
         assert_eq!(
             advisory_flags("energy", "reactor_spert3_fuel"),
@@ -8544,11 +9047,24 @@ mod armor {
         assert_eq!(
             advisory_flags("materials", "tire_eve_r19_ice"),
             tire_eve_r19_ice::FLAG_LOAD_ABOVE_FITTED
+                | tire_eve_r19_ice::FLAG_BEYOND_COMPARED
+                | tire_eve_r19_ice::FLAG_SLIP_SETTLING
         );
-        assert_eq!(advisory_flags("energy", "cell_2170_m80"), 0);
+        assert_eq!(
+            advisory_flags("energy", "cell_2170_m80"),
+            cell_2170_m80::FLAG_BLOCK_MET_NO_MARK | cell_2170_m80::FLAG_OUTSIDE_COMPARED_TESTS
+        );
+        assert_eq!(
+            advisory_flags("energy", "accumulator_sbo450"),
+            accumulator_sbo450::FLAG_OUTSIDE_COMPARED_RUNS
+        );
         assert_eq!(
             advisory_flags("materials", "creep_cmsx6"),
-            creep_cmsx6::FLAG_CREEP_RATE_RISING
+            creep_cmsx6::FLAG_CREEP_RATE_RISING | creep_cmsx6::FLAG_OUTSIDE_MET_RANGE
+        );
+        assert_eq!(
+            advisory_flags("signal", "cantilever_eth"),
+            cantilever_eth::FLAG_ENVELOPE_BELOW_COMPARED | cantilever_eth::FLAG_ENVELOPE_ABOVE_COMPARED
         );
         assert_eq!(
             advisory_flags("energy", "tokamak_jet_dte1"),
@@ -8645,6 +9161,9 @@ mod armor {
 mod permit_probe;
 
 #[cfg(test)]
+mod fault_probe;
+
+#[cfg(test)]
 mod trajectory_probe;
 
 #[cfg(test)]
@@ -8673,3 +9192,6 @@ mod impulse_probe;
 
 #[cfg(test)]
 mod description_probe;
+
+#[cfg(test)]
+mod rebuild_probe;

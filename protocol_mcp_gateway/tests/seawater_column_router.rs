@@ -2,6 +2,8 @@
 //! direct call to `genesis_solvers`, the description, each limit of a cast
 //! at the door, and `POST /verify_solution` against edits of a solution.
 
+mod answer_text;
+
 use std::time::Duration;
 
 use genesis_solvers::seawater_column::{self as column, Cast};
@@ -23,7 +25,7 @@ async fn spawn_app() -> String {
 async fn post(base: &str, path: &str, body: &Value) -> (u16, String) {
     let client = Client::new();
     let url = format!("{base}{path}");
-    let text = serde_json::to_string(body).unwrap();
+    let text = answer_text::as_sent(body);
     let mut last_error = None;
     for _ in 0..20 {
         match client
@@ -35,7 +37,9 @@ async fn post(base: &str, path: &str, body: &Value) -> (u16, String) {
         {
             Ok(response) => {
                 let status = response.status().as_u16();
-                return (status, response.text().await.unwrap());
+                let text = response.text().await.unwrap();
+                answer_text::remember(&text);
+                return (status, text);
             }
             Err(error) => {
                 last_error = Some(error);
@@ -111,7 +115,7 @@ async fn a_solved_cast_is_the_solver_bit_for_bit_and_its_seal_holds() {
 
     let (status, verdict) = post(&base, "/verify_solution", &body).await;
     assert_eq!(status, 200, "{verdict}");
-    assert_eq!(serde_json::from_str::<Value>(&verdict).unwrap(), json!({ "holds": true, "cause": null, "checked": protocol_mcp_gateway::WHOLE_SOLUTION_CHECKED }));
+    assert_eq!(serde_json::from_str::<Value>(&verdict).unwrap(), json!({ "holds": true, "values_hold": true, "cause": null, "compared": protocol_mcp_gateway::WHOLE_SOLUTION_COMPUTED }));
 
     // One level's depth moved by one bit, one level's temperature in the
     // request, and the outcome are each named.
@@ -157,20 +161,29 @@ async fn the_list_and_the_description_say_what_the_solver_is() {
         names,
         ["latitude_deg", "sea_pressure_dbar", "temperature_c", "practical_salinity", "height_above_bottom_m"]
     );
-    // The published ranges are the envelope compared with measurement.
-    assert_eq!(described["inputs"][0]["minimum"], -34.0023);
-    assert_eq!(described["inputs"][0]["maximum"], 26.4108);
-    assert_eq!(described["inputs"][0]["refusal"], "LatitudeOutsideCompared");
-    assert_eq!(described["inputs"][1]["maximum"], 6108.0);
-    assert_eq!(described["inputs"][1]["refusal"], "DeeperThanCompared");
+    // The published ranges are the limits of the Gibbs function and of the
+    // method; the envelope compared with measurement is stated in words.
+    assert_eq!(described["inputs"][0]["minimum"], -90.0);
+    assert_eq!(described["inputs"][0]["maximum"], 90.0);
+    assert_eq!(described["inputs"][0]["refusal"], "LatitudeOutOfRange");
+    assert!(described["inputs"][0]["bound"].as_str().unwrap().contains("-34.0023 to +26.4108"));
+    assert_eq!(described["inputs"][1]["maximum"], 10000.0);
+    assert_eq!(described["inputs"][1]["refusal"], "PressureOutOfRange");
+    assert!(described["inputs"][1]["bound"].as_str().unwrap().contains("6108 dbar"));
     assert_eq!(described["inputs"][1]["most"], 1024);
-    assert_eq!(described["inputs"][2]["minimum"], 0.5088);
-    assert_eq!(described["inputs"][2]["maximum"], 31.169);
-    assert_eq!(described["inputs"][3]["minimum"], 30.9805);
-    assert_eq!(described["inputs"][3]["maximum"], 40.0731);
-    assert_eq!(described["inputs"][4]["maximum"], 86.0);
-    assert_eq!(described["inputs"][4]["refusal"], "HeightAboveBottomOutsideCompared");
-    assert_eq!(described["refusals"].as_array().unwrap().len(), 19);
+    assert_eq!(described["inputs"][2]["maximum"], 40.0);
+    assert_eq!(described["inputs"][2]["refusal"], "TemperatureOutOfRange");
+    assert!(described["inputs"][2]["bound"].as_str().unwrap().contains("0.5088 to 31.169 degC"));
+    assert_eq!(described["inputs"][3]["minimum"], 0.0);
+    assert_eq!(described["inputs"][3]["maximum"], 41.8);
+    assert!(described["inputs"][3]["bound"].as_str().unwrap().contains("30.9805 to 40.0731"));
+    assert_eq!(described["inputs"][4]["maximum"], 100.0);
+    assert_eq!(described["inputs"][4]["refusal"], "HeightAboveBottomOutOfRange");
+    assert!(described["inputs"][4]["bound"].as_str().unwrap().contains("86 m"));
+    assert_eq!(described["refusals"].as_array().unwrap().len(), 14);
+    for refusal in described["refusals"].as_array().unwrap() {
+        assert!(!refusal["meaning"].as_str().unwrap().contains("..="), "{refusal}");
+    }
     assert_eq!(described["reference"]["retrieved"], "2026-10-09");
     assert_eq!(described["reference"]["kind"], "A reference calculation. It is not a measurement.");
     for part in ["object", "data", "pass_line", "result", "limits"] {
@@ -193,7 +206,7 @@ async fn the_list_and_the_description_say_what_the_solver_is() {
         "a quadratic in the maximum pressure with three constants fitted on the opened leg (511 of 632)",
         "48 m off, and does not separate equations of state",
         "spreading over 0.6 m for the solver against 12 m for the quadratic, and the three lines do not measure that",
-        "evidence/checks/second_party/V-29/",
+        "evidence/verification/second_party/V-29/",
     ] {
         assert!(result.contains(words), "{words}: {result}");
     }
@@ -210,8 +223,8 @@ async fn the_list_and_the_description_say_what_the_solver_is() {
         "A cast whose levels lie close together at depth is answered: any pressures that rise from level to level are taken",
         "no least spacing of levels is declared",
         "the balance now allows each layer that rounding, half the spacing of 64-bit numbers at its depth",
-        "The range answered is the envelope of the casts compared: latitudes -34.0023 to +26.4108, the last level no deeper than 6108 dbar",
-        "polar water, trenches, fresh and brackish water, and hot or hypersaline water were not compared",
+        "The casts compared span latitudes -34.0023 to +26.4108, the last level no deeper than 6108 dbar",
+        "Polar water, trenches, fresh and brackish water, and hot or hypersaline water are answered and were not compared",
         "The compared casts had 8 to 612 levels, 1 to 66 dbar apart",
         "Seawater below its freezing temperature is refused as TemperatureBelowFreezing",
         "The water between the last level and the sea floor is taken at the last level's sound speed.",
@@ -255,12 +268,6 @@ async fn each_limit_of_a_cast_is_422_by_name_with_no_seal() {
         ("temperature_c", json!([-2.9, 23.0, 17.5, 13.2, 10.9, 9.1, 7.7, 7.2]), "TemperatureOutOfRange"),
         ("practical_salinity", json!([35.1, 35.2, 35.4, 35.1, 34.9, 34.7, 34.6, 41.9]), "SalinityOutOfRange"),
         ("temperature_c", json!([-2.5, 23.0, 17.5, 13.2, 10.9, 9.1, 7.7, 7.2]), "TemperatureBelowFreezing"),
-        ("latitude_deg", json!(61.0), "LatitudeOutsideCompared"),
-        ("latitude_deg", json!(-89.0), "LatitudeOutsideCompared"),
-        ("height_above_bottom_m", json!(100.0), "HeightAboveBottomOutsideCompared"),
-        ("practical_salinity", json!([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]), "SalinityOutsideCompared"),
-        ("practical_salinity", json!([41.8, 35.2, 35.4, 35.1, 34.9, 34.7, 34.6, 34.6]), "SalinityOutsideCompared"),
-        ("temperature_c", json!([39.9, 23.0, 17.5, 13.2, 10.9, 9.1, 7.7, 7.2]), "TemperatureOutsideCompared"),
     ];
     for (field, value, name) in edits {
         let mut asked = request();
@@ -270,6 +277,30 @@ async fn each_limit_of_a_cast_is_422_by_name_with_no_seal() {
         assert!(text.starts_with("Physical Violation: "), "{text}");
         assert!(text.ends_with(&format!("({name}).")), "{text}");
         assert!(!text.contains("solution_seal"), "{text}");
+        assert!(!text.contains("..="), "{text}");
+    }
+    // Past the casts compared with measurement, where engine 0.8.0 refused
+    // at the door, each cast is answered with a seal that holds.
+    let answered: Vec<(&str, Value)> = vec![
+        ("latitude_deg", json!(61.0)),
+        ("latitude_deg", json!(-89.0)),
+        ("height_above_bottom_m", json!(100.0)),
+        ("practical_salinity", json!([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])),
+        ("practical_salinity", json!([41.8, 35.2, 35.4, 35.1, 34.9, 34.7, 34.6, 34.6])),
+        ("temperature_c", json!([39.9, 23.0, 17.5, 13.2, 10.9, 9.1, 7.7, 7.2])),
+        ("temperature_c", json!([-1.9, 23.0, 17.5, 13.2, 10.9, 9.1, 7.7, 7.2])),
+    ];
+    for (field, value) in answered {
+        let mut asked = request();
+        asked["parameters"][field] = value;
+        let (status, text) = post(&base, "/solve", &asked).await;
+        assert_eq!(status, 200, "{field}: {text}");
+        let body: Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(body["outcome"], "converged", "{text}");
+        let (status, checked) = post(&base, "/verify_solution", &body).await;
+        assert_eq!(status, 200, "{checked}");
+        let checked: Value = serde_json::from_str(&checked).unwrap();
+        assert_eq!(checked["holds"], true, "{checked}");
     }
     // One level: every array is too short.
     let mut one = request();
@@ -319,11 +350,11 @@ async fn seawater_below_its_freezing_temperature_is_refused_by_name() {
     assert!(!text.contains("solution_seal"), "{text}");
 }
 
-/// A cast to the deepest compared level is answered. A cast to the limit of
-/// the Gibbs function is deeper than compared and refused by that name, and
-/// one beyond the Gibbs function by the physics' name.
+/// A cast to the deepest compared level is answered, and so are deeper
+/// ones down to the limit of the Gibbs function, 10000 dbar; one beyond the
+/// Gibbs function is refused by the physics' name.
 #[tokio::test]
-async fn a_cast_to_the_deepest_compared_level_is_answered_and_deeper_ones_are_refused_by_name() {
+async fn a_cast_is_answered_to_the_limit_of_the_gibbs_function_and_refused_by_name_past_it() {
     let base = spawn_app().await;
     let mut compared: Vec<f64> = (0..=61).map(|level| 100.0 * level as f64).collect();
     compared.push(6108.0);
@@ -344,8 +375,7 @@ async fn a_cast_to_the_deepest_compared_level_is_answered_and_deeper_ones_are_re
     let mut deeper = deepest.clone();
     deeper["parameters"]["sea_pressure_dbar"][62] = json!(6108.5);
     let (status, text) = post(&base, "/solve", &deeper).await;
-    assert_eq!(status, 422, "{text}");
-    assert!(text.ends_with("(DeeperThanCompared)."), "{text}");
+    assert_eq!(status, 200, "{text}");
 
     let pressure: Vec<f64> = (0..=100).map(|level| 100.0 * level as f64).collect();
     let temperature: Vec<f64> = pressure.iter().map(|p| 1.5 + 25.0 * (-p / 500.0_f64).exp() + 1.0e-4 * p).collect();
@@ -361,8 +391,10 @@ async fn a_cast_to_the_deepest_compared_level_is_answered_and_deeper_ones_are_re
         }
     });
     let (status, text) = post(&base, "/solve", &asked).await;
-    assert_eq!(status, 422, "{text}");
-    assert!(text.ends_with("(DeeperThanCompared)."), "{text}");
+    assert_eq!(status, 200, "{text}");
+    let body: Value = serde_json::from_str(&text).unwrap();
+    let floor = body["result"]["seabed_depth_m"].as_f64().unwrap();
+    assert!(floor > 9700.0 && floor < 9760.0, "{floor}");
     for field in ["sea_pressure_dbar", "temperature_c", "practical_salinity"] {
         let last = if field == "sea_pressure_dbar" { 10_090.0 } else if field == "temperature_c" { 2.5 } else { 34.7 };
         asked["parameters"][field].as_array_mut().unwrap().push(json!(last));
@@ -374,8 +406,7 @@ async fn a_cast_to_the_deepest_compared_level_is_answered_and_deeper_ones_are_re
 
 /// Casts with levels close together at depth, which were once refused: forty
 /// levels 0.02 dbar apart at 3,000 and 6,000 dbar, 0.05 dbar apart at
-/// 6,100 dbar (9,900 dbar is now deeper than compared; the solver's own test
-/// keeps it) and 0.001 dbar apart at 1,000 dbar, and forty levels one
+/// 6,100 dbar (and 9,900 dbar in the solver's own test) and 0.001 dbar apart at 1,000 dbar, and forty levels one
 /// millionth of a decibar apart at 6,000 dbar. Each is answered with a seal
 /// that holds. A level that does not rise is still refused by name.
 #[tokio::test]

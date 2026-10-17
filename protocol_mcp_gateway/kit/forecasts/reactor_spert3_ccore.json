@@ -1,0 +1,27 @@
+{
+ "model": "reactor_spert3_ccore",
+ "verdict": "missed",
+ "protocol": {
+  "path": "evidence/research/reactor_spert3_ccore/validation_protocol.md",
+  "sha256": "8e2e56cf3e93099f19c6a17537acb76708dc99da682915ea602d84005cbae72f",
+  "committed": {
+   "crate": "protocol_mcp_gateway",
+   "commit": "9f4b02c93801f8c405c3b0f02b1bf3c262557e26",
+   "utc": "2026-10-11T11:05:55Z",
+   "how": "The diff of the 0.8.0 commit ('Set the gateway and the engine to 0.8.0 ... the card reactor_spert3_ccore ...') adds the pass line 'Fixed before any constant was fitted and before any model was run on any row (evidence/research/reactor_spert3_ccore/validation_protocol.md, SHA-256 8e2e56cf...cae72f ...)', together with the card's result."
+  }
+ },
+ "held_back": [
+  {
+   "path": "evidence/research/reactor_spert3_ccore/data/spert3_c_core_ido16918_appendix.csv",
+   "sha256": "a560939fa3375e9c33477e472f84a68c1d2c60fd2c3ef7950173a21b4967f17a"
+  }
+ ],
+ "scored": {
+  "utc": "2026-10-11T07:55:34Z",
+  "evidence": "Birth time of evidence/research/reactor_spert3_ccore/analysis/out/comparison.json (00:55:34 PDT), the one held-back comparison; FINGERPRINT.txt gives the card as locked at 07:55:27Z 'before the held-back comparison'; RESULT.md: 'Run once, 2026-10-11'."
+ },
+ "forecast_first": "not held",
+ "registered_by": "backfill from the record, 2026-10-15",
+ "notes": "The first crate commit carrying the hash is 3 h 10 min after the comparison and states its result. Outside Git: FINGERPRINT.txt fingerprints validation_protocol.md (unchanged on disk) and the data table above at 2026-10-11T07:32:48Z and amendment_1.md (617b224b..., unchanged) at 07:37:04Z, before any constant was chosen; the amendment's hash is in no commit. RESULT.md says every cell of the table, held-back rows included, was read to verify the transcription before the protocol was written: the comparison is not blind. After review at 08:55:02Z the card's flow range was narrowed with no constant changed. Public mark: GitHub-signed commit 9a5cdc50331eaa5005f5bd4b54f9d380dbe09928 at 2026-10-13T17:55:14Z."
+}

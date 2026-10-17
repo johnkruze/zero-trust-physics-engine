@@ -1,0 +1,16 @@
+{
+ "model": "generator_mmrtg_f1",
+ "verdict": "missed",
+ "protocol": {
+  "path": "evidence/research/mmrtg_curiosity/analysis/prereg.json",
+  "sha256": "ea2f70ec6b58a237d9df8ace08f62e90370114aeadce482eeb00fa99cad56cc7",
+  "committed": null
+ },
+ "scored": {
+  "utc": "2026-10-06T20:12:25Z",
+  "evidence": "evidence/research/mmrtg_curiosity/analysis/out/06_sealed_rows_opened_record.json, field sealed_rows_opened_utc, written by the sealed engine run (out/06_engine_comparison_sealed.log) when the held-back days 2,809 to 4,087 were opened."
+ },
+ "forecast_first": "not shown",
+ "registered_by": "backfill from the record, 2026-10-15",
+ "notes": "No commit in any crate carries ea2f70ec (prereg.json), a51a68bb (validation_protocol.md) or 5731dc9b (split_decision.json); the served pass line states no hash. Outside Git: analysis/out/prereg_hash_record.txt records the prereg.json hash at 2026-10-06T18:18:56Z, before the fit and the forecast, and says the folder is not under version control. Not a committed fingerprint: the mark was posted to github.com/johnkruze/zero-trust-physics-pass-marks with this SHA-256 in GitHub-signed commit e23e2762cd622b83114e843f77b024dc01e34ddd at 2026-10-13T17:55:04Z, after the scoring. Second party repeat: evidence/verification/second_party/V-11. The pass line's text, with no hash, first enters a commit in protocol_mcp_gateway 5fe78e256745fbafda10971bf539f9b30acef726 at 2026-10-07T20:15:14Z (as 'within 1.00 percent of the generator's starting power'), after the scoring."
+}

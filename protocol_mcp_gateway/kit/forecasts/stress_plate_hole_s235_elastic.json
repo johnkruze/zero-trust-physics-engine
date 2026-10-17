@@ -1,0 +1,23 @@
+{
+ "model": "stress_plate_hole_s235_elastic",
+ "verdict": "calibrated to the record",
+ "calibration": {
+  "companion_to": "stress_plate_hole_s235",
+  "protocol": {
+   "path": "evidence/research/stress_plate_s235/companion_elastic/CALIBRATION.md",
+   "sha256": "802055fee75f4d195a9cb27d0b75b2360e84cb0c1da3467c68d116b3e95e7d74"
+  },
+  "scored": {
+   "utc": "2026-10-16T05:49:58Z",
+   "output": {
+    "path": "evidence/research/stress_plate_s235/companion_elastic/out/scored_companion.json",
+    "sha256": "5aaa42b9a5bf64acb6d928b9e8e0e68f0355ca577fdda5e7c3766fd9b1946222"
+   },
+   "program": {
+    "path": "evidence/research/stress_plate_s235/companion_elastic/score_companion.py",
+    "sha256": "57b3e257e312159cc85a68ee0112739598553c1e8994d3cb056f5edb3041a3dd"
+   }
+  },
+  "not_blind": "Every number of stress_plate_hole_s235's scored comparison was read before this structure, the same field with the steel not yielding, was chosen: its held-back ring, and the three lines that field had been reported to meet there, not gated, beside the miss of the field yielding at 235 MPa."
+ }
+}

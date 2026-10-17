@@ -1,0 +1,21 @@
+{
+ "model": "runaway_18650_lco",
+ "verdict": "missed",
+ "protocol": {
+  "path": "evidence/research/thermal_runaway_18650/PROTOCOL.md",
+  "sha256": "b704cdf7d0d8bdde297c8ffa7e4b157f4edf633f26890c94e6f4fbfe65a60ad4",
+  "committed": {
+   "crate": "protocol_mcp_gateway",
+   "commit": "c813a2a0e7661e0e7a693fb18fc495653608e829",
+   "utc": "2026-10-15T00:16:54Z",
+   "how": "The serving commit 'Serve the card runaway_18650_lco ...' carries the 8-hex prefix in its message and its diff adds the pass line 'Fixed after the card was built and before any measured number of the sources was read (evidence/research/thermal_runaway_18650/PROTOCOL.md, SHA-256 b704cdf7...60ad4)' together with the result 'Compared once on 2026-10-14 ...: 8 of 23 lines met'."
+  }
+ },
+ "scored": {
+  "utc": "2026-10-15T00:13:21Z",
+  "evidence": "Upper bound: birth time of evidence/research/thermal_runaway_18650/COMPARISON.md (17:13:21 PDT), which states the comparison made once on 2026-10-14 (Pacific). It was made after PROTOCOL.md was written (born 2026-10-14T23:22:18Z) and after the card's sealed runs (analysis/runs.json, 23:40:29Z); no file gives the minute the measured numbers were first read."
+ },
+ "forecast_first": "not held",
+ "registered_by": "backfill from the record, 2026-10-15",
+ "notes": "The only commit carrying the hash is the serving commit, which states the result; it is at least 3 min 33 s after the comparison was written. No commit carries the hash before the comparison, and no fingerprint file outside Git records it either: the hash's only records are COMPARISON.md and the served description. PROTOCOL.md says it was written after the card was built and before any measured number of the sources was read by this session; the card's constants are published values, none fitted. The protocol carries pass lines but no forecast of the outcome. The card was built in genesis_kernel 08d2f1149459af274a4d8119b54993a9d5e36967 (2026-10-14T23:48:39Z), which does not carry the hash. Commit times are the committer's clock. No mark for it in the local copy of the public pass-marks repository (command-center/sales/github/pass-marks/, posted 2026-10-13)."
+}

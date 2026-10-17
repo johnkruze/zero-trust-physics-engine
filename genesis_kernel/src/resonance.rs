@@ -1,6 +1,7 @@
 #![no_implicit_prelude]
 
-//! Mass-spring-damper at one locked natural frequency.
+//! resonance, the company's own specimen: a mass-spring-damper at one locked
+//! natural frequency.
 //!
 //! `core` only: no heap and no standard prelude. The state is `Copy`. An
 //! accepted step writes time, displacement, velocity, the held acceleration,
@@ -33,7 +34,8 @@
 //!
 //! The card ends at a free ring of twice the stroke. A state whose mechanical
 //! energy is above that ring's, four stroke energies, on the incoming state
-//! or on the landing, is [`StepReject::AmplitudeAboveCard`].
+//! or on the landing, is [`StepReject::EnergyAboveCard`]. The energy is a
+//! size: a displacement or a velocity of either sign reaches it.
 //!
 //! The ledger has a stated reach. RK4 is not exact for this mount, and the
 //! residual is the step method's own error, summed since the anchor. At the
@@ -64,6 +66,7 @@ extern crate core;
 use core::prelude::v1::*;
 
 use crate::frame::LastStateFrame64;
+use crate::normal::normal_or_zero;
 
 /// Mount natural frequency.
 pub const NATURAL_FREQUENCY_HZ: f64 = 10.0;
@@ -113,8 +116,8 @@ pub enum StepReject {
     InvalidOscillator,
     /// `|a| dt` is past `ω L`.
     ForceAboveNyquist,
-    /// Mechanical energy, incoming or landing, is above that of a free ring of twice the stroke.
-    AmplitudeAboveCard,
+    /// Mechanical energy, incoming or landing, is above that of a free ring of twice the stroke, four stroke energies: a size, reached by a displacement or a velocity of either sign.
+    EnergyAboveCard,
     /// The stated `t_s` of a started state is below zero or above 1024 s.
     StartTimeOutsideCard,
     /// The stated ledger is not one the card could have written for this state: an anchor below zero or above four stroke energies, booked work at `t_s` 0, or `E − E_anchor − W` already past the limit.
@@ -364,7 +367,7 @@ impl OscillatorState {
             None => return Err(StepReject::NonFiniteState),
         };
         if state.mechanical_energy_j > oscillator.energy_ceiling_j() {
-            return Err(StepReject::AmplitudeAboveCard);
+            return Err(StepReject::EnergyAboveCard);
         }
         if !(energy_anchor_j >= 0.0 && energy_anchor_j <= oscillator.energy_ceiling_j()) {
             return Err(StepReject::LedgerNotOfThisState);
@@ -392,8 +395,25 @@ impl OscillatorState {
 /// Advance one RK4 step and write the frame.
 ///
 /// A rejected step leaves `state` and `frame` as they were.
+///
+/// A value of the landed state below the normal range is written as zero
+/// with its sign ([`crate::normal`]).
 #[must_use]
 pub fn step(
+    oscillator: &DynamicOscillator,
+    state: &mut OscillatorState,
+    frame: &mut LastStateFrame64,
+    load: OscillatorLoad,
+    dt_s: f64,
+) -> Result<(), StepReject> {
+    step_as_computed(oscillator, state, frame, load, dt_s)?;
+    normal_or_zero_state(state);
+    Ok(())
+}
+
+/// The step as its equations compute it, before a value of the landed
+/// state below the normal range is written as zero.
+fn step_as_computed(
     oscillator: &DynamicOscillator,
     state: &mut OscillatorState,
     frame: &mut LastStateFrame64,
@@ -406,6 +426,24 @@ pub fn step(
         None => return Err(StepReject::NonFiniteState),
     };
     commit(oscillator, state, frame, load, dt_s, predicted)
+}
+
+/// Each value of a landed state below the normal range written as zero
+/// with its sign ([`crate::normal`]): the state carried to the next step
+/// and published holds no subnormal number.
+fn normal_or_zero_state(state: &mut OscillatorState) {
+    state.t_s = normal_or_zero(state.t_s);
+    state.displacement_m = normal_or_zero(state.displacement_m);
+    state.velocity_m_s = normal_or_zero(state.velocity_m_s);
+    state.accel_m_s2 = normal_or_zero(state.accel_m_s2);
+    state.kinetic_j = normal_or_zero(state.kinetic_j);
+    state.potential_j = normal_or_zero(state.potential_j);
+    state.mechanical_energy_j = normal_or_zero(state.mechanical_energy_j);
+    state.energy_anchor_j = normal_or_zero(state.energy_anchor_j);
+    state.boundary_work_j = normal_or_zero(state.boundary_work_j);
+    state.energy_defect_j = normal_or_zero(state.energy_defect_j);
+    state.residual_conservation_error = normal_or_zero(state.residual_conservation_error);
+    state.stroke_margin_m = normal_or_zero(state.stroke_margin_m);
 }
 
 fn validate(
@@ -431,7 +469,7 @@ fn validate(
         return Err(StepReject::NonFiniteState);
     }
     if energy_j > oscillator.energy_ceiling_j() {
-        return Err(StepReject::AmplitudeAboveCard);
+        return Err(StepReject::EnergyAboveCard);
     }
     if exceeds_force_nyquist(oscillator, load.accel_m_s2, dt_s) {
         return Err(StepReject::ForceAboveNyquist);
@@ -481,7 +519,7 @@ fn commit(
     }
     if state.mechanical_energy_j > oscillator.energy_ceiling_j() {
         *state = saved;
-        return Err(StepReject::AmplitudeAboveCard);
+        return Err(StepReject::EnergyAboveCard);
     }
     let gate = RESIDUAL_CONSERVATION_LIMIT * scale;
     if state.energy_defect_j > gate {
@@ -1062,7 +1100,7 @@ mod tests {
                 &mut frame,
                 free,
                 dt,
-                StepReject::AmplitudeAboveCard,
+                StepReject::EnergyAboveCard,
             );
             proof_intact(&frame);
             sign -= 2.0;
@@ -1075,7 +1113,7 @@ mod tests {
             let mut frame = blank_frame();
             match step(&oscillator, &mut state, &mut frame, free, dt) {
                 Ok(()) => true,
-                Err(StepReject::AmplitudeAboveCard) => false,
+                Err(StepReject::EnergyAboveCard) => false,
                 Err(other) => std::panic!("speed {velocity_m_s} refused with {other:?}"),
             }
         };
@@ -1104,7 +1142,7 @@ mod tests {
             let mut frame = blank_frame();
             match step(&oscillator, &mut state, &mut frame, pushed, dt) {
                 Ok(()) => Some(state.mechanical_energy_j),
-                Err(StepReject::AmplitudeAboveCard) => None,
+                Err(StepReject::EnergyAboveCard) => None,
                 Err(other) => std::panic!("speed {velocity_m_s} refused with {other:?}"),
             }
         };
@@ -1132,7 +1170,7 @@ mod tests {
             &mut frame,
             pushed,
             dt,
-            StepReject::AmplitudeAboveCard,
+            StepReject::EnergyAboveCard,
         );
         proof_intact(&frame);
 
@@ -1183,7 +1221,7 @@ mod tests {
                 &mut frame,
                 OscillatorLoad::default(),
                 dt_s,
-                StepReject::AmplitudeAboveCard,
+                StepReject::EnergyAboveCard,
             );
             // The same ring a quarter turn on: all of its energy is speed.
             let velocity_m_s = -oscillator.omega_rad_s * displacement_m;
@@ -1194,7 +1232,7 @@ mod tests {
                 &mut frame,
                 OscillatorLoad::default(),
                 dt_s,
-                StepReject::AmplitudeAboveCard,
+                StepReject::EnergyAboveCard,
             );
             i += 1;
         }
@@ -1221,7 +1259,7 @@ mod tests {
                             max_residual = state.residual_conservation_error;
                         }
                     }
-                    Err(StepReject::AmplitudeAboveCard) => {
+                    Err(StepReject::EnergyAboveCard) => {
                         assert_eq!(state_bits(&state), held);
                         assert_eq!(frame.to_bytes(), held_frame);
                         break;
@@ -1638,7 +1676,7 @@ mod continuation_tests {
         let over_m = ceiling_m.next_up();
         assert_eq!(
             at(over_m, 0.0, 0.0, oscillator.mechanical_energy_j(over_m, 0.0), 0.0),
-            Err(StepReject::AmplitudeAboveCard)
+            Err(StepReject::EnergyAboveCard)
         );
         // Not finite, and not this mount.
         assert_eq!(

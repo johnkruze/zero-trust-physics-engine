@@ -47,9 +47,11 @@
 //! left out, a ratio that varied with load and pressure predicted the
 //! left-out condition worse than one that did not, and the traction and the
 //! braking runs gave load exponents of opposite sign. The pressure is a
-//! caller's input only so that a run outside the tested pressures is named.
+//! caller's input so that a frame outside the measured pressures carries
+//! [`FLAG_BEYOND_COMPARED`], and so that a flat tyre is named.
 //! Also left out: the rise of the force from rest, which the first stage of
-//! every run shows and which lasts most of a stage; slips under 5 percent,
+//! every run shows and which lasts most of a stage, and the rise over the
+//! first seconds after a change of slip (below); slips under 5 percent,
 //! where the measured force had not settled inside a stage; the ice
 //! temperature, which the files do not record; any speed but the rig's
 //! creep; a steered or cambered wheel; water on the ice; rolling resistance;
@@ -79,9 +81,15 @@
 //! ```
 //!
 //! The wheel work is the drawbar work plus the heat of sliding. The defect is
-//! held to [`RESIDUAL_CONSERVATION_LIMIT`] of the ledger scale, the heaviest
-//! load at the highest friction ratio over the whole track, about 10.3 kJ. A
-//! positive defect is work that came from nowhere and is
+//! held to [`RESIDUAL_CONSERVATION_LIMIT`] of the ledger scale. The scale is
+//! the larger of a fixed energy and the largest of the three works of the
+//! run. The fixed energy is the heaviest load measured at the highest friction
+//! ratio of the card over the 6 m a measured run rolled, about 10.3 kJ, the
+//! scale through engine 0.9: on every run of 3.5 to 6.5 kN along 6 m it is
+//! the larger, so the residual of such a frame reads as it did. A heavier
+//! load or a longer run does more work, and the scale then follows the work,
+//! so the ledger holds the same relative closure at every load and every
+//! distance. A positive defect is work that came from nowhere and is
 //! [`StepReject::SpontaneousGeneration`]; a negative one is
 //! [`StepReject::FirstLawBreach`].
 //!
@@ -95,51 +103,51 @@
 //! the wheel speed steps, the force ratio met all five lines in every
 //! one-second window from 5 s to 20 s after the change, and every one-second
 //! window before 5 s failed a line: the first second failed the 0.045 line at
-//! 6.5 kN (0.048) and the comparator, and the seconds from 1 s to 5 s did no
-//! better than the constant comparator. With the protocol's own cuts the
-//! window from 5 s to 11 s met all five lines as well. No scored slip was held longer than one
-//! stage, about 20 s, except the last slip of a run, 7 or 20 percent, which
-//! the rig held for 21 to 33 s. The card therefore stands behind the force
-//! from [`SLIP_SETTLE_S`], 5 s, to [`HOLD_CEILING_S`], 21 s, after a slip was
-//! set. The state carries `slip_held_s`, the time the present slip has been
-//! held; a start states it, and a run carries it from step to step while the
-//! slip is held. A step that starts before 5 s, which every step after a
-//! change of slip does, is [`StepReject::SlipNotSettled`]; a step that ends
-//! beyond 21 s is [`StepReject::HoldBeyondMeasured`]. The time held is a
-//! running sum like the distance, and the comparison with 21 s carries
-//! [`HOLD_END_ALLOWANCE_PER_STEP_S`], 2^-49 s, half the spacing of 64-bit
-//! numbers between 16 s and 32 s, for each of the 16,384 steps of the
-//! floor in 16 s and six more.
+//! 6.5 kN (0.0477) and the comparator (0.0449 against 0.0441), and the
+//! seconds from 1 s to 5 s did no better than the constant comparator (0.0430
+//! against 0.0424 from 1 s to 2 s, 0.0399 against 0.0395 from 2 s to 5 s).
+//! With the protocol's own cuts the window from 5 s to 11 s met all five
+//! lines as well. No scored slip was held longer than one stage, about 20 s,
+//! except the last slip of a run, 7 or 20 percent, which the rig held for 21
+//! to 33 s. The state carries `slip_held_s`, the time the present slip has
+//! been held; a start states it, and a run carries it from step to step while
+//! the slip is held and starts it again at zero when the slip changes. The
+//! measured force rises over the first seconds after a slip is set, and the
+//! card's force law has no rise: it gives the steady force from the instant
+//! the slip is set, and there it was compared and missed. A step that starts
+//! before [`SLIP_SETTLE_S`], 5 s, which every step after a change of slip
+//! does, lands with the same force law and the same ledger and carries
+//! [`FLAG_SLIP_SETTLING`]; through engine 0.11 it was refused as
+//! `SlipNotSettled`. A time held below zero is no time a slip can have been
+//! held, [`StepReject::SlipHeldBelowZero`]. From 5 s on the card holds the
+//! force for as long as the slip is held; past [`COMPARED_HOLD_END_S`], 21 s,
+//! a frame carries [`FLAG_BEYOND_COMPARED`].
 //!
-//! [`TireEveR19Ice::gate_dt_s`] is the step ceiling, 16 s: the time from 5 s
-//! to 21 s at one slip. The force law has no dynamics, so the step is exact
-//! at any size. [`TireEveR19Ice::floor_dt_s`] is the ceiling divided by 2^14,
-//! 2^-10 s, about a sixth of the sampling interval of the measurements. A
-//! run is then at most 16,384 steps, and the residual of such a run at the
-//! floor stays under 1e-11 of the ledger scale, a hundredth of its limit. The
-//! public step applies neither. The gateway refuses a step outside them.
+//! The force does not depend on where the wheel is along the track. The
+//! rig's runs rolled 90 to 97 s, about 5.7 m of ice, and the distance goes on
+//! past the end of that track for as long as the run goes on.
 //!
-//! The end of the track and rounding. The distance is a running sum,
-//! `distance += v · dt` in 64-bit arithmetic, and each addition rounds by at
-//! most half the spacing of 64-bit numbers between 4 m and 8 m, 2^-51 m. A
-//! run whose end in decimal is exactly 6 m can therefore reach the last step
-//! with a sum a few spacings past 6 m: 1,000 steps of 0.1 s at 0.06 m/s read
-//! 5.994000000000005 m before the last. A distance handed back as a new
-//! start carries the rounding of the steps before it. The comparison with
-//! the end of the track carries [`TireEveR19Ice::track_end_allowance_m`]:
-//! [`TRACK_END_ALLOWANCE_PER_STEP_M`], 2^-51 m, for each step the whole track
-//! can hold at the step floor and the slowest speed, 6 m over 0.05 m/s times
-//! the floor, 122,880 steps, and [`TRACK_END_ALLOWANCE_EXTRA_STEPS`], six,
-//! more: one for the start read from a decimal, and five for the speed and
-//! the step read from decimals and their product, each within one part in
-//! 2^53 of itself, over 6 m. A returned distance reads back exactly, so no
-//! mix of steps and restarts along the track can round by more. The
-//! allowance is the same at every step, 5.5e-11 m, and is never more than
-//! half the step; the comparison is with the 64-bit number nearest 6 m plus
-//! the allowance. The distance is stepped at its own value and nothing is
-//! pulled back: a run that ends on the track's end in decimal can read up to
-//! the allowance past 6 m, and a step that would end farther is
-//! [`StepReject::TravelBeyondTrack`].
+//! What stops the card besides. A normal load of zero or less is no contact:
+//! the tyre does not press on the ice, and the step is
+//! [`StepReject::NoContact`]. A gauge pressure of zero or less is a flat
+//! tyre, [`StepReject::TyreFlat`]. A distance below zero is
+//! [`StepReject::DistanceBelowZero`]. A step that does not move the time held
+//! at the slip or the distance in 64-bit arithmetic is
+//! [`StepReject::StepTooSmallToResolve`].
+//!
+//! [`TireEveR19Ice::gate_dt_s`] is the step ceiling, 2^22 s, about 48.5
+//! days, from the step's arithmetic. The force law has no dynamics, so every
+//! work of a step is exact at any size: no step error grows with the step.
+//! What a step must still do is move the sums of the clock, the time held and
+//! the distance. The step floor, [`TireEveR19Ice::floor_dt_s`], is 2^-10 s,
+//! about a sixth of the sampling interval of the measurements. Below 2^42 s
+//! the spacing of 64-bit numbers is at most 2^-11 s, half the floor, so a
+//! floor step still moves a time there; a run of 2^20 steps, more than the
+//! million one request takes, at the ceiling ends at 2^42 s. The ceiling is
+//! therefore 2^42 s over 2^20, and the floor is the ceiling divided by
+//! 2^32. A sum that a step would not move, past those, is refused by name
+//! and not left standing. The public step applies neither. The gateway
+//! refuses a step outside them.
 //!
 //! `core` only: no heap and no standard prelude. The card, the state and the
 //! load are `Copy`. An accepted step writes time, the distance along the
@@ -153,6 +161,7 @@ extern crate core;
 use core::prelude::v1::*;
 
 use crate::frame::LastStateFrame64;
+use crate::normal::normal_or_zero;
 
 /// Longitudinal force over normal load at 10 percent slip, driven wheel.
 /// Fitted to this tyre's opened traction runs.
@@ -168,55 +177,64 @@ pub const SLIP_REFERENCE: f64 = 0.10;
 pub const SLIP_FLOOR: f64 = 0.05;
 /// Largest slip magnitude the card accepts: the largest slip measured.
 pub const SLIP_CEILING: f64 = 0.20;
-/// Smallest normal load the card accepts, N: the smallest load measured.
-pub const NORMAL_LOAD_FLOOR_N: f64 = 3_500.0;
-/// Largest normal load the card accepts, N: the largest load measured, which
-/// the constants were not fitted on.
-pub const NORMAL_LOAD_CEILING_N: f64 = 6_500.0;
+/// Smallest normal load measured, N. Below it a frame carries
+/// [`FLAG_BEYOND_COMPARED`].
+pub const COMPARED_LOAD_FLOOR_N: f64 = 3_500.0;
+/// Largest normal load measured, N, which the constants were not fitted on:
+/// held back and compared. Above it a frame carries [`FLAG_BEYOND_COMPARED`].
+pub const COMPARED_LOAD_CEILING_N: f64 = 6_500.0;
 /// Largest normal load the constants were fitted on, N. Advisory only; above
 /// it the frame carries [`FLAG_LOAD_ABOVE_FITTED`].
 pub const NORMAL_LOAD_FITTED_CEILING_N: f64 = 5_000.0;
-/// Smallest inflation pressure the card accepts, Pa: 1.5 bar.
-pub const INFLATION_PRESSURE_FLOOR_PA: f64 = 150_000.0;
-/// Largest inflation pressure the card accepts, Pa: 3.5 bar.
-pub const INFLATION_PRESSURE_CEILING_PA: f64 = 350_000.0;
+/// Smallest inflation pressure measured, Pa: 1.5 bar. Below it a frame
+/// carries [`FLAG_BEYOND_COMPARED`].
+pub const COMPARED_PRESSURE_FLOOR_PA: f64 = 150_000.0;
+/// Largest inflation pressure measured, Pa: 3.5 bar. Above it a frame
+/// carries [`FLAG_BEYOND_COMPARED`].
+pub const COMPARED_PRESSURE_CEILING_PA: f64 = 350_000.0;
 /// Smallest carriage speed the card accepts, m/s.
 pub const CARRIAGE_SPEED_FLOOR_M_S: f64 = 0.05;
 /// Largest carriage speed the card accepts, m/s. The rig moved at about 0.06.
 pub const CARRIAGE_SPEED_CEILING_M_S: f64 = 0.07;
-/// Length of track the card accepts, m. The opened runs roll for 90 to 97 s,
-/// about 5.7 m.
+/// Length of track a measured run rolled, m: the opened runs roll for 90 to
+/// 97 s, about 5.7 m. It sets the fixed part of the ledger scale.
 pub const TRACK_LENGTH_M: f64 = 6.0;
-/// Half the spacing of 64-bit numbers between 4 m and 8 m, 2^-51 m: the most
-/// one addition to the distance can round by. The comparison with the end of
-/// the track allows this much for each step the whole track can hold at the
-/// step floor and the slowest speed.
-pub const TRACK_END_ALLOWANCE_PER_STEP_M: f64 = 4.440_892_098_500_626e-16;
-/// Steps added to the count in [`TireEveR19Ice::track_end_allowance_m`]: one
-/// for the start read from a decimal, five for the speed and the step read
-/// from decimals and for their product, over 6 m. The same six are added to
-/// the count in [`TireEveR19Ice::hold_end_allowance_s`].
-pub const TRACK_END_ALLOWANCE_EXTRA_STEPS: f64 = 6.0;
-/// Time at one slip before which the card does not stand behind the force,
-/// s. Every one-second window of the measurements before it failed a line of
-/// the comparison; every one from it to 20 s met all five.
+/// Time at one slip before which a frame carries [`FLAG_SLIP_SETTLING`], s.
+/// Every one-second window of the measurements before it failed a line of
+/// the comparison; every one from it to 20 s met all five. Not a limit.
 pub const SLIP_SETTLE_S: f64 = 5.0;
-/// Longest time at one slip the card stands behind, s: one slip stage of the
-/// measurements.
-pub const HOLD_CEILING_S: f64 = 21.0;
-/// Half the spacing of 64-bit numbers between 16 s and 32 s, 2^-49 s: the
-/// most one addition to the time held can round by.
-pub const HOLD_END_ALLOWANCE_PER_STEP_S: f64 = 1.776_356_839_400_250_5e-15;
-/// Step ceiling, s: the time from [`SLIP_SETTLE_S`] to [`HOLD_CEILING_S`].
-pub const GATE_DT_S: f64 = 16.0;
-/// Step ceiling divided by step floor: 2^14.
-pub const GATE_OVER_FLOOR: f64 = 16_384.0;
-/// `|D + H − W| / W_scale` must stay at or under this.
+/// Longest time at one slip compared with the measurements, s: one slip
+/// stage. Past it a frame carries [`FLAG_BEYOND_COMPARED`].
+pub const COMPARED_HOLD_END_S: f64 = 21.0;
+/// How far past [`COMPARED_HOLD_END_S`] the running sum of the time held may
+/// read and still be within the compared hold, s: half the spacing of 64-bit
+/// numbers between 16 s and 32 s, 2^-49 s, for each of the 16,384 steps of
+/// 2^-10 s in 16 s and six more, 2.9e-11 s. It moves only
+/// [`FLAG_BEYOND_COMPARED`].
+pub const COMPARED_HOLD_END_ALLOWANCE_S: f64 = 2.911_448_859_777_010_5e-11;
+/// Step ceiling, s: 2^22 s. See the header.
+pub const GATE_DT_S: f64 = 4_194_304.0;
+/// Step ceiling divided by step floor: 2^32.
+pub const GATE_OVER_FLOOR: f64 = 4_294_967_296.0;
+/// `|D + H − W|` over the ledger scale of the run must stay at or under this.
 pub const RESIDUAL_CONSERVATION_LIMIT: f64 = 1.0e-9;
 
 /// The normal load is above 5 000 N, the largest load the constants were
 /// fitted on, on this frame.
 pub const FLAG_LOAD_ABOVE_FITTED: u64 = 1 << 0;
+/// The frame is beyond what was compared with this tyre's measurements: a
+/// normal load below 3 500 N or above 6 500 N, an inflation pressure below
+/// 150 kPa or above 350 kPa, or a slip held longer than 21 s. The same force
+/// law and the same ledger.
+pub const FLAG_BEYOND_COMPARED: u64 = 1 << 1;
+/// The step starts less than 5 s after its slip was set, where the measured
+/// force was still rising and the card's steady force missed it: on the 60
+/// held-back cells the root-mean-square error of the friction ratio was
+/// 0.0449 in the first second, 0.0477 at 6.5 kN against the line of 0.045,
+/// and from 1 s to 5 s no better than a constant ratio's. The same force law
+/// and the same ledger. The frame carries it; the state holds no boolean of
+/// its own for it.
+pub const FLAG_SLIP_SETTLING: u64 = 1 << 2;
 
 /// Why a step did not advance the tyre or the frame.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -229,20 +247,20 @@ pub enum StepReject {
     NonPositiveDt,
     /// A recorded constant is not this tyre's.
     InvalidTire,
-    /// The normal load is below 3 500 N or above 6 500 N, the loads measured.
-    NormalLoadOutsideCard,
-    /// The inflation pressure is below 150 kPa or above 350 kPa, the pressures measured.
-    InflationPressureOutsideCard,
+    /// The normal load is zero or below, or under the smallest normal 64-bit number: the tyre does not press on the ice, and a friction force has nothing to act on.
+    NoContact,
+    /// The inflation pressure, gauge, is zero or below: the tyre is flat, and the card is of a tyre inflated.
+    TyreFlat,
     /// The slip magnitude is below 0.05 or above 0.20, the slips the constants cover.
     SlipOutsideCard,
     /// The carriage speed is below 0.05 m/s or above 0.07 m/s, the creep of the rig.
     CarriageSpeedOutsideCard,
-    /// The distance along the track is below zero, or the step ends beyond 6 m, the length rolled in a run, by more than the rounding allowance of the running sum: 4.44e-16 m for each of the 122,880 steps of the step floor at 0.05 m/s along 6 m, and six more, 5.5e-11 m at every step.
-    TravelBeyondTrack,
-    /// The slip has been held less than 5 s at the start of the step: a start that states less, or the first step after a change of slip. The force in the first 5 s after a slip is set failed the comparison with the measurements.
-    SlipNotSettled,
-    /// The step ends more than 21 s after the slip was set, beyond the rounding allowance of the running sum: no scored slip was compared beyond one 21 s stage.
-    HoldBeyondMeasured,
+    /// The distance along the track is below zero.
+    DistanceBelowZero,
+    /// The time the slip has been held, stated at the start or carried in the state, is below zero: a slip is held from the instant it is set.
+    SlipHeldBelowZero,
+    /// The step does not move the time held at the slip, or the distance, in 64-bit arithmetic.
+    StepTooSmallToResolve,
     /// The trial step created work: the drawbar work plus the slip heat rose above the wheel work.
     SpontaneousGeneration,
     /// The trial step destroyed work: the drawbar work plus the slip heat fell below the wheel work.
@@ -254,8 +272,8 @@ pub enum StepReject {
 pub struct TireLoad {
     /// Normal load on the wheel, `F_z`.
     pub normal_load_n: f64,
-    /// Inflation pressure, gauge. Checked against the tested range; it does
-    /// not enter the force.
+    /// Inflation pressure, gauge. It does not enter the force; zero or below
+    /// is a flat tyre.
     pub inflation_pressure_pa: f64,
     /// Slip `s = 1 − v / v_rim`: positive drives the wheel, negative retards it.
     pub slip_ratio: f64,
@@ -279,32 +297,28 @@ pub struct TireEveR19Ice {
     pub slip_floor: f64,
     /// Recorded copy of [`SLIP_CEILING`].
     pub slip_ceiling: f64,
-    /// Recorded copy of [`NORMAL_LOAD_FLOOR_N`].
-    pub normal_load_floor_n: f64,
-    /// Recorded copy of [`NORMAL_LOAD_CEILING_N`].
-    pub normal_load_ceiling_n: f64,
+    /// Recorded copy of [`COMPARED_LOAD_FLOOR_N`].
+    pub compared_load_floor_n: f64,
+    /// Recorded copy of [`COMPARED_LOAD_CEILING_N`].
+    pub compared_load_ceiling_n: f64,
     /// Recorded copy of [`NORMAL_LOAD_FITTED_CEILING_N`].
     pub normal_load_fitted_ceiling_n: f64,
-    /// Recorded copy of [`INFLATION_PRESSURE_FLOOR_PA`].
-    pub inflation_pressure_floor_pa: f64,
-    /// Recorded copy of [`INFLATION_PRESSURE_CEILING_PA`].
-    pub inflation_pressure_ceiling_pa: f64,
+    /// Recorded copy of [`COMPARED_PRESSURE_FLOOR_PA`].
+    pub compared_pressure_floor_pa: f64,
+    /// Recorded copy of [`COMPARED_PRESSURE_CEILING_PA`].
+    pub compared_pressure_ceiling_pa: f64,
     /// Recorded copy of [`CARRIAGE_SPEED_FLOOR_M_S`].
     pub carriage_speed_floor_m_s: f64,
     /// Recorded copy of [`CARRIAGE_SPEED_CEILING_M_S`].
     pub carriage_speed_ceiling_m_s: f64,
     /// Recorded copy of [`TRACK_LENGTH_M`].
     pub track_length_m: f64,
-    /// Recorded copy of [`TRACK_END_ALLOWANCE_PER_STEP_M`].
-    pub track_end_allowance_per_step_m: f64,
-    /// Recorded copy of [`TRACK_END_ALLOWANCE_EXTRA_STEPS`].
-    pub track_end_allowance_extra_steps: f64,
     /// Recorded copy of [`SLIP_SETTLE_S`].
     pub slip_settle_s: f64,
-    /// Recorded copy of [`HOLD_CEILING_S`].
-    pub hold_ceiling_s: f64,
-    /// Recorded copy of [`HOLD_END_ALLOWANCE_PER_STEP_S`].
-    pub hold_end_allowance_per_step_s: f64,
+    /// Recorded copy of [`COMPARED_HOLD_END_S`].
+    pub compared_hold_end_s: f64,
+    /// Recorded copy of [`COMPARED_HOLD_END_ALLOWANCE_S`].
+    pub compared_hold_end_allowance_s: f64,
     /// Recorded copy of [`GATE_DT_S`].
     pub gate_dt_s: f64,
     /// Recorded copy of [`GATE_OVER_FLOOR`].
@@ -325,19 +339,17 @@ impl TireEveR19Ice {
             slip_reference: SLIP_REFERENCE,
             slip_floor: SLIP_FLOOR,
             slip_ceiling: SLIP_CEILING,
-            normal_load_floor_n: NORMAL_LOAD_FLOOR_N,
-            normal_load_ceiling_n: NORMAL_LOAD_CEILING_N,
+            compared_load_floor_n: COMPARED_LOAD_FLOOR_N,
+            compared_load_ceiling_n: COMPARED_LOAD_CEILING_N,
             normal_load_fitted_ceiling_n: NORMAL_LOAD_FITTED_CEILING_N,
-            inflation_pressure_floor_pa: INFLATION_PRESSURE_FLOOR_PA,
-            inflation_pressure_ceiling_pa: INFLATION_PRESSURE_CEILING_PA,
+            compared_pressure_floor_pa: COMPARED_PRESSURE_FLOOR_PA,
+            compared_pressure_ceiling_pa: COMPARED_PRESSURE_CEILING_PA,
             carriage_speed_floor_m_s: CARRIAGE_SPEED_FLOOR_M_S,
             carriage_speed_ceiling_m_s: CARRIAGE_SPEED_CEILING_M_S,
             track_length_m: TRACK_LENGTH_M,
-            track_end_allowance_per_step_m: TRACK_END_ALLOWANCE_PER_STEP_M,
-            track_end_allowance_extra_steps: TRACK_END_ALLOWANCE_EXTRA_STEPS,
             slip_settle_s: SLIP_SETTLE_S,
-            hold_ceiling_s: HOLD_CEILING_S,
-            hold_end_allowance_per_step_s: HOLD_END_ALLOWANCE_PER_STEP_S,
+            compared_hold_end_s: COMPARED_HOLD_END_S,
+            compared_hold_end_allowance_s: COMPARED_HOLD_END_ALLOWANCE_S,
             gate_dt_s: GATE_DT_S,
             gate_over_floor: GATE_OVER_FLOOR,
             residual_conservation_limit: RESIDUAL_CONSERVATION_LIMIT,
@@ -358,23 +370,18 @@ impl TireEveR19Ice {
             && self.slip_reference.to_bits() == SLIP_REFERENCE.to_bits()
             && self.slip_floor.to_bits() == SLIP_FLOOR.to_bits()
             && self.slip_ceiling.to_bits() == SLIP_CEILING.to_bits()
-            && self.normal_load_floor_n.to_bits() == NORMAL_LOAD_FLOOR_N.to_bits()
-            && self.normal_load_ceiling_n.to_bits() == NORMAL_LOAD_CEILING_N.to_bits()
+            && self.compared_load_floor_n.to_bits() == COMPARED_LOAD_FLOOR_N.to_bits()
+            && self.compared_load_ceiling_n.to_bits() == COMPARED_LOAD_CEILING_N.to_bits()
             && self.normal_load_fitted_ceiling_n.to_bits() == NORMAL_LOAD_FITTED_CEILING_N.to_bits()
-            && self.inflation_pressure_floor_pa.to_bits() == INFLATION_PRESSURE_FLOOR_PA.to_bits()
-            && self.inflation_pressure_ceiling_pa.to_bits()
-                == INFLATION_PRESSURE_CEILING_PA.to_bits()
+            && self.compared_pressure_floor_pa.to_bits() == COMPARED_PRESSURE_FLOOR_PA.to_bits()
+            && self.compared_pressure_ceiling_pa.to_bits() == COMPARED_PRESSURE_CEILING_PA.to_bits()
             && self.carriage_speed_floor_m_s.to_bits() == CARRIAGE_SPEED_FLOOR_M_S.to_bits()
             && self.carriage_speed_ceiling_m_s.to_bits() == CARRIAGE_SPEED_CEILING_M_S.to_bits()
             && self.track_length_m.to_bits() == TRACK_LENGTH_M.to_bits()
-            && self.track_end_allowance_per_step_m.to_bits()
-                == TRACK_END_ALLOWANCE_PER_STEP_M.to_bits()
-            && self.track_end_allowance_extra_steps.to_bits()
-                == TRACK_END_ALLOWANCE_EXTRA_STEPS.to_bits()
             && self.slip_settle_s.to_bits() == SLIP_SETTLE_S.to_bits()
-            && self.hold_ceiling_s.to_bits() == HOLD_CEILING_S.to_bits()
-            && self.hold_end_allowance_per_step_s.to_bits()
-                == HOLD_END_ALLOWANCE_PER_STEP_S.to_bits()
+            && self.compared_hold_end_s.to_bits() == COMPARED_HOLD_END_S.to_bits()
+            && self.compared_hold_end_allowance_s.to_bits()
+                == COMPARED_HOLD_END_ALLOWANCE_S.to_bits()
             && self.gate_dt_s.to_bits() == GATE_DT_S.to_bits()
             && self.gate_over_floor.to_bits() == GATE_OVER_FLOOR.to_bits()
             && self.residual_conservation_limit.to_bits() == RESIDUAL_CONSERVATION_LIMIT.to_bits()
@@ -401,55 +408,40 @@ impl TireEveR19Ice {
         if slip_ratio > 0.0 { size } else { -size }
     }
 
-    /// `W_scale`: the heaviest load at the highest friction ratio of the card
-    /// over the whole track, J. About 10 332 J.
+    /// `W_scale`: the heaviest load measured at the highest friction ratio of
+    /// the card over the 6 m a measured run rolled, J. About 10 332 J.
     #[must_use]
     pub fn ledger_scale_j(&self) -> f64 {
-        self.normal_load_ceiling_n * self.friction_ratio(-self.slip_floor) * self.track_length_m
+        self.compared_load_ceiling_n * self.friction_ratio(-self.slip_floor) * self.track_length_m
     }
 
-    /// How far past [`TRACK_LENGTH_M`] the running sum of the distance may
-    /// read at the end of a step of `dt_s` at this carriage speed, m:
-    /// [`TRACK_END_ALLOWANCE_PER_STEP_M`] for each step the whole track can
-    /// hold at the step floor and the slowest speed, and
-    /// [`TRACK_END_ALLOWANCE_EXTRA_STEPS`] more. It does not depend on the
-    /// step, so every route to the same end, restarts included, meets the
-    /// same allowance, about 5.5e-11 m. Never more than half the step; zero
-    /// for a step or a speed that is not positive.
+    /// The scale the ledger of a run is held to, J: the larger of
+    /// [`Self::ledger_scale_j`] and the size of each of the three works of
+    /// the run so far.
     #[must_use]
-    pub fn track_end_allowance_m(&self, carriage_speed_m_s: f64, dt_s: f64) -> f64 {
-        let half_step_m = 0.5 * carriage_speed_m_s * dt_s;
-        let shortest_step_m = match self.floor_dt_s() {
-            Some(floor_dt_s) => self.carriage_speed_floor_m_s * floor_dt_s,
-            None => return 0.0,
-        };
-        if !(shortest_step_m > 0.0 && half_step_m > 0.0) {
-            return 0.0;
+    pub fn run_ledger_scale_j(&self, state: &TireState) -> f64 {
+        let mut scale = self.ledger_scale_j();
+        for work in [state.wheel_work_j.abs(), state.drawbar_work_j.abs(), state.slip_heat_j] {
+            if work > scale {
+                scale = work;
+            }
         }
-        let steps = self.track_length_m / shortest_step_m + self.track_end_allowance_extra_steps;
-        let allowance_m = steps * self.track_end_allowance_per_step_m;
-        if allowance_m < half_step_m { allowance_m } else { half_step_m }
+        scale
     }
 
-    /// How far past [`HOLD_CEILING_S`] the running sum of the time held at
-    /// one slip may read at the end of a step, s:
-    /// [`HOLD_END_ALLOWANCE_PER_STEP_S`] for each of the steps of the floor
-    /// that fit in the ceiling, 2^14, and [`TRACK_END_ALLOWANCE_EXTRA_STEPS`]
-    /// more, about 2.9e-11 s at every step. Never more than half the step;
-    /// zero for a step that is not positive.
+    /// The load and the time held of a frame are beyond what was compared
+    /// with the measurements: see [`FLAG_BEYOND_COMPARED`].
     #[must_use]
-    pub fn hold_end_allowance_s(&self, dt_s: f64) -> f64 {
-        let half_step_s = 0.5 * dt_s;
-        if !(half_step_s > 0.0) {
-            return 0.0;
-        }
-        let steps = self.gate_over_floor + self.track_end_allowance_extra_steps;
-        let allowance_s = steps * self.hold_end_allowance_per_step_s;
-        if allowance_s < half_step_s { allowance_s } else { half_step_s }
+    pub fn beyond_compared(&self, load: TireLoad, slip_held_s: f64) -> bool {
+        !(load.normal_load_n >= self.compared_load_floor_n
+            && load.normal_load_n <= self.compared_load_ceiling_n
+            && load.inflation_pressure_pa >= self.compared_pressure_floor_pa
+            && load.inflation_pressure_pa <= self.compared_pressure_ceiling_pa
+            && slip_held_s <= self.compared_hold_end_s + self.compared_hold_end_allowance_s)
     }
 
-    /// Largest step the card stands behind: [`GATE_DT_S`], 16 s, the time
-    /// from 5 s to 21 s at one slip. Not applied by [`step`].
+    /// Largest step the card stands behind: [`GATE_DT_S`], 2^22 s, from the
+    /// step's arithmetic (see the header). Not applied by [`step`].
     #[must_use]
     pub fn gate_dt_s(&self) -> Option<f64> {
         if self.gate_dt_s.is_finite() && self.gate_dt_s > 0.0 {
@@ -460,7 +452,7 @@ impl TireEveR19Ice {
     }
 
     /// Smallest step the card stands behind: [`Self::gate_dt_s`] divided by
-    /// 2^14, 2^-10 s. Not applied by [`step`].
+    /// 2^32, 2^-10 s. Not applied by [`step`].
     #[must_use]
     pub fn floor_dt_s(&self) -> Option<f64> {
         match self.gate_dt_s() {
@@ -509,10 +501,12 @@ pub struct TireState {
     pub slip_heat_j: f64,
     /// Signed `D + H − W`. Positive is created work.
     pub energy_defect_j: f64,
-    /// `|energy_defect_j| / W_scale`.
+    /// `|energy_defect_j|` over the ledger scale of the run.
     pub residual_conservation_error: f64,
     /// The normal load of the last step is above [`NORMAL_LOAD_FITTED_CEILING_N`].
     pub load_above_fitted: bool,
+    /// The last step is beyond what was compared: see [`FLAG_BEYOND_COMPARED`].
+    pub beyond_compared: bool,
 }
 
 impl TireState {
@@ -520,10 +514,10 @@ impl TireState {
     /// held for `slip_held_s`, time 0, with the ledger empty.
     /// [`StepReject::InvalidTire`] for a changed tyre,
     /// [`StepReject::NonFiniteState`] for a value that is not finite,
-    /// [`StepReject::TravelBeyondTrack`] for a distance below zero or beyond
-    /// [`TRACK_LENGTH_M`], [`StepReject::SlipNotSettled`] for a time held
-    /// below [`SLIP_SETTLE_S`] and [`StepReject::HoldBeyondMeasured`] for one
-    /// beyond [`HOLD_CEILING_S`].
+    /// [`StepReject::DistanceBelowZero`] for a distance below zero and
+    /// [`StepReject::SlipHeldBelowZero`] for a time held below zero. A time
+    /// held under [`SLIP_SETTLE_S`] is a start: its first steps carry
+    /// [`FLAG_SLIP_SETTLING`].
     pub fn try_start(
         tire: &TireEveR19Ice,
         distance_m: f64,
@@ -535,14 +529,11 @@ impl TireState {
         if !(distance_m.is_finite() && slip_held_s.is_finite()) {
             return Err(StepReject::NonFiniteState);
         }
-        if !(distance_m >= 0.0 && distance_m <= tire.track_length_m) {
-            return Err(StepReject::TravelBeyondTrack);
+        if !(distance_m >= 0.0) {
+            return Err(StepReject::DistanceBelowZero);
         }
-        if !(slip_held_s >= tire.slip_settle_s) {
-            return Err(StepReject::SlipNotSettled);
-        }
-        if !(slip_held_s <= tire.hold_ceiling_s) {
-            return Err(StepReject::HoldBeyondMeasured);
+        if !(slip_held_s >= 0.0) {
+            return Err(StepReject::SlipHeldBelowZero);
         }
         Ok(Self {
             t_s: 0.0,
@@ -557,6 +548,7 @@ impl TireState {
             energy_defect_j: 0.0,
             residual_conservation_error: 0.0,
             load_above_fitted: false,
+            beyond_compared: false,
         })
     }
 }
@@ -576,8 +568,25 @@ struct Advance {
 /// Hold the load for one step and write the frame.
 ///
 /// A rejected step leaves `state` and `frame` as they were.
+///
+/// A value of the landed state below the normal range is written as zero
+/// with its sign ([`crate::normal`]).
 #[must_use]
 pub fn step(
+    tire: &TireEveR19Ice,
+    state: &mut TireState,
+    frame: &mut LastStateFrame64,
+    load: TireLoad,
+    dt_s: f64,
+) -> Result<(), StepReject> {
+    step_as_computed(tire, state, frame, load, dt_s)?;
+    normal_or_zero_state(state);
+    Ok(())
+}
+
+/// The step as its equations compute it, before a value of the landed
+/// state below the normal range is written as zero.
+fn step_as_computed(
     tire: &TireEveR19Ice,
     state: &mut TireState,
     frame: &mut LastStateFrame64,
@@ -587,6 +596,23 @@ pub fn step(
     validate(tire, state, load, dt_s)?;
     let advance = held(tire, load, dt_s);
     commit(tire, state, frame, load, dt_s, advance)
+}
+
+/// Each value of a landed state below the normal range written as zero
+/// with its sign ([`crate::normal`]): the state carried to the next step
+/// and published holds no subnormal number.
+fn normal_or_zero_state(state: &mut TireState) {
+    state.t_s = normal_or_zero(state.t_s);
+    state.distance_m = normal_or_zero(state.distance_m);
+    state.rim_travel_m = normal_or_zero(state.rim_travel_m);
+    state.slip_ratio = normal_or_zero(state.slip_ratio);
+    state.slip_held_s = normal_or_zero(state.slip_held_s);
+    state.longitudinal_force_n = normal_or_zero(state.longitudinal_force_n);
+    state.wheel_work_j = normal_or_zero(state.wheel_work_j);
+    state.drawbar_work_j = normal_or_zero(state.drawbar_work_j);
+    state.slip_heat_j = normal_or_zero(state.slip_heat_j);
+    state.energy_defect_j = normal_or_zero(state.energy_defect_j);
+    state.residual_conservation_error = normal_or_zero(state.residual_conservation_error);
 }
 
 fn validate(
@@ -612,15 +638,11 @@ fn validate(
     if !tire.is_valid() {
         return Err(StepReject::InvalidTire);
     }
-    if !(load.normal_load_n >= tire.normal_load_floor_n
-        && load.normal_load_n <= tire.normal_load_ceiling_n)
-    {
-        return Err(StepReject::NormalLoadOutsideCard);
+    if !(load.normal_load_n >= f64::MIN_POSITIVE) {
+        return Err(StepReject::NoContact);
     }
-    if !(load.inflation_pressure_pa >= tire.inflation_pressure_floor_pa
-        && load.inflation_pressure_pa <= tire.inflation_pressure_ceiling_pa)
-    {
-        return Err(StepReject::InflationPressureOutsideCard);
+    if !(load.inflation_pressure_pa > 0.0) {
+        return Err(StepReject::TyreFlat);
     }
     let slip_size = load.slip_ratio.abs();
     if !(slip_size >= tire.slip_floor && slip_size <= tire.slip_ceiling) {
@@ -632,17 +654,16 @@ fn validate(
         return Err(StepReject::CarriageSpeedOutsideCard);
     }
     let held_before_s = held_before_step_s(state, load);
-    if !(held_before_s >= tire.slip_settle_s) {
-        return Err(StepReject::SlipNotSettled);
+    if !(held_before_s >= 0.0) {
+        return Err(StepReject::SlipHeldBelowZero);
     }
-    if !(held_before_s + dt_s <= tire.hold_ceiling_s + tire.hold_end_allowance_s(dt_s)) {
-        return Err(StepReject::HoldBeyondMeasured);
+    if !(state.distance_m >= 0.0) {
+        return Err(StepReject::DistanceBelowZero);
     }
-    if !(state.distance_m >= 0.0
-        && state.distance_m + load.carriage_speed_m_s * dt_s
-            <= tire.track_length_m + tire.track_end_allowance_m(load.carriage_speed_m_s, dt_s))
+    if !(held_before_s + dt_s > held_before_s
+        && state.distance_m + load.carriage_speed_m_s * dt_s > state.distance_m)
     {
-        return Err(StepReject::TravelBeyondTrack);
+        return Err(StepReject::StepTooSmallToResolve);
     }
     Ok(())
 }
@@ -697,7 +718,8 @@ fn commit(
     state.drawbar_work_j += advance.drawbar_work_j;
     state.slip_heat_j += advance.slip_heat_j;
     state.load_above_fitted = load.normal_load_n > tire.normal_load_fitted_ceiling_n;
-    let scale = tire.ledger_scale_j();
+    state.beyond_compared = tire.beyond_compared(load, state.slip_held_s);
+    let scale = tire.run_ledger_scale_j(state);
     if !(scale.is_finite() && scale > 0.0) {
         *state = saved;
         return Err(StepReject::InvalidTire);
@@ -717,28 +739,15 @@ fn commit(
         *state = saved;
         return Err(StepReject::FirstLawBreach);
     }
-    if !(state.distance_m >= 0.0
-        && state.distance_m
-            <= tire.track_length_m + tire.track_end_allowance_m(load.carriage_speed_m_s, dt_s))
-    {
+    if !(state.distance_m >= 0.0) {
         *state = saved;
-        return Err(StepReject::TravelBeyondTrack);
+        return Err(StepReject::DistanceBelowZero);
     }
-    if !(held_before_s >= tire.slip_settle_s
-        && state.slip_held_s <= tire.hold_ceiling_s + tire.hold_end_allowance_s(dt_s))
-    {
-        *state = saved;
-        return Err(if held_before_s >= tire.slip_settle_s {
-            StepReject::HoldBeyondMeasured
-        } else {
-            StepReject::SlipNotSettled
-        });
-    }
-    publish(state, frame);
+    publish(state, frame, held_before_s < tire.slip_settle_s);
     Ok(())
 }
 
-fn publish(state: &TireState, frame: &mut LastStateFrame64) {
+fn publish(state: &TireState, frame: &mut LastStateFrame64, settling: bool) {
     frame.t = state.t_s;
     frame.pos[0] = state.distance_m as f32;
     frame.pos[1] = state.rim_travel_m as f32;
@@ -748,11 +757,17 @@ fn publish(state: &TireState, frame: &mut LastStateFrame64) {
     frame.vel[2] = state.slip_heat_j as f32;
     frame.force_torque = state.longitudinal_force_n as f32;
     frame.residual = state.residual_conservation_error as f32;
-    frame.flags = if state.load_above_fitted {
-        FLAG_LOAD_ABOVE_FITTED
-    } else {
-        0
-    };
+    let mut flags = 0;
+    if state.load_above_fitted {
+        flags |= FLAG_LOAD_ABOVE_FITTED;
+    }
+    if state.beyond_compared {
+        flags |= FLAG_BEYOND_COMPARED;
+    }
+    if settling {
+        flags |= FLAG_SLIP_SETTLING;
+    }
+    frame.flags = flags;
 }
 
 fn state_is_finite(state: &TireState) -> bool {
@@ -779,13 +794,12 @@ mod tests {
     use std::assert_eq;
 
     use super::{
-        Advance, CARRIAGE_SPEED_CEILING_M_S, CARRIAGE_SPEED_FLOOR_M_S, FLAG_LOAD_ABOVE_FITTED,
-        GATE_DT_S, HOLD_CEILING_S, HOLD_END_ALLOWANCE_PER_STEP_S, INFLATION_PRESSURE_CEILING_PA,
-        INFLATION_PRESSURE_FLOOR_PA, MU_BRAKING, MU_TRACTION, NORMAL_LOAD_CEILING_N,
-        NORMAL_LOAD_FLOOR_N, RESIDUAL_CONSERVATION_LIMIT, SLIP_CEILING, SLIP_EXPONENT, SLIP_FLOOR,
-        SLIP_SETTLE_S, StepReject, TRACK_END_ALLOWANCE_EXTRA_STEPS,
-        TRACK_END_ALLOWANCE_PER_STEP_M, TRACK_LENGTH_M, TireEveR19Ice, TireLoad, TireState,
-        commit, held, step, validate,
+        Advance, CARRIAGE_SPEED_CEILING_M_S, CARRIAGE_SPEED_FLOOR_M_S, COMPARED_HOLD_END_S,
+        COMPARED_LOAD_CEILING_N, COMPARED_LOAD_FLOOR_N, COMPARED_PRESSURE_CEILING_PA,
+        COMPARED_PRESSURE_FLOOR_PA, FLAG_BEYOND_COMPARED, FLAG_LOAD_ABOVE_FITTED, FLAG_SLIP_SETTLING, GATE_DT_S,
+        GATE_OVER_FLOOR, MU_BRAKING, MU_TRACTION, RESIDUAL_CONSERVATION_LIMIT, SLIP_CEILING,
+        SLIP_EXPONENT, SLIP_FLOOR, SLIP_SETTLE_S, StepReject, TRACK_LENGTH_M, TireEveR19Ice,
+        TireLoad, TireState, commit, held, step, validate,
     };
     use crate::frame::LastStateFrame64;
 
@@ -823,7 +837,8 @@ mod tests {
     }
 
     /// The constants are the frozen fit of the research record
-    /// (`analysis/out/fit.json`), to six significant figures.
+    /// (`analysis/out/fit.json`), to six significant figures. The step
+    /// ceiling is 2^22 s and the floor 2^-10 s.
     #[test]
     fn the_constants_are_the_frozen_fit() {
         assert_eq!(MU_TRACTION, 0.228109);
@@ -834,10 +849,16 @@ mod tests {
         assert!(relative(SLIP_EXPONENT, -0.1328230763666814) < 5.0e-6);
         let tire = TireEveR19Ice::on_rig_ice();
         assert!(tire.is_valid());
-        assert_eq!((SLIP_SETTLE_S, HOLD_CEILING_S), (5.0, 21.0));
-        assert_eq!(tire.gate_dt_s(), Some(HOLD_CEILING_S - SLIP_SETTLE_S));
-        assert_eq!(tire.floor_dt_s(), Some(16.0 / 16_384.0));
+        assert_eq!((SLIP_SETTLE_S, COMPARED_HOLD_END_S), (5.0, 21.0));
+        assert_eq!(GATE_DT_S, 4_194_304.0);
+        assert_eq!(TRACK_LENGTH_M, 6.0);
+        assert_eq!(GATE_DT_S, (2.0_f64).powi(42) / (2.0_f64).powi(20));
+        assert_eq!(GATE_OVER_FLOOR, (2.0_f64).powi(32));
+        assert_eq!(tire.gate_dt_s(), Some(GATE_DT_S));
         assert_eq!(tire.floor_dt_s(), Some(1.0 / 1_024.0));
+        // Below 2^42 s the spacing of 64-bit numbers is at most half the floor.
+        let below = f64::from_bits((2.0_f64).powi(42).to_bits() - 1);
+        assert!(f64::from_bits(below.to_bits() + 1) - below <= 0.5 * tire.floor_dt_s().unwrap());
     }
 
     /// The friction ratio against values worked outside Rust with Python
@@ -870,7 +891,7 @@ mod tests {
         let tire = TireEveR19Ice::on_rig_ice();
         let mut state = start(&tire, 0.0);
         let mut frame = blank();
-        step(&tire, &mut state, &mut frame, rig(0.12), GATE_DT_S).unwrap();
+        step(&tire, &mut state, &mut frame, rig(0.12), 16.0).unwrap();
         let force = tire.friction_ratio(0.12) * 5_000.0;
         assert_eq!(state.longitudinal_force_n, force);
         assert!(force > 1_100.0 && force < 1_120.0);
@@ -881,7 +902,7 @@ mod tests {
         assert!(relative(state.slip_heat_j, force * 0.96 * 0.12 / 0.88) < 1.0e-15);
         assert!(state.wheel_work_j > state.drawbar_work_j);
         assert!(state.residual_conservation_error < 1.0e-15);
-        assert_eq!(state.slip_held_s, HOLD_CEILING_S);
+        assert_eq!(state.slip_held_s, COMPARED_HOLD_END_S);
         assert_eq!(frame.t, 16.0);
         assert_eq!(frame.force_torque, force as f32);
         assert_eq!(frame.pos[2], 0.12_f32);
@@ -896,7 +917,7 @@ mod tests {
         let tire = TireEveR19Ice::on_rig_ice();
         let mut state = start(&tire, 0.0);
         let mut frame = blank();
-        step(&tire, &mut state, &mut frame, rig(-0.20), GATE_DT_S).unwrap();
+        step(&tire, &mut state, &mut frame, rig(-0.20), 16.0).unwrap();
         assert!(state.longitudinal_force_n < 0.0);
         assert!(state.drawbar_work_j < 0.0);
         assert!(state.wheel_work_j < 0.0);
@@ -933,7 +954,8 @@ mod tests {
 
     /// A load above the fitted loads lands and carries the flag; a load at
     /// the fitted ceiling does not. A change of load at the same slip keeps
-    /// the time held.
+    /// the time held. The load measured last, 6.5 kN, is inside the
+    /// compared range and carries no second flag.
     #[test]
     fn a_load_above_the_fitted_loads_carries_the_flag() {
         let tire = TireEveR19Ice::on_rig_ice();
@@ -963,7 +985,7 @@ mod tests {
         let kept_frame = frame.to_bytes();
         let base = rig(0.10);
         let nan = f64::NAN;
-        let cases: [(TireLoad, f64, StepReject); 24] = [
+        let cases: [(TireLoad, f64, StepReject); 23] = [
             (TireLoad { normal_load_n: nan, ..base }, 1.0, StepReject::NonFiniteInput),
             (TireLoad { inflation_pressure_pa: f64::INFINITY, ..base }, 1.0, StepReject::NonFiniteInput),
             (TireLoad { slip_ratio: nan, ..base }, 1.0, StepReject::NonFiniteInput),
@@ -971,11 +993,12 @@ mod tests {
             (base, nan, StepReject::NonFiniteInput),
             (base, 0.0, StepReject::NonPositiveDt),
             (base, -1.0, StepReject::NonPositiveDt),
-            (TireLoad { normal_load_n: 3_499.999, ..base }, 1.0, StepReject::NormalLoadOutsideCard),
-            (TireLoad { normal_load_n: 6_500.001, ..base }, 1.0, StepReject::NormalLoadOutsideCard),
-            (TireLoad { normal_load_n: -5_000.0, ..base }, 1.0, StepReject::NormalLoadOutsideCard),
-            (TireLoad { inflation_pressure_pa: 149_999.0, ..base }, 1.0, StepReject::InflationPressureOutsideCard),
-            (TireLoad { inflation_pressure_pa: 350_001.0, ..base }, 1.0, StepReject::InflationPressureOutsideCard),
+            (TireLoad { normal_load_n: 0.0, ..base }, 1.0, StepReject::NoContact),
+            (TireLoad { normal_load_n: -0.0, ..base }, 1.0, StepReject::NoContact),
+            (TireLoad { normal_load_n: -5_000.0, ..base }, 1.0, StepReject::NoContact),
+            (TireLoad { normal_load_n: 1.0e-310, ..base }, 1.0, StepReject::NoContact),
+            (TireLoad { inflation_pressure_pa: 0.0, ..base }, 1.0, StepReject::TyreFlat),
+            (TireLoad { inflation_pressure_pa: -50_000.0, ..base }, 1.0, StepReject::TyreFlat),
             (TireLoad { slip_ratio: 0.0, ..base }, 1.0, StepReject::SlipOutsideCard),
             (TireLoad { slip_ratio: 0.049_999, ..base }, 1.0, StepReject::SlipOutsideCard),
             (TireLoad { slip_ratio: -0.03, ..base }, 1.0, StepReject::SlipOutsideCard),
@@ -985,23 +1008,25 @@ mod tests {
             (TireLoad { carriage_speed_m_s: 0.049, ..base }, 1.0, StepReject::CarriageSpeedOutsideCard),
             (TireLoad { carriage_speed_m_s: 0.071, ..base }, 1.0, StepReject::CarriageSpeedOutsideCard),
             (TireLoad { carriage_speed_m_s: 10.0, ..base }, 1.0, StepReject::CarriageSpeedOutsideCard),
-            // a change of slip starts the hold again at zero
-            (TireLoad { slip_ratio: 0.12, ..base }, 1.0, StepReject::SlipNotSettled),
-            (TireLoad { slip_ratio: -0.10, ..base }, 1.0, StepReject::SlipNotSettled),
-            // 7 s held and 15 s more is 22 s
-            (base, 15.0, StepReject::HoldBeyondMeasured),
+            // a step that does not move the time held
+            (base, 1.0e-20, StepReject::StepTooSmallToResolve),
         ];
         for (load, dt_s, reject) in cases {
-            assert_eq!(step(&tire, &mut state, &mut frame, load, dt_s), Err(reject));
+            assert_eq!(step(&tire, &mut state, &mut frame, load, dt_s), Err(reject), "{load:?} {dt_s}");
             assert_eq!(state, kept_state);
             assert_eq!(frame.to_bytes(), kept_frame);
         }
-        // The ends of every range are inside the card.
+        // The ends of the speed range are inside the card; the compared loads
+        // and pressures and everything past them land.
         for load in [
-            TireLoad { normal_load_n: NORMAL_LOAD_FLOOR_N, ..base },
-            TireLoad { normal_load_n: NORMAL_LOAD_CEILING_N, ..base },
-            TireLoad { inflation_pressure_pa: INFLATION_PRESSURE_FLOOR_PA, ..base },
-            TireLoad { inflation_pressure_pa: INFLATION_PRESSURE_CEILING_PA, ..base },
+            TireLoad { normal_load_n: COMPARED_LOAD_FLOOR_N, ..base },
+            TireLoad { normal_load_n: COMPARED_LOAD_CEILING_N, ..base },
+            TireLoad { normal_load_n: 1.0, ..base },
+            TireLoad { normal_load_n: 1.0e6, ..base },
+            TireLoad { inflation_pressure_pa: COMPARED_PRESSURE_FLOOR_PA, ..base },
+            TireLoad { inflation_pressure_pa: COMPARED_PRESSURE_CEILING_PA, ..base },
+            TireLoad { inflation_pressure_pa: 1.0, ..base },
+            TireLoad { inflation_pressure_pa: 1.0e7, ..base },
             TireLoad { carriage_speed_m_s: CARRIAGE_SPEED_FLOOR_M_S, ..base },
             TireLoad { carriage_speed_m_s: CARRIAGE_SPEED_CEILING_M_S, ..base },
         ] {
@@ -1011,363 +1036,271 @@ mod tests {
             let fresh = start(&tire, 1.0);
             assert_eq!(validate(&tire, &fresh, rig(slip), 1.0), Ok(()));
         }
+        // A distance below zero is no start, and a state made so by hand is
+        // refused by name.
+        assert_eq!(TireState::try_start(&tire, -0.001, 5.0), Err(StepReject::DistanceBelowZero));
+        let mut backward = start(&tire, 0.0);
+        backward.distance_m = -1.0e-9;
+        let kept = backward;
+        assert_eq!(step(&tire, &mut backward, &mut frame, base, 1.0), Err(StepReject::DistanceBelowZero));
+        assert_eq!(backward, kept);
     }
 
-    /// The time at one slip runs from 5 s to 21 s. A start states it, a run
-    /// carries it, a change of slip starts it again at zero, and a restart
-    /// that hands back the time it was given cannot go past 21 s.
+    /// The compared range is the loads, the pressures and the hold measured:
+    /// its ends carry no flag, and beyond each a frame lands with
+    /// FLAG_BEYOND_COMPARED, the force the same law.
     #[test]
-    fn the_time_at_one_slip_is_held_from_5_to_21_seconds() {
+    fn beyond_the_compared_loads_pressures_and_hold_a_frame_is_flagged() {
         let tire = TireEveR19Ice::on_rig_ice();
-        let below = f64::from_bits(SLIP_SETTLE_S.to_bits() - 1);
-        let above = f64::from_bits(HOLD_CEILING_S.to_bits() + 1);
-        assert_eq!(TireState::try_start(&tire, 0.0, 0.0), Err(StepReject::SlipNotSettled));
-        assert_eq!(TireState::try_start(&tire, 0.0, below), Err(StepReject::SlipNotSettled));
-        assert_eq!(TireState::try_start(&tire, 0.0, above), Err(StepReject::HoldBeyondMeasured));
-        assert_eq!(TireState::try_start(&tire, 0.0, f64::NAN), Err(StepReject::NonFiniteState));
-        // one step of 16 s from 5 s ends exactly on 21 s and lands
-        let mut one = start(&tire, 0.0);
+        let below = |x: f64| f64::from_bits(x.to_bits() - 1);
+        let above = |x: f64| f64::from_bits(x.to_bits() + 1);
+        let base = rig(0.10);
+        for (load, flagged) in [
+            (TireLoad { normal_load_n: COMPARED_LOAD_FLOOR_N, ..base }, false),
+            (TireLoad { normal_load_n: COMPARED_LOAD_CEILING_N, ..base }, false),
+            (TireLoad { normal_load_n: below(COMPARED_LOAD_FLOOR_N), ..base }, true),
+            (TireLoad { normal_load_n: above(COMPARED_LOAD_CEILING_N), ..base }, true),
+            (TireLoad { inflation_pressure_pa: COMPARED_PRESSURE_FLOOR_PA, ..base }, false),
+            (TireLoad { inflation_pressure_pa: COMPARED_PRESSURE_CEILING_PA, ..base }, false),
+            (TireLoad { inflation_pressure_pa: below(COMPARED_PRESSURE_FLOOR_PA), ..base }, true),
+            (TireLoad { inflation_pressure_pa: above(COMPARED_PRESSURE_CEILING_PA), ..base }, true),
+        ] {
+            let mut state = start(&tire, 0.0);
+            let mut frame = blank();
+            step(&tire, &mut state, &mut frame, load, 1.0).unwrap();
+            assert_eq!(frame.flags & FLAG_BEYOND_COMPARED != 0, flagged, "{load:?}");
+            assert_eq!(
+                state.longitudinal_force_n,
+                tire.longitudinal_force_n(load.normal_load_n, load.slip_ratio)
+            );
+        }
+        // The hold: one step of 16 s from 5 s ends on 21 s with no flag, and
+        // the next step of the floor is flagged.
+        let mut state = start(&tire, 0.0);
         let mut frame = blank();
-        step(&tire, &mut one, &mut frame, rig(0.15), 16.0).unwrap();
-        assert_eq!(one.slip_held_s, 21.0);
-        let kept = one;
-        assert_eq!(
-            step(&tire, &mut one, &mut frame, rig(0.15), tire.floor_dt_s().unwrap()),
-            Err(StepReject::HoldBeyondMeasured)
-        );
-        assert_eq!(one, kept);
-        // 1,600 steps of 0.01 s read 21.000000000000547 s and land every step
+        step(&tire, &mut state, &mut frame, base, 16.0).unwrap();
+        assert_eq!(state.slip_held_s, 21.0);
+        assert_eq!(frame.flags & FLAG_BEYOND_COMPARED, 0);
+        step(&tire, &mut state, &mut frame, base, tire.floor_dt_s().unwrap()).unwrap();
+        assert_eq!(frame.flags & FLAG_BEYOND_COMPARED, FLAG_BEYOND_COMPARED);
+        // 1,600 steps of 0.01 s read 21.000000000000547 s, within the
+        // rounding of the sum, and carry no flag.
         let mut many = start(&tire, 0.0);
-        for landed in 0..1_600 {
-            assert_eq!(step(&tire, &mut many, &mut frame, rig(0.15), 0.01), Ok(()), "{landed}");
+        for _ in 0..1_600 {
+            step(&tire, &mut many, &mut frame, base, 0.01).unwrap();
         }
         assert!(many.slip_held_s > 21.0);
-        assert!(many.slip_held_s - 21.0 <= tire.hold_end_allowance_s(0.01));
-        assert_eq!(
-            step(&tire, &mut many, &mut frame, rig(0.15), 0.01),
-            Err(StepReject::HoldBeyondMeasured)
-        );
-        // the floor 16,384 times is exactly 16 s
-        let mut finest = start(&tire, 0.0);
-        let floor = tire.floor_dt_s().unwrap();
-        for _ in 0..16_384 {
-            step(&tire, &mut finest, &mut frame, rig(0.15), floor).unwrap();
-        }
-        assert_eq!(finest.slip_held_s, 21.0);
-        assert_eq!(finest.longitudinal_force_n, kept.longitudinal_force_n);
-        assert!(relative(finest.distance_m, kept.distance_m) < 1.0e-12);
-        // a start at 21 s is a start, and no step from it lands
+        assert_eq!(frame.flags & FLAG_BEYOND_COMPARED, 0);
+        // A load above the fitted and above the compared carries both flags.
+        let mut state = start(&tire, 0.0);
+        step(&tire, &mut state, &mut frame, TireLoad { normal_load_n: 9_000.0, ..base }, 1.0).unwrap();
+        assert_eq!(frame.flags, FLAG_LOAD_ABOVE_FITTED | FLAG_BEYOND_COMPARED);
+    }
+
+    /// The time at one slip runs from the instant the slip is set for as long
+    /// as the slip is held. A start states it, a run carries it, a change of
+    /// slip starts it again at zero, and a restart hands it back. A time held
+    /// below zero is no time a slip can have been held.
+    #[test]
+    fn the_time_at_one_slip_runs_from_zero_for_as_long_as_it_is_held() {
+        let tire = TireEveR19Ice::on_rig_ice();
+        let below = f64::from_bits(SLIP_SETTLE_S.to_bits() - 1);
+        assert!(TireState::try_start(&tire, 0.0, 0.0).is_ok());
+        assert!(TireState::try_start(&tire, 0.0, below).is_ok());
+        assert_eq!(TireState::try_start(&tire, 0.0, -1.0e-300), Err(StepReject::SlipHeldBelowZero));
+        assert_eq!(TireState::try_start(&tire, 0.0, -5.0), Err(StepReject::SlipHeldBelowZero));
+        assert!(TireState::try_start(&tire, 0.0, -0.0).is_ok());
+        assert_eq!(TireState::try_start(&tire, 0.0, f64::NAN), Err(StepReject::NonFiniteState));
+        assert!(TireState::try_start(&tire, 0.0, 21.5).is_ok());
+        assert!(TireState::try_start(&tire, 0.0, 1.0e6).is_ok());
+        // Through engine 0.9 one step of the floor from 21 s was refused as
+        // HoldBeyondMeasured; it lands, flagged.
+        let mut frame = blank();
         let mut at_end = TireState::try_start(&tire, 0.0, 21.0).unwrap();
-        assert_eq!(
-            step(&tire, &mut at_end, &mut frame, rig(0.15), floor),
-            Err(StepReject::HoldBeyondMeasured)
-        );
-        // a restart from the returned state carries the time held
+        step(&tire, &mut at_end, &mut frame, rig(0.15), tire.floor_dt_s().unwrap()).unwrap();
+        assert_eq!(frame.flags & FLAG_BEYOND_COMPARED, FLAG_BEYOND_COMPARED);
+        // A restart from the returned state carries the time held on past 21 s.
         let mut first = start(&tire, 0.0);
         step(&tire, &mut first, &mut frame, rig(0.15), 10.0).unwrap();
         let mut again = TireState::try_start(&tire, first.distance_m, first.slip_held_s).unwrap();
-        assert_eq!(
-            step(&tire, &mut again, &mut frame, rig(0.15), 7.0),
-            Err(StepReject::HoldBeyondMeasured)
-        );
-        step(&tire, &mut again, &mut frame, rig(0.15), 6.0).unwrap();
-        assert_eq!(again.slip_held_s, 21.0);
-        // the first step after a change of slip starts at zero and is refused
+        step(&tire, &mut again, &mut frame, rig(0.15), 7.0).unwrap();
+        assert_eq!(again.slip_held_s, 22.0);
+        // The rig held the last slip of a run 21 to 33 s: a hold of 33 s in
+        // one run lands every step, the force steady.
+        let mut long = start(&tire, 0.0);
+        for _ in 0..2_800 {
+            step(&tire, &mut long, &mut frame, rig(0.07), 0.01).unwrap();
+        }
+        assert!(relative(long.slip_held_s, 33.0) < 1.0e-12);
+        assert_eq!(long.longitudinal_force_n, tire.longitudinal_force_n(5_000.0, 0.07));
+        // The first step after a change of slip starts at zero and lands,
+        // flagged; through engine 0.11 it was refused as SlipNotSettled.
+        let floor = tire.floor_dt_s().unwrap();
         let mut changed = start(&tire, 0.0);
         step(&tire, &mut changed, &mut frame, rig(0.15), 1.0).unwrap();
-        let kept = changed;
+        assert_eq!(frame.flags & FLAG_SLIP_SETTLING, 0);
+        step(&tire, &mut changed, &mut frame, rig(0.12), floor).unwrap();
+        assert_eq!(frame.flags & FLAG_SLIP_SETTLING, FLAG_SLIP_SETTLING);
+        assert_eq!(changed.slip_held_s, floor);
+        assert_eq!(changed.longitudinal_force_n, tire.longitudinal_force_n(5_000.0, 0.12));
+        // A state that carries a time held below zero is refused, state and frame kept.
+        let mut forged = changed;
+        forged.slip_held_s = -1.0;
+        let kept = forged;
         let held = frame.to_bytes();
-        assert_eq!(
-            step(&tire, &mut changed, &mut frame, rig(0.12), floor),
-            Err(StepReject::SlipNotSettled)
-        );
-        assert_eq!(changed, kept);
+        assert_eq!(step(&tire, &mut forged, &mut frame, rig(0.12), 1.0), Err(StepReject::SlipHeldBelowZero));
+        assert_eq!(forged, kept);
         assert_eq!(frame.to_bytes(), held);
-        // the allowance is its derivation and a changed copy is not this tyre
-        let spacing_s = f64::from_bits(16.0_f64.to_bits() + 1) - 16.0;
-        assert_eq!(HOLD_END_ALLOWANCE_PER_STEP_S, 0.5 * spacing_s);
-        assert_eq!(
-            tire.hold_end_allowance_s(1.0),
-            (16_384.0 + 6.0) * HOLD_END_ALLOWANCE_PER_STEP_S
-        );
-        assert_eq!(tire.hold_end_allowance_s(1.0), tire.hold_end_allowance_s(floor));
-        assert_eq!(tire.hold_end_allowance_s(1.0e-12), 0.5e-12);
-        assert_eq!(tire.hold_end_allowance_s(0.0), 0.0);
+        // A changed copy of a constant is not this tyre.
         for altered in [
             TireEveR19Ice { slip_settle_s: 0.0, ..tire },
-            TireEveR19Ice { hold_ceiling_s: 100.0, ..tire },
-            TireEveR19Ice { hold_end_allowance_per_step_s: 1.0, ..tire },
+            TireEveR19Ice { compared_hold_end_s: 100.0, ..tire },
+            TireEveR19Ice { compared_hold_end_allowance_s: 1.0, ..tire },
+            TireEveR19Ice { compared_load_ceiling_n: 1.0e9, ..tire },
         ] {
             assert!(!altered.is_valid());
             assert_eq!(TireState::try_start(&altered, 0.0, 5.0), Err(StepReject::InvalidTire));
         }
     }
 
-    /// The track ends at six metres: a step that would end beyond it is
-    /// refused whole, a start off the track is no start, and restarts from
-    /// returned distances roll on to the end.
+    /// The end of the rig's track is not an end of the tyre: a run rolls on
+    /// past 6 m. 1,000 steps of 0.1 s at 0.06 m/s from 0 reach 6 m and the
+    /// run goes on to 60 m; a start at 100 km is a start; one step of the
+    /// ceiling, 2^22 s, rolls 252 km and closes its ledger, the scale
+    /// following the work.
     #[test]
-    fn the_track_has_an_end() {
-        let tire = TireEveR19Ice::on_rig_ice();
-        assert_eq!(TireState::try_start(&tire, -0.001, 5.0), Err(StepReject::TravelBeyondTrack));
-        assert_eq!(TireState::try_start(&tire, 6.001, 5.0), Err(StepReject::TravelBeyondTrack));
-        assert_eq!(TireState::try_start(&tire, f64::NAN, 5.0), Err(StepReject::NonFiniteState));
-        let mut state = start(&tire, 0.0);
-        let mut frame = blank();
-        let mut landed = 0;
-        loop {
-            match step(&tire, &mut state, &mut frame, rig(0.10), GATE_DT_S) {
-                Ok(()) => {
-                    landed += 1;
-                    state = start(&tire, state.distance_m);
-                }
-                Err(reject) => {
-                    assert_eq!(reject, StepReject::TravelBeyondTrack);
-                    break;
-                }
-            }
-        }
-        assert_eq!(landed, 6);
-        assert!(state.distance_m <= TRACK_LENGTH_M);
-        assert!(relative(state.distance_m, 5.76) < 1.0e-14);
-        let mut off = state;
-        off.distance_m = -0.5;
-        assert_eq!(
-            step(&tire, &mut off, &mut frame, rig(0.10), 1.0),
-            Err(StepReject::TravelBeyondTrack)
-        );
-    }
-
-    /// The allowance is what its derivation says: 2^-51 m a step, the track
-    /// over the shortest step at the floor and six more, the same at every
-    /// step, and never half a step or more.
-    #[test]
-    fn the_track_end_allowance_is_its_derivation() {
-        let tire = TireEveR19Ice::on_rig_ice();
-        // half the spacing of 64-bit numbers at 6 m
-        let spacing_m = f64::from_bits(TRACK_LENGTH_M.to_bits() + 1) - TRACK_LENGTH_M;
-        assert_eq!(TRACK_END_ALLOWANCE_PER_STEP_M, 0.5 * spacing_m);
-        assert_eq!(TRACK_END_ALLOWANCE_EXTRA_STEPS, 6.0);
-        let floor_dt_s = tire.floor_dt_s().unwrap();
-        let at_floor = tire.track_end_allowance_m(CARRIAGE_SPEED_FLOOR_M_S, floor_dt_s);
-        assert_eq!(
-            at_floor,
-            (6.0 / (0.05 * floor_dt_s) + 6.0) * TRACK_END_ALLOWANCE_PER_STEP_M
-        );
-        assert!(at_floor > 5.4e-11 && at_floor < 5.5e-11);
-        // the same at every step and speed inside the card
-        for (speed_m_s, dt_s) in [(0.06, GATE_DT_S), (0.07, 0.1), (0.05, 0.01), (0.06, 1.0)] {
-            assert_eq!(tire.track_end_allowance_m(speed_m_s, dt_s), at_floor);
-        }
-        // a hundred-thousandth of the shortest step the gateway lets through
-        assert!(at_floor < 1.0e-5 * CARRIAGE_SPEED_FLOOR_M_S * floor_dt_s);
-        // under the floor it is held to half the step
-        assert_eq!(tire.track_end_allowance_m(0.06, 1.0e-9), 0.5 * 0.06 * 1.0e-9);
-        assert_eq!(tire.track_end_allowance_m(0.06, 0.0), 0.0);
-        assert_eq!(tire.track_end_allowance_m(0.0, 1.0), 0.0);
-        let mut altered = tire;
-        altered.track_end_allowance_per_step_m = 1.0e-9;
-        assert!(!altered.is_valid());
-        let mut altered = tire;
-        altered.track_end_allowance_extra_steps = 7.0;
-        assert!(!altered.is_valid());
-    }
-
-    /// A distance returned by a run of small steps, handed back as a new
-    /// start, carries their rounding. In 0.6.0 one step to the end of the
-    /// track from it was refused while small steps over the same span
-    /// landed. Both routes now land, at the same end to rounding.
-    #[test]
-    fn a_restart_from_a_returned_distance_lands_where_small_steps_land() {
+    fn the_end_of_the_track_is_not_an_end() {
         let tire = TireEveR19Ice::on_rig_ice();
         let mut frame = blank();
-        // 8,400 steps of 0.01 s in runs of 16 s, each run a restart
         let mut state = start(&tire, 0.0);
-        for count in 0..8_400 {
-            if count % 1_600 == 0 {
-                state = start(&tire, state.distance_m);
-            }
-            step(&tire, &mut state, &mut frame, rig(0.12), 0.01).unwrap();
-        }
-        let returned_m = state.distance_m;
-        assert_eq!(returned_m, 5.040000000000356);
-        // a rule that scaled the allowance with this step's count would refuse it
-        let per_step_rule_m = (6.0 / (0.05 * 16.0) + 6.0) * TRACK_END_ALLOWANCE_PER_STEP_M;
-        assert!(returned_m + 0.06 * 16.0 > TRACK_LENGTH_M + per_step_rule_m);
-        let mut one = start(&tire, returned_m);
-        step(&tire, &mut one, &mut frame, rig(0.12), 16.0).unwrap();
-        assert_eq!(one.distance_m, 6.000000000000356);
-        let mut many = start(&tire, returned_m);
-        for _ in 0..1_600 {
-            step(&tire, &mut many, &mut frame, rig(0.12), 0.01).unwrap();
-        }
-        assert_eq!(many.distance_m, 6.000000000000961);
-        assert!((one.distance_m - many.distance_m).abs() < 1.0e-12);
-        assert_eq!(one.longitudinal_force_n, many.longitudinal_force_n);
-        assert!(relative(many.wheel_work_j, one.wheel_work_j) < 1.0e-12);
-        // a step that truly ends beyond 6 m is still refused by name
-        let mut beyond = start(&tire, returned_m + 1.0e-9);
-        assert_eq!(
-            step(&tire, &mut beyond, &mut frame, rig(0.12), 16.0),
-            Err(StepReject::TravelBeyondTrack)
-        );
-    }
-
-    /// Runs whose end in decimal is exactly the track's 6 m land every step,
-    /// at twenty step sizes and three speeds, rolled as runs of at most 16 s
-    /// each restarted from the distance the last returned; the step after,
-    /// from a fresh start, is refused by name.
-    #[test]
-    fn a_decimal_run_that_ends_on_the_track_end_lands_every_step() {
-        let tire = TireEveR19Ice::on_rig_ice();
-        // step sizes in units of 0.0001 s
-        let steps_e4: [u64; 20] = [
-            160_000, 125_000, 100_000, 80_000, 50_000, 25_000, 20_000, 16_000, 10_000, 5_000,
-            4_000, 2_500, 2_000, 1_250, 1_000, 500, 400, 200, 100, 50,
-        ];
-        let mut past_the_end = 0;
-        for speed_e2 in [5_u64, 6, 7] {
-            for dt_e4 in steps_e4 {
-                // lengths in units of 1e-6 m
-                let step_e6 = speed_e2 * dt_e4;
-                let count = 6_000_000 / step_e6;
-                let per_run = 160_000 / dt_e4;
-                let start_e6 = 6_000_000 - count * step_e6;
-                let decimal = |whole: u64, digits: usize, scale: u64| -> f64 {
-                    std::format!("{}.{:0width$}", whole / scale, whole % scale, width = digits)
-                        .parse()
-                        .unwrap()
-                };
-                let start_m = decimal(start_e6, 6, 1_000_000);
-                let dt_s = decimal(dt_e4, 4, 10_000);
-                let speed_m_s = decimal(speed_e2, 2, 100);
-                let load = TireLoad { carriage_speed_m_s: speed_m_s, ..rig(0.10) };
-                let mut state = start(&tire, start_m);
-                let mut frame = blank();
-                for landed in 0..count {
-                    if landed % per_run == 0 {
-                        state = start(&tire, state.distance_m);
-                    }
-                    assert_eq!(
-                        step(&tire, &mut state, &mut frame, load, dt_s),
-                        Ok(()),
-                        "speed {speed_m_s} dt {dt_s} start {start_m}: step {} of {count}",
-                        landed + 1
-                    );
-                }
-                let allowance_m = tire.track_end_allowance_m(speed_m_s, dt_s);
-                assert!((state.distance_m - TRACK_LENGTH_M).abs() <= allowance_m);
-                if state.distance_m > TRACK_LENGTH_M {
-                    past_the_end += 1;
-                }
-                // a returned distance past 6 m is no start; one on the track
-                // starts, and its first step is refused
-                match TireState::try_start(&tire, state.distance_m, SLIP_SETTLE_S) {
-                    Err(reject) => {
-                        assert!(state.distance_m > TRACK_LENGTH_M);
-                        assert_eq!(reject, StepReject::TravelBeyondTrack);
-                    }
-                    Ok(mut fresh) => {
-                        let before = fresh;
-                        let held = frame.to_bytes();
-                        assert_eq!(
-                            step(&tire, &mut fresh, &mut frame, load, dt_s),
-                            Err(StepReject::TravelBeyondTrack)
-                        );
-                        assert_eq!(fresh, before);
-                        assert_eq!(frame.to_bytes(), held);
-                    }
-                }
-            }
-        }
-        // some of the sixty runs do read past 6 m: the allowance is in use
-        assert!(past_the_end > 0);
-    }
-
-    /// The two runs the second scorer found short by a step (V-33), rolled
-    /// now as restarts of at most 16 s.
-    #[test]
-    fn the_two_runs_found_short_by_a_step_land_whole() {
-        let tire = TireEveR19Ice::on_rig_ice();
-        let mut state = start(&tire, 0.0);
-        let mut frame = blank();
-        for count in 0..999 {
-            if count % 160 == 0 {
-                state = start(&tire, state.distance_m);
-            }
+        let mut worst = 0.0_f64;
+        for _ in 0..10_000 {
             step(&tire, &mut state, &mut frame, rig(0.10), 0.1).unwrap();
+            worst = worst.max(state.residual_conservation_error);
         }
-        assert_eq!(state.distance_m, 5.994000000000005);
-        step(&tire, &mut state, &mut frame, rig(0.10), 0.1).unwrap();
-        let load = TireLoad { carriage_speed_m_s: 0.07, ..rig(0.10) };
-        let mut state = start(&tire, 1.52);
-        for _ in 0..4 {
-            state = start(&tire, state.distance_m);
-            step(&tire, &mut state, &mut frame, load, 16.0).unwrap();
-        }
-        assert_eq!(state.distance_m, 6.000000000000001);
-        // handed back, a distance past 6 m is no start
-        assert_eq!(
-            TireState::try_start(&tire, state.distance_m, SLIP_SETTLE_S),
-            Err(StepReject::TravelBeyondTrack)
-        );
+        assert!(relative(state.distance_m, 60.0) < 1.0e-12, "{}", state.distance_m);
+        assert!(worst < 1.0e-11, "{worst:e}");
+        let mut far = TireState::try_start(&tire, 100_000.0, 5.0).unwrap();
+        step(&tire, &mut far, &mut frame, rig(-0.20), 10.0).unwrap();
+        assert!(relative(far.distance_m, 100_000.6) < 1.0e-15);
+        let mut longest = start(&tire, 0.0);
+        step(&tire, &mut longest, &mut frame, rig(0.20), GATE_DT_S).unwrap();
+        assert!(relative(longest.distance_m, 0.06 * GATE_DT_S) < 1.0e-15);
+        assert!(longest.wheel_work_j > tire.ledger_scale_j());
+        assert_eq!(tire.run_ledger_scale_j(&longest), longest.wheel_work_j);
+        assert!(longest.residual_conservation_error < 1.0e-15);
+        assert_eq!(frame.flags & FLAG_BEYOND_COMPARED, FLAG_BEYOND_COMPARED);
     }
 
-    /// A step that would end beyond the track by a spacing more than the
-    /// allowance is refused by name and nothing moves; every end inside the
-    /// allowance lands at its own value. Checked over the last thousand
-    /// spacings inside the allowance and the first four beyond it.
+    /// Steps the 64-bit sums cannot resolve are refused by name, and the
+    /// state and the frame are left as they were: a time held of 1e300 s,
+    /// and a distance of 1e300 m.
     #[test]
-    fn a_step_beyond_the_allowance_is_refused_by_name() {
+    fn a_step_the_sums_cannot_resolve_is_refused_by_name() {
         let tire = TireEveR19Ice::on_rig_ice();
-        let spacing_m = f64::from_bits(TRACK_LENGTH_M.to_bits() + 1) - TRACK_LENGTH_M;
-        for (speed_m_s, dt_s) in [(0.06, GATE_DT_S), (0.07, 10.0), (0.05, 1.0), (0.06, 0.1)] {
-            let load = TireLoad { carriage_speed_m_s: speed_m_s, ..rig(0.10) };
-            let allowance_m = tire.track_end_allowance_m(speed_m_s, dt_s);
-            let step_m = speed_m_s * dt_s;
-            // the comparison is with the 64-bit number nearest the end plus the allowance
-            let whole_spacings =
-                (((TRACK_LENGTH_M + allowance_m) - TRACK_LENGTH_M) / spacing_m) as u64;
-            assert!(whole_spacings > 60_000);
-            let mut landed_past_the_end = 0;
-            let mut refused = 0;
-            let mut ends: std::vec::Vec<u64> = (0..4).collect();
-            ends.extend(whole_spacings - 1_000..whole_spacings + 4);
-            for spacings in ends {
-                let end_m = f64::from_bits(TRACK_LENGTH_M.to_bits() + spacings);
-                // the start whose sum with the step is this end
-                let mut start_m = end_m - step_m;
-                while start_m + step_m < end_m {
-                    start_m = f64::from_bits(start_m.to_bits() + 1);
-                }
-                assert_eq!(start_m + step_m, end_m);
-                let mut state = start(&tire, start_m);
-                let before = state;
-                let mut frame = blank();
-                let result = step(&tire, &mut state, &mut frame, load, dt_s);
-                if end_m <= TRACK_LENGTH_M + allowance_m {
-                    assert_eq!(result, Ok(()));
-                    assert_eq!(state.distance_m, end_m);
-                    if spacings > 0 {
-                        landed_past_the_end += 1;
-                    }
-                } else {
-                    assert_eq!(result, Err(StepReject::TravelBeyondTrack));
-                    assert_eq!(state, before);
-                    assert_eq!(frame.to_bytes(), blank().to_bytes());
-                    refused += 1;
-                }
-            }
-            assert_eq!(landed_past_the_end, 3 + 1_001);
-            assert!(refused >= 3);
-            // one allowance and a half beyond is refused
-            let mut state = start(&tire, 4.0);
-            state.distance_m = TRACK_LENGTH_M + 1.5 * allowance_m - step_m;
-            let mut frame = blank();
+        let mut frame = blank();
+        for (distance_m, held_s) in [(0.0, 1.0e300), (1.0e300, 5.0), (0.0, (2.0_f64).powi(60))] {
+            let mut state = TireState::try_start(&tire, distance_m, held_s).unwrap();
+            let kept = state;
             assert_eq!(
-                step(&tire, &mut state, &mut frame, load, dt_s),
-                Err(StepReject::TravelBeyondTrack)
+                step(&tire, &mut state, &mut frame, rig(0.10), tire.floor_dt_s().unwrap()),
+                Err(StepReject::StepTooSmallToResolve)
             );
+            assert_eq!(state, kept);
+            assert_eq!(frame.to_bytes(), blank().to_bytes());
+        }
+        // At 2^42 s held, a floor step still moves the time held.
+        let mut edge = TireState::try_start(&tire, 0.0, (2.0_f64).powi(42)).unwrap();
+        step(&tire, &mut edge, &mut frame, rig(0.10), tire.floor_dt_s().unwrap()).unwrap();
+        assert!(edge.slip_held_s > (2.0_f64).powi(42));
+    }
+
+    /// Past the old wall at 5 s held: a run from the instant its slip is set
+    /// lands every step, the frames of the first 5 s carry
+    /// [`FLAG_SLIP_SETTLING`] and none after, the force is the steady force
+    /// throughout, the ledger closes at every step, and a falsified heat
+    /// inside those 5 s is named both ways with the state and the frame kept.
+    /// Changes of slip every 2 s, so that no step is ever settled, land as
+    /// well.
+    #[test]
+    fn in_the_first_5_seconds_after_a_slip_is_set_the_step_lands_flagged_and_the_ledger_closes() {
+        let tire = TireEveR19Ice::on_rig_ice();
+        for (slip, normal_load_n) in [(0.15, 5_000.0), (-0.05, 6_500.0), (0.20, 3_500.0), (-0.12, 9_000.0)] {
+            let load = TireLoad { normal_load_n, ..rig(slip) };
+            let mut state = TireState::try_start(&tire, 0.0, 0.0).unwrap();
+            let mut frame = blank();
+            let dt_s = 1.0 / 64.0;
+            for index in 0..640 {
+                let held_before = state.slip_held_s;
+                step(&tire, &mut state, &mut frame, load, dt_s).unwrap();
+                assert_eq!(frame.flags & FLAG_SLIP_SETTLING != 0, held_before < SLIP_SETTLE_S, "{slip}: step {index}");
+                assert_eq!(state.longitudinal_force_n, tire.longitudinal_force_n(normal_load_n, slip));
+                assert!(state.residual_conservation_error < 1.0e-13, "{slip}: step {index}");
+            }
+            assert_eq!(state.slip_held_s, 10.0);
+            // A forged heat at 1 s held is named both ways.
+            let mut early = TireState::try_start(&tire, 0.0, 1.0).unwrap();
+            step(&tire, &mut early, &mut frame, load, 0.5).unwrap();
+            assert_eq!(frame.flags & FLAG_SLIP_SETTLING, FLAG_SLIP_SETTLING);
+            let honest = held(&tire, load, 0.5);
+            let scale = tire.run_ledger_scale_j(&early);
+            for (bias, want) in [
+                (2.0 * RESIDUAL_CONSERVATION_LIMIT * scale, StepReject::SpontaneousGeneration),
+                (-2.0 * RESIDUAL_CONSERVATION_LIMIT * scale, StepReject::FirstLawBreach),
+            ] {
+                let forged = Advance { slip_heat_j: honest.slip_heat_j + bias, ..honest };
+                let mut trial = early;
+                let mut trial_frame = frame;
+                assert_eq!(commit(&tire, &mut trial, &mut trial_frame, load, 0.5, forged), Err(want));
+                assert_eq!(trial, early);
+                assert_eq!(trial_frame.to_bytes(), frame.to_bytes());
+            }
+        }
+        // A slip changed every 2 s, driving and braking in turn: no step is
+        // ever 5 s from its change, every frame carries the flag, and the
+        // ledger closes over 1,000 changes.
+        let mut state = TireState::try_start(&tire, 0.0, 0.0).unwrap();
+        let mut frame = blank();
+        for change in 0..1_000 {
+            let slip = if change % 2 == 0 { 0.07 } else { -0.15 };
+            for _ in 0..4 {
+                step(&tire, &mut state, &mut frame, rig(slip), 0.5).unwrap();
+                assert_eq!(frame.flags & FLAG_SLIP_SETTLING, FLAG_SLIP_SETTLING);
+            }
+            assert_eq!(state.slip_held_s, 2.0);
+        }
+        assert!(state.residual_conservation_error < 1.0e-13, "{}", state.residual_conservation_error);
+        assert!(relative(state.t_s, 2_000.0) < 1.0e-12);
+    }
+
+    /// The load of the card past the loads measured: at 50 kN and at 1 N the
+    /// force is the same law and the ledger closes; at 50 kN over a long run
+    /// the scale is the work, and a falsified heat is named both ways.
+    #[test]
+    fn past_the_measured_loads_the_ledger_closes_and_a_falsified_heat_is_named() {
+        let tire = TireEveR19Ice::on_rig_ice();
+        for normal_load_n in [1.0, 50_000.0, 1.0e8] {
+            let load = TireLoad { normal_load_n, ..rig(-0.07) };
+            let mut state = start(&tire, 0.0);
+            let mut frame = blank();
+            for _ in 0..2_000 {
+                step(&tire, &mut state, &mut frame, load, 0.5).unwrap();
+            }
+            assert!(state.residual_conservation_error < 1.0e-13, "{normal_load_n}");
+            assert_eq!(state.longitudinal_force_n, -(tire.friction_ratio(-0.07) * normal_load_n));
+            let honest = held(&tire, load, 0.5);
+            let scale = tire.run_ledger_scale_j(&state);
+            for (bias, want) in [
+                (2.0 * RESIDUAL_CONSERVATION_LIMIT * scale, StepReject::SpontaneousGeneration),
+                (-2.0 * RESIDUAL_CONSERVATION_LIMIT * scale, StepReject::FirstLawBreach),
+            ] {
+                let forged = Advance { slip_heat_j: honest.slip_heat_j + bias, ..honest };
+                let mut trial = state;
+                let mut trial_frame = frame;
+                assert_eq!(commit(&tire, &mut trial, &mut trial_frame, load, 0.5, forged), Err(want));
+                assert_eq!(trial, state);
+                assert_eq!(trial_frame.to_bytes(), frame.to_bytes());
+            }
         }
     }
 
@@ -1464,14 +1397,6 @@ mod tests {
         );
         assert_eq!(commit(&tire, &mut state, &mut frame, load, dt_s, honest), Ok(()));
         assert_eq!(frame.proof, PROOF);
-        // A commit past the hold is refused as well, whatever its ledger.
-        let mut late = TireState::try_start(&tire, 0.0, 15.0).unwrap();
-        let before = late;
-        assert_eq!(
-            commit(&tire, &mut late, &mut frame, load, dt_s, honest),
-            Err(StepReject::HoldBeyondMeasured)
-        );
-        assert_eq!(late, before);
     }
 
     /// A whole run of the rig, four slips, each its own run from 5 s to 21 s
@@ -1499,9 +1424,9 @@ mod tests {
         }
     }
 
-    /// One hold at the step floor and the slowest speed, 16,384 steps: the
-    /// residual stays under a hundredth of its limit. The whole track at the
-    /// floor, as eight runs, is 122,880 steps.
+    /// One hold at the step floor and the slowest speed, 16,384 steps to
+    /// 21 s and 16,384 more past it: the residual stays under a hundredth of
+    /// its limit.
     #[test]
     fn a_hold_at_the_step_floor_stays_inside_the_ledger() {
         let tire = TireEveR19Ice::on_rig_ice();
@@ -1514,31 +1439,17 @@ mod tests {
         };
         let mut state = start(&tire, 0.0);
         let mut frame = blank();
-        let mut landed = 0_u32;
         let mut worst = 0.0_f64;
-        let mut ends = 0;
-        loop {
-            match step(&tire, &mut state, &mut frame, load, floor) {
-                Ok(()) => {
-                    landed += 1;
-                    worst = worst.max(state.residual_conservation_error);
-                }
-                Err(StepReject::HoldBeyondMeasured) => {
-                    if ends == 0 {
-                        assert_eq!(landed, 16_384);
-                        assert_eq!(state.slip_held_s, 21.0);
-                    }
-                    ends += 1;
-                    state = start(&tire, state.distance_m);
-                }
-                Err(reject) => {
-                    assert_eq!(reject, StepReject::TravelBeyondTrack);
-                    break;
-                }
+        for landed in 1..=32_768 {
+            step(&tire, &mut state, &mut frame, load, floor).unwrap();
+            worst = worst.max(state.residual_conservation_error);
+            if landed == 16_384 {
+                assert_eq!(state.slip_held_s, 21.0);
+                assert_eq!(frame.flags & FLAG_BEYOND_COMPARED, 0);
             }
         }
-        assert_eq!(ends, 7);
-        assert!(landed > 122_870 && landed < 122_890, "{landed}");
+        assert_eq!(state.slip_held_s, 37.0);
+        assert_eq!(frame.flags & FLAG_BEYOND_COMPARED, FLAG_BEYOND_COMPARED);
         assert!(worst < 1.0e-11, "{worst}");
     }
 }

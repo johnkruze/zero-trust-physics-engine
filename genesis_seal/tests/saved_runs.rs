@@ -9,20 +9,14 @@ use genesis_seal::run::{TapeCause, TapeReport, check_tape, check_tape_text, fram
 use serde_json::{Value, json};
 use support::*;
 
+/// A saved run of the company's carries no signed load, so a run that holds
+/// lists none.
 fn holds() -> TapeReport {
-    TapeReport {
-        holds: true,
-        broken_link: None,
-        cause: None,
-    }
+    TapeReport::holds(Vec::new())
 }
 
 fn broken(cause: TapeCause, link: Option<u64>) -> TapeReport {
-    TapeReport {
-        holds: false,
-        broken_link: link,
-        cause: Some(cause),
-    }
+    TapeReport::broken(cause, link)
 }
 
 fn check(tape: &Value) -> TapeReport {

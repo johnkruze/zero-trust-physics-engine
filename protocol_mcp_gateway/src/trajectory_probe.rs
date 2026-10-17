@@ -42,7 +42,7 @@ async fn limits_are_422_without_a_permit_and_a_full_pool_is_429() {
     let too_many_frames = post(&client, &base, "/run_trajectory", &steps_body(10_001, 1)).await;
     let overflow = post(&client, &base, "/run_trajectory", &steps_body(1, 1)).await;
     // A capsule state off the card is refused before a permit too: above the
-    // drag table, and at rest in the air at 40 km.
+    // drag table, and nearly at rest in the air at 40 km, under Mach 0.16.
     let above_the_card = post(
         &client,
         &base,
@@ -54,23 +54,24 @@ async fn limits_are_422_without_a_permit_and_a_full_pool_is_429() {
         &client,
         &base,
         "/run_trajectory",
-        r#"{"domain":"aerospace","card":"capsule_stardust","initial":{"radius_m":6409228.5,"radial_speed_m_s":-100.0,"transverse_speed_m_s":347.0},"dt_s":0.05,"segments":[{"steps":1,"load":{}}],"record_every":1}"#,
+        r#"{"domain":"aerospace","card":"capsule_stardust","initial":{"radius_m":6409228.5,"radial_speed_m_s":-20.0,"transverse_speed_m_s":347.0},"dt_s":0.05,"segments":[{"steps":1,"load":{}}],"record_every":1}"#,
     )
     .await;
     // A satellite state off the card is refused before a permit too: under
-    // the radius band, and a compared start a second before the first date.
+    // the lowest radius, and a compared start moved to a second before the
+    // last leap second.
     let under_the_band = post(
         &client,
         &base,
         "/verify_physics",
-        r#"{"domain":"aerospace","card":"satellite_lageos1","parameters":{"epoch_utc_s":840715200.0,"forecast_elapsed_s":0.0,"position_m":[10000000.0,0.0,0.0],"velocity_m_s":[0.0,-729.2,6313.5],"dt_s":10.0}}"#,
+        r#"{"domain":"aerospace","card":"satellite_lageos1","parameters":{"epoch_utc_s":840715200.0,"forecast_elapsed_s":0.0,"position_m":[6000000.0,0.0,0.0],"velocity_m_s":[0.0,-437.5,8150.9],"dt_s":10.0}}"#,
     )
     .await;
     let before_the_first_date = post(
         &client,
         &base,
         "/run_trajectory",
-        r#"{"domain":"aerospace","card":"satellite_lageos1","initial":{"epoch_utc_s":840715199.0,"forecast_elapsed_s":0.0,"position_m":[3767126.6844992605,8956617.400906362,7564717.856833777],"velocity_m_s":[4119.825668508274,1676.7840658085788,-4053.2216929389388]},"dt_s":10.0,"segments":[{"steps":1,"load":{}}],"record_every":1}"#,
+        r#"{"domain":"aerospace","card":"satellite_lageos1","initial":{"epoch_utc_s":536500799.0,"forecast_elapsed_s":0.0,"position_m":[3767126.6844992605,8956617.400906362,7564717.856833777],"velocity_m_s":[4119.825668508274,1676.7840658085788,-4053.2216929389388]},"dt_s":10.0,"segments":[{"steps":1,"load":{}}],"record_every":1}"#,
     )
     .await;
     // A generator mission time off the card is refused before a permit, so
@@ -82,11 +83,11 @@ async fn limits_are_422_without_a_permit_and_a_full_pool_is_429() {
         r#"{"domain":"energy","card":"generator_mmrtg_f1","parameters":{"mission_time_s":-1.0,"dt_s":86400.0}}"#,
     )
     .await;
-    let after_the_last_day = post(
+    let after_the_ledger_end = post(
         &client,
         &base,
         "/run_trajectory",
-        r#"{"domain":"energy","card":"generator_mmrtg_f1","initial":{"mission_time_s":353116801.0},"dt_s":86400.0,"segments":[{"steps":1,"load":{}}],"record_every":1}"#,
+        r#"{"domain":"energy","card":"generator_mmrtg_f1","initial":{"mission_time_s":1.0e11},"dt_s":86400.0,"segments":[{"steps":1,"load":{}}],"record_every":1}"#,
     )
     .await;
 
@@ -97,7 +98,7 @@ async fn limits_are_422_without_a_permit_and_a_full_pool_is_429() {
         &client,
         &base,
         "/verify_physics",
-        r#"{"domain":"signal","card":"cantilever_eth","parameters":{"deflection_m":0.012,"velocity_m_s":0.6,"dt_s":0.00025}}"#,
+        r#"{"domain":"signal","card":"cantilever_eth","parameters":{"deflection_m":0.015,"velocity_m_s":0.6,"dt_s":0.00025}}"#,
     )
     .await;
     let speed_above_its_bound = post(
@@ -117,11 +118,11 @@ async fn limits_are_422_without_a_permit_and_a_full_pool_is_429() {
         r#"{"domain":"energy","card":"cell_2170_model3","parameters":{"cell_number":449.0,"state_of_charge":1.0,"capacity_ah":4.5,"case_temperature_least_c":25.0,"case_temperature_most_c":25.0,"current_a":4.5,"case_temperature_c":25.0,"dt_s":1.0}}"#,
     )
     .await;
-    let capacity_above_the_card = post(
+    let capacity_of_zero = post(
         &client,
         &base,
         "/run_trajectory",
-        r#"{"domain":"energy","card":"cell_2170_model3","initial":{"cell_number":80.0,"state_of_charge":1.0,"capacity_ah":4.75,"case_temperature_least_c":25.0,"case_temperature_most_c":25.0},"dt_s":1.0,"segments":[{"steps":1,"load":{"current_a":4.5,"case_temperature_c":25.0}}],"record_every":1}"#,
+        r#"{"domain":"energy","card":"cell_2170_model3","initial":{"cell_number":80.0,"state_of_charge":1.0,"capacity_ah":0.0,"case_temperature_least_c":25.0,"case_temperature_most_c":25.0},"dt_s":1.0,"segments":[{"steps":1,"load":{"current_a":4.5,"case_temperature_c":25.0}}],"record_every":1}"#,
     )
     .await;
 
@@ -162,24 +163,17 @@ async fn limits_are_422_without_a_permit_and_a_full_pool_is_429() {
     for (off_card, reject) in [
         (&above_the_card, "AltitudeOutsideCard"),
         (&under_mach_one, "MachOutsideCard"),
-        (&under_the_band, "RadiusOutsideCard"),
-        (&before_the_first_date, "EpochOutsideCard"),
-        (&envelope_above_the_ceiling, "DeflectionAboveCard"),
-        (&speed_above_its_bound, "DeflectionAboveCard"),
+        (&under_the_band, "RadiusBelowEarthRadius"),
+        (&before_the_first_date, "EpochOutsideLeapSecondSpan"),
+        (&envelope_above_the_ceiling, "EnvelopeAboveCard"),
+        (&speed_above_its_bound, "EnvelopeAboveCard"),
         (&cell_that_is_not_held, "CellNotRecognized"),
-        (&capacity_above_the_card, "CapacityOutsideCard"),
+        (&capacity_of_zero, "CapacityNotPositive"),
+        (&before_landing, "MissionTimeBeforeLanding"),
+        (&after_the_ledger_end, "DecayHeatBelowLedgerResolution"),
     ] {
         assert_eq!(off_card.status, 422, "{}", off_card.detail);
         assert!(off_card.detail.contains(reject), "{}", off_card.detail);
-        assert!(!off_card.detail.contains("_seal"), "{}", off_card.detail);
-    }
-    for off_card in [&before_landing, &after_the_last_day] {
-        assert_eq!(off_card.status, 422, "{}", off_card.detail);
-        assert!(
-            off_card.detail.contains("MissionTimeOutsideCard"),
-            "{}",
-            off_card.detail
-        );
         assert!(!off_card.detail.contains("_seal"), "{}", off_card.detail);
     }
 
@@ -222,7 +216,8 @@ async fn a_solve_takes_a_permit_and_a_range_error_does_not() {
     assert!(
         out_of_range
             .detail
-            .contains("atomic number 19 is outside 1..=18"),
+            // Re-pinned for 0.10.1: an atomic number outside the range carries the name AtomicNumberOutOfRange, and the entry writes the range in words.
+            .contains("atomic number 19 is outside 1 to 18 (AtomicNumberOutOfRange)"),
         "{}",
         out_of_range.detail
     );

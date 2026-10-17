@@ -34,7 +34,7 @@ pub const ATOM_DFT: Solver = Solver {
             maximum: atom_dft::ATOMIC_NUMBER_MAX as u64,
             spoken: "atomic number",
         },
-        refusal: None,
+        refusal: Some("AtomicNumberOutOfRange"),
         bound: "The neutral atom. No other input is accepted: the grid, the mixing weight, the tolerances and the iteration cap are constants of the solver.",
         only_when: None,
         asked_by_check: false,
@@ -78,6 +78,7 @@ pub const ATOM_DFT: Solver = Solver {
     field: field_words,
     answer: "a ground state",
     refusals: REFUSALS,
+    door_refusals: &[],
     sections,
     validation: None,
     example,
@@ -93,7 +94,7 @@ pub const ATOM_DFT: Solver = Solver {
 const REFUSALS: &[Refusal] = &[
     Refusal {
         name: "AtomicNumberOutOfRange",
-        meaning: "`atomic_number` is outside `ATOMIC_NUMBER_MIN`..=`ATOMIC_NUMBER_MAX`.",
+        meaning: "`atomic_number` is outside `ATOMIC_NUMBER_MIN` to `ATOMIC_NUMBER_MAX`, the atoms whose ground configurations the solver holds.",
         sealed: false,
     },
     Refusal {
@@ -176,7 +177,7 @@ fn sections() -> Sections {
                 "rule": "The density integrates to the atomic number.",
                 "tolerance": atom_dft::ELECTRON_COUNT_TOLERANCE,
                 "unit": "electrons",
-                "checked": "every iteration",
+                "compared": "every iteration",
                 "refusal": "ElectronCountBroken",
             },
             {
@@ -184,7 +185,7 @@ fn sections() -> Sections {
                 "rule": "The virial identity for this functional holds.",
                 "tolerance": atom_dft::VIRIAL_TOLERANCE_HA,
                 "unit": "Hartree",
-                "checked": "at acceptance",
+                "compared": "at acceptance",
                 "refusal": "VirialBroken",
             },
         ]),
@@ -220,7 +221,7 @@ fn solve(given: &Given) -> Result<Solved, String> {
     let count = given.count("atomic_number")?;
     let atomic_number = u32::try_from(count).map_err(|_| {
         format!(
-            "Physical Violation: atomic number {count} is outside {}..={}.",
+            "Physical Violation: atomic number {count} is outside {} to {} (AtomicNumberOutOfRange).",
             atom_dft::ATOMIC_NUMBER_MIN,
             atom_dft::ATOMIC_NUMBER_MAX
         )

@@ -12,9 +12,9 @@ please cite the paper:
 
 Third-party data in this crate
 
-  src/wall_gas_species.rs holds thermodynamic coefficients copied from
-  thermo.inp, the database of NASA's CEA code (github.com/nasa/cea), used
-  under the Apache License, Version 2.0.
+  src/wall_gas_species.rs and src/air11.rs hold thermodynamic coefficients
+  copied from thermo.inp, the database of NASA's CEA code
+  (github.com/nasa/cea), used under the Apache License, Version 2.0.
 
   A solver built from or compared with published measurements or tables
   names their source at the head of its source file, with the licence where

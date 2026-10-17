@@ -109,15 +109,20 @@ async fn a_whole_job_refusal_takes_no_permit_even_when_every_permit_is_held() {
     }
     assert!(count >= 14, "{count}");
 
-    // A check takes no permit either.
+    // The long form runs the plan again, so with every permit held it is
+    // answered as a full pool answers, and holds once one is free.
     let answer: Value = serde_json::from_str(&answer).unwrap();
     let body = json!({ "head": answer["head"], "rows": answer["rows"], "frames_hex": answer["frames_hex"] });
     let (status, text) = post_text(&client, &base, "/verify_dataset", &text_of(&body)).await;
-    assert_eq!(status, 200, "{text}");
-    assert!(text.contains("\"holds\":true"), "{text}");
+    assert_eq!(status, 429, "{text}");
+    assert_eq!(state.physics_permits.available_permits(), 0);
+    assert_eq!(state.dataset_permits.available_permits(), 0);
 
     drop(physics);
     drop(datasets);
+    let (status, text) = post_text(&client, &base, "/verify_dataset", &text_of(&body)).await;
+    assert_eq!(status, 200, "{text}");
+    assert!(text.contains("\"holds\":true"), "{text}");
     assert_eq!(state.physics_permits.available_permits(), 4);
     assert_eq!(state.dataset_permits.available_permits(), 2);
 }

@@ -8,9 +8,11 @@
 //! runs, every upstream run is computed again and its seal compared with the
 //! seal given (`UpstreamProofBroken`); each handed value is read from the
 //! upstream's sealed answer and compared bit for bit with the downstream
-//! request (`ContinuationNotFromUpstream`, `CouplingLedgerBreach`); and a
-//! coupled value outside the downstream card's declared range is refused
-//! (`CouplingOutsideRange`). Then the downstream request, with `from` taken
+//! request (`ContinuationNotFromUpstream`, `CouplingLedgerBreach`); a
+//! coupling's conditions on the two requests it joins are decided before
+//! any of them runs (`CouplingConditionNotMet`); and a coupled value outside
+//! the downstream card's declared range is refused (`CouplingOutsideRange`).
+//! Then the downstream request, with `from` taken
 //! out, is run exactly as the same request typed by hand: its proof, state
 //! and seal are that request's. The answer adds `chain`, whose `chain_seal`
 //! commits the downstream seal to the upstream's (`genesis_seal::chain`).
@@ -88,10 +90,10 @@ fn own_steps(request: &Value) -> u64 {
 }
 
 /// The declaration of `from` in the schemas of `run_trajectory` and
-/// `verify_step`.
+/// `compute_step`.
 pub(crate) fn from_schema(full: bool) -> Value {
     let description = if full {
-        "Optional: start from a sealed run. request: that run_trajectory request as sent (it may hold its own from); run_seal: its seal; coupling: absent to continue the same card (describe_card says how), or a coupling's name. The upstream is computed again; each carried value must equal its sealed value bit for bit. The run_seal is that of this request without from; chain.chain_seal commits it to the upstream."
+        "Optional: start from a sealed run. request: that run_trajectory request as sent, less its readout if it had one: a readout is not part of a run's seal, and a request here that carries one is refused (it may hold its own from); run_seal: its seal; coupling: absent to continue the same card (describe_card says how), or a coupling's name. The upstream is computed again; each carried value must equal its sealed value bit for bit, and a request whose upstream seal or carried value does not hold is refused by name. The run_seal is that of this request without from; chain.chain_seal commits it to the upstream."
     } else {
         "Optional: a sealed run to start from, as run_trajectory takes it."
     };
@@ -121,11 +123,48 @@ pub(crate) static NOT_CONTINUED: &[(&str, &str)] = &[
     ("cell_2170_m80", "its start fields are the block's chamber temperature and the charge removed; the voltage of its RC branch is not a start field, so a run cut in two is not the uncut run"),
     ("grid_gb", "the card takes only the start of its event: a returned state is refused as a start by the card itself"),
     ("fingerpad_p02_glass", "the card takes only a twist from zero: a returned state is refused as a start by the card itself"),
+    ("grasp_lift_glass_4tu", "its one start field is the hand's velocity at the grip; the object's height and velocity, the force of each of the 32 elements of a pad's contact and the ledgers are not start fields, so a run sent from a returned state is a new grip on an object at rest on the table"),
 ];
 
 /// Why a card is not continued through `from`, or `None` when it is.
 pub(crate) fn not_continued(card: &str) -> Option<&'static str> {
     NOT_CONTINUED.iter().find(|(name, _)| *name == card).map(|(_, why)| *why)
+}
+
+/// The one card continued through `from` from some of its states only: the
+/// crater, whose start field, the radius, carries its whole state only once
+/// the crater has stopped. While it grows the card sets the wall's speed from
+/// the radius at a start, so the speed the upstream integrated and the energy
+/// accounts are not carried: from 1.75 m at 0.25 s, a run of 1,000 steps cut
+/// at 500 ends 27,385 units in the last place from the run uncut in its
+/// radius (the breadth tests of 16 October 2026). Stopped, it is at
+/// `FINAL_RADIUS_M` with its wall at rest, which the radius carries bit for
+/// bit, and a run cut in two is the run uncut but for its clock.
+pub(crate) const CRATER_CONTINUED_ONLY: &str = "It is served only from a crater that has stopped, at 8.571304329477922 m with its wall at rest: while the crater grows, the wall's speed and the energy accounts are not start fields (the card sets the speed from the radius at a start), so a run cut in two before the stop is not the uncut run (from 1.75 m at 0.25 s, a run of 1,000 steps cut at 500 ends 27,385 units in the last place from the uncut run's radius), and a continuation from a radius under 8.571304329477922 m is refused before any physics (ContinuationNotOnCard).";
+
+/// Why a continuation of `card` into `request` (a run's `initial`, a step's
+/// `parameters`) is not served though the card continues, or `None`. Read
+/// from the request before any physics: a continuation states every start
+/// field bit for bit as the upstream returned it, so its radius is the
+/// upstream's, and a radius that is not the stopped crater's is refused
+/// whatever the upstream holds.
+fn continued_only_from(card: &str, request: &Value, target: Target) -> Option<String> {
+    if card != "crater_ryugu_sci" {
+        return None;
+    }
+    let section = match target {
+        Target::Run => "initial",
+        Target::Step => "parameters",
+    };
+    let stated = request.get(section)?.get("radius_m")?;
+    let bits = request_value_hex(stated)?;
+    let stopped = genesis_kernel::crater_ryugu_sci::FINAL_RADIUS_M;
+    if bits.as_str() == Some(format!("{:016x}", stopped.to_bits()).as_str()) {
+        return None;
+    }
+    Some(format!(
+        "aerospace/crater_ryugu_sci is continued through from only from a crater that has stopped, at {stopped} m with its wall at rest, and '{section}.radius_m' is {stated}: while the crater grows, the wall's speed and the energy accounts are not start fields, so a run cut in two there is not the uncut run"
+    ))
 }
 
 /// For each card continued through `from`: the published values in which
@@ -144,7 +183,7 @@ const LEDGER: &str = "residual_conservation_error";
 pub(crate) static CONTINUED: &[Continued] = &[
     Continued { card: "ti64_lattice", differ: &[], within_one_ulp: &[] },
     Continued { card: "resonance", differ: &[], within_one_ulp: &[] },
-    Continued { card: "grid_node", differ: &["t_s"], within_one_ulp: &[] },
+    Continued { card: "grid_node", differ: &["t_s", "boundary_work_j", "energy_anchor_j", "energy_defect_j", "residual_conservation_error", "voltage_spike_v"], within_one_ulp: &[] },
     Continued { card: "swing", differ: &["t_s"], within_one_ulp: &[] },
     Continued { card: "battery_sag", differ: &["t_s"], within_one_ulp: &[] },
     Continued { card: "thermal", differ: &["t_s"], within_one_ulp: &[] },
@@ -152,6 +191,21 @@ pub(crate) static CONTINUED: &[Continued] = &[
     Continued { card: "hydraulic_fluid", differ: &["t_s"], within_one_ulp: &[] },
     Continued { card: "cable_stretch", differ: &["t_s"], within_one_ulp: &[] },
     Continued { card: "crater_ryugu_sci", differ: &["t_s"], within_one_ulp: &[] },
+    Continued {
+        card: "generator_mmrtg_seebeck",
+        differ: &["converter_account_anchor_j", "converter_account_defect_j", "converter_account_error", "electrical_energy_j", "energy_anchor_j", "energy_defect_j", "fading_electrical_energy_j", "heat_rejected_j", LEDGER],
+        within_one_ulp: &[],
+    },
+    Continued {
+        card: "momentum_jwst_dihedral",
+        differ: &["h_anchor_eci_nms", "impulse_eci_nms", "momentum_defect_nms", LEDGER, "t_s"],
+        within_one_ulp: &[],
+    },
+    Continued {
+        card: "momentum_jwst_srp",
+        differ: &["h_anchor_eci_nms", "impulse_eci_nms", "momentum_defect_nms", LEDGER, "t_s"],
+        within_one_ulp: &[],
+    },
     Continued { card: "solar_system", differ: &["t_s"], within_one_ulp: &[] },
     Continued { card: "cell_18650pf", differ: &["electrical_work_j", "energy_anchor_j", "energy_defect_j", "joule_j", LEDGER, "t_s"], within_one_ulp: &[] },
     Continued {
@@ -160,7 +214,7 @@ pub(crate) static CONTINUED: &[Continued] = &[
         within_one_ulp: &["conversion_efficiency", "converter_fading_fraction", "converter_fading_yield_j", "electrical_power_w"],
     },
     Continued { card: "capsule_stardust", differ: &["angle_rad", "drag_loss_j_kg", "energy_anchor_j_kg", "energy_defect_j_kg", "ground_distance_m", LEDGER, "t_s"], within_one_ulp: &[] },
-    Continued { card: "satellite_lageos1", differ: &["energy_defect_j_per_kg", "external_work_j_per_kg", "jacobi_anchor_j_per_kg", LEDGER, "t_s"], within_one_ulp: &[] },
+    Continued { card: "satellite_lageos1", differ: &["angular_momentum_anchor_m2_s", "angular_momentum_defect_m2_s", "energy_defect_j_per_kg", "external_torque_m2_s", "external_work_j_per_kg", "jacobi_anchor_j_per_kg", LEDGER, "t_s"], within_one_ulp: &[] },
     Continued { card: "cantilever_eth", differ: &["energy_anchor_j_per_kg", "energy_defect_j_per_kg", "heat_j_per_kg", LEDGER, "t_s"], within_one_ulp: &[] },
     Continued { card: "creep_cmsx6", differ: &["heat_dissipated_mj_per_m3", LEDGER, "t_s", "work_by_load_mj_per_m3", "work_defect_mj_per_m3"], within_one_ulp: &[] },
     Continued { card: "capsule_insight", differ: &["angle_rad", "drag_loss_j_kg", "energy_anchor_j_kg", "energy_defect_j_kg", "ground_distance_m", LEDGER, "t_s"], within_one_ulp: &[] },
@@ -170,14 +224,18 @@ pub(crate) static CONTINUED: &[Continued] = &[
         within_one_ulp: &[],
     },
     Continued { card: "tokamak_jet_dte1", differ: &["energy_anchor_j", "energy_defect_j", "energy_lost_j", "energy_supplied_j", "fusion_energy_j", LEDGER], within_one_ulp: &[] },
+    Continued { card: "tokamak_vde_mast", differ: &["energy_anchor_j", "energy_defect_j", "energy_dissipated_j", LEDGER, "stored_scale_anchor_j", "t_s"], within_one_ulp: &[] },
     Continued {
         card: "accumulator_sbo450",
         differ: &["energy_defect_j", "gas_force_n", "gas_pressure_pa", "gas_volume_m3", "heat_moved_j", "heat_share", "heat_to_wall_j", LEDGER, "start_energy_j", "t_s", "work_moved_j", "work_on_gas_j"],
         within_one_ulp: &["gas_force_n", "gas_pressure_pa", "gas_volume_m3", "heat_moved_j", "heat_share", "work_moved_j"],
     },
-    // Its worked run's uncut form is refused at the step the continued run
-    // is refused at first: the same refusal at the same place.
-    Continued { card: "tire_eve_r19_ice", differ: &[], within_one_ulp: &[] },
+    Continued {
+        card: "runaway_18650_lco",
+        differ: &["energy_defect_j", "heat_anode_j", "heat_cathode_j", "heat_electrolyte_j", "heat_lost_j", "heat_released_j", "heat_sei_j", "heat_stored_j", LEDGER, "start_temperature_k", "t_s"],
+        within_one_ulp: &[],
+    },
+    Continued { card: "tire_eve_r19_ice", differ: &["drawbar_work_j", "energy_defect_j", LEDGER, "rim_travel_m", "slip_heat_j", "t_s", "wheel_work_j"], within_one_ulp: &[] },
 ];
 
 /// What `describe_card` says of a continuation through `from` on a card.
@@ -191,10 +249,14 @@ pub(crate) fn continuation_statement(card: &str) -> Value {
     let Some(entry) = CONTINUED.iter().find(|entry| entry.card == card) else {
         return serde_json::json!({ "served": false, "sentence": "A continuation through from is refused on this card (ContinuationNotOnCard)." });
     };
-    let mut sentence = String::from("A continuation through from starts from the start fields this card takes, each equal to the upstream's sealed value bit for bit. Measured on this card's worked run cut in two through from: ");
-    if entry.card == "tire_eve_r19_ice" {
-        sentence.push_str("the continued run is refused at the step at which the uncut run is refused.");
-    } else if entry.differ.is_empty() {
+    let mut sentence = String::from("A continuation through from starts from the start fields this card takes, each equal to the upstream's sealed value bit for bit. ");
+    if card == "crater_ryugu_sci" {
+        sentence.push_str(CRATER_CONTINUED_ONLY);
+        sentence.push_str(" Measured on this card's worked run, which stops at step 1,597 of 1,600, cut in two through from after the stop: ");
+    } else {
+        sentence.push_str("Measured on this card's worked run cut in two through from: ");
+    }
+    if entry.differ.is_empty() {
         sentence.push_str("the continued run ends on the uncut run's final state, every published value bit for bit.");
     } else {
         sentence.push_str("the continued run's final state equals the uncut run's bit for bit except in ");
@@ -307,7 +369,7 @@ pub(crate) fn read(
         DoorError::Unprocessable("Physical Violation: a request with 'from' names its 'domain' and 'card' as strings.".to_string())
     })?;
     if view.find(&pair.0, &pair.1).is_none() {
-        return Err(DoorError::NotFound("Card not recognized".to_string()));
+        return Err(DoorError::NotFound(crate::CARD_NOT_RECOGNIZED.to_string()));
     }
     // Nearest upstream first, as `from` nests.
     let mut levels = Vec::new();
@@ -317,7 +379,7 @@ pub(crate) fn read(
         let depth = levels.len() + 1;
         if depth + 1 > MAX_CHAIN_LINKS {
             return Err(violation(
-                format!("the chain holds more than {MAX_CHAIN_LINKS} runs, the most one request may carry"),
+                format!("the chain holds more than {MAX_CHAIN_LINKS} runs, a step at its end counted as one, the most one request may carry"),
                 "ChainTooLong",
             ));
         }
@@ -334,7 +396,7 @@ pub(crate) fn read(
         }
         let request = object
             .get("request")
-            .ok_or_else(|| DoorError::Unprocessable(format!("Missing required parameter: 'request' in {at}")))?
+            .ok_or_else(|| DoorError::Unprocessable(format!("Missing required parameter: 'request' in {at} (InputMissing).")))?
             .clone();
         if !request.is_object() {
             return Err(DoorError::Unprocessable(format!(
@@ -348,7 +410,7 @@ pub(crate) fn read(
                     "Physical Violation: 'run_seal' in {at} must be 64 lowercase hex digits."
                 )));
             }
-            None => return Err(DoorError::Unprocessable(format!("Missing required parameter: 'run_seal' in {at}"))),
+            None => return Err(DoorError::Unprocessable(format!("Missing required parameter: 'run_seal' in {at} (InputMissing)."))),
         };
         let kind = match object.get("coupling") {
             None => Kind::Continuation,
@@ -404,7 +466,8 @@ pub(crate) fn read(
         next = upstream_from;
     }
     levels.reverse();
-    // Each link names pieces it may join, read before any physics.
+    // Each link names pieces it may join, and a coupling's conditions hold,
+    // read before any physics.
     for index in 0..levels.len() {
         let up = &levels[index].pair;
         let down = if index + 1 < levels.len() { &levels[index + 1].pair } else { &pair };
@@ -425,6 +488,14 @@ pub(crate) fn read(
                         "ContinuationNotOnCard",
                     ));
                 }
+                let (next_request, next_target) = if index + 1 < levels.len() {
+                    (&levels[index + 1].request, Target::Run)
+                } else {
+                    (downstream, target)
+                };
+                if let Some(sentence) = continued_only_from(&down.1, next_request, next_target) {
+                    return Err(violation(sentence, "ContinuationNotOnCard"));
+                }
             }
             Kind::Coupling(coupling) => {
                 let names = |pair: (&str, &str)| (pair.0.to_string(), pair.1.to_string());
@@ -444,6 +515,16 @@ pub(crate) fn read(
                         ),
                         "CouplingNotOfThesePieces",
                     ));
+                }
+                // The coupling's conditions on the two requests it joins.
+                let last = index + 1 == levels.len();
+                let joined = couplings::Joined {
+                    upstream: &levels[index].request,
+                    downstream: if last { downstream } else { &levels[index + 1].request },
+                    step: last && target == Target::Step,
+                };
+                if let Some(sentence) = coupling.unmet(&joined) {
+                    return Err(violation(sentence, "CouplingConditionNotMet"));
                 }
             }
         }
@@ -636,6 +717,7 @@ pub(crate) fn continuation_source(card: &str, field: &str) -> Option<&'static st
         ("cell_18650pf", "held_current_a") => "inputs.initial.held_current_a",
         // The generator's t_s is the mission time since landing.
         ("generator_mmrtg_f1", "mission_time_s") => "final_state.t_s",
+        ("generator_mmrtg_seebeck", "mission_time_s") => "final_state.t_s",
         // "a run or a single step continued from a returned state states that state's t_s".
         ("tokamak_jet_dte1", "elapsed_time_s") => "final_state.t_s",
         _ => return None,
@@ -755,7 +837,7 @@ fn coupled(
         if let Some(sentence) = (mapping.outside)(value, &so_far) {
             return Err(refused(
                 format!(
-                    "the coupling '{}' hands '{}' on to '{}': {sentence}. The downstream card was not compared there, and nothing is computed outside its declared range",
+                    "the coupling '{}' hands '{}' on to '{}': {sentence}. That value is outside the downstream card's range, so the downstream card is not run",
                     coupling.name, mapping.from, mapping.to
                 ),
                 "CouplingOutsideRange",

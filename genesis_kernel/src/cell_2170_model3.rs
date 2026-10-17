@@ -1,8 +1,8 @@
 #![no_implicit_prelude]
 
 //! One Tesla Model 3 2170 lithium-ion cell, as a physical model with memory,
-//! under a terminal current and a measured case temperature, from -10 to
-//! 40 degC.
+//! under a terminal current and a measured case temperature, compared with
+//! measurement from -10 to 40 degC.
 //!
 //! Measured by Kollmeyer, Khanum, Naguib and Emadi, "Tesla Model 3 2170
 //! Li-ion Cell Dataset and Battery SOC Estimation Blind Modeling Tool",
@@ -14,6 +14,9 @@
 //! curve with its two corrections and 22 fitted numbers, each with a
 //! physical meaning. The card `cell_2170_m80` describes the same cell with
 //! tables read off the same tests; this card describes it with equations.
+//! On the same discharge, cell m80 from the recharge of its 10 degC block,
+//! 4.2661 Ah, at 1.5 A for 600 s with the case at 12 degC, that card gives
+//! 3.934 V and this one 3.917 V: 17.4 mV apart.
 //!
 //! # The numbers, by group
 //!
@@ -103,11 +106,15 @@
 //! divided by the capacity when the tester topped the cell up afterwards.
 //!
 //! The memories start at zero, which is a cell that has rested. Hysteresis
-//! fades in 5 minutes; the electrolyte drop in 3 minutes at 25 degC and 11
-//! at -10 degC; the slowest diffusion mode in 80 seconds at 25 degC and 16
-//! minutes at -10 degC. An hour's rest is enough anywhere on the card. A
-//! cell that has not rested is not in this state: step the card through the
-//! load that came before.
+//! fades in 5 minutes; the electrolyte drop in 3 minutes at 25 degC and 11 at
+//! -10 degC; the slowest diffusion mode in 80 seconds at 25 degC and 16 minutes
+//! at -10 degC. Five of the slowest mode's times leave under 1 percent of it:
+//! an hour from about -7 degC up, 81 minutes at -10 degC, 103 at -12.9, the
+//! coldest case compared, and 189 at -20. At -12.9 degC an hour after a 1C
+//! discharge of 1400 s leaves the surface 0.85 percent of capacity below the
+//! bulk and the terminal 8.8 mV under its rested voltage. A cell that has not
+//! rested is not in this state: step the card through the load that came
+//! before.
 //!
 //! # The step
 //!
@@ -183,12 +190,16 @@
 //! against its own parts. It does not test how a memory is stepped; the
 //! reference states of the tests do that.
 //!
-//! # The declared range
+//! # The compared range
 //!
-//! Each limit is set from everything the model has been scored on with the
-//! chamber set from -10 to 40 degC: the 80 records of `m80` that are not
+//! Each edge below is set from everything the model has been scored on with
+//! the chamber set from -10 to 40 degC: the 80 records of `m80` that are not
 //! recharges, and the 36 opened records of `m1000` that are not recharges.
-//! Past a limit the card refuses by name. Nothing is pulled back to a limit.
+//! Through engine 0.9.0 each edge was a refusal. It is now the range the
+//! card was compared on: every equation of the card is its own, an
+//! Arrhenius law, a straight line in temperature or the exact solution for
+//! a held current, and the ledger closes past each edge, so a step there
+//! lands with [`FLAG_OUTSIDE_COMPARED_RUNS`]. Nothing is pulled back.
 //!
 //! ```text
 //!                               m80        m1000      limit     how the limit is set
@@ -220,19 +231,31 @@
 //! 13.504 A, its case from -11.9 to 41.8 degC, and its capacities run from
 //! 4.218 to 4.670 Ah.
 //!
-//! The state of charge is held to 0 ... 1.02 and the surface state of charge
-//! to the ends of the curves, -0.05 ... 1.05. The state of charge is a
+//! The state of charge and the surface state of charge are held to the ends
+//! of the rest-voltage curves, -0.05 ... 1.05, outside which the card has no rest voltage; starts were compared up to 1.012,
+//! and a state of charge outside 0 ... 1.02 lands with
+//! [`FLAG_OUTSIDE_COMPARED_RUNS`]. The state of charge is a
 //! running sum, z' = z - rate dt in 64-bit arithmetic, and each subtraction
 //! rounds by up to 1.11e-16, half the spacing of 64-bit numbers between 1
 //! and 2. The comparison of a step's incoming and landing state of charge
-//! with 0 and 1.02 therefore carries a named allowance,
+//! with the ends of the curves therefore carries a named allowance,
 //! [`STATE_OF_CHARGE_ALLOWANCE_PER_STEP`]: one full spacing, 2.22e-16, for
 //! each step of the run so far including this one, and two more for the
 //! start and the current read from decimals. It is 6.7e-16 on the first step
 //! and 2.2e-10 after 1,000,000 steps. A run or a single step whose end in
-//! decimal is exactly 0 or 1.02 lands its last step, and the state of charge
+//! decimal is exactly an end lands its last step, and the state of charge
 //! is not pulled back, so it can read up to the allowance past the end. A
-//! rested start is held to 0 ... 1.02 itself.
+//! rested start is held to the ends themselves.
+//!
+//! What stops the card is physical or of its arithmetic: a capacity of zero
+//! or less, [`StepReject::CapacityNotPositive`], since the charge is counted
+//! against it; a case temperature at or below absolute zero,
+//! [`StepReject::CaseTemperatureBelowAbsoluteZero`], where the temperature
+//! laws have no value; a start whose least case temperature is above its
+//! most, [`StepReject::CaseTemperatureSpanInverted`]; the ends of the
+//! curves; the laboratory's voltage limits; and the ledger. Physical bounds
+//! of the real cell, its electrolyte freezing or the maker's operating
+//! range, are not on the card.
 //!
 //! # Capacity with case temperature
 //!
@@ -260,8 +283,9 @@
 //! 0.01 Ah beyond them, to a hundredth. The case temperatures are those
 //! the sensor read in the same scored runs, with the chamber's 0.3 K beyond
 //! them, to a tenth; the -10 degC block takes the card's least, -12.9 degC,
-//! read in a fitting file of `m80`. Outside every band the step is
-//! [`StepReject::CapacityOutsideCardAtTemperature`].
+//! read in a fitting file of `m80`. Outside every band the step lands with
+//! [`FLAG_OUTSIDE_COMPARED_RUNS`]: a new cell in the cold and an aged cell
+//! when warm were never measured.
 //!
 //! # Case temperature through a run
 //!
@@ -271,27 +295,31 @@
 //! (`m80`, 25 degC, `REORDERED1`), and the largest span of the case
 //! temperature inside one scored run 18.811 K (`m1000`, -10 degC, the
 //! discharge at half the rated current). A step whose case temperature
-//! differs from the last step's by more than 5.4 K is
-//! [`StepReject::CaseTemperatureChangeAboveCard`], and one that would take
-//! the span since the start past 19.2 K is
-//! [`StepReject::CaseTemperatureSpanAboveCard`]: each the measured value
-//! plus the chamber's 0.3 K, to a tenth above. The span depends on every
+//! differs from the last step's by more than 5.4 K, or that takes the span
+//! since the start past 19.2 K, each the measured value plus the chamber's
+//! 0.3 K, to a tenth above, lands with [`FLAG_OUTSIDE_COMPARED_RUNS`]. The
+//! card is given the case temperature and computes at any sequence of it.
+//! A start whose least is above its most is
+//! [`StepReject::CaseTemperatureSpanInverted`]. The span depends on every
 //! case temperature since the rested start, so a run that continues from a
 //! returned state carries the least and the most case temperature of the run
 //! so far ([`CellState::with_case_span`]); a fresh start states both equal to
 //! its first case temperature. The first step of a run has no last step to
 //! differ from.
 //!
-//! -20 degC is outside the card. The measurements there are irregular: the
+//! -20 degC was not compared. The measurements there are irregular: the
 //! discharges at a held current contradict each other, and no mechanism could
 //! be separated from them. Scored there for the record, the model met its
-//! marks on none of the first cell's 13 runs.
+//! marks on none of the first cell's 13 runs. Fitted without its -10 degC
+//! tests the model met 3 of 13 there, so the temperature laws are not shown
+//! to reach colder.
 //!
 //! The sustained current is held because the hill cycle is the only test of
 //! sustained current above the rated current (about 4.5 A), the model's
 //! worst misses are in it, and nothing measured supports a longer or harder
-//! climb. The running mean of the current has a 60 s time constant; past its
-//! limit the step is [`StepReject::SustainedCurrentOutsideCard`]. Above
+//! climb. The running mean of the current has a 60 s time constant; past
+//! the largest scored, 8.722 A discharging and 2.993 A charging, the step
+//! lands with [`FLAG_OUTSIDE_COMPARED_RUNS`]. Above
 //! 4.6 A discharging the step lands and carries [`FLAG_SUSTAINED_ABOVE_1C`]:
 //! a discharge at the rated current sits at 4.50 A.
 //!
@@ -361,7 +389,7 @@
 //! [`Cell2170Model3::gate_dt_s`] and [`Cell2170Model3::floor_dt_s`] are both
 //! 1 s: every fit and every score was made at one second on data logged once
 //! a second, and no measurement on disk can check a shorter step. For a held
-//! 4.5 A discharge at 25 degC, the one load checked, a step of 0.1 s gave the
+//! 4.5 A discharge at 25 degC, the one load compared, a step of 0.1 s gave the
 //! one-second answer to within 0.3 mV. When the current reverses it does not: the rule for the reaction's
 //! overpotential changing sign takes the whole step again from zero, so the
 //! answer depends on the step. From 4.5 A to -4.5 A at 0 degC the 0.1 s
@@ -389,6 +417,7 @@ extern crate core;
 use core::prelude::v1::*;
 
 use crate::frame::LastStateFrame64;
+use crate::normal::{normal_or_zero, normal_or_zero_each};
 use crate::math::{exp, log};
 
 ::core::include!("cell_2170_model3_curves.rs");
@@ -580,11 +609,11 @@ pub const CELLS: [CellNumbers; CELL_COUNT] = cell_rows();
 pub const TESTER_CURRENT_ACCURACY_A: f64 = 0.024;
 /// The accuracy the dataset states for the chamber.
 pub const CHAMBER_ACCURACY_K: f64 = 0.3;
-/// The capacities the two cells had in the scored tests, 4.174 to 4.689 Ah, less 0.01 Ah, to a hundredth.
+/// The capacities the two cells had in the scored tests, 4.174 to 4.689 Ah, less 0.01 Ah, to a hundredth. An edge of the compared range, not a limit.
 pub const CAPACITY_MIN_AH: f64 = 4.16;
 /// The same, plus 0.01 Ah.
 pub const CAPACITY_MAX_AH: f64 = 4.70;
-/// The least the case sensor read in a scored test, -12.586 degC, less the chamber's accuracy, to a tenth.
+/// The least the case sensor read in a scored test, -12.586 degC, less the chamber's accuracy, to a tenth. An edge of the compared range, not a limit.
 pub const CASE_TEMPERATURE_MIN_C: f64 = -12.9;
 /// The most it read, 45.535 degC, plus the chamber's accuracy, to a tenth.
 pub const CASE_TEMPERATURE_MAX_C: f64 = 45.9;
@@ -598,8 +627,9 @@ pub const SUSTAINED_DISCHARGE_MAX_A: f64 = 8.722;
 pub const SUSTAINED_CHARGE_MAX_A: f64 = 2.993;
 /// Above this running mean, discharging, a landed step carries the flag. A run at the rated current sits at 4.50 A.
 pub const SUSTAINED_FLAG_A: f64 = 4.6;
+/// The least state of charge of the compared range. An edge, not a limit: the card's are the ends of the curves.
 pub const STATE_OF_CHARGE_MIN: f64 = 0.0;
-/// The cell was never started above 1.012.
+/// The cell was never started above 1.012. An edge of the compared range, not a limit.
 pub const STATE_OF_CHARGE_MAX: f64 = 1.02;
 /// The largest step the card stands behind: the sampling of the data it was fitted on.
 pub const GATE_DT_S: f64 = 1.0;
@@ -643,6 +673,14 @@ pub const RESIDUAL_CONSERVATION_LIMIT: f64 = 1.0e-10;
 /// hill cycle exercises this region, and below 10 degC the card is known to
 /// read high in it. The step lands.
 pub const FLAG_SUSTAINED_ABOVE_1C: u64 = 1 << 0;
+/// The step lies outside the range the card was compared on: a capacity
+/// outside 4.16 to 4.70 Ah, a case temperature outside -12.9 to 45.9 degC,
+/// a current above 13.524 A discharging or 13.984 A charging, a capacity
+/// and case temperature that no block of tests held together, a case
+/// temperature 5.4 K from the last step's or a span past 19.2 K, a running
+/// mean above 8.722 A discharging or 2.993 A charging, or a state of charge
+/// outside 0 to 1.02. The step lands.
+pub const FLAG_OUTSIDE_COMPARED_RUNS: u64 = 1 << 1;
 
 /// Why a step did not advance the cell or the frame.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -657,23 +695,15 @@ pub enum StepReject {
     InvalidCell,
     /// The cell number of the state names none of the cells the card holds.
     CellNotRecognized,
-    /// Capacity is below 4.16 Ah or above 4.70 Ah.
-    CapacityOutsideCard,
-    /// Case temperature is below -12.9 degC or above 45.9 degC.
-    CaseTemperatureOutsideCard,
-    /// The current is above 13.524 A discharging or above 13.984 A charging.
-    CurrentOutsideCard,
-    /// No block of tests holds both the capacity and the case temperature: the capacity is outside the band scored at the case temperatures that block spanned.
-    CapacityOutsideCardAtTemperature,
-    /// Case temperature differs from the last step's by more than 5.4 K.
-    CaseTemperatureChangeAboveCard,
-    /// Case temperature would take its span since the rested start, carried across a continued start, past 19.2 K.
-    CaseTemperatureSpanAboveCard,
-    /// The landing running mean of the current is above 8.722 A discharging or above 2.993 A charging.
-    SustainedCurrentOutsideCard,
-    /// State of charge, incoming or landing, is below 0 or above 1.02 by more than the rounding allowance of its running sum.
+    /// Capacity is zero or less: the charge is counted against it.
+    CapacityNotPositive,
+    /// Case temperature is at or below absolute zero, -273.15 degC, where the temperature laws have no value.
+    CaseTemperatureBelowAbsoluteZero,
+    /// The least case temperature the state carries is above the most it carries.
+    CaseTemperatureSpanInverted,
+    /// State of charge, incoming or landing, is below -0.05 or above 1.05, the ends of the card's rest-voltage curves, outside which it has no rest voltage, by more than the rounding allowance of its running sum.
     StateOfChargeOutsideCard,
-    /// Landing surface state of charge is below -0.05 or above 1.05, the ends of the measured curves.
+    /// Landing surface state of charge is below -0.05 or above 1.05, the ends of the card's rest-voltage curves, outside which it has no rest voltage.
     SurfaceOutsideCurve,
     /// Landing terminal voltage is below 2.8 V.
     UndervoltageLimit,
@@ -998,7 +1028,7 @@ impl Cell2170Model3 {
 
     /// The smallest step the card stands behind: the same one second. Where
     /// the current reverses, the rule for the reaction changing sign makes the
-    /// answer depend on the step, by 49 mV between 0.1 s and 1 s in the reversal that was checked, and
+    /// answer depend on the step, by 49 mV between 0.1 s and 1 s in the reversal that was compared, and
     /// data logged once a second cannot check a shorter step.
     #[must_use]
     pub fn floor_dt_s(&self) -> Option<f64> {
@@ -1136,11 +1166,11 @@ impl CellState {
             return None;
         }
         let row = cell.cell_of(cell_number)?;
-        if !(capacity_ah >= cell.capacity_min_ah && capacity_ah <= cell.capacity_max_ah) {
+        if !(capacity_ah > 0.0) {
             return None;
         }
-        if !(state_of_charge >= cell.state_of_charge_min
-            && state_of_charge <= cell.state_of_charge_max)
+        if !(state_of_charge >= cell.curve_first_state_of_charge
+            && state_of_charge <= cell.curve_last_state_of_charge)
         {
             return None;
         }
@@ -1185,8 +1215,7 @@ impl CellState {
     /// The same start carrying the least and the most case temperature of the run so far, so
     /// that a run continued from a returned state is weighed against the span of the whole run.
     /// A fresh start states both equal to its first case temperature. `None` unless both are
-    /// finite, on the card's case temperatures, the least is not above the most, and their
-    /// span is at most [`CASE_TEMPERATURE_SPAN_MAX_K`].
+    /// finite, above absolute zero, and the least is not above the most.
     #[must_use]
     pub fn with_case_span(
         self,
@@ -1196,10 +1225,8 @@ impl CellState {
     ) -> Option<Self> {
         if !case_temperature_least_c.is_finite()
             || !case_temperature_most_c.is_finite()
-            || case_temperature_least_c < cell.case_temperature_min_c
-            || case_temperature_most_c > cell.case_temperature_max_c
+            || !(case_temperature_least_c + cell.kelvin_offset > 0.0)
             || case_temperature_least_c > case_temperature_most_c
-            || !(case_temperature_most_c - case_temperature_least_c <= cell.case_temperature_span_max_k)
         {
             return None;
         }
@@ -1215,6 +1242,9 @@ impl CellState {
 /// Advance one step and write the frame.
 ///
 /// A rejected step leaves `state` and `frame` as they were.
+///
+/// A value of the landed state below the normal range is written as zero
+/// with its sign ([`crate::normal`]).
 #[must_use]
 pub fn step(
     cell: &Cell2170Model3,
@@ -1223,13 +1253,57 @@ pub fn step(
     load: CellLoad,
     dt_s: f64,
 ) -> Result<(), StepReject> {
+    step_as_computed(cell, state, frame, load, dt_s)?;
+    normal_or_zero_state(state);
+    Ok(())
+}
+
+/// The step as its equations compute it, before a value of the landed
+/// state below the normal range is written as zero.
+fn step_as_computed(
+    cell: &Cell2170Model3,
+    state: &mut CellState,
+    frame: &mut LastStateFrame64,
+    load: CellLoad,
+    dt_s: f64,
+) -> Result<(), StepReject> {
     validate(cell, state, load, dt_s)?;
-    capacity_with_temperature(cell, state, load)?;
     let trial = match integrate(cell, state, load, dt_s) {
         Ok(trial) => trial,
         Err(reject) => return Err(reject),
     };
     commit(cell, state, frame, load, dt_s, trial)
+}
+
+/// Each value of a landed state below the normal range written as zero
+/// with its sign ([`crate::normal`]): the state carried to the next step
+/// and published holds no subnormal number.
+fn normal_or_zero_state(state: &mut CellState) {
+    state.t_s = normal_or_zero(state.t_s);
+    state.cell_number = normal_or_zero(state.cell_number);
+    state.capacity_ah = normal_or_zero(state.capacity_ah);
+    state.state_of_charge = normal_or_zero(state.state_of_charge);
+    normal_or_zero_each(&mut state.diffusion_lag);
+    state.reaction_overpotential_v = normal_or_zero(state.reaction_overpotential_v);
+    state.near_full_overpotential_v = normal_or_zero(state.near_full_overpotential_v);
+    state.hysteresis_v = normal_or_zero(state.hysteresis_v);
+    state.electrolyte_v = normal_or_zero(state.electrolyte_v);
+    state.current_mean_a = normal_or_zero(state.current_mean_a);
+    state.surface_state_of_charge = normal_or_zero(state.surface_state_of_charge);
+    state.charge_removed_ah = normal_or_zero(state.charge_removed_ah);
+    state.current_a = normal_or_zero(state.current_a);
+    state.case_temperature_c = normal_or_zero(state.case_temperature_c);
+    state.case_temperature_least_c = normal_or_zero(state.case_temperature_least_c);
+    state.case_temperature_most_c = normal_or_zero(state.case_temperature_most_c);
+    state.terminal_v = normal_or_zero(state.terminal_v);
+    state.rest_v = normal_or_zero(state.rest_v);
+    state.resistance_at_once_ohm = normal_or_zero(state.resistance_at_once_ohm);
+    state.chemical_energy_j = normal_or_zero(state.chemical_energy_j);
+    state.energy_anchor_j = normal_or_zero(state.energy_anchor_j);
+    state.electrical_work_j = normal_or_zero(state.electrical_work_j);
+    state.heat_j = normal_or_zero(state.heat_j);
+    state.energy_defect_j = normal_or_zero(state.energy_defect_j);
+    state.residual_conservation_error = normal_or_zero(state.residual_conservation_error);
 }
 
 /// Every input and the incoming state, before any curve is read.
@@ -1254,59 +1328,60 @@ fn validate(
     if cell.cell_of(state.cell_number).is_none() {
         return Err(StepReject::CellNotRecognized);
     }
-    if !(state.capacity_ah >= cell.capacity_min_ah && state.capacity_ah <= cell.capacity_max_ah) {
-        return Err(StepReject::CapacityOutsideCard);
+    if !(state.capacity_ah > 0.0) {
+        return Err(StepReject::CapacityNotPositive);
     }
-    if load.case_temperature_c < cell.case_temperature_min_c
-        || load.case_temperature_c > cell.case_temperature_max_c
-    {
-        return Err(StepReject::CaseTemperatureOutsideCard);
-    }
-    if load.current_a > cell.discharge_current_max_a || load.current_a < -cell.charge_current_max_a
-    {
-        return Err(StepReject::CurrentOutsideCard);
-    }
-    // A step has landed since the rested start exactly when the clock has moved.
-    if state.t_s > 0.0
-        && !(abs_f64(load.case_temperature_c - state.case_temperature_c)
-            <= cell.case_temperature_change_max_k)
-    {
-        return Err(StepReject::CaseTemperatureChangeAboveCard);
+    if !(load.case_temperature_c + cell.kelvin_offset > 0.0) {
+        return Err(StepReject::CaseTemperatureBelowAbsoluteZero);
     }
     // The span is known after the first step, or from a start that carried it.
-    if state.case_span_known {
-        if !(state.case_temperature_least_c <= state.case_temperature_most_c) {
-            return Err(StepReject::CaseTemperatureSpanAboveCard);
-        }
-        let least = if load.case_temperature_c < state.case_temperature_least_c {
-            load.case_temperature_c
-        } else {
-            state.case_temperature_least_c
-        };
-        let most = if load.case_temperature_c > state.case_temperature_most_c {
-            load.case_temperature_c
-        } else {
-            state.case_temperature_most_c
-        };
-        if !(most - least <= cell.case_temperature_span_max_k) {
-            return Err(StepReject::CaseTemperatureSpanAboveCard);
-        }
+    if state.case_span_known && !(state.case_temperature_least_c <= state.case_temperature_most_c) {
+        return Err(StepReject::CaseTemperatureSpanInverted);
     }
     Ok(())
 }
 
-/// The capacity against the band compared at the step's case temperature,
-/// after [`validate`] has held each to its own range.
-fn capacity_with_temperature(
+/// The flags of a step from `state` under `load` that lands at the running
+/// mean `current_mean_a` and the state of charge `state_of_charge`: whether
+/// it lies outside the range the card was compared on, and whether the mean
+/// is above 4.6 A discharging.
+fn compared_flags(
     cell: &Cell2170Model3,
     state: &CellState,
     load: CellLoad,
-) -> Result<(), StepReject> {
-    if cell.capacity_compared_at(state.capacity_ah, load.case_temperature_c) {
-        Ok(())
+    current_mean_a: f64,
+    state_of_charge: f64,
+    allowance: f64,
+) -> u64 {
+    let case_c = load.case_temperature_c;
+    let changed = state.t_s > 0.0
+        && !(abs_f64(case_c - state.case_temperature_c) <= cell.case_temperature_change_max_k);
+    let spread = if state.case_span_known {
+        let least = if case_c < state.case_temperature_least_c { case_c } else { state.case_temperature_least_c };
+        let most = if case_c > state.case_temperature_most_c { case_c } else { state.case_temperature_most_c };
+        !(most - least <= cell.case_temperature_span_max_k)
     } else {
-        Err(StepReject::CapacityOutsideCardAtTemperature)
+        false
+    };
+    let outside = !(state.capacity_ah >= cell.capacity_min_ah && state.capacity_ah <= cell.capacity_max_ah)
+        || case_c < cell.case_temperature_min_c
+        || case_c > cell.case_temperature_max_c
+        || load.current_a > cell.discharge_current_max_a
+        || load.current_a < -cell.charge_current_max_a
+        || !cell.capacity_compared_at(state.capacity_ah, case_c)
+        || changed
+        || spread
+        || !sustained_current_compared(cell, current_mean_a)
+        || !(state_of_charge >= cell.state_of_charge_min - allowance
+            && state_of_charge <= cell.state_of_charge_max + allowance);
+    let mut flags = 0;
+    if current_mean_a > cell.sustained_flag_a {
+        flags |= FLAG_SUSTAINED_ABOVE_1C;
     }
+    if outside {
+        flags |= FLAG_OUTSIDE_COMPARED_RUNS;
+    }
+    flags
 }
 
 /// What a trial step hands to [`commit`]: where the charge and every memory
@@ -1328,8 +1403,8 @@ struct Trial {
     chemical_step_j: f64,
 }
 
-/// The landing running mean of the current against its two limits.
-fn sustained_current_on_card(cell: &Cell2170Model3, current_mean_a: f64) -> bool {
+/// The landing running mean of the current against the largest two scored.
+fn sustained_current_compared(cell: &Cell2170Model3, current_mean_a: f64) -> bool {
     current_mean_a <= cell.sustained_discharge_max_a
         && current_mean_a >= -cell.sustained_charge_max_a
 }
@@ -1342,10 +1417,10 @@ fn state_of_charge_allowance(cell: &Cell2170Model3, t_s: f64, dt_s: f64) -> f64 
         * (t_s / dt_s + 1.0 + cell.state_of_charge_allowance_extra_steps)
 }
 
-/// A state of charge against 0 and 1.02, with the rounding allowance.
+/// A state of charge against the ends of the curves, -0.05 and 1.05, with the rounding allowance.
 fn state_of_charge_on_card(cell: &Cell2170Model3, state_of_charge: f64, allowance: f64) -> bool {
-    state_of_charge >= cell.state_of_charge_min - allowance
-        && state_of_charge <= cell.state_of_charge_max + allowance
+    state_of_charge >= cell.curve_first_state_of_charge - allowance
+        && state_of_charge <= cell.curve_last_state_of_charge + allowance
 }
 
 fn surface_on_curve(cell: &Cell2170Model3, surface_state_of_charge: f64) -> bool {
@@ -1377,14 +1452,11 @@ fn integrate(
     let capacity_ah = state.capacity_ah;
     let age = 1.0 - capacity_ah / numbers.reference_capacity_ah;
 
-    // 7, taken first because its limit is tested first: the running mean of the current.
+    // 7: the running mean of the current.
     let current_mean_a =
         current_a + (state.current_mean_a - current_a) * exp(-dt_s / cell.current_mean_time_s);
     if !current_mean_a.is_finite() {
         return Err(StepReject::NonFiniteState);
-    }
-    if !sustained_current_on_card(cell, current_mean_a) {
-        return Err(StepReject::SustainedCurrentOutsideCard);
     }
 
     // 1 charge
@@ -1550,9 +1622,6 @@ fn commit(
     if !trial_is_finite(&trial) {
         return Err(StepReject::NonFiniteState);
     }
-    if !sustained_current_on_card(cell, trial.current_mean_a) {
-        return Err(StepReject::SustainedCurrentOutsideCard);
-    }
     let allowance = state_of_charge_allowance(cell, state.t_s, dt_s);
     if !(allowance.is_finite() && state_of_charge_on_card(cell, trial.state_of_charge, allowance)) {
         return Err(StepReject::StateOfChargeOutsideCard);
@@ -1644,12 +1713,13 @@ fn commit(
     if !state_is_finite(&landed) {
         return Err(StepReject::NonFiniteState);
     }
+    let flags = compared_flags(cell, state, load, trial.current_mean_a, trial.state_of_charge, allowance);
     *state = landed;
-    publish(state, frame);
+    publish(state, frame, flags);
     Ok(())
 }
 
-fn publish(state: &CellState, frame: &mut LastStateFrame64) {
+fn publish(state: &CellState, frame: &mut LastStateFrame64, flags: u64) {
     frame.t = state.t_s;
     frame.pos[0] = state.terminal_v as f32;
     frame.pos[1] = state.charge_removed_ah as f32;
@@ -1659,11 +1729,7 @@ fn publish(state: &CellState, frame: &mut LastStateFrame64) {
     frame.vel[2] = state.electrolyte_v as f32;
     frame.force_torque = state.current_mean_a as f32;
     frame.residual = state.residual_conservation_error as f32;
-    frame.flags = if state.sustained_above_1c {
-        FLAG_SUSTAINED_ABOVE_1C
-    } else {
-        0
-    };
+    frame.flags = flags;
 }
 
 /// One surface reaction over a step: the exact solution of
@@ -1829,7 +1895,7 @@ mod tests {
         DIFFUSION_AT_ONCE_WEIGHT, DIFFUSION_MODE_TIME_FRACTION, DIFFUSION_MODE_WEIGHT,
         DIFFUSION_MODES, DIFFUSION_TIME_S, DISCHARGE_CURRENT_MAX_A, DISCHARGE_SLOPE_FACTOR,
         DOUBLE_LAYER_F, ELECTROLYTE_ACTIVATION_K, ELECTROLYTE_OHM, ELECTROLYTE_TIME_S,
-        EXCHANGE_CURRENT_A, EXCHANGE_CURRENT_ACTIVATION_K, FITTED_NUMBERS, FLAG_SUSTAINED_ABOVE_1C,
+        EXCHANGE_CURRENT_A, EXCHANGE_CURRENT_ACTIVATION_K, FITTED_NUMBERS, FLAG_OUTSIDE_COMPARED_RUNS, FLAG_SUSTAINED_ABOVE_1C,
         FLOOR_DT_S, GAS_OVER_FARADAY_V_PER_K, GATE_DT_S, HYSTERESIS_EMPTY_RANGE,
         HYSTERESIS_EMPTY_V, HYSTERESIS_FADE_S, HYSTERESIS_FULL_ACTIVATION_K, HYSTERESIS_FULL_RANGE,
         HYSTERESIS_FULL_V, HYSTERESIS_RATE, KELVIN_OFFSET, LOWER_VOLTAGE_LIMIT_V,
@@ -1844,7 +1910,8 @@ mod tests {
         STATE_OF_CHARGE_ALLOWANCE_PER_STEP,
         SUSTAINED_DISCHARGE_MAX_A, SUSTAINED_FLAG_A, StepReject, TESTER_CURRENT_ACCURACY_A, Trial,
         UPPER_VOLTAGE_LIMIT_V,
-        abs_f64, commit, enthalpy_integral_v, integrate, rest_v_at, step, validate,
+        abs_f64, commit, enthalpy_integral_v, integrate, normal_or_zero_state, rest_v_at, step,
+        step_as_computed, validate,
     };
     use crate::frame::LastStateFrame64;
 
@@ -2611,17 +2678,17 @@ mod tests {
             assert_eq!(state.diffusion_lag, [0.0; DIFFUSION_MODES]);
             assert!(!state.sustained_above_1c);
         }
-        // The edges are on the card.
-        for (z, capacity_ah) in [(0.0, 4.16), (1.02, 4.70), (0.0, 4.70), (1.02, 4.16)] {
+        // The compared edges and past them, to the ends of the curves, are starts.
+        for (z, capacity_ah) in [(0.0, 4.16), (1.02, 4.70), (0.0, 4.70), (1.02, 4.16), (-0.05, 3.0), (1.05, 5.0), (next_down(0.0), 4.1), (next_up(1.02), 4.75)] {
             assert!(CellState::try_rested(&cell, 80.0, z, capacity_ah).is_some());
         }
         for cell_number in [0.0, 79.0, 81.0, 449.0, 447.5, 1000.5, -80.0, f64::NAN, f64::INFINITY] {
             assert!(CellState::try_rested(&cell, cell_number, 1.0, 4.5).is_none(), "{cell_number}");
         }
-        for z in [next_down(0.0), next_up(1.02), -0.05, 1.05, f64::NAN, f64::INFINITY] {
+        for z in [next_down(-0.05), next_up(1.05), f64::NAN, f64::INFINITY] {
             assert!(CellState::try_rested(&cell, 80.0, z, 4.5).is_none(), "{z}");
         }
-        for capacity_ah in [next_down(4.16), next_up(4.70), 4.1, 4.75, 0.0, -4.5, f64::NAN] {
+        for capacity_ah in [0.0, -0.0, -4.5, f64::NAN, f64::INFINITY] {
             assert!(CellState::try_rested(&cell, 80.0, 1.0, capacity_ah).is_none(), "{capacity_ah}");
         }
     }
@@ -2648,6 +2715,22 @@ mod tests {
         );
         assert_eq!(state_bits(&state), state_bits(start), "{want:?}");
         assert_eq!(frame.to_bytes(), before, "{want:?}");
+    }
+
+    /// A step that must land with the flag that it lies outside the
+    /// compared range, its ledger closed.
+    fn flagged(cell: &Cell2170Model3, start: &CellState, current_a: f64, case_c: f64) -> CellState {
+        let mut state = *start;
+        let mut frame = blank_frame();
+        assert_eq!(
+            step(cell, &mut state, &mut frame, load(current_a, case_c), 1.0),
+            Ok(()),
+            "{current_a} A, {case_c} degC"
+        );
+        assert_eq!(frame.flags & FLAG_OUTSIDE_COMPARED_RUNS, FLAG_OUTSIDE_COMPARED_RUNS, "{current_a} A, {case_c} degC");
+        assert!(state.residual_conservation_error <= RESIDUAL_CONSERVATION_LIMIT);
+        proof_intact(&frame);
+        state
     }
 
     #[test]
@@ -2689,35 +2772,26 @@ mod tests {
             refused(&cell, &other, 1.0, 25.0, 1.0, StepReject::CellNotRecognized);
         }
 
-        // The capacity.
-        for capacity_ah in [4.1, 4.75, next_down(4.16), next_up(4.70)] {
+        // A capacity of zero or less.
+        for capacity_ah in [0.0, -0.0, -4.5, -1.0e-300] {
             let mut other = start;
             other.capacity_ah = capacity_ah;
-            refused(&cell, &other, 1.0, 25.0, 1.0, StepReject::CapacityOutsideCard);
+            refused(&cell, &other, 1.0, 25.0, 1.0, StepReject::CapacityNotPositive);
         }
 
-        // The case temperature.
-        for case_c in [-13.0, 46.0, next_down(-12.9), next_up(45.9), -20.0, -273.15, 1000.0] {
-            refused(&cell, &start, 1.0, case_c, 1.0, StepReject::CaseTemperatureOutsideCard);
+        // A case temperature at or below absolute zero.
+        for case_c in [-273.15, -273.16, -1000.0, next_down(-273.15)] {
+            refused(&cell, &start, 1.0, case_c, 1.0, StepReject::CaseTemperatureBelowAbsoluteZero);
         }
 
-        // The current, each way.
-        for current_a in [13.6, -14.0, next_up(13.524), next_down(-13.984), 100.0, -13.99] {
-            refused(&cell, &start, current_a, 25.0, 1.0, StepReject::CurrentOutsideCard);
-        }
-
-        // The state of charge, incoming and landing: past either end by more
-        // than the allowance of a first step, three spacings of 2^-52.
+        // The state of charge, incoming and landing: past either end of the
+        // curves by more than the allowance of a first step.
         let allowance = 3.0 * STATE_OF_CHARGE_ALLOWANCE_PER_STEP;
-        for z in [next_down(-allowance), next_up(1.02 + allowance), -0.01, 1.03] {
+        for z in [next_down(-0.05 - allowance), next_up(1.05 + allowance), -0.06, 1.06] {
             let mut other = start;
             other.state_of_charge = z;
             refused(&cell, &other, 0.0, 25.0, 1.0, StepReject::StateOfChargeOutsideCard);
         }
-        let empty = rested(&cell, 0.0, 4.5);
-        refused(&cell, &empty, 0.1, 25.0, 1.0, StepReject::StateOfChargeOutsideCard);
-        let brim = rested(&cell, 1.02, 4.5);
-        refused(&cell, &brim, -0.1, 25.0, 1.0, StepReject::StateOfChargeOutsideCard);
 
         // The surface off either end of the curves. The mean is on the card;
         // the lag of the surface carries it off.
@@ -2733,13 +2807,14 @@ mod tests {
         refused(&cell, &low, 10.0, 0.0, 1.0, StepReject::UndervoltageLimit);
         let full = rested(&cell, 1.0, 4.5);
         refused(&cell, &full, -5.0, 25.0, 1.0, StepReject::OvervoltageLimit);
+        // A current far past the compared, either way, ends at a voltage limit.
+        refused(&cell, &start, 100.0, 25.0, 1.0, StepReject::UndervoltageLimit);
+        refused(&cell, &start, -100.0, 25.0, 1.0, StepReject::OvervoltageLimit);
 
-        // A capacity outside the band compared at the case temperature.
-        for (capacity_ah, case_c) in [(4.70, -12.9), (4.16, 45.9), (4.6768, 25.0), (4.5, 10.0), (4.32, 25.0)] {
-            let mut other = start;
-            other.capacity_ah = capacity_ah;
-            refused(&cell, &other, 1.0, case_c, 1.0, StepReject::CapacityOutsideCardAtTemperature);
-        }
+        // An inverted span carried in.
+        let mut inverted = start.with_case_span(&cell, 10.0, 12.0).unwrap();
+        inverted.case_temperature_least_c = 13.0;
+        refused(&cell, &inverted, 1.0, 12.0, 1.0, StepReject::CaseTemperatureSpanInverted);
 
         // The ledger, both ways: the work on the books is not the work done.
         let mut created = start;
@@ -2751,23 +2826,55 @@ mod tests {
 
         // The order of the names, where two limits are passed at once.
         let mut both = start;
-        both.capacity_ah = 4.75;
-        refused(&cell, &both, 13.6, 46.0, 1.0, StepReject::CapacityOutsideCard);
-        refused(&cell, &start, 13.6, 46.0, 1.0, StepReject::CaseTemperatureOutsideCard);
+        both.capacity_ah = -1.0;
+        refused(&cell, &both, 1.0, -300.0, 1.0, StepReject::CapacityNotPositive);
         both.cell_number = 449.0;
-        refused(&cell, &both, 13.6, 46.0, 1.0, StepReject::CellNotRecognized);
-        refused(&cell, &both, 13.6, 46.0, 0.0, StepReject::NonPositiveDt);
-        refused(&cell, &both, f64::NAN, 46.0, 0.0, StepReject::NonFiniteInput);
-        // The range of each input is named before the pairing of two.
-        let mut aged = start;
-        aged.capacity_ah = 4.16;
-        refused(&cell, &aged, 13.6, 45.9, 1.0, StepReject::CurrentOutsideCard);
-        let mut mean_and_charge = rested(&cell, 0.0, 4.5);
-        mean_and_charge.current_mean_a = 9.0;
-        refused(&cell, &mean_and_charge, 9.0, 25.0, 1.0, StepReject::SustainedCurrentOutsideCard);
+        refused(&cell, &both, 1.0, -300.0, 1.0, StepReject::CellNotRecognized);
+        refused(&cell, &both, 1.0, -300.0, 0.0, StepReject::NonPositiveDt);
+        refused(&cell, &both, f64::NAN, -300.0, 0.0, StepReject::NonFiniteInput);
     }
 
-    /// The edges of the declared range are on the card.
+    /// Through engine 0.9.0 each edge of the compared range was a refusal.
+    /// Past each, the step lands with the flag and the ledger closes: a
+    /// capacity, a case temperature and a current past the compared, a
+    /// capacity that no block held at that temperature, a jump and a span of
+    /// case temperature past the scored, and a state of charge past 1.02.
+    #[test]
+    fn past_each_edge_of_the_compared_range_a_step_lands_with_the_flag() {
+        let cell = Cell2170Model3::cell();
+        let start = rested(&cell, 0.8, 4.5);
+        for capacity_ah in [4.1, 4.75, next_down(4.16), next_up(4.70), 3.0, 2.0, 5.0] {
+            flagged(&cell, &rested(&cell, 0.8, capacity_ah), 1.0, 25.0);
+        }
+        for case_c in [-13.0, 46.0, next_down(-12.9), next_up(45.9), -20.0, -40.0, 60.0] {
+            flagged(&cell, &rested(&cell, 0.8, 4.25), 1.0, case_c);
+        }
+        for current_a in [13.6, -14.0, next_up(13.524), next_down(-13.984), 20.0, -13.99] {
+            flagged(&cell, &rested(&cell, 0.5, 4.5), current_a, 25.0);
+        }
+        // A capacity outside the band compared at the case temperature: a
+        // new cell in the cold, an aged cell when warm.
+        for (capacity_ah, case_c) in [(4.70, -12.9), (4.16, 45.9), (4.6768, 25.0), (4.5, 10.0), (4.32, 25.0)] {
+            flagged(&cell, &rested(&cell, 0.8, capacity_ah), 1.0, case_c);
+        }
+        // A start above 1.02, the compared, inside the curves.
+        flagged(&cell, &rested(&cell, 1.03, 4.5), 1.0, 25.0);
+        // A jump of case temperature past 5.4 K, and a span past 19.2 K.
+        let mut state = rested(&cell, 0.8, 4.25);
+        let mut frame = blank_frame();
+        step(&cell, &mut state, &mut frame, load(1.0, 10.0), 1.0).unwrap();
+        assert_eq!(frame.flags, 0);
+        flagged(&cell, &state, 1.0, next_up(15.4));
+        flagged(&cell, &state, 1.0, next_down(4.6));
+        let continued = state.with_case_span(&cell, 0.0, 18.0).unwrap();
+        flagged(&cell, &continued, 1.0, 22.0);
+        // Inside the reach, no flag.
+        let mut on = continued;
+        step(&cell, &mut on, &mut frame, load(1.0, 14.0), 1.0).unwrap();
+        assert_eq!(frame.flags, 0);
+    }
+
+    /// The edges of the compared range are on it: a step there lands with no flag.
     #[test]
     fn a_step_at_each_edge_of_the_range_lands() {
         let cell = Cell2170Model3::cell();
@@ -2811,20 +2918,24 @@ mod tests {
                         Ok(()),
                         "{block} {capacity_ah} {case_c}"
                     );
+                    assert_eq!(frame.flags, 0);
                 }
             }
         }
     }
 
-    /// A discharge held at 9 A lands until the running mean of the current
-    /// passes 8.722 A, and is flagged from the step on which it passes 4.6 A.
+    /// A discharge held at 9 A is flagged from the step on which the running
+    /// mean passes 4.6 A, and as outside the compared runs from the step on
+    /// which it passes 8.722 A, the largest scored; it lands every step, the
+    /// ledger closing, until 2.8 V stops it by name.
     #[test]
-    fn a_held_nine_amperes_is_flagged_and_then_refused_when_the_running_mean_passes_its_limit() {
+    fn a_held_nine_amperes_is_flagged_past_the_scored_mean_and_runs_to_the_lower_limit() {
         let cell = Cell2170Model3::cell();
         let mut state = rested(&cell, 1.0, 4.5006);
         let mut frame = blank_frame();
         let mut landed = 0;
         let mut first_flagged = 0;
+        let mut first_outside = 0;
         let reject = loop {
             let before = state;
             let frame_before = frame.to_bytes();
@@ -2835,14 +2946,19 @@ mod tests {
                     assert!(abs_f64(state.current_mean_a - plain) < 1.0e-12);
                     assert_eq!(frame.force_torque, state.current_mean_a as f32);
                     assert_eq!(state.sustained_above_1c, state.current_mean_a > 4.6);
+                    let outside = state.current_mean_a > 8.722;
                     assert_eq!(
                         frame.flags,
-                        if state.sustained_above_1c { FLAG_SUSTAINED_ABOVE_1C } else { 0 }
+                        (if state.sustained_above_1c { FLAG_SUSTAINED_ABOVE_1C } else { 0 })
+                            | (if outside { FLAG_OUTSIDE_COMPARED_RUNS } else { 0 })
                     );
                     if state.sustained_above_1c && first_flagged == 0 {
                         first_flagged = landed;
                     }
-                    assert!(state.current_mean_a <= 8.722);
+                    if outside && first_outside == 0 {
+                        first_outside = landed;
+                    }
+                    assert!(state.residual_conservation_error <= RESIDUAL_CONSERVATION_LIMIT);
                 }
                 Err(reject) => {
                     assert_eq!(state_bits(&state), state_bits(&before));
@@ -2850,29 +2966,31 @@ mod tests {
                     break reject;
                 }
             }
-            assert!(landed < 1000);
+            assert!(landed < 5000);
         };
-        assert_eq!(reject, StepReject::SustainedCurrentOutsideCard);
+        assert_eq!(reject, StepReject::UndervoltageLimit);
         // 9 (1 - exp(-t / 60)) passes 4.6 at 42.9 s and 8.722 at 208.6 s.
         assert_eq!(first_flagged, 43);
-        assert_eq!(landed, 208);
+        assert_eq!(first_outside, 209);
+        assert!(landed > 209, "{landed}");
         proof_intact(&frame);
 
-        // Charging: a held 3.2 A of charge passes 2.993 A at 164.3 s.
+        // Charging: a held 3.2 A of charge passes 2.993 A at 164.3 s and runs
+        // on, flagged, to 4.242 V.
         let mut state = rested(&cell, 0.3, 4.5006);
         let mut landed = 0;
         let reject = loop {
             match step(&cell, &mut state, &mut frame, load(-3.2, 25.0), 1.0) {
                 Ok(()) => {
                     landed += 1;
-                    assert_eq!(frame.flags, 0);
+                    assert_eq!(frame.flags == FLAG_OUTSIDE_COMPARED_RUNS, landed > 164, "{landed}");
                 }
                 Err(reject) => break reject,
             }
-            assert!(landed < 1000);
+            assert!(landed < 10_000);
         };
-        assert_eq!(reject, StepReject::SustainedCurrentOutsideCard);
-        assert_eq!(landed, 164);
+        assert!(reject == StepReject::OvervoltageLimit || reject == StepReject::SurfaceOutsideCurve, "{reject:?}");
+        assert!(landed > 164);
         // A discharge at the rated current never reaches the flag.
         let mut state = rested(&cell, 1.0, 4.5006);
         for _ in 0..1000 {
@@ -2884,16 +3002,15 @@ mod tests {
 
     // ---- the ends of the state of charge ----------------------------------------
 
-    /// A run or a single step whose end in decimal is exactly 1.02 or 0
-    /// lands its last step: the state of charge is a running sum, and its
-    /// comparison with each end carries the published rounding allowance. The
-    /// value is not pulled back. A step that would end farther than the
-    /// allowance past either end is refused by name.
+    /// A run whose end in decimal is exactly 1.02, the top of the compared
+    /// starts, lands every step and the step past it lands with the flag;
+    /// charging on, the card stops by name at a limit of its own. A single
+    /// first step whose end in decimal is exactly 0 lands, and so does the
+    /// next, below 0: the card's ends are the curves' -0.05 and 1.05. A
+    /// state of charge past those ends by more than the allowance is refused.
     #[test]
-    fn a_run_or_a_single_step_ending_exactly_on_either_end_of_the_charge_lands() {
+    fn a_run_past_the_compared_charge_lands_and_stops_at_the_cards_own_limits() {
         let cell = Cell2170Model3::cell();
-        // 160 s at 0.225 A of charge from 1.0177777777777777 of 4.5 Ah ends in
-        // decimal on 1.02. Before the allowance this run lost its last step.
         let mut state = rested(&cell, 1.0177777777777777, 4.5);
         let mut frame = blank_frame();
         for index in 0..160 {
@@ -2905,36 +3022,43 @@ mod tests {
             );
         }
         let past = state.state_of_charge - STATE_OF_CHARGE_MAX;
-        std::println!("run to 1.02 ends at {:e} past it", past);
         assert!(abs_f64(past) <= STATE_OF_CHARGE_ALLOWANCE_PER_STEP * (160.0 + 2.0));
-        assert!(past > 0.0, "{past:e}");
-        // Restarted as a rested cell, that value is past the published end and builds no state.
-        assert!(CellState::try_rested(&cell, 80.0, state.state_of_charge, 4.5).is_none());
-        // One more step of charge is past the allowance.
-        let before = state;
-        assert_eq!(
-            step(&cell, &mut state, &mut frame, load(-0.225, 25.0), 1.0),
-            Err(StepReject::StateOfChargeOutsideCard)
+        // Restarted as a rested cell, that value is inside the curves.
+        assert!(CellState::try_rested(&cell, 80.0, state.state_of_charge, 4.5).is_some());
+        let mut landed = 0;
+        let reject = loop {
+            let before = state;
+            match step(&cell, &mut state, &mut frame, load(-0.225, 25.0), 1.0) {
+                Ok(()) => {
+                    landed += 1;
+                    if state.state_of_charge > STATE_OF_CHARGE_MAX + 1.0e-12 {
+                        assert_eq!(frame.flags & FLAG_OUTSIDE_COMPARED_RUNS, FLAG_OUTSIDE_COMPARED_RUNS);
+                    }
+                    assert!(state.residual_conservation_error <= RESIDUAL_CONSERVATION_LIMIT);
+                }
+                Err(reject) => {
+                    assert_eq!(state_bits(&state), state_bits(&before));
+                    break reject;
+                }
+            }
+            assert!(landed < 100_000);
+        };
+        assert!(
+            reject == StepReject::OvervoltageLimit || reject == StepReject::SurfaceOutsideCurve,
+            "{reject:?}"
         );
-        assert_eq!(state_bits(&state), state_bits(&before));
+        assert!(state.state_of_charge <= 1.05 + 1.0e-9);
 
-        // A single first step that ends in decimal on 0: 1.215 A for 1 s from
-        // 0.000075 of 4.5 Ah. In binary it lands 1.36e-20 below 0.
+        // A single first step that ends in decimal on 0, and one more below it.
         let start = rested(&cell, 0.000075, 4.5);
-        let landing = start.state_of_charge - 1.215 / (SECONDS_PER_HOUR * 4.5);
-        assert!(landing < 0.0, "the sum must round past the end for this test");
         let mut state = start;
-        let outcome = step(&cell, &mut state, &mut frame, load(1.215, 25.0), 1.0);
-        std::println!("single step to 0: {outcome:?} at {:e}, {} V", state.state_of_charge, state.terminal_v);
-        assert_eq!(outcome, Ok(()));
-        assert!(abs_f64(state.state_of_charge) <= 3.0 * STATE_OF_CHARGE_ALLOWANCE_PER_STEP);
-        // A second step of the same current is far past 0.
-        assert_eq!(
-            step(&cell, &mut state, &mut frame, load(1.215, 25.0), 1.0),
-            Err(StepReject::StateOfChargeOutsideCard)
-        );
-        // The allowance grows with the steps of the run and stays far below
-        // any physical amount: 2.2e-10 after 1,000,000 steps.
+        let first = step(&cell, &mut state, &mut frame, load(1.215, 25.0), 1.0);
+        // At 0 the cell is under 2.8 V at 1.215 A, or the step lands.
+        assert!(first == Ok(()) || first == Err(StepReject::UndervoltageLimit), "{first:?}");
+        assert!(CellState::try_rested(&cell, 80.0, -0.05, 4.5).is_some());
+        assert!(CellState::try_rested(&cell, 80.0, 1.05, 4.5).is_some());
+        assert!(CellState::try_rested(&cell, 80.0, next_down(-0.05), 4.5).is_none());
+        assert!(CellState::try_rested(&cell, 80.0, next_up(1.05), 4.5).is_none());
         assert_eq!(STATE_OF_CHARGE_ALLOWANCE_PER_STEP.to_bits(), (2.0_f64).powi(-52).to_bits());
         assert_eq!(STATE_OF_CHARGE_ALLOWANCE_EXTRA_STEPS, 2.0);
         assert!(STATE_OF_CHARGE_ALLOWANCE_PER_STEP * 1.0e6 < 2.3e-10);
@@ -2942,13 +3066,13 @@ mod tests {
 
     // ---- case temperature through a run ----------------------------------------
 
-    /// A change of case temperature between two steps of more than 5.4 K is
-    /// refused by name, and so is a span since the rested start of more than
-    /// 19.2 K. The first step has no last step to differ from.
+    /// The card is given the case temperature and computes at any sequence of
+    /// it. A run that jumps 30 K and spans 50 K lands every step with the
+    /// flag and closes its ledger; inside the scored jump and span no flag
+    /// is set. The first step has no last step to differ from.
     #[test]
-    fn a_jump_or_a_span_of_case_temperature_beyond_what_was_scored_is_refused_by_name() {
+    fn a_jump_or_a_span_of_case_temperature_beyond_what_was_scored_lands_with_the_flag() {
         let cell = Cell2170Model3::cell();
-        // 4.25 Ah is in the bands of the -10, 0 and 10 degC blocks: -12.9 to 26.8 degC.
         for first_c in [-12.9, 0.0, 26.8] {
             let mut state = rested(&cell, 0.8, 4.25);
             let mut frame = blank_frame();
@@ -2957,37 +3081,25 @@ mod tests {
                 (state.case_temperature_least_c, state.case_temperature_most_c),
                 (first_c, first_c)
             );
+            assert_eq!(frame.flags, 0);
         }
         let mut state = rested(&cell, 0.8, 4.25);
         let mut frame = blank_frame();
-        assert_eq!((state.case_temperature_least_c, state.case_temperature_most_c), (0.0, 0.0));
         step(&cell, &mut state, &mut frame, load(1.0, 10.0), 1.0).unwrap();
-        refused(&cell, &state, 1.0, next_up(15.4), 1.0, StepReject::CaseTemperatureChangeAboveCard);
-        refused(&cell, &state, 1.0, next_down(4.6), 1.0, StepReject::CaseTemperatureChangeAboveCard);
-        refused(&cell, &state, 1.0, -12.9, 1.0, StepReject::CaseTemperatureChangeAboveCard);
-        // The range of each input is named first.
-        refused(&cell, &state, 1.0, 46.0, 1.0, StepReject::CaseTemperatureOutsideCard);
-        step(&cell, &mut state, &mut frame, load(1.0, 15.4), 1.0).unwrap();
-        // Up to 19.2 K above the least, in steps of at most 5.4 K.
-        for case_c in [10.0, 4.6, 0.0, 5.4, 10.8, 16.2, 19.2] {
+        for case_c in [15.4, 10.0, 4.6, 0.0, 5.4, 10.8, 16.2, 19.2] {
             step(&cell, &mut state, &mut frame, load(1.0, case_c), 1.0).unwrap();
+            assert_eq!(frame.flags, 0, "{case_c}");
         }
         assert_eq!((state.case_temperature_least_c, state.case_temperature_most_c), (0.0, 19.2));
-        refused(&cell, &state, 1.0, next_up(19.2), 1.0, StepReject::CaseTemperatureSpanAboveCard);
-        step(&cell, &mut state, &mut frame, load(1.0, 14.0), 1.0).unwrap();
-        step(&cell, &mut state, &mut frame, load(1.0, 9.0), 1.0).unwrap();
-        step(&cell, &mut state, &mut frame, load(1.0, 4.0), 1.0).unwrap();
-        step(&cell, &mut state, &mut frame, load(1.0, 0.0), 1.0).unwrap();
-        refused(&cell, &state, 1.0, -0.001, 1.0, StepReject::CaseTemperatureSpanAboveCard);
-        // A run of 300 s at -12.9 degC, then 45.9 degC.
-        let mut state = rested(&cell, 0.6, 4.16);
-        for _ in 0..300 {
-            step(&cell, &mut state, &mut frame, load(2.0, -12.9), 1.0).unwrap();
+        let mut worst = 0.0_f64;
+        for case_c in [-10.8, 19.2, 40.0, -10.0, 0.0, 30.0] {
+            step(&cell, &mut state, &mut frame, load(1.0, case_c), 1.0).unwrap();
+            assert_eq!(frame.flags & FLAG_OUTSIDE_COMPARED_RUNS, FLAG_OUTSIDE_COMPARED_RUNS, "{case_c}");
+            worst = worst.max(state.residual_conservation_error);
         }
-        let mut aged = state;
-        aged.capacity_ah = 4.60;
-        refused(&cell, &aged, 2.0, 45.9, 1.0, StepReject::CaseTemperatureChangeAboveCard);
-        // The scored extremes are on the card.
+        assert!(worst <= RESIDUAL_CONSERVATION_LIMIT);
+        assert_eq!((state.case_temperature_least_c, state.case_temperature_most_c), (-10.8, 40.0));
+        // The scored extremes are the edges of the flag.
         assert!(5.022600000000072 <= CASE_TEMPERATURE_CHANGE_MAX_K);
         assert!(18.8107 <= CASE_TEMPERATURE_SPAN_MAX_K);
     }
@@ -2995,13 +3107,13 @@ mod tests {
     /// The span depends on every case temperature since the rested start, so a run continued
     /// from a returned state carries the least and the most case temperature of the run so far.
     /// A fresh start that states both equal to its first case temperature is the rested start,
-    /// to the bit. A continuation that carries the span is refused where the whole run would
-    /// pass 19.2 K; restarting without it would have evaded the limit. A carried span that is
-    /// off the card, reversed or wider than 19.2 K is no start.
+    /// to the bit. A continuation that carries the span is flagged where the whole run would
+    /// pass 19.2 K; restarting without it would not be. A carried span that is inverted, not
+    /// finite or at or below absolute zero is no start, and a handed-in inverted span is
+    /// refused by name.
     #[test]
-    fn a_continued_run_carries_its_case_temperature_span_and_cannot_evade_the_limit() {
+    fn a_continued_run_carries_its_case_temperature_span() {
         let cell = Cell2170Model3::cell();
-        // A fresh start stating its first case temperature is the rested start.
         let plain = rested(&cell, 0.8, 4.25);
         assert!(!plain.case_span_known);
         let stated = plain.with_case_span(&cell, 10.0, 10.0).expect("a fresh start");
@@ -3014,7 +3126,6 @@ mod tests {
         }
         assert_eq!(a, b);
         assert_eq!(fa.to_bytes(), fb.to_bytes());
-        // A run from 0 to 18 degC, then handed back.
         let mut state = rested(&cell, 0.8, 4.25);
         let mut frame = blank_frame();
         for case_c in [0.0, 4.5, 9.0, 13.5, 18.0] {
@@ -3022,31 +3133,106 @@ mod tests {
         }
         assert_eq!((state.case_temperature_least_c, state.case_temperature_most_c), (0.0, 18.0));
         let returned = CellState::try_rested(&cell, 80.0, state.state_of_charge, 4.25).unwrap();
-        // Without the carried span, 22 degC after a restart is inside its new span of 0 K.
-        let mut evading = returned;
-        assert_eq!(step(&cell, &mut evading, &mut blank_frame(), load(1.0, 22.0), 1.0), Ok(()));
-        // Carrying it, the whole run would span 22 K, and the step is refused by name.
+        let mut fresh = returned;
+        let mut fresh_frame = blank_frame();
+        step(&cell, &mut fresh, &mut fresh_frame, load(1.0, 22.0), 1.0).unwrap();
+        assert_eq!(fresh_frame.flags, 0);
         let continued = returned.with_case_span(&cell, 0.0, 18.0).expect("a carried span");
-        refused(&cell, &continued, 1.0, 22.0, 1.0, StepReject::CaseTemperatureSpanAboveCard);
-        refused(&cell, &continued, 1.0, next_up(19.2), 1.0, StepReject::CaseTemperatureSpanAboveCard);
-        refused(&cell, &continued, 1.0, -1.3, 1.0, StepReject::CaseTemperatureSpanAboveCard);
-        // Inside the carried span's reach it lands, and the span goes on from there.
+        flagged(&cell, &continued, 1.0, 22.0);
+        flagged(&cell, &continued, 1.0, -1.3);
         let mut on = continued;
-        assert_eq!(step(&cell, &mut on, &mut blank_frame(), load(1.0, 19.2), 1.0), Ok(()));
+        step(&cell, &mut on, &mut blank_frame(), load(1.0, 19.2), 1.0).unwrap();
         assert_eq!((on.case_temperature_least_c, on.case_temperature_most_c), (0.0, 19.2));
-        // A carried span off the card, reversed, or wider than the limit is no start.
-        assert!(returned.with_case_span(&cell, next_down(CASE_TEMPERATURE_MIN_C), 0.0).is_none());
-        assert!(returned.with_case_span(&cell, 40.0, next_up(CASE_TEMPERATURE_MAX_C)).is_none());
+        // Any carried span above absolute zero that is not inverted is a start.
+        assert!(returned.with_case_span(&cell, -40.0, 0.0).is_some());
+        assert!(returned.with_case_span(&cell, 0.0, 80.0).is_some());
         assert!(returned.with_case_span(&cell, 10.0, 9.0).is_none());
-        assert!(returned.with_case_span(&cell, 0.0, next_up(19.2)).is_none());
+        assert!(returned.with_case_span(&cell, -273.15, 0.0).is_none());
         assert!(returned.with_case_span(&cell, f64::NAN, 0.0).is_none());
-        assert!(returned.with_case_span(&cell, 0.0, 19.2).is_some());
-        assert!(returned.with_case_span(&cell, CASE_TEMPERATURE_MIN_C, CASE_TEMPERATURE_MIN_C).is_some());
-        // A handed-in state whose carried span is reversed is refused by name.
+        // A handed-in state whose carried span is inverted is refused by name.
         let mut forged = continued;
         forged.case_temperature_least_c = 18.0;
         forged.case_temperature_most_c = 0.0;
-        refused(&cell, &forged, 1.0, 9.0, 1.0, StepReject::CaseTemperatureSpanAboveCard);
+        refused(&cell, &forged, 1.0, 9.0, 1.0, StepReject::CaseTemperatureSpanInverted);
+    }
+
+    /// Outside the compared case temperatures the card runs whole
+    /// discharges: a third of the capacity per hour at -20 and -40 degC, and
+    /// at 55 degC, each landing every step with the flag and the ledger
+    /// closing, to 2.8 V; colder, the cell reaches 2.8 V sooner, at -40 degC
+    /// within seconds, its resistances grown by the Arrhenius laws. A falsified
+    /// ledger is refused there by name as it is inside the range.
+    #[test]
+    fn whole_discharges_outside_the_compared_temperatures_close_the_ledger() {
+        let cell = Cell2170Model3::cell();
+        let mut seconds = std::vec::Vec::new();
+        for case_c in [55.0, -20.0, -40.0] {
+            let mut state = rested(&cell, 1.0, 4.2);
+            let mut frame = blank_frame();
+            let mut landed = 0u32;
+            let mut worst = 0.0_f64;
+            let reject = loop {
+                let before = state_bits(&state);
+                match step(&cell, &mut state, &mut frame, load(1.4, case_c), 1.0) {
+                    Ok(()) => {
+                        landed += 1;
+                        assert_eq!(frame.flags & FLAG_OUTSIDE_COMPARED_RUNS, FLAG_OUTSIDE_COMPARED_RUNS);
+                        worst = worst.max(state.residual_conservation_error);
+                        if landed == 5 {
+                            let mut forged = state;
+                            forged.heat_j += 1.0;
+                            refused(&cell, &forged, 1.4, case_c, 1.0, StepReject::SpontaneousGeneration);
+                            let mut forged = state;
+                            forged.heat_j -= 1.0;
+                            refused(&cell, &forged, 1.4, case_c, 1.0, StepReject::FirstLawBreach);
+                        }
+                    }
+                    Err(reject) => {
+                        assert_eq!(state_bits(&state), before);
+                        break reject;
+                    }
+                }
+                assert!(landed < 20_000);
+            };
+            assert_eq!(reject, StepReject::UndervoltageLimit, "{case_c}");
+            assert!(landed > 5, "{case_c} {landed}");
+            assert!(worst <= RESIDUAL_CONSERVATION_LIMIT, "{case_c} {worst:e}");
+            seconds.push(landed);
+        }
+        assert!(seconds[0] > seconds[1] && seconds[1] > seconds[2], "{seconds:?}");
+    }
+
+    /// The two served models of cell m80 on one discharge: from the recharge
+    /// of the 10 degC block, 4.2661 Ah, at 1.5 A for 600 s with the case at
+    /// 12 degC, `cell_2170_m80` gives 3.934 V and this card 3.917 V, 17.4 mV
+    /// apart. Both descriptions state it.
+    #[test]
+    fn the_two_models_of_cell_m80_are_18_mv_apart_on_one_discharge() {
+        use crate::cell_2170_m80 as tables;
+        let cell = Cell2170Model3::cell();
+        let mut state = rested(&cell, 1.0, 4.2661);
+        let mut frame = blank_frame();
+        for _ in 0..600 {
+            step(&cell, &mut state, &mut frame, load(1.5, 12.0), 1.0).unwrap();
+        }
+        let table_cell = tables::Cell2170M80::cell();
+        let mut table_state = tables::CellState::try_start(&table_cell, 10.0, 0.0).unwrap();
+        let mut table_frame = blank_frame();
+        for _ in 0..600 {
+            tables::step(
+                &table_cell,
+                &mut table_state,
+                &mut table_frame,
+                tables::CellLoad { current_a: -1.5, case_temperature_c: 12.0 },
+                1.0,
+            )
+            .unwrap();
+        }
+        std::println!("model3 {} V, m80 {} V", state.terminal_v, table_state.terminal_v);
+        assert!(abs_f64(table_state.terminal_v - 3.934) < 0.0005, "{}", table_state.terminal_v);
+        assert!(abs_f64(state.terminal_v - 3.917) < 0.0005, "{}", state.terminal_v);
+        let apart_mv = 1000.0 * (table_state.terminal_v - state.terminal_v);
+        assert!(apart_mv > 17.35 && apart_mv < 17.45, "{apart_mv}");
     }
 
     // ---- rest ---------------------------------------------------------------
@@ -3179,12 +3365,10 @@ mod tests {
         let cell = Cell2170Model3::cell();
         let mut state = rested(&cell, 1.0, 4.6768);
         let mut frame = blank_frame();
-        let before = state;
-        assert_eq!(
-            step(&cell, &mut state, &mut frame, load(4.5, 25.0), 1.0),
-            Err(StepReject::CapacityOutsideCardAtTemperature)
-        );
-        assert_eq!(state_bits(&state), state_bits(&before));
+        let mut probe = state;
+        step(&cell, &mut probe, &mut frame, load(4.5, 25.0), 1.0).unwrap();
+        assert_eq!(frame.flags & FLAG_OUTSIDE_COMPARED_RUNS, FLAG_OUTSIDE_COMPARED_RUNS);
+        let mut frame = blank_frame();
         let mut voltages = Vec::new();
         let mut largest_residual = 0.0;
         let reject = loop {
@@ -3194,7 +3378,8 @@ mod tests {
                     if state.residual_conservation_error > largest_residual {
                         largest_residual = state.residual_conservation_error;
                     }
-                    assert_eq!(frame.flags, 0);
+                    // a new cell at 25 degC, which no block measured
+                    assert_eq!(frame.flags, FLAG_OUTSIDE_COMPARED_RUNS);
                 }
                 Err(reject) => break reject,
             }
@@ -3505,10 +3690,8 @@ mod tests {
         let start = rested(&cell, 0.7, 4.5);
         let honest = integrate(&cell, &start, load(1.0, 25.0), 1.0).unwrap();
         let cases = [
-            (Trial { current_mean_a: 8.723, ..honest }, StepReject::SustainedCurrentOutsideCard),
-            (Trial { current_mean_a: -2.994, ..honest }, StepReject::SustainedCurrentOutsideCard),
-            (Trial { state_of_charge: -0.001, ..honest }, StepReject::StateOfChargeOutsideCard),
-            (Trial { state_of_charge: 1.021, ..honest }, StepReject::StateOfChargeOutsideCard),
+            (Trial { state_of_charge: -0.051, ..honest }, StepReject::StateOfChargeOutsideCard),
+            (Trial { state_of_charge: 1.051, ..honest }, StepReject::StateOfChargeOutsideCard),
             (Trial { surface_state_of_charge: -0.051, ..honest }, StepReject::SurfaceOutsideCurve),
             (Trial { surface_state_of_charge: 1.051, ..honest }, StepReject::SurfaceOutsideCurve),
             (Trial { terminal_v: 2.79, ..honest }, StepReject::UndervoltageLimit),
@@ -3645,8 +3828,8 @@ mod tests {
             assert_eq!(frame.proof, proof);
         }
         assert_eq!(
-            step(&cell, &mut state, &mut frame, load(4.5, 60.0), 1.0),
-            Err(StepReject::CaseTemperatureOutsideCard)
+            step(&cell, &mut state, &mut frame, load(4.5, -274.0), 1.0),
+            Err(StepReject::CaseTemperatureBelowAbsoluteZero)
         );
         assert_eq!(frame.proof, proof);
         // What a landed step writes.
@@ -3686,7 +3869,7 @@ mod tests {
     /// checked, a shorter step gave the one-second answer to within 0.3 mV, as
     /// the study found (0.25 mV at 0.1 s and 0.10 mV at 0.5 s on case A). Where
     /// the current reverses it does not: the second of the reversal differs by
-    /// 49 mV in the reversal that was checked, which is why nothing shorter
+    /// 49 mV in the reversal that was compared, which is why nothing shorter
     /// than a second is served.
     #[test]
     fn the_step_is_one_second_because_a_shorter_step_changes_the_answer_where_the_current_reverses() {
@@ -3761,4 +3944,41 @@ mod tests {
     /// The difference in the second of the reversal at 4.25 Ah, 0 degC.
     const REVERSAL_ON_CARD_MV: f64 = 48.973;
 
+    /// The red team's rest of engine 0.13.0 (D1): cell m80 from full at its
+    /// reference capacity, 600 s at 4.5 A and then the 3600 s at zero current
+    /// at 40 degC that both m80 couplings require. As the cell rests, each
+    /// diffusion mode's lag decays toward zero; computed as it is, the fastest
+    /// modes fall under the smallest normal number and the last of them stops
+    /// at 5e-324, the smallest subnormal, which the decay's rounding never
+    /// takes lower. Each such value lands as zero with its sign: every landed
+    /// state is normal or zero, that lag ends at +0, and each step's frame
+    /// is the computed step's.
+    #[test]
+    fn a_lag_under_the_smallest_normal_number_lands_as_zero_through_the_couplings_rest() {
+        let cell = Cell2170Model3::cell();
+        let mut state = rested(&cell, 1.0, 4.67683635335689).with_case_span(&cell, 40.0, 40.0).unwrap();
+        let mut frame = blank_frame();
+        let mut written = 0;
+        for second in 0..4200 {
+            let current_a = if second < 600 { 4.5 } else { 0.0 };
+            let mut computed = state;
+            let mut frame_computed = frame;
+            step_as_computed(&cell, &mut computed, &mut frame_computed, load(current_a, 40.0), 1.0).unwrap();
+            step(&cell, &mut state, &mut frame, load(current_a, 40.0), 1.0).unwrap();
+            let mut held = computed;
+            normal_or_zero_state(&mut held);
+            assert_eq!(held, state, "second {second}");
+            assert_eq!(frame.to_bytes(), frame_computed.to_bytes(), "second {second}");
+            if computed != state {
+                written += 1;
+            }
+            let mut again = state;
+            normal_or_zero_state(&mut again);
+            assert_eq!(again, state, "second {second}: a subnormal number landed");
+        }
+        assert!(written > 0);
+        // The red team's diffusion_lag_3, 5e-324 as computed, is +0.
+        assert_eq!(state.diffusion_lag[3].to_bits(), 0, "{:?}", state.diffusion_lag);
+        assert!(state.residual_conservation_error <= RESIDUAL_CONSERVATION_LIMIT);
+    }
 }

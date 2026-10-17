@@ -9,7 +9,7 @@
 use serde_json::{Value, json};
 
 use crate::view::View;
-use crate::{descriptor, new_gateway_state, verify_step};
+use crate::{compute_step, descriptor, new_gateway_state};
 
 /// `(domain, card, load key, component of the load vector or none)`.
 const CARDS: [(&str, &str, &str, bool); 6] = [
@@ -33,7 +33,7 @@ async fn refused_by_the_load_rule(card: &(&str, &str, &str, bool), base: &Value,
     let mut request = base.clone();
     request["parameters"]["dt_s"] = json!(dt_s);
     request["parameters"][card.2] = if card.3 { json!([load, 0.0, 0.0]) } else { json!(load) };
-    match verify_step(&new_gateway_state(), request).await {
+    match compute_step(&new_gateway_state(), request).await {
         Ok(_) => false,
         Err(error) => error.message().contains("Nyquist"),
     }
@@ -49,7 +49,7 @@ async fn the_door_applies_the_rule_the_description_states_on_six_cards() {
         let limit = published_constant(rule);
         let floor = description["dt_s"]["floor_s"].as_f64().unwrap();
         let ceiling = description["dt_s"]["ceiling_s"].as_f64().unwrap();
-        let base = description["example_verify_step"].clone();
+        let base = description["example_compute_step"].clone();
         let mut windows = 0;
         for k in 0..24 {
             // From just over the floor to just under the ceiling, geometrically.

@@ -29,10 +29,12 @@
 //! energy released  dE/dt = P
 //! ```
 //!
-//! `ρ_0` is a step at time zero; `v` is the coolant velocity through the
-//! core. Both are the load, recorded by the first landed step and held: a
-//! later step with another reactivity or another flow is refused by name.
-//! `θ_i` and the system pressure are the start. T are rises above `θ_i`.
+//! `ρ_0` is a step at time zero, recorded by the first landed step and held:
+//! a later step with another reactivity is refused by name. `v` is the
+//! coolant velocity through the core, the load of each step: a step may carry
+//! another flow than the one before, and `H`, the sweep `2 v / L`, `S` and
+//! `S_h` are each taken at that step's flow. `θ_i` and the system pressure are
+//! the start. T are rises above `θ_i`.
 //! `R_w` is the integral of the measured isothermal temperature coefficient
 //! `a(T)`: 1.8 cents/degC to 37.78 degC (IDO-16918 Table I at 20 degC;
 //! IDO-17138 Table B-1, −1.0 cent/degF at 100 degF), then straight to 5.76
@@ -59,18 +61,42 @@
 //! and neutrons put into the water. The held-back comparison missed its
 //! marks; `RESULT.md` of the research record states by how much.
 //!
-//! The card leaves out boiling, void, any effect of pressure on the
-//! transient (pressure is a recorded start field held to the compared span),
-//! heat conduction within the plate, the thermocouple's response, anything
-//! after the first maximum of the hot-spot plate temperature, and any other
-//! core.
+//! The card has no boiling, no void, no melting of the plate, no pressure term
+//! (the system pressure is a start field that sets only where the water at
+//! the start boils), no heat conduction within the plate and no thermocouple
+//! response; it ends at the first maximum of the hot-spot plate temperature,
+//! and it is one core.
 //!
-//! Declared range, the span the fit and held-back rows cover: initial
+//! Compared range, the span the fit and held-back rows cover: initial
 //! temperature 21 to 36 degC; pressure 0 to 2500 psig with no flow, and flow
 //! 200 to 20,000 gpm (0.054864 to 5.4864 m/s) only at 230 psig; the
 //! reactivity of the inhour equation (with this card's `l*` and groups) for
-//! the longest and the shortest compared period: 9.3 s to 9.7 ms with no
-//! flow, 516 ms to 9.7 ms with flow. Outside it the card refuses by name.
+//! the longest and the shortest compared period: 9.3 s to 9.7 ms (0.412 to
+//! 1.305 dollars) with no flow, 516 ms to 9.7 ms (0.870 to 1.305 dollars)
+//! with flow; to the plate maximum or 200 s. Compared once with 39 held-back
+//! transients, it failed all three lines: peak power 33.3 percent, energy to
+//! peak 56.7 percent, plate surface temperature rise 71.0 percent (pass line
+//! 20 percent). On the held-back 1000 psig series peak power read 13.5
+//! percent, energy 11.7 percent and temperature rise 67.9 percent low: the
+//! card gives the same transient at every pressure, where the measured energy
+//! to peak doubles from 0 to 2500 psig. Where the hot-spot plate temperature
+//! has no maximum before 200 s (long periods, and flow), the comparison took
+//! the rise reached at 200 s; those 11 held-back rows read 2.2 times high on
+//! average. Flow was compared at 200 to 20,000 gpm at 230 psig only; the
+//! Dittus–Boelter term is a turbulent correlation, blended with the fitted
+//! stagnant conductance; no compared transient changed its flow. The water
+//! properties of the heat transfer are those of 25 degC. The largest energy
+//! the card reaches inside the compared range is about 58,000 MW s (53,000
+//! from 36 degC), at the slowest compared flow insertion with the most flow,
+//! by 200 s; the largest power about 1050 MW.
+//!
+//! Outside the compared range the card computes the same equations, with
+//! nothing compared: from any start of liquid water (273.15 K up to the
+//! saturation temperature of water at the system pressure, IAPWS-IF97 region
+//! 4, or the critical temperature 647.096 K above the critical pressure
+//! 22.064 MPa), at any absolute pressure above zero, any flow of zero or
+//! more, any reactivity above zero, for any time. The isothermal coefficient
+//! law holds to 204.44 degC and continues straight past it.
 //!
 //! The ledger has three balances, each closed on every step:
 //!
@@ -91,14 +117,33 @@
 //!
 //! [`ReactorSpert3Ccore::gate_dt_s`] is 0.2 l* = 0.6 ms;
 //! [`ReactorSpert3Ccore::floor_dt_s`] is 1e-9 s. The public step applies
-//! neither. `core` only, with `exp` and `log` from [`crate::math`] and `sqrt`
-//! from the platform.
+//! neither. The step applies a ceiling of its own that follows the state: at
+//! the state it starts from and at its trial end, it refuses as
+//! `DtAboveStateCeiling` a step that would advance a pole further than a step
+//! of 0.6 ms ever does inside the compared range: the growing prompt pole
+//! `(ρ_net − 1) / l*` by 0.0611 (at 1.305 dollars), the decaying prompt pole
+//! `(1 − ρ_net) / l*` by 0.5 (at −1.48 dollars net), and the thermal rates
+//! `H / C_p + H / C_w + 2 v / L`, whose sum no thermal pole is faster than,
+//! by 0.0184 (at 5.4864 m/s). Inside the compared range a step at 0.6 ms
+//! never reaches it; past it, the state ceiling binds: above about 1.31
+//! dollars net, below about −1.5 dollars net, and above about 5.5 m/s.
+//! The three phases are where a 0.6 ms step stands inside the compared range;
+//! they are not yet worked out from the step's own error. Measured with the
+//! card's own step at the state ceiling, the ledger closes on bursts to 1.5
+//! dollars and on flows to 300 m/s; on bursts of 2 dollars and more it names
+//! a step after the power peak, where the feedback turns the power faster
+//! than the prompt poles say and the decaying prompt pole carries the power's
+//! fall, and there a shorter step closes it to the plate maximum: 0.1 ms at 2
+//! dollars, 0.023 ms at 5 dollars, 0.001 ms at 30 dollars.
+//! `core` only, with `exp` and `log` from [`crate::math`] and `sqrt` from the
+//! platform.
 
 extern crate core;
 
 use core::prelude::v1::*;
 
 use crate::frame::LastStateFrame64;
+use crate::normal::{normal_or_zero, normal_or_zero_each};
 
 /// Delayed-neutron group fractions `b_i`, fractions of the total; sum 1.
 /// G. R. Keepin, Physics of Nuclear Kinetics (1965), thermal fission of U-235.
@@ -150,33 +195,56 @@ pub const STAGNANT_CONDUCTANCE_W_PER_M2_K: f64 = 6403.73;
 /// Share of fission energy deposited directly in the water, `f_w`. Fitted;
 /// an effective value (see the header).
 pub const WATER_DIRECT_HEATING_FRACTION: f64 = 0.551915;
-/// Initial temperature span, K: 21 to 36 degC, the compared rows.
+/// Compared initial temperatures, K: 21 to 36 degC. Not a limit: outside it the card computes the
+/// same equations, with nothing compared.
 pub const INITIAL_TEMPERATURE_MIN_K: f64 = 21.0 + 273.15;
 pub const INITIAL_TEMPERATURE_MAX_K: f64 = 36.0 + 273.15;
-/// System pressure span with no flow, psig: 0 to 2500.
+/// Compared system pressures with no flow, psig: 0 to 2500. Not a limit.
 pub const PRESSURE_MAX_PSIG: f64 = 2500.0;
-/// System pressure with flow, psig: 230, the one pressure at which every compared flow
-/// transient was run. The protocol's "225 to 250" counted two flow rows (03040 at 225 and 03042
-/// at 250 psig) that are on no line and were never run; the card holds to 230.
+/// System pressure of every compared flow transient, psig: 230. The protocol's "225 to 250"
+/// counted two flow rows (03040 at 225 and 03042 at 250 psig) that are on no line and were never
+/// run. Not a limit.
 pub const FLOW_PRESSURE_MIN_PSIG: f64 = 230.0;
 pub const FLOW_PRESSURE_MAX_PSIG: f64 = 230.0;
-/// Coolant velocity span with flow, m/s: 200 and 20,000 gpm at 18 ft/s per 20,000 gpm (IDO-16918
-/// p. 1), each as `gpm × (18 / 20000) × 0.3048` evaluates; the upper one is the double above 5.4864.
+/// Compared coolant velocities, m/s: 200 and 20,000 gpm at 18 ft/s per 20,000 gpm (IDO-16918
+/// p. 1), each as `gpm × (18 / 20000) × 0.3048` evaluates; the upper one is the double above
+/// 5.4864. Not a limit.
 pub const FLOW_MIN_M_PER_S: f64 = 0.054864;
 pub const FLOW_MAX_M_PER_S: f64 = 5.486400000000001;
-/// Smallest reactivity with no flow, dollars: the inhour value of 9.3 s.
+/// Smallest compared reactivity with no flow, dollars: the inhour value of 9.3 s. Not a limit.
 pub const REACTIVITY_MIN_NO_FLOW_DOLLAR: f64 = 0.4122874385206243;
-/// Smallest reactivity with flow, dollars: the inhour value of 516 ms.
+/// Smallest compared reactivity with flow, dollars: the inhour value of 516 ms. Not a limit.
 pub const REACTIVITY_MIN_FLOW_DOLLAR: f64 = 0.870348183353308;
-/// Largest reactivity, dollars: the inhour value of 9.7 ms.
+/// Largest compared reactivity, dollars: the inhour value of 9.7 ms. Not a limit.
 pub const REACTIVITY_MAX_DOLLAR: f64 = 1.3053996316244825;
-/// Power beyond which the card refuses, MW. The largest the card reaches inside its range is about 1050.
-pub const POWER_MAX_MW: f64 = 2000.0;
-/// Energy released beyond which the card refuses, MW s. A run at the slowest compared flow insertion
-/// with the most flow reaches about 53,000 by the time limit.
-pub const ENERGY_MAX_MWS: f64 = 1.0e5;
-/// Time beyond which the card refuses, s.
-pub const TIME_MAX_S: f64 = 200.0;
+/// Time to which the compared runs went where the plate temperature had no maximum before it, s.
+/// Not a limit.
+pub const COMPARED_TIME_S: f64 = 200.0;
+/// Freezing point of water, K: below it the start is not liquid water.
+pub const FREEZING_K: f64 = 273.15;
+/// One standard atmosphere, psi: the gauge pressure of absolute zero is minus this.
+pub const ATMOSPHERE_PSI: f64 = 14.6959488;
+/// One psi in MPa.
+pub const MPA_PER_PSI: f64 = 0.00689475729;
+/// Critical pressure of water, MPa (IAPWS-IF97). Above it the upper limit of a liquid start is
+/// the critical temperature.
+pub const CRITICAL_PRESSURE_MPA: f64 = 22.064;
+/// Critical temperature of water, K (IAPWS-IF97).
+pub const CRITICAL_TEMPERATURE_K: f64 = 647.096;
+/// IAPWS-IF97 region 4, the coefficients `n_1` to `n_10` of the saturation-pressure equation,
+/// read by its backward equation (eq. 31) for the saturation temperature.
+pub const SATURATION_N: [f64; 10] = [
+    0.11670521452767e4,
+    -0.72421316598320e6,
+    -0.17073846940092e2,
+    0.12020824702470e5,
+    -0.32325550322333e7,
+    0.14915108613530e2,
+    -0.48232657361591e4,
+    0.40511340542057e6,
+    -0.23855557567849,
+    0.65017534844798e3,
+];
 /// The ledger's residual must stay at or under this: 11 times the largest the card's own step
 /// left at the ceiling over the 67 fit rows run and eight runs at the corners of the range
 /// (2.24e-8, the shortest period at the most flow). It names a wrong method; it is not a bound on
@@ -184,6 +252,16 @@ pub const TIME_MAX_S: f64 = 200.0;
 pub const RESIDUAL_CONSERVATION_LIMIT: f64 = 2.5e-7;
 /// Fraction of `l*` one step at the ceiling advances.
 pub const GATE_PHASE_STEP: f64 = 0.2;
+/// The state ceiling holds each step to the phases a step at the static ceiling, 0.6 ms, reaches
+/// inside the compared range, each rounded up. Growing prompt pole `(ρ_net − 1) / l*`: 0.0611, at the
+/// largest compared reactivity, 1.305 dollars (0.0610799).
+pub const GROWTH_PHASE_STEP: f64 = 0.0611;
+/// Decaying prompt pole `(1 − ρ_net) / l*`: 0.5, at the most negative net reactivity inside the
+/// compared range, −1.48 dollars (21 degC, no flow, 1.099 dollars, at 200 s: 0.496).
+pub const DECAY_PHASE_STEP: f64 = 0.5;
+/// Plate and water heat transfer and sweep, `H / C_p + H / C_w + 2 v / L`: 0.0184, at the largest
+/// compared flow, 5.4864 m/s (30.56 per s: 0.01834).
+pub const THERMAL_PHASE_STEP: f64 = 0.0184;
 /// Smallest step the card stands behind, s.
 pub const FLOOR_DT_S: f64 = 1.0e-9;
 
@@ -203,28 +281,24 @@ pub enum StepReject {
     NonPositiveDt,
     /// A recorded constant is not this reactor's.
     InvalidCard,
-    /// The initial temperature is outside the compared 21 to 36 degC.
-    InitialTemperatureOutsideCard,
-    /// The system pressure is outside the compared 0 to 2500 psig.
-    PressureOutsideCard,
-    /// The coolant flow is outside the compared: none, or 200 to 20,000 gpm (0.054864 to 5.4864 m/s) at 230 psig only.
-    FlowOutsideCard,
-    /// The reactivity is outside the compared: the inhour values of 9.3 s to 9.7 ms with no flow, 516 ms to 9.7 ms with flow.
-    ReactivityOutsideCard,
+    /// The system pressure is at or below absolute zero: a gauge pressure at or below −14.6959488 psig.
+    PressureNotPositive,
+    /// The initial temperature is not that of liquid water at the system pressure: below 273.15 K, or at or above the saturation temperature of water at that pressure (IAPWS-IF97 region 4), or above the critical pressure, 22.064 MPa, at or above the critical temperature, 647.096 K.
+    InitialTemperatureNotLiquidWater,
+    /// The coolant flow is below zero.
+    NegativeFlow,
+    /// The held reactivity is zero or less: no step in reactivity is inserted, and there is no burst.
+    ReactivityNotPositive,
     /// The state is past the first maximum of the hot-spot plate temperature after the power peak; nothing after it is on the card.
     PastPlateTemperatureMaximum,
-    /// The step would end after 200 s.
-    TimeBeyondCard,
-    /// The incoming state holds an energy, a temperature rise or a precursor sum below zero, or a power not above zero.
+    /// The incoming state's clock is below zero.
+    NegativeTime,
+    /// The incoming state holds an energy, a temperature rise, a swept energy, a precursor sum or a flow below zero, or a power not above zero.
     NegativeState,
-    /// The incoming state or the trial step holds more than 1e5 MW s released.
-    EnergyBeyondCard,
-    /// The incoming state or the trial step holds a power, or a peak power, above 2000 MW.
-    PowerBeyondCard,
+    /// The step is longer than the state lets it be, at the state it starts from or at its trial end: one Runge–Kutta step would advance the growing prompt pole (net reactivity − 1) / l* by more than 0.0611 of its time constant, the decaying prompt pole (1 − net reactivity) / l* by more than 0.5, or the plate and water heat transfer and sweep by more than 0.0184.
+    DtAboveStateCeiling,
     /// The reactivity of the load is not the one of the first step of this run; a run is one step of reactivity.
     ReactivityChangedDuringRun,
-    /// The coolant flow of the load is not the one of the first step of this run; no compared test changed its flow.
-    FlowChangedDuringRun,
     /// The incoming state is not one this card writes: at time zero it is not the card's start; later, a derived field, a flag or a peak field is not what the card computes from the rest of the state.
     InconsistentState,
     /// The trial step created neutrons or energy beyond what the ledger supplies.
@@ -247,11 +321,11 @@ pub struct ReactorLoad {
 pub struct ReactorSpert3Ccore {
     pub group_fraction: [f64; 6],
     pub group_decay_per_s: [f64; 6],
-    pub constants: [f64; 36],
+    pub constants: [f64; 41],
 }
 
 /// The scalar constants in one list, in the order `is_valid` and `terms` read them.
-const SCALARS: [f64; 36] = [
+const SCALARS: [f64; 41] = [
     GENERATION_TIME_REDUCED_S,
     INITIAL_POWER_MW,
     HOT_SPOT_PEAKING,
@@ -272,21 +346,26 @@ const SCALARS: [f64; 36] = [
     WATER_PRANDTL,
     STAGNANT_CONDUCTANCE_W_PER_M2_K,
     WATER_DIRECT_HEATING_FRACTION,
-    INITIAL_TEMPERATURE_MIN_K,
-    INITIAL_TEMPERATURE_MAX_K,
-    PRESSURE_MAX_PSIG,
-    FLOW_PRESSURE_MIN_PSIG,
-    FLOW_PRESSURE_MAX_PSIG,
-    FLOW_MIN_M_PER_S,
-    FLOW_MAX_M_PER_S,
-    REACTIVITY_MIN_NO_FLOW_DOLLAR,
-    REACTIVITY_MIN_FLOW_DOLLAR,
-    REACTIVITY_MAX_DOLLAR,
-    POWER_MAX_MW,
-    ENERGY_MAX_MWS,
-    TIME_MAX_S,
+    FREEZING_K,
+    ATMOSPHERE_PSI,
+    MPA_PER_PSI,
+    CRITICAL_PRESSURE_MPA,
+    CRITICAL_TEMPERATURE_K,
+    SATURATION_N[0],
+    SATURATION_N[1],
+    SATURATION_N[2],
+    SATURATION_N[3],
+    SATURATION_N[4],
+    SATURATION_N[5],
+    SATURATION_N[6],
+    SATURATION_N[7],
+    SATURATION_N[8],
+    SATURATION_N[9],
     RESIDUAL_CONSERVATION_LIMIT,
     GATE_PHASE_STEP,
+    GROWTH_PHASE_STEP,
+    DECAY_PHASE_STEP,
+    THERMAL_PHASE_STEP,
     FLOOR_DT_S,
 ];
 
@@ -310,22 +389,18 @@ const K_K_W: usize = 16;
 const K_PR_W: usize = 17;
 const K_HS: usize = 18;
 const K_FW: usize = 19;
-const K_TMIN: usize = 20;
-const K_TMAX: usize = 21;
-const K_PMAX: usize = 22;
-const K_FPMIN: usize = 23;
-const K_FPMAX: usize = 24;
-const K_VMIN: usize = 25;
-const K_VMAX: usize = 26;
-const K_RMIN0: usize = 27;
-const K_RMINF: usize = 28;
-const K_RMAX: usize = 29;
-const K_POWER_MAX: usize = 30;
-const K_ENERGY_MAX: usize = 31;
-const K_TIME_MAX: usize = 32;
-const K_RESIDUAL: usize = 33;
-const K_GATE: usize = 34;
-const K_FLOOR: usize = 35;
+const K_FREEZING: usize = 20;
+const K_ATMOSPHERE: usize = 21;
+const K_MPA_PER_PSI: usize = 22;
+const K_CRITICAL_P: usize = 23;
+const K_CRITICAL_T: usize = 24;
+const K_SATURATION: usize = 25;
+const K_RESIDUAL: usize = 35;
+const K_GATE: usize = 36;
+const K_GROWTH_PHASE: usize = 37;
+const K_DECAY_PHASE: usize = 38;
+const K_THERMAL_PHASE: usize = 39;
+const K_FLOOR: usize = 40;
 
 impl ReactorSpert3Ccore {
     /// Card: the SPERT III C-19/52 core, step transients from room temperature. No arguments.
@@ -394,7 +469,10 @@ impl ReactorSpert3Ccore {
         (c[K_HS] * c[K_HS] + forced * forced).sqrt()
     }
 
-    /// Largest step the card stands behind: `GATE_PHASE_STEP · l*`, 0.6 ms. Not applied by [`step`].
+    /// Largest step the card stands behind at every state of the compared range:
+    /// `GATE_PHASE_STEP · l*`, 0.6 ms, the time constant of the prompt pole at zero net
+    /// reactivity, where every run starts. Not applied by [`step`]. Past the compared range the
+    /// state ceiling of [`step`] binds as well (`DtAboveStateCeiling`, [`state_dt_ceiling_s`]).
     #[must_use]
     pub fn gate_dt_s(&self) -> Option<f64> {
         let l_star = self.constants[K_L_STAR];
@@ -417,35 +495,106 @@ impl ReactorSpert3Ccore {
         }
     }
 
-    /// Whether an initial temperature is in the compared span.
+    /// Absolute pressure in MPa of a gauge pressure in psig: `(psig + 14.6959488) · 0.00689475729`.
     #[must_use]
-    pub fn initial_temperature_on_card(&self, initial_temperature_k: f64) -> bool {
-        initial_temperature_k >= self.constants[K_TMIN] && initial_temperature_k <= self.constants[K_TMAX]
+    pub fn absolute_pressure_mpa(&self, system_pressure_psig: f64) -> f64 {
+        (system_pressure_psig + self.constants[K_ATMOSPHERE]) * self.constants[K_MPA_PER_PSI]
     }
 
-    /// Whether a system pressure is in the compared span.
+    /// Whether a system pressure is above absolute zero.
     #[must_use]
-    pub fn pressure_on_card(&self, system_pressure_psig: f64) -> bool {
-        system_pressure_psig >= 0.0 && system_pressure_psig <= self.constants[K_PMAX]
+    pub fn pressure_is_positive(&self, system_pressure_psig: f64) -> bool {
+        self.absolute_pressure_mpa(system_pressure_psig) > 0.0
     }
 
-    /// Whether a coolant flow was compared at this pressure.
+    /// The saturation temperature of water at a gauge pressure, K: IAPWS-IF97 region 4, backward
+    /// equation (eq. 31), with `p` in MPa absolute; at or above the critical pressure, 22.064 MPa,
+    /// the critical temperature 647.096 K. `+ − × /` and `sqrt` only. Not finite where the
+    /// equation has no real answer, at a pressure far under the triple point.
     #[must_use]
-    pub fn flow_on_card(&self, system_pressure_psig: f64, coolant_flow_m_per_s: f64) -> bool {
+    pub fn saturation_temperature_k(&self, system_pressure_psig: f64) -> f64 {
         let c = &self.constants;
-        coolant_flow_m_per_s == 0.0
-            || (coolant_flow_m_per_s >= c[K_VMIN]
-                && coolant_flow_m_per_s <= c[K_VMAX]
-                && system_pressure_psig >= c[K_FPMIN]
-                && system_pressure_psig <= c[K_FPMAX])
+        let p = self.absolute_pressure_mpa(system_pressure_psig);
+        if p >= c[K_CRITICAL_P] {
+            return c[K_CRITICAL_T];
+        }
+        let n = |i: usize| c[K_SATURATION + i - 1];
+        let beta = p.sqrt().sqrt();
+        let beta2 = beta * beta;
+        let e = beta2 + n(3) * beta + n(6);
+        let f = n(1) * beta2 + n(4) * beta + n(7);
+        let g = n(2) * beta2 + n(5) * beta + n(8);
+        let d = 2.0 * g / (-f - (f * f - 4.0 * e * g).sqrt());
+        let sum = n(10) + d;
+        (sum - (sum * sum - 4.0 * (n(9) + n(10) * d)).sqrt()) / 2.0
     }
 
-    /// Whether a reactivity was compared with this flow.
+    /// Whether a start at this temperature and gauge pressure is liquid water: at or above
+    /// 273.15 K and below the saturation temperature at that pressure (or the critical
+    /// temperature, above the critical pressure).
     #[must_use]
-    pub fn reactivity_on_card(&self, coolant_flow_m_per_s: f64, reactivity_inserted_dollar: f64) -> bool {
-        let c = &self.constants;
-        let least = if coolant_flow_m_per_s == 0.0 { c[K_RMIN0] } else { c[K_RMINF] };
-        reactivity_inserted_dollar >= least && reactivity_inserted_dollar <= c[K_RMAX]
+    pub fn initial_temperature_is_liquid_water(&self, initial_temperature_k: f64, system_pressure_psig: f64) -> bool {
+        initial_temperature_k >= self.constants[K_FREEZING]
+            && initial_temperature_k < self.saturation_temperature_k(system_pressure_psig)
+    }
+
+    /// Whether an initial temperature is in the compared 21 to 36 degC. Not a limit.
+    #[must_use]
+    pub fn initial_temperature_compared(&self, initial_temperature_k: f64) -> bool {
+        initial_temperature_k >= INITIAL_TEMPERATURE_MIN_K && initial_temperature_k <= INITIAL_TEMPERATURE_MAX_K
+    }
+}
+
+/// The rates of the poles at `y` under these terms, per second: the growing prompt pole
+/// `(ρ_net − 1) / l*` (zero when `ρ_net` is at or under one dollar), the decaying prompt pole
+/// `(1 − ρ_net) / l*` (zero when it is at or over one dollar), and `H / C_p + H / C_w + 2 v / L`, the
+/// trace of the plate and water pair, which no pole of that pair is faster than.
+fn pole_rates_per_s(terms: &Terms, y: &[f64; 12]) -> [f64; 3] {
+    let rho_net = terms.rho_0 - feedback(terms, y);
+    let excess = (rho_net - 1.0) / terms.l_star;
+    let h = terms.conductance_mw_per_k;
+    let thermal = h / terms.cp + h / terms.cw + terms.sweep;
+    if excess > 0.0 {
+        [excess, 0.0, thermal]
+    } else {
+        [0.0, -excess, thermal]
+    }
+}
+
+/// The longest step the state ceiling lets cover `y`: the least of each pole's phase over its rate.
+fn state_ceiling(reactor: &ReactorSpert3Ccore, terms: &Terms, y: &[f64; 12]) -> f64 {
+    let c = &reactor.constants;
+    let rates = pole_rates_per_s(terms, y);
+    let phases = [c[K_GROWTH_PHASE], c[K_DECAY_PHASE], c[K_THERMAL_PHASE]];
+    let mut ceiling = f64::INFINITY;
+    let mut index = 0;
+    while index < 3 {
+        if rates[index] > 0.0 {
+            let longest = phases[index] / rates[index];
+            if longest < ceiling {
+                ceiling = longest;
+            }
+        }
+        index += 1;
+    }
+    ceiling
+}
+
+/// The longest step the state ceiling of [`step`] lets start from `state` under `load`, s: the
+/// least of [`GROWTH_PHASE_STEP`], [`DECAY_PHASE_STEP`] and [`THERMAL_PHASE_STEP`], each over the
+/// rate of its pole there. The trial end of a step is held to the same ceiling. `None` when the
+/// card or the state is not one the card holds.
+#[must_use]
+pub fn state_dt_ceiling_s(reactor: &ReactorSpert3Ccore, state: &ReactorState, load: ReactorLoad) -> Option<f64> {
+    if !reactor.is_valid() || !state_is_finite(state) {
+        return None;
+    }
+    let terms = terms(reactor, state.initial_temperature_k, load);
+    let ceiling = state_ceiling(reactor, &terms, &state_vector(state));
+    if ceiling > 0.0 && ceiling.is_finite() {
+        Some(ceiling)
+    } else {
+        None
     }
 }
 
@@ -471,7 +620,7 @@ pub struct ReactorState {
     pub energy_mws: f64,
     /// Initial temperature of plates and water, `θ_i`.
     pub initial_temperature_k: f64,
-    /// System pressure, psig. Held to the compared span; no equation reads it.
+    /// System pressure, psig. No equation of the transient reads it; it sets where the water at the start boils.
     pub system_pressure_psig: f64,
     /// `dP/dt` at this state under the run's load.
     pub power_rate_mw_per_s: f64,
@@ -507,7 +656,7 @@ pub struct ReactorState {
     pub plate_rise_max_time_s: f64,
     /// Reactivity of the first landed step's load, `ρ_0`. Zero at the start.
     pub run_reactivity_dollar: f64,
-    /// Coolant flow of the first landed step's load. Zero at the start.
+    /// Coolant flow of the last landed step's load; the derived fields of the state are taken at it. Zero at the start.
     pub run_coolant_flow_m_per_s: f64,
     /// Set by the first landed step on which the power is no longer rising.
     pub past_power_peak: bool,
@@ -519,7 +668,8 @@ pub struct ReactorState {
 
 impl ReactorState {
     /// The reactor in equilibrium at [`INITIAL_POWER_MW`] with every rise zero, time 0. `None`
-    /// unless the initial temperature and the pressure are finite and on the card.
+    /// unless the initial temperature and the pressure are finite, the pressure is above absolute
+    /// zero and the start is liquid water.
     #[must_use]
     pub fn try_start(
         reactor: &ReactorSpert3Ccore,
@@ -529,8 +679,8 @@ impl ReactorState {
         if !reactor.is_valid()
             || !initial_temperature_k.is_finite()
             || !system_pressure_psig.is_finite()
-            || !reactor.initial_temperature_on_card(initial_temperature_k)
-            || !reactor.pressure_on_card(system_pressure_psig)
+            || !reactor.pressure_is_positive(system_pressure_psig)
+            || !reactor.initial_temperature_is_liquid_water(initial_temperature_k, system_pressure_psig)
         {
             return None;
         }
@@ -653,6 +803,9 @@ fn feedback(terms: &Terms, y: &[f64; 12]) -> f64 {
 }
 
 /// Advance one Runge–Kutta step and write the frame. A rejected step leaves `state` and `frame` as they were.
+///
+/// A value of the landed state below the normal range is written as zero
+/// with its sign ([`crate::normal`]).
 #[must_use]
 pub fn step(
     reactor: &ReactorSpert3Ccore,
@@ -661,10 +814,75 @@ pub fn step(
     load: ReactorLoad,
     dt_s: f64,
 ) -> Result<(), StepReject> {
+    step_as_computed(reactor, state, frame, load, dt_s)?;
+    normal_or_zero_state(state);
+    Ok(())
+}
+
+/// The step as its equations compute it, before a value of the landed
+/// state below the normal range is written as zero.
+fn step_as_computed(
+    reactor: &ReactorSpert3Ccore,
+    state: &mut ReactorState,
+    frame: &mut LastStateFrame64,
+    load: ReactorLoad,
+    dt_s: f64,
+) -> Result<(), StepReject> {
     validate(reactor, state, load, dt_s)?;
     let terms = terms(reactor, state.initial_temperature_k, load);
+    within_state_ceiling(reactor, &terms, &state_vector(state), dt_s)?;
     let advanced = rk4(reactor, &terms, &state_vector(state), dt_s);
     commit(reactor, state, frame, &terms, load, dt_s, advanced)
+}
+
+/// Each value of a landed state below the normal range written as zero
+/// with its sign ([`crate::normal`]): the state carried to the next step
+/// and published holds no subnormal number.
+fn normal_or_zero_state(state: &mut ReactorState) {
+    state.t_s = normal_or_zero(state.t_s);
+    state.power_mw = normal_or_zero(state.power_mw);
+    normal_or_zero_each(&mut state.precursor_mw);
+    state.plate_rise_k = normal_or_zero(state.plate_rise_k);
+    state.water_rise_k = normal_or_zero(state.water_rise_k);
+    state.hot_spot_plate_rise_k = normal_or_zero(state.hot_spot_plate_rise_k);
+    state.hot_spot_water_rise_k = normal_or_zero(state.hot_spot_water_rise_k);
+    state.energy_mws = normal_or_zero(state.energy_mws);
+    state.initial_temperature_k = normal_or_zero(state.initial_temperature_k);
+    state.system_pressure_psig = normal_or_zero(state.system_pressure_psig);
+    state.power_rate_mw_per_s = normal_or_zero(state.power_rate_mw_per_s);
+    state.hot_spot_plate_rate_k_per_s = normal_or_zero(state.hot_spot_plate_rate_k_per_s);
+    state.reactivity_net_dollar = normal_or_zero(state.reactivity_net_dollar);
+    state.population_anchor_mw = normal_or_zero(state.population_anchor_mw);
+    state.feedback_integral_dollar_mws = normal_or_zero(state.feedback_integral_dollar_mws);
+    state.swept_energy_mws = normal_or_zero(state.swept_energy_mws);
+    state.hot_spot_swept_energy_mws = normal_or_zero(state.hot_spot_swept_energy_mws);
+    state.population_defect_mw = normal_or_zero(state.population_defect_mw);
+    state.energy_defect_mws = normal_or_zero(state.energy_defect_mws);
+    state.hot_spot_energy_defect_mws = normal_or_zero(state.hot_spot_energy_defect_mws);
+    state.residual_conservation_error = normal_or_zero(state.residual_conservation_error);
+    state.peak_power_mw = normal_or_zero(state.peak_power_mw);
+    state.peak_energy_mws = normal_or_zero(state.peak_energy_mws);
+    state.peak_time_s = normal_or_zero(state.peak_time_s);
+    state.plate_rise_max_k = normal_or_zero(state.plate_rise_max_k);
+    state.plate_rise_max_time_s = normal_or_zero(state.plate_rise_max_time_s);
+    state.run_reactivity_dollar = normal_or_zero(state.run_reactivity_dollar);
+    state.run_coolant_flow_m_per_s = normal_or_zero(state.run_coolant_flow_m_per_s);
+}
+
+/// The state ceiling: for each pole, `dt_s` times its rate at `y` at most its phase.
+fn within_state_ceiling(
+    reactor: &ReactorSpert3Ccore,
+    terms: &Terms,
+    y: &[f64; 12],
+    dt_s: f64,
+) -> Result<(), StepReject> {
+    let c = &reactor.constants;
+    let rates = pole_rates_per_s(terms, y);
+    if dt_s * rates[0] > c[K_GROWTH_PHASE] || dt_s * rates[1] > c[K_DECAY_PHASE] || dt_s * rates[2] > c[K_THERMAL_PHASE] {
+        Err(StepReject::DtAboveStateCeiling)
+    } else {
+        Ok(())
+    }
 }
 
 fn validate(
@@ -685,23 +903,23 @@ fn validate(
     if !reactor.is_valid() {
         return Err(StepReject::InvalidCard);
     }
-    if !reactor.initial_temperature_on_card(state.initial_temperature_k) {
-        return Err(StepReject::InitialTemperatureOutsideCard);
+    if !reactor.pressure_is_positive(state.system_pressure_psig) {
+        return Err(StepReject::PressureNotPositive);
     }
-    if !reactor.pressure_on_card(state.system_pressure_psig) {
-        return Err(StepReject::PressureOutsideCard);
+    if !reactor.initial_temperature_is_liquid_water(state.initial_temperature_k, state.system_pressure_psig) {
+        return Err(StepReject::InitialTemperatureNotLiquidWater);
     }
-    if !reactor.flow_on_card(state.system_pressure_psig, load.coolant_flow_m_per_s) {
-        return Err(StepReject::FlowOutsideCard);
+    if load.coolant_flow_m_per_s < 0.0 {
+        return Err(StepReject::NegativeFlow);
     }
-    if !reactor.reactivity_on_card(load.coolant_flow_m_per_s, load.reactivity_inserted_dollar) {
-        return Err(StepReject::ReactivityOutsideCard);
+    if !(load.reactivity_inserted_dollar > 0.0) {
+        return Err(StepReject::ReactivityNotPositive);
     }
     if state.past_plate_maximum {
         return Err(StepReject::PastPlateTemperatureMaximum);
     }
-    if !(state.t_s >= 0.0) || !(state.t_s + dt_s <= reactor.constants[K_TIME_MAX]) {
-        return Err(StepReject::TimeBeyondCard);
+    if !(state.t_s >= 0.0) {
+        return Err(StepReject::NegativeTime);
     }
     incoming_state_is_the_cards(reactor, state, load)
 }
@@ -727,14 +945,9 @@ fn incoming_state_is_the_cards(
         || state.hot_spot_water_rise_k < 0.0
         || state.swept_energy_mws < 0.0
         || state.hot_spot_swept_energy_mws < 0.0
+        || state.run_coolant_flow_m_per_s < 0.0
     {
         return Err(StepReject::NegativeState);
-    }
-    if state.energy_mws > reactor.constants[K_ENERGY_MAX] {
-        return Err(StepReject::EnergyBeyondCard);
-    }
-    if state.power_mw > reactor.constants[K_POWER_MAX] || state.peak_power_mw > reactor.constants[K_POWER_MAX] {
-        return Err(StepReject::PowerBeyondCard);
     }
     let start = match ReactorState::try_start(reactor, state.initial_temperature_k, state.system_pressure_psig) {
         Some(start) => start,
@@ -750,20 +963,23 @@ fn incoming_state_is_the_cards(
     if load.reactivity_inserted_dollar != state.run_reactivity_dollar {
         return Err(StepReject::ReactivityChangedDuringRun);
     }
-    if load.coolant_flow_m_per_s != state.run_coolant_flow_m_per_s {
-        return Err(StepReject::FlowChangedDuringRun);
-    }
-    let terms = terms(reactor, state.initial_temperature_k, load);
+    // The derived fields were written at the flow of the last landed step; this step may carry another.
+    let written = ReactorLoad {
+        reactivity_inserted_dollar: load.reactivity_inserted_dollar,
+        coolant_flow_m_per_s: state.run_coolant_flow_m_per_s,
+    };
+    let terms = terms(reactor, state.initial_temperature_k, written);
     let derived = derive(&terms, reactor, state);
-    if state.population_anchor_mw.to_bits() != start.population_anchor_mw.to_bits()
-        || state.power_rate_mw_per_s.to_bits() != derived.power_rate.to_bits()
-        || state.hot_spot_plate_rate_k_per_s.to_bits() != derived.plate_rate.to_bits()
-        || state.reactivity_net_dollar.to_bits() != derived.net_dollar.to_bits()
+    // Each held as the landed step wrote it, a value below the normal range as zero.
+    if state.population_anchor_mw.to_bits() != normal_or_zero(start.population_anchor_mw).to_bits()
+        || state.power_rate_mw_per_s.to_bits() != normal_or_zero(derived.power_rate).to_bits()
+        || state.hot_spot_plate_rate_k_per_s.to_bits() != normal_or_zero(derived.plate_rate).to_bits()
+        || state.reactivity_net_dollar.to_bits() != normal_or_zero(derived.net_dollar).to_bits()
         || state.prompt_supercritical != derived.prompt_supercritical
-        || state.population_defect_mw.to_bits() != derived.population_defect.to_bits()
-        || state.energy_defect_mws.to_bits() != derived.energy_defect.to_bits()
-        || state.hot_spot_energy_defect_mws.to_bits() != derived.hot_spot_defect.to_bits()
-        || state.residual_conservation_error.to_bits() != derived.residual.to_bits()
+        || state.population_defect_mw.to_bits() != normal_or_zero(derived.population_defect).to_bits()
+        || state.energy_defect_mws.to_bits() != normal_or_zero(derived.energy_defect).to_bits()
+        || state.hot_spot_energy_defect_mws.to_bits() != normal_or_zero(derived.hot_spot_defect).to_bits()
+        || state.residual_conservation_error.to_bits() != normal_or_zero(derived.residual).to_bits()
     {
         return Err(StepReject::InconsistentState);
     }
@@ -929,7 +1145,7 @@ fn commit(
     terms: &Terms,
     load: ReactorLoad,
     dt_s: f64,
-    advanced: [f64; 12],
+    mut advanced: [f64; 12],
 ) -> Result<(), StepReject> {
     let saved = *state;
     let mut index = 0;
@@ -939,12 +1155,11 @@ fn commit(
         }
         index += 1;
     }
-    if advanced[11] > reactor.constants[K_ENERGY_MAX] {
-        return Err(StepReject::EnergyBeyondCard);
-    }
-    if advanced[0] > reactor.constants[K_POWER_MAX] {
-        return Err(StepReject::PowerBeyondCard);
-    }
+    // A value below the normal range is carried as zero (`crate::normal`):
+    // the derived fields below are computed from the values the state
+    // carries, as the check of an incoming state computes them again.
+    normal_or_zero_each(&mut advanced);
+    within_state_ceiling(reactor, terms, &advanced, dt_s)?;
     let y_old = state_vector(state);
     let k_old = rates(reactor, terms, &y_old);
     let k_new = rates(reactor, terms, &advanced);
@@ -954,6 +1169,9 @@ fn commit(
     let swept = terms.cw * terms.sweep;
     state.swept_energy_mws += swept * hermite_rule(dt_s, y_old[8], advanced[8], k_old[8], k_new[8]);
     state.hot_spot_swept_energy_mws += swept * hermite_rule(dt_s, y_old[10], advanced[10], k_old[10], k_new[10]);
+    state.feedback_integral_dollar_mws = normal_or_zero(state.feedback_integral_dollar_mws);
+    state.swept_energy_mws = normal_or_zero(state.swept_energy_mws);
+    state.hot_spot_swept_energy_mws = normal_or_zero(state.hot_spot_swept_energy_mws);
     state.t_s += dt_s;
     state.power_mw = advanced[0];
     index = 0;
@@ -966,9 +1184,9 @@ fn commit(
     state.hot_spot_plate_rise_k = advanced[9];
     state.hot_spot_water_rise_k = advanced[10];
     state.energy_mws = advanced[11];
-    state.power_rate_mw_per_s = k_new[0];
-    state.hot_spot_plate_rate_k_per_s = k_new[9];
-    state.reactivity_net_dollar = terms.rho_0 - feedback(terms, &advanced);
+    state.power_rate_mw_per_s = normal_or_zero(k_new[0]);
+    state.hot_spot_plate_rate_k_per_s = normal_or_zero(k_new[9]);
+    state.reactivity_net_dollar = normal_or_zero(terms.rho_0 - feedback(terms, &advanced));
     let (population_defect, energy_defect, hot_spot_defect, residual) = balances(terms, state);
     state.population_defect_mw = population_defect;
     state.energy_defect_mws = energy_defect;
@@ -1159,13 +1377,14 @@ mod tests {
     use std::assert;
     use std::assert_eq;
     use std::format;
+    use std::matches;
 
     use super::{
-        advance, commit, rates, rk4, state_vector, step, terms, validate, ENERGY_MAX_MWS, FLAG_PAST_POWER_PEAK,
-        FLOW_MAX_M_PER_S, FLOW_MIN_M_PER_S, GROUP_FRACTION, INITIAL_POWER_MW, INITIAL_TEMPERATURE_MAX_K,
-        INITIAL_TEMPERATURE_MIN_K, POWER_MAX_MW, REACTIVITY_MAX_DOLLAR, REACTIVITY_MIN_FLOW_DOLLAR,
+        advance, commit, rates, rk4, state_dt_ceiling_s, state_vector, step, terms, validate, within_state_ceiling,
+        ATMOSPHERE_PSI, CRITICAL_TEMPERATURE_K, FLAG_PAST_POWER_PEAK, FLOW_MAX_M_PER_S, FLOW_MIN_M_PER_S, FREEZING_K,
+        GROUP_FRACTION, INITIAL_POWER_MW, MPA_PER_PSI, REACTIVITY_MAX_DOLLAR, REACTIVITY_MIN_FLOW_DOLLAR,
         REACTIVITY_MIN_NO_FLOW_DOLLAR, RESIDUAL_CONSERVATION_LIMIT, ReactorLoad, ReactorSpert3Ccore, ReactorState,
-        StepReject, TIME_MAX_S, Terms,
+        StepReject, Terms,
     };
     use crate::frame::LastStateFrame64;
 
@@ -1194,6 +1413,11 @@ mod tests {
         ReactorSpert3Ccore::c_core_step_transients().gate_dt_s().unwrap()
     }
 
+    /// The gauge pressure in psig of an absolute pressure in MPa.
+    fn psig_of_mpa(mpa: f64) -> f64 {
+        mpa / MPA_PER_PSI - ATMOSPHERE_PSI
+    }
+
     type Method = fn(&ReactorSpert3Ccore, &Terms, &[f64; 12], f64) -> [f64; 12];
 
     fn step_with(
@@ -1206,6 +1430,7 @@ mod tests {
     ) -> Result<(), StepReject> {
         validate(reactor, state, load, dt_s)?;
         let t = terms(reactor, state.initial_temperature_k, load);
+        within_state_ceiling(reactor, &t, &state_vector(state), dt_s)?;
         let advanced = method(reactor, &t, &state_vector(state), dt_s);
         commit(reactor, state, frame, &t, load, dt_s, advanced)
     }
@@ -1241,32 +1466,58 @@ mod tests {
         last: ReactorState,
         steps: u64,
         largest_residual: f64,
-        end: StepReject,
+        /// The refusal that stopped the run; `None` when it took every step asked.
+        end: Option<StepReject>,
     }
 
-    fn run_with(method: Method, celsius: f64, psig: f64, load: ReactorLoad, dt_s: f64, most: u64) -> Run {
-        let (reactor, mut state) = start(celsius, psig);
+    fn run_from(
+        method: Method,
+        reactor: &ReactorSpert3Ccore,
+        mut state: ReactorState,
+        load: ReactorLoad,
+        dt_s: f64,
+        most: u64,
+    ) -> Run {
         let mut frame = marked_frame();
         let mut steps = 0;
         let mut largest_residual = 0.0f64;
         let end = loop {
-            match step_with(method, &reactor, &mut state, &mut frame, load, dt_s) {
+            if steps >= most {
+                break None;
+            }
+            let before = state;
+            let before_frame = frame.to_bytes();
+            match step_with(method, reactor, &mut state, &mut frame, load, dt_s) {
                 Ok(()) => {
                     steps += 1;
                     largest_residual = largest_residual.max(state.residual_conservation_error);
                     assert_eq!(frame.proof, [0xA5; 16]);
                 }
-                Err(reject) => break reject,
-            }
-            if steps >= most {
-                break StepReject::TimeBeyondCard;
+                Err(reject) => {
+                    // every refusal keeps the state and the frame
+                    assert_eq!(format!("{:?}", state), format!("{:?}", before));
+                    assert_eq!(frame.to_bytes(), before_frame);
+                    break Some(reject);
+                }
             }
         };
         Run { last: state, steps, largest_residual, end }
     }
 
+    fn run_with(method: Method, celsius: f64, psig: f64, load: ReactorLoad, dt_s: f64, most: u64) -> Run {
+        let (reactor, state) = start(celsius, psig);
+        run_from(method, &reactor, state, load, dt_s, most)
+    }
+
+    /// The step at the start: the static ceiling, or the state ceiling at the start where that is shorter.
+    fn start_dt(celsius: f64, psig: f64, l: ReactorLoad) -> f64 {
+        let (reactor, state) = start(celsius, psig);
+        let state_ceiling = state_dt_ceiling_s(&reactor, &state, l).unwrap();
+        if state_ceiling < ceiling() { state_ceiling } else { ceiling() }
+    }
+
     #[test]
-    fn constants_are_locked_and_the_range_is_the_inhour_value_of_the_compared_periods() {
+    fn constants_are_locked_and_the_compared_range_is_the_inhour_value_of_the_compared_periods() {
         let reactor = ReactorSpert3Ccore::c_core_step_transients();
         assert!(reactor.is_valid());
         for index in 0..reactor.constants.len() {
@@ -1296,10 +1547,33 @@ mod tests {
         assert!(full > 21_000.0 && full < 23_500.0, "{full}");
     }
 
+    /// IAPWS-IF97 region 4, backward equation, against the verification values the release
+    /// gives for it (IAPWS R7-97(2012), Table 35).
     #[test]
-    fn the_start_is_the_equilibrium_and_only_compared_starts_start() {
+    fn the_saturation_temperature_is_iapws_if97_region_4() {
         let reactor = ReactorSpert3Ccore::c_core_step_transients();
-        for (celsius, psig) in [(21.0, 0.0), (36.0, 2500.0), (25.0, 1000.0), (30.0, 230.0)] {
+        for (mpa, kelvin) in [(0.1, 372.755919), (1.0, 453.035632), (10.0, 584.149488)] {
+            let t = reactor.saturation_temperature_k(psig_of_mpa(mpa));
+            assert!((t / kelvin - 1.0).abs() < 1.0e-6, "{mpa} MPa: {t}");
+        }
+        // at 0 psig water boils at 99.97 degC
+        let atmospheric = reactor.saturation_temperature_k(0.0);
+        assert!((atmospheric - 373.124).abs() < 1.0e-3, "{atmospheric}");
+        // at the critical pressure and above, the critical temperature
+        assert_eq!(reactor.saturation_temperature_k(psig_of_mpa(22.064) + 1.0e-6), CRITICAL_TEMPERATURE_K);
+        assert_eq!(reactor.saturation_temperature_k(1.0e6), CRITICAL_TEMPERATURE_K);
+        let below = reactor.saturation_temperature_k(psig_of_mpa(22.0));
+        assert!(below < CRITICAL_TEMPERATURE_K && below > 646.0, "{below}");
+        // at the triple point the saturation temperature is the freezing point: nothing below it is liquid
+        let triple = reactor.saturation_temperature_k(psig_of_mpa(611.213e-6));
+        assert!((triple - FREEZING_K).abs() < 1.0e-4, "{triple}");
+        assert!(reactor.saturation_temperature_k(psig_of_mpa(1.0e-4)) < FREEZING_K);
+    }
+
+    #[test]
+    fn the_start_is_the_equilibrium_and_every_start_of_liquid_water_starts() {
+        let reactor = ReactorSpert3Ccore::c_core_step_transients();
+        for (celsius, psig) in [(21.0, 0.0), (36.0, 2500.0), (25.0, 1000.0), (30.0, 230.0), (0.0, 0.0), (99.9, 0.0), (300.0, 2500.0), (373.9, 5000.0)] {
             let state = ReactorState::try_start(&reactor, celsius + 273.15, psig).unwrap();
             assert_eq!(state.power_mw, INITIAL_POWER_MW);
             // no reactivity stepped in: the start is the equilibrium
@@ -1310,12 +1584,17 @@ mod tests {
                 assert!(k[i].abs() < 1.0e-12 * state.precursor_mw[i - 1]);
             }
         }
-        assert!(ReactorState::try_start(&reactor, INITIAL_TEMPERATURE_MIN_K, 0.0).is_some());
-        assert!(ReactorState::try_start(&reactor, INITIAL_TEMPERATURE_MAX_K, 0.0).is_some());
-        assert!(ReactorState::try_start(&reactor, INITIAL_TEMPERATURE_MIN_K.next_down(), 0.0).is_none());
-        assert!(ReactorState::try_start(&reactor, INITIAL_TEMPERATURE_MAX_K.next_up(), 0.0).is_none());
-        assert!(ReactorState::try_start(&reactor, 300.0, -0.1).is_none());
-        assert!(ReactorState::try_start(&reactor, 300.0, 2500.1).is_none());
+        let boiling = reactor.saturation_temperature_k(0.0);
+        assert!(ReactorState::try_start(&reactor, FREEZING_K, 0.0).is_some());
+        assert!(ReactorState::try_start(&reactor, FREEZING_K.next_down(), 0.0).is_none());
+        assert!(ReactorState::try_start(&reactor, boiling.next_down(), 0.0).is_some());
+        assert!(ReactorState::try_start(&reactor, boiling, 0.0).is_none());
+        assert!(ReactorState::try_start(&reactor, CRITICAL_TEMPERATURE_K.next_down(), 1.0e5).is_some());
+        assert!(ReactorState::try_start(&reactor, CRITICAL_TEMPERATURE_K, 1.0e5).is_none());
+        assert!(ReactorState::try_start(&reactor, 300.0, -ATMOSPHERE_PSI).is_none());
+        assert!(ReactorState::try_start(&reactor, 300.0, -20.0).is_none());
+        // just above absolute zero water boils below freezing: no start is liquid
+        assert!(ReactorState::try_start(&reactor, 274.0, -14.69).is_none());
         assert!(ReactorState::try_start(&reactor, f64::NAN, 0.0).is_none());
         assert!(ReactorState::try_start(&reactor, 300.0, f64::INFINITY).is_none());
     }
@@ -1340,56 +1619,74 @@ mod tests {
         refuse(bad, load(1.0, 0.0), dt, StepReject::NonFiniteState);
         refuse(fresh, load(1.0, 0.0), 0.0, StepReject::NonPositiveDt);
         refuse(fresh, load(1.0, 0.0), -dt, StepReject::NonPositiveDt);
-        let mut warm = fresh;
-        warm.initial_temperature_k = 40.0 + 273.15;
-        refuse(warm, load(1.0, 0.0), dt, StepReject::InitialTemperatureOutsideCard);
-        let mut pressed = fresh;
-        pressed.system_pressure_psig = 2600.0;
-        refuse(pressed, load(1.0, 0.0), dt, StepReject::PressureOutsideCard);
-        // flow is on the card only at 230 psig, and only from 200 to 20,000 gpm
-        refuse(fresh, load(1.0, gpm(5000.0)), dt, StepReject::FlowOutsideCard);
-        let (_, loop230) = start(30.0, 230.0);
-        refuse(loop230, load(1.0, gpm(199.0)), dt, StepReject::FlowOutsideCard);
-        refuse(loop230, load(1.0, FLOW_MAX_M_PER_S.next_up()), dt, StepReject::FlowOutsideCard);
-        refuse(loop230, load(1.0, -gpm(1000.0)), dt, StepReject::FlowOutsideCard);
-        let (_, high) = start(30.0, 2500.0);
-        refuse(high, load(1.0, gpm(20000.0)), dt, StepReject::FlowOutsideCard);
-        // flow was compared at 230 psig only: 225 and 250 psig with flow are refused
-        for psig in [225.0, 229.9, 230.1, 250.0] {
-            let (_, other) = start(30.0, psig);
-            refuse(other, load(1.0, gpm(5000.0)), dt, StepReject::FlowOutsideCard);
-            refuse(other, load(1.0, FLOW_MAX_M_PER_S), dt, StepReject::FlowOutsideCard);
+        // pressure at or below absolute zero
+        for psig in [-ATMOSPHERE_PSI, -20.0, -1.0e6] {
+            let mut vacuum = fresh;
+            vacuum.system_pressure_psig = psig;
+            refuse(vacuum, load(1.0, 0.0), dt, StepReject::PressureNotPositive);
         }
-        // the reactivity span: 9.3 s to 9.7 ms with no flow, 516 ms to 9.7 ms with flow
-        refuse(fresh, load(REACTIVITY_MIN_NO_FLOW_DOLLAR.next_down(), 0.0), dt, StepReject::ReactivityOutsideCard);
-        refuse(fresh, load(REACTIVITY_MAX_DOLLAR.next_up(), 0.0), dt, StepReject::ReactivityOutsideCard);
-        refuse(loop230, load(0.8, gpm(1000.0)), dt, StepReject::ReactivityOutsideCard);
-        let mut late = fresh;
-        late.t_s = TIME_MAX_S - 0.5 * dt;
-        refuse(late, load(1.0, 0.0), dt, StepReject::TimeBeyondCard);
-        let mut powerful = fresh;
-        powerful.power_mw = POWER_MAX_MW * 2.0;
-        refuse(powerful, load(1.0, 0.0), dt, StepReject::PowerBeyondCard);
-        let mut spent = fresh;
-        spent.energy_mws = ENERGY_MAX_MWS * 1.01;
-        refuse(spent, load(1.0, 0.0), dt, StepReject::EnergyBeyondCard);
+        // a start that is not liquid water at its pressure
+        let boiling = reactor.saturation_temperature_k(0.0);
+        for (kelvin, psig) in [
+            (FREEZING_K.next_down(), 0.0),
+            (250.0, 2500.0),
+            (boiling, 0.0),
+            (400.0, 0.0),
+            (CRITICAL_TEMPERATURE_K, 5000.0),
+            (700.0, 1.0e5),
+            (274.0, -14.69),
+        ] {
+            let mut odd = fresh;
+            odd.initial_temperature_k = kelvin;
+            odd.system_pressure_psig = psig;
+            refuse(odd, load(1.0, 0.0), dt, StepReject::InitialTemperatureNotLiquidWater);
+        }
+        // a flow below zero
+        for flow in [-1.0e-12, -gpm(1000.0), -100.0] {
+            refuse(fresh, load(1.0, flow), dt, StepReject::NegativeFlow);
+        }
+        // a reactivity of zero or less
+        for rho in [0.0, -0.0, -0.5, -1.0e-300] {
+            refuse(fresh, load(rho, 0.0), dt, StepReject::ReactivityNotPositive);
+        }
+        // a clock below zero
+        let mut early = fresh;
+        early.t_s = -1.0;
+        refuse(early, load(1.0, 0.0), dt, StepReject::NegativeTime);
         let mut negative = fresh;
         negative.water_rise_k = -1.0;
         refuse(negative, load(1.0, 0.0), dt, StepReject::NegativeState);
         let mut moved = fresh;
         moved.plate_rise_k = 1.0;
         refuse(moved, load(1.0, 0.0), dt, StepReject::InconsistentState);
-        // every edge of the range lands
-        for (state, l) in [
-            (fresh, load(REACTIVITY_MIN_NO_FLOW_DOLLAR, 0.0)),
-            (fresh, load(REACTIVITY_MAX_DOLLAR, 0.0)),
-            (loop230, load(REACTIVITY_MIN_FLOW_DOLLAR, FLOW_MIN_M_PER_S)),
-            (loop230, load(REACTIVITY_MAX_DOLLAR, FLOW_MAX_M_PER_S)),
-            (high, load(1.0, 0.0)),
+        // a step longer than the state lets it be: 5 dollars at 0.6 ms, 300 m/s at 0.6 ms
+        refuse(fresh, load(5.0, 0.0), ceiling(), StepReject::DtAboveStateCeiling);
+        refuse(fresh, load(1.2, 300.0), ceiling(), StepReject::DtAboveStateCeiling);
+        // every edge of the compared range lands, and so do the old walls and far past them
+        let (_, loop230) = start(30.0, 230.0);
+        let (_, high) = start(30.0, 2500.0);
+        let (_, hot) = start(250.0, 2500.0);
+        let (_, cold) = start(0.0, 0.0);
+        let (_, supercritical) = start(370.0, 3500.0);
+        for (state, l, dt_s) in [
+            (fresh, load(REACTIVITY_MIN_NO_FLOW_DOLLAR, 0.0), ceiling()),
+            (fresh, load(REACTIVITY_MAX_DOLLAR, 0.0), ceiling()),
+            (loop230, load(REACTIVITY_MIN_FLOW_DOLLAR, FLOW_MIN_M_PER_S), ceiling()),
+            (loop230, load(REACTIVITY_MAX_DOLLAR, FLOW_MAX_M_PER_S), ceiling()),
+            (high, load(1.0, 0.0), ceiling()),
+            (high, load(1.0, gpm(20000.0)), ceiling()),
+            (fresh, load(1.0, gpm(5000.0)), ceiling()),
+            (fresh, load(1.0e-6, 0.0), ceiling()),
+            (fresh, load(0.1, 0.0), ceiling()),
+            (fresh, load(3.0, 0.0), 9.0e-5),
+            (fresh, load(1.2, 300.0), 1.0e-5),
+            (hot, load(1.2, 0.0), ceiling()),
+            (cold, load(1.2, 0.0), ceiling()),
+            (supercritical, load(1.2, 0.0), ceiling()),
         ] {
             let mut s = state;
             let mut frame = marked_frame();
-            assert!(step(&reactor, &mut s, &mut frame, l, ceiling()).is_ok());
+            assert!(step(&reactor, &mut s, &mut frame, l, dt_s).is_ok(), "{l:?} from {} K", state.initial_temperature_k);
         }
     }
 
@@ -1397,7 +1694,7 @@ mod tests {
     fn a_short_period_run_passes_the_power_peak_then_ends_at_the_plate_maximum_with_the_ledger_closed() {
         let rho = ReactorSpert3Ccore::c_core_step_transients().inhour_dollar(0.0107);
         let run = run_with(rk4, 25.0, 0.0, load(rho, 0.0), ceiling(), 10_000);
-        assert_eq!(run.end, StepReject::PastPlateTemperatureMaximum);
+        assert_eq!(run.end, Some(StepReject::PastPlateTemperatureMaximum));
         let s = run.last;
         assert!(s.past_power_peak && s.past_plate_maximum);
         assert!(s.peak_time_s < s.plate_rise_max_time_s);
@@ -1416,7 +1713,7 @@ mod tests {
     }
 
     #[test]
-    fn the_flag_marks_the_power_peak_and_the_load_cannot_change_during_a_run() {
+    fn the_flag_marks_the_power_peak_and_the_reactivity_cannot_change_during_a_run() {
         let reactor = ReactorSpert3Ccore::c_core_step_transients();
         let (_, mut state) = start(30.0, 230.0);
         let mut frame = marked_frame();
@@ -1433,41 +1730,92 @@ mod tests {
                 let mut s = state;
                 let mut f = frame;
                 assert_eq!(step(&reactor, &mut s, &mut f, load(1.2, gpm(5000.0)), ceiling()), Err(StepReject::ReactivityChangedDuringRun));
-                assert_eq!(step(&reactor, &mut s, &mut f, load(1.1, gpm(6000.0)), ceiling()), Err(StepReject::FlowChangedDuringRun));
                 assert_eq!(s, state);
                 assert_eq!(f.to_bytes(), frame.to_bytes());
+                // another flow lands
+                assert!(step(&reactor, &mut s, &mut f, load(1.1, gpm(6000.0)), ceiling()).is_ok());
             }
         }
         assert!(seen_flag);
     }
 
+    /// The flow may change from step to step: each step is taken at its own flow, the swept
+    /// energies are booked at that step's flow, and the ledger closes through every change.
+    #[test]
+    fn a_run_whose_flow_changes_closes_its_ledger_at_every_step() {
+        let reactor = ReactorSpert3Ccore::c_core_step_transients();
+        let (_, mut state) = start(25.0, 0.0);
+        let mut frame = marked_frame();
+        let rho = 1.15;
+        let mut largest = 0.0f64;
+        let mut swept_before_flow = None;
+        let mut end = None;
+        for index in 0..100_000u64 {
+            // no flow to 0.1 s, then 20,000 gpm to 0.2 s, then 30 m/s, then no flow again from 0.3 s
+            let flow = match index {
+                0..=166 => 0.0,
+                167..=333 => FLOW_MAX_M_PER_S,
+                334..=499 => 30.0,
+                _ => 0.0,
+            };
+            let l = load(rho, flow);
+            let dt = if state_dt_ceiling_s(&reactor, &state, l).unwrap() < ceiling() { 1.0e-4 } else { ceiling() };
+            match step(&reactor, &mut state, &mut frame, l, dt) {
+                Ok(()) => largest = largest.max(state.residual_conservation_error),
+                Err(reject) => {
+                    end = Some(reject);
+                    break;
+                }
+            }
+            if index == 166 {
+                assert_eq!(state.swept_energy_mws, 0.0);
+                swept_before_flow = Some(state.swept_energy_mws);
+            }
+            if index == 400 {
+                assert!(state.swept_energy_mws > 0.0 && state.hot_spot_swept_energy_mws > 0.0);
+            }
+            assert!(state.residual_conservation_error <= RESIDUAL_CONSERVATION_LIMIT, "{index}");
+        }
+        assert!(swept_before_flow.is_some());
+        assert_eq!(end, Some(StepReject::PastPlateTemperatureMaximum));
+        assert!(largest <= RESIDUAL_CONSERVATION_LIMIT, "{largest}");
+        assert!(state.past_plate_maximum);
+    }
+
     #[test]
     fn a_wrong_method_or_a_falsified_heat_path_is_named_by_the_ledger() {
         let rho = ReactorSpert3Ccore::c_core_step_transients().inhour_dollar(0.0107);
+        let named = |end: Option<StepReject>| end == Some(StepReject::SpontaneousGeneration) || end == Some(StepReject::FirstLawBreach);
         for method in [euler as Method, wrong_weights, no_water_feedback, leaky_heat_path] {
             let run = run_with(method, 25.0, 0.0, load(rho, 0.0), ceiling(), 10_000);
-            assert!(
-                run.end == StepReject::SpontaneousGeneration || run.end == StepReject::FirstLawBreach,
-                "{:?} after {} steps",
-                run.end,
-                run.steps
-            );
+            assert!(named(run.end), "{:?} after {} steps", run.end, run.steps);
         }
         // with flow, too
         let run = run_with(euler, 30.0, 230.0, load(rho, gpm(20000.0)), ceiling(), 10_000);
-        assert!(run.end == StepReject::SpontaneousGeneration || run.end == StepReject::FirstLawBreach);
+        assert!(named(run.end));
+        // and past the compared range: 3 dollars, a start at 250 degC, 30 m/s at 0 psig
+        for (celsius, psig, l) in [(25.0, 0.0, load(3.0, 0.0)), (250.0, 2500.0, load(1.2, 0.0)), (25.0, 0.0, load(1.2, 30.0))] {
+            let dt = start_dt(celsius, psig, l);
+            for method in [euler as Method, wrong_weights, leaky_heat_path] {
+                let run = run_with(method, celsius, psig, l, dt, 100_000);
+                assert!(named(run.end), "{l:?} {celsius} degC: {:?} after {} steps", run.end, run.steps);
+            }
+            let right = run_with(rk4, celsius, psig, l, dt, 100_000);
+            assert_eq!(right.end, Some(StepReject::PastPlateTemperatureMaximum), "{l:?}");
+        }
         // a falsified ledger in the handed-in state is not one the card wrote
         let (reactor, mut state) = start(25.0, 0.0);
         let mut frame = marked_frame();
         for _ in 0..50 {
             step(&reactor, &mut state, &mut frame, load(rho, 0.0), ceiling()).unwrap();
         }
-        for field in 0..4 {
+        for field in 0..5 {
             let mut forged = state;
             match field {
                 0 => forged.feedback_integral_dollar_mws = forged.feedback_integral_dollar_mws * 1.01 + 1.0e-9,
                 1 => forged.swept_energy_mws += 1.0e-9,
                 2 => forged.peak_power_mw *= 0.5,
+                3 => forged.run_coolant_flow_m_per_s = 1.0,
                 _ => forged.residual_conservation_error = 0.0,
             }
             let before = forged;
@@ -1496,35 +1844,165 @@ mod tests {
         assert!(largest > RESIDUAL_CONSERVATION_LIMIT / 20.0, "{largest}");
     }
 
+    /// (a) Inside the compared range, a step at the static ceiling never reaches the state
+    /// ceiling: at the corners, and at the most negative net reactivity the compared range
+    /// reaches (21 degC, no flow, 1.0989 dollars, by 200 s). (b) Past the range the state
+    /// ceiling binds, at the start and at the trial end of a step, and keeps state and frame.
+    #[test]
+    fn the_state_ceiling_never_binds_inside_the_compared_range_and_binds_past_it() {
+        let reactor = ReactorSpert3Ccore::c_core_step_transients();
+        let to_200_s = 333_333;
+        let mut least_room = f64::INFINITY;
+        let mut deepest = (0.0f64, None);
+        for (celsius, psig, l, most) in [
+            (21.0, 0.0, load(1.0989, 0.0), to_200_s),
+            (21.0, 0.0, load(REACTIVITY_MAX_DOLLAR, 0.0), 10_000),
+            (21.0, 0.0, load(REACTIVITY_MIN_NO_FLOW_DOLLAR, 0.0), to_200_s),
+            (21.0, 230.0, load(REACTIVITY_MAX_DOLLAR, FLOW_MAX_M_PER_S), 10_000),
+            (21.0, 230.0, load(REACTIVITY_MIN_FLOW_DOLLAR, FLOW_MAX_M_PER_S), to_200_s),
+        ] {
+            let (_, mut state) = start(celsius, psig);
+            let mut frame = marked_frame();
+            for _ in 0..most {
+                let room = state_dt_ceiling_s(&reactor, &state, l).unwrap() / ceiling();
+                least_room = least_room.min(room);
+                assert!(room > 1.0, "{l:?} at {} s: {room}", state.t_s);
+                match step(&reactor, &mut state, &mut frame, l, ceiling()) {
+                    Ok(()) => {}
+                    Err(reject) => {
+                        assert_eq!(reject, StepReject::PastPlateTemperatureMaximum, "{l:?}");
+                        break;
+                    }
+                }
+            }
+            if state.reactivity_net_dollar < deepest.0 {
+                deepest = (state.reactivity_net_dollar, Some(state));
+            }
+        }
+        // the room is less than one percent at the deepest net reactivity: the phase there is 0.496
+        assert!(least_room < 1.01, "{least_room}");
+        assert!(deepest.0 < -1.47 && deepest.0 > -1.48, "{}", deepest.0);
+        // (b) at the start: 3 dollars at the static ceiling is refused, at its own state ceiling it runs to its end
+        let (_, fresh) = start(25.0, 0.0);
+        for l in [load(3.0, 0.0), load(1.2, 300.0)] {
+            let mut s = fresh;
+            let mut frame = marked_frame();
+            assert_eq!(step(&reactor, &mut s, &mut frame, l, ceiling()), Err(StepReject::DtAboveStateCeiling));
+            assert_eq!(s, fresh);
+            assert_eq!(frame.to_bytes(), marked_frame().to_bytes());
+            let at = state_dt_ceiling_s(&reactor, &fresh, l).unwrap();
+            assert!(at < ceiling());
+            assert_eq!(step(&reactor, &mut s, &mut frame, l, at.next_up()), Err(StepReject::DtAboveStateCeiling));
+            let run = run_from(rk4, &reactor, fresh, l, at, 3_000_000);
+            assert!(run.largest_residual <= RESIDUAL_CONSERVATION_LIMIT, "{l:?}");
+            assert!(run.steps > 400, "{l:?}");
+        }
+        // (b) at the trial end: from the deepest state, a step the start allows and its end does not
+        let state = deepest.1.unwrap();
+        let l = load(1.0989, 0.0);
+        let mut dt = state_dt_ceiling_s(&reactor, &state, l).unwrap();
+        let t = terms(&reactor, state.initial_temperature_k, l);
+        while within_state_ceiling(&reactor, &t, &state_vector(&state), dt).is_err() {
+            dt = dt.next_down();
+        }
+        let mut s = state;
+        let mut frame = marked_frame();
+        assert_eq!(step(&reactor, &mut s, &mut frame, l, dt), Err(StepReject::DtAboveStateCeiling));
+        assert_eq!(format!("{:?}", s), format!("{:?}", state));
+        assert_eq!(frame.to_bytes(), marked_frame().to_bytes());
+        // and at the static ceiling the same state goes on, past the 200 s the comparison stopped at,
+        // until the ledger, the state ceiling or the end names its limit
+        let run = run_from(rk4, &reactor, state, l, ceiling(), 1_000_000);
+        assert!(run.last.t_s > 400.0, "{}", run.last.t_s);
+        assert!(
+            matches!(
+                run.end,
+                Some(StepReject::SpontaneousGeneration | StepReject::FirstLawBreach | StepReject::DtAboveStateCeiling)
+            ),
+            "{:?} at {} s",
+            run.end,
+            run.last.t_s
+        );
+        assert!(run.largest_residual <= RESIDUAL_CONSERVATION_LIMIT);
+    }
+
+    /// Past every old wall the card computes the same equations and closes its ledger at every step.
+    #[test]
+    fn past_every_old_wall_the_ledger_closes() {
+        // starts outside 21 to 36 degC: 0, 99 degC at 0 psig, 250 degC at 2500 psig, 370 degC at 3500 psig
+        for (celsius, psig) in [(0.0, 0.0), (99.0, 0.0), (250.0, 2500.0), (370.0, 3500.0)] {
+            let run = run_with(rk4, celsius, psig, load(1.2, 0.0), ceiling(), 100_000);
+            assert_eq!(run.end, Some(StepReject::PastPlateTemperatureMaximum), "{celsius} degC");
+            assert!(run.largest_residual <= RESIDUAL_CONSERVATION_LIMIT, "{celsius} degC");
+        }
+        // no equation reads the pressure: the same transient, bit for bit, at 0 and far above 2500 psig
+        let at_zero = run_with(rk4, 25.0, 0.0, load(1.2, 0.0), ceiling(), 100_000);
+        for psig in [1000.0, 2500.0, 5000.0, 50_000.0] {
+            let run = run_with(rk4, 25.0, psig, load(1.2, 0.0), ceiling(), 100_000);
+            let mut same = run.last;
+            same.system_pressure_psig = 0.0;
+            assert_eq!(format!("{:?}", same), format!("{:?}", at_zero.last), "{psig} psig");
+        }
+        // flow at pressures other than 230 psig, and far above 20,000 gpm
+        for (psig, flow) in [(0.0, gpm(5000.0)), (2500.0, FLOW_MAX_M_PER_S), (225.0, 30.0), (0.0, 100.0)] {
+            let l = load(1.2, flow);
+            let run = run_with(rk4, 25.0, psig, l, start_dt(25.0, psig, l), 100_000);
+            if flow < 50.0 {
+                assert_eq!(run.end, Some(StepReject::PastPlateTemperatureMaximum), "{flow} m/s at {psig} psig");
+            } else {
+                // at 100 m/s the flow carries the heat away and the plate temperature is still rising
+                // after 100,000 steps (4.6 s): the run is completed
+                assert_eq!(run.end, None, "{flow} m/s at {psig} psig");
+                assert!(run.last.past_power_peak && !run.last.past_plate_maximum);
+            }
+            assert!(run.largest_residual <= RESIDUAL_CONSERVATION_LIMIT);
+        }
+        // reactivities below 0.412 and far above 1.305 dollars; above 2000 MW
+        for (rho, peak_low, peak_high) in [(1.5, 2400.0, 2700.0), (2.0, 9000.0, 10_000.0), (3.0, 33_000.0, 35_500.0), (5.0, 110_000.0, 120_000.0)] {
+            let l = load(rho, 0.0);
+            let dt = 0.5 * start_dt(25.0, 0.0, l);
+            let run = run_with(rk4, 25.0, 0.0, l, dt, 1_000_000);
+            assert_eq!(run.end, Some(StepReject::PastPlateTemperatureMaximum), "{rho} dollars");
+            assert!(run.largest_residual <= RESIDUAL_CONSERVATION_LIMIT, "{rho} dollars");
+            assert!(run.last.peak_power_mw > peak_low && run.last.peak_power_mw < peak_high, "{rho}: {}", run.last.peak_power_mw);
+        }
+        for rho in [1.0e-3, 0.1, 0.3] {
+            let run = run_with(rk4, 25.0, 0.0, load(rho, 0.0), ceiling(), 200_000);
+            assert_eq!(run.end, None, "{rho} dollars");
+            assert!(run.largest_residual <= RESIDUAL_CONSERVATION_LIMIT, "{rho} dollars");
+            assert!(run.last.power_mw > INITIAL_POWER_MW, "{rho}");
+        }
+        // past 200 s and 1e5 MW s: the slowest compared flow insertion with the most flow, to 600 s,
+        // settles and stays completed
+        let run = run_with(rk4, 25.0, 230.0, load(REACTIVITY_MIN_FLOW_DOLLAR, FLOW_MAX_M_PER_S), ceiling(), 1_000_000);
+        assert_eq!(run.end, None);
+        assert!(run.largest_residual <= RESIDUAL_CONSERVATION_LIMIT);
+        assert!(run.last.t_s > 599.0 && run.last.energy_mws > 1.5e5, "{} MW s", run.last.energy_mws);
+        assert!(!run.last.past_plate_maximum);
+    }
+
     /// Three compared rows (held back) run to their end at the ceiling: the card's answers as
     /// the comparison of 2026-10-11 recorded them (`analysis/out/rust_held_rows.tsv` of the
-    /// research record), pinned bit for bit so that any change to the equations shows.
+    /// research record), pinned bit for bit so that any change to the equations shows. 01425 has
+    /// no plate maximum before 200 s, where the comparison read it; it is run to 200 s.
     #[test]
     fn three_compared_rows_give_the_answers_the_comparison_recorded() {
         let reactor = ReactorSpert3Ccore::c_core_step_transients();
         // record, degC, psig, gpm, period s, steps landed, end, peak power, peak energy, plate rise max
-        let rows: [(&str, f64, f64, f64, f64, u64, StepReject, u64, u64, u64); 3] = [
-            ("01676", 25.0, 0.0, 0.0, 10.1 / 1000.0, 369, StepReject::PastPlateTemperatureMaximum, PIN[0], PIN[1], PIN[2]),
-            ("02985", 33.0, 230.0, 10000.0, 9.7 / 1000.0, 344, StepReject::PastPlateTemperatureMaximum, PIN[3], PIN[4], PIN[5]),
-            ("01425", 25.0, 0.0, 0.0, 9300.0 / 1000.0, 333_333, StepReject::TimeBeyondCard, PIN[6], PIN[7], PIN[8]),
+        let rows: [(&str, f64, f64, f64, f64, u64, Option<StepReject>, u64, u64, u64); 3] = [
+            ("01676", 25.0, 0.0, 0.0, 10.1 / 1000.0, 369, Some(StepReject::PastPlateTemperatureMaximum), PIN[0], PIN[1], PIN[2]),
+            ("02985", 33.0, 230.0, 10000.0, 9.7 / 1000.0, 344, Some(StepReject::PastPlateTemperatureMaximum), PIN[3], PIN[4], PIN[5]),
+            ("01425", 25.0, 0.0, 0.0, 9300.0 / 1000.0, 333_333, None, PIN[6], PIN[7], PIN[8]),
         ];
         for (record, celsius, psig, flow_gpm, period_s, landed, end, power, energy, plate) in rows {
-            let (_, mut state) = start(celsius, psig);
-            let mut frame = marked_frame();
             let l = load(reactor.inhour_dollar(period_s), gpm(flow_gpm));
-            let mut steps = 0u64;
-            let reject = loop {
-                match step(&reactor, &mut state, &mut frame, l, ceiling()) {
-                    Ok(()) => steps += 1,
-                    Err(reject) => break reject,
-                }
-            };
-            assert_eq!((steps, reject), (landed, end), "{record}");
-            assert_eq!(state.peak_power_mw.to_bits(), power, "{record}");
-            assert_eq!(state.peak_energy_mws.to_bits(), energy, "{record}");
-            assert_eq!(state.plate_rise_max_k.to_bits(), plate, "{record}");
+            let run = run_with(rk4, celsius, psig, l, ceiling(), 333_333);
+            assert_eq!((run.steps, run.end), (landed, end), "{record}");
+            assert_eq!(run.last.peak_power_mw.to_bits(), power, "{record}");
+            assert_eq!(run.last.peak_energy_mws.to_bits(), energy, "{record}");
+            assert_eq!(run.last.plate_rise_max_k.to_bits(), plate, "{record}");
         }
-        // 01425 ends at the time limit, where the comparison took the largest rise reached
+        // 01425 at 200 s, where the comparison took the largest rise reached
         assert!((f64::from_bits(PIN[8]) / 99.457652733 - 1.0).abs() < 1.0e-9);
     }
 

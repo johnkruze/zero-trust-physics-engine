@@ -1,0 +1,16 @@
+{
+ "model": "satellite_lageos1",
+ "verdict": "met",
+ "protocol": {
+  "path": "evidence/research/lageos1_orbit/analysis/prereg.json",
+  "sha256": "52114d795811fc014b3114c4bec8726d33ca0771dc295c57253d914243498fed",
+  "committed": null
+ },
+ "scored": {
+  "utc": "2026-10-06T22:00:09Z",
+  "evidence": "evidence/research/lageos1_orbit/analysis/out/10_sealed_weeks_opened.json: the sealed LAGEOS-1 weeks 260912 and 260919 opened_utc 2026-10-06T22:00:09Z (LAGEOS-2 weeks from 22:00:11Z) by the frozen engine comparison (out/10_engine_comparison_sealed.log). The forecasts from 18:52:15Z ran on the opened weeks only."
+ },
+ "forecast_first": "not shown",
+ "registered_by": "backfill from the record, 2026-10-15",
+ "notes": "No commit in any crate carries 52114d79 (prereg.json), any of its four amendments (2f633a28, 357f482a, d22f8fab, fe3d4421) or 543d60d4 (validation_protocol.md); the served pass line states no hash. Outside Git: analysis/out/prereg_sha256_recorded_before_scoring.txt (2026-10-06T18:51:19Z) and one record per amendment, the last, prereg_amendment_4_sha256_recorded_before_any_engine_run_on_data.txt, at 2026-10-06T21:55:02Z, before the sealed weeks were opened. Four amendments were made after the forecast on the opened weeks had been scored. 10_sealed_weeks_opened.json says week lageos1 260919 was not fully blind: a helper agent had computed the spread between centres for it. Not a committed fingerprint: posted to github.com/johnkruze/zero-trust-physics-pass-marks with this SHA-256 in GitHub-signed commit 6356e008cadeffd45125f861f39c3c61d9a5b6df at 2026-10-13T17:54:36Z, after the scoring. The pass line's text, with no hash, first enters a commit in protocol_mcp_gateway 5fe78e256745fbafda10971bf539f9b30acef726 at 2026-10-07T20:15:14Z, after the scoring."
+}

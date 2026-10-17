@@ -52,17 +52,23 @@
 //! Compared with measurement on the casts and echo soundings of R/V Knorr
 //! cruise 145, the WOCE Indian Ocean expedition of 1994 to 1996: see
 //! `evidence/research/marine_knorr145_indian_ocean/`. The casts scored
-//! there span the envelope of the `COMPARED_` constants, and a cast outside
-//! it is refused by name, although the Gibbs function itself reaches
-//! further: latitudes −34.0023 to +26.4108, the last level no deeper than
-//! 6108 dbar, temperatures 0.5088 to 31.169 °C, Practical Salinity 30.9805
-//! to 40.0731, and the last level no more than 86 m above the sea floor.
+//! there span the envelope of the `COMPARED_` constants: latitudes −34.0023
+//! to +26.4108, the last level no deeper than 6108 dbar, temperatures
+//! 0.5088 to 31.169 °C, Practical Salinity 30.9805 to 40.0731, and the last
+//! level no more than 86 m above the sea floor. The solver answers past
+//! that envelope wherever the Gibbs function holds: any latitude, down to
+//! 10,000 dbar, Practical Salinity 0 to 41.8, from the freezing temperature
+//! of seawater up to 40 °C, and up to 100 m above the sea floor, so the
+//! Arctic, the Southern Ocean and the trenches to 10,000 dbar are answered.
+//! Through engine 0.8.0 a cast outside the envelope was refused by name.
 //!
 //! Left out: the difference between Absolute Salinity and Reference Salinity
 //! (the composition anomaly, at most 0.03 g/kg in the open ocean), the
 //! atmosphere's departure from one standard atmosphere, the sea surface's
 //! height above the geoid, currents, and the local anomaly of gravity.
 
+use genesis_kernel::math;
+use crate::normal::NormalOrZero;
 use std::fmt;
 
 /// Fewest and most levels of one cast.
@@ -72,7 +78,11 @@ pub const LEVELS_MAX: usize = 1024;
 pub const SEA_PRESSURE_MIN_DBAR: f64 = 0.0;
 /// The upper pressure limit of the Gibbs function, 100 MPa.
 pub const SEA_PRESSURE_MAX_DBAR: f64 = 10_000.0;
-/// The first level lies no deeper than this.
+/// The first level lies no deeper than this. The layer from the sea surface
+/// down to it has no level above it, so it is weighed at the first level's
+/// specific volume alone, a one-level layer in place of the mean of two; the
+/// layers between levels may be up to [`LEVEL_GAP_MAX_DBAR`], five times as
+/// thick, because each takes the mean of its two levels.
 pub const FIRST_LEVEL_MAX_DBAR: f64 = 20.0;
 /// No two neighbouring levels are further apart than this.
 pub const LEVEL_GAP_MAX_DBAR: f64 = 100.0;
@@ -99,7 +109,8 @@ pub const HEIGHT_ABOVE_BOTTOM_MAX_M: f64 = 100.0;
 
 /// The envelope of the 761 casts compared with measurement: the 632 scored
 /// on the held-back legs 7, 8, 9, 10 and 13 of Knorr cruise 145 and the 129
-/// of the opened leg 6, every level as the scored request gave it.
+/// of the opened leg 6, every level as the scored request gave it. These
+/// are stated, not enforced: a cast outside them is answered.
 pub const COMPARED_LATITUDE_MIN_DEG: f64 = -34.0023;
 pub const COMPARED_LATITUDE_MAX_DEG: f64 = 26.4108;
 /// The deepest last level of a compared cast, decibars.
@@ -169,7 +180,7 @@ pub const HYDROSTATIC_TOLERANCE: f64 = 1.0e-11;
 pub const DEPTH_ROUNDING_SPACINGS: f64 = 0.5;
 
 /// The published formulation this solver is checked against.
-pub const REFERENCE_NAME: &str = "IAPWS SR7-09, Supplementary Release on a Computationally Efficient Thermodynamic Formulation for Liquid Water for Oceanographic Use (2009), Table 6, and IAPWS R13-08, Release on the IAPWS Formulation 2008 for the Thermodynamic Properties of Seawater (2008), Table 8: numerical check values";
+pub const REFERENCE_NAME: &str = "IAPWS SR7-09, Supplementary Release on a Computationally Efficient Thermodynamic Formulation for Liquid Water for Oceanographic Use (2009), Table 6, and IAPWS R13-08, Release on the IAPWS Formulation 2008 for the Thermodynamic Properties of Seawater (2008), Table 8";
 pub const REFERENCE_URL: &str = "https://www.teos-10.org/pubs/IAPWS-09.pdf";
 pub const REFERENCE_URL_SALINE: &str = "https://www.teos-10.org/pubs/IAPWS-08.pdf";
 /// Date the two releases were read.
@@ -295,38 +306,28 @@ const SALINE: [(usize, usize, usize, f64); 64] = [
 pub enum ColumnReject {
     /// An input or an intermediate value was NaN or infinite.
     NonFiniteValue,
-    /// `latitude_deg` is outside [`LATITUDE_MIN_DEG`]..=[`LATITUDE_MAX_DEG`].
+    /// `latitude_deg` is outside [`LATITUDE_MIN_DEG`] to [`LATITUDE_MAX_DEG`].
     LatitudeOutOfRange { latitude_deg: f64 },
     /// The cast has fewer than [`LEVELS_MIN`] or more than [`LEVELS_MAX`] levels.
     LevelCountOutOfRange { levels: usize },
     /// The pressures, the temperatures and the salinities are not one for each level.
     LevelsDoNotMatch { pressures: usize, temperatures: usize, salinities: usize },
-    /// A level's sea pressure is outside [`SEA_PRESSURE_MIN_DBAR`]..=[`SEA_PRESSURE_MAX_DBAR`], the range of the Gibbs function.
+    /// A level's sea pressure is outside [`SEA_PRESSURE_MIN_DBAR`] to [`SEA_PRESSURE_MAX_DBAR`], the range of the Gibbs function.
     PressureOutOfRange { level: usize, sea_pressure_dbar: f64 },
-    /// The first level is deeper than [`FIRST_LEVEL_MAX_DBAR`], so the water above it was not measured.
+    /// The first level is deeper than [`FIRST_LEVEL_MAX_DBAR`]: the layer from the sea surface down to it has no level above it to take a mean with, so it is weighed at the first level's specific volume alone, and the solver takes that one-level layer no thicker than this.
     FirstLevelTooDeep { sea_pressure_dbar: f64 },
     /// A level's pressure is not above the pressure of the level before it.
     PressureNotRising { level: usize },
     /// Two neighbouring levels are more than [`LEVEL_GAP_MAX_DBAR`] apart.
     LevelGapTooWide { level: usize, gap_dbar: f64 },
-    /// A level's Practical Salinity is outside [`PRACTICAL_SALINITY_MIN`]..=[`PRACTICAL_SALINITY_MAX`].
+    /// A level's Practical Salinity is outside [`PRACTICAL_SALINITY_MIN`] to [`PRACTICAL_SALINITY_MAX`].
     SalinityOutOfRange { level: usize, practical_salinity: f64 },
     /// A level's temperature is above [`TEMPERATURE_MAX_C`] or below the lowest temperature of the water part of the Gibbs function, IAPWS SR7-09, at its pressure.
     TemperatureOutOfRange { level: usize, temperature_c: f64, lowest_c: f64 },
     /// A level's temperature is below the freezing temperature of air-free seawater of its salinity at its pressure, where the Gibbs function of seawater does not hold.
     TemperatureBelowFreezing { level: usize, temperature_c: f64, freezing_c: f64 },
-    /// `height_above_bottom_m` is outside [`HEIGHT_ABOVE_BOTTOM_MIN_M`]..=[`HEIGHT_ABOVE_BOTTOM_MAX_M`].
+    /// `height_above_bottom_m` is outside [`HEIGHT_ABOVE_BOTTOM_MIN_M`] to [`HEIGHT_ABOVE_BOTTOM_MAX_M`].
     HeightAboveBottomOutOfRange { height_above_bottom_m: f64 },
-    /// `latitude_deg` is outside [`COMPARED_LATITUDE_MIN_DEG`]..=[`COMPARED_LATITUDE_MAX_DEG`], the latitudes of the casts compared with measurement.
-    LatitudeOutsideCompared { latitude_deg: f64 },
-    /// `height_above_bottom_m` is above [`COMPARED_HEIGHT_ABOVE_BOTTOM_MAX_M`], the greatest height of the casts compared with measurement.
-    HeightAboveBottomOutsideCompared { height_above_bottom_m: f64 },
-    /// The last level is deeper than [`COMPARED_DEEPEST_MAX_DBAR`], the deepest last level of the casts compared with measurement.
-    DeeperThanCompared { sea_pressure_dbar: f64 },
-    /// A level's Practical Salinity is outside [`COMPARED_SALINITY_MIN`]..=[`COMPARED_SALINITY_MAX`], the salinities of the casts compared with measurement.
-    SalinityOutsideCompared { level: usize, practical_salinity: f64 },
-    /// A level's temperature is outside [`COMPARED_TEMPERATURE_MIN_C`]..=[`COMPARED_TEMPERATURE_MAX_C`], the temperatures of the casts compared with measurement.
-    TemperatureOutsideCompared { level: usize, temperature_c: f64 },
     /// The sweep cap was reached with a level still moving.
     ColumnNotSettled { sweeps: u32 },
     /// A layer of an otherwise settled column left [`HYDROSTATIC_TOLERANCE`] of its pressure step by more than the weight of [`DEPTH_ROUNDING_SPACINGS`] of the spacing of 64-bit numbers at its lower depth.
@@ -349,11 +350,6 @@ impl ColumnReject {
             Self::TemperatureOutOfRange { .. } => "TemperatureOutOfRange",
             Self::TemperatureBelowFreezing { .. } => "TemperatureBelowFreezing",
             Self::HeightAboveBottomOutOfRange { .. } => "HeightAboveBottomOutOfRange",
-            Self::LatitudeOutsideCompared { .. } => "LatitudeOutsideCompared",
-            Self::HeightAboveBottomOutsideCompared { .. } => "HeightAboveBottomOutsideCompared",
-            Self::DeeperThanCompared { .. } => "DeeperThanCompared",
-            Self::SalinityOutsideCompared { .. } => "SalinityOutsideCompared",
-            Self::TemperatureOutsideCompared { .. } => "TemperatureOutsideCompared",
             Self::ColumnNotSettled { .. } => "ColumnNotSettled",
             Self::HydrostaticBalanceBroken { .. } => "HydrostaticBalanceBroken",
         }
@@ -366,10 +362,10 @@ impl fmt::Display for ColumnReject {
             Self::NonFiniteValue => write!(f, "an input or a computed value was not finite"),
             Self::LatitudeOutOfRange { latitude_deg } => write!(
                 f,
-                "latitude {latitude_deg} deg is outside {LATITUDE_MIN_DEG}..={LATITUDE_MAX_DEG}"
+                "latitude {latitude_deg} deg is outside {LATITUDE_MIN_DEG} to {LATITUDE_MAX_DEG} deg"
             ),
             Self::LevelCountOutOfRange { levels } => {
-                write!(f, "{levels} levels is outside {LEVELS_MIN}..={LEVELS_MAX}")
+                write!(f, "{levels} levels is outside {LEVELS_MIN} to {LEVELS_MAX} levels")
             }
             Self::LevelsDoNotMatch { pressures, temperatures, salinities } => write!(
                 f,
@@ -377,11 +373,11 @@ impl fmt::Display for ColumnReject {
             ),
             Self::PressureOutOfRange { level, sea_pressure_dbar } => write!(
                 f,
-                "sea pressure {sea_pressure_dbar} dbar at level {level} is outside {SEA_PRESSURE_MIN_DBAR}..={SEA_PRESSURE_MAX_DBAR}"
+                "sea pressure {sea_pressure_dbar} dbar at level {level} is outside {SEA_PRESSURE_MIN_DBAR} to {SEA_PRESSURE_MAX_DBAR} dbar, the range of the Gibbs function"
             ),
             Self::FirstLevelTooDeep { sea_pressure_dbar } => write!(
                 f,
-                "the first level is at {sea_pressure_dbar} dbar, deeper than {FIRST_LEVEL_MAX_DBAR}"
+                "the first level is at {sea_pressure_dbar} dbar, deeper than {FIRST_LEVEL_MAX_DBAR} dbar: the layer from the sea surface down to it is weighed at the first level's water alone, and no thicker one is taken"
             ),
             Self::PressureNotRising { level } => write!(
                 f,
@@ -389,15 +385,15 @@ impl fmt::Display for ColumnReject {
             ),
             Self::LevelGapTooWide { level, gap_dbar } => write!(
                 f,
-                "level {level} is {gap_dbar} dbar below the level before it, more than {LEVEL_GAP_MAX_DBAR}"
+                "level {level} is {gap_dbar} dbar below the level before it, more than {LEVEL_GAP_MAX_DBAR} dbar"
             ),
             Self::SalinityOutOfRange { level, practical_salinity } => write!(
                 f,
-                "Practical Salinity {practical_salinity} at level {level} is outside {PRACTICAL_SALINITY_MIN}..={PRACTICAL_SALINITY_MAX}"
+                "Practical Salinity {practical_salinity} at level {level} is outside {PRACTICAL_SALINITY_MIN} to {PRACTICAL_SALINITY_MAX}, the range of the Gibbs function"
             ),
             Self::TemperatureOutOfRange { level, temperature_c, lowest_c } => write!(
                 f,
-                "temperature {temperature_c} degC at level {level} is outside {lowest_c}..={TEMPERATURE_MAX_C} at its pressure"
+                "temperature {temperature_c} degC at level {level} is outside {lowest_c} to {TEMPERATURE_MAX_C} degC, the range of the Gibbs function at its pressure"
             ),
             Self::TemperatureBelowFreezing { level, temperature_c, freezing_c } => write!(
                 f,
@@ -405,27 +401,7 @@ impl fmt::Display for ColumnReject {
             ),
             Self::HeightAboveBottomOutOfRange { height_above_bottom_m } => write!(
                 f,
-                "height above bottom {height_above_bottom_m} m is outside {HEIGHT_ABOVE_BOTTOM_MIN_M}..={HEIGHT_ABOVE_BOTTOM_MAX_M}"
-            ),
-            Self::LatitudeOutsideCompared { latitude_deg } => write!(
-                f,
-                "latitude {latitude_deg} deg is outside {COMPARED_LATITUDE_MIN_DEG}..={COMPARED_LATITUDE_MAX_DEG}, the latitudes compared with measurement"
-            ),
-            Self::HeightAboveBottomOutsideCompared { height_above_bottom_m } => write!(
-                f,
-                "height above bottom {height_above_bottom_m} m is above {COMPARED_HEIGHT_ABOVE_BOTTOM_MAX_M}, the greatest height compared with measurement"
-            ),
-            Self::DeeperThanCompared { sea_pressure_dbar } => write!(
-                f,
-                "the last level is at {sea_pressure_dbar} dbar, deeper than {COMPARED_DEEPEST_MAX_DBAR}, the deepest compared with measurement"
-            ),
-            Self::SalinityOutsideCompared { level, practical_salinity } => write!(
-                f,
-                "Practical Salinity {practical_salinity} at level {level} is outside {COMPARED_SALINITY_MIN}..={COMPARED_SALINITY_MAX}, the salinities compared with measurement"
-            ),
-            Self::TemperatureOutsideCompared { level, temperature_c } => write!(
-                f,
-                "temperature {temperature_c} degC at level {level} is outside {COMPARED_TEMPERATURE_MIN_C}..={COMPARED_TEMPERATURE_MAX_C}, the temperatures compared with measurement"
+                "height above bottom {height_above_bottom_m} m is outside {HEIGHT_ABOVE_BOTTOM_MIN_M} to {HEIGHT_ABOVE_BOTTOM_MAX_M} m"
             ),
             Self::ColumnNotSettled { sweeps } => {
                 write!(f, "a level was still moving after {sweeps} sweeps")
@@ -551,7 +527,7 @@ fn specific_volume_and_sound_speed(
 
 /// Gravity at the sea surface at one latitude, m/s².
 pub fn surface_gravity_m_per_s2(latitude_deg: f64) -> f64 {
-    let sine = latitude_deg.to_radians().sin();
+    let sine = math::sin(latitude_deg.to_radians());
     let sin2 = sine * sine;
     GRAVITY_EQUATOR_M_PER_S2 * (1.0 + (GRAVITY_SIN2 + GRAVITY_SIN4 * sin2) * sin2)
 }
@@ -577,10 +553,10 @@ fn water_chemical_potential(
     let x = (salinity_kg_per_kg / REDUCING_SALINITY_KG_PER_KG).sqrt();
     let (mut potential, mut slope) = (0.0, 0.0);
     let mut add = |coefficient: f64, j: usize, k: usize| {
-        let z_to_k = z.powi(k as i32);
-        potential += coefficient * y.powi(j as i32) * z_to_k;
+        let z_to_k = math::powi(z, k as i32);
+        potential += coefficient * math::powi(y, j as i32) * z_to_k;
         if j >= 1 {
-            slope += coefficient * j as f64 * y.powi(j as i32 - 1) * z_to_k / REDUCING_TEMPERATURE_K;
+            slope += coefficient * j as f64 * math::powi(y, j as i32 - 1) * z_to_k / REDUCING_TEMPERATURE_K;
         }
     };
     for (j, k, coefficient) in WATER {
@@ -590,7 +566,7 @@ fn water_chemical_potential(
         let share = if i == 1 {
             -0.5 * x * x
         } else {
-            (1.0 - 0.5 * i as f64) * x.powi(i as i32)
+            (1.0 - 0.5 * i as f64) * math::powi(x, i as i32)
         };
         add(coefficient * share, j, k);
     }
@@ -606,7 +582,7 @@ fn complex_mul(a: Complex, b: Complex) -> Complex {
 
 /// The principal value of the logarithm, as R10-06 asks.
 fn complex_ln(a: Complex) -> Complex {
-    (a.0.hypot(a.1).ln(), a.1.atan2(a.0))
+    (math::log(math::hypot(a.0, a.1)), math::atan2(a.1, a.0))
 }
 
 /// The Gibbs energy of ice Ih (J/kg) and its temperature derivative
@@ -677,11 +653,10 @@ pub fn freezing_temperature_c(practical_salinity: f64, sea_pressure_dbar: f64) -
 }
 
 /// Every limit the cast itself shows, in the order the solver asks them:
-/// first the limits of the physics, level by level, then the envelope of
-/// the casts compared with measurement.
+/// the limits of the physics, level by level. The envelope of the casts
+/// compared with measurement is not a limit.
 pub fn check_cast(cast: &Cast<'_>) -> Result<(), ColumnReject> {
-    check_physics(cast)?;
-    check_compared(cast)
+    check_physics(cast)
 }
 
 /// The limits of the physics: the Gibbs function, the freezing temperature,
@@ -744,37 +719,6 @@ fn check_physics(cast: &Cast<'_>) -> Result<(), ColumnReject> {
         let freezing_c = freezing_temperature_c(practical_salinity, sea_pressure_dbar)?;
         if temperature_c < freezing_c {
             return Err(ColumnReject::TemperatureBelowFreezing { level, temperature_c, freezing_c });
-        }
-    }
-    Ok(())
-}
-
-/// The envelope of the casts compared with measurement. Asked after
-/// [`check_physics`], so the cast has its levels.
-fn check_compared(cast: &Cast<'_>) -> Result<(), ColumnReject> {
-    let (pressures, temperatures, salinities) =
-        (cast.sea_pressure_dbar, cast.temperature_c, cast.practical_salinity);
-    let levels = pressures.len();
-    if !(COMPARED_LATITUDE_MIN_DEG..=COMPARED_LATITUDE_MAX_DEG).contains(&cast.latitude_deg) {
-        return Err(ColumnReject::LatitudeOutsideCompared { latitude_deg: cast.latitude_deg });
-    }
-    if cast.height_above_bottom_m > COMPARED_HEIGHT_ABOVE_BOTTOM_MAX_M {
-        return Err(ColumnReject::HeightAboveBottomOutsideCompared {
-            height_above_bottom_m: cast.height_above_bottom_m,
-        });
-    }
-    let deepest = pressures[levels - 1];
-    if deepest > COMPARED_DEEPEST_MAX_DBAR {
-        return Err(ColumnReject::DeeperThanCompared { sea_pressure_dbar: deepest });
-    }
-    for level in 0..levels {
-        let practical_salinity = salinities[level];
-        if !(COMPARED_SALINITY_MIN..=COMPARED_SALINITY_MAX).contains(&practical_salinity) {
-            return Err(ColumnReject::SalinityOutsideCompared { level, practical_salinity });
-        }
-        let temperature_c = temperatures[level];
-        if !(COMPARED_TEMPERATURE_MIN_C..=COMPARED_TEMPERATURE_MAX_C).contains(&temperature_c) {
-            return Err(ColumnReject::TemperatureOutsideCompared { level, temperature_c });
         }
     }
     Ok(())
@@ -874,14 +818,35 @@ fn spacing_at(depth_m: f64) -> f64 {
 }
 
 /// The settled column of one cast.
+///
+/// Each value of the answer below the normal range is written as zero
+/// with its sign ([`crate::normal`]).
 pub fn solve(cast: &Cast<'_>) -> Result<SettledColumn, ColumnReject> {
+    crate::normal::held(solve_as_computed(cast))
+}
+
+/// The answer as the equations compute it, before a value below the
+/// normal range is written as zero.
+fn solve_as_computed(cast: &Cast<'_>) -> Result<SettledColumn, ColumnReject> {
     check_cast(cast)?;
     settle(cast, MAX_SWEEPS)
 }
 
-/// The column of a cast held to the limits of the physics alone. The tests
-/// use it to hold the equations to their references outside the compared
-/// envelope; the public solver asks the envelope as well.
+impl NormalOrZero for SettledColumn {
+    fn normal_or_zero(&mut self) {
+        self.depth_m.normal_or_zero();
+        self.density_kg_per_m3.normal_or_zero();
+        self.sound_speed_m_per_s.normal_or_zero();
+        self.seabed_depth_m.normal_or_zero();
+        self.echo_one_way_time_s.normal_or_zero();
+        self.echo_sounder_depth_m.normal_or_zero();
+        self.mean_sound_speed_m_per_s.normal_or_zero();
+        self.hydrostatic_residual.normal_or_zero();
+        self.column_weight_residual_dbar.normal_or_zero();
+    }
+}
+
+/// The column of a cast with a sweep cap of the test's choosing.
 #[cfg(test)]
 fn solve_with(cast: &Cast<'_>, sweep_cap: u32) -> Result<SettledColumn, ColumnReject> {
     check_physics(cast)?;
@@ -1020,7 +985,7 @@ mod tests {
     ];
 
     #[test]
-    fn iapws_check_values_of_the_water_part_and_the_saline_part() {
+    fn iapws_published_values_of_the_water_part_and_the_saline_part() {
         println!("IAPWS releases retrieved {REFERENCE_RETRIEVED} from {REFERENCE_URL} and {REFERENCE_URL_SALINE}");
         let mut worst: f64 = 0.0;
         for (kelvin, pascal, published) in WATER_CHECK {
@@ -1215,7 +1180,7 @@ mod tests {
             ColumnReject::TemperatureOutOfRange { level: 0, .. }
         ));
         // Seawater freezes before that: -2 degC is ice at the surface and
-        // liquid at 1000 dbar, where it is outside the compared temperatures.
+        // liquid at 1000 dbar, where it is answered.
         match refused(&|c| c.1[0] = -2.0, 0.0, 0.0) {
             ColumnReject::TemperatureBelowFreezing { level: 0, temperature_c, freezing_c } => {
                 assert_eq!(temperature_c, -2.0);
@@ -1226,16 +1191,12 @@ mod tests {
         let mut cold = good.clone();
         cold.1[20] = -2.0;
         assert!(physics(&cast(0.0, &cold, 0.0)).is_ok());
-        assert_eq!(
-            solve(&cast(0.0, &cold, 0.0)),
-            Err(ColumnReject::TemperatureOutsideCompared { level: 20, temperature_c: -2.0 })
-        );
+        assert_eq!(solve(&cast(0.0, &cold, 0.0)), physics(&cast(0.0, &cold, 0.0)));
     }
 
     /// A request engine 0.6.0 answered with a proof: salinity 35 at -2.5 degC
     /// at 0 and 10 dbar, below the freezing temperature of seawater, about
-    /// -1.92 degC. It is refused by name, by the physics as well as by the
-    /// compared envelope.
+    /// -1.92 degC. It is refused by name: ice, not seawater.
     #[test]
     fn seawater_below_its_freezing_temperature_is_named() {
         let columns = (vec![0.0, 10.0], vec![-2.5, -2.5], vec![35.0, 35.0]);
@@ -1308,7 +1269,7 @@ mod tests {
     ];
 
     #[test]
-    fn the_freezing_temperature_meets_the_check_values_of_ice_water_and_salt() {
+    fn the_freezing_temperature_meets_the_published_values_of_ice_water_and_salt() {
         for (kelvin, pascal, energy, slope) in ICE_CHECK {
             let (got_energy, got_slope) = ice_gibbs(kelvin - 273.15, pascal);
             println!("ice {kelvin} K {pascal} Pa: g {got_energy:e} against {energy:e}, g_T {got_slope:e} against {slope:e}");
@@ -1366,94 +1327,120 @@ mod tests {
         );
     }
 
-    /// The compared envelope: each of its ends is answered, and the next
-    /// 64-bit number outside each end is refused by its name. Every one of
-    /// these casts the physics alone answers.
+    /// Past the envelope of the casts compared with measurement, where
+    /// engine 0.8.0 refused by name: every cast here is answered, the same
+    /// bits as the column held to the physics alone, with every layer
+    /// carrying its weight and the column carrying the last pressure, and
+    /// the limits of the physics still stop it by name.
     #[test]
-    fn a_cast_outside_the_compared_envelope_is_named() {
+    fn a_cast_outside_the_compared_envelope_is_answered_to_the_limits_of_the_physics() {
         let next_up = |value: f64| f64::from_bits(if value >= 0.0 { value.to_bits() + 1 } else { value.to_bits() - 1 });
         let next_down = |value: f64| -next_up(-value);
-        let base = made_up_cast(1000.0, 50.0);
-        let answered = |columns: &(Vec<f64>, Vec<f64>, Vec<f64>), latitude: f64, height: f64| {
-            physics(&cast(latitude, columns, height)).expect("the physics answers");
-            solve(&cast(latitude, columns, height))
+        let held = |columns: &(Vec<f64>, Vec<f64>, Vec<f64>), latitude: f64, height: f64| -> SettledColumn {
+            let column = solve(&cast(latitude, columns, height)).unwrap_or_else(|reject| panic!("{latitude} {height}: {reject}"));
+            assert_eq!(Ok(column.clone()), physics(&cast(latitude, columns, height)));
+            assert!(column.hydrostatic_residual <= 1.0e-9, "{}", column.hydrostatic_residual);
+            assert!(column.column_weight_residual_dbar.abs() <= 1.0e-6, "{}", column.column_weight_residual_dbar);
+            assert_eq!(check_cast(&cast(latitude, columns, height)), Ok(()));
+            column
         };
-        // latitude
-        for latitude in [COMPARED_LATITUDE_MIN_DEG, COMPARED_LATITUDE_MAX_DEG] {
-            assert!(answered(&base, latitude, 0.0).is_ok(), "{latitude}");
+        let base = made_up_cast(1000.0, 50.0);
+        // latitude: every latitude, the poles included
+        for latitude in [next_down(COMPARED_LATITUDE_MIN_DEG), next_up(COMPARED_LATITUDE_MAX_DEG), 61.0, -89.0, 90.0, -90.0] {
+            held(&base, latitude, 0.0);
         }
-        for latitude in [next_down(COMPARED_LATITUDE_MIN_DEG), next_up(COMPARED_LATITUDE_MAX_DEG), 61.0, -89.0, 90.0] {
-            assert_eq!(answered(&base, latitude, 0.0), Err(ColumnReject::LatitudeOutsideCompared { latitude_deg: latitude }));
-        }
-        // height above bottom
-        assert!(answered(&base, 0.0, COMPARED_HEIGHT_ABOVE_BOTTOM_MAX_M).is_ok());
+        // height above bottom, to the 100 m of the method
         for height in [next_up(COMPARED_HEIGHT_ABOVE_BOTTOM_MAX_M), 100.0] {
-            assert_eq!(
-                answered(&base, 0.0, height),
-                Err(ColumnReject::HeightAboveBottomOutsideCompared { height_above_bottom_m: height })
-            );
+            let column = held(&base, 0.0, height);
+            assert_eq!(column.seabed_depth_m, column.depth_m[column.depth_m.len() - 1] + height);
         }
-        // the last level
-        let mut deep = made_up_cast(COMPARED_DEEPEST_MAX_DBAR, 50.0);
-        assert!(answered(&deep, 0.0, 0.0).is_ok());
-        let last = deep.0.len() - 1;
-        deep.0[last] = next_up(COMPARED_DEEPEST_MAX_DBAR);
-        assert_eq!(answered(&deep, 0.0, 0.0), Err(ColumnReject::DeeperThanCompared { sea_pressure_dbar: deep.0[last] }));
+        // the last level, to the 10,000 dbar of the Gibbs function
         let trench = made_up_cast(10_000.0, 100.0);
-        assert_eq!(answered(&trench, 0.0, 0.0), Err(ColumnReject::DeeperThanCompared { sea_pressure_dbar: 10_000.0 }));
-        // salinity and temperature, at a level part way down
-        for (salinity, inside) in [
-            (COMPARED_SALINITY_MIN, true),
-            (COMPARED_SALINITY_MAX, true),
-            (next_down(COMPARED_SALINITY_MIN), false),
-            (next_up(COMPARED_SALINITY_MAX), false),
-            (0.0, false),
-            (41.8, false),
-        ] {
+        let deep = held(&trench, 11.3, 0.0);
+        assert!(deep.seabed_depth_m > 9700.0 && deep.seabed_depth_m < 9760.0, "{}", deep.seabed_depth_m);
+        // salinity, 0 to 41.8, and temperature, freezing to 40 degC
+        for salinity in [next_down(COMPARED_SALINITY_MIN), next_up(COMPARED_SALINITY_MAX), 0.0, 41.8] {
             let mut columns = base.clone();
             columns.2[7] = salinity;
-            let answer = answered(&columns, 0.0, 0.0);
-            if inside {
-                assert!(answer.is_ok(), "{salinity}");
-            } else {
-                assert_eq!(answer, Err(ColumnReject::SalinityOutsideCompared { level: 7, practical_salinity: salinity }));
-            }
+            held(&columns, 0.0, 0.0);
         }
-        for (temperature, inside) in [
-            (COMPARED_TEMPERATURE_MIN_C, true),
-            (COMPARED_TEMPERATURE_MAX_C, true),
-            (next_down(COMPARED_TEMPERATURE_MIN_C), false),
-            (next_up(COMPARED_TEMPERATURE_MAX_C), false),
-            (39.9, false),
-        ] {
+        for temperature in [next_down(COMPARED_TEMPERATURE_MIN_C), next_up(COMPARED_TEMPERATURE_MAX_C), 39.9, 40.0] {
             let mut columns = base.clone();
             columns.1[7] = temperature;
-            let answer = answered(&columns, 0.0, 0.0);
-            if inside {
-                assert!(answer.is_ok(), "{temperature}");
-            } else {
-                assert_eq!(answer, Err(ColumnReject::TemperatureOutsideCompared { level: 7, temperature_c: temperature }));
-            }
+            held(&columns, 0.0, 0.0);
         }
-        // Three casts outside the compared ones: fresh water at 61 degN,
-        // a polar trench cast 100 m above the floor, and hot hypersaline water.
+        // fresh water at 61 degN, a polar trench cast 100 m above the
+        // floor, hot hypersaline water
         let fresh = (vec![0.0, 50.0, 100.0, 150.0, 200.0], vec![4.0; 5], vec![0.0; 5]);
-        assert_eq!(answered(&fresh, 61.0, 10.0), Err(ColumnReject::LatitudeOutsideCompared { latitude_deg: 61.0 }));
-        assert_eq!(answered(&fresh, 0.0, 10.0), Err(ColumnReject::SalinityOutsideCompared { level: 0, practical_salinity: 0.0 }));
+        held(&fresh, 61.0, 10.0);
         let polar = ((0..=100).map(|level| 100.0 * level as f64).collect::<Vec<f64>>(), vec![1.5; 101], vec![34.7; 101]);
-        assert_eq!(answered(&polar, -89.0, 100.0), Err(ColumnReject::LatitudeOutsideCompared { latitude_deg: -89.0 }));
-        assert_eq!(answered(&polar, 0.0, 100.0), Err(ColumnReject::HeightAboveBottomOutsideCompared { height_above_bottom_m: 100.0 }));
-        assert_eq!(answered(&polar, 0.0, 0.0), Err(ColumnReject::DeeperThanCompared { sea_pressure_dbar: 10_000.0 }));
+        held(&polar, -89.0, 100.0);
         let hot = (vec![0.0, 10.0, 20.0], vec![39.9; 3], vec![41.8; 3]);
-        assert_eq!(answered(&hot, 27.0, 50.0), Err(ColumnReject::LatitudeOutsideCompared { latitude_deg: 27.0 }));
-        assert_eq!(answered(&hot, 20.0, 50.0), Err(ColumnReject::SalinityOutsideCompared { level: 0, practical_salinity: 41.8 }));
-        // check_cast is what the gateway asks at its door, and it agrees
-        assert_eq!(check_cast(&cast(27.0, &hot, 50.0)), Err(ColumnReject::LatitudeOutsideCompared { latitude_deg: 27.0 }));
+        held(&hot, 27.0, 50.0);
+        // past them the physics names the limit
+        let mut hotter = hot.clone();
+        hotter.1[1] = 40.5;
+        assert!(matches!(solve(&cast(27.0, &hotter, 50.0)), Err(ColumnReject::TemperatureOutOfRange { level: 1, .. })));
+        let mut saltier = hot.clone();
+        saltier.2[2] = 41.9;
+        assert_eq!(solve(&cast(27.0, &saltier, 50.0)), Err(ColumnReject::SalinityOutOfRange { level: 2, practical_salinity: 41.9 }));
+        assert_eq!(solve(&cast(-90.5, &hot, 50.0)), Err(ColumnReject::LatitudeOutOfRange { latitude_deg: -90.5 }));
+        assert_eq!(
+            solve(&cast(0.0, &polar, 100.5)),
+            Err(ColumnReject::HeightAboveBottomOutOfRange { height_above_bottom_m: 100.5 })
+        );
+    }
+
+    /// The Arctic and the Southern Ocean, where engine 0.8.0 refused every
+    /// cast by latitude and by temperature: cold casts down to the freezing
+    /// temperature of their own water are answered with the column held,
+    /// and the next 64-bit number colder than freezing at any level is
+    /// refused as ice.
+    #[test]
+    fn polar_water_is_answered_down_to_its_freezing_temperature() {
+        // Arctic: the Canada Basin, fresh cold surface water over Atlantic water.
+        let arctic_pressure: Vec<f64> = (0..=38).map(|level| 100.0 * level as f64).collect();
+        let arctic_salinity: Vec<f64> = arctic_pressure.iter().map(|p| 34.95 - 6.0 * (-p / 60.0).exp()).collect();
+        let arctic_temperature: Vec<f64> = arctic_pressure
+            .iter()
+            .zip(&arctic_salinity)
+            .enumerate()
+            .map(|(level, (p, salinity))| if level == 0 { freezing_temperature_c(*salinity, *p).unwrap() } else { -0.3 + 0.8 * (-(p - 400.0).powi(2) / 1.0e5).exp() })
+            .collect();
+        // Southern Ocean: the Weddell Sea, water at freezing at the surface and
+        // Antarctic Bottom Water near -0.8 degC at 4800 dbar.
+        let weddell_pressure: Vec<f64> = (0..=48).map(|level| 100.0 * level as f64).collect();
+        let weddell_salinity = vec![34.66; weddell_pressure.len()];
+        let weddell_temperature: Vec<f64> = weddell_pressure
+            .iter()
+            .enumerate()
+            .map(|(level, p)| if level == 0 { freezing_temperature_c(34.66, 0.0).unwrap() } else { -0.8 + 1.2 * (-p / 800.0).exp() })
+            .collect();
+        for (latitude, columns) in [
+            (84.5, (arctic_pressure, arctic_temperature, arctic_salinity)),
+            (-68.0, (weddell_pressure, weddell_temperature, weddell_salinity)),
+        ] {
+            let column = solve(&cast(latitude, &columns, 20.0)).unwrap_or_else(|reject| panic!("{latitude}: {reject}"));
+            assert!(column.hydrostatic_residual <= 1.0e-9);
+            assert!(column.column_weight_residual_dbar.abs() <= 1.0e-6);
+            // the surface level sits exactly at freezing and is liquid
+            assert!(columns.1[0] < -1.5 && columns.1[0] > -2.0, "{}", columns.1[0]);
+            // a hair colder is ice
+            let mut colder = columns.clone();
+            colder.1[0] = f64::from_bits(colder.1[0].to_bits() + 1);
+            assert!(matches!(
+                solve(&cast(latitude, &colder, 20.0)),
+                Err(ColumnReject::TemperatureBelowFreezing { level: 0, .. })
+            ));
+            // the gravity of the high latitude makes the same water shallower
+            // than at the equator
+            let equator = solve(&cast(0.0, &columns, 20.0)).expect("settles");
+            assert!(column.seabed_depth_m < equator.seabed_depth_m);
+        }
     }
 
     /// The Gibbs function ends at 10,000 dbar. The deepest trenches are
-    /// deeper: a cast into the Challenger Deep is refused by name. The public
-    /// solver refuses below 6108 dbar already, as deeper than compared.
+    /// deeper: a cast into the Challenger Deep is refused by name.
     #[test]
     fn a_cast_below_the_limit_of_the_gibbs_function_is_named() {
         let to_the_limit = made_up_cast(10_000.0, 100.0);
@@ -1471,10 +1458,7 @@ mod tests {
             solve(&cast(11.3, &beyond, 0.0)),
             Err(ColumnReject::PressureOutOfRange { level: 101, sea_pressure_dbar: 10_050.0 })
         );
-        assert_eq!(
-            solve(&cast(11.3, &to_the_limit, 0.0)),
-            Err(ColumnReject::DeeperThanCompared { sea_pressure_dbar: 10_000.0 })
-        );
+        assert_eq!(solve(&cast(11.3, &to_the_limit, 0.0)), Ok(column));
     }
 
     /// Attack: a column stopped before it has settled is named, not returned.

@@ -131,7 +131,7 @@ async fn the_titanium_cells_largest_temperature_is_answered_from_a_stretched_sta
     assert!(bound.contains("a step at exactly 1268.15 K lands from a start position of 3e-5 m in each component"), "{bound}");
     assert!(bound.contains("from the rest position the largest temperature that lands is 1192.3203110311847 K"), "{bound}");
     let step = |position: f64, temperature_k: f64| {
-        let mut request = ti64["example_verify_step"].clone();
+        let mut request = ti64["example_compute_step"].clone();
         request["parameters"]["position_m"] = json!([position, position, position]);
         request["parameters"]["temperature_k"] = json!(temperature_k);
         // The start's ledger is anchored at its own strain energy at 293.15 K.
@@ -327,8 +327,8 @@ async fn each_new_bound_is_the_specimens_own_number() {
         (&ti64, "position_m", "specimen's yield"),
         (&ti64, "velocity_m_s", "the highest speed along a ligament that a run"),
         (&ti64, "force_n", "specimen's yield"),
-        (&grid, "current_a", "specimen's melting point"),
-        (&grid, "voltage_v", "specimen's melting point"),
+        (&grid, "current_a", "specimen's energy bound, not a melt"),
+        (&grid, "voltage_v", "specimen's energy bound, not a melt"),
         (&grid, "upstream_voltage_v", "the bound of voltage_v"),
         (&grid, "load_current_a", "the bound of current_a"),
         (&drive, "displacement_m", "the card's amplitude limit, 1/128 m. It is a limit of the card and not the amplitude where the driven response folds"),
@@ -384,7 +384,7 @@ async fn the_value_at_each_new_bound_is_accepted_and_the_next_number_is_turned_a
                 );
 
                 // The step.
-                let mut step = card["example_verify_step"].clone();
+                let mut step = card["example_compute_step"].clone();
                 step["parameters"][key] = written(sign * bound);
                 let (status, text) = post(&base, "/verify_physics", &step).await;
                 assert!(status == 200 || !text.contains(&format!("'{label}'")), "{name} {label} at the bound: {text}");
@@ -429,7 +429,7 @@ async fn the_value_at_each_new_bound_is_accepted_and_the_next_number_is_turned_a
     assert_eq!(checked, 2 * 2 * (6 + 1 + 1 + 2 + 2 + 1 + 1 + 1));
     // The titanium position names the card's own refusal for it.
     let card = describe(&base, "materials", "ti64_lattice").await;
-    let mut step = card["example_verify_step"].clone();
+    let mut step = card["example_compute_step"].clone();
     step["parameters"]["position_m"] = json!([0.0, 1.0, 0.0]);
     let (_, text) = post(&base, "/verify_physics", &step).await;
     assert!(text.ends_with("of the ti64_lattice card (YieldReached). That state is not sealed."), "{text}");
@@ -441,7 +441,7 @@ async fn the_value_at_each_new_bound_is_accepted_and_the_next_number_is_turned_a
 async fn the_titanium_load_rule_keeps_its_sentence() {
     let base = spawn_app().await;
     let card = describe(&base, "materials", "ti64_lattice").await;
-    let mut step = card["example_verify_step"].clone();
+    let mut step = card["example_compute_step"].clone();
     step["parameters"]["force_n"] = json!([0.0, 1.0e30, 0.0]);
     let (status, text) = post(&base, "/verify_physics", &step).await;
     assert_eq!(status, 422);
@@ -463,6 +463,12 @@ async fn a_dataset_plan_is_held_to_the_new_bounds() {
     let mut run = card["example_run_trajectory"].clone();
     run.as_object_mut().unwrap().remove("domain");
     run.as_object_mut().unwrap().remove("card");
+    // The node at rest for four steps, with no load and no voltage held: a
+    // start at the bound of the current lands there. The card's worked run
+    // carries a load since 0.11.0, under which that start rings past it.
+    run["initial"]["voltage_v"] = json!(0.0);
+    run["segments"] = json!([{ "steps": 4, "load": { "upstream_voltage_v": 0.0, "load_current_a": 0.0, "ambient_k": 293.15 } }]);
+    run["record_every"] = json!(1);
     let mut grid_base = run.clone();
     grid_base["initial"].as_object_mut().unwrap().remove("current_a");
     let plan = |values: Value| {
@@ -537,7 +543,7 @@ async fn every_field_of_every_card_states_its_range_or_its_reach() {
     let client = Client::new();
     let list: Value = client.get(format!("{base}/cards")).send().await.unwrap().json().await.unwrap();
     let cards = list["cards"].as_array().unwrap();
-    assert_eq!(cards.len(), 31);
+    assert_eq!(cards.len(), 37);
     let mut fields = 0;
     for item in cards {
         let card = describe(&base, item["domain"].as_str().unwrap(), item["card"].as_str().unwrap()).await;
@@ -553,7 +559,12 @@ async fn every_field_of_every_card_states_its_range_or_its_reach() {
     // 131 with the tyre's slip_held_s, the time its slip has been held.
     // 131 with the tokamak's elapsed_time_s, added in 0.7.0.
     // 157 with the four fields of the C-core reactor.
-    assert_eq!(fields, 157);
+    // 165 with the eight fields of the 18650 thermal-runaway card, 168 with
+    // the three of the grasped object, 177 with the nine of the JWST
+    // momentum card, 182 with the five of the MAST VDE card, 191 with the nine
+    // of the JWST momentum card on the two slopes of its sunshield, 192 with
+    // the mission time of the generator in the Seebeck matched-load form.
+    assert_eq!(fields, 192);
 }
 
 /// The fields that publish no bound state their reach, and what each states
@@ -654,17 +665,16 @@ async fn each_statement_of_reach_is_in_the_description_and_holds() {
         let sentence = field(&capsule, name)["bound"].as_str().unwrap();
         for words in [
             "The speed through the air is the square root of the sum of the squares of radial_speed_m_s and of transverse_speed_m_s less the air's own turning, 5.4197601852574874e-05 rad/s times radius_m.",
-            "the speed through the air must be from 11900 to 12575 m/s, and a state outside is refused as AirSpeedOutsideCard",
-            "11911.98 to 12573.44 m/s at every step from 0.05 s to 0.0005 s, rounded outward to 25 m/s.",
-            "the air speeds the locked entry passes through there, 11911.98 to 12573.44 m/s",
+            "the speed through the air must be from 11900 to 12620 m/s, the top the highest speed the table was computed at, and a state outside is refused as AirSpeedOutsideCard",
+            "The locked entry, which met all three lines, passed through 11911.98 to 12573.44 m/s there at every step from 0.05 s to 0.0005 s",
             "12487 to 12620 m/s in Table 1, 12173 m/s at the 68.96 km row from Table 4, of Mitcheltree, Wilmoth, Cheatwood, Brauckmann and Greene, Aerodynamics of Stardust Sample Return Capsule, AIAA 97-2304, 1997; that paper does not say whether these speeds are inertial or through the air",
-            "the Mach number must be from 1.0 to 40, the ends of that table, and a state outside is refused as MachOutsideCard",
-            "Below 68.96 km, and for a state moving upward above it, the speed through the air and the sine of the path angle through the air",
-            "must be inside the corridor the locked entry flew at that altitude, and a state outside is refused as OffComparedCorridor",
-            "At 40 km the speed through the air must be from 1147.51 to 1350.11 m/s.",
+            "the Mach number must be from 0.16 to 40, the ends of that table, and a state outside is refused as MachOutsideCard",
+            "Any path is computed on the same equations and ledger.",
+            "a state off it was not compared, and engines 0.7 to 0.9 refused it as OffComparedCorridor",
+            "(at 40 km 1147.51 to 1350.11 m/s)",
             "Above 86 km the speed of sound is held at its 86 km value, 274.096 m/s",
             "is refused as PastFlightDeployment",
-            "is off the corridor and is refused as OffComparedCorridor before any step",
+            "can be refused by the ledger at the largest step and lands at a smaller one",
         ] {
             assert!(sentence.contains(words), "{words}: {sentence}");
         }
@@ -674,7 +684,6 @@ async fn each_statement_of_reach_is_in_the_description_and_holds() {
             "11400",
             "13100",
             "widened by about 500 m/s",
-            "can still be refused at the largest step",
             "12625",
             "joined with Table 1",
         ] {
@@ -702,9 +711,8 @@ async fn each_statement_of_reach_is_in_the_description_and_holds() {
     let (status, text) = post(&base, "/run_trajectory", &run_of("aerospace", "capsule_stardust", fast, json!({}), 0.005, 20)).await;
     assert_eq!(status, 422, "{text}");
     assert!(text.contains("(AirSpeedOutsideCard)"), "{text}");
-    // From 40 km at the entry speed: through engine 0.6.0 the ceiling step was
-    // refused on the ledger and a tenth of it completed. It is off the
-    // compared corridor and is refused at either step before any step.
+    // From 40 km at the entry speed: off the corridor the locked entry flew,
+    // refused by engines 0.7 to 0.9, and computed now at either step.
     let deep = json!({
         "radius_m": genesis_kernel::capsule_stardust::LOCAL_EARTH_RADIUS_M + 40_000.0,
         "radial_speed_m_s": entry["radial_speed_m_s"],
@@ -712,8 +720,7 @@ async fn each_statement_of_reach_is_in_the_description_and_holds() {
     });
     for dt_s in [0.05, 0.005] {
         let (status, text) = post(&base, "/run_trajectory", &run_of("aerospace", "capsule_stardust", deep.clone(), json!({}), dt_s, 20)).await;
-        assert_eq!(status, 422, "{text}");
-        assert!(text.contains("(OffComparedCorridor)"), "{text}");
+        assert_eq!(status, 200, "{text}");
     }
     // The gate and the load say the same.
     let gate = capsule.to_string();

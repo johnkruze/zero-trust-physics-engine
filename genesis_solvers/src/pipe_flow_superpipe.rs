@@ -59,6 +59,17 @@
 //! 1e6, -1.4 at 1e7, -2.7 at 3.57e7. Not gated: the Zagarola-Smits friction
 //! factors above 1e6 rms 2.75 percent, worst 4.52 (Prandtl-Karman 3.62, 5.45).
 //!
+//! **What is served.** Every fully turbulent bulk Reynolds number from 4000
+//! to [`REYNOLDS_MAX`], 1e10, where the first grid node is still inside the
+//! viscous sublayer (y+ 0.78) and doubling the grid moves the friction factor
+//! by 2.6e-5: the equations depend on the Reynolds number alone. Pressure and
+//! temperature do not enter the solve. They give the bulk velocity and its
+//! Mach number, for ideal-gas air with Sutherland's viscosity, and a bulk
+//! Mach number above [`MACH_MAX`], where a constant density is no longer
+//! the flow, is refused by name. Through engine 0.8.0 every question outside
+//! the compared Reynolds numbers, pressures, temperatures and bulk
+//! velocities was refused by name.
+//!
 //! **What was compared where.** The held-back comparison starts at Reynolds
 //! number 74,345; from 31,577 to there, at the lowest pressure (100,090 Pa)
 //! and at the highest temperature (300.13 K) the only comparison is with the
@@ -74,6 +85,8 @@
 //! is the opened Zagarola-Smits set, <https://smits.princeton.edu/zagarola/>,
 //! Retrieved 2026-10-11.
 
+use genesis_kernel::math;
+use crate::normal::NormalOrZero;
 use std::fmt;
 
 /// Bore of the Superpipe's test section, metres (Zagarola and Smits 1998; the
@@ -98,31 +111,46 @@ pub const LAMINAR_BELOW_REYNOLDS: f64 = 2300.0;
 /// transitional.
 pub const TRANSITIONAL_BELOW_REYNOLDS: f64 = 4000.0;
 /// Lowest bulk Reynolds number compared with measurement: the lowest
-/// Zagarola-Smits profile.
-pub const REYNOLDS_MIN: f64 = 31_577.0;
+/// Zagarola-Smits profile. Stated, not enforced.
+pub const COMPARED_REYNOLDS_MIN: f64 = 31_577.0;
 /// Highest bulk Reynolds number compared with measurement: the highest
-/// McKeon et al. profile.
-pub const REYNOLDS_MAX: f64 = 35_724_000.0;
-/// Lowest static pressure among the compared files, pascals.
-pub const PRESSURE_MIN_PA: f64 = 100_090.0;
+/// McKeon et al. profile. Stated, not enforced.
+pub const COMPARED_REYNOLDS_MAX: f64 = 35_724_000.0;
+/// Highest bulk Reynolds number served. The grid's first node sits at
+/// 7.3e-9 of the radius; at 1e10 that is y+ 0.78, inside the viscous
+/// sublayer, and doubling the grid moves the friction factor by 2.6e-5
+/// (relative), second order. Above it the first node leaves the sublayer.
+pub const REYNOLDS_MAX: f64 = 1.0e10;
+/// Lowest static pressure among the compared files, pascals. Stated, not enforced.
+pub const COMPARED_PRESSURE_MIN_PA: f64 = 100_090.0;
 /// Highest static pressure among the compared files, pascals (Zagarola-Smits
 /// at 3.5259e7). The NSTAP files give a gauge pressure; it is taken over one
-/// standard atmosphere.
-pub const PRESSURE_MAX_PA: f64 = 18_928_000.0;
+/// standard atmosphere. Stated, not enforced.
+pub const COMPARED_PRESSURE_MAX_PA: f64 = 18_928_000.0;
 /// Lowest temperature among the compared files, kelvin: NSTAP case 3 at
-/// 18.64 C, 291.79 K, written as 18.64 + 273.15 rounds in 64 bits.
-pub const TEMPERATURE_MIN_K: f64 = 291.789_999_999_999_96;
-/// Highest temperature among the compared files, kelvin.
-pub const TEMPERATURE_MAX_K: f64 = 300.13;
-/// Lowest bulk Reynolds number over static pressure among the compared
-/// files, per pascal (Zagarola-Smits at 3.1577e4: 0.314857). At the compared
-/// temperatures it is proportional to the bulk velocity over the
-/// compressibility factor and the viscosity; the compared runs had bulk
-/// velocities from 3.9 to 30.8 m/s.
-pub const REYNOLDS_PER_PASCAL_MIN: f64 = 0.314_856_914_946_654_7;
-/// Highest bulk Reynolds number over static pressure among the compared
-/// files, per pascal (McKeon et al. at 3.5724e7: 1.99687).
-pub const REYNOLDS_PER_PASCAL_MAX: f64 = 1.996_869_759_642_258_2;
+/// 18.64 C. Stated, not enforced.
+pub const COMPARED_TEMPERATURE_MIN_K: f64 = 291.79;
+/// Highest temperature among the compared files, kelvin. Stated, not enforced.
+pub const COMPARED_TEMPERATURE_MAX_K: f64 = 300.13;
+/// Lowest and highest bulk velocity of the compared runs, metres per
+/// second. Stated, not enforced.
+pub const COMPARED_BULK_VELOCITY_M_PER_S: (f64, f64) = (3.9, 30.8);
+/// Ratio of the heat capacities of air, for its speed of sound.
+pub const AIR_HEAT_CAPACITY_RATIO: f64 = 1.4;
+/// Specific gas constant of dry air, J/(kg K): 8.314462618 over 0.0289647 kg/mol.
+pub const AIR_GAS_CONSTANT_J_PER_KG_K: f64 = 287.05;
+/// Sutherland's law for the viscosity of air, as F. M. White, Viscous Fluid
+/// Flow, Table 1-2, gives it: `mu0 (T/T0)^1.5 (T0 + S)/(T + S)`, with
+/// `mu0` 1.716e-5 Pa s at `T0` 273 K and `S` 111 K, within 2 percent from
+/// [`AIR_VISCOSITY_LAW_K`]`.0` to [`AIR_VISCOSITY_LAW_K`]`.1`.
+pub const SUTHERLAND_MU0_PA_S: f64 = 1.716e-5;
+pub const SUTHERLAND_T0_K: f64 = 273.0;
+pub const SUTHERLAND_S_K: f64 = 111.0;
+/// The temperatures over which Sutherland's law holds for air, kelvin.
+pub const AIR_VISCOSITY_LAW_K: (f64, f64) = (170.0, 1900.0);
+/// Highest bulk Mach number served: the solver's density is constant, and at
+/// Mach 0.3 the density of air brought to rest changes by about 4.5 percent.
+pub const MACH_MAX: f64 = 0.3;
 /// The Superpipe's wall roughness, root mean square, micrometres (Zagarola
 /// and Smits 1998: 0.15 um rms). A rougher wall is refused.
 pub const WALL_ROUGHNESS_RMS_MAX_UM: f64 = 0.15;
@@ -160,8 +188,9 @@ pub const IMBALANCE_TOLERANCE: f64 = 1.0e-11;
 /// Largest change of the friction velocity between the last two Newton
 /// iterations, as a fraction, for an accepted flow.
 pub const FRICTION_VELOCITY_TOLERANCE: f64 = 1.0e-12;
-/// An imbalance above this stops the solver.
-pub const IMBALANCE_CAP: f64 = 1.0e6;
+/// An imbalance above this stops the solver. The first iterate, the
+/// one-seventh power law, starts at 1.03e6 at Reynolds number 4000.
+pub const IMBALANCE_CAP: f64 = 1.0e8;
 /// Newton iterations allowed.
 pub const MAX_NEWTON_ITERATIONS: u32 = 60;
 /// Largest departure of the volume flux from the asked bulk velocity, as a
@@ -205,6 +234,10 @@ pub struct PipeFlow {
     /// Pressure drop per metre over the bulk dynamic pressure, per metre,
     /// `f / D`.
     pub pressure_drop_per_m_over_bulk_dynamic_pressure: f64,
+    /// Bulk velocity over the speed of sound, for ideal-gas air with
+    /// Sutherland's viscosity at the asked pressure and temperature. Zero
+    /// when settled at a Reynolds number alone.
+    pub bulk_mach_number: f64,
     /// Wall distance over the radius of each served profile station.
     pub profile_y_over_radius: Vec<f64>,
     /// The same distances in viscous units.
@@ -237,18 +270,18 @@ pub enum PipeReject {
     LaminarFlow { bulk_reynolds_number: f64 },
     /// The bulk Reynolds number is from [`LAMINAR_BELOW_REYNOLDS`] to below [`TRANSITIONAL_BELOW_REYNOLDS`]: the flow is transitional.
     TransitionalFlow { bulk_reynolds_number: f64 },
-    /// The bulk Reynolds number is turbulent but outside [`REYNOLDS_MIN`]..=[`REYNOLDS_MAX`], the range compared with measurement.
-    ReynoldsOutOfRange { bulk_reynolds_number: f64 },
-    /// The static pressure is outside [`PRESSURE_MIN_PA`]..=[`PRESSURE_MAX_PA`].
-    PressureOutOfRange { static_pressure_pa: f64 },
-    /// The temperature is outside [`TEMPERATURE_MIN_K`]..=[`TEMPERATURE_MAX_K`].
-    TemperatureOutOfRange { temperature_k: f64 },
-    /// The bulk Reynolds number over the static pressure is outside [`REYNOLDS_PER_PASCAL_MIN`]..=[`REYNOLDS_PER_PASCAL_MAX`]: at the compared temperatures, a bulk velocity no compared run had.
-    ReynoldsPerPascalOutOfRange { reynolds_per_pascal: f64 },
+    /// The bulk Reynolds number is above [`REYNOLDS_MAX`], where the grid's first node leaves the viscous sublayer.
+    ReynoldsAboveGrid { bulk_reynolds_number: f64 },
     /// The wall roughness is negative.
     RoughnessNegative { wall_roughness_rms_um: f64 },
     /// The wall is rougher than the Superpipe's [`WALL_ROUGHNESS_RMS_MAX_UM`]: a rough-wall flow, which this solver is not of.
     RoughWall { wall_roughness_rms_um: f64 },
+    /// The static pressure is not above zero: no gas.
+    PressureNotPositive { static_pressure_pa: f64 },
+    /// The temperature is outside 170 to 1900 K ([`AIR_VISCOSITY_LAW_K`]), where Sutherland's law gives the viscosity of air, so the bulk velocity cannot be known.
+    TemperatureOutsideViscosityLaw { temperature_k: f64 },
+    /// The bulk Mach number is above [`MACH_MAX`]: the flow is compressible, and this solver's density is constant.
+    MachAboveIncompressible { bulk_mach_number: f64 },
     /// A value of the field or its imbalance was NaN or infinite.
     NonFiniteValue,
     /// The linear system of a Newton iteration had no usable pivot.
@@ -277,21 +310,9 @@ impl fmt::Display for PipeReject {
                 f,
                 "bulk Reynolds number {bulk_reynolds_number} is from {LAMINAR_BELOW_REYNOLDS} to below {TRANSITIONAL_BELOW_REYNOLDS}: the flow is transitional, and this solver is of fully turbulent flow"
             ),
-            Self::ReynoldsOutOfRange { bulk_reynolds_number } => write!(
+            Self::ReynoldsAboveGrid { bulk_reynolds_number } => write!(
                 f,
-                "bulk Reynolds number {bulk_reynolds_number} is outside {REYNOLDS_MIN}..={REYNOLDS_MAX}, the range compared with the Superpipe's measurements"
-            ),
-            Self::PressureOutOfRange { static_pressure_pa } => write!(
-                f,
-                "static pressure {static_pressure_pa} Pa is outside {PRESSURE_MIN_PA}..={PRESSURE_MAX_PA} Pa, the pressures of the compared runs"
-            ),
-            Self::TemperatureOutOfRange { temperature_k } => write!(
-                f,
-                "temperature {temperature_k} K is outside {TEMPERATURE_MIN_K}..={TEMPERATURE_MAX_K} K, the temperatures of the compared runs"
-            ),
-            Self::ReynoldsPerPascalOutOfRange { reynolds_per_pascal } => write!(
-                f,
-                "bulk Reynolds number over static pressure {reynolds_per_pascal} per Pa is outside {REYNOLDS_PER_PASCAL_MIN}..={REYNOLDS_PER_PASCAL_MAX} per Pa: at the compared temperatures that is a bulk velocity no compared run had"
+                "bulk Reynolds number {bulk_reynolds_number} is above {REYNOLDS_MAX}, where the grid's first node leaves the viscous sublayer"
             ),
             Self::RoughnessNegative { wall_roughness_rms_um } => {
                 write!(f, "wall roughness {wall_roughness_rms_um} um is negative")
@@ -299,6 +320,18 @@ impl fmt::Display for PipeReject {
             Self::RoughWall { wall_roughness_rms_um } => write!(
                 f,
                 "wall roughness {wall_roughness_rms_um} um rms is above the Superpipe's smooth wall, {WALL_ROUGHNESS_RMS_MAX_UM} um: a rough-wall flow, which this solver is not of"
+            ),
+            Self::PressureNotPositive { static_pressure_pa } => {
+                write!(f, "static pressure {static_pressure_pa} Pa is not above zero")
+            }
+            Self::TemperatureOutsideViscosityLaw { temperature_k } => write!(
+                f,
+                "temperature {temperature_k} K is outside {} to {} K, where Sutherland's law gives the viscosity of air, so the bulk velocity cannot be known",
+                AIR_VISCOSITY_LAW_K.0, AIR_VISCOSITY_LAW_K.1
+            ),
+            Self::MachAboveIncompressible { bulk_mach_number } => write!(
+                f,
+                "bulk Mach number {bulk_mach_number} is above {MACH_MAX}: the flow is compressible, and this solver's density is constant"
             ),
             Self::NonFiniteValue => write!(f, "a value of the field was not finite"),
             Self::SingularSystem => write!(f, "a Newton iteration had no usable pivot"),
@@ -379,8 +412,8 @@ pub fn admit(question: &PipeQuestion) -> Result<(), PipeReject> {
     if re < TRANSITIONAL_BELOW_REYNOLDS {
         return Err(PipeReject::TransitionalFlow { bulk_reynolds_number: re });
     }
-    if !(re >= REYNOLDS_MIN && re <= REYNOLDS_MAX) {
-        return Err(PipeReject::ReynoldsOutOfRange { bulk_reynolds_number: re });
+    if re > REYNOLDS_MAX {
+        return Err(PipeReject::ReynoldsAboveGrid { bulk_reynolds_number: re });
     }
     let roughness = question.wall_roughness_rms_um;
     if roughness < 0.0 {
@@ -390,31 +423,88 @@ pub fn admit(question: &PipeQuestion) -> Result<(), PipeReject> {
         return Err(PipeReject::RoughWall { wall_roughness_rms_um: roughness });
     }
     let p = question.static_pressure_pa;
-    if !(p >= PRESSURE_MIN_PA && p <= PRESSURE_MAX_PA) {
-        return Err(PipeReject::PressureOutOfRange { static_pressure_pa: p });
+    if !(p > 0.0) {
+        return Err(PipeReject::PressureNotPositive { static_pressure_pa: p });
     }
     let t = question.temperature_k;
-    if !(t >= TEMPERATURE_MIN_K && t <= TEMPERATURE_MAX_K) {
-        return Err(PipeReject::TemperatureOutOfRange { temperature_k: t });
+    if !(t >= AIR_VISCOSITY_LAW_K.0 && t <= AIR_VISCOSITY_LAW_K.1) {
+        return Err(PipeReject::TemperatureOutsideViscosityLaw { temperature_k: t });
     }
-    let per_pascal = re / p;
-    if !(per_pascal >= REYNOLDS_PER_PASCAL_MIN && per_pascal <= REYNOLDS_PER_PASCAL_MAX) {
-        return Err(PipeReject::ReynoldsPerPascalOutOfRange {
-            reynolds_per_pascal: per_pascal,
-        });
+    let mach = bulk_mach_number(re, p, t);
+    if !mach.is_finite() {
+        return Err(PipeReject::NonFiniteValue);
+    }
+    if mach > MACH_MAX {
+        return Err(PipeReject::MachAboveIncompressible { bulk_mach_number: mach });
     }
     Ok(())
 }
 
-/// Settle the flow for one question, or name the limit.
-pub fn solve(question: &PipeQuestion) -> Result<PipeFlow, PipeReject> {
-    admit(question)?;
-    settle(question.bulk_reynolds_number, &SERVED)
+/// Viscosity of air at a temperature, pascal seconds: Sutherland's law.
+pub fn air_viscosity_pa_s(temperature_k: f64) -> f64 {
+    SUTHERLAND_MU0_PA_S
+        * math::powf(temperature_k / SUTHERLAND_T0_K, 1.5)
+        * (SUTHERLAND_T0_K + SUTHERLAND_S_K)
+        / (temperature_k + SUTHERLAND_S_K)
 }
 
-/// Settle the flow at a bulk Reynolds number with no check of the declared
-/// range: for the comparison scripts and the tests, which ask at the
-/// measured conditions. The gateway calls [`solve`].
+/// Bulk velocity of air in the pipe at a bulk Reynolds number, pressure and
+/// temperature, metres per second: `Re mu / (rho D)`, `rho = p / (R T)`.
+pub fn bulk_velocity_m_per_s(bulk_reynolds_number: f64, static_pressure_pa: f64, temperature_k: f64) -> f64 {
+    let density = static_pressure_pa / (AIR_GAS_CONSTANT_J_PER_KG_K * temperature_k);
+    bulk_reynolds_number * air_viscosity_pa_s(temperature_k) / (density * DIAMETER_M)
+}
+
+/// Bulk velocity over the speed of sound of ideal-gas air, `sqrt(gamma R T)`.
+pub fn bulk_mach_number(bulk_reynolds_number: f64, static_pressure_pa: f64, temperature_k: f64) -> f64 {
+    let sound = (AIR_HEAT_CAPACITY_RATIO * AIR_GAS_CONSTANT_J_PER_KG_K * temperature_k).sqrt();
+    bulk_velocity_m_per_s(bulk_reynolds_number, static_pressure_pa, temperature_k) / sound
+}
+
+/// Settle the flow for one question, or name the limit.
+///
+/// Each value of the answer below the normal range is written as zero
+/// with its sign ([`crate::normal`]).
+pub fn solve(question: &PipeQuestion) -> Result<PipeFlow, PipeReject> {
+    crate::normal::held(solve_as_computed(question))
+}
+
+/// The answer as the equations compute it, before a value below the
+/// normal range is written as zero.
+fn solve_as_computed(question: &PipeQuestion) -> Result<PipeFlow, PipeReject> {
+    admit(question)?;
+    let mut flow = settle(question.bulk_reynolds_number, &SERVED)?;
+    flow.bulk_mach_number = bulk_mach_number(
+        question.bulk_reynolds_number,
+        question.static_pressure_pa,
+        question.temperature_k,
+    );
+    Ok(flow)
+}
+
+impl NormalOrZero for PipeFlow {
+    fn normal_or_zero(&mut self) {
+        self.darcy_friction_factor.normal_or_zero();
+        self.centreline_to_bulk_velocity_ratio.normal_or_zero();
+        self.friction_to_bulk_velocity_ratio.normal_or_zero();
+        self.karman_number.normal_or_zero();
+        self.pressure_drop_per_m_over_bulk_dynamic_pressure.normal_or_zero();
+        self.bulk_mach_number.normal_or_zero();
+        self.profile_y_over_radius.normal_or_zero();
+        self.profile_y_plus.normal_or_zero();
+        self.profile_u_plus.normal_or_zero();
+        self.profile_u_over_bulk.normal_or_zero();
+        self.largest_imbalance.normal_or_zero();
+        self.flux_residual.normal_or_zero();
+        self.momentum_ledger_residual.normal_or_zero();
+        self.field_y_over_radius.normal_or_zero();
+        self.field_u_over_bulk.normal_or_zero();
+    }
+}
+
+/// Settle the flow at a bulk Reynolds number alone, with no pressure or
+/// temperature and so no Mach number: for the comparison scripts and the
+/// tests, which ask at the measured conditions. The gateway calls [`solve`].
 pub fn settle_at_reynolds_number(bulk_reynolds_number: f64) -> Result<PipeFlow, PipeReject> {
     turbulent(bulk_reynolds_number)?;
     settle(bulk_reynolds_number, &SERVED)
@@ -438,9 +528,9 @@ fn turbulent(re: f64) -> Result<(), PipeReject> {
 /// The grid: wall distance over the radius of each node, wall (0) to axis (N).
 fn grid(numerics: &Numerics) -> Vec<f64> {
     let n = numerics.intervals;
-    let denominator = numerics.stretch.exp_m1();
+    let denominator = math::exp_m1(numerics.stretch);
     let mut y: Vec<f64> = (0..=n)
-        .map(|j| (numerics.stretch * j as f64 / n as f64).exp_m1() / denominator)
+        .map(|j| math::exp_m1(numerics.stretch * j as f64 / n as f64) / denominator)
         .collect();
     y[0] = 0.0;
     y[n] = 1.0;
@@ -518,7 +608,7 @@ fn settle_field(bulk_reynolds_number: f64, numerics: &Numerics) -> Result<Field,
         vol[j] = 0.5 * (r_lo * r_lo - r_hi * r_hi);
     }
     // Start from the one-seventh power law scaled to the asked flux.
-    let mut u: Vec<f64> = y.iter().map(|&v| v.powf(1.0 / 7.0)).collect();
+    let mut u: Vec<f64> = y.iter().map(|&v| math::powf(v, 1.0 / 7.0)).collect();
     u[0] = 0.0;
     let flux: f64 = (1..=n).map(|j| vol[j] * u[j]).sum();
     for v in u.iter_mut() {
@@ -543,7 +633,7 @@ fn settle_field(bulk_reynolds_number: f64, numerics: &Numerics) -> Result<Field,
         let friction_velocity = wall_shear.sqrt();
         for j in 0..n {
             let y_plus = yf[j] * re_r * friction_velocity;
-            let l = shape[j] * (1.0 - (-y_plus / VAN_DRIEST_A_PLUS).exp());
+            let l = shape[j] * (1.0 - math::exp(-y_plus / VAN_DRIEST_A_PLUS));
             let l2 = l * l;
             face_flux[j] = rf[j] * (1.0 / re_r + l2 * grad[j].abs()) * grad[j];
             dflux[j] = rf[j] * (1.0 / re_r + 2.0 * l2 * grad[j].abs());
@@ -687,6 +777,7 @@ fn flow_of(bulk_reynolds_number: f64, numerics: &Numerics, field: &Field) -> Pip
         friction_to_bulk_velocity_ratio: friction_to_bulk,
         karman_number,
         pressure_drop_per_m_over_bulk_dynamic_pressure: darcy_friction_factor / DIAMETER_M,
+        bulk_mach_number: 0.0,
         profile_y_over_radius,
         profile_y_plus,
         profile_u_plus,
@@ -807,9 +898,12 @@ mod tests {
         assert!(miss < -0.02 && (miss + 0.0299).abs() < 0.0005, "{miss}");
     }
 
+    /// The grid was fixed against itself at the two ends of the compared
+    /// range, and is held so at the two ends of the served one: 4000, the
+    /// start of fully turbulent flow, and 1e10, the top.
     #[test]
     fn the_grid_is_converged() {
-        for re in [REYNOLDS_MIN, REYNOLDS_MAX] {
+        for re in [TRANSITIONAL_BELOW_REYNOLDS, COMPARED_REYNOLDS_MIN, COMPARED_REYNOLDS_MAX, REYNOLDS_MAX] {
             let served = settle_field(re, &SERVED).expect("settles");
             let fine = settle_field(re, &Numerics { intervals: 2 * GRID_INTERVALS, ..SERVED }).expect("settles");
             let coarse = settle_field(re, &Numerics { intervals: GRID_INTERVALS / 2, ..SERVED }).expect("settles");
@@ -823,7 +917,7 @@ mod tests {
 
     #[test]
     fn the_ledgers_close_and_the_profile_rises() {
-        for re in [REYNOLDS_MIN, 1.0e6, REYNOLDS_MAX] {
+        for re in [TRANSITIONAL_BELOW_REYNOLDS, 1.0e4, COMPARED_REYNOLDS_MIN, 1.0e6, COMPARED_REYNOLDS_MAX, 1.0e9, REYNOLDS_MAX] {
             let flow = settle_at_reynolds_number(re).expect("settles");
             assert!(flow.largest_imbalance <= IMBALANCE_TOLERANCE);
             assert!(flow.flux_residual.abs() <= FLUX_TOLERANCE);
@@ -842,7 +936,7 @@ mod tests {
     #[test]
     fn the_friction_factor_falls_and_the_profile_flattens_with_reynolds_number() {
         let mut last = (f64::INFINITY, f64::INFINITY);
-        for re in [REYNOLDS_MIN, 1.0e5, 1.0e6, 1.0e7, REYNOLDS_MAX] {
+        for re in [TRANSITIONAL_BELOW_REYNOLDS, 1.0e4, COMPARED_REYNOLDS_MIN, 1.0e5, 1.0e6, 1.0e7, COMPARED_REYNOLDS_MAX, 1.0e9, REYNOLDS_MAX] {
             let flow = settle_at_reynolds_number(re).expect("settles");
             assert!(flow.darcy_friction_factor < last.0);
             assert!(flow.centreline_to_bulk_velocity_ratio < last.1);
@@ -863,46 +957,43 @@ mod tests {
     fn both_ends_of_every_range_are_inside_and_the_next_number_is_not() {
         let base = PipeQuestion {
             bulk_reynolds_number: 1.0e6,
-            static_pressure_pa: 1.0e6,
+            static_pressure_pa: 2.0e6,
             temperature_k: 296.0,
             wall_roughness_rms_um: 0.0,
         };
         assert!(admit(&base).is_ok());
         let at_p = |re: f64, p: f64| PipeQuestion { bulk_reynolds_number: re, static_pressure_pa: p, ..base };
-        // The Reynolds ends, each at a pressure that keeps Re/p inside.
-        assert!(admit(&at_p(REYNOLDS_MIN, 100_290.0)).is_ok());
-        assert!(admit(&at_p(REYNOLDS_MAX, 17_890_000.0)).is_ok());
+        // The Reynolds ends: fully turbulent from 4000, and the grid's top.
+        assert!(admit(&at_p(TRANSITIONAL_BELOW_REYNOLDS, 101_325.0)).is_ok());
+        assert!(admit(&at_p(REYNOLDS_MAX, 2.0e9)).is_ok());
         assert_eq!(
-            admit(&at_p(REYNOLDS_MIN.next_down(), 100_290.0)),
-            Err(PipeReject::ReynoldsOutOfRange { bulk_reynolds_number: REYNOLDS_MIN.next_down() })
-        );
-        assert_eq!(
-            admit(&at_p(REYNOLDS_MAX.next_up(), 17_890_000.0)),
-            Err(PipeReject::ReynoldsOutOfRange { bulk_reynolds_number: REYNOLDS_MAX.next_up() })
+            admit(&at_p(REYNOLDS_MAX.next_up(), 2.0e9)),
+            Err(PipeReject::ReynoldsAboveGrid { bulk_reynolds_number: REYNOLDS_MAX.next_up() })
         );
         // Laminar and transitional flow by name.
         assert!(matches!(admit(&at_p(2299.0, 100_300.0)), Err(PipeReject::LaminarFlow { .. })));
         assert!(matches!(admit(&at_p(2300.0, 100_300.0)), Err(PipeReject::TransitionalFlow { .. })));
         assert!(matches!(admit(&at_p(3999.0, 100_300.0)), Err(PipeReject::TransitionalFlow { .. })));
-        assert!(matches!(admit(&at_p(4000.0, 100_300.0)), Err(PipeReject::ReynoldsOutOfRange { .. })));
-        // Pressure ends.
-        assert!(admit(&at_p(31_600.0, PRESSURE_MIN_PA)).is_ok());
-        assert!(admit(&at_p(3.5e7, PRESSURE_MAX_PA)).is_ok());
-        assert!(matches!(admit(&at_p(31_600.0, PRESSURE_MIN_PA.next_down())), Err(PipeReject::PressureOutOfRange { .. })));
-        assert!(matches!(admit(&at_p(3.5e7, PRESSURE_MAX_PA.next_up())), Err(PipeReject::PressureOutOfRange { .. })));
-        // Temperature ends.
+        // Pressure: anything above zero; the Mach number holds the rest.
+        assert!(admit(&at_p(4000.0, 1000.0)).is_ok());
+        for p in [0.0, -0.0, -1.0, -1.0e9] {
+            assert_eq!(admit(&at_p(1.0e5, p)), Err(PipeReject::PressureNotPositive { static_pressure_pa: p }));
+        }
+        // Temperature: where Sutherland's law holds.
         let at_t = |t: f64| PipeQuestion { temperature_k: t, ..base };
-        assert!(admit(&at_t(TEMPERATURE_MIN_K)).is_ok());
-        assert!(admit(&at_t(291.78999999999996)).is_ok());
-        assert!(admit(&at_t(TEMPERATURE_MAX_K)).is_ok());
-        assert!(matches!(admit(&at_t(TEMPERATURE_MIN_K.next_down())), Err(PipeReject::TemperatureOutOfRange { .. })));
-        assert!(matches!(admit(&at_t(TEMPERATURE_MAX_K.next_up())), Err(PipeReject::TemperatureOutOfRange { .. })));
-        // Re over pressure: the same Reynolds number at too high or too low a pressure.
-        assert!(admit(&at_p(35_724_000.0, 17_890_000.0)).is_ok());
-        assert!(matches!(admit(&at_p(35_724_000.0, 17_889_999.0)), Err(PipeReject::ReynoldsPerPascalOutOfRange { .. })));
-        assert!(matches!(admit(&at_p(31_577.0, 100_290.000_001)), Err(PipeReject::ReynoldsPerPascalOutOfRange { .. })));
-        assert!(matches!(admit(&at_p(3.5e7, 1.0e6)), Err(PipeReject::ReynoldsPerPascalOutOfRange { .. })));
-        assert!(matches!(admit(&at_p(40_000.0, 1.0e6)), Err(PipeReject::ReynoldsPerPascalOutOfRange { .. })));
+        for t in [AIR_VISCOSITY_LAW_K.0, 291.78999999999996, COMPARED_TEMPERATURE_MIN_K, AIR_VISCOSITY_LAW_K.1] {
+            assert!(admit(&at_t(t)).is_ok(), "{t}");
+        }
+        for t in [AIR_VISCOSITY_LAW_K.0.next_down(), AIR_VISCOSITY_LAW_K.1.next_up(), 0.0, -10.0] {
+            assert_eq!(admit(&at_t(t)), Err(PipeReject::TemperatureOutsideViscosityLaw { temperature_k: t }));
+        }
+        // The Mach number: the same Reynolds number at a lower pressure is a
+        // faster flow.
+        assert!(admit(&at_p(35_724_000.0, 1.0e6)).is_err());
+        match admit(&at_p(35_724_000.0, 1.0e6)) {
+            Err(PipeReject::MachAboveIncompressible { bulk_mach_number }) => assert!(bulk_mach_number > MACH_MAX),
+            other => panic!("{other:?}"),
+        }
         // Roughness: the Superpipe's wall and smoother are inside, rougher is a rough wall.
         let at_k = |k: f64| PipeQuestion { wall_roughness_rms_um: k, ..base };
         assert!(admit(&at_k(WALL_ROUGHNESS_RMS_MAX_UM)).is_ok());
@@ -914,10 +1005,84 @@ mod tests {
             admit(&PipeQuestion { temperature_k: f64::NAN, ..base }),
             Err(PipeReject::InputNotFinite { field: "temperature_k" })
         );
+        // The sentences say their ranges in words.
+        assert_eq!(
+            PipeReject::TemperatureOutsideViscosityLaw { temperature_k: 100.0 }.to_string(),
+            "temperature 100 K is outside 170 to 1900 K, where Sutherland's law gives the viscosity of air, so the bulk velocity cannot be known"
+        );
+        assert_eq!(
+            PipeReject::ReynoldsAboveGrid { bulk_reynolds_number: 2.0e10 }.to_string(),
+            "bulk Reynolds number 20000000000 is above 10000000000, where the grid's first node leaves the viscous sublayer"
+        );
     }
 
-    /// Every compared run's own condition is inside the declared range: all
-    /// 60 files, (Re, p, T) as the scoring script read them.
+    /// The Mach number is the bulk velocity of ideal-gas air over its speed
+    /// of sound. At NSTAP case 1 (Reynolds number 81,330, one atmosphere,
+    /// 292.4 K) the bulk velocity is about 9.4 m/s; at the highest McKeon
+    /// profile (35.7 million, 17.89 MPa, 297.25 K) about 24 m/s; the limit is
+    /// a bulk Mach number of 0.3, about 104 m/s at 300 K.
+    #[test]
+    fn the_mach_number_is_the_bulk_velocity_over_the_speed_of_sound() {
+        let low = bulk_velocity_m_per_s(81_330.0, 101_325.0, 292.4);
+        assert!((low - 9.48).abs() < 0.2, "{low}");
+        let high = bulk_velocity_m_per_s(35_724_000.0, 17_890_000.0, 297.25);
+        // Ideal-gas air with the viscosity of air at low pressure: at 17.89 MPa
+        // air is denser-than-ideal by about 3 percent and more viscous, so
+        // this is below the run's own bulk velocity.
+        assert!(high > 20.0 && high < COMPARED_BULK_VELOCITY_M_PER_S.1, "{high}");
+        let sound = (AIR_HEAT_CAPACITY_RATIO * AIR_GAS_CONSTANT_J_PER_KG_K * 300.0).sqrt();
+        assert!((sound - 347.2).abs() < 0.2, "{sound}");
+        assert!((air_viscosity_pa_s(300.0) - 1.846e-5).abs() < 0.01e-5, "{}", air_viscosity_pa_s(300.0));
+        // the answer carries its Mach number, and the friction is the
+        // Reynolds number's alone
+        let flow = solve(&ask(1.0e5, 101_325.0)).expect("settles");
+        let mach = bulk_mach_number(1.0e5, 101_325.0, 296.0);
+        assert_eq!(flow.bulk_mach_number, mach);
+        assert_eq!(flow.darcy_friction_factor, settle_at_reynolds_number(1.0e5).unwrap().darcy_friction_factor);
+        // At one atmosphere and 296 K a Mach number of 0.3 is near Reynolds
+        // number 870,000: just under it is answered, just over it refused.
+        let mut re = 8.0e5;
+        while bulk_mach_number(re * 1.001, 101_325.0, 296.0) <= MACH_MAX {
+            re *= 1.001;
+        }
+        assert!(re > 8.0e5 && re < 9.5e5, "{re}");
+        assert!(solve(&ask(re, 101_325.0)).is_ok());
+        assert!(matches!(solve(&ask(re * 1.001, 101_325.0)), Err(PipeReject::MachAboveIncompressible { .. })));
+    }
+
+    /// Past every wall engine 0.8.0 held, the flow is settled with every
+    /// ledger closed and the profile rising, and gives the same friction
+    /// factor at the same Reynolds number whatever the pressure and
+    /// temperature: below the compared Reynolds numbers, above them, at
+    /// pressures and temperatures no compared run had, and at bulk velocities
+    /// outside 3.9 to 30.8 m/s.
+    #[test]
+    fn past_the_compared_runs_the_flow_settles_with_its_ledgers_closed() {
+        for (re, p, t) in [
+            (4000.0, 101_325.0, 296.0),
+            (10_000.0, 2_000.0, 200.0),
+            (20_000.0, 101_325.0, 1500.0),
+            (1.0e7, 2.0e6, 220.0),
+            (1.0e8, 5.0e7, 300.0),
+            (1.0e9, 5.0e8, 300.0),
+            (REYNOLDS_MAX, 2.0e9, 300.0),
+        ] {
+            let flow = solve(&PipeQuestion { bulk_reynolds_number: re, static_pressure_pa: p, temperature_k: t, wall_roughness_rms_um: 0.15 })
+                .unwrap_or_else(|reject| panic!("{re} {p} {t}: {reject}"));
+            assert!(flow.largest_imbalance <= IMBALANCE_TOLERANCE);
+            assert!(flow.flux_residual.abs() <= FLUX_TOLERANCE);
+            assert!(flow.momentum_ledger_residual.abs() <= MOMENTUM_LEDGER_TOLERANCE);
+            assert!(flow.bulk_mach_number > 0.0 && flow.bulk_mach_number <= MACH_MAX);
+            assert!(flow.profile_u_plus.windows(2).all(|w| w[1] > w[0]));
+            assert_eq!(flow.darcy_friction_factor, settle_at_reynolds_number(re).unwrap().darcy_friction_factor);
+            // the first node of the grid is inside the viscous sublayer
+            assert!(flow.field_y_over_radius[1] * flow.karman_number < 1.0, "{re}");
+        }
+    }
+
+    /// Every compared run's own condition is answered: all 60 files, (Re, p,
+    /// T) as the scoring script read them, and each lies inside the stated
+    /// compared envelope.
     #[test]
     fn every_compared_run_is_inside() {
         let runs: [(f64, f64, f64); 60] = [
@@ -985,6 +1150,11 @@ mod tests {
         for (re, p, t) in runs {
             let q = PipeQuestion { bulk_reynolds_number: re, static_pressure_pa: p, temperature_k: t, wall_roughness_rms_um: 0.15 };
             assert!(admit(&q).is_ok(), "{re} {p} {t}: {:?}", admit(&q));
+            assert!(re >= COMPARED_REYNOLDS_MIN && re <= COMPARED_REYNOLDS_MAX);
+            assert!(p >= COMPARED_PRESSURE_MIN_PA && p <= COMPARED_PRESSURE_MAX_PA);
+            assert!(t >= COMPARED_TEMPERATURE_MIN_K.next_down() && t <= COMPARED_TEMPERATURE_MAX_K);
+            let speed = bulk_velocity_m_per_s(re, p, t);
+            assert!(speed > 3.5 && speed < 33.0, "{re} {p} {t}: {speed}");
         }
     }
 
@@ -993,7 +1163,7 @@ mod tests {
     /// stations go in to 50 viscous units.
     #[test]
     fn a_station_nearer_the_wall_than_was_compared_is_left_out() {
-        let high = settle_at_reynolds_number(REYNOLDS_MAX).expect("settles");
+        let high = settle_at_reynolds_number(COMPARED_REYNOLDS_MAX).expect("settles");
         assert_eq!(high.profile_y_over_radius[0], 0.015);
         assert!(high.profile_y_over_radius.iter().all(|e| *e >= PROFILE_Y_OVER_RADIUS_MIN_PITOT));
         assert_eq!(high.profile_y_over_radius.len(), 14);
@@ -1033,12 +1203,12 @@ mod tests {
             PipeReject::InputNotFinite { field: "temperature_k" },
             PipeReject::LaminarFlow { bulk_reynolds_number: 2000.0 },
             PipeReject::TransitionalFlow { bulk_reynolds_number: 3000.0 },
-            PipeReject::ReynoldsOutOfRange { bulk_reynolds_number: 1e8 },
-            PipeReject::PressureOutOfRange { static_pressure_pa: 1.0 },
-            PipeReject::TemperatureOutOfRange { temperature_k: 400.0 },
-            PipeReject::ReynoldsPerPascalOutOfRange { reynolds_per_pascal: 9.0 },
+            PipeReject::ReynoldsAboveGrid { bulk_reynolds_number: 1e11 },
             PipeReject::RoughnessNegative { wall_roughness_rms_um: -1.0 },
             PipeReject::RoughWall { wall_roughness_rms_um: 2.5 },
+            PipeReject::PressureNotPositive { static_pressure_pa: 0.0 },
+            PipeReject::TemperatureOutsideViscosityLaw { temperature_k: 100.0 },
+            PipeReject::MachAboveIncompressible { bulk_mach_number: 0.5 },
             PipeReject::NonFiniteValue,
             PipeReject::SingularSystem,
             PipeReject::ImbalanceGrew { imbalance: 1e9 },
@@ -1049,6 +1219,8 @@ mod tests {
         ];
         for reject in all {
             assert!(!reject.to_string().is_empty());
+            assert!(!reject.to_string().contains("..="), "{reject}");
         }
     }
 }
+

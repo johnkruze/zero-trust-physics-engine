@@ -2,15 +2,17 @@
 //!
 //! A step is bit-checked against the compiled kernel step with the same proof
 //! bytes. The whole entry, with no lift and with the lift measured on the
-//! flight, ends at the compared floor, PastComparedFlight, the end the card
-//! declares at the flown parachute deployment, and
-//! its last landed state is the kernel loop's, to the bit. The tape of each
-//! run verifies and its receipt matches. The bound on lift is refused by name
-//! at the last representable number outside it, in a step, in the first
-//! segment of a run and in a later one. A state off the card, past the
-//! compared floor or off the compared corridor is refused by name before any
-//! step, and a restart from a returned state lands. The local connection
-//! gives the bytes of the web connection.
+//! flight, ends at the flown parachute deployment, PastFlightDeployment, the
+//! end the card declares, and its last landed state is the kernel loop's, to
+//! the bit. The tape of each run verifies and its receipt matches. The bound
+//! on lift is refused by name at the last representable number outside it,
+//! in a step, in the first segment of a run and in a later one. A state off
+//! the card's tables, under the landing site or past the deployment is refused
+//! by name before any step; a state off the compared corridor or under the
+//! old compared floor is computed; a restart from a returned state lands. The
+//! local connection gives the bytes of the web connection.
+
+mod answer_text;
 
 use std::process::Stdio;
 use std::time::Duration;
@@ -53,7 +55,9 @@ async fn post_text(base: &str, path: &str, body: &str) -> (u16, String) {
         {
             Ok(response) => {
                 let status = response.status().as_u16();
-                return (status, response.text().await.unwrap());
+                let text = response.text().await.unwrap();
+                answer_text::remember(&text);
+                return (status, text);
             }
             Err(error) => {
                 last_error = Some(error);
@@ -65,7 +69,7 @@ async fn post_text(base: &str, path: &str, body: &str) -> (u16, String) {
 }
 
 async fn post(base: &str, path: &str, body: &Value) -> (u16, String) {
-    post_text(base, path, &serde_json::to_string(body).unwrap()).await
+    post_text(base, path, &answer_text::as_sent(body)).await
 }
 
 fn sha256_hex(bytes: &[u8]) -> String {
@@ -318,14 +322,14 @@ async fn a_step_of_the_capsule_matches_the_compiled_step_with_the_same_proof_byt
 // ---------------------------------------------------------------- the run
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn the_whole_entry_ends_in_the_sealed_refusal_at_the_floor_with_the_state_of_the_kernel_loop() {
+async fn the_whole_entry_ends_at_the_flown_deployment_with_the_state_of_the_kernel_loop() {
     let base = spawn_app().await;
     // (lift, steps that land, the step of the largest load, that load in g):
     // the model in table form, `card_reference.json` of the research record,
-    // up to the compared floor.
+    // to the flown deployment.
     for (lift, steps, peak_step, peak_g) in [
-        (0.0, 2273_u64, 1047_u64, 7.600699812494663_f64),
-        (FLIGHT_LIFT, 2110, 1065, 7.951853813798471),
+        (0.0, 2321_u64, 1047_u64, 7.600699812494663_f64),
+        (FLIGHT_LIFT, 2106, 1065, 7.951853813798471),
     ] {
         let request = run_body(entry(), lift, ceiling(), STEPS_ASKED, 1);
         let (status, answer) = post(&base, "/run_trajectory", &request).await;
@@ -333,24 +337,24 @@ async fn the_whole_entry_ends_in_the_sealed_refusal_at_the_floor_with_the_state_
         let tape: Value = serde_json::from_str(&answer).unwrap();
 
         let (state, landed, reject, direct_peak_g, direct_peak_step) = direct_loop(lift, ceiling(), STEPS_ASKED);
-        assert_eq!(reject, Some(StepReject::PastComparedFlight), "lift {lift}");
+        assert_eq!(reject, Some(StepReject::PastFlightDeployment), "lift {lift}");
         assert_eq!(landed, steps, "lift {lift}");
         assert_eq!(direct_peak_step, peak_step, "lift {lift}");
         assert_eq!(direct_peak_g.to_bits(), peak_g.to_bits(), "lift {lift}");
         // The flown parachute deployment is the end the card declares: the entry is sealed as ended there.
         assert_eq!(tape["outcome"], "ended", "lift {lift}");
-        assert_eq!(tape["reject"], "PastComparedFlight", "lift {lift}");
+        assert_eq!(tape["reject"], "PastFlightDeployment", "lift {lift}");
         assert_eq!(
             tape["reject_detail"],
-            format!("Ended: the run reached the end the capsule_insight card declares (PastComparedFlight): 5700 m or Mach 1.46, the lowest state the compared run reached at the flown parachute deployment, 6164.6 m above the datum, where the card's entry ends. The step past it is not taken, and the run is sealed to step {landed}."),
+            format!("Ended: the run reached the end the capsule_insight card declares (PastFlightDeployment): the flown parachute deployment, the last row of the flight's record, altitude under 6164.62 m and speed through the air under 352.1169 m/s at once, where the card's entry ends; the step that first crosses both lands, and with the flight's lift that step is at 5793 m and Mach 1.470, the lowest state the compared run reached. The step past it is not taken, and the run is sealed to step {landed}."),
             "lift {lift}"
         );
         assert_eq!(tape["steps_landed"], landed, "lift {lift}");
         assert_eq!(tape["steps_requested"], STEPS_ASKED);
         assert_state_is(&tape["final_state"], &state, &format!("lift {lift}"));
-        // Both stop at the compared Mach floor; no landed state is below it.
-        assert!(state.mach >= capsule_insight::COMPARED_MACH_FLOOR && state.mach < 1.463, "{}", state.mach);
-        assert!(state.altitude_m >= capsule_insight::COMPARED_ALTITUDE_FLOOR_M);
+        // Both stop at the first state under both deployment conditions.
+        assert!(state.altitude_m < capsule_insight::FLIGHT_DEPLOYMENT_ALTITUDE_M);
+        assert!(state.air_speed_m_s < capsule_insight::FLIGHT_DEPLOYMENT_AIR_SPEED_M_S);
         assert!(tape["max_residual_conservation_error"].as_f64().unwrap() < 2.0e-12);
 
         // One frame for each landed step, and the frame of the largest load holds it.
@@ -418,8 +422,8 @@ async fn a_later_segment_changes_the_lift_and_a_changed_tape_breaks() {
     assert_eq!(report["holds"], false, "{report}");
 
     // No lift to 60 s, then -0.05 and +0.05: a change no compared run made.
-    // The run leaves the corridor and is refused by name where it does; the
-    // steps before land.
+    // The run leaves the corridor the compared runs flew, where engines 0.7
+    // to 0.9 refused it, and goes on, on the kernel loop's state to the bit.
     let mut wander = request.clone();
     wander["segments"] = json!([
         { "steps": 600, "load": { "lift_over_drag": 0.0 } },
@@ -429,28 +433,18 @@ async fn a_later_segment_changes_the_lift_and_a_changed_tape_breaks() {
     let (status, answer) = post(&base, "/run_trajectory", &wander).await;
     assert_eq!(status, 200, "{answer}");
     let tape: Value = serde_json::from_str(&answer).unwrap();
-    assert_eq!(tape["outcome"], "refused", "{answer}");
-    assert_eq!(tape["reject"], "OffComparedCorridor", "{answer}");
-    let landed = tape["steps_landed"].as_u64().unwrap();
-    assert!(landed > 600 && landed < 1500, "{landed}");
+    assert_eq!(tape["outcome"], "completed", "{answer}");
+    assert_eq!(tape["steps_landed"], 1500);
     let mut state = CapsuleState::try_entry_interface(&capsule).unwrap();
-    let mut n = 0;
-    let refusal = 'run: {
-        for (steps, lift) in [(600, 0.0), (600, -0.05), (300, 0.05)] {
-            for _ in 0..steps {
-                if let Err(reject) =
-                    capsule_insight::step(&capsule, &mut state, &mut frame, CapsuleLoad { lift_over_drag: lift }, ceiling())
-                {
-                    break 'run reject;
-                }
-                n += 1;
-            }
+    for (steps, lift) in [(600, 0.0), (600, -0.05), (300, 0.05)] {
+        for _ in 0..steps {
+            capsule_insight::step(&capsule, &mut state, &mut frame, CapsuleLoad { lift_over_drag: lift }, ceiling())
+                .unwrap();
         }
-        panic!("the wandering run stayed in the corridor");
-    };
-    assert_eq!(refusal, StepReject::OffComparedCorridor);
-    assert_eq!(n, landed);
+    }
     assert_state_is(&tape["final_state"], &state, "wandering run");
+    let (_, report) = post(&base, "/verify_tape", &tape).await;
+    assert_eq!(serde_json::from_str::<Value>(&report).unwrap()["holds"], true);
 }
 
 // -------------------------------------------------------------- the limits
@@ -510,24 +504,15 @@ async fn a_start_off_the_card_is_refused_by_name_and_the_edges_of_the_card_land(
         text.contains(&format!("({name}). That state is not sealed.")) && !text.contains("sha256_seal") && !text.contains("run_seal")
     };
     // (phase, the refusal).
-    let off: [((f64, f64, f64), &str); 10] = [
+    let off: [((f64, f64, f64), &str); 6] = [
         ((above(datum + 128_000.0), -1000.0, 5000.0), "AltitudeOutsideCard"),
-        ((below(datum + 4_000.0), -100.0, 600.0), "AltitudeOutsideCard"),
-        // 229 m/s through air whose speed of sound is 235 m/s.
-        ((datum + 10_000.0, -50.0, 458.0), "MachOutsideCard"),
+        ((below(datum + capsule_insight::LANDING_SITE_ALTITUDE_M), -100.0, 600.0), "BelowLandingSite"),
+        // 173 m/s through air whose speed of sound is 235 m/s.
+        ((datum + 10_000.0, -50.0, 400.0), "MachOutsideCard"),
         ((datum + 60_000.0, -1000.0, 6_200.0), "AirSpeedOutsideCard"),
         ((datum + 60_000.0, -6_000.0, 240.0), "AirSpeedOutsideCard"),
-        // Climbing at the old 4 km floor: under the compared floor.
-        ((datum + 4_000.0, 50.0, 600.0), "PastComparedFlight"),
-        // Mach 1.27 at 9 km.
-        ((datum + 9_000.0, -150.0, 494.0), "PastComparedFlight"),
-        // 5804 m/s through the air at 100 km: above any speed the compared
-        // runs had.
-        ((datum + 100_000.0, -1000.0, 5_954.0), "OffComparedCorridor"),
-        // Climbing at 60 km at the compared speed there.
-        ((datum + 60_000.0, 100.0, 5_700.0), "OffComparedCorridor"),
-        // The top of the air tables, above the entry altitude.
-        ((datum + 128_000.0, -100.0, 5000.0), "OffComparedCorridor"),
+        // 6 km at 300 m/s: past the flown deployment.
+        ((datum + 6_000.0, -100.0, 517.0), "PastFlightDeployment"),
     ];
     for (phase, name) in off {
         let (status, text) = post(&base, "/verify_physics", &step_body(phase, 0.0, ceiling())).await;
@@ -537,6 +522,21 @@ async fn a_start_off_the_card_is_refused_by_name_and_the_edges_of_the_card_land(
         assert_eq!(status, 422, "{phase:?}: {text}");
         assert!(named(&text, name), "{phase:?} {name}: {text}");
         assert!(CapsuleState::try_state(&capsule(), phase.0, phase.1, phase.2).is_none());
+    }
+    // Where engines 0.7 to 0.9 refused, the card computes: climbing at 4 km,
+    // Mach 1.27 at 9 km, 5804 m/s at 100 km, climbing at 60 km, the top of
+    // the air tables, 4 km at Mach 1.57 and the bottom of the old tables.
+    for phase in [
+        (datum + 4_000.0, 50.0, 600.0),
+        (datum + 9_000.0, -150.0, 494.0),
+        (datum + 100_000.0, -1000.0, 5_954.0),
+        (datum + 60_000.0, 100.0, 5_700.0),
+        (datum + 128_000.0, -100.0, 5000.0),
+        (below(datum + 4_000.0), -100.0, 600.0),
+    ] {
+        let (status, text) = post(&base, "/verify_physics", &step_body(phase, 0.0, ceiling() / 8.0)).await;
+        assert_eq!(status, 200, "{phase:?}: {text}");
+        assert!(text.contains("sha256_seal"), "{text}");
     }
     // The top knot of the corridor is on the card: a capsule going down
     // from it lands.
@@ -552,7 +552,8 @@ async fn a_start_off_the_card_is_refused_by_name_and_the_edges_of_the_card_land(
     assert_eq!(
         text,
         format!(
-            "Physical Violation: 'dt_s' {} is above 0.1 s, the step ceiling of the capsule_insight card.",
+            // Re-pinned for 0.10.1: a step above the ceiling carries the name DtAboveCeiling.
+            "Physical Violation: 'dt_s' {} is above 0.1 s, the step ceiling of the capsule_insight card (DtAboveCeiling).",
             above(ceiling())
         )
     );
@@ -601,22 +602,32 @@ async fn a_card_constant_sent_as_a_field_is_refused() {
 }
 
 /// A run past the flight's parachute deployment, once sealed down to 4010 m
-/// and Mach 1.20. It now ends at the compared floor, the end the card
-/// declares, and no landed state is below it.
+/// and Mach 1.20. It now ends at the flown deployment, the end the card
+/// declares, and no landed state is past both conditions.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn the_entry_past_the_flights_deployment_is_refused_by_name_and_a_restart_lands() {
     let base = spawn_app().await;
-    for lift in [0.0, capsule_insight::LIFT_OVER_DRAG_LIMIT, -capsule_insight::LIFT_OVER_DRAG_LIMIT] {
+    for lift in [0.0, -capsule_insight::LIFT_OVER_DRAG_LIMIT] {
         let (status, text) = post(&base, "/run_trajectory", &run_body(entry(), lift, ceiling(), STEPS_ASKED, 3_000)).await;
         assert_eq!(status, 200, "{text}");
         let tape: Value = serde_json::from_str(&text).unwrap();
         assert_eq!(tape["outcome"], "ended", "lift {lift}");
-        assert_eq!(tape["reject"], "PastComparedFlight", "lift {lift}");
+        assert_eq!(tape["reject"], "PastFlightDeployment", "lift {lift}");
         let last = &tape["final_state"];
-        assert!(published(last, "altitude_m") >= capsule_insight::COMPARED_ALTITUDE_FLOOR_M, "lift {lift}");
-        assert!(published(last, "mach") >= capsule_insight::COMPARED_MACH_FLOOR, "lift {lift}");
+        assert!(published(last, "altitude_m") < capsule_insight::FLIGHT_DEPLOYMENT_ALTITUDE_M, "lift {lift}");
+        assert!(published(last, "air_speed_m_s") < capsule_insight::FLIGHT_DEPLOYMENT_AIR_SPEED_M_S, "lift {lift}");
         assert!(last.get("past_flight_deployment").is_none(), "{last}");
     }
+    // With the most lift away from Mars the capsule slows above the
+    // deployment altitude, where engines 0.7 to 0.9 stopped it at Mach 1.46;
+    // it goes on and no landed state is past both conditions.
+    let lift = capsule_insight::LIFT_OVER_DRAG_LIMIT;
+    let (status, text) = post(&base, "/run_trajectory", &run_body(entry(), lift, ceiling(), STEPS_ASKED, 3_000)).await;
+    assert_eq!(status, 200, "{text}");
+    let tape: Value = serde_json::from_str(&text).unwrap();
+    assert!(tape["outcome"] == "completed" || tape["outcome"] == "ended", "{}", tape["outcome"]);
+    let last = &tape["final_state"];
+    assert!(published(last, "mach") < capsule_insight::COMPARED_MACH_FLOOR, "{last}");
 
     // A restart from a state the run returns lands, and lands on the phase
     // of the run that went straight on.
@@ -721,7 +732,7 @@ impl Local {
     }
 
     async fn call(&mut self, name: &str, arguments: &Value) -> String {
-        let line = json!({"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":name,"arguments":arguments}});
+        let line = answer_text::tool_call(7, name, arguments);
         self.raw(&line.to_string()).await
     }
 }
@@ -732,6 +743,7 @@ fn result_text(answer: &str) -> (String, bool) {
         .as_str()
         .unwrap_or_else(|| panic!("no text in {answer}"))
         .to_string();
+    answer_text::remember(&text);
     (text, value["result"]["isError"] == true)
 }
 
@@ -745,7 +757,7 @@ async fn the_local_connection_lists_the_capsule_and_gives_the_bytes_of_the_web_c
     assert!(!error);
     let listed: Value = serde_json::from_str(&listed).unwrap();
     let cards = listed["cards"].as_array().unwrap();
-    assert_eq!(cards.len(), 31);
+    assert_eq!(cards.len(), 37);
     assert_eq!(cards[18]["domain"], "aerospace");
     assert_eq!(cards[18]["card"], "capsule_insight");
     let on_web: Value = Client::new().get(format!("{web}/cards")).send().await.unwrap().json().await.unwrap();
@@ -758,10 +770,11 @@ async fn the_local_connection_lists_the_capsule_and_gives_the_bytes_of_the_web_c
     assert_eq!(status, 200);
     assert_eq!(described, on_web);
     let described: Value = serde_json::from_str(&described).unwrap();
-    assert_eq!(described["rejects"].as_array().unwrap().len(), 12);
+    // Re-pinned for 0.10.1: after the kernel's 12 names the list holds the gateway's own two, DtBelowFloor and DtAboveCeiling.
+    assert_eq!(described["rejects"].as_array().unwrap().len(), 14);
 
     // The description's own examples run as written, on both connections, to the same bytes.
-    let step = described["example_verify_step"].clone();
+    let step = described["example_compute_step"].clone();
     let (stepped, error) = result_text(&local.call("verify_step", &step).await);
     assert!(!error, "{stepped}");
     let (status, on_web) = post(&web, "/verify_physics", &step).await;

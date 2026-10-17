@@ -24,7 +24,7 @@ pub(crate) const EXAMPLE: &str = "example";
 /// The answer to a solve request that names its solver and neither
 /// `parameters` nor `example`.
 pub(crate) const MISSING_PARAMETERS: &str =
-    "Missing required parameter: 'parameters' (or 'example', the name of a worked example describe_solver lists)";
+    "Missing required parameter: 'parameters' (or 'example', the name of a worked example describe_solver lists) (InputMissing).";
 
 /// A solve request that names a worked example (`{"solver": ..., "example":
 /// "<name>"}`, a name `describe_solver` lists) made into the request it
@@ -45,7 +45,7 @@ pub(crate) fn filled(view: &crate::view::View, request: Value) -> Result<Value, 
     let solver = Some(name)
         .filter(|name| view.sees_solver(name))
         .and_then(solvers::find)
-        .ok_or_else(|| DoorError::NotFound("Solver not recognized".to_string()))?;
+        .ok_or_else(|| DoorError::NotFound(crate::SOLVER_NOT_RECOGNIZED.to_string()))?;
     if object.contains_key("parameters") {
         return Err(DoorError::Unprocessable(
             "Physical Violation: a solve request takes 'parameters' or 'example', not both: 'example' fills 'parameters' with a worked example whole.".to_string(),
@@ -106,6 +106,12 @@ pub struct SolutionDocument {
     #[serde(serialize_with = "crate::trajectory::serialize_optional_state")]
     pub invariants: Option<Value>,
     pub field_sha256: Option<String>,
+    /// Present only when the request's parameters carry an instrument's
+    /// signature: whose it is. A solve answer without it is the caller's
+    /// number. Outside the solution seal, which covers the signature in its
+    /// inputs.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub load_source: Option<Value>,
     pub seal_parts: SealParts,
     pub solution_seal: String,
 }
@@ -124,11 +130,14 @@ pub struct SolutionReport {
     /// `outcome`, `solution_seal`, or null when the solution holds.
     pub cause: Option<String>,
     /// What the check of a whole solution compared, and what it did not.
-    pub checked: &'static str,
+    pub compared: &'static str,
 }
 
-/// What the check of a whole solution says it compared, in every answer.
-pub const WHOLE_SOLUTION_CHECKED: &str = "Only the exact hex values and the seals were checked: the decimal copies of the values and the receipt were not, so a copy with a decimal changed can hold. verify_receipt checks the decimals and the receipt of an answer kept byte for byte; sending the request as 'request' with its solution_seal solves it again.";
+/// What the long form of `verify_solution` says when it solved nothing: a
+/// part of the seal that does not hold, a signed reading that does not
+/// verify, another engine version, or inputs the engine turns away before
+/// solving.
+pub const WHOLE_SOLUTION_COMPARED: &str = "No physics was run. The solution seal and each of its parts were recomputed from the answer's exact hex values, and its signed readings verified; cause names the first that does not hold, an answer of another engine version (engine_version), or inputs the engine turns away before solving (answer_text, at inputs). The seal has no key, so a seal that holds shows only that the answer is consistent with itself: an answer is solved again from its request, and compared with the engine's answer byte for byte, only when all of these hold.";
 
 #[derive(Serialize)]
 struct SealTail<'a> {
@@ -156,12 +165,12 @@ pub fn check(body: &Value) -> Result<SolutionReport, DoorError> {
 /// request (`request` and `solution_seal`), which solves the request again
 /// under a physics permit, or the check of a whole solution, which runs no
 /// physics.
-pub async fn verify(state: &crate::AppState, body: &Value) -> Result<String, DoorError> {
+pub async fn verify(state: &crate::AppState, body: &Value, text: Option<&str>) -> Result<String, DoorError> {
     let object = body.as_object().ok_or_else(|| {
         DoorError::Unprocessable("Physical Violation: the request must be a JSON object.".into())
     })?;
-    let Some((request, given)) = crate::check_by_request::read(object, CAUSE_SEAL, "the whole solve answer")? else {
-        let report = check_in(state.view(), body)?;
+    let Some((request, given)) = crate::verify_by_request::read(object, CAUSE_SEAL, "the whole solve answer")? else {
+        let report = long_form(state, body, text).await?;
         return serde_json::to_string(&report).map_err(|error| {
             DoorError::Internal(format!(
                 "Physical Violation: the response could not be encoded. {error}"
@@ -169,22 +178,187 @@ pub async fn verify(state: &crate::AppState, body: &Value) -> Result<String, Doo
         });
     };
     let response = run(state, request.clone()).await?;
-    crate::check_by_request::answer(
+    let version = (given != response.document.solution_seal).then(|| version_words(&response.document, given));
+    crate::verify_by_request::answer(
         CAUSE_SEAL,
         "solve",
         given,
         &response.document.solution_seal,
         Some(&response.receipt_sha256),
-        &crate::check_by_request::checked_with_receipt("solved", CAUSE_SEAL),
-        crate::check_by_request::TEXT_NOT_COMPARED,
+        &crate::verify_by_request::compared_with_receipt("solved", CAUSE_SEAL),
+        crate::verify_by_request::TEXT_NOT_COMPARED,
+        version,
     )
+}
+
+/// What a check by request of a solution says when the seal given is not the
+/// one computed: the seal covers `engine_version`, and, when the seal given
+/// is this request's solution under another version's name, that version
+/// beside this engine's (the red team of 0.13.0, D4).
+fn version_words(document: &SolutionDocument, given: &str) -> String {
+    let ours = &document.engine_version;
+    let theirs = crate::verify_by_request::other_versions("genesis_solvers", ours)
+        .into_iter()
+        .find(|name| seal_with_version(document, name).as_deref() == Some(given));
+    match theirs {
+        Some(theirs) => format!(
+            "The solution_seal covers engine_version: the seal given is this request's solution under engine_version {theirs}, another engine version's, and this engine writes {ours}, so it does not hold here. The long form, given that answer whole, compares it value by value and names both versions."
+        ),
+        None => format!(
+            "The solution_seal covers engine_version, {ours} on this engine: the seal of an answer another engine version gave does not hold here."
+        ),
+    }
+}
+
+/// The solution seal of `document` with `version` in the place of its
+/// engine version: what the same solution sealed by another version of the
+/// solvers comes to.
+pub(crate) fn seal_with_version(document: &SolutionDocument, version: &str) -> Option<String> {
+    let ingredients = Ingredients {
+        request: crate::sealed_form(&document.inputs).into_bytes(),
+        version: version_text(version),
+        result_text: values_text(PART_RESULT, document.result.as_ref().and_then(Value::as_object)).ok()?,
+        invariants_text: values_text(PART_INVARIANTS, document.invariants.as_ref().and_then(Value::as_object)).ok()?,
+        field: field_text(document.field_sha256.as_deref()),
+        tail: tail_bytes(&document.outcome, document.iterations, document.reject.as_deref()),
+    };
+    Some(ingredients.seal())
+}
+
+/// What the long form of `verify_solution` answers: the seal recomputed,
+/// then the answer the engine writes for it compared with the answer sent.
+#[derive(Serialize)]
+pub struct LongSolutionReport {
+    /// Every byte of the answer sent is the engine's answer to its request.
+    pub holds: bool,
+    /// Every value of the answer sent is the engine's answer to its request,
+    /// computed again, whatever its spelling: true beside a false holds when
+    /// only the text differs (a number spelled another way, an escape).
+    pub values_hold: bool,
+    /// A part of the seal, `solution_seal`, `engine_version`, `answer_text`,
+    /// or null when the answer holds.
+    pub cause: Option<String>,
+    /// With `answer_text` and `engine_version`: the first field where the
+    /// answer sent is not the engine's. Left out when there is none.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub differs_at: Option<String>,
+    /// What is different, in one sentence. Left out when there is nothing.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub difference: Option<String>,
+    pub compared: &'static str,
+}
+
+impl LongSolutionReport {
+    fn of(holds: bool, cause: Option<&str>, compared: &'static str) -> Self {
+        Self { holds, values_hold: holds, cause: cause.map(str::to_string), differs_at: None, difference: None, compared }
+    }
+
+    /// The report of a comparison with the engine's answer.
+    fn of_compared(found: crate::rebuild::Compared, compared: &'static str) -> Self {
+        match found.difference {
+            None => Self::of(true, None, compared),
+            Some(difference) => Self { values_hold: found.values_hold, ..Self::differs(difference, compared) },
+        }
+    }
+
+    fn differs(difference: crate::rebuild::Difference, compared: &'static str) -> Self {
+        Self {
+            differs_at: Some(difference.at),
+            difference: Some(difference.says),
+            ..Self::of(false, Some(crate::rebuild::CAUSE_ANSWER_TEXT), compared)
+        }
+    }
+}
+
+/// What the long form of `verify_solution` compared when its request was
+/// solved again.
+pub const WHOLE_SOLUTION_COMPUTED: &str = "The solution seal and each of its parts were recomputed from the answer's exact hex values. Then its request, the answer's inputs, was solved again under a physics permit and the limits of solve, the solution_seal of that solve was compared with the answer's, and the engine's whole answer to that request was compared with the answer sent: value by value, and then byte for byte, its words, decimals and receipt included. holds is true only when every one is the same, so an answer that holds is, every byte, the engine's answer to its request; cause names the first that is not, and answer_text, with differs_at, is a text that differs while the seal holds.";
+
+/// Whether the long form of `verify_solution` solves again, read from the
+/// answer alone: every whole answer is solved again once its seal holds.
+/// The open connection counts it as a solve.
+pub(crate) fn long_form_solves(answer: &Map<String, Value>) -> bool {
+    !answer.contains_key(crate::verify_by_request::REQUEST)
+}
+
+/// The long form of `verify_solution`: the seal recomputed with no physics,
+/// then the request the answer carries solved again under a physics permit,
+/// and the engine's answer to it compared with the answer sent, value by
+/// value and byte for byte. The seal has no key, so an answer whose parts
+/// were rewritten with the seal worked out again holds every seal; only the
+/// solve shows its values are the engine's.
+async fn long_form(state: &crate::AppState, body: &Value, text: Option<&str>) -> Result<LongSolutionReport, DoorError> {
+    let seals = check_in(state.view(), body)?;
+    if !seals.holds {
+        return Ok(LongSolutionReport::of(false, seals.cause.as_deref(), WHOLE_SOLUTION_COMPARED));
+    }
+    let object = body.as_object().expect("a verified solution is an object");
+    // The seal holds: a signature over the parameters is verified next, as a
+    // run's loads are after its chain.
+    let inputs = object.get("inputs").cloned().unwrap_or(Value::Null);
+    if let Err(fault) = genesis_seal::attest::verify_all(&genesis_seal::attest::solve_places(&inputs)) {
+        return Ok(LongSolutionReport {
+            differs_at: Some(format!("inputs.{}.{}", fault.place().label(), crate::signed_load::SIGNED)),
+            difference: Some(fault.to_string()),
+            ..LongSolutionReport::of(false, Some(crate::trajectory::CAUSE_LOAD_SIGNATURE), WHOLE_SOLUTION_COMPARED)
+        });
+    }
+    let served = solvers::engine_version();
+    if let Some(Value::String(version)) = object.get(PART_VERSION) {
+        if *version != served {
+            return Ok(LongSolutionReport {
+                differs_at: Some(PART_VERSION.to_string()),
+                difference: Some(crate::rebuild::another_version(version, &served, CAUSE_SEAL)),
+                ..LongSolutionReport::of(false, Some(crate::rebuild::CAUSE_ENGINE_VERSION), WHOLE_SOLUTION_COMPARED)
+            });
+        }
+    }
+    // The request is read as `solve` reads it, so a request the engine turns
+    // away has no answer here either.
+    let prepared = match prepare_in(state.view(), &inputs) {
+        Ok(prepared) => prepared,
+        Err(refused) => {
+            return Ok(LongSolutionReport::differs(
+                crate::rebuild::Difference::new(
+                    "inputs",
+                    format!("The engine solves nothing for these inputs: it turns them away before solving. {}", refused.message()),
+                ),
+                WHOLE_SOLUTION_COMPARED,
+            ));
+        }
+    };
+    let solved = crate::on_pool(state, move || Ok(prepared.solve_and_seal(inputs))).await?;
+    let response = match solved {
+        Ok(response) => response,
+        Err(sentence) => {
+            return Ok(LongSolutionReport::differs(
+                crate::rebuild::Difference::new(
+                    "outcome",
+                    format!("The request was solved again and the engine answers it with no seal: {sentence}"),
+                ),
+                WHOLE_SOLUTION_COMPUTED,
+            ));
+        }
+    };
+    let sent_seal = object.get(CAUSE_SEAL).and_then(Value::as_str).unwrap_or_default();
+    if response.document.solution_seal != sent_seal {
+        return Ok(LongSolutionReport {
+            difference: Some("The request was solved again and solves to another solution_seal: the answer is consistent with itself, and its sealed parts are not the engine's solution of this request.".to_string()),
+            ..LongSolutionReport::of(false, Some(CAUSE_SEAL), WHOLE_SOLUTION_COMPUTED)
+        });
+    }
+    let engine_text = serde_json::to_string(&response).map_err(|error| {
+        DoorError::Internal(format!("Physical Violation: the response could not be encoded. {error}"))
+    })?;
+    let sent_text = crate::rebuild::sent_text(body, text);
+    Ok(LongSolutionReport::of_compared(crate::rebuild::compare(&engine_text, body, &sent_text)?, WHOLE_SOLUTION_COMPUTED))
 }
 
 pub fn check_in(view: &crate::view::View, body: &Value) -> Result<SolutionReport, DoorError> {
     let object = body.as_object().ok_or_else(|| {
         DoorError::Unprocessable("Physical Violation: the request must be a JSON object.".into())
     })?;
-    if let Some(meant) = crate::check_by_request::meant_by_request(object, CAUSE_SEAL, "seal_parts") {
+    if let Some(meant) = crate::verify_by_request::meant_by_request(object, CAUSE_SEAL, "seal_parts") {
         return Err(meant);
     }
     let inputs = required(object, "inputs")?;
@@ -229,7 +403,7 @@ pub fn check_in(view: &crate::view::View, body: &Value) -> Result<SolutionReport
             Some(_) => return Err(wrong_type("seal_parts", "six strings")),
             None => {
                 return Err(DoorError::Unprocessable(format!(
-                    "Missing required parameter: 'seal_parts.{part}'"
+                    "Missing required parameter: 'seal_parts.{part}' (InputMissing)."
                 )));
             }
         }
@@ -277,7 +451,7 @@ pub fn check_in(view: &crate::view::View, body: &Value) -> Result<SolutionReport
     Ok(SolutionReport {
         holds: true,
         cause: None,
-        checked: WHOLE_SOLUTION_CHECKED,
+        compared: WHOLE_SOLUTION_COMPARED,
     })
 }
 
@@ -334,14 +508,24 @@ pub(crate) fn prepare_in(view: &crate::view::View, request: &Value) -> Result<Pr
     let solver = Some(name)
         .filter(|name| view.sees_solver(name))
         .and_then(solvers::find)
-        .ok_or_else(|| DoorError::NotFound("Solver not recognized".to_string()))?;
+        .ok_or_else(|| DoorError::NotFound(crate::SOLVER_NOT_RECOGNIZED.to_string()))?;
     reject_unknown_keys(solver, object, TOP_LEVEL.iter().copied())?;
     let parameters = object
         .get("parameters")
         .ok_or_else(|| DoorError::Unprocessable(MISSING_PARAMETERS.to_string()))?
         .as_object()
         .ok_or_else(|| wrong_type("parameters", "a JSON object"))?;
-    let given = read_parameters(solver, parameters)?;
+    // An instrument's signature over the parameters is verified before the
+    // inputs are read, and the inputs are read without it: the solver takes
+    // the reading and knows nothing of who signed it.
+    let given = if parameters.contains_key(crate::signed_load::SIGNED) {
+        crate::signed_load::verify_solve(request)?;
+        let mut reading = parameters.clone();
+        reading.shift_remove(crate::signed_load::SIGNED);
+        read_parameters(solver, &reading)?
+    } else {
+        read_parameters(solver, parameters)?
+    };
     Ok(Prepared { solver, given })
 }
 
@@ -367,8 +551,9 @@ pub(crate) fn read_parameters(
                         None => format!("no '{switch}'"),
                     };
                     return Err(DoorError::Unprocessable(format!(
-                        "Physical Violation: '{}' is an input only when '{switch}' is \"{word}\"; this request has {has}.",
-                        input.name
+                        "Physical Violation: '{}' is an input only when '{switch}' is \"{word}\"; this request has {has} ({}).",
+                        input.name,
+                        crate::INPUT_NOT_WITH_CHOICE
                     )));
                 }
                 continue;
@@ -395,7 +580,7 @@ fn read_input(input: &Input, given: &Value) -> Result<GivenValue, DoorError> {
         } => {
             let outside = |shown: String| {
                 refused(
-                    format!("{spoken} {shown} is outside {minimum}..={maximum}"),
+                    format!("{spoken} {shown} is outside {minimum} to {maximum}"),
                     input.refusal,
                 )
             };
@@ -411,7 +596,7 @@ fn read_input(input: &Input, given: &Value) -> Result<GivenValue, DoorError> {
                 // the value is named as it was read, not as it was written.
                 (None, None) if integer_held_as_float(given) => Err(refused(
                     format!(
-                        "{spoken} read as {given} is outside {minimum}..={maximum}"
+                        "{spoken} read as {given} is outside {minimum} to {maximum}"
                     ),
                     input.refusal,
                 )),
@@ -454,6 +639,29 @@ fn read_input(input: &Input, given: &Value) -> Result<GivenValue, DoorError> {
             if bounds_here && !(number > *above && number <= *maximum) {
                 return Err(refused(
                     format!("'{name}' {given} is not above {above} {unit} or is above {maximum} {unit}"),
+                    input.refusal,
+                ));
+            }
+            Ok(GivenValue::Number(number))
+        }
+        Kind::NumberWithin {
+            minimum,
+            minimum_exclusive,
+            maximum,
+            maximum_exclusive,
+            unit,
+        } => {
+            let number = given
+                .as_f64()
+                .ok_or_else(|| must_be(name, "a number", given))?;
+            let number = normal_number(name, number)?;
+            let low = if *minimum_exclusive { number > *minimum } else { number >= *minimum };
+            let high = if *maximum_exclusive { number < *maximum } else { number <= *maximum };
+            if bounds_here && !(low && high) {
+                let from = if *minimum_exclusive { "above" } else { "from" };
+                let to = if *maximum_exclusive { "and below" } else { "to" };
+                return Err(refused(
+                    format!("'{name}' {given} is outside {from} {minimum} {unit} {to} {maximum} {unit}"),
                     input.refusal,
                 ));
             }
@@ -514,6 +722,50 @@ fn read_input(input: &Input, given: &Value) -> Result<GivenValue, DoorError> {
                         format!(
                             "'{place}' {item} is outside {}",
                             solvers::range_words(*minimum, *maximum, unit)
+                        ),
+                        input.refusal,
+                    ));
+                }
+                numbers.push(number);
+            }
+            Ok(GivenValue::Numbers(numbers))
+        }
+        Kind::NumbersWithin {
+            fewest,
+            most,
+            minimum,
+            minimum_exclusive,
+            maximum,
+            maximum_exclusive,
+            unit,
+        } => {
+            let Value::Array(items) = given else {
+                return Err(must_be(name, "an array of numbers", given));
+            };
+            if bounds_here && items.len() > *most {
+                return Err(refused(
+                    format!("'{name}' holds {} numbers, more than {most}", items.len()),
+                    input.refusal,
+                ));
+            }
+            if bounds_here && items.len() < *fewest {
+                return Err(refused(
+                    format!("'{name}' holds {} numbers, fewer than {fewest}", items.len()),
+                    input.refusal,
+                ));
+            }
+            let mut numbers = Vec::with_capacity(items.len());
+            for (index, item) in items.iter().enumerate() {
+                let place = format!("{name}[{index}]");
+                let number = item
+                    .as_f64()
+                    .ok_or_else(|| must_be(&place, "a number", item))?;
+                let number = normal_number(&place, number)?;
+                if bounds_here && !solvers::within(number, *minimum, *minimum_exclusive, *maximum, *maximum_exclusive) {
+                    return Err(refused(
+                        format!(
+                            "'{place}' {item} is outside {}",
+                            solvers::range_within_words(*minimum, *minimum_exclusive, *maximum, *maximum_exclusive, unit)
                         ),
                         input.refusal,
                     ));
@@ -591,9 +843,16 @@ pub(crate) fn seal(
             })?;
             // The door checks a limit the request shows before a permit is
             // taken. A solver that still names the question as outside its
-            // range is not sealed.
+            // range is not sealed, and its sentence carries the refusal's
+            // name, as the door's does: an entry that has not already put
+            // the name at the end of the sentence has it put there.
             if !listed.sealed {
-                return Err(format!("Physical Violation: {}.", refusal.sentence));
+                let name = format!("({})", refusal.name);
+                return Err(if refusal.sentence.ends_with(&name) {
+                    format!("Physical Violation: {}.", refusal.sentence)
+                } else {
+                    format!("Physical Violation: {} {name}.", refusal.sentence)
+                });
             }
             (
                 OUTCOME_REFUSED,
@@ -609,6 +868,23 @@ pub(crate) fn seal(
             )
         }
     };
+    sealed(request, outcome, reject, reject_detail, iterations, result, invariants, field)
+}
+
+/// A solution's document sealed under this engine's version, with its
+/// receipt: the same for a solve and for a solution the long form of
+/// `verify_solution` writes again from its sealed parts.
+#[allow(clippy::too_many_arguments)]
+fn sealed(
+    request: Value,
+    outcome: &str,
+    reject: Option<&str>,
+    reject_detail: Option<String>,
+    iterations: Option<u64>,
+    result: Option<Value>,
+    invariants: Option<Value>,
+    field: Option<String>,
+) -> Result<SolutionResponse, String> {
     let version = solvers::engine_version();
     let ingredients = Ingredients {
         request: crate::sealed_form(&request).into_bytes(),
@@ -621,6 +897,7 @@ pub(crate) fn seal(
         field: field_text(field.as_deref()),
         tail: tail_bytes(outcome, iterations, reject),
     };
+    let load_source = crate::signed_load::solve_source_of(&request);
     let document = SolutionDocument {
         inputs: request,
         engine_version: version,
@@ -631,6 +908,7 @@ pub(crate) fn seal(
         result,
         invariants,
         field_sha256: field,
+        load_source,
         seal_parts: ingredients.parts(),
         solution_seal: ingredients.seal(),
     };
@@ -963,14 +1241,14 @@ fn fails(part: &str) -> SolutionReport {
     SolutionReport {
         holds: false,
         cause: Some(part.to_string()),
-        checked: WHOLE_SOLUTION_CHECKED,
+        compared: WHOLE_SOLUTION_COMPARED,
     }
 }
 
 fn required<'a>(object: &'a Map<String, Value>, key: &str) -> Result<&'a Value, DoorError> {
     object
         .get(key)
-        .ok_or_else(|| DoorError::Unprocessable(format!("Missing required parameter: '{key}'")))
+        .ok_or_else(|| DoorError::Unprocessable(format!("Missing required parameter: '{key}' (InputMissing).")))
 }
 
 fn wrong_type(key: &str, expected: &str) -> DoorError {
@@ -1099,9 +1377,12 @@ mod tests {
             Ok(_) => panic!("an out-of-range atom was sealed"),
             Err(message) => message,
         };
+        // Re-pinned for 0.10.1: a refusal the solver itself returns unsealed
+        // carries its name, as the door's sentence does. The words before
+        // the name are the solver's own, the range in words.
         assert_eq!(
             message,
-            "Physical Violation: atomic number 19 is outside 1..=18."
+            "Physical Violation: atomic number 19 is outside 1 to 18 (AtomicNumberOutOfRange)."
         );
         let door = match prepare(&json!({
             "solver": "atom_dft",
@@ -1110,7 +1391,26 @@ mod tests {
             Ok(_) => panic!("an out-of-range atom passed the door"),
             Err(error) => error.message().to_string(),
         };
-        assert_eq!(door, message);
+        // The door refuses first, with the same name and the range in words.
+        assert_eq!(door, "Physical Violation: atomic number 19 is outside 1 to 18 (AtomicNumberOutOfRange).");
+    }
+
+    /// An entry that has already put the refusal's name at the end of an
+    /// unsealed sentence keeps it once: the name is not written twice.
+    #[test]
+    fn an_unsealed_refusal_that_already_ends_with_its_name_carries_it_once() {
+        use genesis_solvers::pipe_flow_superpipe::PipeReject;
+        let solved = crate::solver_pipe_flow_superpipe::solved(Err(PipeReject::LaminarFlow { bulk_reynolds_number: 1000.0 }));
+        let request = json!({ "solver": "pipe_flow_superpipe", "parameters": {} });
+        let message = match seal(&crate::solver_pipe_flow_superpipe::PIPE_FLOW_SUPERPIPE, request, solved) {
+            Ok(_) => panic!("a laminar flow was sealed"),
+            Err(message) => message,
+        };
+        assert_eq!(
+            message,
+            "Physical Violation: bulk Reynolds number 1000 is below 2300: the flow is laminar, and this solver is of turbulent flow (LaminarFlow)."
+        );
+        assert_eq!(message.matches("(LaminarFlow)").count(), 1);
     }
 
     #[test]
@@ -1309,27 +1609,45 @@ mod tests {
     /// 0.6.0 put back the same rule gives the 0.7.0 values. In 0.10.0 the
     /// solvers went to 0.8.0, and the seals and receipts were worked out
     /// again the same way; with the version 0.7.0 put back the same rule
-    /// gives the values pinned for 0.8.0. The hash of the request, of the
-    /// result, of the invariants, of the field and of the outcome have not
-    /// moved: of the six seal parts only `engine_version` has.
+    /// gives the values pinned for 0.8.0. In the engine after 0.10.1 the
+    /// solvers went to 0.9.0, and the seal, its engine_version part and the
+    /// receipt, and the seals and receipts of the five refusals below, were
+    /// worked out again the same way; with the version 0.8.0
+    /// put back the same rule gives the values pinned before. In engine
+    /// 0.12.0 the solvers went to 0.10.0: the seal, its engine_version part
+    /// and the receipt, and the five refusals' seals and receipts, were
+    /// reproduced at 0.9.0 with Python's hashlib from the rule (request,
+    /// version line, hex lines, field, tail; the receipt over the answer's own
+    /// bytes) and then taken at 0.10.0. In engine 0.13.0 the solvers went to
+    /// 0.11.0: the same rule, run on this test's own answer texts, reproduces
+    /// every 0.10.0 pin with the version put back (seal 0ec742ce...9c56,
+    /// engine_version part 4c5b6265...4786, receipt 2a1c8e94...e668) and
+    /// gave the 0.11.0 values. In the solvers' 0.12.0, the canonical math for
+    /// engine 0.14.0, the same rule, run on this test's own answer texts,
+    /// reproduces every 0.11.0 pin with the version put back (seal
+    /// 10688f6c...5ff0, engine_version part eb36a60b...f390, receipt
+    /// c5b6d0b6...6878) and gives the 0.12.0 values pinned here. The hash of
+    /// the request, of the result, of the invariants, of the field and of the
+    /// outcome have not moved: of the six seal parts only `engine_version`
+    /// has.
     #[test]
     fn the_proof_of_an_atom_is_bit_for_bit_the_proof_before_solvers_were_named() {
         let request = json!({ "solver": "atom_dft", "parameters": { "atomic_number": 3 } });
         let response = seal_atom(request, Ok(made_up_state())).expect("sealed");
         assert_eq!(
             response.document.solution_seal,
-            "43568cc002f085c50c95da2e1d675be0baa6070d75d602d4b2af3d12de92b61b"
+            "6fd55b35beeb5d4c27adf07c2968ef25f846a871a2f4cddb00a7365d64ae35ea"
         );
         assert_eq!(
             serde_json::to_string(&response).unwrap(),
             concat!(
-                r#"{"inputs":{"solver":"atom_dft","parameters":{"atomic_number":3}},"engine_version":"genesis_solvers_v0.8.0","outcome":"converged","reject":null,"reject_detail":null,"iterations":7,"#,
+                r#"{"inputs":{"solver":"atom_dft","parameters":{"atomic_number":3}},"engine_version":"genesis_solvers_v0.12.0","outcome":"converged","reject":null,"reject_detail":null,"iterations":7,"#,
                 r#""result":{"total_energy_ha":-7.25e0,"total_energy_ha_hex":"c01d000000000000","kinetic_energy_ha":7.125e0,"kinetic_energy_ha_hex":"401c800000000000","electron_nucleus_energy_ha":-1.65e1,"electron_nucleus_energy_ha_hex":"c030800000000000","hartree_energy_ha":3.875e0,"hartree_energy_ha_hex":"400f000000000000","exchange_correlation_energy_ha":-1.75e0,"exchange_correlation_energy_ha_hex":"bffc000000000000","#,
                 r#""eigenvalue_1s_ha":-1.875e0,"eigenvalue_1s_ha_hex":"bffe000000000000","occupation_1s":2.0e0,"occupation_1s_hex":"4000000000000000","eigenvalue_2s_ha":-1.0e-1,"eigenvalue_2s_ha_hex":"bfb999999999999a","occupation_2s":1.0e0,"occupation_2s_hex":"3ff0000000000000","eigenvalue_2p_ha":-0.0e0,"eigenvalue_2p_ha_hex":"8000000000000000","occupation_2p":0.0e0,"occupation_2p_hex":"0000000000000000"},"#,
                 r#""invariants":{"electron_count":3.0000000001e0,"electron_count_hex":"4008000000036f9c","virial_residual_ha":-1.953125e-6,"virial_residual_ha_hex":"bec0624dd2f1a9fc"},"#,
                 r#""field_sha256":"1a9df62a92e88e4a0cf1cd97fa0cedfde9535f809f238b045b96e8c6033923c5","#,
-                r#""seal_parts":{"inputs":"e57be020a41482d3fc714652587ebb43e497ba6ce06e40cb8c3b6e2e2693c98b","engine_version":"03681dfbba883c99a15572f7caac98c48373f19f1eda2c2c26ad6e42e5b7daec","result":"1c15b61ca9b42bdba55397c2dceb2da92eca1b61e58d22fd42cd34163afdf58e","invariants":"590bcb8e8f0d5b8941c276f3a620b5a9960996cdd65a05a0a297305d75a975c1","field_sha256":"fec27d21016c7846505738c86f771be21347f175fdc1108680e8e6df46db079c","outcome":"daec2f73173111450f5ffd61d25450b3e9da9d0d55f370590d4ad61736c4bdea"},"#,
-                r#""solution_seal":"43568cc002f085c50c95da2e1d675be0baa6070d75d602d4b2af3d12de92b61b","receipt_sha256":"ddf597f1b984cbe2ae0df3fe3be9080dee747151b095ab506c176b670cd04d3b"}"#,
+                r#""seal_parts":{"inputs":"e57be020a41482d3fc714652587ebb43e497ba6ce06e40cb8c3b6e2e2693c98b","engine_version":"e54ba43c1f265471435c46a330ca4e5ef1e80b1e6c44fb8e3a664f4ba299a2b0","result":"1c15b61ca9b42bdba55397c2dceb2da92eca1b61e58d22fd42cd34163afdf58e","invariants":"590bcb8e8f0d5b8941c276f3a620b5a9960996cdd65a05a0a297305d75a975c1","field_sha256":"fec27d21016c7846505738c86f771be21347f175fdc1108680e8e6df46db079c","outcome":"daec2f73173111450f5ffd61d25450b3e9da9d0d55f370590d4ad61736c4bdea"},"#,
+                r#""solution_seal":"6fd55b35beeb5d4c27adf07c2968ef25f846a871a2f4cddb00a7365d64ae35ea","receipt_sha256":"99912ec592a889d009af7464a0fe0daab0a44a941ab1ac432d368639d8a84446"}"#,
             )
         );
         let report = check(&posted(&response)).unwrap_or_else(|_| panic!("the solution parses"));
@@ -1339,32 +1657,32 @@ mod tests {
             (
                 AtomReject::NotConverged { iterations: 80 },
                 "Solver Refusal: atom_dft did not return a ground state (NotConverged). not converged after 80 iterations.",
-                "43c14d9f842d919ce199ef57f003f9a0ababf2ddd3b55109aea0e860eaa8dae3",
-                "3c56becc19853fc8513f64dfd2672c490392670f82a15171b0c01758f7f44e31",
+                "31405c831bc56e30b64f2520998b0a0d937a2b2618fbd2ef052381e04c6a3179",
+                "3d94cce52ec2e2f70cf9318ea489075160594b26aa879a065563e861234794ed",
             ),
             (
                 AtomReject::VirialBroken { residual_ha: 0.5 },
                 "Solver Refusal: atom_dft did not return a ground state (VirialBroken). virial residual 0.5 Ha.",
-                "1997d83176ff69cc7a5cef33563595897e905b585ff46c5bb66252befa1c148a",
-                "4ebe8291bbba21fb78b6444c711d62e46d2a85179e3882a2b013d5c9614c91a8",
+                "0564435477fbe0888db5ee10ed2e41070daae67b3069af3b41a8566f34c32254",
+                "65b4b727cfb71431653689a676043b9c02fae5f6effb1f8017538abc7abea218",
             ),
             (
                 AtomReject::ElectronCountBroken { electron_count: 4.0, atomic_number: 2 },
                 "Solver Refusal: atom_dft did not return a ground state (ElectronCountBroken). electron count 4 is not atomic number 2.",
-                "2656fcc787ea600f32fb6c10140a5a0a42d4d1d052714edb2c73ec6c9fc20357",
-                "5ecb27b94800a23e6d788b359dff53514628f876f64f5d8752c6a145c02c99bb",
+                "004207555228a9489081a85c2b3df6e0655b9ded5c46008d332c74d4a352c5d2",
+                "e9bba7708be346e3ed36b4db752030ce49bd023749f2b913eef6b1d55edebeaf",
             ),
             (
                 AtomReject::NegativeDensity,
                 "Solver Refusal: atom_dft did not return a ground state (NegativeDensity). electron density was negative.",
-                "e7eb7971794b499745cc6b6b67bf7858eba568780f91ad71ea49eca3d4871814",
-                "7e2519e69f8d49d6e050e527d32f170ea466b06a9e49bdfb83c5ee9f53864350",
+                "68c36f6425250f0098e896cb60892c4f45532c2e3f14105c6518c76091a180d2",
+                "03deb8f089456393b34abfd4b7cde1327e3109a204ed90cf2baafcbb11059e88",
             ),
             (
                 AtomReject::OrbitalNotBound { n: 3, l: 1 },
                 "Solver Refusal: atom_dft did not return a ground state (OrbitalNotBound). no bound orbital for n=3 l=1.",
-                "72e09eb45039e426f8f08c41825e2ae65fbd65120a552904b4cdb817f3c15f23",
-                "52ec097700f285dbe622c3678db6da78e32cda64df71ffad152cbc6f7b430f7a",
+                "db60f94fc0d9cf8cf664782f107bf21f14fb1081caef1bb740b0d4c8b7d32f97",
+                "d9f5266c81a03e50790dedc669e65e3f6968dcece9cec15ad6fd4e132508f784",
             ),
         ];
         for (reject, detail, solution_seal, receipt) in refusals {
@@ -1466,4 +1784,28 @@ mod tests {
         .unwrap_err();
         assert!(not_finite.contains("not finite"), "{not_finite}");
     }
+
+    /// The red team of 0.13.0, D4: a solution seal given by request that is
+    /// this request's under another version's name is said with both
+    /// versions; one of no version names this engine's alone.
+    #[test]
+    fn a_seal_of_another_version_is_said_with_both_versions() {
+        let request = serde_json::json!({ "solver": "atom_dft", "parameters": { "atomic_number": 3 } });
+        let prepared = prepare(&request).expect("prepared");
+        let response = prepared.solve_and_seal(request).expect("sealed");
+        let document = &response.document;
+        assert_eq!(seal_with_version(document, &document.engine_version).as_deref(), Some(document.solution_seal.as_str()));
+        let theirs = seal_with_version(document, "genesis_solvers_v0.10.0").unwrap();
+        assert_ne!(theirs, document.solution_seal);
+        let said = version_words(document, &theirs);
+        assert_eq!(
+            said,
+            "The solution_seal covers engine_version: the seal given is this request's solution under engine_version genesis_solvers_v0.10.0, another engine version's, and this engine writes genesis_solvers_v0.12.0, so it does not hold here. The long form, given that answer whole, compares it value by value and names both versions."
+        );
+        assert_eq!(
+            version_words(document, &"0".repeat(64)),
+            "The solution_seal covers engine_version, genesis_solvers_v0.12.0 on this engine: the seal of an answer another engine version gave does not hold here."
+        );
+    }
+
 }

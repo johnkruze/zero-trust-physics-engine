@@ -48,6 +48,7 @@ extern crate core;
 use core::prelude::v1::*;
 
 use crate::frame::LastStateFrame64;
+use crate::normal::normal_or_zero;
 
 /// Nominal mineral-oil bulk modulus. Campaign constant.
 pub const BULK_MODULUS_PA: f64 = 1.72e9;
@@ -364,8 +365,25 @@ impl FluidState {
 /// Advance one RK4 step and write the frame.
 ///
 /// A rejected step leaves `state` and `frame` as they were.
+///
+/// A value of the landed state below the normal range is written as zero
+/// with its sign ([`crate::normal`]).
 #[must_use]
 pub fn step(
+    column: &FluidColumn,
+    state: &mut FluidState,
+    frame: &mut LastStateFrame64,
+    load: FluidLoad,
+    dt_s: f64,
+) -> Result<(), StepReject> {
+    step_as_computed(column, state, frame, load, dt_s)?;
+    normal_or_zero_state(state);
+    Ok(())
+}
+
+/// The step as its equations compute it, before a value of the landed
+/// state below the normal range is written as zero.
+fn step_as_computed(
     column: &FluidColumn,
     state: &mut FluidState,
     frame: &mut LastStateFrame64,
@@ -378,6 +396,27 @@ pub fn step(
         None => return Err(StepReject::NonFiniteState),
     };
     commit(column, state, frame, load, dt_s, predicted)
+}
+
+/// Each value of a landed state below the normal range written as zero
+/// with its sign ([`crate::normal`]): the state carried to the next step
+/// and published holds no subnormal number.
+fn normal_or_zero_state(state: &mut FluidState) {
+    state.t_s = normal_or_zero(state.t_s);
+    state.pressure_pa = normal_or_zero(state.pressure_pa);
+    state.flow_m3_s = normal_or_zero(state.flow_m3_s);
+    state.fluid_volume_m3 = normal_or_zero(state.fluid_volume_m3);
+    state.compression_m = normal_or_zero(state.compression_m);
+    state.mass_kg = normal_or_zero(state.mass_kg);
+    state.elastic_energy_j = normal_or_zero(state.elastic_energy_j);
+    state.mass_anchor_kg = normal_or_zero(state.mass_anchor_kg);
+    state.energy_anchor_j = normal_or_zero(state.energy_anchor_j);
+    state.boundary_mass_kg = normal_or_zero(state.boundary_mass_kg);
+    state.boundary_work_j = normal_or_zero(state.boundary_work_j);
+    state.mass_defect_kg = normal_or_zero(state.mass_defect_kg);
+    state.energy_defect_j = normal_or_zero(state.energy_defect_j);
+    state.residual_conservation_error = normal_or_zero(state.residual_conservation_error);
+    state.vapor_margin_pa = normal_or_zero(state.vapor_margin_pa);
 }
 
 fn validate(

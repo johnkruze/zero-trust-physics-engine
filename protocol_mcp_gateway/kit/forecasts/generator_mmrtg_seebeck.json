@@ -1,0 +1,53 @@
+{
+ "model": "generator_mmrtg_seebeck",
+ "protocol": {
+  "path": "evidence/research/mmrtg_curiosity/companion_seebeck/validation_protocol.md",
+  "sha256": "0afc18e0e7af9b4405b4ce5b16764226ee917774d72253a1590cc179e76d86d1",
+  "committed": null
+ },
+ "held_back": [
+  {
+   "path": "evidence/research/mmrtg_curiosity/companion_seebeck/fresh/NASA_TM-20250004743_Final2.pdf",
+   "sha256": "718c483338f3ad9c58649a29483b390d4f2767a6f7a3cf97bf123c73eca0bad1"
+  },
+  {
+   "path": "evidence/research/mmrtg_curiosity/companion_seebeck/fresh/NTRS_record_20250004743.json",
+   "sha256": "65c02415344e65999f3dbbb5f00037b6428b5fdaf4232e16d7c103a0f33d8677"
+  }
+ ],
+ "registered": {
+  "utc": "2026-10-16T02:41:57Z"
+ },
+ "opened": [
+  {
+   "path": "evidence/research/mmrtg_curiosity/companion_seebeck/fresh/NASA_TM-20250004743_Final2.pdf",
+   "utc": "2026-10-16T02:42:03Z"
+  },
+  {
+   "path": "evidence/research/mmrtg_curiosity/companion_seebeck/fresh/NTRS_record_20250004743.json",
+   "utc": "2026-10-16T02:42:04Z"
+  }
+ ],
+ "scored": null,
+ "registered_by": "forecast.py register",
+ "verdict": "calibrated to the record",
+ "calibration": {
+  "companion_to": "generator_mmrtg_f1",
+  "protocol": {
+   "path": "evidence/research/mmrtg_curiosity/companion_seebeck/CALIBRATION.md",
+   "sha256": "94158b2f7d49855b053cc504bfe7ef9d1ee4e8741c9da45f92afb055beb2aadf"
+  },
+  "scored": {
+   "utc": "2026-10-16T05:57:29Z",
+   "output": {
+    "path": "evidence/research/mmrtg_curiosity/companion_seebeck/calibration_scored.json",
+    "sha256": "0d7c7db22a56d52f45ac98223acdf38e3d2732c3108b727b6f0e6f3dad54f410"
+   },
+   "program": {
+    "path": "evidence/research/mmrtg_curiosity/companion_seebeck/score_calibration.py",
+    "sha256": "644ac929de4b5bcd7e4ecbb93a61f7633eb6055a4806bdb1abe9a34a7abbc34e"
+   }
+  },
+  "not_blind": "Every published day of the record, mission days 0 to 4,087, was open: days 0 to 2,060 had fitted generator_mmrtg_f1, days 2,061 to 2,808 had chosen its structure, and days 2,809 to 4,087, held back from it, had been compared with it once on 2026-10-06, where it missed its final-365 line by 0.000094 of 115.4 W and this structure, with constants fixed on days 0 to 2,060, gave after the fact a root mean square error of 0.00507 and a final-365 mean of +0.00468, before it was preferred and its constants fitted on all of days 0 to 4,087."
+ }
+}

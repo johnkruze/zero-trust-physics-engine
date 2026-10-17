@@ -65,10 +65,14 @@
 //! The named limits, each enforced and none pulled back:
 //!
 //! ```text
+//! the load             P_aux ≥ 0, P_ohm ≥ 0, Ip > 0, Bt > 0, n_el > 0, 0 ≤ f_T ≤ 1
 //! Greenwald density    n_el ≤ 1e20 · Ip[MA] / (π a²)                         m^-3
-//! Troyon beta          β_N = β[%] · a · Bt / Ip[MA] ≤ 2.8,  β = 2 μ0 · (2/3)(W_th + W_f)/V / Bt²
 //! safety factor        q = 5 a² Bt / (R · Ip[MA]) · (1 + κ²)/2 · (1.17 − 0.65 ε)/(1 − ε²)² ≥ 2
+//! the stores           W_th > 0, W_f ≥ 0
 //! reactivity fit       0.2 keV ≤ T  and  (1 + α) · T ≤ 100 keV
+//! Troyon beta          β_N = β[%] · a · Bt / Ip[MA] ≤ 2.8,  β = 2 μ0 · (2/3)(W_th + W_f)/V / Bt²
+//! the clock            t ≥ 0, and a step moves it
+//! the step             dt ≤ min(τ_f / 18, 0.31 · τ_E / 46, 2 · τ_f · W_th / W_f / 48),  τ_E = W_th / P_loss
 //! ```
 //!
 //! Greenwald: Nucl. Fusion 28 (1988) 2199. Troyon: Plasma Phys. Control.
@@ -106,37 +110,44 @@
 //! `physics/tokamak.rs` held a radial force balance, a vertical instability
 //! and a coil quench with invented constants; none of that is here.
 //!
-//! The declared range is the envelope the comparison spanned inside the
-//! card's regime: the nine pulses of the research record that are ELMy
-//! H-modes, the eight fitted and the held-back 42982, run through the card at
-//! 1 ms by the protocol's rule (`analysis/pulses.py`). Each bound is the
-//! smallest or the largest value over the loads of those nine runs, or over
-//! every state a step of them started from or landed on under that step's
-//! load, rounded outward in the third figure
+//! The compared envelope. The card was compared on the nine pulses of the
+//! research record that are ELMy H-modes, the eight fitted and the held-back
+//! 42982, run through the card at 1 ms by the protocol's rule
+//! (`analysis/pulses.py`). Each bound of the envelope is the smallest or the
+//! largest value over the loads of those nine runs, or over every state a
+//! step of them started from or landed on under that step's load, rounded
+//! outward in the third figure
 //! (`evidence/research/tokamak_jet_dte1/fix_0.7.0/envelope_nine.py`). The
-//! held-back pulse 42976 is not in the envelope: a hot-ion pulse, it was
-//! declared outside the card's regime before it was run, and it missed all
-//! four marks. The states and loads only it reached (up to 25.1 MW, 4.16 MA,
-//! 3.1 MW of ohmic power, densities below 1.65e19 and above 7.85e19 m^-3, a safety
-//! factor down to 3.39, fast-ion energy to 3.5 MJ, temperature to 6.3 keV,
-//! confinement times to 8.5 s, a normalised beta down to 0.13) are refused.
-//! The loads: heating power 0.124 to 24.3 MW, ohmic power 0.173 to 2.44 MW,
+//! loads: heating power 0.124 to 24.3 MW, ohmic power 0.173 to 2.44 MW,
 //! line-averaged density 1.65e19 to 7.85e19 m^-3 and at most 0.834 of the
 //! Greenwald density, plasma current 1.65 to 3.84 MA, toroidal field 1.80 to
-//! 4.04 T, edge safety factor 3.66 to 4.14. The tritium fraction of the fuel
-//! is 0 to 0.034, deuterium and the trace-tritium pulse 43134, or 0.451 to
-//! 0.504, the held-back pulse 42982 and the fitted pulse 42762 at an even mix
-//! (0.503, rounded up by 0.001 to hold the value the protocol's run
-//! computes). The fusion power was compared there and not elsewhere; at 0.75
-//! to 0.93 three training pulses showed it wrong, and from 0.034 to 0.451
-//! nothing was compared. The state, at the start and after every step: thermal
-//! energy 0.462 to 9.57 MJ, fast-ion energy 5.59 kJ to 1.62 MJ, temperature
-//! 0.777 to 4.30 keV, normalised beta 0.224 to 2.21, confinement time
-//! `W_th / P_loss` 0.150 to 5.72 s. The time since the start of the heated
-//! window is 0 to 5.475 s, the longest compared window, and a start states
-//! it. Outside any of these the step is refused by a name that ends in
-//! `OutsideComparison` or `AboveComparison`, or by the name the bound had
-//! before; the physical limits below are tested first and still stand.
+//! 4.04 T, edge safety factor 3.66 to 4.14 (the card's formula; JET's own
+//! equilibrium value is about a fifth higher). The tritium fraction of the
+//! fuel 0 to 0.034, deuterium and the trace-tritium pulse 43134, or 0.451 to
+//! 0.504, the held-back pulse 42982 and the fitted pulse 42762 at an even
+//! mix (0.503, rounded up by 0.001 to hold the value the protocol's run
+//! computes). The state, at the start and after every step: thermal energy
+//! 0.462 to 9.57 MJ, fast-ion energy 5.59 kJ to 1.62 MJ, temperature 0.777
+//! to 4.30 keV, normalised beta 0.224 to 2.21, confinement time
+//! `W_th / P_loss` 0.150 to 5.72 s. The longest compared heated window is
+//! 5.475 s, pulse 42982.
+//!
+//! How it did there, and past it. On the held-back 42982 the thermal energy
+//! error was 7.9 percent and the fast-ion 22.5 percent of peak, and the
+//! fusion energy was 0.743 of the measured. The fusion power was compared at
+//! tritium fractions 0 to 0.034 and 0.451 to 0.504; between them nothing was
+//! compared, and at 0.75 to 0.93 three training pulses showed it wrong by 33
+//! to 65 percent of its peak. The held-back hot-ion pulse 42976, declared
+//! outside the card's regime before it was run, reached what no other pulse
+//! did (25.1 MW of heating, 3.1 MW of ohmic power, 4.16 MA, densities below
+//! 1.65e19 and above 7.85e19 m^-3, a safety factor of 3.39, fast-ion energy
+//! to 3.5 MJ, 6.3 keV, confinement times to 8.5 s) and missed all four
+//! marks. Outside the envelope the card computes the same equations, with
+//! nothing compared there, until one of the named limits above stops it.
+//! Lifting the envelope opens loads below the L-H power threshold, where the
+//! plasma is in L-mode and the H-mode scaling the card uses was not
+//! compared; the card has no limit there, and the compared runs start their
+//! heated window at 0.124 MW.
 //!
 //! The pass marks and the result. Fixed before the card was run on either
 //! held-back pulse (`analysis/prereg.json`, SHA-256 7badf2b1...ba94bb), over
@@ -151,21 +162,11 @@
 //! all four (19.2, 25.1 and 34.7 percent; 5.4 MJ against 10.3 MJ). The
 //! card's fusion power is too low on both.
 //!
-//! The end of the card and rounding. The clock is a running sum,
-//! `t += dt` in 64-bit arithmetic, started from the time the caller states,
-//! and each addition rounds by at most half the spacing of 64-bit numbers
-//! between 4 s and 8 s, 2^-51 s. A run that ends on 5.475 s in decimal can
-//! therefore reach its last step with a clock a little late. The comparison
-//! with the end carries
-//! [`TokamakJetDte1::time_end_allowance_s`]: [`TIME_END_ALLOWANCE_PER_STEP_S`],
-//! 2^-51 s, for each step a run of this step takes to reach the end, and
-//! [`TIME_END_ALLOWANCE_EXTRA_STEPS`], two, more for the step itself read
-//! from a decimal, which is within one part in 2^53 of itself, over the whole
-//! span. It is never more than half the step, and the comparison is with the
-//! 64-bit number nearest the end plus the allowance. The clock is stepped at
-//! its own value and nothing is pulled back: a run that ends on the end in
-//! decimal can read up to the allowance past it, and a step that would end
-//! later is [`StepReject::TimeBeyondCard`].
+//! The clock. It is a running sum, `t += dt` in 64-bit arithmetic, started
+//! from the time the caller states, and the card has no end: a clock below
+//! zero is [`StepReject::NegativeTime`], and a step too small to move the
+//! clock at its time, which a step of 1e-6 s first is at 2^34 s, is
+//! [`StepReject::StepBelowClockResolution`].
 //!
 //! `core` only: no heap and no standard prelude. The state is `Copy`. An
 //! accepted step writes time, the two energies, the fusion energy, the
@@ -173,28 +174,51 @@
 //! the conservation residual into [`LastStateFrame64`]. The 16-byte frame
 //! proof is not touched.
 //!
-//! [`TokamakJetDte1::gate_dt_s`] is the step ceiling, [`GATE_DT_S`], 1 ms.
-//! Two times set how fast the stores move: the slowing-down time, at least
-//! 18.0 ms inside the declared range (0.777 keV at 7.85e19 m^-3), and the
-//! time in which the loss power changes the thermal energy,
-//! `0.31 · τ_E`, at least 46.5 ms (a confinement time of 0.150 s). The
-//! ceiling is under an eighteenth of the first and under a fortieth of the second.
+//! The step ceilings. Three times set how fast the stores move: the
+//! slowing-down time `τ_f`; the loss time `0.31 · τ_E`, in which the loss
+//! power changes the thermal energy; and the coupling time
+//! `2 · τ_f · W_th / W_f`, in which a change of the thermal energy changes the
+//! power the fast ions give it, since `τ_f` grows as the square root of the
+//! temperature. [`TokamakJetDte1::gate_dt_s`] is the largest step the card
+//! stands behind anywhere, [`GATE_DT_S`], 1 ms, and the step itself holds
+//! `dt` to the ceiling of the state, [`TokamakJetDte1::state_ceiling_dt_s`]:
+//! an eighteenth of the first, a forty-sixth of the second and a
+//! forty-eighth of the third, whichever is smallest, at the state the step
+//! starts from and where its trial step lands, refused above it as
+//! [`StepReject::DtAboveStateCeiling`] with nothing changed. Each fraction
+//! is the largest whole one at which the 1 ms step still fits at the fastest
+//! corner of the compared envelope: there `τ_f` is at least 18.06 ms (0.777
+//! keV at 7.85e19 m^-3), `0.31 · τ_E` at least 46.5 ms (a confinement time
+//! of 0.150 s) and the coupling time at least 48.1 ms (0.777 keV with 1.62 MJ
+//! of fast ions, at any density). Inside the envelope the state ceiling is
+//! therefore at least 1.0018 ms and never binds, and every compared run lands
+//! as before, bit for bit; over the nine compared runs at 1 ms the three
+//! times are at least 28.3 ms, 46.6 ms and 0.30 s. Past the envelope a
+//! denser or colder plasma, a shorter confinement time or a fast-ion store
+//! large against the thermal one shortens the ceiling with the state, and
+//! each step stands where the 1 ms step stood at that corner. Run so, at
+//! the state ceiling or 1 ms, whichever is shorter, past every old wall of
+//! the envelope the ledger closed with a residual of at most 1.5e-9. The
+//! strongest start attacked, eight times the thermal energy in the fast ions
+//! at 2e20 m^-3 and 1 keV, passes the ledger's limit after about a hundred
+//! steps at the state ceiling and is refused as
+//! [`StepReject::FirstLawBreach`] with the state kept: the truncation of the
+//! step, which the 1 ms step would carry at a corner of the envelope no
+//! compared run reached; at a quarter of the ceiling it closes.
 //! In 0.6.0 the ceiling rested on the slowing-down time alone, and states
-//! with a confinement time near 37 ms, far outside the compared envelope,
-//! were refused as FirstLawBreach although no energy was lost: the step's
-//! truncation error passed the ledger's limit. The confinement time is now
-//! held to the compared envelope, so [`StepReject::FirstLawBreach`] and
-//! [`StepReject::SpontaneousGeneration`] name a ledger defect only.
-//! [`TokamakJetDte1::floor_dt_s`] is [`FLOOR_DT_S`], 1e-6 s: at 5.475 s a
-//! step of that size still moves the clock, and at 1 MW it moves a store of
-//! 20 MJ by one joule, which 64-bit numbers resolve to nine figures. The
-//! public step applies neither. The gateway refuses a step outside them.
+//! with a confinement time near 37 ms were refused as FirstLawBreach
+//! although no energy was lost; the loss time now holds that step.
+//! [`TokamakJetDte1::floor_dt_s`] is [`FLOOR_DT_S`], 1e-6 s: at 1 MW it moves
+//! a store of 20 MJ by one joule, which 64-bit numbers resolve to nine
+//! figures. The public step applies neither the static ceiling nor the
+//! floor; the gateway refuses a step outside them.
 
 extern crate core;
 
 use core::prelude::v1::*;
 
 use crate::frame::LastStateFrame64;
+use crate::normal::normal_or_zero;
 use crate::math::{exp, log};
 
 /// Major radius, m. Mean of `RGEO` over the eight training pulses' 0D files, four figures.
@@ -269,80 +293,90 @@ pub const TROYON_BETA_NORMALISED_MAX: f64 = 2.8;
 pub const SAFETY_FACTOR_MIN: f64 = 2.0;
 /// Fraction of the Greenwald density above which [`FLAG_NEAR_DENSITY_LIMIT`] is set.
 pub const NEAR_DENSITY_LIMIT_FRACTION: f64 = 0.85;
-/// Smallest heating power the card accepts, W: the smallest of the nine compared runs of the card's regime, 0.1248 MW, rounded down.
-pub const HEATING_POWER_MIN_W: f64 = 0.124e6;
-/// Largest heating power (neutral beams and ion cyclotron waves) the card accepts, W: the largest compared, 24.22 MW, rounded up.
-pub const HEATING_POWER_MAX_W: f64 = 24.3e6;
-/// Smallest ohmic power the card accepts, W: the smallest compared, 0.1738 MW, rounded down.
-pub const OHMIC_POWER_MIN_W: f64 = 0.173e6;
-/// Largest ohmic power the card accepts, W: the largest compared, 2.436 MW, rounded up.
-pub const OHMIC_POWER_MAX_W: f64 = 2.44e6;
-/// Smallest line-averaged electron density the card accepts, m^-3: the smallest compared, 1.658e19, rounded down.
-pub const LINE_DENSITY_MIN_PER_M3: f64 = 1.65e19;
-/// Largest line-averaged electron density the card accepts, m^-3: the largest compared, 7.849e19, rounded up.
-pub const LINE_DENSITY_MAX_PER_M3: f64 = 7.85e19;
-/// Largest fraction of the Greenwald density the card accepts: the largest compared, 0.8331, rounded up.
-pub const GREENWALD_FRACTION_MAX: f64 = 0.834;
-/// Smallest plasma current the card accepts, A: the smallest compared, 1.652 MA, rounded down.
-pub const PLASMA_CURRENT_MIN_A: f64 = 1.65e6;
-/// Largest plasma current the card accepts, A: the largest compared, 3.835 MA, rounded up.
-pub const PLASMA_CURRENT_MAX_A: f64 = 3.84e6;
-/// Smallest toroidal field the card accepts, T: the smallest compared, 1.807 T, rounded down.
-pub const TOROIDAL_FIELD_MIN_T: f64 = 1.80;
-/// Largest toroidal field the card accepts, T: the largest compared, 4.039 T, rounded up.
-pub const TOROIDAL_FIELD_MAX_T: f64 = 4.04;
-/// Smallest edge safety factor the card accepts above the limit of 2: the smallest compared, 3.663, rounded down.
+/// Smallest heating power compared, W: the smallest of the nine compared runs of the card's regime, 0.1248 MW, rounded down.
+pub const HEATING_POWER_COMPARED_MIN_W: f64 = 0.124e6;
+/// Largest heating power (neutral beams and ion cyclotron waves) compared, W: 24.22 MW, rounded up. The held-back hot-ion pulse 42976 reached 25.1 MW.
+pub const HEATING_POWER_COMPARED_MAX_W: f64 = 24.3e6;
+/// Smallest ohmic power compared, W: 0.1738 MW, rounded down.
+pub const OHMIC_POWER_COMPARED_MIN_W: f64 = 0.173e6;
+/// Largest ohmic power compared, W: 2.436 MW, rounded up.
+pub const OHMIC_POWER_COMPARED_MAX_W: f64 = 2.44e6;
+/// Smallest line-averaged electron density compared, m^-3: 1.658e19, rounded down.
+pub const LINE_DENSITY_COMPARED_MIN_PER_M3: f64 = 1.65e19;
+/// Largest line-averaged electron density compared, m^-3: 7.849e19, rounded up.
+pub const LINE_DENSITY_COMPARED_MAX_PER_M3: f64 = 7.85e19;
+/// Largest fraction of the Greenwald density compared: 0.8331, rounded up.
+pub const GREENWALD_FRACTION_COMPARED_MAX: f64 = 0.834;
+/// Smallest plasma current compared, A: 1.652 MA, rounded down.
+pub const PLASMA_CURRENT_COMPARED_MIN_A: f64 = 1.65e6;
+/// Largest plasma current compared, A: 3.835 MA, rounded up. 42976 reached 4.16 MA.
+pub const PLASMA_CURRENT_COMPARED_MAX_A: f64 = 3.84e6;
+/// Smallest toroidal field compared, T: 1.807 T, rounded down.
+pub const TOROIDAL_FIELD_COMPARED_MIN_T: f64 = 1.80;
+/// Largest toroidal field compared, T: 4.039 T, rounded up.
+pub const TOROIDAL_FIELD_COMPARED_MAX_T: f64 = 4.04;
+/// Smallest edge safety factor compared: 3.663, rounded down. 42976 reached 3.39.
 pub const SAFETY_FACTOR_COMPARED_MIN: f64 = 3.66;
-/// Largest edge safety factor the card accepts: the largest compared, 4.136, rounded up.
+/// Largest edge safety factor compared: 4.136, rounded up.
 pub const SAFETY_FACTOR_COMPARED_MAX: f64 = 4.14;
-/// Largest tritium fraction of the lower span: 43134, the one compared pulse with tritium below an even mix.
+/// Largest tritium fraction of the lower compared span: 43134, the one compared pulse with tritium below an even mix.
 pub const TRITIUM_FRACTION_TRACE_MAX: f64 = 0.034;
-/// Smallest tritium fraction of the upper span: the held-back pulse 42982.
+/// Smallest tritium fraction of the upper compared span: the held-back pulse 42982.
 pub const TRITIUM_FRACTION_EVEN_MIN: f64 = 0.451;
-/// Largest tritium fraction of the upper span: the fitted pulse 42762 at 0.503, rounded up by 0.001 to hold the value the protocol's run computes.
+/// Largest tritium fraction of the upper compared span: the fitted pulse 42762 at 0.503, rounded up by 0.001 to hold the value the protocol's run computes.
 pub const TRITIUM_FRACTION_EVEN_MAX: f64 = 0.504;
-/// Smallest thermal energy the card accepts, J: the smallest compared, 0.4624 MJ, rounded down.
-pub const THERMAL_ENERGY_MIN_J: f64 = 0.462e6;
-/// Largest thermal energy the card accepts, J: the largest compared, 9.566 MJ, rounded up.
-pub const THERMAL_ENERGY_MAX_J: f64 = 9.57e6;
-/// Smallest fast-ion energy the card accepts, J: the smallest compared, 5.592 kJ, rounded down.
-pub const FAST_ION_ENERGY_MIN_J: f64 = 5.59e3;
-/// Largest fast-ion energy the card accepts, J: the largest compared, 1.618 MJ, rounded up.
-pub const FAST_ION_ENERGY_MAX_J: f64 = 1.62e6;
-/// Smallest plasma temperature the card accepts, keV: the smallest compared, 0.7776 keV at the start of a step of 43134, rounded down.
+/// Smallest thermal energy compared, J: 0.4624 MJ, rounded down.
+pub const THERMAL_ENERGY_COMPARED_MIN_J: f64 = 0.462e6;
+/// Largest thermal energy compared, J: 9.566 MJ, rounded up.
+pub const THERMAL_ENERGY_COMPARED_MAX_J: f64 = 9.57e6;
+/// Smallest fast-ion energy compared, J: 5.592 kJ, rounded down.
+pub const FAST_ION_ENERGY_COMPARED_MIN_J: f64 = 5.59e3;
+/// Largest fast-ion energy compared, J: 1.618 MJ, rounded up. 42976 reached 3.5 MJ.
+pub const FAST_ION_ENERGY_COMPARED_MAX_J: f64 = 1.62e6;
+/// Smallest plasma temperature compared, keV: 0.7776 keV at the start of a step of 43134, rounded down.
 pub const TEMPERATURE_COMPARED_MIN_KEV: f64 = 0.777;
-/// Largest plasma temperature the card accepts, keV: the largest compared, 4.294 keV, rounded up.
+/// Largest plasma temperature compared, keV: 4.294 keV, rounded up. 42976 reached 6.3 keV.
 pub const TEMPERATURE_COMPARED_MAX_KEV: f64 = 4.30;
-/// Smallest normalised beta the card accepts: the smallest compared, 0.2241, rounded down.
+/// Smallest normalised beta compared: 0.2241, rounded down.
 pub const BETA_NORMALISED_COMPARED_MIN: f64 = 0.224;
-/// Largest normalised beta the card accepts: the largest compared, 2.202, rounded up.
+/// Largest normalised beta compared: 2.202, rounded up.
 pub const BETA_NORMALISED_COMPARED_MAX: f64 = 2.21;
-/// Smallest confinement time `W_th / P_loss` the card accepts, s: the smallest compared, 0.1504 s, rounded down.
-pub const CONFINEMENT_TIME_MIN_S: f64 = 0.150;
-/// Largest confinement time `W_th / P_loss` the card accepts, s: the largest compared, 5.716 s, rounded up.
-pub const CONFINEMENT_TIME_MAX_S: f64 = 5.72;
-/// Time since the start of the heated window beyond which the card refuses, s: the longest compared window, pulse 42982.
-pub const TIME_MAX_S: f64 = 5.475;
-/// Half the spacing of 64-bit numbers between 4 s and 8 s, 2^-51 s: the
-/// most one addition to the clock can round by. The comparison with
-/// [`TIME_MAX_S`] allows this much for each step a run takes to reach it.
-pub const TIME_END_ALLOWANCE_PER_STEP_S: f64 = 4.440_892_098_500_626e-16;
-/// Steps added to the count in [`TokamakJetDte1::time_end_allowance_s`], for
-/// the step read from a decimal.
-pub const TIME_END_ALLOWANCE_EXTRA_STEPS: f64 = 2.0;
+/// Smallest confinement time `W_th / P_loss` compared, s: 0.1504 s, rounded down.
+pub const CONFINEMENT_TIME_COMPARED_MIN_S: f64 = 0.150;
+/// Largest confinement time `W_th / P_loss` compared, s: 5.716 s, rounded up. 42976 reached 8.5 s.
+pub const CONFINEMENT_TIME_COMPARED_MAX_S: f64 = 5.72;
+/// The longest compared heated window, s: pulse 42982. The card does not end there.
+pub const TIME_COMPARED_MAX_S: f64 = 5.475;
 /// `|defect| / max(W_th + W_f, anchor)` must stay at or under this. Set by
 /// measurement (`analysis/out/06_ledger_on_training.log`): over the eight
 /// training pulses run at the ceiling the largest value found is 5.1e-10
 /// (pulse 42997, 5425 steps), and the limit is 39 times it. An Euler step in
 /// place of the first Runge–Kutta step of those runs gives 4.9e-7 or more.
-/// Inside the declared range, over a grid of 2,784 starts and loads, one
+/// Inside the compared envelope, over a grid of 2,784 starts and loads, one
 /// Runge–Kutta step at the ceiling gives at most 4.9e-10, and runs held at the
-/// corners of the loads to the end of the card at most 3.9e-10.
+/// corners of the loads for 5.475 s at most 3.9e-10.
 pub const RESIDUAL_CONSERVATION_LIMIT: f64 = 2.0e-8;
-/// Largest step the card stands behind, s.
+/// Largest step the card stands behind anywhere, s. Inside the compared
+/// envelope it is the whole ceiling; past it the step also holds `dt` to
+/// [`TokamakJetDte1::state_ceiling_dt_s`], which follows the state.
 pub const GATE_DT_S: f64 = 1.0e-3;
 /// Smallest step the card stands behind, s.
 pub const FLOOR_DT_S: f64 = 1.0e-6;
+/// Steps in one slowing-down time at the state ceiling: the slowing-down time
+/// is at least 18.06 ms inside the compared envelope (0.777 keV at 7.85e19
+/// m^-3), so an eighteenth of it is at least 1.003 ms.
+pub const STATE_CEILING_SLOWING_STEPS: f64 = 18.0;
+/// Steps in one loss time `0.31 · τ_E` at the state ceiling: the loss time is
+/// at least 46.5 ms inside the compared envelope, so a forty-sixth of it is
+/// at least 1.011 ms.
+pub const STATE_CEILING_LOSS_STEPS: f64 = 46.0;
+/// Steps in one coupling time `2 · τ_f · W_th / W_f` at the state ceiling:
+/// the time in which a change of the thermal energy changes the power the
+/// fast ions give it, since `τ_f` grows as the square root of the
+/// temperature. It is at least 48.1 ms inside the compared envelope (0.777 keV
+/// and 1.62 MJ of fast ions, at any density), so a forty-eighth of it is at
+/// least 1.0018 ms.
+pub const STATE_CEILING_COUPLING_STEPS: f64 = 48.0;
 /// Vacuum permeability, H/m (CODATA 2018).
 pub const VACUUM_PERMEABILITY_H_PER_M: f64 = 1.25663706212e-6;
 /// π to 64-bit precision.
@@ -362,30 +396,22 @@ pub enum StepReject {
     NonPositiveDt,
     /// A recorded constant is not this tokamak's.
     InvalidCard,
-    /// The heating power is below 0.124 MW or above 24.3 MW, the span of the nine compared pulses of the card's regime.
-    HeatingPowerOutsideCard,
-    /// The ohmic power is below 0.173 MW or above 2.44 MW, the span of the nine compared pulses of the card's regime.
-    OhmicPowerOutsideCard,
-    /// The plasma current is below 1.65 MA or above 3.84 MA, the span of the nine compared pulses of the card's regime.
-    PlasmaCurrentOutsideCard,
-    /// The toroidal field is below 1.80 T or above 4.04 T, the span of the nine compared pulses of the card's regime.
-    ToroidalFieldOutsideCard,
-    /// The tritium fraction of the fuel is below 0.
+    /// The heating power is below zero.
+    HeatingPowerNegative,
+    /// The ohmic power is below zero.
+    OhmicPowerNegative,
+    /// The plasma current is zero or less: the confinement law takes its logarithm and the safety factor divides by it.
+    PlasmaCurrentNotPositive,
+    /// The toroidal field is zero or less: the confinement law takes its logarithm and the normalised beta divides by it.
+    ToroidalFieldNotPositive,
+    /// The tritium fraction of the fuel is below 0 or above 1, which no fraction of the fuel atoms can be.
     FuelMixOutsideCard,
-    /// The tritium fraction of the fuel is above 0.034 and below 0.451, where the fusion power was never compared, or above 0.504, where three training pulses at 0.75 to 0.93 showed it wrong.
-    FuelMixOutsideComparison,
-    /// The line-averaged density is below 1.65e19 per cubic metre, the smallest compared.
-    DensityBelowCard,
-    /// The line-averaged density is above 7.85e19 per cubic metre, the largest compared.
-    DensityAboveComparison,
+    /// The line-averaged density is zero or less: the slowing-down time divides by it.
+    DensityNotPositive,
     /// The line-averaged density is above the Greenwald density of the plasma current.
     DensityAboveGreenwald,
-    /// The line-averaged density is above 0.834 of the Greenwald density of the plasma current, the largest fraction compared.
-    GreenwaldFractionAboveComparison,
     /// The edge safety factor of the current and the field is below 2.
     SafetyFactorBelowLimit,
-    /// The edge safety factor of the current and the field is below 3.66 or above 4.14, the span of the nine compared pulses of the card's regime.
-    SafetyFactorOutsideComparison,
     /// The thermal energy is zero or negative, or the fast-ion energy is negative.
     EnergyOutsideCard,
     /// The plasma temperature is below 0.2 keV, the floor of the reactivity fit.
@@ -394,16 +420,12 @@ pub enum StepReject {
     TemperatureAboveReactivityFit,
     /// The normalised beta of the two stores is above the Troyon limit of 2.8, at the start of the step or where the trial step lands.
     BetaAboveTroyon,
-    /// The thermal energy is outside 0.462 to 9.57 MJ, or the fast-ion energy outside 5.59 kJ to 1.62 MJ, the spans of the nine compared runs of the card's regime, at the start of the step or where the trial step lands.
-    EnergyOutsideComparison,
-    /// The plasma temperature is below 0.777 keV or above 4.30 keV, the span of the nine compared runs of the card's regime, at the start of the step or where the trial step lands.
-    TemperatureOutsideComparison,
-    /// The normalised beta of the two stores is below 0.224 or above 2.21, the span of the nine compared runs of the card's regime, at the start of the step or where the trial step lands.
-    BetaOutsideComparison,
-    /// The confinement time, the thermal energy over the loss power, is below 0.150 s or above 5.72 s, the span of the nine compared runs of the card's regime, at the start of the step or where the trial step lands.
-    ConfinementTimeOutsideComparison,
-    /// The clock is negative, or the step would end after 5.475 s, the longest compared window, by more than the rounding allowance of the running sum of the clock: 4.44e-16 s for each step a run of this step takes to reach 5.475 s, and two more.
-    TimeBeyondCard,
+    /// The clock, the time since the start of the heated window, is negative.
+    NegativeTime,
+    /// The step is too small to move the clock at its time in 64-bit arithmetic.
+    StepBelowClockResolution,
+    /// The step is longer than the ceiling of the state it starts from or where its trial step lands: the smallest of an eighteenth of the slowing-down time, a forty-sixth of 0.31 times the confinement time and a forty-eighth of the coupling time of the fast ions and the thermal plasma.
+    DtAboveStateCeiling,
     /// The trial step created energy beyond what the heating and the fusion supply: a defect of the arithmetic or the integrator.
     SpontaneousGeneration,
     /// The trial step destroyed energy the heating and the fusion supply: a defect of the arithmetic or the integrator.
@@ -454,18 +476,18 @@ pub struct TokamakJetDte1 {
     pub troyon_beta_normalised_max: f64,
     /// Recorded copy of [`SAFETY_FACTOR_MIN`].
     pub safety_factor_min: f64,
-    /// Recorded copy of [`TIME_MAX_S`].
-    pub time_max_s: f64,
-    /// Recorded copy of [`TIME_END_ALLOWANCE_PER_STEP_S`].
-    pub time_end_allowance_per_step_s: f64,
-    /// Recorded copy of [`TIME_END_ALLOWANCE_EXTRA_STEPS`].
-    pub time_end_allowance_extra_steps: f64,
     /// Recorded copy of [`RESIDUAL_CONSERVATION_LIMIT`].
     pub residual_conservation_limit: f64,
     /// Recorded copy of [`GATE_DT_S`].
     pub gate_dt_s: f64,
     /// Recorded copy of [`FLOOR_DT_S`].
     pub floor_dt_s: f64,
+    /// Recorded copy of [`STATE_CEILING_SLOWING_STEPS`].
+    pub state_ceiling_slowing_steps: f64,
+    /// Recorded copy of [`STATE_CEILING_LOSS_STEPS`].
+    pub state_ceiling_loss_steps: f64,
+    /// Recorded copy of [`STATE_CEILING_COUPLING_STEPS`].
+    pub state_ceiling_coupling_steps: f64,
 }
 
 impl TokamakJetDte1 {
@@ -485,12 +507,12 @@ impl TokamakJetDte1 {
             reactivity_coeff: REACTIVITY_COEFF,
             troyon_beta_normalised_max: TROYON_BETA_NORMALISED_MAX,
             safety_factor_min: SAFETY_FACTOR_MIN,
-            time_max_s: TIME_MAX_S,
-            time_end_allowance_per_step_s: TIME_END_ALLOWANCE_PER_STEP_S,
-            time_end_allowance_extra_steps: TIME_END_ALLOWANCE_EXTRA_STEPS,
             residual_conservation_limit: RESIDUAL_CONSERVATION_LIMIT,
             gate_dt_s: GATE_DT_S,
             floor_dt_s: FLOOR_DT_S,
+            state_ceiling_slowing_steps: STATE_CEILING_SLOWING_STEPS,
+            state_ceiling_loss_steps: STATE_CEILING_LOSS_STEPS,
+            state_ceiling_coupling_steps: STATE_CEILING_COUPLING_STEPS,
         };
         if tokamak.is_valid() {
             tokamak
@@ -519,14 +541,12 @@ impl TokamakJetDte1 {
             && self.beam_fusion_coeff_mw_per_mj.to_bits() == BEAM_FUSION_COEFF_MW_PER_MJ.to_bits()
             && self.troyon_beta_normalised_max.to_bits() == TROYON_BETA_NORMALISED_MAX.to_bits()
             && self.safety_factor_min.to_bits() == SAFETY_FACTOR_MIN.to_bits()
-            && self.time_max_s.to_bits() == TIME_MAX_S.to_bits()
-            && self.time_end_allowance_per_step_s.to_bits()
-                == TIME_END_ALLOWANCE_PER_STEP_S.to_bits()
-            && self.time_end_allowance_extra_steps.to_bits()
-                == TIME_END_ALLOWANCE_EXTRA_STEPS.to_bits()
             && self.residual_conservation_limit.to_bits() == RESIDUAL_CONSERVATION_LIMIT.to_bits()
             && self.gate_dt_s.to_bits() == GATE_DT_S.to_bits()
             && self.floor_dt_s.to_bits() == FLOOR_DT_S.to_bits()
+            && self.state_ceiling_slowing_steps.to_bits() == STATE_CEILING_SLOWING_STEPS.to_bits()
+            && self.state_ceiling_loss_steps.to_bits() == STATE_CEILING_LOSS_STEPS.to_bits()
+            && self.state_ceiling_coupling_steps.to_bits() == STATE_CEILING_COUPLING_STEPS.to_bits()
             && self.major_radius_m > self.minor_radius_m
             && self.minor_radius_m > 0.0
             && self.elongation > 0.0
@@ -539,22 +559,9 @@ impl TokamakJetDte1 {
             && self.beam_fusion_coeff_mw_per_mj >= 0.0
     }
 
-    /// How far past [`TIME_MAX_S`] the running sum of the clock may read at
-    /// the end of a step of `dt_s`, seconds:
-    /// [`TIME_END_ALLOWANCE_PER_STEP_S`] for each step a run of this step
-    /// takes to reach the end, and [`TIME_END_ALLOWANCE_EXTRA_STEPS`] more;
-    /// never more than half the step. Zero for a step that is not positive.
-    #[must_use]
-    pub fn time_end_allowance_s(&self, dt_s: f64) -> f64 {
-        if !(dt_s > 0.0) {
-            return 0.0;
-        }
-        let steps = self.time_max_s / dt_s + self.time_end_allowance_extra_steps;
-        let allowance_s = steps * self.time_end_allowance_per_step_s;
-        if allowance_s < 0.5 * dt_s { allowance_s } else { 0.5 * dt_s }
-    }
-
-    /// Largest step the card stands behind: [`GATE_DT_S`]. Not applied by [`step`].
+    /// Largest step the card stands behind anywhere: [`GATE_DT_S`]. Not
+    /// applied by [`step`]. Past the compared envelope the step itself holds
+    /// `dt` to the smaller [`TokamakJetDte1::state_ceiling_dt_s`].
     #[must_use]
     pub fn gate_dt_s(&self) -> Option<f64> {
         if self.gate_dt_s.is_finite() && self.gate_dt_s > 0.0 {
@@ -572,6 +579,31 @@ impl TokamakJetDte1 {
         } else {
             None
         }
+    }
+
+    /// The step ceiling of a state under a load, s: the smallest of an
+    /// eighteenth of the slowing-down time `τ_f`, a forty-sixth of the loss time
+    /// `0.31 · τ_E` and a forty-eighth of the coupling time `2 · τ_f · W_th / W_f`
+    /// (none with no fast ions). [`step`] refuses a longer step as
+    /// [`StepReject::DtAboveStateCeiling`], at the state it starts from and
+    /// where its trial step lands. Inside the compared envelope it is at
+    /// least 1.0018 ms, above [`GATE_DT_S`].
+    #[must_use]
+    pub fn state_ceiling_dt_s(&self, thermal_energy_j: f64, fast_ion_energy_j: f64, load: TokamakLoad) -> f64 {
+        let d = derived(self, load, &[thermal_energy_j, fast_ion_energy_j, 0.0]);
+        let mut ceiling = d.slowing_time_s / self.state_ceiling_slowing_steps;
+        let loss = IPB98_EXP_LOSS * (thermal_energy_j / d.loss_power_w) / self.state_ceiling_loss_steps;
+        if loss < ceiling {
+            ceiling = loss;
+        }
+        if fast_ion_energy_j > 0.0 {
+            let coupling = 2.0 * d.slowing_time_s * thermal_energy_j / fast_ion_energy_j
+                / self.state_ceiling_coupling_steps;
+            if coupling < ceiling {
+                ceiling = coupling;
+            }
+        }
+        ceiling
     }
 
     /// Main fuel ions per electron, `(6 − Z_eff) / 5`.
@@ -623,13 +655,6 @@ impl TokamakJetDte1 {
             / (2.0 * VACUUM_PERMEABILITY_H_PER_M)
             * 1.5
             * self.plasma_volume_m3
-    }
-
-    /// The largest energy the two stores can hold together anywhere on the card:
-    /// the Troyon limit at the largest current and the largest field, J.
-    #[must_use]
-    pub fn largest_stored_energy_j(&self) -> f64 {
-        self.troyon_stored_energy_j(PLASMA_CURRENT_MAX_A, TOROIDAL_FIELD_MAX_T)
     }
 
     /// Plasma temperature of a thermal energy at a density, keV.
@@ -732,7 +757,7 @@ impl TokamakState {
     /// The plasma with a thermal and a fast-ion energy at `elapsed_time_s`
     /// since the start of the heated window, nothing released, ledger
     /// anchored. A run continued from a returned state states that state's
-    /// `t_s` here, so the end of the card is counted from the window's start.
+    /// `t_s` here, so the clock counts from the window's start.
     /// `None` unless the time and both energies are finite, the time is not
     /// negative, the thermal energy is above zero and the fast-ion energy is not negative.
     #[must_use]
@@ -793,6 +818,9 @@ struct Derived {
 /// Advance one Runge–Kutta step and write the frame.
 ///
 /// A rejected step leaves `state` and `frame` as they were.
+///
+/// A value of the landed state below the normal range is written as zero
+/// with its sign ([`crate::normal`]).
 #[must_use]
 pub fn step(
     tokamak: &TokamakJetDte1,
@@ -801,91 +829,90 @@ pub fn step(
     load: TokamakLoad,
     dt_s: f64,
 ) -> Result<(), StepReject> {
-    validate(tokamak, state, load, dt_s, Envelope::Compared)?;
+    step_as_computed(tokamak, state, frame, load, dt_s)?;
+    normal_or_zero_state(state);
+    Ok(())
+}
+
+/// The step as its equations compute it, before a value of the landed
+/// state below the normal range is written as zero.
+fn step_as_computed(
+    tokamak: &TokamakJetDte1,
+    state: &mut TokamakState,
+    frame: &mut LastStateFrame64,
+    load: TokamakLoad,
+    dt_s: f64,
+) -> Result<(), StepReject> {
+    validate(tokamak, state, load, dt_s)?;
     let advanced = rk4(tokamak, load, &state_vector(state), dt_s);
-    commit(tokamak, state, frame, load, dt_s, advanced, Envelope::Compared)
+    commit(tokamak, state, frame, load, dt_s, advanced)
 }
 
-/// Whether a step is held to the envelope of the comparison. The public
-/// step always is; the tests of the integrator against the forecast script,
-/// whose reference runs start outside it, are not.
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum Envelope {
-    Compared,
-    #[cfg(test)]
-    Structure,
+/// Each value of a landed state below the normal range written as zero
+/// with its sign ([`crate::normal`]): the state carried to the next step
+/// and published holds no subnormal number.
+fn normal_or_zero_state(state: &mut TokamakState) {
+    state.t_s = normal_or_zero(state.t_s);
+    state.thermal_energy_j = normal_or_zero(state.thermal_energy_j);
+    state.fast_ion_energy_j = normal_or_zero(state.fast_ion_energy_j);
+    state.fusion_energy_j = normal_or_zero(state.fusion_energy_j);
+    state.temperature_kev = normal_or_zero(state.temperature_kev);
+    state.loss_power_w = normal_or_zero(state.loss_power_w);
+    state.confinement_time_s = normal_or_zero(state.confinement_time_s);
+    state.slowing_time_s = normal_or_zero(state.slowing_time_s);
+    state.fusion_power_w = normal_or_zero(state.fusion_power_w);
+    state.fusion_power_thermal_w = normal_or_zero(state.fusion_power_thermal_w);
+    state.beta_normalised = normal_or_zero(state.beta_normalised);
+    state.greenwald_fraction = normal_or_zero(state.greenwald_fraction);
+    state.safety_factor = normal_or_zero(state.safety_factor);
+    state.energy_anchor_j = normal_or_zero(state.energy_anchor_j);
+    state.energy_supplied_j = normal_or_zero(state.energy_supplied_j);
+    state.energy_lost_j = normal_or_zero(state.energy_lost_j);
+    state.energy_defect_j = normal_or_zero(state.energy_defect_j);
+    state.residual_conservation_error = normal_or_zero(state.residual_conservation_error);
 }
 
-/// The load held to the card: each field to its span, the density to the
-/// Greenwald density and the current and the field to the safety factor,
-/// each limit of physics before the envelope of the comparison. The step
-/// tests this first; a caller may test a load with it before a run.
+/// The load held to the card: each field to what it can physically be, the
+/// density to the Greenwald density and the current and the field to the
+/// safety factor. The step tests this first; a caller may test a load with
+/// it before a run.
 pub fn load_in_card(tokamak: &TokamakJetDte1, load: TokamakLoad) -> Result<(), StepReject> {
-    if load.heating_power_w < HEATING_POWER_MIN_W || load.heating_power_w > HEATING_POWER_MAX_W {
-        return Err(StepReject::HeatingPowerOutsideCard);
+    if load.heating_power_w < 0.0 {
+        return Err(StepReject::HeatingPowerNegative);
     }
-    if load.ohmic_power_w < OHMIC_POWER_MIN_W || load.ohmic_power_w > OHMIC_POWER_MAX_W {
-        return Err(StepReject::OhmicPowerOutsideCard);
+    if load.ohmic_power_w < 0.0 {
+        return Err(StepReject::OhmicPowerNegative);
     }
-    if load.plasma_current_a < PLASMA_CURRENT_MIN_A || load.plasma_current_a > PLASMA_CURRENT_MAX_A {
-        return Err(StepReject::PlasmaCurrentOutsideCard);
+    if !(load.plasma_current_a > 0.0) {
+        return Err(StepReject::PlasmaCurrentNotPositive);
     }
-    if load.toroidal_field_t < TOROIDAL_FIELD_MIN_T || load.toroidal_field_t > TOROIDAL_FIELD_MAX_T {
-        return Err(StepReject::ToroidalFieldOutsideCard);
+    if !(load.toroidal_field_t > 0.0) {
+        return Err(StepReject::ToroidalFieldNotPositive);
     }
-    if load.tritium_fraction < 0.0 {
+    if load.tritium_fraction < 0.0 || load.tritium_fraction > 1.0 {
         return Err(StepReject::FuelMixOutsideCard);
     }
-    if load.tritium_fraction > TRITIUM_FRACTION_EVEN_MAX
-        || (load.tritium_fraction > TRITIUM_FRACTION_TRACE_MAX
-            && load.tritium_fraction < TRITIUM_FRACTION_EVEN_MIN)
-    {
-        return Err(StepReject::FuelMixOutsideComparison);
+    if !(load.line_density_per_m3 > 0.0) {
+        return Err(StepReject::DensityNotPositive);
     }
-    if load.line_density_per_m3 < LINE_DENSITY_MIN_PER_M3 {
-        return Err(StepReject::DensityBelowCard);
-    }
-    if load.line_density_per_m3 > LINE_DENSITY_MAX_PER_M3 {
-        return Err(StepReject::DensityAboveComparison);
-    }
-    let greenwald = tokamak.greenwald_density_per_m3(load.plasma_current_a);
-    if load.line_density_per_m3 > greenwald {
+    if load.line_density_per_m3 > tokamak.greenwald_density_per_m3(load.plasma_current_a) {
         return Err(StepReject::DensityAboveGreenwald);
     }
-    if load.line_density_per_m3 > GREENWALD_FRACTION_MAX * greenwald {
-        return Err(StepReject::GreenwaldFractionAboveComparison);
-    }
-    let safety_factor = tokamak.safety_factor(load.plasma_current_a, load.toroidal_field_t);
-    if safety_factor < tokamak.safety_factor_min {
+    if tokamak.safety_factor(load.plasma_current_a, load.toroidal_field_t) < tokamak.safety_factor_min {
         return Err(StepReject::SafetyFactorBelowLimit);
-    }
-    if safety_factor < SAFETY_FACTOR_COMPARED_MIN || safety_factor > SAFETY_FACTOR_COMPARED_MAX {
-        return Err(StepReject::SafetyFactorOutsideComparison);
     }
     Ok(())
 }
 
 /// A thermal and a fast-ion energy held to the card under a load: the
-/// energies positive, the temperature in the reactivity fit, the two stores
-/// under the Troyon limit, and then the envelope of the comparison, the two
-/// energies, the temperature, the normalised beta and the confinement time.
-/// The step tests this at its start and where its trial step lands; a caller
-/// may test a start with it.
+/// energies positive, the temperature in the reactivity fit and the two
+/// stores under the Troyon limit. The step tests this at its start and
+/// where its trial step lands; a caller may test a start with it.
 pub fn state_in_card(
     tokamak: &TokamakJetDte1,
     thermal_energy_j: f64,
     fast_ion_energy_j: f64,
     load: TokamakLoad,
-) -> Result<(), StepReject> {
-    state_in(tokamak, thermal_energy_j, fast_ion_energy_j, load, Envelope::Compared)
-}
-
-fn state_in(
-    tokamak: &TokamakJetDte1,
-    thermal_energy_j: f64,
-    fast_ion_energy_j: f64,
-    load: TokamakLoad,
-    envelope: Envelope,
 ) -> Result<(), StepReject> {
     if !(thermal_energy_j > 0.0) || !(fast_ion_energy_j >= 0.0) {
         return Err(StepReject::EnergyOutsideCard);
@@ -899,33 +926,23 @@ fn state_in(
     {
         return Err(StepReject::BetaAboveTroyon);
     }
-    if envelope != Envelope::Compared {
-        return Ok(());
-    }
-    if thermal_energy_j < THERMAL_ENERGY_MIN_J
-        || thermal_energy_j > THERMAL_ENERGY_MAX_J
-        || fast_ion_energy_j < FAST_ION_ENERGY_MIN_J
-        || fast_ion_energy_j > FAST_ION_ENERGY_MAX_J
-    {
-        return Err(StepReject::EnergyOutsideComparison);
-    }
-    let temperature = tokamak.temperature_kev(thermal_energy_j, load.line_density_per_m3);
-    if temperature < TEMPERATURE_COMPARED_MIN_KEV || temperature > TEMPERATURE_COMPARED_MAX_KEV {
-        return Err(StepReject::TemperatureOutsideComparison);
-    }
-    let beta = tokamak.beta_normalised(
-        thermal_energy_j + fast_ion_energy_j,
-        load.plasma_current_a,
-        load.toroidal_field_t,
-    );
-    if beta < BETA_NORMALISED_COMPARED_MIN || beta > BETA_NORMALISED_COMPARED_MAX {
-        return Err(StepReject::BetaOutsideComparison);
-    }
-    let confinement_time_s = tokamak.confinement_time_s(thermal_energy_j, load);
-    if !(confinement_time_s >= CONFINEMENT_TIME_MIN_S) || confinement_time_s > CONFINEMENT_TIME_MAX_S {
-        return Err(StepReject::ConfinementTimeOutsideComparison);
-    }
     Ok(())
+}
+
+/// A step of `dt_s` from a state under a load is at or under the state's
+/// ceiling, [`TokamakJetDte1::state_ceiling_dt_s`].
+fn under_state_ceiling(
+    tokamak: &TokamakJetDte1,
+    thermal_energy_j: f64,
+    fast_ion_energy_j: f64,
+    load: TokamakLoad,
+    dt_s: f64,
+) -> Result<(), StepReject> {
+    if dt_s <= tokamak.state_ceiling_dt_s(thermal_energy_j, fast_ion_energy_j, load) {
+        Ok(())
+    } else {
+        Err(StepReject::DtAboveStateCeiling)
+    }
 }
 
 fn validate(
@@ -933,7 +950,6 @@ fn validate(
     state: &TokamakState,
     load: TokamakLoad,
     dt_s: f64,
-    envelope: Envelope,
 ) -> Result<(), StepReject> {
     if !dt_s.is_finite()
         || !load.heating_power_w.is_finite()
@@ -955,13 +971,14 @@ fn validate(
         return Err(StepReject::InvalidCard);
     }
     load_in_card(tokamak, load)?;
-    state_in(tokamak, state.thermal_energy_j, state.fast_ion_energy_j, load, envelope)?;
-    if !(state.t_s >= 0.0)
-        || !(state.t_s + dt_s <= tokamak.time_max_s + tokamak.time_end_allowance_s(dt_s))
-    {
-        return Err(StepReject::TimeBeyondCard);
+    state_in_card(tokamak, state.thermal_energy_j, state.fast_ion_energy_j, load)?;
+    if !(state.t_s >= 0.0) {
+        return Err(StepReject::NegativeTime);
     }
-    Ok(())
+    if !(state.t_s + dt_s > state.t_s) {
+        return Err(StepReject::StepBelowClockResolution);
+    }
+    under_state_ceiling(tokamak, state.thermal_energy_j, state.fast_ion_energy_j, load, dt_s)
 }
 
 fn temperature_in_fit(tokamak: &TokamakJetDte1, thermal_energy_j: f64, load: TokamakLoad) -> Result<(), StepReject> {
@@ -982,12 +999,12 @@ fn commit(
     load: TokamakLoad,
     dt_s: f64,
     advanced: [f64; 3],
-    envelope: Envelope,
 ) -> Result<(), StepReject> {
     if !advanced[0].is_finite() || !advanced[1].is_finite() || !advanced[2].is_finite() {
         return Err(StepReject::NonFiniteState);
     }
-    state_in(tokamak, advanced[0], advanced[1], load, envelope)?;
+    state_in_card(tokamak, advanced[0], advanced[1], load)?;
+    under_state_ceiling(tokamak, advanced[0], advanced[1], load, dt_s)?;
     let beta = tokamak.beta_normalised(
         advanced[0] + advanced[1],
         load.plasma_current_a,
@@ -1162,6 +1179,7 @@ fn state_is_finite(state: &TokamakState) -> bool {
         && state.residual_conservation_error.is_finite()
 }
 
+
 #[cfg(test)]
 mod tests {
     extern crate core;
@@ -1170,21 +1188,23 @@ mod tests {
     use core::prelude::v1::*;
     use std::assert;
     use std::assert_eq;
+    use std::matches;
 
     use super::{
-        ALPHA_ENERGY_SHARE, BETA_NORMALISED_COMPARED_MAX, BETA_NORMALISED_COMPARED_MIN,
-        CONFINEMENT_TIME_MAX_S, CONFINEMENT_TIME_MIN_S, Envelope,
-        FAST_ION_ENERGY_MAX_J, FAST_ION_ENERGY_MIN_J, FLOOR_DT_S, GATE_DT_S,
-        GREENWALD_FRACTION_MAX, HEATING_POWER_MAX_W, HEATING_POWER_MIN_W, IPB98_EXP_LOSS,
-        LINE_DENSITY_MAX_PER_M3, LINE_DENSITY_MIN_PER_M3, OHMIC_POWER_MAX_W, OHMIC_POWER_MIN_W,
-        PLASMA_CURRENT_MAX_A, PLASMA_CURRENT_MIN_A, PROFILE_EXPONENT, REACTIVITY_COEFF,
-        RESIDUAL_CONSERVATION_LIMIT, SAFETY_FACTOR_COMPARED_MAX, SAFETY_FACTOR_COMPARED_MIN,
-        StepReject, TEMPERATURE_COMPARED_MAX_KEV, TEMPERATURE_COMPARED_MIN_KEV, THERMAL_ENERGY_MAX_J, THERMAL_ENERGY_MIN_J,
-        TIME_END_ALLOWANCE_EXTRA_STEPS, TIME_END_ALLOWANCE_PER_STEP_S, TIME_MAX_S,
-        TOROIDAL_FIELD_MAX_T, TOROIDAL_FIELD_MIN_T, TRITIUM_FRACTION_EVEN_MAX,
-        TRITIUM_FRACTION_EVEN_MIN, TRITIUM_FRACTION_TRACE_MAX, TROYON_BETA_NORMALISED_MAX,
-        TokamakJetDte1, TokamakLoad, TokamakState, advance, commit, load_in_card,
-        profile_reactivity_m3_per_s, rates, reactivity_dt_m3_per_s, rk4, state_in_card,
+        ALPHA_ENERGY_SHARE, BETA_NORMALISED_COMPARED_MAX, CONFINEMENT_TIME_COMPARED_MAX_S,
+        CONFINEMENT_TIME_COMPARED_MIN_S, FAST_ION_ENERGY_COMPARED_MAX_J, FAST_ION_ENERGY_COMPARED_MIN_J,
+        FLOOR_DT_S, GATE_DT_S, GREENWALD_FRACTION_COMPARED_MAX, HEATING_POWER_COMPARED_MAX_W,
+        HEATING_POWER_COMPARED_MIN_W, IPB98_EXP_LOSS, LINE_DENSITY_COMPARED_MAX_PER_M3,
+        LINE_DENSITY_COMPARED_MIN_PER_M3, NEAR_DENSITY_LIMIT_FRACTION, OHMIC_POWER_COMPARED_MAX_W,
+        OHMIC_POWER_COMPARED_MIN_W, PLASMA_CURRENT_COMPARED_MAX_A, PLASMA_CURRENT_COMPARED_MIN_A,
+        PROFILE_EXPONENT, REACTIVITY_COEFF, RESIDUAL_CONSERVATION_LIMIT, SAFETY_FACTOR_COMPARED_MAX,
+        SAFETY_FACTOR_COMPARED_MIN, STATE_CEILING_COUPLING_STEPS, STATE_CEILING_LOSS_STEPS,
+        STATE_CEILING_SLOWING_STEPS, StepReject, TEMPERATURE_COMPARED_MAX_KEV,
+        TEMPERATURE_COMPARED_MIN_KEV, THERMAL_ENERGY_COMPARED_MAX_J, THERMAL_ENERGY_COMPARED_MIN_J,
+        TIME_COMPARED_MAX_S, TOROIDAL_FIELD_COMPARED_MAX_T, TOROIDAL_FIELD_COMPARED_MIN_T,
+        TRITIUM_FRACTION_EVEN_MAX, TRITIUM_FRACTION_EVEN_MIN, TRITIUM_FRACTION_TRACE_MAX,
+        TROYON_BETA_NORMALISED_MAX, TokamakJetDte1, TokamakLoad, TokamakState, advance, commit,
+        load_in_card, profile_reactivity_m3_per_s, rates, reactivity_dt_m3_per_s, rk4, state_in_card,
         state_vector, step, validate,
     };
     use crate::frame::LastStateFrame64;
@@ -1215,6 +1235,10 @@ mod tests {
         (got - expected).abs() <= relative * expected.abs()
     }
 
+    fn above(x: f64) -> f64 {
+        f64::from_bits(x.to_bits() + 1)
+    }
+
     /// An even D-T mix at 3.8 MA and 4.0 T, the first case of `analysis/05_reference_run.py`.
     fn even_mix() -> TokamakLoad {
         TokamakLoad {
@@ -1239,13 +1263,30 @@ mod tests {
         }
     }
 
+    /// A load from its six numbers.
+    fn load(heating_w: f64, ohmic_w: f64, density: f64, current_a: f64, field_t: f64, tritium: f64) -> TokamakLoad {
+        TokamakLoad {
+            heating_power_w: heating_w,
+            ohmic_power_w: ohmic_w,
+            line_density_per_m3: density,
+            plasma_current_a: current_a,
+            toroidal_field_t: field_t,
+            tritium_fraction: tritium,
+        }
+    }
+
     fn start(thermal_j: f64, fast_j: f64) -> (TokamakJetDte1, TokamakState) {
         let tokamak = TokamakJetDte1::elmy_h_mode();
         let state = TokamakState::try_start(&tokamak, thermal_j, fast_j).unwrap();
         (tokamak, state)
     }
 
-    /// The real `validate`, a chosen integrator, the real `commit`, held to the envelope.
+    /// The thermal energy of a temperature at a density, J.
+    fn thermal_at(kev: f64, density: f64) -> f64 {
+        kev / TokamakJetDte1::elmy_h_mode().temperature_kev(1.0, density)
+    }
+
+    /// The real `validate`, a chosen integrator, the real `commit`.
     fn step_with(
         tokamak: &TokamakJetDte1,
         state: &mut TokamakState,
@@ -1254,26 +1295,12 @@ mod tests {
         dt_s: f64,
         integrate: impl FnOnce(&TokamakJetDte1, TokamakLoad, &[f64; 3], f64) -> [f64; 3],
     ) -> Result<(), StepReject> {
-        validate(tokamak, state, load, dt_s, Envelope::Compared)?;
+        validate(tokamak, state, load, dt_s)?;
         let advanced = integrate(tokamak, load, &state_vector(state), dt_s);
-        commit(tokamak, state, frame, load, dt_s, advanced, Envelope::Compared)
+        commit(tokamak, state, frame, load, dt_s, advanced)
     }
 
-    /// The real step without the envelope of the comparison: the structure
-    /// the forecast script runs, from starts the comparison never reached.
-    fn step_structure(
-        tokamak: &TokamakJetDte1,
-        state: &mut TokamakState,
-        frame: &mut LastStateFrame64,
-        load: TokamakLoad,
-        dt_s: f64,
-    ) -> Result<(), StepReject> {
-        validate(tokamak, state, load, dt_s, Envelope::Structure)?;
-        let advanced = rk4(tokamak, load, &state_vector(state), dt_s);
-        commit(tokamak, state, frame, load, dt_s, advanced, Envelope::Structure)
-    }
-
-    /// A start inside the envelope of the comparison under [`even_mix`]:
+    /// A start inside the compared envelope under [`even_mix`]:
     /// 1.9 keV, a normalised beta of 0.57, a confinement time of 2.0 s.
     fn inside() -> (TokamakJetDte1, TokamakState) {
         start(4.0e6, 0.5e6)
@@ -1283,135 +1310,8 @@ mod tests {
         advance(y, &rates(tokamak, load, y).0, dt_s)
     }
 
-    /// The allowance is what its derivation says: 2^-49 s a step, the steps a
-    /// run takes to reach the end and two more, and never half a step or more.
-    #[test]
-    fn the_time_end_allowance_is_its_derivation() {
-        let tokamak = TokamakJetDte1::elmy_h_mode();
-        let spacing_s = f64::from_bits(TIME_MAX_S.to_bits() + 1) - TIME_MAX_S;
-        assert_eq!(TIME_END_ALLOWANCE_PER_STEP_S, 0.5 * spacing_s);
-        assert_eq!(TIME_END_ALLOWANCE_EXTRA_STEPS, 2.0);
-        let ceiling_s = tokamak.gate_dt_s().unwrap();
-        let floor_s = tokamak.floor_dt_s().unwrap();
-        assert_eq!(
-            tokamak.time_end_allowance_s(ceiling_s),
-            (TIME_MAX_S / ceiling_s + 2.0) * TIME_END_ALLOWANCE_PER_STEP_S
-        );
-        let at_floor = tokamak.time_end_allowance_s(floor_s);
-        assert_eq!(at_floor, (TIME_MAX_S / floor_s + 2.0) * TIME_END_ALLOWANCE_PER_STEP_S);
-        // inside the step floor it is under a tenth of the step
-        assert!(at_floor < 0.1 * floor_s);
-        // far under the floor it is held to half the step
-        assert_eq!(tokamak.time_end_allowance_s(1.0e-6 * floor_s), 0.5e-6 * floor_s);
-        assert_eq!(tokamak.time_end_allowance_s(0.0), 0.0);
-        assert_eq!(tokamak.time_end_allowance_s(-1.0), 0.0);
-        let mut altered = tokamak;
-        altered.time_end_allowance_per_step_s = 1.0e-9;
-        assert!(!altered.is_valid());
-        let mut altered = tokamak;
-        altered.time_end_allowance_extra_steps = 3.0;
-        assert!(!altered.is_valid());
-    }
-
-    /// Runs that end on the end of the card in decimal land every step at
-    /// twelve step sizes, and the step after is refused by name.
-    #[test]
-    fn a_decimal_run_to_the_end_of_the_card_lands_every_step() {
-        // (the step as a decimal, steps to the end)
-        let sizes: [(&str, usize); 12] = [
-            ("0.001", 5_475),
-            ("0.00073", 7_500),
-            ("0.0005", 10_950),
-            ("0.000365", 15_000),
-            ("0.0003", 18_250),
-            ("0.00025", 21_900),
-            ("0.000219", 25_000),
-            ("0.0002", 27_375),
-            ("0.00015", 36_500),
-            ("0.0001", 54_750),
-            ("0.00005", 109_500),
-            ("0.000025", 219_000),
-        ];
-        let mut past_the_end = 0;
-        for (text, count) in sizes {
-            let dt_s: f64 = text.parse().unwrap();
-            let (tokamak, mut state) = inside();
-            let mut frame = blank_frame();
-            for landed in 0..count {
-                assert_eq!(
-                    step(&tokamak, &mut state, &mut frame, even_mix(), dt_s),
-                    Ok(()),
-                    "dt {text}: step {} of {count}",
-                    landed + 1
-                );
-            }
-            assert!((state.t_s - TIME_MAX_S).abs() <= tokamak.time_end_allowance_s(dt_s));
-            if state.t_s > TIME_MAX_S {
-                past_the_end += 1;
-            }
-            let before = state;
-            let held = frame.to_bytes();
-            assert_eq!(
-                step(&tokamak, &mut state, &mut frame, even_mix(), dt_s),
-                Err(StepReject::TimeBeyondCard)
-            );
-            assert_eq!(state, before);
-            assert_eq!(frame.to_bytes(), held);
-        }
-        assert!(past_the_end > 0);
-    }
-
-    /// A step that would end later than the end of the card by a spacing
-    /// more than the allowance is refused by name and nothing moves; every
-    /// end inside the allowance lands at its own value.
-    #[test]
-    fn a_step_beyond_the_time_allowance_is_refused_by_name() {
-        let spacing_s = f64::from_bits(TIME_MAX_S.to_bits() + 1) - TIME_MAX_S;
-        for dt_s in [0.001, 0.0005, 0.0001, 0.00005] {
-            let (tokamak, fresh) = inside();
-            let allowance_s = tokamak.time_end_allowance_s(dt_s);
-            // the comparison is with the 64-bit number nearest the end plus the allowance
-            let whole_spacings = (((TIME_MAX_S + allowance_s) - TIME_MAX_S) / spacing_s) as u64;
-            assert!(whole_spacings >= 1);
-            let mut landed_past_the_end = 0;
-            let mut refused = 0;
-            for spacings in (0..whole_spacings + 4).rev().take(8).chain(0..2) {
-                let end_s = f64::from_bits(TIME_MAX_S.to_bits() + spacings);
-                // the clock whose sum with the step is this end
-                let mut t_s = end_s - dt_s;
-                while t_s + dt_s < end_s {
-                    t_s = f64::from_bits(t_s.to_bits() + 1);
-                }
-                assert_eq!(t_s + dt_s, end_s);
-                let mut state = fresh;
-                state.t_s = t_s;
-                let before = state;
-                let mut frame = blank_frame();
-                let result = step(&tokamak, &mut state, &mut frame, even_mix(), dt_s);
-                if end_s <= TIME_MAX_S + allowance_s {
-                    assert_eq!(result, Ok(()));
-                    assert_eq!(state.t_s, end_s);
-                    if spacings > 0 {
-                        landed_past_the_end += 1;
-                    }
-                } else {
-                    assert_eq!(result, Err(StepReject::TimeBeyondCard));
-                    assert_eq!(state, before);
-                    assert_eq!(frame.to_bytes(), blank_frame().to_bytes());
-                    refused += 1;
-                }
-            }
-            assert!(landed_past_the_end >= 1);
-            assert_eq!(refused, 3);
-            // one allowance and a half beyond is refused
-            let mut state = fresh;
-            state.t_s = TIME_MAX_S + 1.5 * allowance_s - dt_s;
-            let mut frame = blank_frame();
-            assert_eq!(
-                step(&tokamak, &mut state, &mut frame, even_mix(), dt_s),
-                Err(StepReject::TimeBeyondCard)
-            );
-        }
+    fn ledger(end: Result<(), StepReject>) -> bool {
+        end == Err(StepReject::FirstLawBreach) || end == Err(StepReject::SpontaneousGeneration)
     }
 
     #[test]
@@ -1429,8 +1329,9 @@ mod tests {
         assert_eq!(tokamak.effective_charge, 2.174);
         assert_eq!(REACTIVITY_COEFF[0], 1.17302e-9);
         assert_eq!(ALPHA_ENERGY_SHARE, 0.2);
+        assert_eq!((STATE_CEILING_SLOWING_STEPS, STATE_CEILING_LOSS_STEPS, STATE_CEILING_COUPLING_STEPS), (18.0, 46.0, 48.0));
         // Every recorded copy is held to its constant, one at a time.
-        let alter: [fn(&mut TokamakJetDte1); 16] = [
+        let alter: [fn(&mut TokamakJetDte1); 18] = [
             |t| t.major_radius_m += 1.0e-3,
             |t| t.minor_radius_m += 1.0e-3,
             |t| t.elongation += 1.0e-3,
@@ -1443,10 +1344,12 @@ mod tests {
             |t| t.reactivity_coeff[6] *= 1.5,
             |t| t.troyon_beta_normalised_max = 10.0,
             |t| t.safety_factor_min = 0.5,
-            |t| t.time_max_s = 1.0e9,
             |t| t.residual_conservation_limit = 1.0,
             |t| t.gate_dt_s = 1.0,
             |t| t.floor_dt_s = 1.0e-12,
+            |t| t.state_ceiling_slowing_steps = 1.0,
+            |t| t.state_ceiling_loss_steps = 1.0,
+            |t| t.state_ceiling_coupling_steps = 1.0,
         ];
         for change in alter {
             let mut altered = tokamak;
@@ -1494,20 +1397,17 @@ mod tests {
     }
 
     /// 1000 steps at the ceiling under a held load against the plain-Python
-    /// run of the same structure (`analysis/out/05_reference_run.log`).
+    /// run of the same structure (`analysis/out/05_reference_run.log`). The
+    /// start's confinement time, 9.3 s, is above the compared 5.72 s; the
+    /// card computes it with the same equations.
     #[test]
     fn a_second_at_the_ceiling_agrees_with_the_forecast_structure() {
         let (tokamak, mut state) = start(2.0e6, 0.5e6);
         let mut frame = blank_frame();
         let mut worst = 0.0_f64;
-        // The start's confinement time, 9.3 s, is above the envelope: the
-        // public step refuses it, and the structure is run without it.
-        assert_eq!(
-            step(&tokamak, &mut state.clone(), &mut blank_frame(), even_mix(), GATE_DT_S),
-            Err(StepReject::ConfinementTimeOutsideComparison)
-        );
+        assert!(tokamak.confinement_time_s(2.0e6, even_mix()) > CONFINEMENT_TIME_COMPARED_MAX_S);
         for _ in 0..1000 {
-            step_structure(&tokamak, &mut state, &mut frame, even_mix(), GATE_DT_S).unwrap();
+            step(&tokamak, &mut state, &mut frame, even_mix(), GATE_DT_S).unwrap();
             worst = worst.max(state.residual_conservation_error);
         }
         assert!(within(state.thermal_energy_j, 8287198.7043702248, 1.0e-11));
@@ -1532,7 +1432,7 @@ mod tests {
 
         let (tokamak, mut state) = start(1.0e6, 0.0);
         for _ in 0..1000 {
-            step_structure(&tokamak, &mut state, &mut frame, deuterium(), GATE_DT_S).unwrap();
+            step(&tokamak, &mut state, &mut frame, deuterium(), GATE_DT_S).unwrap();
         }
         assert!(within(state.thermal_energy_j, 3492366.1133224079, 1.0e-11));
         assert!(within(state.fast_ion_energy_j, 631451.60550995078, 1.0e-11));
@@ -1540,18 +1440,17 @@ mod tests {
         assert_eq!(state.fusion_power_w, 0.0);
     }
 
-    /// Held long enough, the plasma settles where the loss power equals the
-    /// power supplied, and the confinement time there is the scaling's.
+    /// Held for twelve seconds, past the longest compared window, the plasma
+    /// settles where the loss power equals the power supplied, and the
+    /// confinement time there is the scaling's.
     #[test]
     fn a_held_load_settles_at_the_power_balance() {
         let (tokamak, mut state) = start(1.0e6, 0.0);
         let mut frame = blank_frame();
-        // Twelve seconds pass the end of the card, so the clock is held at
-        // the start; nothing else reads it.
         for _ in 0..12_000 {
-            state.t_s = 0.0;
-            step_structure(&tokamak, &mut state, &mut frame, deuterium(), GATE_DT_S).unwrap();
+            step(&tokamak, &mut state, &mut frame, deuterium(), GATE_DT_S).unwrap();
         }
+        assert!(within(state.t_s, 12.0, 1.0e-12));
         assert!(within(state.loss_power_w, 11.0e6, 1.0e-6), "{}", state.loss_power_w);
         assert!(within(
             state.fast_ion_energy_j / state.slowing_time_s,
@@ -1561,65 +1460,41 @@ mod tests {
         assert!(state.residual_conservation_error < RESIDUAL_CONSERVATION_LIMIT);
     }
 
-    /// A load from its six numbers.
-    fn load(heating_w: f64, ohmic_w: f64, density: f64, current_a: f64, field_t: f64, tritium: f64) -> TokamakLoad {
-        TokamakLoad {
-            heating_power_w: heating_w,
-            ohmic_power_w: ohmic_w,
-            line_density_per_m3: density,
-            plasma_current_a: current_a,
-            toroidal_field_t: field_t,
-            tritium_fraction: tritium,
-        }
-    }
-
-    /// Each load refused by name before the step, with state and frame kept.
+    /// Each limit of the card refused by name before the step, with state and
+    /// frame kept; the limits of the load at their edges.
     #[test]
     fn every_refusal_is_named_and_rolls_back_state_and_frame() {
         let (tokamak, state) = inside();
         let base = even_mix();
         let low_current = TokamakLoad { plasma_current_a: 1.65e6, toroidal_field_t: 1.80, ..base };
-        let mid_current = TokamakLoad { plasma_current_a: 2.5e6, toroidal_field_t: 2.6, ..base };
-        let cases: [(TokamakLoad, f64, StepReject); 35] = [
+        let cases: [(TokamakLoad, f64, StepReject); 24] = [
             (TokamakLoad { heating_power_w: f64::NAN, ..base }, GATE_DT_S, StepReject::NonFiniteInput),
             (TokamakLoad { tritium_fraction: f64::INFINITY, ..base }, GATE_DT_S, StepReject::NonFiniteInput),
             (TokamakLoad { ohmic_power_w: f64::NEG_INFINITY, ..base }, GATE_DT_S, StepReject::NonFiniteInput),
+            (TokamakLoad { tritium_fraction: f64::NAN, ..base }, GATE_DT_S, StepReject::NonFiniteInput),
             (base, f64::NAN, StepReject::NonFiniteInput),
             (base, 0.0, StepReject::NonPositiveDt),
             (base, -1.0e-3, StepReject::NonPositiveDt),
-            (TokamakLoad { heating_power_w: 0.0, ..base }, GATE_DT_S, StepReject::HeatingPowerOutsideCard),
-            (TokamakLoad { heating_power_w: HEATING_POWER_MIN_W * 0.999999, ..base }, GATE_DT_S, StepReject::HeatingPowerOutsideCard),
-            (TokamakLoad { heating_power_w: HEATING_POWER_MAX_W * 1.000001, ..base }, GATE_DT_S, StepReject::HeatingPowerOutsideCard),
-            (TokamakLoad { heating_power_w: 30.0e6, ..base }, GATE_DT_S, StepReject::HeatingPowerOutsideCard),
-            (TokamakLoad { ohmic_power_w: 0.0, ..base }, GATE_DT_S, StepReject::OhmicPowerOutsideCard),
-            (TokamakLoad { ohmic_power_w: OHMIC_POWER_MIN_W * 0.999999, ..base }, GATE_DT_S, StepReject::OhmicPowerOutsideCard),
-            (TokamakLoad { ohmic_power_w: OHMIC_POWER_MAX_W * 1.000001, ..base }, GATE_DT_S, StepReject::OhmicPowerOutsideCard),
-            (TokamakLoad { plasma_current_a: PLASMA_CURRENT_MIN_A * 0.999999, ..low_current }, GATE_DT_S, StepReject::PlasmaCurrentOutsideCard),
-            (TokamakLoad { plasma_current_a: PLASMA_CURRENT_MAX_A * 1.000001, ..base }, GATE_DT_S, StepReject::PlasmaCurrentOutsideCard),
-            (TokamakLoad { toroidal_field_t: TOROIDAL_FIELD_MIN_T * 0.999999, ..low_current }, GATE_DT_S, StepReject::ToroidalFieldOutsideCard),
-            (TokamakLoad { toroidal_field_t: TOROIDAL_FIELD_MAX_T * 1.000001, ..base }, GATE_DT_S, StepReject::ToroidalFieldOutsideCard),
+            (TokamakLoad { heating_power_w: -1.0e-9, ..base }, GATE_DT_S, StepReject::HeatingPowerNegative),
+            (TokamakLoad { heating_power_w: -20.0e6, ..base }, GATE_DT_S, StepReject::HeatingPowerNegative),
+            (TokamakLoad { ohmic_power_w: -1.0e-9, ..base }, GATE_DT_S, StepReject::OhmicPowerNegative),
+            (TokamakLoad { plasma_current_a: 0.0, ..base }, GATE_DT_S, StepReject::PlasmaCurrentNotPositive),
+            (TokamakLoad { plasma_current_a: -3.8e6, ..base }, GATE_DT_S, StepReject::PlasmaCurrentNotPositive),
+            (TokamakLoad { toroidal_field_t: 0.0, ..base }, GATE_DT_S, StepReject::ToroidalFieldNotPositive),
+            (TokamakLoad { toroidal_field_t: -4.0, ..base }, GATE_DT_S, StepReject::ToroidalFieldNotPositive),
             (TokamakLoad { tritium_fraction: -1.0e-9, ..base }, GATE_DT_S, StepReject::FuelMixOutsideCard),
-            // Never compared: between the trace-tritium pulse and the held-back pulses.
-            (TokamakLoad { tritium_fraction: 0.0341, ..base }, GATE_DT_S, StepReject::FuelMixOutsideComparison),
-            (TokamakLoad { tritium_fraction: 0.25, ..base }, GATE_DT_S, StepReject::FuelMixOutsideComparison),
-            (TokamakLoad { tritium_fraction: 0.4509, ..base }, GATE_DT_S, StepReject::FuelMixOutsideComparison),
-            // Shown wrong: the training pulses at 0.75 to 0.93, and beyond.
-            (TokamakLoad { tritium_fraction: 0.5041, ..base }, GATE_DT_S, StepReject::FuelMixOutsideComparison),
-            (TokamakLoad { tritium_fraction: 0.93, ..base }, GATE_DT_S, StepReject::FuelMixOutsideComparison),
-            (TokamakLoad { tritium_fraction: 1.0, ..base }, GATE_DT_S, StepReject::FuelMixOutsideComparison),
-            (TokamakLoad { line_density_per_m3: LINE_DENSITY_MIN_PER_M3 * 0.999999, ..base }, GATE_DT_S, StepReject::DensityBelowCard),
-            (TokamakLoad { line_density_per_m3: LINE_DENSITY_MAX_PER_M3 * 1.000001, plasma_current_a: PLASMA_CURRENT_MAX_A, ..base }, GATE_DT_S, StepReject::DensityAboveComparison),
+            (TokamakLoad { tritium_fraction: above(1.0), ..base }, GATE_DT_S, StepReject::FuelMixOutsideCard),
+            (TokamakLoad { tritium_fraction: 1.5, ..base }, GATE_DT_S, StepReject::FuelMixOutsideCard),
+            (TokamakLoad { line_density_per_m3: 0.0, ..base }, GATE_DT_S, StepReject::DensityNotPositive),
+            (TokamakLoad { line_density_per_m3: -6.0e19, ..base }, GATE_DT_S, StepReject::DensityNotPositive),
             (TokamakLoad { line_density_per_m3: tokamak.greenwald_density_per_m3(1.65e6) * 1.000001, ..low_current }, GATE_DT_S, StepReject::DensityAboveGreenwald),
-            (TokamakLoad { line_density_per_m3: GREENWALD_FRACTION_MAX * tokamak.greenwald_density_per_m3(2.5e6) * 1.000001, ..mid_current }, GATE_DT_S, StepReject::GreenwaldFractionAboveComparison),
+            (TokamakLoad { line_density_per_m3: above(tokamak.greenwald_density_per_m3(3.8e6)), ..base }, GATE_DT_S, StepReject::DensityAboveGreenwald),
             // 3.84 MA at 1.80 T: an edge safety factor of 1.73.
             (TokamakLoad { plasma_current_a: 3.84e6, toroidal_field_t: 1.80, ..base }, GATE_DT_S, StepReject::SafetyFactorBelowLimit),
-            // 3.0 MA at 3.4 T: 4.18; 3.84 MA at 3.8 T: 3.65.
-            (TokamakLoad { plasma_current_a: 3.0e6, toroidal_field_t: 3.4, ..base }, GATE_DT_S, StepReject::SafetyFactorOutsideComparison),
-            (TokamakLoad { plasma_current_a: 3.84e6, toroidal_field_t: 3.8, ..base }, GATE_DT_S, StepReject::SafetyFactorOutsideComparison),
-            (base, TIME_MAX_S + GATE_DT_S, StepReject::TimeBeyondCard),
-            (base, 6.0, StepReject::TimeBeyondCard),
-            (base, 21.0, StepReject::TimeBeyondCard),
-            (TokamakLoad { tritium_fraction: f64::NAN, ..base }, GATE_DT_S, StepReject::NonFiniteInput),
+            // 3.8 MA at 2.0 T: 1.94.
+            (TokamakLoad { toroidal_field_t: 2.0, ..base }, GATE_DT_S, StepReject::SafetyFactorBelowLimit),
+            // 2 ms is above the ceiling of this state, 2.04 ms.
+            (base, 2.1e-3, StepReject::DtAboveStateCeiling),
         ];
         for (index, (load, dt_s, expected)) in cases.iter().enumerate() {
             let mut trial = state;
@@ -1627,12 +1502,23 @@ mod tests {
             let mut frame = blank_frame();
             assert_eq!(step(&tokamak, &mut trial, &mut frame, *load, *dt_s), Err(*expected), "case {index}");
             assert_eq!(trial, held, "case {index}");
-            assert_eq!(frame.t, -1.0);
-            assert_eq!(frame.flags, 9);
+            assert_eq!(frame.to_bytes(), blank_frame().to_bytes(), "case {index}");
             proof_intact(&frame);
-            if *expected != StepReject::NonFiniteInput && *expected != StepReject::NonPositiveDt && *expected != StepReject::TimeBeyondCard {
+            if !matches!(*expected, StepReject::NonFiniteInput | StepReject::NonPositiveDt | StepReject::DtAboveStateCeiling) {
                 assert_eq!(load_in_card(&tokamak, *load), Err(*expected), "case {index}");
             }
+        }
+        // Each limit of the load is met at its edge: the value at it is taken.
+        let edges = [
+            TokamakLoad { heating_power_w: 0.0, ..base },
+            TokamakLoad { ohmic_power_w: 0.0, ..base },
+            TokamakLoad { tritium_fraction: 0.0, ..base },
+            TokamakLoad { tritium_fraction: 1.0, ..base },
+            TokamakLoad { line_density_per_m3: tokamak.greenwald_density_per_m3(3.8e6), ..base },
+            TokamakLoad { toroidal_field_t: 2.0 * 3.8 / tokamak.safety_factor(1.0e6, 1.0) * 1.000001, ..base },
+        ];
+        for (index, edge) in edges.iter().enumerate() {
+            assert_eq!(load_in_card(&tokamak, *edge), Ok(()), "edge {index}");
         }
         // A state that is not a plasma.
         for (thermal, fast) in [(0.0, 1.0), (-1.0, 0.0), (1.0e6, -1.0), (f64::NAN, 0.0), (1.0e6, f64::INFINITY)] {
@@ -1641,227 +1527,117 @@ mod tests {
         for elapsed in [-1.0e-12, f64::NAN, f64::INFINITY] {
             assert!(TokamakState::try_continue(&tokamak, elapsed, 4.0e6, 0.5e6).is_none());
         }
+        let mut frame = blank_frame();
         let mut broken = state;
         broken.fast_ion_energy_j = -1.0;
         let held = broken;
-        let mut frame = blank_frame();
         assert_eq!(step(&tokamak, &mut broken, &mut frame, base, GATE_DT_S), Err(StepReject::EnergyOutsideCard));
         assert_eq!(broken, held);
+        assert_eq!(state_in_card(&tokamak, 0.0, 0.5e6, base), Err(StepReject::EnergyOutsideCard));
         let mut broken = state;
         broken.loss_power_w = f64::NAN;
         assert_eq!(step(&tokamak, &mut broken, &mut frame, base, GATE_DT_S), Err(StepReject::NonFiniteState));
-        let mut broken = state;
-        broken.t_s = -1.0e-9;
-        assert_eq!(step(&tokamak, &mut broken, &mut frame, base, GATE_DT_S), Err(StepReject::TimeBeyondCard));
+        assert_eq!(frame.to_bytes(), blank_frame().to_bytes());
         proof_intact(&frame);
     }
 
-    /// The value at each bound of a load is accepted, each with a start the
-    /// envelope holds under it.
+    /// The clock has no end: a step from 5.475 s, the longest compared
+    /// window, lands, and so does one from an hour. A negative clock is
+    /// refused as NegativeTime, and a step too small to move the clock as
+    /// StepBelowClockResolution, each with state and frame kept.
     #[test]
-    fn the_value_at_each_bound_of_a_load_is_accepted() {
+    fn the_clock_runs_past_the_compared_window_and_holds_its_two_limits() {
         let tokamak = TokamakJetDte1::elmy_h_mode();
-        let base = even_mix();
-        let cases: [((f64, f64), TokamakLoad); 13] = [
-            ((4.0e6, 0.5e6), TokamakLoad { heating_power_w: HEATING_POWER_MIN_W, ..base }),
-            ((4.0e6, 0.5e6), TokamakLoad { heating_power_w: HEATING_POWER_MAX_W, ..base }),
-            ((4.0e6, 0.5e6), TokamakLoad { ohmic_power_w: OHMIC_POWER_MIN_W, ..base }),
-            ((4.0e6, 0.5e6), TokamakLoad { ohmic_power_w: OHMIC_POWER_MAX_W, ..base }),
-            ((4.0e6, 0.5e6), TokamakLoad { tritium_fraction: 0.0, ..base }),
-            ((4.0e6, 0.5e6), TokamakLoad { tritium_fraction: TRITIUM_FRACTION_TRACE_MAX, ..base }),
-            ((4.0e6, 0.5e6), TokamakLoad { tritium_fraction: TRITIUM_FRACTION_EVEN_MIN, ..base }),
-            ((4.0e6, 0.5e6), TokamakLoad { tritium_fraction: TRITIUM_FRACTION_EVEN_MAX, ..base }),
-            ((4.0e6, 0.5e6), TokamakLoad { plasma_current_a: PLASMA_CURRENT_MAX_A, toroidal_field_t: TOROIDAL_FIELD_MAX_T, ..base }),
-            // The smallest current, field and density together, on a plasma of 0.6 MJ.
-            ((0.6e6, 0.1e6), load(10.0e6, 1.0e6, LINE_DENSITY_MIN_PER_M3, PLASMA_CURRENT_MIN_A, TOROIDAL_FIELD_MIN_T, 0.5)),
-            ((8.0e6, 1.0e6), TokamakLoad { line_density_per_m3: LINE_DENSITY_MAX_PER_M3, ..base }),
-            ((5.0e6, 1.0e6), load(10.0e6, 1.0e6, GREENWALD_FRACTION_MAX * tokamak.greenwald_density_per_m3(2.5e6), 2.5e6, 2.6, 0.5)),
-            ((4.0e6, 0.5e6), TokamakLoad { line_density_per_m3: tokamak.greenwald_density_per_m3(3.8e6) * GREENWALD_FRACTION_MAX * 0.5, ..base }),
-        ];
-        for (index, ((thermal, fast), load)) in cases.iter().enumerate() {
-            let (_, mut trial) = start(*thermal, *fast);
+        for (elapsed, dt_s) in [(TIME_COMPARED_MAX_S, GATE_DT_S), (TIME_COMPARED_MAX_S, FLOOR_DT_S), (3600.0, FLOOR_DT_S), (8.0e9, FLOOR_DT_S)] {
+            let mut state = TokamakState::try_continue(&tokamak, elapsed, 4.0e6, 0.5e6).unwrap();
             let mut frame = blank_frame();
-            assert_eq!(state_in_card(&tokamak, *thermal, *fast, *load), Ok(()), "case {index}");
-            assert_eq!(step(&tokamak, &mut trial, &mut frame, *load, GATE_DT_S), Ok(()), "case {index}");
-            assert_eq!(frame.flags, 0, "case {index}");
+            assert_eq!(step(&tokamak, &mut state, &mut frame, even_mix(), dt_s), Ok(()), "{elapsed}");
+            assert!(state.t_s > elapsed);
+            assert_eq!(frame.t, state.t_s);
         }
-        // The safety factor's compared span, met from both sides by the field at 3.0 MA.
-        let field_at = |q: f64| q / tokamak.safety_factor(3.0e6, 1.0);
-        for (q, accepted) in [(SAFETY_FACTOR_COMPARED_MIN, true), (SAFETY_FACTOR_COMPARED_MAX, true), (0.999 * SAFETY_FACTOR_COMPARED_MIN, false), (1.001 * SAFETY_FACTOR_COMPARED_MAX, false)] {
-            let at = TokamakLoad { plasma_current_a: 3.0e6, toroidal_field_t: field_at(q), ..base };
-            let landed = load_in_card(&tokamak, at);
-            if accepted {
-                // the field rounds; inside the span by a part in 1e15 either way
-                let q_back = tokamak.safety_factor(at.plasma_current_a, at.toroidal_field_t);
-                assert_eq!(landed.is_ok(), q_back >= SAFETY_FACTOR_COMPARED_MIN && q_back <= SAFETY_FACTOR_COMPARED_MAX);
-                let nudged = TokamakLoad { toroidal_field_t: field_at(q) * (1.0 + if q < 4.0 { 1.0e-12 } else { -1.0e-12 }), ..at };
-                assert_eq!(load_in_card(&tokamak, nudged), Ok(()));
-            } else {
-                assert_eq!(landed, Err(StepReject::SafetyFactorOutsideComparison));
-            }
-        }
-    }
-
-    /// Each bound of the state is refused by name, at the start of a step, and
-    /// the limits of physics are tested before the envelope.
-    #[test]
-    fn each_state_outside_the_envelope_is_refused_by_name() {
-        let tokamak = TokamakJetDte1::elmy_h_mode();
-        let base = even_mix();
-        let low = load(10.0e6, 1.0e6, 2.0e19, 1.65e6, 1.80, 0.5);
-        let high_field = load(10.0e6, 1.0e6, 2.0e19, PLASMA_CURRENT_MAX_A, TOROIDAL_FIELD_MAX_T, 0.5);
-        let dense = TokamakLoad { line_density_per_m3: LINE_DENSITY_MAX_PER_M3, ..base };
-        let thin = TokamakLoad { line_density_per_m3: LINE_DENSITY_MIN_PER_M3, ..base };
-        let cases: [((f64, f64), TokamakLoad, StepReject); 14] = [
-            ((THERMAL_ENERGY_MIN_J * 0.999, 0.1e6), thin, StepReject::EnergyOutsideComparison),
-            ((THERMAL_ENERGY_MAX_J * 1.001, 0.5e6), dense, StepReject::EnergyOutsideComparison),
-            ((4.0e6, FAST_ION_ENERGY_MIN_J * 0.999), base, StepReject::EnergyOutsideComparison),
-            ((4.0e6, 0.0), base, StepReject::EnergyOutsideComparison),
-            ((4.0e6, FAST_ION_ENERGY_MAX_J * 1.001), base, StepReject::EnergyOutsideComparison),
-            // 0.72 keV and 6.9 keV.
-            ((2.0e6, 0.5e6), dense, StepReject::TemperatureOutsideComparison),
-            ((4.0e6, 0.5e6), thin, StepReject::TemperatureOutsideComparison),
-            // A normalised beta of 2.50 and of 0.131.
-            ((3.0e6, 0.85e6), low, StepReject::BetaOutsideComparison),
-            ((1.0e6, 0.05e6), high_field, StepReject::BetaOutsideComparison),
-            // A confinement time of 0.063 s and of 9.3 s.
-            ((2.4e6, 0.1e6), TokamakLoad { line_density_per_m3: LINE_DENSITY_MIN_PER_M3, ..low }, StepReject::ConfinementTimeOutsideComparison),
-            ((2.0e6, 0.5e6), base, StepReject::ConfinementTimeOutsideComparison),
-            // The limits of physics come first: 0.064 keV is below the fit
-            // before it is below the envelope, 23 MJ at 3.8 MA and 4.0 T is
-            // above the Troyon limit before it is above 9.57 MJ, and 46 MJ at
-            // 1.65e19 per cubic metre is 103 keV at the centre of the profile.
-            ((0.2e6, 0.0), dense, StepReject::TemperatureBelowReactivityFit),
-            ((22.0e6, 1.0e6), dense, StepReject::BetaAboveTroyon),
-            ((46.0e6, 0.0), thin, StepReject::TemperatureAboveReactivityFit),
-        ];
-        for (index, ((thermal, fast), load, expected)) in cases.iter().enumerate() {
-            assert_eq!(state_in_card(&tokamak, *thermal, *fast, *load), Err(*expected), "case {index}");
-            let mut state = TokamakState::try_start(&tokamak, *thermal, *fast).unwrap();
-            let held = state;
+        let (_, inside_state) = inside();
+        let mut cases = [(inside_state, FLOOR_DT_S, StepReject::NegativeTime); 4];
+        cases[0].0.t_s = -1.0e-9;
+        cases[1].0.t_s = f64::from_bits((-0.0_f64).to_bits() + 1);
+        // 2^34 s: the spacing of 64-bit numbers is 3.8e-6 s and a step of 1e-6 s rounds to nothing.
+        cases[2] = (TokamakState { t_s: 17_179_869_184.0, ..inside_state }, FLOOR_DT_S, StepReject::StepBelowClockResolution);
+        cases[3] = (TokamakState { t_s: 1.0e300, ..inside_state }, GATE_DT_S, StepReject::StepBelowClockResolution);
+        for (index, (state, dt_s, expected)) in cases.iter().enumerate() {
+            let mut trial = *state;
             let mut frame = blank_frame();
-            assert_eq!(step(&tokamak, &mut state, &mut frame, *load, GATE_DT_S), Err(*expected), "case {index}");
-            assert_eq!(state, held, "case {index}");
+            assert_eq!(step(&tokamak, &mut trial, &mut frame, even_mix(), *dt_s), Err(*expected), "case {index}");
+            assert_eq!(trial, *state);
+            assert_eq!(frame.to_bytes(), blank_frame().to_bytes());
             proof_intact(&frame);
         }
-        // The confinement time the step tests is the one a landed step writes.
+        // Just under 2^34 s a step of 1e-6 s still moves the clock.
+        let mut late = TokamakState { t_s: f64::from_bits(17_179_869_184.0_f64.to_bits() - 1), ..inside_state };
+        let mut frame = blank_frame();
+        assert_eq!(step(&tokamak, &mut late, &mut frame, even_mix(), FLOOR_DT_S), Ok(()));
+        // A run at the ceiling lands every step past 5.475 s, to 6 s, with the ledger closed.
         let (_, mut state) = inside();
-        let mut frame = blank_frame();
-        step(&tokamak, &mut state, &mut frame, base, GATE_DT_S).unwrap();
-        assert_eq!(
-            tokamak.confinement_time_s(state.thermal_energy_j, base).to_bits(),
-            state.confinement_time_s.to_bits()
-        );
-    }
-
-    /// 0.6.0 refused in-range states with a confinement time of tens of
-    /// milliseconds as FirstLawBreach at the ceiling, from the step's
-    /// truncation error. That region is outside the envelope and is now
-    /// refused by its own name before the step, at every step size; the same
-    /// state stepped without the envelope lands at a tenth of the ceiling.
-    #[test]
-    fn a_fast_loss_state_is_refused_by_its_confinement_time_and_not_by_the_ledger() {
-        let tokamak = TokamakJetDte1::elmy_h_mode();
-        let fast_loss = load(HEATING_POWER_MAX_W, OHMIC_POWER_MAX_W, LINE_DENSITY_MIN_PER_M3, 1.65e6, 1.80, 0.5);
-        // 2.4 MJ there is 4.1 keV, a normalised beta of 1.6 with the fast
-        // ions and a confinement time of 63 ms: every other bound holds.
-        let thermal = 2.4e6;
-        assert!(tokamak.temperature_kev(thermal, LINE_DENSITY_MIN_PER_M3) < TEMPERATURE_COMPARED_MAX_KEV);
-        assert!(tokamak.beta_normalised(thermal + 0.1e6, 1.65e6, 1.80) < BETA_NORMALISED_COMPARED_MAX);
-        assert!(tokamak.confinement_time_s(thermal, fast_loss) < 0.07);
-        for dt_s in [GATE_DT_S, 1.0e-4, FLOOR_DT_S] {
-            let (_, mut state) = start(thermal, 0.1e6);
-            let mut frame = blank_frame();
-            assert_eq!(
-                step(&tokamak, &mut state, &mut frame, fast_loss, dt_s),
-                Err(StepReject::ConfinementTimeOutsideComparison)
-            );
-        }
-        let (_, mut state) = start(thermal, 0.1e6);
-        let mut frame = blank_frame();
-        assert_eq!(step_structure(&tokamak, &mut state, &mut frame, fast_loss, 1.0e-4), Ok(()));
-        // The loss time is 0.31 of the confinement time: 20 ms here, against
-        // 46.5 ms at the smallest confinement time the envelope allows.
-        assert!(IPB98_EXP_LOSS * CONFINEMENT_TIME_MIN_S > 40.0 * GATE_DT_S);
-    }
-
-    /// Pulse 42976, a hot-ion pulse declared outside the card's regime before
-    /// it was run, missed all four marks and is not in the envelope. Each
-    /// value only it reached (`fix_0.7.0/envelope_nine.json`) is outside a
-    /// bound, and its first load and its own largest states are refused by name.
-    #[test]
-    fn the_states_and_loads_only_42976_reached_are_refused() {
-        let tokamak = TokamakJetDte1::elmy_h_mode();
-        assert!(25.134e6 > HEATING_POWER_MAX_W && 24.221e6 <= HEATING_POWER_MAX_W);
-        assert!(3.1153e6 > OHMIC_POWER_MAX_W && 2.4360e6 <= OHMIC_POWER_MAX_W);
-        assert!(1.1991e19 < LINE_DENSITY_MIN_PER_M3 && 1.6580e19 >= LINE_DENSITY_MIN_PER_M3);
-        assert!(8.8684e19 > LINE_DENSITY_MAX_PER_M3 && 7.8493e19 <= LINE_DENSITY_MAX_PER_M3);
-        assert!(4.1593e6 > PLASMA_CURRENT_MAX_A && 3.8350e6 <= PLASMA_CURRENT_MAX_A);
-        assert!(3.3859 < SAFETY_FACTOR_COMPARED_MIN && 3.6631 >= SAFETY_FACTOR_COMPARED_MIN);
-        assert!(9.6603e6 > THERMAL_ENERGY_MAX_J && 9.5657e6 <= THERMAL_ENERGY_MAX_J);
-        assert!(3.5221e6 > FAST_ION_ENERGY_MAX_J && 1.6181e6 <= FAST_ION_ENERGY_MAX_J);
-        assert!(6.2523 > TEMPERATURE_COMPARED_MAX_KEV && 4.2938 <= TEMPERATURE_COMPARED_MAX_KEV);
-        assert!(0.13409 < BETA_NORMALISED_COMPARED_MIN && 0.22410 >= BETA_NORMALISED_COMPARED_MIN);
-        assert!(8.4534 > CONFINEMENT_TIME_MAX_S && 5.7160 <= CONFINEMENT_TIME_MAX_S);
-        // Its first load: 5.60 MW, 3.12 MW of ohmic power, 1.50e19 per cubic
-        // metre, 4.13 MA and 3.83 T. Each of three values is refused alone.
-        let first = load(5.60e6, 3.115e6, 1.5025e19, 4.128e6, 3.827, 0.501);
-        assert_eq!(load_in_card(&tokamak, first), Err(StepReject::OhmicPowerOutsideCard));
-        let first = TokamakLoad { ohmic_power_w: 1.0e6, ..first };
-        assert_eq!(load_in_card(&tokamak, first), Err(StepReject::PlasmaCurrentOutsideCard));
-        let first = TokamakLoad { plasma_current_a: 3.8e6, ..first };
-        assert_eq!(load_in_card(&tokamak, first), Err(StepReject::DensityBelowCard));
-        // 3.5 MJ of fast ions, and 6.25 keV, under a load the envelope holds.
-        let held = load(20.0e6, 1.0e6, 3.0e19, 3.8e6, 4.0, 0.5);
-        assert_eq!(load_in_card(&tokamak, held), Ok(()));
-        assert_eq!(state_in_card(&tokamak, 4.0e6, 3.5e6, held), Err(StepReject::EnergyOutsideComparison));
-        let hot = 6.25 / tokamak.temperature_kev(1.0, 3.0e19);
-        assert!(hot < THERMAL_ENERGY_MAX_J);
-        assert_eq!(state_in_card(&tokamak, hot, 0.5e6, held), Err(StepReject::TemperatureOutsideComparison));
-    }
-
-    /// Over a grid of loads and starts inside the envelope, one step at the
-    /// ceiling lands or is refused by a bound of the envelope, never by the
-    /// ledger; and runs held at the corners of the loads to the end of the
-    /// card do the same.
-    #[test]
-    fn inside_the_envelope_the_ledger_holds_at_the_ceiling() {
-        let tokamak = TokamakJetDte1::elmy_h_mode();
-        let pairs = [(1.65e6, 1.80), (2.5e6, 2.6), (3.8e6, 4.0), (PLASMA_CURRENT_MAX_A, TOROIDAL_FIELD_MAX_T)];
-        let mut tried = 0;
-        let mut landed = 0;
         let mut worst = 0.0_f64;
-        let ledger = |end: Result<(), StepReject>| {
-            end == Err(StepReject::FirstLawBreach) || end == Err(StepReject::SpontaneousGeneration)
+        for _ in 0..6_000 {
+            step(&tokamak, &mut state, &mut frame, even_mix(), GATE_DT_S).unwrap();
+            worst = worst.max(state.residual_conservation_error);
+        }
+        assert!(within(state.t_s, 6.0, 1.0e-12));
+        assert!(worst < 0.01 * RESIDUAL_CONSERVATION_LIMIT, "{worst}");
+    }
+
+    /// Over a grid of loads and starts inside the compared envelope, one step
+    /// at the 1 ms ceiling lands, never refused by the ledger or by the state
+    /// ceiling, which is at least 1.0018 ms at every start and every landing;
+    /// and runs held at the corners of the loads for 5.475 s do the same.
+    #[test]
+    fn inside_the_compared_envelope_the_state_ceiling_never_binds_and_the_ledger_holds() {
+        let tokamak = TokamakJetDte1::elmy_h_mode();
+        let pairs = [(1.65e6, 1.80), (2.5e6, 2.6), (3.8e6, 4.0), (PLASMA_CURRENT_COMPARED_MAX_A, TOROIDAL_FIELD_COMPARED_MAX_T)];
+        let compared = |thermal: f64, fast: f64, at: TokamakLoad| {
+            let kev = tokamak.temperature_kev(thermal, at.line_density_per_m3);
+            let beta = tokamak.beta_normalised(thermal + fast, at.plasma_current_a, at.toroidal_field_t);
+            let confinement = tokamak.confinement_time_s(thermal, at);
+            (THERMAL_ENERGY_COMPARED_MIN_J..=THERMAL_ENERGY_COMPARED_MAX_J).contains(&thermal)
+                && (FAST_ION_ENERGY_COMPARED_MIN_J..=FAST_ION_ENERGY_COMPARED_MAX_J).contains(&fast)
+                && (TEMPERATURE_COMPARED_MIN_KEV..=TEMPERATURE_COMPARED_MAX_KEV).contains(&kev)
+                && (super::BETA_NORMALISED_COMPARED_MIN..=BETA_NORMALISED_COMPARED_MAX).contains(&beta)
+                && (CONFINEMENT_TIME_COMPARED_MIN_S..=CONFINEMENT_TIME_COMPARED_MAX_S).contains(&confinement)
         };
-        for heating in [HEATING_POWER_MIN_W, 10.0e6, HEATING_POWER_MAX_W] {
-            for ohmic in [OHMIC_POWER_MIN_W, OHMIC_POWER_MAX_W] {
+        let mut tried = 0;
+        let mut least_ceiling = f64::INFINITY;
+        let mut worst = 0.0_f64;
+        for heating in [HEATING_POWER_COMPARED_MIN_W, 10.0e6, HEATING_POWER_COMPARED_MAX_W] {
+            for ohmic in [OHMIC_POWER_COMPARED_MIN_W, OHMIC_POWER_COMPARED_MAX_W] {
                 for (current, field) in pairs {
                     let greenwald = tokamak.greenwald_density_per_m3(current);
-                    let densest = if GREENWALD_FRACTION_MAX * greenwald < LINE_DENSITY_MAX_PER_M3 {
-                        GREENWALD_FRACTION_MAX * greenwald
+                    let densest = if GREENWALD_FRACTION_COMPARED_MAX * greenwald < LINE_DENSITY_COMPARED_MAX_PER_M3 {
+                        GREENWALD_FRACTION_COMPARED_MAX * greenwald
                     } else {
-                        LINE_DENSITY_MAX_PER_M3
+                        LINE_DENSITY_COMPARED_MAX_PER_M3
                     };
-                    for density in [LINE_DENSITY_MIN_PER_M3, 0.5 * (LINE_DENSITY_MIN_PER_M3 + densest), densest] {
+                    for density in [LINE_DENSITY_COMPARED_MIN_PER_M3, 0.5 * (LINE_DENSITY_COMPARED_MIN_PER_M3 + densest), densest] {
                         for tritium in [0.0, TRITIUM_FRACTION_TRACE_MAX, TRITIUM_FRACTION_EVEN_MIN, TRITIUM_FRACTION_EVEN_MAX] {
                             let at = load(heating, ohmic, density, current, field, tritium);
+                            let q = tokamak.safety_factor(current, field);
+                            if !(SAFETY_FACTOR_COMPARED_MIN..=SAFETY_FACTOR_COMPARED_MAX).contains(&q) {
+                                continue;
+                            }
                             assert_eq!(load_in_card(&tokamak, at), Ok(()));
                             for kev in [TEMPERATURE_COMPARED_MIN_KEV, 1.5, 2.5, 3.5, TEMPERATURE_COMPARED_MAX_KEV] {
                                 let thermal = kev / tokamak.temperature_kev(1.0, density);
-                                for fast in [FAST_ION_ENERGY_MIN_J, 0.3e6, 1.5e6, FAST_ION_ENERGY_MAX_J] {
-                                    if state_in_card(&tokamak, thermal, fast, at).is_err() {
+                                for fast in [FAST_ION_ENERGY_COMPARED_MIN_J, 0.3e6, 1.5e6, FAST_ION_ENERGY_COMPARED_MAX_J] {
+                                    if !compared(thermal, fast, at) {
                                         continue;
                                     }
                                     tried += 1;
+                                    let ceiling = tokamak.state_ceiling_dt_s(thermal, fast, at);
+                                    least_ceiling = least_ceiling.min(ceiling);
                                     let (_, mut state) = start(thermal, fast);
                                     let mut frame = blank_frame();
                                     let end = step(&tokamak, &mut state, &mut frame, at, GATE_DT_S);
-                                    assert!(!ledger(end), "{at:?} {thermal} {fast}: {end:?}");
-                                    if end.is_ok() {
-                                        landed += 1;
-                                        worst = worst.max(state.residual_conservation_error);
-                                    }
+                                    assert_eq!(end, Ok(()), "{at:?} {thermal} {fast}");
+                                    least_ceiling = least_ceiling.min(tokamak.state_ceiling_dt_s(state.thermal_energy_j, state.fast_ion_energy_j, at));
+                                    worst = worst.max(state.residual_conservation_error);
                                 }
                             }
                         }
@@ -1869,36 +1645,37 @@ mod tests {
                 }
             }
         }
-        assert!(tried > 500, "{tried}");
-        assert!(landed > 400, "{landed}");
+        assert!(tried > 400, "{tried}");
+        assert!(least_ceiling >= 1.0017e-3, "{least_ceiling}");
         // The largest found is 4.9e-10, a fortieth of the limit.
         assert!(worst < 0.1 * RESIDUAL_CONSERVATION_LIMIT, "{worst}");
-        // Runs held at the corners, from a start at 2 keV, to the end of the card.
+        // Runs held at the corners, from a start at 2 keV, for 5.475 s.
         let mut runs = 0;
         let mut run_worst = 0.0_f64;
-        for heating in [HEATING_POWER_MIN_W, HEATING_POWER_MAX_W] {
+        for heating in [HEATING_POWER_COMPARED_MIN_W, HEATING_POWER_COMPARED_MAX_W] {
             for (current, field) in pairs {
                 let greenwald = tokamak.greenwald_density_per_m3(current);
-                for density in [LINE_DENSITY_MIN_PER_M3, 0.6 * GREENWALD_FRACTION_MAX * greenwald] {
-                    let at = load(heating, OHMIC_POWER_MAX_W, density, current, field, 0.5);
-                    if load_in_card(&tokamak, at).is_err() {
-                        continue;
-                    }
+                for density in [LINE_DENSITY_COMPARED_MIN_PER_M3, 0.6 * GREENWALD_FRACTION_COMPARED_MAX * greenwald] {
+                    let at = load(heating, OHMIC_POWER_COMPARED_MAX_W, density, current, field, 0.5);
                     let thermal = 2.0 / tokamak.temperature_kev(1.0, density);
                     for fast in [0.1e6, 1.0e6] {
-                        if state_in_card(&tokamak, thermal, fast, at).is_err() {
+                        if !compared(thermal, fast, at) {
                             continue;
                         }
                         runs += 1;
                         let (_, mut state) = start(thermal, fast);
                         let mut frame = blank_frame();
-                        let end = loop {
-                            match step(&tokamak, &mut state, &mut frame, at, GATE_DT_S) {
-                                Ok(()) => run_worst = run_worst.max(state.residual_conservation_error),
-                                Err(reject) => break reject,
+                        for _ in 0..5_475 {
+                            let held = state;
+                            let end = step(&tokamak, &mut state, &mut frame, at, GATE_DT_S);
+                            if !compared(state.thermal_energy_j, state.fast_ion_energy_j, at) {
+                                // 0.9.0 refused this step; the state before it was compared.
+                                assert!(compared(held.thermal_energy_j, held.fast_ion_energy_j, at));
+                                break;
                             }
-                        };
-                        assert!(!ledger(Err(end)), "{at:?} {thermal} {fast}: {end:?} at {}", state.t_s);
+                            assert_eq!(end, Ok(()), "{at:?} {thermal} {fast} at {}", state.t_s);
+                            run_worst = run_worst.max(state.residual_conservation_error);
+                        }
                     }
                 }
             }
@@ -1908,43 +1685,331 @@ mod tests {
         assert!(run_worst < 0.05 * RESIDUAL_CONSERVATION_LIMIT, "{run_worst}");
     }
 
-    /// The clock is the caller's: a run continued from a returned state at
-    /// that state's time is the run straight through, bit for bit, and the
-    /// end of the card cannot be passed by starting again. A single first
-    /// step that ends exactly on the end lands.
+    /// The three times of the state ceiling at the fastest corners of the
+    /// compared envelope: the slowing-down time at least 18.06 ms, the loss
+    /// time 46.5 ms and the coupling time 48.1 ms, so an eighteenth, a
+    /// forty-sixth and a forty-eighth of them are each at least 1 ms, and the
+    /// 1 ms ceiling is never above the state ceiling there. Each fraction is
+    /// the largest whole one that does so.
     #[test]
-    fn a_continued_run_keeps_the_clock_and_cannot_pass_the_end() {
+    fn the_step_ceilings_and_the_floor_are_derived_and_hold_the_ledger() {
+        let tokamak = TokamakJetDte1::elmy_h_mode();
+        assert_eq!(tokamak.gate_dt_s(), Some(GATE_DT_S));
+        assert_eq!(tokamak.floor_dt_s(), Some(FLOOR_DT_S));
+        let slowing = tokamak.slowing_time_coeff_s * TEMPERATURE_COMPARED_MIN_KEV.sqrt()
+            / (LINE_DENSITY_COMPARED_MAX_PER_M3 / 1.0e19);
+        assert!(within(slowing, 0.01806, 5.0e-3), "{slowing}");
+        assert!(slowing / STATE_CEILING_SLOWING_STEPS >= 1.003e-3);
+        assert!(slowing / (STATE_CEILING_SLOWING_STEPS + 1.0) < 1.0e-3);
+        let loss = IPB98_EXP_LOSS * CONFINEMENT_TIME_COMPARED_MIN_S;
+        assert!(within(loss, 0.0465, 1.0e-12));
+        assert!(loss / STATE_CEILING_LOSS_STEPS >= 1.01e-3);
+        assert!(loss / (STATE_CEILING_LOSS_STEPS + 1.0) < 1.0e-3);
+        // The coupling time does not depend on the density: 2 τ_f W_th / W_f.
+        let coupling = |density: f64| {
+            let thermal = TEMPERATURE_COMPARED_MIN_KEV / tokamak.temperature_kev(1.0, density);
+            2.0 * tokamak.slowing_time_coeff_s * TEMPERATURE_COMPARED_MIN_KEV.sqrt() / (density / 1.0e19) * thermal
+                / FAST_ION_ENERGY_COMPARED_MAX_J
+        };
+        assert!(within(coupling(LINE_DENSITY_COMPARED_MIN_PER_M3), coupling(LINE_DENSITY_COMPARED_MAX_PER_M3), 1.0e-12));
+        assert!(within(coupling(1.0e19), 0.0481, 2.0e-3), "{}", coupling(1.0e19));
+        assert!(coupling(1.0e19) / STATE_CEILING_COUPLING_STEPS >= 1.0017e-3);
+        assert!(coupling(1.0e19) / (STATE_CEILING_COUPLING_STEPS + 1.0) < 1.0e-3);
+        // The state ceiling is each of the three where it is the smallest.
+        let at = TokamakLoad { line_density_per_m3: LINE_DENSITY_COMPARED_MAX_PER_M3, plasma_current_a: PLASMA_CURRENT_COMPARED_MAX_A, ..even_mix() };
+        let thermal = TEMPERATURE_COMPARED_MIN_KEV / tokamak.temperature_kev(1.0, LINE_DENSITY_COMPARED_MAX_PER_M3);
+        assert!(within(tokamak.state_ceiling_dt_s(thermal, 0.0, at), slowing / 18.0, 1.0e-12));
+        let fast_loss = load(24.3e6, 2.44e6, 1.65e19, 1.65e6, 1.80, 0.5);
+        assert!(within(
+            tokamak.state_ceiling_dt_s(2.4e6, 0.0, fast_loss),
+            IPB98_EXP_LOSS * tokamak.confinement_time_s(2.4e6, fast_loss) / 46.0,
+            1.0e-12
+        ));
+        let cold = thermal_at(0.3, 2.0e19);
+        let tau_f = tokamak.slowing_time_coeff_s * 0.3_f64.sqrt() / 2.0;
+        assert!(within(
+            tokamak.state_ceiling_dt_s(cold, 1.0e6, load(20.0e6, 1.0e6, 2.0e19, 3.8e6, 4.0, 0.5)),
+            2.0 * tau_f * cold / 1.0e6 / 48.0,
+            1.0e-9
+        ));
+        // A step at the floor moves both stores and the clock.
+        let (_, mut state) = inside();
+        let held = state;
+        let mut frame = blank_frame();
+        step(&tokamak, &mut state, &mut frame, even_mix(), FLOOR_DT_S).unwrap();
+        assert!(state.thermal_energy_j != held.thermal_energy_j);
+        assert!(state.fast_ion_energy_j != held.fast_ion_energy_j);
+        assert!(state.t_s > held.t_s);
+        assert!(state.residual_conservation_error < RESIDUAL_CONSERVATION_LIMIT);
+    }
+
+    /// One point past an old wall of the compared envelope: what the step
+    /// does there.
+    struct Past {
+        label: &'static str,
+        thermal_j: f64,
+        fast_j: f64,
+        load: TokamakLoad,
+    }
+
+    fn past(label: &'static str, thermal_j: f64, fast_j: f64, load: TokamakLoad) -> Past {
+        Past { label, thermal_j, fast_j, load }
+    }
+
+    /// Every old wall of the compared envelope, at its edge and well past it.
+    fn past_the_old_walls() -> [Past; 30] {
+        let tokamak = TokamakJetDte1::elmy_h_mode();
+        let field_for = |q: f64, current_a: f64| q * (current_a / 1.0e6) / tokamak.safety_factor(1.0e6, 1.0);
+        [
+            past("heating 0 MW", 2.0e6, 0.0, load(0.0, 0.5e6, 3.0e19, 2.5e6, 2.6, 0.5)),
+            past("heating 30 MW", 4.0e6, 0.5e6, load(30.0e6, 1.0e6, 6.0e19, 3.8e6, 4.0, 0.5)),
+            past("heating 100 MW", 4.0e6, 0.5e6, load(100.0e6, 1.0e6, 6.0e19, 5.0e6, 5.0, 0.5)),
+            past("ohmic 0 MW", 4.0e6, 0.5e6, load(20.0e6, 0.0, 6.0e19, 3.8e6, 4.0, 0.5)),
+            past("ohmic 10 MW", 2.0e6, 0.1e6, load(5.0e6, 10.0e6, 4.0e19, 3.8e6, 4.0, 0.5)),
+            past("current 1.0 MA at 1.0 T", 0.5e6, 0.05e6, load(2.0e6, 0.5e6, 2.0e19, 1.0e6, 1.0, 0.5)),
+            past("current 4.16 MA, 42976", 4.0e6, 0.5e6, load(5.6e6, 3.115e6, 1.5025e19, 4.128e6, 3.827, 0.501)),
+            past("current 5 MA at 5 T", 6.0e6, 0.5e6, load(30.0e6, 1.0e6, 6.0e19, 5.0e6, 5.0, 0.5)),
+            past("field 8 T", 6.0e6, 0.5e6, load(20.0e6, 1.0e6, 6.0e19, 5.0e6, 8.0, 0.5)),
+            past("tritium 0.25", 4.0e6, 0.5e6, TokamakLoad { tritium_fraction: 0.25, ..even_mix() }),
+            past("tritium 0.93", 4.0e6, 0.5e6, TokamakLoad { tritium_fraction: 0.93, ..even_mix() }),
+            past("tritium 1.0", 4.0e6, 0.5e6, TokamakLoad { tritium_fraction: 1.0, ..even_mix() }),
+            past("density 0.5e19", 0.5e6, 0.1e6, load(10.0e6, 1.0e6, 0.5e19, 2.5e6, 2.6, 0.5)),
+            past("density 1e20 at 5 MA", 8.0e6, 1.0e6, load(20.0e6, 1.0e6, 1.0e20, 5.0e6, 5.0, 0.5)),
+            past("Greenwald 0.95 at 5 MA", 8.0e6, 1.0e6, load(20.0e6, 1.0e6, 0.95 * tokamak.greenwald_density_per_m3(5.0e6), 5.0e6, 5.0, 0.5)),
+            past("Greenwald 1.0 at 2.5 MA", 5.0e6, 1.0e6, load(10.0e6, 1.0e6, tokamak.greenwald_density_per_m3(2.5e6), 2.5e6, 2.6, 0.5)),
+            past("safety factor 2.05", 4.0e6, 0.5e6, load(20.0e6, 0.5e6, 6.0e19, 3.84e6, field_for(2.05, 3.84e6), 0.5)),
+            past("safety factor 3.39, 42976", 4.0e6, 0.5e6, load(20.0e6, 0.5e6, 6.0e19, 3.84e6, field_for(3.39, 3.84e6), 0.5)),
+            past("safety factor 8", 2.0e6, 0.3e6, load(10.0e6, 0.5e6, 3.0e19, 2.0e6, field_for(8.0, 2.0e6), 0.5)),
+            past("thermal 0.2 MJ", 0.2e6, 0.02e6, load(1.0e6, 0.5e6, 1.0e19, 2.0e6, 2.5, 0.5)),
+            past("thermal 20 MJ", 20.0e6, 1.0e6, load(30.0e6, 1.0e6, 1.0e20, 5.0e6, 6.0, 0.5)),
+            past("fast ions 0", 4.0e6, 0.0, even_mix()),
+            past("fast ions 3.5 MJ, 42976", 4.0e6, 3.5e6, even_mix()),
+            past("fast ions 10 times the thermal", 0.3e6, 3.0e6, load(30.0e6, 0.5e6, 0.3e19, 3.8e6, 4.0, 0.5)),
+            past("temperature 0.3 keV", thermal_at(0.3, 6.0e19), 0.1e6, load(5.0e6, 1.0e6, 6.0e19, 3.8e6, 4.0, 0.5)),
+            past("temperature 0.3 keV, 1 MJ of fast ions", thermal_at(0.3, 2.0e19), 1.0e6, load(20.0e6, 1.0e6, 2.0e19, 3.8e6, 4.0, 0.5)),
+            past("temperature 15 keV", thermal_at(15.0, 2.0e19), 0.5e6, load(20.0e6, 1.0e6, 2.0e19, 5.0e6, 5.0, 0.5)),
+            past("temperature 30 keV", thermal_at(30.0, 1.0e19), 0.5e6, load(20.0e6, 1.0e6, 1.0e19, 5.0e6, 5.0, 0.5)),
+            past("confinement 0.03 s", 2.4e6, 0.1e6, load(24.3e6, 2.44e6, 1.0e19, 1.65e6, 1.80, 0.5)),
+            past("confinement 9 s", 2.0e6, 0.5e6, load(1.0e6, 0.2e6, 6.0e19, 3.8e6, 4.0, 0.5)),
+        ]
+    }
+
+    /// Past every old wall of the compared envelope, at its edge and well
+    /// beyond: a step just above the state's ceiling, and one at the 1 ms
+    /// ceiling where the state's is shorter, is refused as
+    /// DtAboveStateCeiling with state and frame kept; and a run that steps at
+    /// the ceiling of each state it reaches, or at 1 ms where that is
+    /// shorter, lands every step with the ledger closed, for 2000 steps or
+    /// until a limit of physics stops it by name.
+    #[test]
+    fn past_every_old_wall_the_ledger_closes_at_the_state_ceiling() {
+        let tokamak = TokamakJetDte1::elmy_h_mode();
+        let mut bound_below_1_ms = 0;
+        let mut worst = 0.0_f64;
+        let mut full_runs = 0;
+        for point in past_the_old_walls() {
+            let label = point.label;
+            assert_eq!(load_in_card(&tokamak, point.load), Ok(()), "{label}");
+            assert_eq!(state_in_card(&tokamak, point.thermal_j, point.fast_j, point.load), Ok(()), "{label}");
+            let (_, fresh) = start(point.thermal_j, point.fast_j);
+            let ceiling = tokamak.state_ceiling_dt_s(point.thermal_j, point.fast_j, point.load);
+            let mut refused_steps = [above(ceiling), 0.0];
+            if ceiling < GATE_DT_S {
+                bound_below_1_ms += 1;
+                refused_steps[1] = GATE_DT_S;
+            }
+            for dt_s in refused_steps {
+                if dt_s == 0.0 {
+                    continue;
+                }
+                let mut state = fresh;
+                let mut frame = blank_frame();
+                assert_eq!(step(&tokamak, &mut state, &mut frame, point.load, dt_s), Err(StepReject::DtAboveStateCeiling), "{label} {dt_s}");
+                assert_eq!(state, fresh, "{label}");
+                assert_eq!(frame.to_bytes(), blank_frame().to_bytes(), "{label}");
+            }
+            let mut state = fresh;
+            let mut frame = blank_frame();
+            let mut landed = 0;
+            let end = loop {
+                if landed == 2_000 {
+                    break None;
+                }
+                let ceiling_now = tokamak.state_ceiling_dt_s(state.thermal_energy_j, state.fast_ion_energy_j, point.load);
+                let at_ceiling = if ceiling_now < GATE_DT_S { ceiling_now } else { GATE_DT_S };
+                let held = state;
+                let mut result = step(&tokamak, &mut state, &mut frame, point.load, at_ceiling);
+                if result == Err(StepReject::DtAboveStateCeiling) {
+                    // The ceiling is shorter where the trial step lands: the
+                    // step is refused whole, and a step of half lands.
+                    assert_eq!(state, held, "{label}");
+                    result = step(&tokamak, &mut state, &mut frame, point.load, 0.5 * at_ceiling);
+                }
+                match result {
+                    Ok(()) => {
+                        landed += 1;
+                        worst = worst.max(state.residual_conservation_error);
+                        assert!(state.residual_conservation_error < RESIDUAL_CONSERVATION_LIMIT, "{label}");
+                    }
+                    Err(reject) => {
+                        assert_eq!(state, held, "{label}");
+                        break Some(reject);
+                    }
+                }
+            };
+            assert!(!ledger(end.map_or(Ok(()), Err)), "{label}: {end:?}");
+            assert!(
+                matches!(end, None | Some(StepReject::BetaAboveTroyon) | Some(StepReject::TemperatureAboveReactivityFit)),
+                "{label}: {end:?} after {landed}"
+            );
+            assert!(landed > 100, "{label}: {landed}");
+            if end.is_none() {
+                full_runs += 1;
+            }
+
+            proof_intact(&frame);
+        }
+        assert!(bound_below_1_ms >= 6, "{bound_below_1_ms}");
+        assert!(full_runs >= 20, "{full_runs}");
+        // The largest found is 1.42e-9.
+        assert!(worst < 1.5e-9, "{worst}");
+    }
+
+    /// Rule 10 past the old walls. An Euler step in place of the
+    /// Runge–Kutta step, at the state ceiling or 1 ms, is refused by the
+    /// ledger, and by nothing else; only where the state ceiling is a small
+    /// fraction of a millisecond does the Euler step's error stay under the
+    /// ledger's limit, at two of the thirty points.
+    #[test]
+    fn explicit_euler_past_the_old_walls_is_refused_by_the_ledger() {
+        let tokamak = TokamakJetDte1::elmy_h_mode();
+        let mut attacked = 0;
+        let mut under_the_limit = 0;
+        for point in past_the_old_walls() {
+            let ceiling = tokamak.state_ceiling_dt_s(point.thermal_j, point.fast_j, point.load);
+            let dt_s = if ceiling < GATE_DT_S { ceiling } else { GATE_DT_S };
+            let (_, mut state) = start(point.thermal_j, point.fast_j);
+            let held = state;
+            let mut frame = blank_frame();
+            let end = step_with(&tokamak, &mut state, &mut frame, point.load, dt_s, euler);
+            if end == Err(StepReject::DtAboveStateCeiling) {
+                continue;
+            }
+            if end == Ok(()) {
+                assert!(dt_s < 0.5 * GATE_DT_S, "{}", point.label);
+                under_the_limit += 1;
+                continue;
+            }
+            assert!(ledger(end), "{}: {end:?}", point.label);
+            assert_eq!(state, held);
+            proof_intact(&frame);
+            attacked += 1;
+        }
+        assert!(attacked >= 20, "{attacked}");
+        assert!(under_the_limit <= 2, "{under_the_limit}");
+    }
+
+    /// 0.6.0 refused states with a confinement time of tens of milliseconds
+    /// as FirstLawBreach at the 1 ms ceiling, from the step's truncation
+    /// error; 0.7.0 to 0.9.0 refused them as outside the compared envelope.
+    /// The step at 1 ms is now refused as DtAboveStateCeiling, and at the
+    /// state's own ceiling the run lands with the ledger closed until the
+    /// stores reach the Troyon limit.
+    #[test]
+    fn a_fast_loss_state_steps_at_its_own_ceiling_and_not_into_the_ledger() {
+        let tokamak = TokamakJetDte1::elmy_h_mode();
+        // 2.4 MJ at 1.65e19 per cubic metre under the largest compared loads
+        // is 4.1 keV and a confinement time of 63 ms; at 1.0e19, 6.8 keV and 32 ms.
+        for (density, confinement_below) in [(1.65e19, 0.07), (1.0e19, 0.035)] {
+            let fast_loss = load(HEATING_POWER_COMPARED_MAX_W, OHMIC_POWER_COMPARED_MAX_W, density, 1.65e6, 1.80, 0.5);
+            let thermal = 2.4e6;
+            assert!(tokamak.confinement_time_s(thermal, fast_loss) < confinement_below);
+            let (_, fresh) = start(thermal, 0.1e6);
+            let mut state = fresh;
+            let mut frame = blank_frame();
+            assert_eq!(step(&tokamak, &mut state, &mut frame, fast_loss, GATE_DT_S), Err(StepReject::DtAboveStateCeiling));
+            assert_eq!(state, fresh);
+            let ceiling = tokamak.state_ceiling_dt_s(thermal, 0.1e6, fast_loss);
+            assert!(ceiling < 0.5 * GATE_DT_S, "{ceiling}");
+            // At a forty-sixth of 0.31 of the confinement time.
+            assert!(within(ceiling, IPB98_EXP_LOSS * tokamak.confinement_time_s(thermal, fast_loss) / 46.0, 1.0e-12));
+            let mut landed = 0;
+            let end = loop {
+                match step(&tokamak, &mut state, &mut frame, fast_loss, ceiling) {
+                    Ok(()) => {
+                        landed += 1;
+                        assert!(state.residual_conservation_error < 0.05 * RESIDUAL_CONSERVATION_LIMIT);
+                    }
+                    Err(reject) => break reject,
+                }
+                assert!(landed < 100_000);
+            };
+            assert!(landed > 100, "{landed}");
+            assert_eq!(end, StepReject::BetaAboveTroyon);
+            proof_intact(&frame);
+        }
+    }
+
+    /// Pulse 42976, a hot-ion pulse declared outside the card's regime before
+    /// it was run, missed all four marks and is not in the compared envelope.
+    /// Each value only it reached (`fix_0.7.0/envelope_nine.json`) is outside
+    /// a compared bound, and the card computes its first load and its own
+    /// largest states with the same equations.
+    #[test]
+    fn the_states_and_loads_only_42976_reached_are_computed() {
+        let tokamak = TokamakJetDte1::elmy_h_mode();
+        assert!(25.134e6 > HEATING_POWER_COMPARED_MAX_W && 24.221e6 <= HEATING_POWER_COMPARED_MAX_W);
+        assert!(3.1153e6 > OHMIC_POWER_COMPARED_MAX_W && 2.4360e6 <= OHMIC_POWER_COMPARED_MAX_W);
+        assert!(1.1991e19 < LINE_DENSITY_COMPARED_MIN_PER_M3 && 1.6580e19 >= LINE_DENSITY_COMPARED_MIN_PER_M3);
+        assert!(8.8684e19 > LINE_DENSITY_COMPARED_MAX_PER_M3 && 7.8493e19 <= LINE_DENSITY_COMPARED_MAX_PER_M3);
+        assert!(4.1593e6 > PLASMA_CURRENT_COMPARED_MAX_A && 3.8350e6 <= PLASMA_CURRENT_COMPARED_MAX_A);
+        assert!(3.3859 < SAFETY_FACTOR_COMPARED_MIN && 3.6631 >= SAFETY_FACTOR_COMPARED_MIN);
+        assert!(9.6603e6 > THERMAL_ENERGY_COMPARED_MAX_J && 9.5657e6 <= THERMAL_ENERGY_COMPARED_MAX_J);
+        assert!(3.5221e6 > FAST_ION_ENERGY_COMPARED_MAX_J && 1.6181e6 <= FAST_ION_ENERGY_COMPARED_MAX_J);
+        assert!(6.2523 > TEMPERATURE_COMPARED_MAX_KEV && 4.2938 <= TEMPERATURE_COMPARED_MAX_KEV);
+        assert!(0.13409 < super::BETA_NORMALISED_COMPARED_MIN && 0.22410 >= super::BETA_NORMALISED_COMPARED_MIN);
+        assert!(8.4534 > CONFINEMENT_TIME_COMPARED_MAX_S && 5.7160 <= CONFINEMENT_TIME_COMPARED_MAX_S);
+        assert!(PLASMA_CURRENT_COMPARED_MIN_A < 1.66e6 && TOROIDAL_FIELD_COMPARED_MIN_T < 1.81 && OHMIC_POWER_COMPARED_MIN_W < 0.174e6);
+        // Its first load: 5.60 MW, 3.12 MW of ohmic power, 1.50e19 per cubic
+        // metre, 4.13 MA and 3.83 T. It lands.
+        let first = load(5.60e6, 3.115e6, 1.5025e19, 4.128e6, 3.827, 0.501);
+        assert_eq!(load_in_card(&tokamak, first), Ok(()));
+        let (_, mut state) = start(4.0e6, 0.5e6);
+        let mut frame = blank_frame();
+        assert_eq!(step(&tokamak, &mut state, &mut frame, first, GATE_DT_S), Ok(()));
+        // 3.5 MJ of fast ions, and 6.25 keV.
+        let held = load(20.0e6, 1.0e6, 3.0e19, 3.8e6, 4.0, 0.5);
+        let hot = 6.25 / tokamak.temperature_kev(1.0, 3.0e19);
+        for (thermal, fast) in [(4.0e6, 3.5e6), (hot, 0.5e6)] {
+            assert_eq!(state_in_card(&tokamak, thermal, fast, held), Ok(()));
+            let (_, mut state) = start(thermal, fast);
+            assert_eq!(step(&tokamak, &mut state, &mut frame, held, GATE_DT_S), Ok(()));
+        }
+    }
+
+    /// The clock is the caller's: a run continued from a returned state at
+    /// that state's time is the run straight through, bit for bit, past the
+    /// longest compared window.
+    #[test]
+    fn a_continued_run_keeps_the_clock() {
         let (tokamak, mut straight) = inside();
         let mut frame = blank_frame();
-        for _ in 0..2000 {
+        for _ in 0..7000 {
             step(&tokamak, &mut straight, &mut frame, even_mix(), GATE_DT_S).unwrap();
         }
         let (_, mut first) = inside();
-        for _ in 0..1000 {
+        for _ in 0..5000 {
             step(&tokamak, &mut first, &mut frame, even_mix(), GATE_DT_S).unwrap();
         }
         let mut second = TokamakState::try_continue(&tokamak, first.t_s, first.thermal_energy_j, first.fast_ion_energy_j).unwrap();
-        for _ in 0..1000 {
+        for _ in 0..2000 {
             step(&tokamak, &mut second, &mut frame, even_mix(), GATE_DT_S).unwrap();
         }
+        assert!(second.t_s > TIME_COMPARED_MAX_S);
         assert_eq!(second.t_s.to_bits(), straight.t_s.to_bits());
         assert_eq!(second.thermal_energy_j.to_bits(), straight.thermal_energy_j.to_bits());
         assert_eq!(second.fast_ion_energy_j.to_bits(), straight.fast_ion_energy_j.to_bits());
         assert!(within(first.fusion_energy_j + second.fusion_energy_j, straight.fusion_energy_j, 1.0e-12));
-        // Continued at the end, the first step is refused.
-        let mut late = TokamakState::try_continue(&tokamak, TIME_MAX_S, 4.0e6, 0.5e6).unwrap();
-        let held = late;
-        assert_eq!(step(&tokamak, &mut late, &mut frame, even_mix(), FLOOR_DT_S), Err(StepReject::TimeBeyondCard));
-        assert_eq!(late, held);
-        // A single first step that ends exactly on 5.475 s in decimal lands, at four step sizes.
-        for (start_text, dt_text) in [("5.474", "0.001"), ("5.4745", "0.0005"), ("5.4749", "0.0001"), ("5.474999", "0.000001")] {
-            let elapsed: f64 = start_text.parse().unwrap();
-            let dt_s: f64 = dt_text.parse().unwrap();
-            let mut last = TokamakState::try_continue(&tokamak, elapsed, 4.0e6, 0.5e6).unwrap();
-            assert_eq!(step(&tokamak, &mut last, &mut frame, even_mix(), dt_s), Ok(()), "{start_text} + {dt_text}");
-            assert!((last.t_s - TIME_MAX_S).abs() <= tokamak.time_end_allowance_s(dt_s));
-            assert_eq!(step(&tokamak, &mut last, &mut frame, even_mix(), dt_s), Err(StepReject::TimeBeyondCard));
-        }
         // One step of 1 ms and a thousand of 1 µs over the same span agree.
         let (_, mut one) = inside();
         step(&tokamak, &mut one, &mut frame, even_mix(), GATE_DT_S).unwrap();
@@ -1957,61 +2022,126 @@ mod tests {
     }
 
     /// 46 MJ of thermal energy at 1.65e19 per cubic metre is 79 keV, 103 keV
-    /// at the centre of the profile: above the fit. No start the published
-    /// bounds allow reaches it; the card's own step names it.
+    /// at the centre of the profile: above the fit. Under the Troyon limit at
+    /// 6 MA and 6 T the step names it, and below 0.2 keV it names the floor.
     #[test]
-    fn a_temperature_above_the_reactivity_fit_is_refused() {
-        let (tokamak, mut state) = start(46.0e6, 0.0);
-        let held = state;
-        let mut frame = blank_frame();
-        let load = TokamakLoad { line_density_per_m3: LINE_DENSITY_MIN_PER_M3, ..even_mix() };
-        assert!((1.0 + PROFILE_EXPONENT) * tokamak.temperature_kev(46.0e6, LINE_DENSITY_MIN_PER_M3) > 100.0);
-        assert!(tokamak.temperature_kev(THERMAL_ENERGY_MAX_J, LINE_DENSITY_MIN_PER_M3) < 17.0);
-        assert!((1.0 + PROFILE_EXPONENT) * tokamak.temperature_kev(THERMAL_ENERGY_MAX_J, LINE_DENSITY_MIN_PER_M3) < 22.0);
-        assert_eq!(step(&tokamak, &mut state, &mut frame, load, GATE_DT_S), Err(StepReject::TemperatureAboveReactivityFit));
-        assert_eq!(state, held);
-        proof_intact(&frame);
+    fn a_temperature_outside_the_reactivity_fit_is_refused() {
+        let tokamak = TokamakJetDte1::elmy_h_mode();
+        let load = load(20.0e6, 1.0e6, 1.65e19, 6.0e6, 6.0, 0.5);
+        assert!((1.0 + PROFILE_EXPONENT) * tokamak.temperature_kev(46.0e6, 1.65e19) > 100.0);
+        assert!(46.0e6 < tokamak.troyon_stored_energy_j(6.0e6, 6.0));
+        for (thermal, expected) in [(46.0e6, StepReject::TemperatureAboveReactivityFit), (thermal_at(0.199, 1.65e19), StepReject::TemperatureBelowReactivityFit)] {
+            let (_, mut state) = start(thermal, 0.0);
+            let held = state;
+            let mut frame = blank_frame();
+            assert_eq!(step(&tokamak, &mut state, &mut frame, load, GATE_DT_S), Err(expected));
+            assert_eq!(state_in_card(&tokamak, thermal, 0.0, load), Err(expected));
+            assert_eq!(state, held);
+            proof_intact(&frame);
+        }
     }
 
-    /// Full heating at 1.65 MA, 1.80 T and 0.83 of the Greenwald density, from
-    /// 2 MJ: the two stores rise until the normalised beta reaches the
-    /// envelope's 2.21, and the step that would cross it is refused with the
-    /// state on the last landed step. Without the envelope, at 2e19 per cubic
-    /// metre from 1 MJ, the stores go on to the Troyon limit and stop there.
+    /// Full heating at 1.65 MA and 1.80 T, from 2 MJ: the two stores rise
+    /// past the compared normalised beta of 2.21. At 0.83 of the Greenwald
+    /// density, held at 1 ms, the run is stopped where the ceiling of the
+    /// state the step would land on falls under 1 ms; stepped at the ceiling
+    /// of each state, it settles at a normalised beta of 2.73, where the loss
+    /// balances the heating, and lands 20,000 steps. At 2e19 per cubic metre
+    /// from 1 MJ, stepped the same way, the stores go on to the Troyon limit,
+    /// and the step that would cross it is refused with the state on the last
+    /// landed step.
     #[test]
-    fn the_beta_envelope_and_the_troyon_limit_stop_a_run_and_keep_the_last_state() {
+    fn the_troyon_limit_stops_a_run_and_keeps_the_last_state() {
         let tokamak = TokamakJetDte1::elmy_h_mode();
-        let dense = load(HEATING_POWER_MAX_W, OHMIC_POWER_MIN_W, 0.83 * tokamak.greenwald_density_per_m3(1.65e6), 1.65e6, 1.80, 0.0);
+        let dense = load(HEATING_POWER_COMPARED_MAX_W, OHMIC_POWER_COMPARED_MIN_W, 0.83 * tokamak.greenwald_density_per_m3(1.65e6), 1.65e6, 1.80, 0.0);
         let thin = TokamakLoad { line_density_per_m3: 2.0e19, ..dense };
-        for (envelope, load, thermal, expected, limit) in [
-            (true, dense, 2.0e6, StepReject::BetaOutsideComparison, BETA_NORMALISED_COMPARED_MAX),
-            (false, thin, 1.0e6, StepReject::BetaAboveTroyon, TROYON_BETA_NORMALISED_MAX),
+        for (at, thermal, follow, expected) in [
+            (dense, 2.0e6, false, Some(StepReject::DtAboveStateCeiling)),
+            (dense, 2.0e6, true, None),
+            (thin, 1.0e6, true, Some(StepReject::BetaAboveTroyon)),
         ] {
             let (_, mut state) = start(thermal, 0.1e6);
             let mut frame = blank_frame();
             let mut steps = 0;
+            let mut passed_compared = false;
             let end = loop {
+                if steps == 20_000 {
+                    break None;
+                }
                 let held = state;
                 let frame_t = frame.t;
-                let result = if envelope {
-                    step(&tokamak, &mut state, &mut frame, load, GATE_DT_S)
-                } else {
-                    step_structure(&tokamak, &mut state, &mut frame, load, GATE_DT_S)
-                };
+                let ceiling = tokamak.state_ceiling_dt_s(state.thermal_energy_j, state.fast_ion_energy_j, at);
+                let dt_s = if follow && ceiling < GATE_DT_S { ceiling } else { GATE_DT_S };
+                let mut result = step(&tokamak, &mut state, &mut frame, at, dt_s);
+                if follow && result == Err(StepReject::DtAboveStateCeiling) {
+                    // Shorter still where the trial step lands: half lands.
+                    result = step(&tokamak, &mut state, &mut frame, at, 0.5 * dt_s);
+                }
                 match result {
                     Ok(()) => steps += 1,
                     Err(reject) => {
                         assert_eq!(state, held);
                         assert_eq!(frame.t, frame_t);
-                        break reject;
+                        break Some(reject);
                     }
                 }
-                assert!(steps < 6_000);
+                assert!(state.residual_conservation_error < 0.05 * RESIDUAL_CONSERVATION_LIMIT);
+                passed_compared |= state.beta_normalised > BETA_NORMALISED_COMPARED_MAX;
             };
             assert_eq!(end, expected);
+            assert!(passed_compared);
             assert!(steps > 10);
-            assert!(state.beta_normalised <= limit);
-            assert!(state.beta_normalised > 0.98 * limit, "{}", state.beta_normalised);
+            if expected == Some(StepReject::BetaAboveTroyon) {
+                assert!(state.beta_normalised <= TROYON_BETA_NORMALISED_MAX);
+                assert!(state.beta_normalised > 0.98 * TROYON_BETA_NORMALISED_MAX, "{}", state.beta_normalised);
+            }
+            if expected.is_none() {
+                assert!(within(state.beta_normalised, 2.73, 2.0e-3), "{}", state.beta_normalised);
+            }
+            proof_intact(&frame);
+        }
+    }
+
+    /// The strongest start attacked: eight times the thermal energy in the
+    /// fast ions, at 2e20 per cubic metre and 1 keV, under 7 MA and 7 T. At
+    /// the state ceiling the truncation of the step passes the ledger's limit
+    /// after about a hundred steps, and that step is refused as
+    /// FirstLawBreach with the state kept; at a quarter of the ceiling the
+    /// ledger closes for 3000 steps.
+    #[test]
+    fn the_strongest_fast_ion_start_is_held_by_the_ledger_at_the_full_ceiling() {
+        let tokamak = TokamakJetDte1::elmy_h_mode();
+        let at = load(20.0e6, 1.0e6, 2.0e20, 7.0e6, 7.0, 0.5);
+        let thermal = thermal_at(1.0, 2.0e20);
+        for (fraction, closes) in [(1.0, false), (0.25, true)] {
+            let (_, mut state) = start(thermal, 8.0 * thermal);
+            let mut frame = blank_frame();
+            let mut landed = 0;
+            let mut worst = 0.0_f64;
+            let end = loop {
+                if landed == 3_000 {
+                    break None;
+                }
+                let dt_s = fraction * tokamak.state_ceiling_dt_s(state.thermal_energy_j, state.fast_ion_energy_j, at);
+                let held = state;
+                match step(&tokamak, &mut state, &mut frame, at, dt_s) {
+                    Ok(()) => {
+                        landed += 1;
+                        worst = worst.max(state.residual_conservation_error);
+                    }
+                    Err(reject) => {
+                        assert_eq!(state, held);
+                        break Some(reject);
+                    }
+                }
+            };
+            if closes {
+                assert_eq!(end, None);
+                assert!(worst < 1.0e-9, "{worst}");
+            } else {
+                assert_eq!(end, Some(StepReject::FirstLawBreach), "{landed}");
+                assert!(landed > 50 && landed < 300, "{landed}");
+            }
             proof_intact(&frame);
         }
     }
@@ -2028,7 +2158,6 @@ mod tests {
             TROYON_BETA_NORMALISED_MAX,
             1.0e-14
         ));
-        assert!(within(tokamak.largest_stored_energy_j(), 2.253e7, 1.0e-3), "{}", tokamak.largest_stored_energy_j());
         let mut state = TokamakState::try_start(&tokamak, 0.9 * limit_j, 0.11 * limit_j).unwrap();
         let held = state;
         let mut frame = blank_frame();
@@ -2037,22 +2166,27 @@ mod tests {
         proof_intact(&frame);
     }
 
-    /// The flag is set above 0.85 of the Greenwald density, which the
-    /// compared span of 0.834 does not reach: at that span the frame carries
-    /// no flag, and a density above it is refused by name.
+    /// The flag is set above 0.85 of the Greenwald density. The compared span
+    /// of 0.834 does not reach it; from 0.85 to the Greenwald density itself
+    /// the frame carries it, and above the Greenwald density the step is refused.
     #[test]
-    fn the_density_flag_is_not_reached_inside_the_envelope() {
+    fn the_density_flag_is_set_between_0_85_and_the_greenwald_density() {
         let tokamak = TokamakJetDte1::elmy_h_mode();
-        let at_span = load(10.0e6, 1.0e6, GREENWALD_FRACTION_MAX * tokamak.greenwald_density_per_m3(2.5e6), 2.5e6, 2.6, 0.5);
+        let greenwald = tokamak.greenwald_density_per_m3(2.5e6);
+        assert!(GREENWALD_FRACTION_COMPARED_MAX < NEAR_DENSITY_LIMIT_FRACTION);
+        for (fraction, flagged) in [(GREENWALD_FRACTION_COMPARED_MAX, false), (NEAR_DENSITY_LIMIT_FRACTION, false), (0.86, true), (0.95, true), (1.0, true)] {
+            let at = load(10.0e6, 1.0e6, fraction * greenwald, 2.5e6, 2.6, 0.5);
+            let (_, mut state) = start(5.0e6, 1.0e6);
+            let mut frame = blank_frame();
+            step(&tokamak, &mut state, &mut frame, at, GATE_DT_S).unwrap();
+            assert_eq!(state.near_density_limit, flagged, "{fraction}");
+            assert_eq!(frame.flags, if flagged { super::FLAG_NEAR_DENSITY_LIMIT } else { 0 }, "{fraction}");
+            proof_intact(&frame);
+        }
+        let over = load(10.0e6, 1.0e6, above(greenwald), 2.5e6, 2.6, 0.5);
         let (_, mut state) = start(5.0e6, 1.0e6);
         let mut frame = blank_frame();
-        step(&tokamak, &mut state, &mut frame, at_span, GATE_DT_S).unwrap();
-        assert!(!state.near_density_limit);
-        assert_eq!(frame.flags, 0);
-        assert!(GREENWALD_FRACTION_MAX < super::NEAR_DENSITY_LIMIT_FRACTION);
-        let above = TokamakLoad { line_density_per_m3: 0.86 * tokamak.greenwald_density_per_m3(2.5e6), ..at_span };
-        assert_eq!(step(&tokamak, &mut state, &mut frame, above, GATE_DT_S), Err(StepReject::GreenwaldFractionAboveComparison));
-        proof_intact(&frame);
+        assert_eq!(step(&tokamak, &mut state, &mut frame, over, GATE_DT_S), Err(StepReject::DensityAboveGreenwald));
     }
 
     #[test]
@@ -2078,10 +2212,7 @@ mod tests {
             let held = state;
             let mut frame = blank_frame();
             let end = step_with(&tokamak, &mut state, &mut frame, load, GATE_DT_S, euler);
-            assert!(
-                end == Err(StepReject::SpontaneousGeneration) || end == Err(StepReject::FirstLawBreach),
-                "{end:?}"
-            );
+            assert!(ledger(end), "{end:?}");
             assert_eq!(state, held);
             assert_eq!(frame.t, -1.0);
             proof_intact(&frame);
@@ -2122,30 +2253,6 @@ mod tests {
         });
         assert_eq!(end, Err(StepReject::FirstLawBreach));
         assert_eq!(trial, state);
-    }
-
-    #[test]
-    fn the_step_ceiling_and_floor_are_present_and_hold_the_ledger() {
-        let tokamak = TokamakJetDte1::elmy_h_mode();
-        assert_eq!(tokamak.gate_dt_s(), Some(GATE_DT_S));
-        assert_eq!(tokamak.floor_dt_s(), Some(FLOOR_DT_S));
-        // The ceiling is under an eighteenth of the shortest slowing-down time
-        // inside the declared range, 18.0 ms, and under a fortieth of the shortest
-        // loss time, 0.31 of the smallest confinement time, 46.5 ms.
-        let shortest = tokamak.slowing_time_coeff_s * TEMPERATURE_COMPARED_MIN_KEV.sqrt()
-            / (LINE_DENSITY_MAX_PER_M3 / 1.0e19);
-        assert!(within(shortest, 0.01806, 5.0e-3), "{shortest}");
-        assert!(GATE_DT_S <= shortest / 18.0, "{shortest}");
-        assert!(GATE_DT_S < IPB98_EXP_LOSS * CONFINEMENT_TIME_MIN_S / 40.0);
-        // A step at the floor moves both stores and the clock at the end of the card.
-        let (_, mut state) = inside();
-        let held = state;
-        let mut frame = blank_frame();
-        step(&tokamak, &mut state, &mut frame, even_mix(), FLOOR_DT_S).unwrap();
-        assert!(state.thermal_energy_j != held.thermal_energy_j);
-        assert!(state.fast_ion_energy_j != held.fast_ion_energy_j);
-        assert!(TIME_MAX_S - FLOOR_DT_S < TIME_MAX_S);
-        assert!(state.residual_conservation_error < RESIDUAL_CONSERVATION_LIMIT);
     }
 
     /// Halving the step changes the state after a quarter second by the

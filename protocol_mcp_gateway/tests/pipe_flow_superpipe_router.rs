@@ -1,6 +1,8 @@
 //! `pipe_flow_superpipe` through `POST /solve`, against a direct call to
 //! `genesis_solvers`, with its refusals at the door and its description.
 
+mod answer_text;
+
 use std::time::Duration;
 
 use genesis_solvers::pipe_flow_superpipe::{self as pipe, PipeQuestion};
@@ -23,7 +25,7 @@ async fn spawn_app() -> String {
 async fn post(base: &str, path: &str, body: &Value) -> (u16, String) {
     let client = Client::new();
     let url = format!("{base}{path}");
-    let text = serde_json::to_string(body).unwrap();
+    let text = answer_text::as_sent(body);
     let mut last_error = None;
     for _ in 0..20 {
         match client
@@ -35,7 +37,9 @@ async fn post(base: &str, path: &str, body: &Value) -> (u16, String) {
         {
             Ok(response) => {
                 let status = response.status().as_u16();
-                return (status, response.text().await.unwrap());
+                let text = response.text().await.unwrap();
+                answer_text::remember(&text);
+                return (status, text);
             }
             Err(error) => {
                 last_error = Some(error);
@@ -112,7 +116,8 @@ async fn a_compared_condition_matches_the_solver_bit_for_bit_and_its_proof_holds
     assert_numbers(result, "profile_y_plus", &direct.profile_y_plus);
     assert_numbers(result, "profile_u_plus", &direct.profile_u_plus);
     assert_numbers(result, "profile_u_over_bulk", &direct.profile_u_over_bulk);
-    assert_eq!(result.as_object().unwrap().len(), 18, "nine values and their hex");
+    assert_number(result, "bulk_mach_number", direct.bulk_mach_number);
+    assert_eq!(result.as_object().unwrap().len(), 20, "ten values and their hex");
     // At 35.7 million only the stations from 0.015 of the radius out are
     // served: nearer than 0.010591, the Pitot profiles' nearest point, nothing
     // was compared.
@@ -142,7 +147,7 @@ async fn a_compared_condition_matches_the_solver_bit_for_bit_and_its_proof_holds
     // The proof holds, and an edit of a number breaks it by name.
     let (status, text) = post(&base, "/verify_solution", &body).await;
     assert_eq!(status, 200, "{text}");
-    assert_eq!(serde_json::from_str::<Value>(&text).unwrap(), json!({ "holds": true, "cause": null, "checked": protocol_mcp_gateway::WHOLE_SOLUTION_CHECKED }));
+    assert_eq!(serde_json::from_str::<Value>(&text).unwrap(), json!({ "holds": true, "values_hold": true, "cause": null, "compared": protocol_mcp_gateway::WHOLE_SOLUTION_COMPUTED }));
     for (section, key) in [("result", "darcy_friction_factor_hex"), ("result", "centreline_to_bulk_velocity_ratio_hex"), ("invariants", "largest_imbalance_hex"), ("invariants", "momentum_ledger_residual_hex")] {
         let mut edited = body.clone();
         edited[section][key] = json!(flip_hex(body[section][key].as_str().unwrap()));
@@ -167,23 +172,21 @@ async fn a_compared_condition_matches_the_solver_bit_for_bit_and_its_proof_holds
 }
 
 #[tokio::test]
-async fn a_question_outside_what_was_compared_is_422_with_its_name_and_no_seal() {
+async fn a_question_past_a_limit_of_the_physics_is_422_with_its_name_and_no_seal() {
     let base = spawn_app().await;
     let cases = [
         (flow(2000.0, 101_325.0, 296.0, 0.15), "LaminarFlow"),
         (flow(2300.0, 101_325.0, 296.0, 0.15), "TransitionalFlow"),
         (flow(3999.0, 101_325.0, 296.0, 0.15), "TransitionalFlow"),
-        (flow(4000.0, 101_325.0, 296.0, 0.15), "ReynoldsOutOfRange"),
-        (flow(31_576.999999999996, 101_325.0, 296.0, 0.15), "ReynoldsOutOfRange"),
-        (flow(35_724_000.000000004, 18_000_000.0, 296.0, 0.15), "ReynoldsOutOfRange"),
+        (flow(1.0e10_f64.next_up(), 3.0e9, 296.0, 0.15), "ReynoldsAboveGrid"),
+        (flow(1.0e11, 3.0e10, 296.0, 0.15), "ReynoldsAboveGrid"),
         (flow(-1.0, 101_325.0, 296.0, 0.15), "LaminarFlow"),
-        (flow(1.0e5, 100_089.99999999999, 296.0, 0.15), "PressureOutOfRange"),
-        (flow(3.5e7, 18_928_000.000000004, 296.0, 0.15), "PressureOutOfRange"),
-        (flow(1.0e5, 101_325.0, 291.78, 0.15), "TemperatureOutOfRange"),
-        (flow(1.0e5, 101_325.0, 300.13000000000005, 0.15), "TemperatureOutOfRange"),
-        (flow(1.0e5, 101_325.0, 350.0, 0.15), "TemperatureOutOfRange"),
-        (flow(3.5e7, 101_325.0, 296.0, 0.15), "ReynoldsPerPascalOutOfRange"),
-        (flow(40_000.0, 1.0e6, 296.0, 0.15), "ReynoldsPerPascalOutOfRange"),
+        (flow(1.0e5, 0.0, 296.0, 0.15), "PressureNotPositive"),
+        (flow(1.0e5, -101_325.0, 296.0, 0.15), "PressureNotPositive"),
+        (flow(1.0e5, 101_325.0, 169.99999999999997, 0.15), "TemperatureOutsideViscosityLaw"),
+        (flow(1.0e5, 101_325.0, 1900.0000000000002, 0.15), "TemperatureOutsideViscosityLaw"),
+        (flow(3.5e7, 101_325.0, 296.0, 0.15), "MachAboveIncompressible"),
+        (flow(1.0e6, 101_325.0, 296.0, 0.15), "MachAboveIncompressible"),
         (flow(1.0e5, 101_325.0, 296.0, 0.15000000000000002), "RoughWall"),
         (flow(1.0e5, 101_325.0, 296.0, 2.5), "RoughWall"),
         (flow(1.0e5, 101_325.0, 296.0, -0.01), "RoughnessNegative"),
@@ -194,7 +197,14 @@ async fn a_question_outside_what_was_compared_is_422_with_its_name_and_no_seal()
         assert!(text.starts_with("Physical Violation: "), "{text}");
         assert!(text.contains(&format!("({name}).")), "{request}: {text}");
         assert!(!text.contains("solution_seal"), "{text}");
+        assert!(!text.contains("..="), "{text}");
     }
+    let (status, text) = post(&base, "/solve", &flow(1.0e5, 101_325.0, 100.0, 0.15)).await;
+    assert_eq!(status, 422);
+    assert_eq!(
+        text,
+        "Physical Violation: temperature 100 K is outside 170 to 1900 K, where Sutherland's law gives the viscosity of air, so the bulk velocity cannot be known (TemperatureOutsideViscosityLaw)."
+    );
     let (status, text) = post(&base, "/solve", &flow(2000.0, 101_325.0, 296.0, 0.15)).await;
     assert_eq!(status, 422);
     assert_eq!(
@@ -204,7 +214,7 @@ async fn a_question_outside_what_was_compared_is_422_with_its_name_and_no_seal()
     let others = [
         (
             json!({ "solver": "pipe_flow_superpipe", "parameters": { "bulk_reynolds_number": 1.0e5, "static_pressure_pa": 101_325.0, "temperature_k": 296.0 } }),
-            "Missing required parameter: 'wall_roughness_rms_um'".to_string(),
+            "Missing required parameter: 'wall_roughness_rms_um' (InputMissing).".to_string(),
         ),
         (
             json!({ "solver": "pipe_flow_superpipe", "parameters": { "bulk_reynolds_number": 1.0e5, "static_pressure_pa": 101_325.0, "temperature_k": 296.0, "wall_roughness_rms_um": 0.15, "diameter_m": 0.2 } }),
@@ -218,12 +228,26 @@ async fn a_question_outside_what_was_compared_is_422_with_its_name_and_no_seal()
     }
 }
 
-/// Every end of the declared range is answered and sealed, and so is each
-/// compared run at the corners of the envelope.
+/// Every end of the served range is answered and sealed, and so is each
+/// compared run at the corners of the compared envelope, and each question
+/// past it where engine 0.8.0 refused by name: Reynolds numbers below
+/// 31,577 and above 35,724,000, pressures, temperatures and bulk velocities
+/// no compared run had.
 #[tokio::test]
 async fn the_ends_of_the_range_and_the_compared_corners_are_answered() {
     let base = spawn_app().await;
     for request in [
+        flow(4000.0, 101_325.0, 296.0, 0.15),
+        flow(31_576.999999999996, 101_325.0, 296.0, 0.15),
+        flow(35_724_000.000000004, 18_000_000.0, 296.0, 0.15),
+        flow(1.0e5, 100_089.99999999999, 296.0, 0.15),
+        flow(3.5e7, 18_928_000.000000004, 296.0, 0.15),
+        flow(1.0e5, 101_325.0, 291.78, 0.15),
+        flow(1.0e5, 101_325.0, 350.0, 0.15),
+        flow(1.0e5, 101_325.0, 170.0, 0.15),
+        flow(4.0e4, 1.0e6, 1900.0, 0.15),
+        flow(40_000.0, 1.0e6, 296.0, 0.15),
+        flow(1.0e10, 3.0e9, 296.0, 0.15),
         flow(31_577.0, 100_290.0, 300.12, 0.15),
         flow(41_727.0, 100_090.0, 300.13, 0.15),
         flow(246_600.0, 344_505.0, 291.79, 0.15),
@@ -238,6 +262,12 @@ async fn the_ends_of_the_range_and_the_compared_corners_are_answered() {
         assert!(body["solution_seal"].is_string());
         let y_plus = body["result"]["profile_y_plus"].as_array().unwrap();
         assert!(y_plus.iter().all(|y| y.as_f64().unwrap() >= 50.0));
+        let mach = body["result"]["bulk_mach_number"].as_f64().unwrap();
+        assert!(mach > 0.0 && mach <= pipe::MACH_MAX, "{request} {mach}");
+        assert!(body["invariants"]["momentum_ledger_residual"].as_f64().unwrap().abs() <= pipe::MOMENTUM_LEDGER_TOLERANCE);
+        let (status, checked) = post(&base, "/verify_solution", &body).await;
+        assert_eq!(status, 200, "{checked}");
+        assert_eq!(serde_json::from_str::<Value>(&checked).unwrap()["holds"], true, "{checked}");
     }
 }
 
@@ -247,7 +277,7 @@ async fn the_description_carries_the_standing_and_its_example_runs_unchanged() {
     let listed = reqwest::get(format!("{base}/solvers")).await.unwrap();
     let listed: Value = serde_json::from_str(&listed.text().await.unwrap()).unwrap();
     let solvers = listed["solvers"].as_array().expect("solvers");
-    assert_eq!(solvers.len(), 13);
+    assert_eq!(solvers.len(), 24);
     assert_eq!(solvers[12]["solver"], "pipe_flow_superpipe");
     let summary = solvers[12]["summary"].as_str().expect("a sentence");
     assert!(summary.contains("nothing fitted"), "{summary}");
@@ -274,14 +304,21 @@ async fn the_description_carries_the_standing_and_its_example_runs_unchanged() {
     }
     let inputs = described["inputs"].as_array().expect("inputs");
     assert_eq!(inputs.len(), 4);
-    assert_eq!(inputs[0]["minimum"], pipe::REYNOLDS_MIN);
+    assert_eq!(inputs[0]["minimum"], pipe::TRANSITIONAL_BELOW_REYNOLDS);
     assert_eq!(inputs[0]["maximum"], pipe::REYNOLDS_MAX);
-    assert_eq!(inputs[1]["minimum"], pipe::PRESSURE_MIN_PA);
-    assert_eq!(inputs[1]["maximum"], pipe::PRESSURE_MAX_PA);
-    assert_eq!(inputs[2]["minimum"], pipe::TEMPERATURE_MIN_K);
-    assert_eq!(inputs[2]["maximum"], pipe::TEMPERATURE_MAX_K);
+    assert_eq!(inputs[1]["minimum"], 0.0);
+    assert_eq!(inputs[1]["minimum_exclusive"], true);
+    assert_eq!(inputs[2]["minimum"], 170.0);
+    assert_eq!(inputs[2]["maximum"], 1900.0);
     assert_eq!(inputs[3]["maximum"], pipe::WALL_ROUGHNESS_RMS_MAX_UM);
+    assert!(inputs[0]["bound"].as_str().unwrap().contains("31,577"));
+    assert!(inputs[1]["bound"].as_str().unwrap().contains("100,090 to 18,928,000 Pa"));
+    assert!(inputs[2]["bound"].as_str().unwrap().contains("291.79 to 300.13 K"));
+    assert!(!text.contains("291.78999999999996"), "the lowest compared temperature prints as 291.79");
     assert_eq!(described["refusals"].as_array().expect("refusals").len(), 16);
+    for refusal in described["refusals"].as_array().unwrap() {
+        assert!(!refusal["meaning"].as_str().unwrap().contains("..="), "{refusal}");
+    }
     assert_eq!(described["locked"]["kappa"], 0.41);
     assert_eq!(described["locked"]["van_driest_a_plus"], 26.0);
 

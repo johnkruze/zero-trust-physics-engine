@@ -17,6 +17,14 @@ pub mod modulus_bam_s355;
 pub mod pb11_reaction;
 pub mod step_flow_armaly;
 pub mod pipe_flow_superpipe;
+pub mod culture_trichoderma_atp;
+pub mod normal;
+pub mod blast_wave_tnt_air;
+pub mod plane_stress_fe;
+pub mod stress_plate_hole_s235;
+pub mod stress_plate_hole_s235_elastic;
+pub mod air11;
+pub mod plasma_sheath_ram_c2;
 
 /// This crate's version, for a caller that stamps results.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -24,3 +32,11 @@ pub mod bosch_hale;
 pub mod tokamak_dt_beam_target;
 #[cfg(test)]
 mod tokamak_dt_beam_target_reference;
+pub mod junction_nist_b7_s2;
+pub mod line_transient;
+pub mod water_hammer_oil_line;
+pub mod orifice_air_chamber;
+pub mod pneumatic_hose_resonance;
+pub mod icf_hotspot_burn;
+pub mod ln2_nitrogen;
+pub mod ln2_line_dlr_fttf;

@@ -32,8 +32,10 @@
 //! from earlier rain, a cell rested at partial charge, a known quiet period,
 //! a tire part way down the track) keep taking the values stated, unchecked,
 //! and are not listed: `tire_eve_r19_ice` (`distance_m`, `slip_held_s`),
-//! `los_jwst_fine_guide` (`quiet_before_start_s`), `generator_mmrtg_f1`
-//! (`mission_time_s`, the mission clock itself and the card's whole state),
+//! `los_jwst_fine_guide` (`quiet_before_start_s`), `cell_18650pf` (`soc`, a
+//! rested cell below full charge), `generator_mmrtg_f1` and its companion
+//! `generator_mmrtg_seebeck` (`mission_time_s`, the mission clock itself
+//! and the card's whole state),
 //! `link_gothenburg_10010`'s `antenna_water_db`, and `cell_2170_m80`'s
 //! `charge_removed_ah`. `fingerpad_p02_glass` refuses every start but zero
 //! twist on its own.
@@ -58,8 +60,6 @@ enum Fresh {
     Zero,
     /// A 3-vector of zeros.
     ZeroVector,
-    /// The number 1.
-    One,
     /// The first segment's value of the named load field.
     FirstLoad(&'static str),
     /// The card's own value of a ledger quantity at the stated start, within
@@ -122,11 +122,6 @@ const RULES: &[Rule] = &[
         fresh_words: "energy_defect_j 0",
     },
     Rule {
-        card: "cell_18650pf",
-        fields: &[Field { name: "soc", fresh: Fresh::One }],
-        fresh_words: "soc 1, a discharge from full charge",
-    },
-    Rule {
         card: "satellite_lageos1",
         fields: &[Field { name: "forecast_elapsed_s", fresh: Fresh::Zero }],
         fresh_words: "forecast_elapsed_s 0, a state turned from a published orbit",
@@ -138,11 +133,6 @@ const RULES: &[Rule] = &[
             Field { name: "case_temperature_most_c", fresh: Fresh::FirstLoad("case_temperature_c") },
         ],
         fresh_words: "case_temperature_least_c and case_temperature_most_c both equal to its first case_temperature_c",
-    },
-    Rule {
-        card: "link_gothenburg_10010",
-        fields: &[Field { name: "gauge_minute_elapsed_s", fresh: Fresh::Zero }],
-        fresh_words: "gauge_minute_elapsed_s 0, a link on a minute's boundary",
     },
     Rule {
         card: "tokamak_jet_dte1",
@@ -222,7 +212,6 @@ pub(crate) fn field_sentence(card: &str, field: &str) -> Option<String> {
     let fresh = match one.fresh {
         Fresh::Zero => "0".to_string(),
         Fresh::ZeroVector => "[0, 0, 0]".to_string(),
-        Fresh::One => "1".to_string(),
         Fresh::FirstLoad(load) => format!("the first segment's {load} (in a single step, its {load})"),
         Fresh::Own { terms, what } => allowance_words(terms, what),
     };
@@ -250,7 +239,7 @@ fn how(card: &str) -> &'static str {
     if crate::chain::not_continued(card).is_some() {
         "a start that carries a run on must arrive with from, and a continuation through from is not served on this card (ContinuationNotOnCard), so only a fresh start is taken"
     } else {
-        "a start that carries a run on must arrive with from, naming the sealed run it continues, so that what it carries is checked against that run's seal"
+        "a start that carries a run on must arrive with from, naming the sealed run it continues, so that what it carries is compared with that run's seal"
     }
 }
 
@@ -282,7 +271,6 @@ pub(crate) fn check(
         };
         let (holds, fresh) = match field.fresh {
             Fresh::Zero => (number(Some(given)) == Some(0.0), "0".to_string()),
-            Fresh::One => (number(Some(given)) == Some(1.0), "1".to_string()),
             Fresh::ZeroVector => (
                 given
                     .as_array()

@@ -77,9 +77,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                     write_line(&stdout, &response).await?;
                     continue;
                 }
-                client_write.write_all(&line).await?;
-                if !line.ends_with(b"\n") {
-                    client_write.write_all(b"\n").await?;
+                // A verification's long form holds the answer sent byte for
+                // byte: the library reads arguments as values, so the exact
+                // text of them goes with the call, under params._meta.
+                match guard::with_arguments_text(&line) {
+                    Some(carried) => client_write.write_all(&carried).await?,
+                    None => {
+                        client_write.write_all(&line).await?;
+                        if !line.ends_with(b"\n") {
+                            client_write.write_all(b"\n").await?;
+                        }
+                    }
                 }
                 client_write.flush().await?;
             }

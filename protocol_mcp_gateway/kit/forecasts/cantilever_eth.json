@@ -1,0 +1,21 @@
+{
+ "model": "cantilever_eth",
+ "verdict": "missed",
+ "protocol": {
+  "path": "evidence/research/resonator_eth_aluminium_cantilever/analysis/prereg.json",
+  "sha256": "d081cc5ae51b5de4a028cd17b4e1ae80b402f71fdc786f82876713f3b925d4a6",
+  "committed": {
+   "crate": "protocol_mcp_gateway",
+   "commit": "8e9f44d15f35c0fc973cd5cdd0848e3ae38127b3",
+   "utc": "2026-10-09T08:06:19Z",
+   "how": "The diff of 'Serve the cantilever_eth card in the signal domain ...' adds the pass line 'Fixed before any scoring (pre-registration SHA-256 d081cc5a...25d4a6)'; 3d5661e6f3e6bf8a4965694d025cf96ad0bd0a09, same second, adds a test holding the hash. Author time of both 2026-10-09T06:23:38Z."
+  }
+ },
+ "scored": {
+  "utc": "2026-10-09T07:52:47Z",
+  "evidence": "evidence/research/resonator_eth_aluminium_cantilever/card/SEALED_RUN_FINGERPRINT.txt: 'the sealed comparison, which ran once at 2026-10-09T07:52:47Z' on the sealed twelve seconds of test1b; card/sealed_output.txt born 07:52:48Z."
+ },
+ "forecast_first": "not held",
+ "registered_by": "backfill from the record, 2026-10-15",
+ "notes": "The first crate commit carrying the hash is 13 min 32 s after the sealed comparison; its author time (06:23:38Z) is earlier but it entered the history at its committer time, after the scoring. Outside Git before the scoring: analysis/prereg_sha256.txt records the hash at 2026-10-06T22:13:38Z, before the forecast; card/SEALED_RUN_FINGERPRINT.txt fingerprints the declaration and script at 07:52:33Z; it says the folder is not under version control. A forecast outside the engine on the opened window of the held-back test was scored on 2026-10-07 (analysis/out/forecast.json, born 2026-10-07T00:01:17Z); the verdict rests on the sealed window. A second scoring by a different agent (output born 08:00:08Z, fingerprinted 08:10:38Z) reached the same verdict. Posted to the public pass-marks repository in GitHub-signed commit 182c79c47fc608c3d147847f9a95cc6ec912bc02 at 2026-10-13T17:56:08Z."
+}

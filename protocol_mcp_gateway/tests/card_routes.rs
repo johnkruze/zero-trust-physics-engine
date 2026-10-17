@@ -77,7 +77,7 @@ async fn the_card_routes_give_the_bytes_of_the_tools_for_all_thirty_cards() {
         .as_array()
         .unwrap()
         .clone();
-    assert_eq!(cards.len(), 31);
+    assert_eq!(cards.len(), 37);
     for entry in &cards {
         let which = json!({ "domain": entry["domain"], "card": entry["card"] });
         let (status, http_text) = post(&base, "/describe_card", &which).await;
@@ -102,8 +102,8 @@ async fn the_card_routes_refuse_as_the_tools_do() {
     let base = spawn_app().await;
 
     let cases = [
-        ("an unknown pair", 404, "Card not recognized", json!({ "domain": "energy", "card": "no_such_card" })),
-        ("a pair with the domain wrong", 404, "Card not recognized", json!({ "domain": "signal", "card": "thermal" })),
+        ("an unknown pair", 404, "Card not recognized (UnknownCard).", json!({ "domain": "energy", "card": "no_such_card" })),
+        ("a pair with the domain wrong", 404, "Card not recognized (UnknownCard).", json!({ "domain": "signal", "card": "thermal" })),
         (
             "an unknown key",
             422,
@@ -116,7 +116,7 @@ async fn the_card_routes_refuse_as_the_tools_do() {
             "Physical Violation: 'orchestrator' is not a field of this request.",
             json!({ "domain": "energy", "orchestrator": "thermal" }),
         ),
-        ("a missing key", 422, "Missing required parameter: 'card'", json!({ "domain": "energy" })),
+        ("a missing key", 422, "Missing required parameter: 'card' (InputMissing).", json!({ "domain": "energy" })),
         ("a non-string", 422, "Physical Violation: 'card' must be a string.", json!({ "domain": "energy", "card": 5 })),
     ];
     for (label, status, sentence, body) in cases {

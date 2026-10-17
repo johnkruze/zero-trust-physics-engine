@@ -8,7 +8,7 @@
 //! mission page, saved in the research folder as
 //! `lageos1_orbit/raw/reference/ilrs/lag1_general.html`.
 //!
-//! The card will be compared with the weekly orbit files of the International
+//! The card was compared with the weekly orbit files of the International
 //! Laser Ranging Service, product doi 10.5067/SLR/SLR_ILRSORB_001. The ILRS
 //! asks for this citation: Pearlman, Noll, Pavlis et al. (2019), "The ILRS:
 //! approaching 20 years and planning for the future", J Geod 93, 2161–2180,
@@ -35,9 +35,12 @@
 //! solid tide. Its Sun and Moon are approximate.
 //!
 //! This structure was chosen after scores on two opened weeks of the orbit
-//! data had been seen: a ladder of structures fixed in advance failed the pass
-//! line on those weeks, and the tide was added afterwards. The sealed weeks
-//! have had no model scored on them.
+//! data had been seen: a ladder of structures fixed in advance, sunlight
+//! pressure and relativity among its rungs, failed the pass line on those
+//! weeks, and the tide was added afterwards. The rule then named the field to
+//! degree 8; the card was built at degree 12, a departure from that rule chosen
+//! on the same two weeks. No model had been scored on the sealed weeks when
+//! the structure was chosen.
 //!
 //! This is a LAGEOS-1 card. The mass and the diameter are that satellite's and
 //! enter only through sunlight pressure. The card was also run on LAGEOS-2.
@@ -50,36 +53,90 @@
 //! calendar days, 2026-08-23 to 2026-09-19: four weeks of LAGEOS-1 (two of
 //! them opened while the card was designed) and four of LAGEOS-2, 56 runs of
 //! 10 s steps, each started on one day of a week and run for at most seven
-//! days, to 2026-09-20 00:00 UTC at the latest. The card serves only that: the
-//! two orbits, as bands of semi-major axis, eccentricity and inclination
-//! around each that hold every start and every landing of those runs; the
-//! radii those runs reached; those dates; and a forecast of at most seven days
-//! from a state taken from a published orbit, counted over every run it is
-//! restarted through. Outside them the card refuses by name:
-//! [`StepReject::RadiusOutsideCard`], [`StepReject::OrbitOutsideCard`],
-//! [`StepReject::EpochOutsideCard`] and [`StepReject::HorizonOutsideCard`].
-//! The step compared was 10 s.
+//! days, to 2026-09-20 00:00 UTC at the latest. Every line was met on all 42
+//! held-back runs (1 m after one revolution, 10 m after one day, 100 m after
+//! seven days): LAGEOS-1 worst 0.65 m, 3.8 m and 32 m; LAGEOS-2 worst 0.34 m,
+//! 2.9 m and 22 m. The compared orbits were LAGEOS-1, semi-major axis
+//! 12 265.14 to 12 274.83 km, eccentricity 0.003438 to 0.004375, inclination
+//! 109.8039 to 109.8235 degrees, and LAGEOS-2, 12 158.51 to 12 165.68 km,
+//! 0.013232 to 0.013761, 52.6315 to 52.6508 degrees; the radii reached were
+//! 11 997.57 to 12 326.40 km. The step compared was 10 s.
+//!
+//! The card computes past all of that: any orbit with a radius of at least
+//! the Earth's equatorial radius, 6 378.1363 km, the radius its field is
+//! scaled to, closed or not; a forecast of any length, whose error grows from
+//! what the card leaves out; and any date on which its locked TT − UTC of
+//! 69.184 s holds, from the last leap second, 2017-01-01 00:00 UTC, to
+//! 2027-06-28 00:00 UTC, when the IERS leap-second file of Bulletin C 72
+//! expires. Below the equatorial radius it refuses as
+//! [`StepReject::RadiusBelowEarthRadius`]: there the satellite is under the
+//! sphere of the Earth's equator, in the ground at the equator, and the
+//! card's field, the series of the Earth's field outside the Earth, is not
+//! the field. Outside the dates it refuses as
+//! [`StepReject::EpochOutsideLeapSecondSpan`]. A landing under 11 997 km, the
+//! lowest point any compared run reached, carries
+//! [`FLAG_BELOW_COMPARED_RADIUS`]: the same forces and the same two ledgers.
+//! The card carries no air, so the lower the orbit, the larger the drag on
+//! the sphere it does not carry; through engine 0.11 it refused under
+//! 11 997 km as `RadiusOutsideCard`. Over
+//! 2017 to 2027 the field's yearly rates, which the card does not apply, move
+//! no coefficient by more than they did in the compared weeks' distance from
+//! 2000.0, and the Sun and the Moon are placed by the same series to about a
+//! tenth of a degree.
+//!
+//! Until engine 0.9 the bands of the two orbits were also the only thing that
+//! stopped a Coriolis term with the wrong sign, which the energy ledger cannot
+//! see. The card now keeps a second ledger, of the angular momentum about the
+//! Earth's axis, which that term breaks at the first step
+//! ([`StepReject::AngularMomentumBreach`]).
 //!
 //! # The start state
 //!
 //! The published orbit files are in a frame fixed to the Earth's crust, which
-//! does not turn uniformly. A state must be turned into the card's frame, the
-//! true pole of the start epoch, before it is given to the card. That is done
-//! outside the engine. A crust-fixed state fed straight in is 21 to 22 m off
-//! within one revolution for that reason alone. `epoch_utc_s` in a request is
-//! UTC at the start of the run in seconds after 2000-01-01 12:00 UTC. The
-//! `epoch_utc_s` of a returned state is the UTC of that state: the start epoch
-//! plus `t_s`, worked out from the two at each state with one rounding and not
-//! kept as a sum that gains a step at a time. `t_s` counts from the start of
-//! the run. A final state handed back as a new start, with its `epoch_utc_s`,
-//! `position_m` and `velocity_m_s`, continues the same orbit, and the new run's
-//! `t_s` begins again at zero. `forecast_elapsed_s` in a request is the time
-//! since the state was taken from a published orbit: zero for a state turned
-//! from a published orbit, and the `forecast_elapsed_s` of a returned state for
-//! a state handed back. It is required. The card holds it, plus `t_s`, to seven
-//! days, so a forecast carried on through restarts stops where a run straight
-//! through stops. The card cannot check the number a caller states: a state
-//! stated as fresh that is not gets answers the comparison does not cover.
+//! does not turn uniformly. A state must be turned into the card's frame before
+//! it is given to the card. That is done outside the engine; the compared runs
+//! did it with
+//! `evidence/research/lageos1_orbit/analysis/10_engine_comparison.py` and its
+//! `earth_orientation.py` and `subdaily_earth_rotation.py`, as follows. The
+//! card's z axis is the celestial intermediate pole of the start epoch, from
+//! the IAU 2006/2000A precession and nutation with the celestial pole offsets
+//! dX and dY of IERS Bulletin A, held fixed in the celestial frame (GCRS)
+//! through the run. Its x axis at the start is where the Earth Rotation Angle
+//! of the start epoch puts it, from UT1 − UTC of Bulletin A, so that at the
+//! start the card's frame is the crust-fixed frame with the pole's motion
+//! against the crust, Bulletin A's x and y, turned out. From there the frame
+//! turns about that fixed axis at the locked rate 7.29211514670698e-5 rad/s,
+//! 2π × 1.00273781191135448 / 86400, and follows neither the changing length of
+//! the day nor any motion of the pole after the start. The pole's x and y and
+//! UT1 carry the diurnal and semi-diurnal ocean-tide terms of the IERS
+//! Conventions (2010), routine ORTHO_EOP; the libration terms are not applied.
+//! The velocity is turned with the time derivative of the whole turning from
+//! the crust to the celestial frame, at the true spin rate and with the slow
+//! motions of the pole, which holds for a velocity that is the exact rate of
+//! change of the crust-fixed position, as GFZ's is: the compared runs started
+//! from GFZ's file, and the combined orbit's velocity record is not such a
+//! rate. Then the locked rate's ω × r is taken off. A crust-fixed state fed
+//! straight in starts 22.9 m from the state so turned, the pole's offset from
+//! the crust's z axis alone, and through the engine it was 69 to 81 m off the
+//! published orbit after one revolution, 374 to 385 m after one day and 2.7 km
+//! after seven days, from the worked example's start, LAGEOS-1 at 2026-09-06
+//! 0 h UTC. `epoch_utc_s` in a request is UTC at the start of the run in
+//! seconds after 2000-01-01 12:00 UTC, 86,400 to each day: the five leap
+//! seconds since then are not counted, so 2017-01-01 00:00 UTC is 536500800 s;
+//! a count that includes them is 5 s larger, and from the same start it moved
+//! the distance after seven days from 31.9 to 33.6 m. The `epoch_utc_s` of a
+//! returned state is the UTC of that state: the start epoch plus `t_s`, worked
+//! out from the two at each state with one rounding and not kept as a sum that
+//! gains a step at a time. `t_s` counts from the start of the run. A final
+//! state handed back as a new start, with its `epoch_utc_s`, `position_m` and
+//! `velocity_m_s`, continues the same orbit, and the new run's `t_s` begins
+//! again at zero. `forecast_elapsed_s` in a request is the time since the state
+//! was taken from a published orbit: zero for a state turned from a published
+//! orbit, and the `forecast_elapsed_s` of a returned state for a state handed
+//! back. It is required, and reported plus `t_s`: the compared forecasts were
+//! at most seven days long, and no limit depends on it. The card cannot confirm
+//! the number a caller states: a state stated as fresh that is not gets answers
+//! the comparison does not cover.
 //!
 //! # Where the locked numbers come from
 //!
@@ -140,7 +197,11 @@
 //!
 //! J = ½ v·v − U(r) − ½ ω² (x² + y²)                U the potential of the locked field
 //! defect = J − J_anchor − W
-//! residual = |defect| / LEDGER_SCALE_J_PER_KG
+//!
+//! L_z = x u_y − y u_x                              u = v + (−ω y, ω x, 0)
+//! d T/dt = (r × (g + a))_z                         torque of the true forces, per kilogram
+//! turning defect = L_z − L_anchor − T
+//! residual = max(|defect| / LEDGER_SCALE_J_PER_KG, |turning defect| / LEDGER_SCALE_TURNING_M2_S)
 //! ```
 //!
 //! The field is evaluated in Cartesian form by a recursion on solid harmonics
@@ -169,7 +230,7 @@
 //!
 //! # The step
 //!
-//! One step is classical RK4 on seven numbers, `r`, `v` and `W`, with the Sun
+//! One step is classical RK4 on eight numbers, `r`, `v`, `W` and `T`, with the Sun
 //! and the Moon placed again at each stage time. [`SatelliteLageos1::gate_dt_s`]
 //! is 10 s. Measured against an 8th-order reference from the worked example
 //! of engine 0.6.0, a circular polar orbit that the card now refuses, the
@@ -179,9 +240,17 @@
 //! recomputation outside this crate, 2026-10-07, not confirmed by a second). [`SatelliteLageos1::floor_dt_s`] is that divided by
 //! 2^20, 9.5367431640625e-6 s. The public step applies neither.
 //!
-//! The radius band, the two orbit bands, the dates and the seven-day forecast
-//! are applied to the incoming state and to the landing. Nothing is pulled
-//! back to a bound.
+//! A lower orbit is faster and needs a smaller step, and the two ledgers
+//! refuse one taken too large. Measured with this card on circular orbits
+//! inclined 51.6 degrees: at 10 s the energy ledger reaches its limit and the
+//! step is refused by name after about 1.5 days at 6 400 km, 2.5 days at
+//! 6 700 km and 3.9 days at 7 000 km; at 5 s a week at 6 700 km leaves
+//! 8.8e-11 and at 6 400 km 1.4e-10. Over one revolution from 6 700 km to
+//! 11 000 km the 10 s step lands within 1.7 cm of steps of 2.5 s.
+//!
+//! The lowest radius and the dates are applied to the incoming state and to
+//! the landing; a stage of the step between them is not held to the radius.
+//! Nothing is pulled back to a bound.
 //!
 //! The arithmetic is `+ − × ÷`, `sqrt`, `sin` and `cos`. The sines and cosines
 //! are in the Sun and Moon series and in the two turns that follow them. There
@@ -189,7 +258,7 @@
 //!
 //! # The ledger
 //!
-//! `J` is the energy per kilogram as seen from the turning frame: kinetic
+//! Two accounts are kept. The first is energy. `J` is the energy per kilogram as seen from the turning frame: kinetic
 //! energy, less the potential of the locked field, less the centrifugal term.
 //! In a field that stands still in that frame `J` changes only by the work of
 //! the other forces. The step integrates that work beside the state and the
@@ -203,12 +272,18 @@
 //!
 //! What it cannot detect:
 //!
-//! - A Coriolis term with the wrong sign. That force is at right angles to the
-//!   velocity and does no work, so the ledger stays clean while the satellite
-//!   goes 25 000 km astray in a day. A comparison of positions catches it at
-//!   the first step, 65 m off after 10 s, and this file's tests carry one.
-//!   The card's orbit bands also stop such a run, at the first step from the
-//!   test state, as a range refusal. The ledger itself never objects.
+//! - A Coriolis term with the wrong sign, to the energy ledger. That force is
+//!   at right angles to the velocity and does no work, so `J` stays clean
+//!   while the satellite goes 25 000 km astray in a day. The second ledger
+//!   sees it: the angular momentum about the Earth's axis, `L_z = x u_y −
+//!   y u_x` with `u` the velocity seen from a frame that does not turn,
+//!   changes only by the torque of the true forces, `(r × (g + a))_z`, which
+//!   the step integrates beside the state as `T`. The Coriolis and
+//!   centrifugal terms of the turning frame give `L_z` no change of their
+//!   own; a Coriolis term with the wrong sign adds `4 ω (x v_x + y v_y)` to
+//!   its rate, and the step is [`StepReject::AngularMomentumBreach`] at the
+//!   first step from the test state. A comparison of positions catches it
+//!   too, 65 m off after 10 s, and this file's tests carry both.
 //! - A force that is wrong and booked consistently: a Sun in the wrong place,
 //!   a wrong tide number, a wrong mass. The work of the wrong force is booked
 //!   and the ledger balances.
@@ -229,7 +304,7 @@
 //! vel[0..3]     x, y, z less the number in pos, metres: at most 0.5 m in size
 //! force_torque  radius_m − REFERENCE_RADIUS_M, metres
 //! residual      residual_conservation_error
-//! flags         FLAG_EARTH_SHADOW or 0
+//! flags         FLAG_EARTH_SHADOW and FLAG_BELOW_COMPARED_RADIUS, or 0
 //! ```
 //!
 //! A reader adds `pos[i]` and `vel[i]` as 64-bit numbers and has each
@@ -242,7 +317,7 @@
 //! each addition rounds by at most half the spacing of 64-bit numbers at the
 //! clock, which is at most one part in 2^53 of it. The time of a state is the
 //! start epoch plus that clock, rounded to the spacing of 64-bit numbers at
-//! the epoch, 2^-23 s. A run whose end in decimal is exactly 2026-09-20 00:00 can
+//! the epoch, 2^-23 s. A run whose end in decimal is exactly 2027-06-28 00:00 can
 //! therefore reach its last step with a clock a little late: 499,999 steps of
 //! 0.6 s read 299999.40000032616 s. The comparison with the last date carries
 //! [`SatelliteLageos1::epoch_end_allowance_s`]: [`CLOCK_ROUNDING_PER_STEP`],
@@ -255,10 +330,7 @@
 //! steps of 0.1 s, 1.1e-5 s. The clock is stepped at its own value and
 //! nothing is pulled back: a run that ends on the last date in decimal can
 //! read up to the allowance past it, and a step that would end later is
-//! [`StepReject::EpochOutsideCard`]. The seven days of a forecast carry the
-//! same allowance, [`SatelliteLageos1::horizon_end_allowance_s`], with the
-//! steps counted from the published state, and a step that would end later
-//! is [`StepReject::HorizonOutsideCard`].
+//! [`StepReject::EpochOutsideLeapSecondSpan`].
 //!
 //! `core` only: no heap and no standard prelude. The card and the state are
 //! `Copy`. The 16-byte frame proof is not touched.
@@ -268,6 +340,7 @@ extern crate core;
 use core::prelude::v1::*;
 
 use crate::frame::LastStateFrame64;
+use crate::normal::{normal_or_zero, normal_or_zero_each};
 
 /// Gravitational parameter of the Earth. EGM2008 file header; IERS Conventions
 /// (2010) section 6.1 names it as the value to use with EGM2008.
@@ -855,17 +928,30 @@ pub const REFERENCE_RADIUS_M: f64 = 12270000.0;
 pub const LEDGER_SCALE_J_PER_KG: f64 = GM_EARTH_M3_S2 / REFERENCE_RADIUS_M;
 /// `|J − J_anchor − W| / LEDGER_SCALE_J_PER_KG` must stay at or under this.
 pub const RESIDUAL_CONSERVATION_LIMIT: f64 = 1.0e-9;
-/// Bottom of the card in radius: under the lowest point any compared run
-/// reached, 11 997.57 km, LAGEOS-2 near its perigee. Below it nothing was
-/// compared with a published orbit.
-pub const RADIUS_MIN_M: f64 = 11997000.0;
-/// Top of the card in radius: over the highest point any compared run
-/// reached, 12 326.40 km, LAGEOS-2 near its apogee.
+/// `√(GM_EARTH_M3_S2 × REFERENCE_RADIUS_M)`, 69 934 450 861 m²/s: the angular
+/// momentum per kilogram of a circular orbit at the reference radius. Scale of
+/// the turning residual.
+pub const LEDGER_SCALE_TURNING_M2_S: f64 = 69_934_450_860.823_96;
+/// `|L_z − L_anchor − T| / LEDGER_SCALE_TURNING_M2_S` must stay at or under this.
+pub const TURNING_CONSERVATION_LIMIT: f64 = 1.0e-9;
+/// Bottom of the card in radius: [`FIELD_RADIUS_M`], 6 378 136.3 m, the
+/// Earth's equatorial radius by the field file, the radius the field is
+/// scaled to. Under it the satellite is under the sphere of the Earth's
+/// equator, in the ground at the equator, and the card's field, the series
+/// of the Earth's field outside the Earth, is not the field there.
+pub const RADIUS_MIN_M: f64 = FIELD_RADIUS_M;
+/// Under the lowest point any compared run reached, 11 997.57 km, LAGEOS-2
+/// near its perigee, rounded down. Not a limit: a landing under it carries
+/// [`FLAG_BELOW_COMPARED_RADIUS`]. Through engine 0.11 the card refused there.
+pub const COMPARED_RADIUS_MIN_M: f64 = 11997000.0;
+/// Over the highest point any compared run reached, 12 326.40 km, LAGEOS-2
+/// near its apogee. Not a limit: a larger radius is computed.
 pub const RADIUS_MAX_M: f64 = 12327000.0;
 /// The two orbits compared with published orbits, LAGEOS-1 then LAGEOS-2,
-/// each as the smallest and the largest semi-major axis, metres. Each band
-/// holds every start and every landing of the 28 compared runs of its
-/// satellite: 12 265.14 to 12 274.83 km and 12 158.51 to 12 165.68 km.
+/// each as the smallest and the largest semi-major axis, metres. Not a
+/// limit: any orbit is computed. Each band holds every start and every
+/// landing of the 28 compared runs of its satellite: 12 265.14 to 12 274.83 km
+/// and 12 158.51 to 12 165.68 km.
 pub const ORBIT_SEMI_MAJOR_AXIS_M: [[f64; 2]; 2] = [[12265000.0, 12275000.0], [12158000.0, 12166000.0]];
 /// The eccentricity of the same two orbits, smallest and largest: the
 /// compared runs spanned 0.003438 to 0.004375 and 0.013232 to 0.013761.
@@ -874,17 +960,29 @@ pub const ORBIT_ECCENTRICITY: [[f64; 2]; 2] = [[0.0034, 0.0044], [0.0132, 0.0138
 /// largest, degrees: the compared runs spanned 109.8039 to 109.8235 and
 /// 52.6315 to 52.6508.
 pub const ORBIT_INCLINATION_DEG: [[f64; 2]; 2] = [[109.80, 109.83], [52.63, 52.66]];
-/// 2026-08-23 00:00 UTC, in seconds of UTC after 2000-01-01 12:00: the first
-/// start of the compared runs, day 0 of week 260829.
-pub const EPOCH_MIN_S: f64 = 840715200.0;
-/// 2026-09-20 00:00 UTC, in the same seconds: the end of the last compared
-/// run, seven days from day 0 of week 260919. The last published epoch it
-/// was scored at is 2026-09-19 23:58 UTC.
-pub const EPOCH_MAX_S: f64 = 843134400.0;
-/// Seven days, seconds: the longest forecast the card gives from a state
-/// taken from a published orbit, counted over every run it is restarted
-/// through. The compared runs were 604 800 s long and were scored up to
-/// 604 680 s, the last epoch of the published file.
+/// 2017-01-01 00:00 UTC, in seconds of UTC after 2000-01-01 12:00: the last
+/// leap second, from which TT − UTC is the card's 69.184 s. IERS leap-second
+/// file `Leap_Second.dat`, saved in the research folder as
+/// `lageos1_orbit/raw/reference/iers/Leap_Second.dat`.
+pub const EPOCH_MIN_S: f64 = 536500800.0;
+/// 2027-06-28 00:00 UTC, in the same seconds: the date the same IERS file,
+/// updated through Bulletin C 72 of July 2026, says it expires. Bulletin C 72
+/// announced no leap second at the end of December 2026; the next one the
+/// IERS can announce is at the end of June 2027, and past this date TT − UTC
+/// is not yet known.
+pub const EPOCH_MAX_S: f64 = 867412800.0;
+/// 2026-08-23 00:00 UTC: the first start of the compared runs, day 0 of week
+/// 260829. Not a limit.
+pub const COMPARED_EPOCH_FIRST_S: f64 = 840715200.0;
+/// 2026-09-20 00:00 UTC: the end of the last compared run, seven days from day
+/// 0 of week 260919. The last published epoch it was scored at is 2026-09-19
+/// 23:58 UTC. Not a limit.
+pub const COMPARED_EPOCH_LAST_S: f64 = 843134400.0;
+/// Seven days, seconds: the longest forecast compared with a published
+/// orbit, from a state taken from it. The compared runs were 604 800 s long
+/// and were scored up to 604 680 s, the last epoch of the published file.
+/// Not a limit: a longer forecast is computed, and its error grows with the
+/// length of the forecast.
 pub const FORECAST_HORIZON_S: f64 = 604800.0;
 /// The spacing of 64-bit numbers at the dates of the card, 2^-23 s: half of
 /// it for the start epoch plus the clock, half for that sum plus the step.
@@ -909,6 +1007,12 @@ pub const GATE_OVER_FLOOR: f64 = 1_048_576.0;
 /// The landing is in the Earth's shadow. Sunlight pressure was off there, and
 /// that part of the model has not been compared with data.
 pub const FLAG_EARTH_SHADOW: u64 = 1 << 0;
+/// The landing is under 11 997 km from the Earth's centre, the lowest point
+/// any compared run reached: the same forces and the same two ledgers, and
+/// nothing compared there. The card carries no air, so the lower the orbit,
+/// the larger the drag on the sphere it does not carry. The frame carries
+/// it; the state holds no boolean of its own for it.
+pub const FLAG_BELOW_COMPARED_RADIUS: u64 = 1 << 1;
 
 const SECONDS_PER_DAY: f64 = 86_400.0;
 const SECONDS_PER_JULIAN_CENTURY: f64 = 36_525.0 * 86_400.0;
@@ -933,18 +1037,18 @@ pub enum StepReject {
     NonPositiveDt,
     /// A recorded constant or table entry is not this satellite and its Earth.
     InvalidSatellite,
-    /// Distance from the Earth's centre, incoming or landing, is below 11 997 km or above 12 327 km.
-    RadiusOutsideCard,
-    /// The orbit, incoming or landing, is not closed, or is in neither of the two compared orbits: LAGEOS-1, semi-major axis 12 265 to 12 275 km, eccentricity 0.0034 to 0.0044 and inclination 109.80 to 109.83 degrees, and LAGEOS-2, 12 158 to 12 166 km, 0.0132 to 0.0138 and 52.63 to 52.66 degrees.
-    OrbitOutsideCard,
-    /// The time, incoming or landing, is before 2026-08-23 00:00 or after 2026-09-20 00:00 UTC; the landing by more than the rounding allowance of the running sum of the clock: 1.19e-7 s, and one part in 2^53 of the clock for each step taken at this step and two more.
-    EpochOutsideCard,
-    /// The forecast, incoming or landing, is more than seven days, 604 800 s, from the state taken from a published orbit, or the stated time since that state is below zero; the landing by more than the same rounding allowance, counted over the whole forecast.
-    HorizonOutsideCard,
+    /// Distance from the Earth's centre, incoming or landing, is below 6 378.1363 km, the Earth's equatorial radius, to which the field is scaled: the satellite is under the sphere of the Earth's equator, in the ground at the equator, and the card's field, the series of the Earth's field outside the Earth, is not the field there.
+    RadiusBelowEarthRadius,
+    /// The time, incoming or landing, is before 2017-01-01 00:00 UTC, the last leap second, or after 2027-06-28 00:00 UTC, when the IERS leap-second file of Bulletin C 72 expires: outside that span TT − UTC is not the card's 69.184 s, or is not yet known. The landing by more than the rounding allowance of the running sum of the clock: 1.19e-7 s, and one part in 2^53 of the clock for each step taken at this step and two more.
+    EpochOutsideLeapSecondSpan,
+    /// The stated time since the state was taken from a published orbit is below zero.
+    ForecastElapsedBelowZero,
     /// The trial step gained energy that the work of the Sun, the Moon, the tide, sunlight and relativity does not account for.
     SpontaneousGeneration,
     /// The trial step lost energy that the work of the Sun, the Moon, the tide, sunlight and relativity does not account for.
     FirstLawBreach,
+    /// The trial step changed the angular momentum about the Earth's axis by more than the torque of the field, the Sun, the Moon, the tide, sunlight and relativity accounts for. The Coriolis term does no work and is seen by this ledger alone.
+    AngularMomentumBreach,
 }
 
 /// The satellite is in free flight. The load is empty.
@@ -991,15 +1095,15 @@ pub struct SatelliteLageos1 {
     pub reference_radius_m: f64,
     pub ledger_scale_j_per_kg: f64,
     pub residual_conservation_limit: f64,
+    /// Recorded copy of [`LEDGER_SCALE_TURNING_M2_S`].
+    pub ledger_scale_turning_m2_s: f64,
+    /// Recorded copy of [`TURNING_CONSERVATION_LIMIT`].
+    pub turning_conservation_limit: f64,
     pub radius_min_m: f64,
-    pub radius_max_m: f64,
-    pub orbit_semi_major_axis_m: [[f64; 2]; 2],
-    pub orbit_eccentricity: [[f64; 2]; 2],
-    pub orbit_inclination_deg: [[f64; 2]; 2],
+    /// Recorded copy of [`COMPARED_RADIUS_MIN_M`].
+    pub compared_radius_min_m: f64,
     pub epoch_min_s: f64,
     pub epoch_max_s: f64,
-    /// Recorded copy of [`FORECAST_HORIZON_S`].
-    pub forecast_horizon_s: f64,
     /// Recorded copy of [`EPOCH_END_ALLOWANCE_S`].
     pub epoch_end_allowance_s: f64,
     /// Recorded copy of [`CLOCK_ROUNDING_PER_STEP`].
@@ -1049,14 +1153,12 @@ impl SatelliteLageos1 {
             reference_radius_m: REFERENCE_RADIUS_M,
             ledger_scale_j_per_kg: LEDGER_SCALE_J_PER_KG,
             residual_conservation_limit: RESIDUAL_CONSERVATION_LIMIT,
+            ledger_scale_turning_m2_s: LEDGER_SCALE_TURNING_M2_S,
+            turning_conservation_limit: TURNING_CONSERVATION_LIMIT,
             radius_min_m: RADIUS_MIN_M,
-            radius_max_m: RADIUS_MAX_M,
-            orbit_semi_major_axis_m: ORBIT_SEMI_MAJOR_AXIS_M,
-            orbit_eccentricity: ORBIT_ECCENTRICITY,
-            orbit_inclination_deg: ORBIT_INCLINATION_DEG,
+            compared_radius_min_m: COMPARED_RADIUS_MIN_M,
             epoch_min_s: EPOCH_MIN_S,
             epoch_max_s: EPOCH_MAX_S,
-            forecast_horizon_s: FORECAST_HORIZON_S,
             epoch_end_allowance_s: EPOCH_END_ALLOWANCE_S,
             clock_rounding_per_step: CLOCK_ROUNDING_PER_STEP,
             epoch_end_allowance_extra_steps: EPOCH_END_ALLOWANCE_EXTRA_STEPS,
@@ -1106,11 +1208,12 @@ impl SatelliteLageos1 {
                 self.residual_conservation_limit,
                 RESIDUAL_CONSERVATION_LIMIT,
             )
+            || !same_bits(self.ledger_scale_turning_m2_s, LEDGER_SCALE_TURNING_M2_S)
+            || !same_bits(self.turning_conservation_limit, TURNING_CONSERVATION_LIMIT)
             || !same_bits(self.radius_min_m, RADIUS_MIN_M)
-            || !same_bits(self.radius_max_m, RADIUS_MAX_M)
+            || !same_bits(self.compared_radius_min_m, COMPARED_RADIUS_MIN_M)
             || !same_bits(self.epoch_min_s, EPOCH_MIN_S)
             || !same_bits(self.epoch_max_s, EPOCH_MAX_S)
-            || !same_bits(self.forecast_horizon_s, FORECAST_HORIZON_S)
             || !same_bits(self.epoch_end_allowance_s, EPOCH_END_ALLOWANCE_S)
             || !same_bits(self.clock_rounding_per_step, CLOCK_ROUNDING_PER_STEP)
             || !same_bits(self.epoch_end_allowance_extra_steps, EPOCH_END_ALLOWANCE_EXTRA_STEPS)
@@ -1125,16 +1228,6 @@ impl SatelliteLageos1 {
                 return false;
             }
             degree += 1;
-        }
-        let mut orbit = 0;
-        while orbit < ORBIT_SEMI_MAJOR_AXIS_M.len() {
-            if !same_row(&self.orbit_semi_major_axis_m[orbit], &ORBIT_SEMI_MAJOR_AXIS_M[orbit])
-                || !same_row(&self.orbit_eccentricity[orbit], &ORBIT_ECCENTRICITY[orbit])
-                || !same_row(&self.orbit_inclination_deg[orbit], &ORBIT_INCLINATION_DEG[orbit])
-            {
-                return false;
-            }
-            orbit += 1;
         }
         if !same_row(&self.sun_mean_anomaly_deg, &SUN_MEAN_ANOMALY_DEG)
             || !same_row(&self.sun_distance_gm, &SUN_DISTANCE_GM)
@@ -1241,17 +1334,6 @@ impl SatelliteLageos1 {
         if allowance_s < 0.5 * dt_s { allowance_s } else { 0.5 * dt_s }
     }
 
-    /// How far past [`FORECAST_HORIZON_S`] the time since the published
-    /// state may read at the end of a step of `dt_s` taken at a time since
-    /// that state of `elapsed_s`, seconds: the allowance of the last date,
-    /// [`Self::epoch_end_allowance_s`], with the steps counted over the whole
-    /// forecast, so the steps of the runs a forecast was restarted through
-    /// are counted too.
-    #[must_use]
-    pub fn horizon_end_allowance_s(&self, elapsed_s: f64, dt_s: f64) -> f64 {
-        self.epoch_end_allowance_s(elapsed_s, dt_s)
-    }
-
     /// The latest epoch, in seconds, a step can start from: the largest
     /// 64-bit number `epoch_utc_s` for which `epoch_utc_s + floor_dt_s` is
     /// not after the last date of the card. This is the published bound and
@@ -1304,7 +1386,18 @@ pub struct SatelliteState {
     pub external_work_j_per_kg: f64,
     /// Signed `J − J_anchor − W`. Positive is created energy.
     pub energy_defect_j_per_kg: f64,
-    /// `|energy_defect_j_per_kg| / LEDGER_SCALE_J_PER_KG`.
+    /// `L_z = x u_y − y u_x`: angular momentum per kilogram about the Earth's
+    /// axis, `u` the velocity seen from a frame that does not turn.
+    pub angular_momentum_m2_s: f64,
+    /// `L_z` at the state the ledger started from.
+    pub angular_momentum_anchor_m2_s: f64,
+    /// Torque per kilogram about the Earth's axis of the field, the Sun, the
+    /// Moon, the tide, sunlight and relativity, integrated by the step.
+    pub external_torque_m2_s: f64,
+    /// Signed `L_z − L_anchor − T`.
+    pub angular_momentum_defect_m2_s: f64,
+    /// The larger of `|energy_defect_j_per_kg| / LEDGER_SCALE_J_PER_KG` and
+    /// `|angular_momentum_defect_m2_s| / LEDGER_SCALE_TURNING_M2_S`.
     pub residual_conservation_error: f64,
     /// Distance from the Earth's centre.
     pub radius_m: f64,
@@ -1334,11 +1427,12 @@ impl SatelliteState {
         self.forecast_elapsed_at_start_s + self.t_s
     }
 
-    /// Anchor the ledger at this epoch, time since the published state,
+    /// Anchor both ledgers at this epoch, time since the published state,
     /// position and velocity. `None` unless every number is finite, the
-    /// radius is from 11 997 to 12 327 km, the orbit is one of the two
-    /// compared orbits, the epoch is from 2026-08-23 00:00 to 2026-09-20 00:00
-    /// UTC, and the time since the published state is from zero to seven days.
+    /// radius is at least the Earth's equatorial radius, 6 378.1363 km, the
+    /// epoch is from 2017-01-01 00:00 to
+    /// 2027-06-28 00:00 UTC, and the time since the published state is zero
+    /// or more.
     #[must_use]
     pub fn try_state(
         satellite: &SatelliteLageos1,
@@ -1359,7 +1453,7 @@ impl SatelliteState {
             Ok(here) => here,
             Err(_) => return None,
         };
-        if !(forecast_elapsed_s >= 0.0 && forecast_elapsed_s <= satellite.forecast_horizon_s) {
+        if !(forecast_elapsed_s >= 0.0) {
             return None;
         }
         let state = Self {
@@ -1372,6 +1466,10 @@ impl SatelliteState {
             jacobi_anchor_j_per_kg: here.jacobi_j_per_kg,
             external_work_j_per_kg: 0.0,
             energy_defect_j_per_kg: 0.0,
+            angular_momentum_m2_s: here.angular_momentum_m2_s,
+            angular_momentum_anchor_m2_s: here.angular_momentum_m2_s,
+            external_torque_m2_s: 0.0,
+            angular_momentum_defect_m2_s: 0.0,
             residual_conservation_error: 0.0,
             radius_m: here.radius_m,
             semi_major_axis_m: here.semi_major_axis_m,
@@ -1389,8 +1487,25 @@ impl SatelliteState {
 ///
 /// The satellite is driven by the clock alone; `load` is empty. A rejected
 /// step leaves `state` and `frame` as they were.
+///
+/// A value of the landed state below the normal range is written as zero
+/// with its sign ([`crate::normal`]).
 #[must_use]
 pub fn step(
+    satellite: &SatelliteLageos1,
+    state: &mut SatelliteState,
+    frame: &mut LastStateFrame64,
+    load: SatelliteLoad,
+    dt_s: f64,
+) -> Result<(), StepReject> {
+    step_as_computed(satellite, state, frame, load, dt_s)?;
+    normal_or_zero_state(state);
+    Ok(())
+}
+
+/// The step as its equations compute it, before a value of the landed
+/// state below the normal range is written as zero.
+fn step_as_computed(
     satellite: &SatelliteLageos1,
     state: &mut SatelliteState,
     frame: &mut LastStateFrame64,
@@ -1405,6 +1520,28 @@ pub fn step(
         dt_s,
     )?;
     commit(satellite, state, frame, dt_s, predicted)
+}
+
+/// Each value of a landed state below the normal range written as zero
+/// with its sign ([`crate::normal`]): the state carried to the next step
+/// and published holds no subnormal number.
+fn normal_or_zero_state(state: &mut SatelliteState) {
+    state.t_s = normal_or_zero(state.t_s);
+    state.start_epoch_utc_s = normal_or_zero(state.start_epoch_utc_s);
+    state.forecast_elapsed_at_start_s = normal_or_zero(state.forecast_elapsed_at_start_s);
+    normal_or_zero_each(&mut state.position_m);
+    normal_or_zero_each(&mut state.velocity_m_s);
+    state.jacobi_j_per_kg = normal_or_zero(state.jacobi_j_per_kg);
+    state.jacobi_anchor_j_per_kg = normal_or_zero(state.jacobi_anchor_j_per_kg);
+    state.external_work_j_per_kg = normal_or_zero(state.external_work_j_per_kg);
+    state.energy_defect_j_per_kg = normal_or_zero(state.energy_defect_j_per_kg);
+    state.angular_momentum_m2_s = normal_or_zero(state.angular_momentum_m2_s);
+    state.angular_momentum_anchor_m2_s = normal_or_zero(state.angular_momentum_anchor_m2_s);
+    state.external_torque_m2_s = normal_or_zero(state.external_torque_m2_s);
+    state.angular_momentum_defect_m2_s = normal_or_zero(state.angular_momentum_defect_m2_s);
+    state.residual_conservation_error = normal_or_zero(state.residual_conservation_error);
+    state.radius_m = normal_or_zero(state.radius_m);
+    state.semi_major_axis_m = normal_or_zero(state.semi_major_axis_m);
 }
 
 fn validate(
@@ -1432,17 +1569,12 @@ fn validate(
     if !(utc_s + dt_s
         <= satellite.epoch_max_s + satellite.epoch_end_allowance_s(state.t_s, dt_s))
     {
-        return Err(StepReject::EpochOutsideCard);
+        return Err(StepReject::EpochOutsideLeapSecondSpan);
     }
-    // The forecast: the time since the published state, at the landing, is
-    // held to seven days, with the steps counted over the whole forecast.
-    let elapsed_s = state.forecast_elapsed_s();
-    if !(state.forecast_elapsed_at_start_s >= 0.0
-        && state.forecast_elapsed_at_start_s + (state.t_s + dt_s)
-            <= satellite.forecast_horizon_s
-                + satellite.horizon_end_allowance_s(elapsed_s, dt_s))
-    {
-        return Err(StepReject::HorizonOutsideCard);
+    // The time since the published state is reported; a stated time below
+    // zero is malformed.
+    if !(state.forecast_elapsed_at_start_s >= 0.0) {
+        return Err(StepReject::ForecastElapsedBelowZero);
     }
     Ok(())
 }
@@ -1453,20 +1585,20 @@ fn validate(
 fn integrate(
     satellite: &SatelliteLageos1,
     utc_s: f64,
-    y: [f64; 7],
+    y: [f64; 8],
     dt_s: f64,
-) -> Result<[f64; 7], StepReject> {
+) -> Result<[f64; 8], StepReject> {
     let k1 = rates(satellite, utc_s, y)?;
     let k2 = rates(satellite, utc_s + 0.5 * dt_s, axpy(y, dt_s * 0.5, k1))?;
     let k3 = rates(satellite, utc_s + 0.5 * dt_s, axpy(y, dt_s * 0.5, k2))?;
     let k4 = rates(satellite, utc_s + dt_s, axpy(y, dt_s, k3))?;
     let mut next = y;
     let mut index = 0;
-    while index < 7 {
+    while index < 8 {
         next[index] += (dt_s / 6.0) * (k1[index] + 2.0 * k2[index] + 2.0 * k3[index] + k4[index]);
         index += 1;
     }
-    if finite7(next) {
+    if finite8(next) {
         Ok(next)
     } else {
         Err(StepReject::NonFiniteState)
@@ -1478,10 +1610,10 @@ fn commit(
     state: &mut SatelliteState,
     frame: &mut LastStateFrame64,
     dt_s: f64,
-    predicted: [f64; 7],
+    predicted: [f64; 8],
 ) -> Result<(), StepReject> {
     let saved = *state;
-    if !finite7(predicted) {
+    if !finite8(predicted) {
         return Err(StepReject::NonFiniteState);
     }
     let position_m = [predicted[0], predicted[1], predicted[2]];
@@ -1509,13 +1641,36 @@ fn commit(
     if defect < -gate {
         return Err(StepReject::FirstLawBreach);
     }
+    let turning_scale = satellite.ledger_scale_turning_m2_s;
+    if !(turning_scale > 0.0 && turning_scale.is_finite()) {
+        return Err(StepReject::InvalidSatellite);
+    }
+    let angular_momentum_m2_s =
+        angular_momentum_about_axis_m2_s(satellite, position_m, velocity_m_s);
+    let turning_defect =
+        angular_momentum_m2_s - state.angular_momentum_anchor_m2_s - predicted[7];
+    if !turning_defect.is_finite() {
+        return Err(StepReject::NonFiniteState);
+    }
+    if abs_f64(turning_defect) > satellite.turning_conservation_limit * turning_scale {
+        return Err(StepReject::AngularMomentumBreach);
+    }
     state.t_s = t_s;
     state.position_m = position_m;
     state.velocity_m_s = velocity_m_s;
     state.jacobi_j_per_kg = here.jacobi_j_per_kg;
     state.external_work_j_per_kg = predicted[6];
     state.energy_defect_j_per_kg = defect;
-    state.residual_conservation_error = abs_f64(defect) / scale;
+    state.angular_momentum_m2_s = angular_momentum_m2_s;
+    state.external_torque_m2_s = predicted[7];
+    state.angular_momentum_defect_m2_s = turning_defect;
+    let energy_residual = abs_f64(defect) / scale;
+    let turning_residual = abs_f64(turning_defect) / turning_scale;
+    state.residual_conservation_error = if turning_residual > energy_residual {
+        turning_residual
+    } else {
+        energy_residual
+    };
     state.radius_m = here.radius_m;
     state.semi_major_axis_m = here.semi_major_axis_m;
     state.in_earth_shadow = here.in_earth_shadow;
@@ -1540,11 +1695,14 @@ fn publish(satellite: &SatelliteLageos1, state: &SatelliteState, frame: &mut Las
     }
     frame.force_torque = (state.radius_m - satellite.reference_radius_m) as f32;
     frame.residual = state.residual_conservation_error as f32;
-    frame.flags = if state.in_earth_shadow {
-        FLAG_EARTH_SHADOW
-    } else {
-        0
-    };
+    let mut flags = 0;
+    if state.in_earth_shadow {
+        flags |= FLAG_EARTH_SHADOW;
+    }
+    if state.radius_m < satellite.compared_radius_min_m {
+        flags |= FLAG_BELOW_COMPARED_RADIUS;
+    }
+    frame.flags = flags;
 }
 
 /// What follows from one time, position and velocity.
@@ -1552,6 +1710,7 @@ struct Place {
     radius_m: f64,
     semi_major_axis_m: f64,
     jacobi_j_per_kg: f64,
+    angular_momentum_m2_s: f64,
     in_earth_shadow: bool,
 }
 
@@ -1570,20 +1729,19 @@ fn place(
     if !radius_m.is_finite() || !finite3(velocity_m_s) || !utc_s.is_finite() {
         return Err(StepReject::NonFiniteState);
     }
-    if !(radius_m >= satellite.radius_min_m && radius_m <= satellite.radius_max_m) {
-        return Err(StepReject::RadiusOutsideCard);
+    if !(radius_m >= satellite.radius_min_m) {
+        return Err(StepReject::RadiusBelowEarthRadius);
     }
     let fixed_m_s = fixed_frame_velocity_m_s(satellite, position_m, velocity_m_s);
     let semi_major_axis_m = -satellite.gm_earth_m3_s2
         / (dot(fixed_m_s, fixed_m_s) - 2.0 * satellite.gm_earth_m3_s2 / radius_m);
-    if !in_a_compared_orbit(satellite, position_m, fixed_m_s, semi_major_axis_m) {
-        return Err(StepReject::OrbitOutsideCard);
-    }
     if !(utc_s >= satellite.epoch_min_s && utc_s <= satellite.epoch_max_s + end_allowance_s) {
-        return Err(StepReject::EpochOutsideCard);
+        return Err(StepReject::EpochOutsideLeapSecondSpan);
     }
     let jacobi_j_per_kg = jacobi_j_per_kg(satellite, position_m, velocity_m_s);
-    if !jacobi_j_per_kg.is_finite() {
+    let angular_momentum_m2_s =
+        angular_momentum_about_axis_m2_s(satellite, position_m, velocity_m_s);
+    if !jacobi_j_per_kg.is_finite() || !angular_momentum_m2_s.is_finite() {
         return Err(StepReject::NonFiniteState);
     }
     let sun_m = sun_position_m(satellite, utc_s);
@@ -1591,63 +1749,13 @@ fn place(
         radius_m,
         semi_major_axis_m,
         jacobi_j_per_kg,
+        angular_momentum_m2_s,
         in_earth_shadow: !sunlit(satellite, position_m, sun_m),
     })
 }
 
-/// The orbit is closed and inside one of the two compared orbits in its
-/// semi-major axis, its eccentricity and its inclination together. The
-/// eccentricity is `√(1 − h·h ÷ (GM a))` and the cosine of the inclination is
-/// `h_z ÷ |h|`, with `h = r × u` and `u` the velocity seen from a frame that
-/// does not turn: two-body elements at this instant, which the compared runs
-/// also had at every landing. No angle is taken of `h`: the cosine is held
-/// between the cosines of the two bounds.
-fn in_a_compared_orbit(
-    satellite: &SatelliteLageos1,
-    position_m: [f64; 3],
-    fixed_m_s: [f64; 3],
-    semi_major_axis_m: f64,
-) -> bool {
-    if !(semi_major_axis_m > 0.0 && semi_major_axis_m.is_finite()) {
-        return false;
-    }
-    let h = [
-        position_m[1] * fixed_m_s[2] - position_m[2] * fixed_m_s[1],
-        position_m[2] * fixed_m_s[0] - position_m[0] * fixed_m_s[2],
-        position_m[0] * fixed_m_s[1] - position_m[1] * fixed_m_s[0],
-    ];
-    let h_squared = dot(h, h);
-    if !(h_squared > 0.0 && h_squared.is_finite()) {
-        return false;
-    }
-    let one_less_e_squared = h_squared / (satellite.gm_earth_m3_s2 * semi_major_axis_m);
-    let e_squared = 1.0 - one_less_e_squared;
-    let eccentricity = if e_squared > 0.0 { e_squared.sqrt() } else { 0.0 };
-    let cos_inclination = h[2] / h_squared.sqrt();
-    let mut orbit = 0;
-    while orbit < satellite.orbit_semi_major_axis_m.len() {
-        let a = satellite.orbit_semi_major_axis_m[orbit];
-        let e = satellite.orbit_eccentricity[orbit];
-        let i = satellite.orbit_inclination_deg[orbit];
-        // The cosine falls as the inclination rises from 0 to 180 degrees.
-        let cos_lowest = crate::math::cos(i[0] * RADIANS_PER_DEGREE);
-        let cos_highest = crate::math::cos(i[1] * RADIANS_PER_DEGREE);
-        if semi_major_axis_m >= a[0]
-            && semi_major_axis_m <= a[1]
-            && eccentricity >= e[0]
-            && eccentricity <= e[1]
-            && cos_inclination <= cos_lowest
-            && cos_inclination >= cos_highest
-        {
-            return true;
-        }
-        orbit += 1;
-    }
-    false
-}
-
-/// Rates of `(r, v, W)` at time `utc_s`.
-fn rates(satellite: &SatelliteLageos1, utc_s: f64, y: [f64; 7]) -> Result<[f64; 7], StepReject> {
+/// Rates of `(r, v, W, T)` at time `utc_s`.
+fn rates(satellite: &SatelliteLageos1, utc_s: f64, y: [f64; 8]) -> Result<[f64; 8], StepReject> {
     let position_m = [y[0], y[1], y[2]];
     let velocity_m_s = [y[3], y[4], y[5]];
     let field = field_acceleration_m_s2(satellite, position_m);
@@ -1661,12 +1769,34 @@ fn rates(satellite: &SatelliteLageos1, utc_s: f64, y: [f64; 7]) -> Result<[f64; 
         (field[1] + other[1]) + turning[1],
         (field[2] + other[2]) + turning[2],
         dot(other, velocity_m_s),
+        torque_about_axis_m2_s2(position_m, field, other),
     ];
-    if finite7(out) {
+    if finite8(out) {
         Ok(out)
     } else {
         Err(StepReject::NonFiniteState)
     }
+}
+
+/// `(r × (g + a))_z`: the torque per kilogram about the Earth's axis of the
+/// field and of everything else. The Coriolis and centrifugal terms are not
+/// forces of a frame that does not turn and give it no torque.
+fn torque_about_axis_m2_s2(position_m: [f64; 3], field: [f64; 3], other: [f64; 3]) -> f64 {
+    let force_x = field[0] + other[0];
+    let force_y = field[1] + other[1];
+    position_m[0] * force_y - position_m[1] * force_x
+}
+
+/// `L_z = x u_y − y u_x`, `u` the velocity seen from a frame that does not
+/// turn: the angular momentum per kilogram about the Earth's axis, the same
+/// in both frames.
+fn angular_momentum_about_axis_m2_s(
+    satellite: &SatelliteLageos1,
+    position_m: [f64; 3],
+    velocity_m_s: [f64; 3],
+) -> f64 {
+    let fixed_m_s = fixed_frame_velocity_m_s(satellite, position_m, velocity_m_s);
+    position_m[0] * fixed_m_s[1] - position_m[1] * fixed_m_s[0]
 }
 
 /// Coriolis and centrifugal terms: `(2 ω v_y + ω² x, −2 ω v_x + ω² y, 0)`.
@@ -2151,17 +2281,17 @@ fn orbit_plane_to_card_frame(
     ]
 }
 
-fn axpy(y: [f64; 7], scale: f64, k: [f64; 7]) -> [f64; 7] {
+fn axpy(y: [f64; 8], scale: f64, k: [f64; 8]) -> [f64; 8] {
     let mut out = y;
     let mut index = 0;
-    while index < 7 {
+    while index < 8 {
         out[index] += scale * k[index];
         index += 1;
     }
     out
 }
 
-fn recorded(state: &SatelliteState) -> [f64; 7] {
+fn recorded(state: &SatelliteState) -> [f64; 8] {
     [
         state.position_m[0],
         state.position_m[1],
@@ -2170,6 +2300,7 @@ fn recorded(state: &SatelliteState) -> [f64; 7] {
         state.velocity_m_s[1],
         state.velocity_m_s[2],
         state.external_work_j_per_kg,
+        state.external_torque_m2_s,
     ]
 }
 
@@ -2181,9 +2312,9 @@ fn finite3(x: [f64; 3]) -> bool {
     x[0].is_finite() && x[1].is_finite() && x[2].is_finite()
 }
 
-fn finite7(x: [f64; 7]) -> bool {
+fn finite8(x: [f64; 8]) -> bool {
     let mut index = 0;
-    while index < 7 {
+    while index < 8 {
         if !x[index].is_finite() {
             return false;
         }
@@ -2224,6 +2355,10 @@ fn state_is_finite(state: &SatelliteState) -> bool {
         && state.jacobi_anchor_j_per_kg.is_finite()
         && state.external_work_j_per_kg.is_finite()
         && state.energy_defect_j_per_kg.is_finite()
+        && state.angular_momentum_m2_s.is_finite()
+        && state.angular_momentum_anchor_m2_s.is_finite()
+        && state.external_torque_m2_s.is_finite()
+        && state.angular_momentum_defect_m2_s.is_finite()
         && state.residual_conservation_error.is_finite()
         && state.radius_m.is_finite()
         && state.semi_major_axis_m.is_finite()
@@ -2237,6 +2372,7 @@ mod tests {
     use core::prelude::v1::*;
     use std::assert;
     use std::assert_eq;
+    use std::assert_ne;
     use std::concat;
     use std::format;
     use std::include_str;
@@ -2519,7 +2655,7 @@ degree,order,normalised_C,normalised_S,source\n\
     }
 
     /// Signed `(J − J_anchor − W) / LEDGER_SCALE_J_PER_KG` of a trial `(r, v, W)`.
-    fn signed_residual(satellite: &SatelliteLageos1, anchor_j_per_kg: f64, y: [f64; 7]) -> f64 {
+    fn signed_residual(satellite: &SatelliteLageos1, anchor_j_per_kg: f64, y: [f64; 8]) -> f64 {
         (jacobi_j_per_kg(satellite, [y[0], y[1], y[2]], [y[3], y[4], y[5]])
             - anchor_j_per_kg
             - y[6])
@@ -2531,10 +2667,10 @@ degree,order,normalised_C,normalised_S,source\n\
     fn rates_with_signs(
         satellite: &SatelliteLageos1,
         utc_s: f64,
-        y: [f64; 7],
+        y: [f64; 8],
         coriolis_sign: f64,
         centrifugal_sign: f64,
-    ) -> Result<[f64; 7], StepReject> {
+    ) -> Result<[f64; 8], StepReject> {
         let position_m = [y[0], y[1], y[2]];
         let velocity_m_s = [y[3], y[4], y[5]];
         let field = field_acceleration_m_s2(satellite, position_m);
@@ -2552,6 +2688,7 @@ degree,order,normalised_C,normalised_S,source\n\
                     + centrifugal_sign * w * w * position_m[1]),
             (field[2] + other[2]) + 0.0,
             dot(other, velocity_m_s),
+            torque_about_axis_m2_s2(position_m, field, other),
         ])
     }
 
@@ -2559,12 +2696,12 @@ degree,order,normalised_C,normalised_S,source\n\
     fn rk4_with_signs(
         satellite: &SatelliteLageos1,
         utc_s: f64,
-        y: [f64; 7],
+        y: [f64; 8],
         dt_s: f64,
         coriolis_sign: f64,
         centrifugal_sign: f64,
-    ) -> Result<[f64; 7], StepReject> {
-        let f = |at_s: f64, at: [f64; 7]| {
+    ) -> Result<[f64; 8], StepReject> {
+        let f = |at_s: f64, at: [f64; 8]| {
             rates_with_signs(satellite, at_s, at, coriolis_sign, centrifugal_sign)
         };
         let k1 = f(utc_s, y)?;
@@ -2573,7 +2710,7 @@ degree,order,normalised_C,normalised_S,source\n\
         let k4 = f(utc_s + dt_s, axpy(y, dt_s, k3))?;
         let mut next = y;
         let mut index = 0;
-        while index < 7 {
+        while index < 8 {
             next[index] +=
                 (dt_s / 6.0) * (k1[index] + 2.0 * k2[index] + 2.0 * k3[index] + k4[index]);
             index += 1;
@@ -2957,20 +3094,14 @@ degree,order,normalised_C,normalised_S,source\n\
         tampered.ledger_scale_j_per_kg = 1.0e12;
         refuse(tampered, "the ledger scale");
         let mut tampered = satellite;
-        tampered.radius_max_m = 1.0e9;
-        refuse(tampered, "the top of the radius band");
+        tampered.turning_conservation_limit = 1.0e-3;
+        refuse(tampered, "the turning ledger limit");
         let mut tampered = satellite;
-        tampered.orbit_semi_major_axis_m[0][0] = 0.0;
-        refuse(tampered, "the bottom of the LAGEOS-1 orbit band");
+        tampered.ledger_scale_turning_m2_s = 1.0e20;
+        refuse(tampered, "the turning ledger scale");
         let mut tampered = satellite;
-        tampered.orbit_eccentricity[1][1] = 0.5;
-        refuse(tampered, "the top of the LAGEOS-2 eccentricity band");
-        let mut tampered = satellite;
-        tampered.orbit_inclination_deg[0][0] = 0.0;
-        refuse(tampered, "the bottom of the LAGEOS-1 inclination band");
-        let mut tampered = satellite;
-        tampered.forecast_horizon_s = 1.0e9;
-        refuse(tampered, "the seven days of a forecast");
+        tampered.epoch_min_s = 0.0;
+        refuse(tampered, "the first date");
         let mut tampered = satellite;
         tampered.epoch_max_s = 1.0e10;
         refuse(tampered, "the last date");
@@ -3442,6 +3573,34 @@ degree,order,normalised_C,normalised_S,source\n\
         proof_intact(&frame);
     }
 
+    /// The turning ledger at the ceiling: a week from the test state, the
+    /// largest turning residual stays far under its limit, and so does the
+    /// energy residual. Measured: 1.06e-11 and 1.47e-11 against 1e-9.
+    #[test]
+    fn a_week_at_the_ceiling_holds_the_turning_ledger() {
+        let satellite = SatelliteLageos1::lageos1();
+        let mut frame = blank_frame();
+        let mut state = start(&satellite);
+        let mut worst_turning: f64 = 0.0;
+        let mut worst_energy: f64 = 0.0;
+        let mut n = 0u32;
+        while n < 60_480 {
+            step(&satellite, &mut state, &mut frame, NO_LOAD, DT).unwrap();
+            worst_turning = worst_turning
+                .max(abs_f64(state.angular_momentum_defect_m2_s) / LEDGER_SCALE_TURNING_M2_S);
+            worst_energy =
+                worst_energy.max(abs_f64(state.energy_defect_j_per_kg) / LEDGER_SCALE_J_PER_KG);
+            n += 1;
+        }
+        assert!(worst_turning < 0.1 * TURNING_CONSERVATION_LIMIT, "{worst_turning:e}");
+        assert!(worst_energy < 0.1 * RESIDUAL_CONSERVATION_LIMIT, "{worst_energy:e}");
+        // The scale is the angular momentum of a circle at the reference radius.
+        assert!(abs_f64(LEDGER_SCALE_TURNING_M2_S - (GM_EARTH_M3_S2 * REFERENCE_RADIUS_M).sqrt()) < 1.0e-4);
+        // The Earth's field turns the orbit: the torque it booked is not small
+        // beside the limit, so the ledger would refuse the week if it were not booked.
+        assert!(abs_f64(state.external_torque_m2_s) > 100.0 * TURNING_CONSERVATION_LIMIT * LEDGER_SCALE_TURNING_M2_S);
+    }
+
     #[test]
     fn honest_steps_conserve() {
         let satellite = SatelliteLageos1::lageos1();
@@ -3452,9 +3611,15 @@ degree,order,normalised_C,normalised_S,source\n\
         while n < 8_640 {
             step(&satellite, &mut state, &mut frame, NO_LOAD, DT).unwrap();
             assert!(state.residual_conservation_error < 1.0e-11);
+            let energy = abs_f64(state.energy_defect_j_per_kg) / LEDGER_SCALE_J_PER_KG;
+            let turning = abs_f64(state.angular_momentum_defect_m2_s) / LEDGER_SCALE_TURNING_M2_S;
+            assert_eq!(state.residual_conservation_error.to_bits(), energy.max(turning).to_bits());
             assert_eq!(
-                state.residual_conservation_error.to_bits(),
-                (abs_f64(state.energy_defect_j_per_kg) / LEDGER_SCALE_J_PER_KG).to_bits()
+                state.angular_momentum_defect_m2_s.to_bits(),
+                (state.angular_momentum_m2_s
+                    - state.angular_momentum_anchor_m2_s
+                    - state.external_torque_m2_s)
+                    .to_bits()
             );
             assert_eq!(
                 state.energy_defect_j_per_kg.to_bits(),
@@ -3464,7 +3629,8 @@ degree,order,normalised_C,normalised_S,source\n\
                     .to_bits()
             );
             if n == 0 {
-                assert!(state.residual_conservation_error < 1.0e-14);
+                assert!(energy < 1.0e-14);
+                assert!(turning < 1.0e-13, "{turning:e}");
             }
             n += 1;
         }
@@ -3515,7 +3681,8 @@ degree,order,normalised_C,normalised_S,source\n\
         }
         // The honest step from the same state lands.
         step(&satellite, &mut state, &mut frame, NO_LOAD, DT).unwrap();
-        assert!(state.residual_conservation_error < 1.0e-14);
+        assert!(abs_f64(state.energy_defect_j_per_kg) / LEDGER_SCALE_J_PER_KG < 1.0e-14);
+        assert!(abs_f64(state.angular_momentum_defect_m2_s) / LEDGER_SCALE_TURNING_M2_S < 1.0e-13);
         proof_intact(&frame);
     }
 
@@ -3565,7 +3732,7 @@ degree,order,normalised_C,normalised_S,source\n\
         let own = rk4_with_signs(&satellite, START_EPOCH_UTC_S, y, DT, 1.0, 1.0).unwrap();
         let card = integrate(&satellite, START_EPOCH_UTC_S, y, DT).unwrap();
         let mut index = 0;
-        while index < 7 {
+        while index < 8 {
             assert_eq!(own[index].to_bits(), card[index].to_bits());
             index += 1;
         }
@@ -3585,14 +3752,15 @@ degree,order,normalised_C,normalised_S,source\n\
 
         // Both signs right through the same helper: lands.
         step_with_signs(&satellite, &mut state, &mut frame, DT, 1.0, 1.0).unwrap();
-        assert!(state.residual_conservation_error < 1.0e-14);
+        assert!(abs_f64(state.energy_defect_j_per_kg) / LEDGER_SCALE_J_PER_KG < 1.0e-14);
         proof_intact(&frame);
     }
 
     #[test]
-    fn a_flipped_coriolis_sign_passes_the_ledger_and_the_position_test_catches_it() {
+    fn a_flipped_coriolis_sign_passes_the_energy_ledger_and_the_turning_ledger_refuses_it() {
         // The Coriolis force is at right angles to the velocity and does no
-        // work. The ledger cannot see its sign. This is a stated limit.
+        // work. The energy ledger cannot see its sign; the ledger of the
+        // angular momentum about the Earth's axis can.
         let satellite = SatelliteLageos1::lageos1();
         let mut state = start(&satellite);
         let saved = state_bits(&state);
@@ -3608,17 +3776,27 @@ degree,order,normalised_C,normalised_S,source\n\
         let miss_m = apart([trial[0], trial[1], trial[2]], STAND_IN_STATES[0].1);
         assert!(miss_m > 60.0 && miss_m < 70.0, "{miss_m} m");
 
-        // What stops the step is the card's orbit band, not the ledger: the
-        // orbit worked out from the wrong velocity is in neither of the two
-        // compared orbits, at the first landing.
+        // The turning ledger names it at the first landing: L_z moved by
+        // 4 ω (x v_x + y v_y) dt that no torque booked, many times its limit.
         let got = step_with_signs(&satellite, &mut state, &mut frame, DT, -1.0, 1.0);
-        assert_eq!(got, Err(StepReject::OrbitOutsideCard));
+        assert_eq!(got, Err(StepReject::AngularMomentumBreach));
         assert_eq!(state_bits(&state), saved);
         assert_eq!(frame.to_bytes(), held);
+        let turning = (angular_momentum_about_axis_m2_s(
+            &satellite,
+            [trial[0], trial[1], trial[2]],
+            [trial[3], trial[4], trial[5]],
+        ) - state.angular_momentum_anchor_m2_s
+            - trial[7])
+            / LEDGER_SCALE_TURNING_M2_S;
+        assert!(abs_f64(turning) > 1.0e3 * TURNING_CONSERVATION_LIMIT, "{turning:e}");
+        // The same orbit with the right sign lands, the turning ledger at rounding.
+        step_with_signs(&satellite, &mut state, &mut frame, DT, 1.0, 1.0).unwrap();
+        assert!(abs_f64(state.angular_momentum_defect_m2_s) / LEDGER_SCALE_TURNING_M2_S < 1.0e-13);
 
-        // Without the card's bands, as in the stand-in: one day of RK4 with
-        // the wrong sign. The ledger stays clean all day, and the satellite
-        // ends 24 955 km from where it should be.
+        // Through the test's own RK4 alone: one day with the wrong sign. The
+        // energy ledger stays clean all day, and the satellite ends 24 955 km
+        // from where it should be.
         let begin = start(&satellite);
         let mut y = recorded(&begin);
         let mut worst = 0.0;
@@ -3650,7 +3828,7 @@ degree,order,normalised_C,normalised_S,source\n\
         let mut frame = blank_frame();
         step(&satellite, &mut state, &mut frame, NO_LOAD, 60.0).unwrap();
         // Measured after one step: 3.36e-11, ten thousand times a 10 s step.
-        let first = state.residual_conservation_error;
+        let first = abs_f64(state.energy_defect_j_per_kg) / LEDGER_SCALE_J_PER_KG;
         assert!(first > 3.0e-11 && first < 4.0e-11, "{first:e}");
         let mut landed = 1u32;
         let why = loop {
@@ -3668,7 +3846,12 @@ degree,order,normalised_C,normalised_S,source\n\
                 }
             }
         };
-        assert_eq!(why, StepReject::FirstLawBreach);
+        // The turning ledger, five times the more sensitive at this step, may
+        // name it first.
+        assert!(
+            why == StepReject::FirstLawBreach || why == StepReject::AngularMomentumBreach,
+            "{why:?}"
+        );
         assert!(state.residual_conservation_error > 10.0 * first);
         // From the refused state a step at the ceiling still lands: the
         // ledger was not reset and nothing was pulled back.
@@ -3712,6 +3895,126 @@ degree,order,normalised_C,normalised_S,source\n\
         step(&satellite, &mut honest, &mut frame, NO_LOAD, DT).unwrap();
         assert_eq!(state_bits(&state), state_bits(&honest));
         proof_intact(&frame);
+    }
+
+    /// Past the old wall at 11 997 km, down to the Earth's equatorial radius.
+    /// Circular orbits at 11 000, 9 000, 7 000 and 6 700 km land a day of
+    /// 10 s steps with both ledgers closed and every landing flagged, and the
+    /// 10 s step there is held against steps of 2.5 s; an orbit from 6 500 km
+    /// at perigee to 12 300 km at apogee is flagged on exactly its landings
+    /// under 11 997 km; a fall from rest at 7 000 km lands until the landing
+    /// that would pass under the equatorial radius, which is refused by name
+    /// with the state and the frame kept; and Euler, the midpoint rule, the
+    /// Coriolis term with the wrong sign and a falsified work are named there.
+    #[test]
+    fn below_the_compared_radii_the_card_computes_down_to_the_earths_equatorial_radius() {
+        let satellite = SatelliteLageos1::lageos1();
+        // On the equator, where an orbit of any inclination can stand.
+        let toward = [1.0, 0.0, 0.0];
+        let circle = |radius_m: f64, inclination_deg: f64| {
+            let (position_m, velocity_m_s) =
+                on_orbit(&satellite, toward, radius_m, radius_m, 0.0, inclination_deg);
+            fresh(&satellite, START_EPOCH_UTC_S, position_m, velocity_m_s)
+                .unwrap_or_else(|| ::core::panic!("{radius_m} is refused"))
+        };
+        let advance = |mut state: SatelliteState, dt_s: f64, steps: usize, what: &str| -> (SatelliteState, f64, f64) {
+            let mut frame = blank_frame();
+            let mut worst = 0.0_f64;
+            let mut lowest = f64::INFINITY;
+            for index in 0..steps {
+                step(&satellite, &mut state, &mut frame, NO_LOAD, dt_s)
+                    .unwrap_or_else(|reject| ::core::panic!("{what}: step {index}: {reject:?}"));
+                assert_eq!(
+                    frame.flags & FLAG_BELOW_COMPARED_RADIUS != 0,
+                    state.radius_m < COMPARED_RADIUS_MIN_M,
+                    "{what}: step {index}"
+                );
+                assert_eq!(frame.flags & !(FLAG_BELOW_COMPARED_RADIUS | FLAG_EARTH_SHADOW), 0);
+                if state.residual_conservation_error > worst {
+                    worst = state.residual_conservation_error;
+                }
+                if state.radius_m < lowest {
+                    lowest = state.radius_m;
+                }
+                proof_intact(&frame);
+            }
+            (state, worst, lowest)
+        };
+        for (radius_m, inclination_deg) in [(11_000_000.0, 52.6), (9_000_000.0, 109.8), (7_000_000.0, 98.0), (6_700_000.0, 51.6)] {
+            let start = circle(radius_m, inclination_deg);
+            let (end, worst, lowest) = advance(start, DT, 8_640, "a day on a circle");
+            assert!(worst <= RESIDUAL_CONSERVATION_LIMIT, "{radius_m}: {worst:e}");
+            assert!(lowest > FIELD_RADIUS_M && end.radius_m < COMPARED_RADIUS_MIN_M, "{radius_m}");
+            // The 10 s step against steps of 2.5 s over one revolution.
+            let period_s = 2.0 * core::f64::consts::PI * (radius_m * radius_m * radius_m / GM_EARTH_M3_S2).sqrt();
+            let steps = (period_s / DT) as usize;
+            let (coarse, _, _) = advance(start, DT, steps, "one revolution at 10 s");
+            let (fine, _, _) = advance(start, DT / 4.0, 4 * steps, "one revolution at 2.5 s");
+            let off = apart(coarse.position_m, fine.position_m);
+            assert!(off < 1.0, "{radius_m}: {off} m");
+        }
+        // An orbit that crosses the old wall twice a revolution.
+        let a_m = 9_400_000.0;
+        let e = (12_300_000.0 - 6_500_000.0) / (12_300_000.0 + 6_500_000.0);
+        let (position_m, velocity_m_s) = on_orbit(&satellite, toward, 6_500_000.0, a_m, e, 63.4);
+        let crossing = fresh(&satellite, START_EPOCH_UTC_S, position_m, velocity_m_s).unwrap();
+        let (end, worst, lowest) = advance(crossing, DT, 1_820, "two revolutions from 6 500 to 12 300 km");
+        assert!(worst <= RESIDUAL_CONSERVATION_LIMIT, "{worst:e}");
+        // Its perigee is under the old wall and its apogee over it.
+        assert!(lowest < 6_510_000.0 && lowest > FIELD_RADIUS_M, "{lowest}");
+        assert!(end.radius_m < COMPARED_RADIUS_MIN_M, "{}", end.radius_m);
+        // A fall from rest at 7 000 km over 60 degrees of latitude, seen from a
+        // frame that does not turn.
+        let position_m = [3_500_000.0, 0.0, 3_500_000.0 * 3.0_f64.sqrt()];
+        let velocity_m_s = turning_frame_velocity_m_s(&satellite, position_m, [0.0; 3]);
+        let mut falling = fresh(&satellite, START_EPOCH_UTC_S, position_m, velocity_m_s).unwrap();
+        let mut frame = blank_frame();
+        let mut landed = 0;
+        loop {
+            let kept = state_bits(&falling);
+            let kept_frame = frame.to_bytes();
+            match step(&satellite, &mut falling, &mut frame, NO_LOAD, DT) {
+                Ok(()) => {
+                    landed += 1;
+                    assert!(falling.radius_m >= FIELD_RADIUS_M);
+                    assert!(falling.residual_conservation_error <= RESIDUAL_CONSERVATION_LIMIT);
+                    assert_ne!(frame.flags & FLAG_BELOW_COMPARED_RADIUS, 0);
+                }
+                Err(reject) => {
+                    assert_eq!(reject, StepReject::RadiusBelowEarthRadius, "after {landed} steps");
+                    assert_eq!(state_bits(&falling), kept);
+                    assert_eq!(frame.to_bytes(), kept_frame);
+                    break;
+                }
+            }
+            assert!(landed < 1_000);
+        }
+        assert!(landed > 10 && falling.radius_m < FIELD_RADIUS_M + 40_000.0, "{landed} {}", falling.radius_m);
+        // The attacks, at 6 700 km.
+        let low = circle(6_700_000.0, 51.6);
+        let mut frame = blank_frame();
+        let mut state = low;
+        assert_eq!(
+            step_with_signs(&satellite, &mut state, &mut frame, DT, -1.0, 1.0),
+            Err(StepReject::AngularMomentumBreach)
+        );
+        assert_eq!(state_bits(&state), state_bits(&low));
+        let mut state = low;
+        assert!(core::matches!(
+            step_euler(&satellite, &mut state, &mut frame, DT),
+            Err(StepReject::SpontaneousGeneration | StepReject::FirstLawBreach | StepReject::AngularMomentumBreach)
+        ));
+        let mut state = low;
+        assert!(core::matches!(
+            step_midpoint(&satellite, &mut state, &mut frame, DT),
+            Err(StepReject::SpontaneousGeneration | StepReject::FirstLawBreach | StepReject::AngularMomentumBreach)
+        ));
+        let gate = 2.0 * RESIDUAL_CONSERVATION_LIMIT * LEDGER_SCALE_J_PER_KG;
+        let mut state = low;
+        assert_eq!(step_bias_work(&satellite, &mut state, &mut frame, DT, -gate), Err(StepReject::SpontaneousGeneration));
+        let mut state = low;
+        assert_eq!(step_bias_work(&satellite, &mut state, &mut frame, DT, gate), Err(StepReject::FirstLawBreach));
+        assert_eq!(state_bits(&state), state_bits(&low));
     }
 
     #[test]
@@ -3784,7 +4087,11 @@ degree,order,normalised_C,normalised_S,source\n\
             [f64::INFINITY, 0.0, 0.0]
         ));
 
-        // The radius band: 11 996 km and 12 328 km in the direction of the start.
+        // The lowest radius is the Earth's equatorial radius: one metre under
+        // it in the direction of the start is refused; 11 996 km, where the
+        // card stood at 11 997 km through engine 0.11, and 12 328 km and
+        // 13 000 km, where it stood at 12 327 km through engine 0.9, are
+        // computed, and a step from each lands with both ledgers closed.
         let scale = |radius_m: f64| {
             let by = radius_m / size(START_POSITION_M);
             [
@@ -3793,50 +4100,46 @@ degree,order,normalised_C,normalised_S,source\n\
                 START_POSITION_M[2] * by,
             ]
         };
-        for radius_m in [11_996_000.0, 12_328_000.0] {
-            assert!(none(START_EPOCH_UTC_S, scale(radius_m), START_VELOCITY_M_S));
-            let mut state = good;
-            state.position_m = scale(radius_m);
-            refuse(
-                state,
-                DT,
-                StepReject::RadiusOutsideCard,
-                "a radius outside the band",
-            );
-        }
-        // The edges themselves are inside, and one metre past each is not. A
-        // LAGEOS-2 orbit of 12 162 km inclined 52.645 degrees has its lowest
-        // point at 11 997 km or its highest at 12 327 km, eccentricity 0.01357,
-        // when it crosses the x axis there at right angles.
-        for (edge_m, past_m) in [(11_997_000.0, 11_996_999.0), (12_327_000.0, 12_327_001.0)] {
-            let at = |radius_m: f64| {
-                let e = abs_f64(1.0 - radius_m / 12_162_000.0);
-                on_orbit(&satellite, [1.0, 0.0, 0.0], radius_m, 12_162_000.0, e, 52.645)
-            };
-            let (position_m, velocity_m_s) = at(edge_m);
-            let mut state =
-                fresh(&satellite, START_EPOCH_UTC_S, position_m, velocity_m_s)
-                    .unwrap();
-            assert_eq!(state.radius_m.to_bits(), edge_m.to_bits());
-            assert!(abs_f64(state.semi_major_axis_m - 12_162_000.0) < 1.0e-3);
+        assert!(none(START_EPOCH_UTC_S, scale(FIELD_RADIUS_M - 1.0), START_VELOCITY_M_S));
+        assert!(!none(START_EPOCH_UTC_S, scale(11_996_000.0), START_VELOCITY_M_S));
+        let mut state = good;
+        state.position_m = scale(FIELD_RADIUS_M - 1.0);
+        refuse(state, DT, StepReject::RadiusBelowEarthRadius, "a radius under the Earth's equatorial radius");
+        let mut state = good;
+        state.position_m = scale(1.0);
+        refuse(state, DT, StepReject::RadiusBelowEarthRadius, "a metre from the centre");
+        let lands = |mut state: SatelliteState, dt_s: f64, what: &str| -> SatelliteState {
             let mut scratch = blank_frame();
-            step(&satellite, &mut state, &mut scratch, NO_LOAD, DT).unwrap();
-            let (position_m, velocity_m_s) = at(past_m);
-            assert!(none(START_EPOCH_UTC_S, position_m, velocity_m_s));
-            let mut state = good;
-            state.position_m = position_m;
-            state.velocity_m_s = velocity_m_s;
-            refuse(
-                state,
-                DT,
-                StepReject::RadiusOutsideCard,
-                "one metre past an edge",
-            );
+            let got = step(&satellite, &mut state, &mut scratch, NO_LOAD, dt_s);
+            assert_eq!(got, Ok(()), "{what}");
+            assert!(state.residual_conservation_error < RESIDUAL_CONSERVATION_LIMIT, "{what}");
+            proof_intact(&scratch);
+            state
+        };
+        for radius_m in [11_996_000.0, 12_328_000.0, 13_000_000.0] {
+            let state = fresh(&satellite, START_EPOCH_UTC_S, scale(radius_m), START_VELOCITY_M_S)
+                .unwrap_or_else(|| ::core::panic!("{radius_m} is refused"));
+            lands(state, DT, "a radius past the compared ones");
         }
-        // A landing outside: 10 m under the top and rising at 10 m/s, on a
-        // LAGEOS-2 orbit. A 10 s step would end near 90 m above the top. It
-        // is refused, the state stays where it was, and a 0.1 s step from it
-        // lands. Nothing was pulled back.
+        // The lowest compared point is inside, and one metre under it is
+        // inside as well, where through engine 0.11 it was not. A LAGEOS-2
+        // orbit of 12 162 km inclined 52.645 degrees has its lowest point at
+        // 11 997 km, eccentricity 0.01357, when it crosses the x axis there at
+        // right angles.
+        let at = |radius_m: f64| {
+            let e = abs_f64(1.0 - radius_m / 12_162_000.0);
+            on_orbit(&satellite, [1.0, 0.0, 0.0], radius_m, 12_162_000.0, e, 52.645)
+        };
+        let (position_m, velocity_m_s) = at(11_997_000.0);
+        let state = fresh(&satellite, START_EPOCH_UTC_S, position_m, velocity_m_s).unwrap();
+        assert_eq!(state.radius_m.to_bits(), 11_997_000.0_f64.to_bits());
+        assert!(abs_f64(state.semi_major_axis_m - 12_162_000.0) < 1.0e-3);
+        lands(state, DT, "the lowest edge");
+        let (position_m, velocity_m_s) = at(11_996_999.0);
+        let state = fresh(&satellite, START_EPOCH_UTC_S, position_m, velocity_m_s).unwrap();
+        lands(state, DT, "one metre under the lowest compared point");
+        // A landing past where the card stood: 10 m under 12 327 km and rising
+        // at 10 m/s, on a LAGEOS-2 orbit. The 10 s step lands near 90 m above.
         let position_m = [12_326_990.0, 0.0, 0.0];
         let speed_squared = gm * (2.0 / 12_326_990.0 - 1.0 / 12_162_000.0);
         let across = (speed_squared - 100.0).sqrt();
@@ -3847,221 +4150,109 @@ degree,order,normalised_C,normalised_S,source\n\
             across * crate::math::sin(tilt),
         ];
         let velocity_m_s = turning_frame_velocity_m_s(&satellite, position_m, fixed_m_s);
-        let rising =
-            fresh(&satellite, START_EPOCH_UTC_S, position_m, velocity_m_s)
-                .unwrap();
-        refuse(
-            rising,
-            DT,
-            StepReject::RadiusOutsideCard,
-            "a landing above the band",
-        );
-        let mut state = rising;
-        let mut scratch = blank_frame();
-        step(&satellite, &mut state, &mut scratch, NO_LOAD, 0.1).unwrap();
-        assert!(state.radius_m > 12_326_990.5 && state.radius_m < 12_326_991.5);
-        assert_eq!(state.position_m[0].to_bits(), {
-            let mut again = rising;
-            let mut other = blank_frame();
-            step(&satellite, &mut again, &mut other, NO_LOAD, 0.1).unwrap();
-            again.position_m[0].to_bits()
-        });
+        let rising = fresh(&satellite, START_EPOCH_UTC_S, position_m, velocity_m_s).unwrap();
+        let landed = lands(rising, DT, "a landing above 12 327 km");
+        assert!(landed.radius_m > RADIUS_MAX_M, "{}", landed.radius_m);
 
-        // The orbit band: the start state with its speed changed.
+        // Orbits past the two compared ones, where the card stood at their
+        // bands: the start state with its speed changed, escaping and falling
+        // among them, lands with both ledgers closed.
         for (by, what) in [
             (1.02, "the speed raised 2 percent"),
             (1.5, "the speed raised 50 percent: escaping"),
             (0.98, "the speed lowered 2 percent"),
-            (0.0, "no speed at all: falling"),
+            (0.0, "no speed at all in the turning frame"),
         ] {
             let velocity_m_s = [
                 START_VELOCITY_M_S[0] * by,
                 START_VELOCITY_M_S[1] * by,
                 START_VELOCITY_M_S[2] * by,
             ];
-            assert!(
-                none(START_EPOCH_UTC_S, START_POSITION_M, velocity_m_s),
-                "{what}"
-            );
-            let mut state = good;
-            state.velocity_m_s = velocity_m_s;
-            refuse(state, DT, StepReject::OrbitOutsideCard, what);
+            let state = fresh(&satellite, START_EPOCH_UTC_S, START_POSITION_M, velocity_m_s)
+                .unwrap_or_else(|| ::core::panic!("{what} is refused"));
+            lands(state, DT, what);
         }
-        assert!(good.semi_major_axis_m > 12_265_000.0 && good.semi_major_axis_m < 12_275_000.0);
-
-        // The two compared orbits, and nothing else. Orbits that cross the x
-        // axis at a distance of their semi-major axis, inside every band, and
-        // past each edge of one band with the other two numbers held inside.
         let x_axis = [1.0, 0.0, 0.0];
         let orbit = |a_m: f64, e: f64, inclination_deg: f64| {
             on_orbit(&satellite, x_axis, a_m, a_m, e, inclination_deg)
         };
         for (a_m, e, inclination_deg, what) in [
             (12_270_000.0, 0.0039, 109.815, "LAGEOS-1"),
-            (12_265_100.0, 0.0039, 109.815, "LAGEOS-1, the smallest orbit"),
-            (12_274_900.0, 0.0039, 109.815, "LAGEOS-1, the largest orbit"),
-            (12_270_000.0, 0.00341, 109.815, "LAGEOS-1, the roundest orbit"),
-            (12_270_000.0, 0.00439, 109.815, "LAGEOS-1, the least round orbit"),
-            (12_270_000.0, 0.0039, 109.801, "LAGEOS-1, the lowest inclination"),
-            (12_270_000.0, 0.0039, 109.829, "LAGEOS-1, the highest inclination"),
             (12_162_000.0, 0.0135, 52.645, "LAGEOS-2"),
-            (12_158_100.0, 0.0135, 52.645, "LAGEOS-2, the smallest orbit"),
-            (12_165_900.0, 0.0135, 52.645, "LAGEOS-2, the largest orbit"),
-            (12_162_000.0, 0.01321, 52.645, "LAGEOS-2, the roundest orbit"),
-            (12_162_000.0, 0.01379, 52.645, "LAGEOS-2, the least round orbit"),
-            (12_162_000.0, 0.0135, 52.631, "LAGEOS-2, the lowest inclination"),
-            (12_162_000.0, 0.0135, 52.659, "LAGEOS-2, the highest inclination"),
+            (12_264_900.0, 0.0039, 109.815, "LAGEOS-1 under its smallest orbit"),
+            (12_270_000.0, 0.00339, 109.815, "LAGEOS-1 rounder than compared"),
+            (12_162_000.0, 0.0135, 52.661, "LAGEOS-2 over its inclination"),
+            (12_270_000.0, 0.0039, 52.645, "LAGEOS-1 at the inclination of LAGEOS-2"),
+            (12_270_000.0, 0.0039, 0.0, "an equatorial orbit"),
+            (12_270_000.0, 0.0039, 90.0, "a polar orbit"),
+            (12_270_000.0, 0.0039, 180.0, "a retrograde equatorial orbit"),
+            (12_270_000.0, 0.0, 109.815, "a circle"),
+            (12_216_000.0, 0.0039, 109.815, "between the two orbit sizes"),
+            (20_000_000.0, 0.0, 55.0, "a navigation satellite's orbit"),
+            (42_164_000.0, 0.0, 0.0, "a geostationary orbit"),
         ] {
             let (position_m, velocity_m_s) = orbit(a_m, e, inclination_deg);
             let mut state = fresh(&satellite, START_EPOCH_UTC_S, position_m, velocity_m_s)
                 .unwrap_or_else(|| ::core::panic!("{what} is refused"));
-            let mut scratch = blank_frame();
-            step(&satellite, &mut state, &mut scratch, NO_LOAD, DT).unwrap();
-        }
-        for (a_m, e, inclination_deg, what) in [
-            (12_264_900.0, 0.0039, 109.815, "LAGEOS-1 under its smallest orbit"),
-            (12_275_100.0, 0.0039, 109.815, "LAGEOS-1 over its largest orbit"),
-            (12_270_000.0, 0.00339, 109.815, "LAGEOS-1 rounder than compared"),
-            (12_270_000.0, 0.00441, 109.815, "LAGEOS-1 less round than compared"),
-            (12_270_000.0, 0.0039, 109.799, "LAGEOS-1 under its inclination"),
-            (12_270_000.0, 0.0039, 109.831, "LAGEOS-1 over its inclination"),
-            (12_157_900.0, 0.0135, 52.645, "LAGEOS-2 under its smallest orbit"),
-            (12_166_100.0, 0.0135, 52.645, "LAGEOS-2 over its largest orbit"),
-            (12_162_000.0, 0.01319, 52.645, "LAGEOS-2 rounder than compared"),
-            (12_162_000.0, 0.01381, 52.645, "LAGEOS-2 less round than compared"),
-            (12_162_000.0, 0.0135, 52.629, "LAGEOS-2 under its inclination"),
-            (12_162_000.0, 0.0135, 52.661, "LAGEOS-2 over its inclination"),
-            // the bands of one orbit with a number of the other
-            (12_270_000.0, 0.0039, 52.645, "LAGEOS-1 at the inclination of LAGEOS-2"),
-            (12_270_000.0, 0.0135, 109.815, "LAGEOS-1 at the eccentricity of LAGEOS-2"),
-            (12_162_000.0, 0.0135, 109.815, "LAGEOS-2 at the inclination of LAGEOS-1"),
-            (12_162_000.0, 0.0039, 52.645, "LAGEOS-2 at the eccentricity of LAGEOS-1"),
-            // orbits never compared: equatorial, polar, retrograde, circular
-            (12_270_000.0, 0.0039, 0.0, "an equatorial orbit"),
-            (12_270_000.0, 0.0039, 90.0, "a polar orbit"),
-            (12_270_000.0, 0.0039, 180.0, "a retrograde equatorial orbit"),
-            (12_270_000.0, 0.0039, 81.0, "between the two inclinations"),
-            (12_270_000.0, 0.0, 109.815, "a circle"),
-            (12_216_000.0, 0.0039, 109.815, "between the two orbit sizes"),
-        ] {
-            let (position_m, velocity_m_s) = orbit(a_m, e, inclination_deg);
-            assert!(
-                none(START_EPOCH_UTC_S, position_m, velocity_m_s),
-                "{what}"
-            );
-            let mut state = good;
-            state.position_m = position_m;
-            state.velocity_m_s = velocity_m_s;
-            refuse(state, DT, StepReject::OrbitOutsideCard, what);
+            for _ in 0..360 {
+                state = lands(state, DT, what);
+            }
         }
         // The polar orbit of 0.6.0's worked example, circular at 12 270 km
-        // over the pole, is refused.
-        assert!(none(
+        // over the pole, is computed again.
+        let polar = fresh(
+            &satellite,
             START_EPOCH_UTC_S,
             [12_270_000.0, 0.0, 0.0],
-            [0.0, -894.7425285009465, 5699.629247010917]
-        ));
+            [0.0, -894.7425285009465, 5699.629247010917],
+        )
+        .unwrap();
+        lands(polar, DT, "the polar orbit of 0.6.0");
 
-        // The dates: 2026-08-22 and 2026-09-21, a day outside each end of the
-        // compared runs, and 2017-01-01, which 0.6.0 took.
-        for epoch_utc_s in [EPOCH_MIN_S - 86_400.0, EPOCH_MAX_S + 86_400.0, 536_500_800.0] {
+        // The dates: a day outside each end of the compared runs, and
+        // 2017-01-01, the last leap second, are computed; the day before it
+        // and the day after the leap-second file expires are refused.
+        for epoch_utc_s in [
+            COMPARED_EPOCH_FIRST_S - 86_400.0,
+            COMPARED_EPOCH_LAST_S + 86_400.0,
+            536_500_800.0,
+            EPOCH_MAX_S - 86_400.0,
+        ] {
+            let state = fresh(&satellite, epoch_utc_s, START_POSITION_M, START_VELOCITY_M_S)
+                .unwrap_or_else(|| ::core::panic!("{epoch_utc_s} is refused"));
+            lands(state, DT, "a date inside the leap-second span");
+        }
+        for epoch_utc_s in [EPOCH_MIN_S - 86_400.0, EPOCH_MAX_S + 86_400.0] {
             assert!(none(epoch_utc_s, START_POSITION_M, START_VELOCITY_M_S));
             let mut state = good;
             state.start_epoch_utc_s = epoch_utc_s;
             refuse(
                 state,
                 DT,
-                StepReject::EpochOutsideCard,
-                "a date outside the card",
+                StepReject::EpochOutsideLeapSecondSpan,
+                "a date outside the leap-second span",
             );
         }
-        // The first second of the card is inside. So is the last, but no step
+        // The first second of the span is inside. So is the last, but no step
         // can be taken from it; a step that lands on it exactly lands.
-        let mut first = fresh(
-            &satellite,
-            EPOCH_MIN_S,
-            START_POSITION_M,
-            START_VELOCITY_M_S,
-        )
-        .unwrap();
-        let mut scratch = blank_frame();
-        step(&satellite, &mut first, &mut scratch, NO_LOAD, DT).unwrap();
-        assert!(none(
-            EPOCH_MIN_S - 1.0,
-            START_POSITION_M,
-            START_VELOCITY_M_S
-        ));
-        let last = fresh(
-            &satellite,
-            EPOCH_MAX_S,
-            START_POSITION_M,
-            START_VELOCITY_M_S,
-        )
-        .unwrap();
-        refuse(
-            last,
-            DT,
-            StepReject::EpochOutsideCard,
-            "a step past the last date",
-        );
-        let mut near = fresh(
-            &satellite,
-            EPOCH_MAX_S - 10.0,
-            START_POSITION_M,
-            START_VELOCITY_M_S,
-        )
-        .unwrap();
-        step(&satellite, &mut near, &mut scratch, NO_LOAD, DT).unwrap();
-        assert_eq!(
-            near.epoch_utc_s().to_bits(),
-            EPOCH_MAX_S.to_bits()
-        );
-        refuse(
-            near,
-            DT,
-            StepReject::EpochOutsideCard,
-            "a second step past the last date",
-        );
+        let first = fresh(&satellite, EPOCH_MIN_S, START_POSITION_M, START_VELOCITY_M_S).unwrap();
+        lands(first, DT, "the first second");
+        assert!(none(EPOCH_MIN_S - 1.0, START_POSITION_M, START_VELOCITY_M_S));
+        let last = fresh(&satellite, EPOCH_MAX_S, START_POSITION_M, START_VELOCITY_M_S).unwrap();
+        refuse(last, DT, StepReject::EpochOutsideLeapSecondSpan, "a step past the last date");
+        let near = fresh(&satellite, EPOCH_MAX_S - 10.0, START_POSITION_M, START_VELOCITY_M_S)
+            .unwrap();
+        let near = lands(near, DT, "a step to the last date");
+        assert_eq!(near.epoch_utc_s().to_bits(), EPOCH_MAX_S.to_bits());
+        refuse(near, DT, StepReject::EpochOutsideLeapSecondSpan, "a second step past the last date");
         // The clock of a run counts too.
         let mut late = good;
         late.t_s = EPOCH_MAX_S - START_EPOCH_UTC_S - 5.0;
-        refuse(
-            late,
-            DT,
-            StepReject::EpochOutsideCard,
-            "a run that reaches the last date",
-        );
+        refuse(late, DT, StepReject::EpochOutsideLeapSecondSpan, "a run that reaches the last date");
 
-        // The seven days of a forecast. A state stated as 604 790 s from its
-        // published state takes one 10 s step, to the seven days exactly, and
-        // no more.
-        let mut old = SatelliteState::try_state(
-            &satellite,
-            START_EPOCH_UTC_S,
-            FORECAST_HORIZON_S - 10.0,
-            START_POSITION_M,
-            START_VELOCITY_M_S,
-        )
-        .unwrap();
-        let mut scratch = blank_frame();
-        step(&satellite, &mut old, &mut scratch, NO_LOAD, DT).unwrap();
-        assert_eq!(old.forecast_elapsed_s().to_bits(), FORECAST_HORIZON_S.to_bits());
-        refuse(old, DT, StepReject::HorizonOutsideCard, "a step past seven days");
-        refuse(old, 0.1, StepReject::HorizonOutsideCard, "a short step past seven days");
-        // The run's own clock counts the same way.
-        let mut long = good;
-        long.t_s = FORECAST_HORIZON_S - 5.0;
-        refuse(long, DT, StepReject::HorizonOutsideCard, "a run past seven days");
-        // A start at seven days is a state; no step can be taken from it.
-        let at_end = SatelliteState::try_state(
-            &satellite,
-            START_EPOCH_UTC_S,
-            FORECAST_HORIZON_S,
-            START_POSITION_M,
-            START_VELOCITY_M_S,
-        )
-        .unwrap();
-        refuse(at_end, DT, StepReject::HorizonOutsideCard, "a step from seven days");
+        // A forecast past seven days, where the card stood, is computed: a
+        // state stated as 604 790 s from its published state takes steps past
+        // seven days, and so do a start at seven days and one at a year.
         let stated = |elapsed_s: f64| {
             SatelliteState::try_state(
                 &satellite,
@@ -4071,24 +4262,47 @@ degree,order,normalised_C,normalised_S,source\n\
                 START_VELOCITY_M_S,
             )
         };
+        let mut old = stated(FORECAST_HORIZON_S - 10.0).unwrap();
+        for _ in 0..3 {
+            old = lands(old, DT, "a step past seven days");
+        }
+        assert!(old.forecast_elapsed_s() > FORECAST_HORIZON_S);
+        lands(stated(FORECAST_HORIZON_S).unwrap(), DT, "a step from seven days");
+        lands(stated(365.25 * 86_400.0).unwrap(), DT, "a step a year on");
+        let mut long = good;
+        long.t_s = FORECAST_HORIZON_S - 5.0;
+        let mut scratch = blank_frame();
+        let got = step(&satellite, &mut long, &mut scratch, NO_LOAD, DT);
+        assert!(got != Err(StepReject::ForecastElapsedBelowZero));
         assert!(stated(-1.0e-9).is_none());
-        assert!(stated(f64::from_bits(FORECAST_HORIZON_S.to_bits() + 1)).is_none());
         assert!(stated(f64::NAN).is_none());
         assert!(stated(f64::INFINITY).is_none());
         let mut early = good;
         early.forecast_elapsed_at_start_s = -1.0;
-        refuse(early, DT, StepReject::HorizonOutsideCard, "a stated time below zero");
+        refuse(early, DT, StepReject::ForecastElapsedBelowZero, "a stated time below zero");
         let mut broken = good;
         broken.forecast_elapsed_at_start_s = f64::NAN;
         refuse(broken, DT, StepReject::NonFiniteState, "NaN in the stated time");
+        let mut broken = good;
+        broken.external_torque_m2_s = f64::NAN;
+        refuse(broken, DT, StepReject::NonFiniteState, "NaN in the booked torque");
 
         // A step far too long for the orbit: refused by name, not stepped.
-        refuse(
-            good,
-            3_000.0,
-            StepReject::RadiusOutsideCard,
-            "a 50 minute step",
+        let mut state = good;
+        let saved = state_bits(&state);
+        let mut scratch = blank_frame();
+        let got = step(&satellite, &mut state, &mut scratch, NO_LOAD, 3_000.0);
+        assert!(
+            core::matches!(
+                got,
+                Err(StepReject::RadiusBelowEarthRadius
+                    | StepReject::SpontaneousGeneration
+                    | StepReject::FirstLawBreach
+                    | StepReject::AngularMomentumBreach)
+            ),
+            "{got:?}"
         );
+        assert_eq!(state_bits(&state), saved);
     }
 
     #[test]
@@ -4250,7 +4464,7 @@ degree,order,normalised_C,normalised_S,source\n\
         assert_eq!(got, Err(StepReject::NonFiniteInput));
         proof_intact(&frame);
         let got = step(&satellite, &mut state, &mut frame, NO_LOAD, 3_000.0);
-        assert_eq!(got, Err(StepReject::RadiusOutsideCard));
+        assert!(got.is_err(), "{got:?}");
         proof_intact(&frame);
         let got = step_euler(&satellite, &mut state, &mut frame, DT);
         assert_eq!(got, Err(StepReject::SpontaneousGeneration));
@@ -4261,12 +4475,16 @@ degree,order,normalised_C,normalised_S,source\n\
         let mut faster = state;
         faster.velocity_m_s[0] *= 1.5;
         let got = step(&satellite, &mut faster, &mut frame, NO_LOAD, DT);
-        assert_eq!(got, Err(StepReject::OrbitOutsideCard));
+        assert!(got.is_err(), "{got:?}");
+        proof_intact(&frame);
+        let mut flipped = state;
+        let got = step_with_signs(&satellite, &mut flipped, &mut frame, DT, -1.0, 1.0);
+        assert_eq!(got, Err(StepReject::AngularMomentumBreach));
         proof_intact(&frame);
         let mut later = state;
         later.start_epoch_utc_s = EPOCH_MAX_S;
         let got = step(&satellite, &mut later, &mut frame, NO_LOAD, DT);
-        assert_eq!(got, Err(StepReject::EpochOutsideCard));
+        assert_eq!(got, Err(StepReject::EpochOutsideLeapSecondSpan));
         proof_intact(&frame);
         let mut broken = state;
         broken.position_m[0] = f64::NAN;
@@ -4289,13 +4507,13 @@ degree,order,normalised_C,normalised_S,source\n\
         assert_eq!(floor_s.to_bits(), (ceiling_s / GATE_OVER_FLOOR).to_bits());
         assert_eq!(floor_s.to_bits(), 9.5367431640625e-6_f64.to_bits());
 
-        // The clock. The card allows a forecast of seven days, and its dates
-        // span 28 days. The Sun and the Moon are placed at the time counted
+        // The clock. The card's dates span the leap-second span, 2017-01-01 to
+        // 2027-06-28, 3830 days. The Sun and the Moon are placed at the time counted
         // from 2000, at the start, the middle and the end of a step. Each of
         // those advances by the floor step, or by half of it, exactly.
         let dates_s = EPOCH_MAX_S - EPOCH_MIN_S;
-        assert_eq!(dates_s.to_bits(), 2_419_200.0_f64.to_bits());
-        for late_s in [FORECAST_HORIZON_S, FORECAST_HORIZON_S - 1.0, EPOCH_MAX_S - 1.0] {
+        assert_eq!(dates_s.to_bits(), 330_912_000.0_f64.to_bits());
+        for late_s in [FORECAST_HORIZON_S, dates_s, dates_s - 1.0, EPOCH_MAX_S - 1.0] {
             assert_eq!(((late_s + floor_s) - late_s).to_bits(), floor_s.to_bits());
             let half_s = 0.5 * floor_s;
             assert_eq!(((late_s + half_s) - late_s).to_bits(), half_s.to_bits());
@@ -4378,7 +4596,7 @@ degree,order,normalised_C,normalised_S,source\n\
         assert!(EPOCH_MAX_S - last_s < 2.0 * floor_s);
         // The published bound holds no allowance: one floor step before the
         // last date, to the spacing of 64-bit numbers there.
-        assert_eq!(last_s, 843_134_399.999_990_5);
+        assert_eq!(last_s, 867_412_799.999_990_5);
         let mut frame = blank_frame();
         let mut state =
             fresh(&card, last_s, START_POSITION_M, START_VELOCITY_M_S)
@@ -4394,7 +4612,7 @@ degree,order,normalised_C,normalised_S,source\n\
             let before = state;
             assert_eq!(
                 step(&card, &mut state, &mut frame, NO_LOAD, dt_s),
-                Err(StepReject::EpochOutsideCard)
+                Err(StepReject::EpochOutsideLeapSecondSpan)
             );
             assert_eq!(state, before);
         }
@@ -4452,7 +4670,7 @@ degree,order,normalised_C,normalised_S,source\n\
                 std::format!("{}.{}", tenths / 10, tenths % 10).parse().unwrap()
             };
             let dt_s = decimal(dt_e1);
-            let start_s = decimal(8_431_344_000 - count * dt_e1);
+            let start_s = decimal(8_674_128_000 - count * dt_e1);
             let mut state =
                 fresh(&card, start_s, START_POSITION_M, START_VELOCITY_M_S)
                     .unwrap();
@@ -4476,7 +4694,7 @@ degree,order,normalised_C,normalised_S,source\n\
             let held = frame.to_bytes();
             assert_eq!(
                 step(&card, &mut state, &mut frame, NO_LOAD, dt_s),
-                Err(StepReject::EpochOutsideCard)
+                Err(StepReject::EpochOutsideLeapSecondSpan)
             );
             assert_eq!(state, before);
             assert_eq!(frame.to_bytes(), held);
@@ -4520,7 +4738,7 @@ degree,order,normalised_C,normalised_S,source\n\
                         landed_past_the_end += 1;
                     }
                 } else {
-                    assert_eq!(result, Err(StepReject::EpochOutsideCard));
+                    assert_eq!(result, Err(StepReject::EpochOutsideLeapSecondSpan));
                     assert_eq!(state, before);
                     assert_eq!(frame.to_bytes(), blank_frame().to_bytes());
                     refused += 1;
@@ -4537,7 +4755,7 @@ degree,order,normalised_C,normalised_S,source\n\
             let mut frame = blank_frame();
             assert_eq!(
                 step(&card, &mut state, &mut frame, NO_LOAD, dt_s),
-                Err(StepReject::EpochOutsideCard)
+                Err(StepReject::EpochOutsideLeapSecondSpan)
             );
         }
     }
@@ -4615,22 +4833,25 @@ degree,order,normalised_C,normalised_S,source\n\
             let state = fresh(&card, epoch_utc_s, position_m, velocity_m_s)
                 .unwrap_or_else(|| ::core::panic!("{name} is refused"));
             let own = if name.contains("lageos1") { 0 } else { 1 };
-            let a = card.orbit_semi_major_axis_m[own];
+            let a = ORBIT_SEMI_MAJOR_AXIS_M[own];
             assert!(state.semi_major_axis_m >= a[0] && state.semi_major_axis_m <= a[1], "{name}");
             let end_s = f64::from(steps) * DT;
             assert!(end_s <= FORECAST_HORIZON_S, "{name}");
-            assert!(epoch_utc_s + end_s <= EPOCH_MAX_S, "{name}");
-            assert!(epoch_utc_s >= EPOCH_MIN_S, "{name}");
+            assert!(epoch_utc_s + end_s <= COMPARED_EPOCH_LAST_S, "{name}");
+            assert!(epoch_utc_s >= COMPARED_EPOCH_FIRST_S, "{name}");
+            assert!(epoch_utc_s >= EPOCH_MIN_S && epoch_utc_s + end_s <= EPOCH_MAX_S, "{name}");
         }
-        // The first and the last of them are the ends of the dates.
-        assert!(COMPARED_RUNS.iter().any(|run| run.1 == EPOCH_MIN_S));
+        // The first and the last of them are the ends of the compared dates.
+        assert!(COMPARED_RUNS.iter().any(|run| run.1 == COMPARED_EPOCH_FIRST_S));
         assert!(COMPARED_RUNS
             .iter()
-            .any(|run| run.1 + f64::from(run.4) * DT == EPOCH_MAX_S && run.4 == 60_480));
+            .any(|run| run.1 + f64::from(run.4) * DT == COMPARED_EPOCH_LAST_S && run.4 == 60_480));
     }
 
     /// The measurement behind the bands: every landing of the 56 compared
-    /// runs, 1 255 008 steps, is inside the card. Slow in a debug build, so
+    /// runs, 1 255 008 steps, is inside the card, and none is under the
+    /// lowest compared radius: no frame of theirs carries
+    /// [`FLAG_BELOW_COMPARED_RADIUS`]. Slow in a debug build, so
     /// it is asked for by name: `cargo test -p genesis_kernel -- --ignored
     /// every_landing_of_the_compared_runs`.
     #[test]
@@ -4647,14 +4868,16 @@ degree,order,normalised_C,normalised_S,source\n\
                     "{name}: step {}",
                     landed + 1
                 );
+                assert_eq!(frame.flags & FLAG_BELOW_COMPARED_RADIUS, 0, "{name}: step {}", landed + 1);
             }
         }
     }
 
-    /// A forecast carried on through restarts stops where a run straight
-    /// through stops: at seven days from the published state.
+    /// A forecast carried on through restarts lands where a run straight
+    /// through lands, and both go on past seven days, where the card stood
+    /// until engine 0.9, with both ledgers under their limits.
     #[test]
-    fn a_forecast_restarted_from_its_own_states_stops_at_seven_days() {
+    fn a_forecast_restarted_from_its_own_states_goes_on_past_seven_days() {
         let card = SatelliteLageos1::lageos1();
         let mut frame = blank_frame();
         // Seven restarts of a day each, every one from the state the last
@@ -4675,52 +4898,24 @@ degree,order,normalised_C,normalised_S,source\n\
             .unwrap();
             state = next;
         }
-        let before = state;
-        assert_eq!(
-            step(&card, &mut state, &mut frame, NO_LOAD, DT),
-            Err(StepReject::HorizonOutsideCard)
-        );
-        assert_eq!(state, before);
-        // Straight through, the same end.
+        // Straight through, the same place.
         let mut whole = start(&card);
+        let mut worst: f64 = 0.0;
         for _ in 0..60_480 {
             step(&card, &mut whole, &mut frame, NO_LOAD, DT).unwrap();
+            worst = worst.max(whole.residual_conservation_error);
         }
         assert_eq!(whole.forecast_elapsed_s(), FORECAST_HORIZON_S);
         assert_eq!(whole.position_m, state.position_m);
-        assert_eq!(
-            step(&card, &mut whole, &mut frame, NO_LOAD, DT),
-            Err(StepReject::HorizonOutsideCard)
-        );
-        // A run of decimal steps that ends on seven days in decimal lands its
-        // last step, after a restart half way.
-        let dt_s = 0.6;
-        let mut first = start(&card);
-        for _ in 0..1_000 {
-            step(&card, &mut first, &mut frame, NO_LOAD, dt_s).unwrap();
+        // On past seven days: three more days, straight through.
+        for _ in 0..3 * 8_640 {
+            step(&card, &mut whole, &mut frame, NO_LOAD, DT).unwrap();
+            worst = worst.max(whole.residual_conservation_error);
         }
-        let mut second = SatelliteState::try_state(
-            &card,
-            first.epoch_utc_s(),
-            FORECAST_HORIZON_S - 1_000.0 * dt_s,
-            first.position_m,
-            first.velocity_m_s,
-        )
-        .unwrap();
-        for landed in 0..1_000 {
-            assert_eq!(
-                step(&card, &mut second, &mut frame, NO_LOAD, dt_s),
-                Ok(()),
-                "step {}",
-                landed + 1
-            );
-        }
-        let allowance_s = card.horizon_end_allowance_s(second.forecast_elapsed_s() - dt_s, dt_s);
-        assert!(abs_f64(second.forecast_elapsed_s() - FORECAST_HORIZON_S) <= allowance_s);
-        assert_eq!(
-            step(&card, &mut second, &mut frame, NO_LOAD, dt_s),
-            Err(StepReject::HorizonOutsideCard)
-        );
+        assert_eq!(whole.forecast_elapsed_s(), FORECAST_HORIZON_S + 3.0 * 86_400.0);
+        assert!(worst < 0.1 * RESIDUAL_CONSERVATION_LIMIT, "{worst:e}");
+        assert!(abs_f64(whole.angular_momentum_defect_m2_s) / LEDGER_SCALE_TURNING_M2_S < 0.1 * TURNING_CONSERVATION_LIMIT);
+        step(&card, &mut state, &mut frame, NO_LOAD, DT).unwrap();
     }
 
     /// A single first step that ends exactly on the last date lands, for
@@ -4743,7 +4938,7 @@ degree,order,normalised_C,normalised_S,source\n\
             )
             .unwrap();
             assert_eq!(step(&card, &mut state, &mut frame, NO_LOAD, dt_s), Ok(()), "dt {dt_s}");
-            assert!(state.forecast_elapsed_s() <= FORECAST_HORIZON_S + card.horizon_end_allowance_s(0.0, dt_s));
+            assert!(abs_f64(state.forecast_elapsed_s() - FORECAST_HORIZON_S) <= card.epoch_end_allowance_s(0.0, dt_s));
         }
     }
 

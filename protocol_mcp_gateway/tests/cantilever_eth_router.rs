@@ -5,15 +5,18 @@
 //! scored ring-down, 4,000 steps, ends on the kernel loop's state to the bit,
 //! and its first 3,405 steps end on the reference numbers of the research
 //! record. The compared run's own start is the top of the amplitude range
-//! and is accepted: the run lands 94,731 steps and is refused below the
-//! floor; from the start of the scored ring-down the run lands 94,136 steps
-//! and is refused below the floor, and its tape verifies. Each refusal a
-//! request can reach is named and carries no proof: a deflection or a speed
-//! past its own bound, the two together past the amplitude ceiling or under
-//! its floor, a step of zero or less, a step outside the card's floor and
+//! and is accepted: the run lands 94,731 steps inside the compared envelope
+//! and goes on below it, flagged; from the start of the scored ring-down the
+//! run lands 94,136 steps inside it and goes on, and its tape verifies. Each
+//! refusal a request can reach is named and carries no proof: a deflection
+//! or a speed past its own bound, the two together past the amplitude
+//! ceiling, a step of zero or less, a step outside the card's floor and
 //! ceiling, a missing input, a load the card does not have. A start near the
-//! ceiling that the card refuses part way, and a ring-down refused at the
-//! floor, are runs that keep their proof up to the last step that landed. A
+//! ceiling that the card refuses part way keeps its proof up to the last
+//! step that landed; a start under the compared envelope, rest included,
+//! lands with FLAG_ENVELOPE_BELOW_COMPARED, and one above the largest
+//! envelope compared, 15.79 mm, up to the ceiling, 18.75 mm, lands with
+//! FLAG_ENVELOPE_ABOVE_COMPARED and its ledger closed. A
 //! dataset's rows carry the run seals of the runs alone, and `validate_series`
 //! compares the deflection. The local, the web and the hosted connection
 //! return the same bytes.
@@ -24,12 +27,15 @@
 //! state 595 steps later; every other start is a round number chosen for the
 //! test.
 
+mod answer_text;
+
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::time::Duration;
 
 use genesis_kernel::cantilever_eth::{
-    self, CantileverEth, CantileverLoad, CantileverState, StepReject,
+    self, CantileverEth, CantileverLoad, CantileverState, FLAG_ENVELOPE_ABOVE_COMPARED,
+    FLAG_ENVELOPE_BELOW_COMPARED, StepReject,
 };
 use genesis_kernel::frame::LastStateFrame64;
 use protocol_mcp_gateway::{VerifyPhysicsResponse, app, commit_request_proof};
@@ -66,7 +72,9 @@ async fn post_text(base: &str, path: &str, body: &str) -> (u16, String) {
         {
             Ok(response) => {
                 let status = response.status().as_u16();
-                return (status, response.text().await.unwrap());
+                let text = response.text().await.unwrap();
+                answer_text::remember(&text);
+                return (status, text);
             }
             Err(error) => {
                 last_error = Some(error);
@@ -78,7 +86,7 @@ async fn post_text(base: &str, path: &str, body: &str) -> (u16, String) {
 }
 
 async fn post(base: &str, path: &str, body: &Value) -> (u16, String) {
-    post_text(base, path, &serde_json::to_string(body).unwrap()).await
+    post_text(base, path, &answer_text::as_sent(body)).await
 }
 
 fn sha256_hex(bytes: &[u8]) -> String {
@@ -122,8 +130,13 @@ const COMPARED_START_VELOCITY_M_S: f64 = 2.099361936006e-1;
 const START_DEFLECTION_M: f64 = -0.00104914043915228;
 const START_VELOCITY_M_S: f64 = 0.7408030982848752;
 
-/// The amplitude ceiling of the card, 15.79 mm.
+/// The amplitude ceiling of the card, 18.75 mm, the largest amplitude the
+/// constants were fitted on.
 const CEILING_M: f64 = cantilever_eth::AMPLITUDE_CEILING_M;
+
+/// The largest envelope compared, 15.79 mm: the card's ceiling through
+/// engine 0.11. Above it a frame carries FLAG_ENVELOPE_ABOVE_COMPARED.
+const COMPARED_M: f64 = cantilever_eth::COMPARED_CEILING_M;
 
 /// The amplitude floor of the card, 0.058 mm.
 const FLOOR_M: f64 = cantilever_eth::AMPLITUDE_FLOOR_M;
@@ -251,6 +264,8 @@ fn assert_state_is(published_state: &Value, state: &CantileverState, label: &str
         keys.insert(name.to_string());
         keys.insert(format!("{name}_hex"));
     }
+    assert_eq!(object["envelope_below_compared"], state.envelope_below_compared, "{label}");
+    keys.insert("envelope_below_compared".to_string());
     let found: std::collections::BTreeSet<String> = object.keys().cloned().collect();
     assert_eq!(found, keys, "{label}: the published names drifted from the card");
 }
@@ -288,16 +303,18 @@ fn slots(frame_hex: &str) -> (f64, f32, f32, f32, f32, u64) {
     )
 }
 
-const ENVELOPE_ABOVE_THE_CEILING: &str = "Physical Failure: the deflection envelope, sqrt(deflection_m^2 + (velocity_m_s / omega0)^2), is above 0.01579 m, the largest the compared run held (DeflectionAboveCard). That state is not sealed.";
-const ENVELOPE_BELOW_THE_FLOOR: &str = "Physical Failure: the deflection envelope, sqrt(deflection_m^2 + (velocity_m_s / omega0)^2), is below 5.8e-5 m, the smallest the card was compared at (DeflectionBelowCard). That state is not sealed.";
+const ENVELOPE_ABOVE_THE_CEILING: &str = "Physical Failure: the deflection envelope, sqrt(deflection_m^2 + (velocity_m_s / omega0)^2), a size, is above 0.01875 m: a deflection or a speed of either sign larger than the card takes. 0.01875 m is 3.119 V x 0.006012 m/V, the largest amplitude the softening and the damping were fitted on; above it those laws were not fitted, and the strip's own limit, its yield at the clamp, needs its alloy, which the dataset does not state (EnvelopeAboveCard). That state is not sealed.";
 
-/// The sentence of a run refused part way at the floor: the card's words,
-/// ending with the refused step and the step the run is sealed to.
-fn below_the_floor_at(landed: u64) -> String {
-    format!(
-        "Physical Failure: the deflection envelope, sqrt(deflection_m^2 + (velocity_m_s / omega0)^2), is below 5.8e-5 m, the smallest the card was compared at (DeflectionBelowCard). The run is sealed to step {landed}. The state at step {} was refused and is not sealed.",
-        landed + 1
-    )
+/// The flag a frame of this state carries: the envelope below the compared
+/// floor, above the largest envelope compared, or none.
+fn flags_for(state: &CantileverState) -> u64 {
+    if state.envelope_m < FLOOR_M {
+        FLAG_ENVELOPE_BELOW_COMPARED
+    } else if state.envelope_m > COMPARED_M {
+        FLAG_ENVELOPE_ABOVE_COMPARED
+    } else {
+        0
+    }
 }
 
 // -------------------------------------------------------------- the step
@@ -308,15 +325,19 @@ async fn a_step_of_the_beam_matches_the_compiled_step_with_the_same_proof_bytes_
     let cases = [
         // The start of the scored ring-down, at the ceiling.
         step_body(START_DEFLECTION_M, START_VELOCITY_M_S, ceiling()),
-        // At rest at the amplitude ceiling, on either side.
-        step_body(CEILING_M, 0.0, ceiling()),
-        step_body(-CEILING_M, 0.0, 1.0e-4),
+        // At rest at the largest envelope compared, the ceiling through
+        // engine 0.11, on either side: the same seals as then.
+        step_body(COMPARED_M, 0.0, ceiling()),
+        step_body(-COMPARED_M, 0.0, 1.0e-4),
         // Through the rest position, at the floor.
         step_body(0.0, -0.4, floor()),
         // Just above the amplitude floor.
         step_body(6.5e-5, 0.0, ceiling()),
-        // At rest at the amplitude ceiling, at the step floor.
-        step_body(CEILING_M, 0.0, floor()),
+        // At rest at the largest envelope compared, at the step floor.
+        step_body(COMPARED_M, 0.0, floor()),
+        // At rest at the amplitude ceiling, flagged above the compared envelope.
+        step_body(CEILING_M, 0.0, ceiling()),
+        step_body(-CEILING_M, 0.0, floor()),
     ];
     let mut seals = Vec::new();
     for request in cases {
@@ -334,7 +355,8 @@ async fn a_step_of_the_beam_matches_the_compiled_step_with_the_same_proof_bytes_
             CantileverState::try_phase(&beam, number("deflection_m"), number("velocity_m_s")).unwrap();
         let mut frame = blank_frame(commit_request_proof(&request));
         cantilever_eth::step(&beam, &mut state, &mut frame, NO_LOAD, number("dt_s")).unwrap();
-        assert_eq!(frame.flags, 0);
+        assert_eq!(frame.flags, flags_for(&state));
+        assert_eq!(frame.flags == FLAG_ENVELOPE_ABOVE_COMPARED, number("deflection_m").abs() == CEILING_M);
         assert_state_is(&response.state, &state, "step");
         assert_eq!(
             response.residual_conservation_error.to_bits(),
@@ -365,7 +387,7 @@ async fn a_step_of_the_beam_matches_the_compiled_step_with_the_same_proof_bytes_
     }
     seals.sort();
     seals.dedup();
-    assert_eq!(seals.len(), 6, "six different steps, six different proofs");
+    assert_eq!(seals.len(), 8, "eight different steps, eight different proofs");
 }
 
 /// A single step handed back as a new start continues the same motion: the
@@ -449,7 +471,7 @@ async fn the_first_second_of_the_scored_ring_down_ends_on_the_reference_state_of
         assert_eq!(deflection.to_bits(), (state.deflection_m as f32).to_bits(), "frame {index}");
         assert_eq!(speed.to_bits(), (state.velocity_m_s as f32).to_bits(), "frame {index}");
         assert_eq!(envelope.to_bits(), (state.envelope_m as f32).to_bits(), "frame {index}");
-        assert_eq!(margin.to_bits(), ((CEILING_M - state.envelope_m) as f32).to_bits(), "frame {index}");
+        assert_eq!(margin.to_bits(), ((COMPARED_M - state.envelope_m) as f32).to_bits(), "frame {index}");
         assert_eq!(margin.to_bits(), kernel_frame.force_torque.to_bits(), "frame {index}");
         assert!(margin > 0.0);
         assert_eq!(flags, 0, "frame {index}");
@@ -497,7 +519,7 @@ async fn the_first_second_of_the_scored_ring_down_ends_on_the_reference_state_of
 /// state to the bit, it keeps its proof up to the last step that landed, and
 /// its tape verifies.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn the_compared_run_and_the_scored_ring_down_land_to_the_floor() {
+async fn the_compared_run_and_the_scored_ring_down_land_through_the_floor_and_on_below_it() {
     let base = spawn_app().await;
     let compared = run_body(COMPARED_START_DEFLECTION_M, COMPARED_START_VELOCITY_M_S, 2.5e-4, 96_800, 10);
     assert_eq!(
@@ -507,15 +529,19 @@ async fn the_compared_run_and_the_scored_ring_down_land_to_the_floor() {
     let (status, text) = post(&base, "/run_trajectory", &compared).await;
     assert_eq!(status, 200, "{}", &text[..text.len().min(400)]);
     let whole: Value = serde_json::from_str(&text).unwrap();
-    assert_eq!(whole["outcome"], "refused");
-    assert_eq!(whole["reject"], "DeflectionBelowCard");
-    assert_eq!(whole["steps_landed"], 94_731);
-    assert!(beam().envelope_m(COMPARED_START_DEFLECTION_M, COMPARED_START_VELOCITY_M_S) <= CEILING_M);
-    assert!(CantileverState::try_phase(&beam(), COMPARED_START_DEFLECTION_M, COMPARED_START_VELOCITY_M_S).is_some());
+    // Through engine 0.9 this run was refused as DeflectionBelowCard after
+    // 94,731 steps; it completes, every step past those flagged.
+    assert_eq!(whole["outcome"], "completed", "{}", whole["reject_detail"]);
+    assert_eq!(whole["steps_landed"], 96_800);
+    assert!(beam().envelope_m(COMPARED_START_DEFLECTION_M, COMPARED_START_VELOCITY_M_S) <= COMPARED_M);
     let compared_direct = direct_loop(COMPARED_START_DEFLECTION_M, COMPARED_START_VELOCITY_M_S, 2.5e-4, 96_800, 10);
-    assert_eq!(compared_direct.reject, Some(StepReject::DeflectionBelowCard));
-    assert_eq!(compared_direct.landed, 94_731);
-    assert_state_is(&whole["final_state"], &compared_direct.state, "94,731 steps");
+    assert_eq!(compared_direct.reject, None);
+    assert_eq!(compared_direct.landed, 96_800);
+    assert_state_is(&whole["final_state"], &compared_direct.state, "96,800 steps");
+    assert_eq!(whole["final_state"]["envelope_below_compared"], true);
+    let first_below = compared_direct.kept.iter().position(|(state, _)| state.envelope_m < FLOOR_M).unwrap();
+    // Through engine 0.9 the run was refused at step 94,732.
+    assert!((first_below + 1) * 10 > 94_731, "the first kept state below the floor is step {}", (first_below + 1) * 10);
     let (status, report) = post(&base, "/verify_tape", &whole).await;
     assert_eq!(status, 200, "{report}");
     let report: Value = serde_json::from_str(&report).unwrap();
@@ -528,36 +554,38 @@ async fn the_compared_run_and_the_scored_ring_down_land_to_the_floor() {
     assert_eq!(status, 200, "{}", &answer[..answer.len().min(400)]);
     println!("the scored ring-down: {} bytes in {:.2} s", answer.len(), took.as_secs_f64());
     let tape: Value = serde_json::from_str(&answer).unwrap();
-    assert_eq!(tape["outcome"], "refused");
-    assert_eq!(tape["reject"], "DeflectionBelowCard");
-    assert_eq!(tape["reject_detail"], below_the_floor_at(94_136));
-    assert_eq!(tape["steps_landed"], 94_136);
+    assert_eq!(tape["outcome"], "completed", "{}", tape["reject_detail"]);
+    assert_eq!(tape["steps_landed"], 96_205);
     assert_eq!(tape["steps_requested"], 96_205);
     let frames = tape["frames"].as_array().unwrap();
-    // A frame every tenth step, and the last landed step's frame.
-    assert_eq!(frames.len(), 9_414);
+    // A frame every tenth step, and the last step's frame.
+    assert_eq!(frames.len(), 9_621);
     assert_eq!(frames[0]["step"], 10);
-    assert_eq!(frames[9_412]["step"], 94_130);
-    assert_eq!(frames[9_413]["step"], 94_136);
+    assert_eq!(frames[9_619]["step"], 96_200);
+    assert_eq!(frames[9_620]["step"], 96_205);
 
     let direct = direct_loop(START_DEFLECTION_M, START_VELOCITY_M_S, 2.5e-4, 96_205, 10);
-    assert_eq!(direct.reject, Some(StepReject::DeflectionBelowCard));
-    assert_eq!(direct.landed, 94_136);
+    assert_eq!(direct.reject, None);
+    assert_eq!(direct.landed, 96_205);
     let last = &tape["final_state"];
-    assert_state_is(last, &direct.state, "94,136 steps");
-    assert!((published(last, "t_s") - 23.534).abs() < 1.0e-9);
-    assert!(published(last, "envelope_m") >= FLOOR_M);
+    assert_state_is(last, &direct.state, "96,205 steps");
+    assert!(published(last, "envelope_m") < FLOOR_M);
+    // The 94,136 steps that engine 0.9 landed, to 23.534 s, are inside the
+    // compared envelope: the 94,137th is the first below it.
+    let inside = direct_loop(START_DEFLECTION_M, START_VELOCITY_M_S, 2.5e-4, 94_136, 1);
+    assert!(inside.kept.iter().all(|(state, _)| state.envelope_m >= FLOOR_M));
+    assert!((inside.state.t_s - 23.534).abs() < 1.0e-9);
     let worst = tape["max_residual_conservation_error"].as_f64().unwrap();
     assert_eq!(worst.to_bits(), direct.worst.to_bits());
     assert!(relative(worst, 7.368e-8) < 1.0e-3, "{worst:e}");
 
     // Each recorded frame is the kernel loop's deflection at that step, with
-    // no flag.
-    for (index, frame) in frames.iter().take(9_413).enumerate() {
+    // the flag of its envelope.
+    for (index, frame) in frames.iter().take(9_620).enumerate() {
         let (_, deflection, _, _, _, flags) = slots(frame["frame_hex"].as_str().unwrap());
         let (state, _) = &direct.kept[index];
         assert_eq!(deflection.to_bits(), (state.deflection_m as f32).to_bits(), "frame {index}");
-        assert_eq!(flags, 0, "frame {index}");
+        assert_eq!(flags, flags_for(state), "frame {index}");
     }
 
     assert!(tape["run_seal"].as_str().is_some_and(|seal| seal.len() == 64));
@@ -587,26 +615,29 @@ async fn a_start_near_the_ceiling_is_refused_part_way_and_the_run_keeps_its_proo
     assert_eq!(status, 200, "{answer}");
     let tape: Value = serde_json::from_str(&answer).unwrap();
     let direct = direct_loop(0.0, start_m_s, ceiling(), 500, 1);
-    assert_eq!(direct.reject, Some(StepReject::DeflectionAboveCard));
-    // The description says 104 steps.
-    assert_eq!(direct.landed, 104);
+    assert_eq!(direct.reject, Some(StepReject::EnvelopeAboveCard));
+    // The description says 107 steps.
+    assert_eq!(direct.landed, 107);
     assert_eq!(tape["outcome"], "refused");
-    assert_eq!(tape["reject"], "DeflectionAboveCard");
+    assert_eq!(tape["reject"], "EnvelopeAboveCard");
     assert_eq!(
         tape["reject_detail"],
-        "Physical Failure: the deflection envelope, sqrt(deflection_m^2 + (velocity_m_s / omega0)^2), is above 0.01579 m, the largest the compared run held (DeflectionAboveCard). The run is sealed to step 104. The state at step 105 was refused and is not sealed."
+        "Physical Failure: the deflection envelope, sqrt(deflection_m^2 + (velocity_m_s / omega0)^2), a size, is above 0.01875 m: a deflection or a speed of either sign larger than the card takes. 0.01875 m is 3.119 V x 0.006012 m/V, the largest amplitude the softening and the damping were fitted on; above it those laws were not fitted, and the strip's own limit, its yield at the clamp, needs its alloy, which the dataset does not state (EnvelopeAboveCard). The run is sealed to step 107. The state at step 108 was refused and is not sealed."
     );
-    assert_eq!(tape["steps_landed"], 104);
+    assert_eq!(tape["steps_landed"], 107);
     assert_eq!(tape["steps_requested"], 500);
-    assert_eq!(tape["frames"].as_array().unwrap().len(), 104);
+    assert_eq!(tape["frames"].as_array().unwrap().len(), 107);
     // The last landed state is the kernel loop's, and it is inside the
     // ceiling: the refused state is not in it.
     let last = &tape["final_state"];
     assert_state_is(last, &direct.state, "refused part way");
     assert!(published(last, "envelope_m") <= CEILING_M);
     assert!(published(last, "deflection_m") > 0.0138);
-    let (_, _, _, _, margin, _) = slots(tape["frames"][102]["frame_hex"].as_str().unwrap());
-    assert!(margin >= 0.0);
+    // The last frames are above the largest envelope compared: flagged, with
+    // the margin to it below zero.
+    let (_, _, _, _, margin, flags) = slots(tape["frames"][105]["frame_hex"].as_str().unwrap());
+    assert!(margin < 0.0);
+    assert_eq!(flags, FLAG_ENVELOPE_ABOVE_COMPARED);
     // The run has a proof, and the tape verifies.
     assert!(tape["run_seal"].as_str().is_some_and(|seal| seal.len() == 64));
     let (status, report) = post(&base, "/verify_tape", &tape).await;
@@ -614,7 +645,7 @@ async fn a_start_near_the_ceiling_is_refused_part_way_and_the_run_keeps_its_proo
     let report: Value = serde_json::from_str(&report).unwrap();
     assert_eq!(report["holds"], true, "{report}");
     // One step fewer than the card lands completes, on the same state.
-    let (status, text) = post(&base, "/run_trajectory", &run_body(0.0, start_m_s, ceiling(), 104, 104)).await;
+    let (status, text) = post(&base, "/run_trajectory", &run_body(0.0, start_m_s, ceiling(), 107, 107)).await;
     assert_eq!(status, 200, "{text}");
     let short: Value = serde_json::from_str(&text).unwrap();
     assert_eq!(short["outcome"], "completed");
@@ -631,36 +662,135 @@ async fn a_start_near_the_ceiling_is_refused_part_way_and_the_run_keeps_its_proo
     assert_eq!(through["steps_landed"], 2_000);
 }
 
+/// Above the largest envelope compared, 15.79 mm, and up to the ceiling,
+/// 18.75 mm, the largest amplitude the constants were fitted on: through
+/// engine 0.11 refused as EnvelopeAboveCard, now a step and a run land, on
+/// the kernel loop's state to the bit, every frame above 15.79 mm carrying
+/// FLAG_ENVELOPE_ABOVE_COMPARED and the ledger closed at every step, and the
+/// tape verifies. Above 18.75 mm the same requests are refused by name, with
+/// no proof.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn a_start_under_the_floor_is_refused_by_name_and_a_ring_down_keeps_its_proof_to_the_floor() {
+async fn above_the_compared_envelope_a_run_lands_flagged_with_its_ledger_closed_and_above_the_ceiling_it_is_refused() {
+    let base = spawn_app().await;
+    let limit = cantilever_eth::RESIDUAL_CONSERVATION_LIMIT;
+    for (deflection_m, velocity_m_s) in [(0.0158, 0.0), (0.0185, 0.0), (CEILING_M, 0.0), (-0.017, 0.0), (0.012, 0.6), (0.0, -0.95)] {
+        let label = format!("{deflection_m:e} {velocity_m_s:e}");
+        let envelope_m = beam().envelope_m(deflection_m, velocity_m_s);
+        assert!(envelope_m > COMPARED_M && envelope_m <= CEILING_M, "{label}");
+        // The step lands flagged, bit for bit as the kernel's.
+        let request = step_body(deflection_m, velocity_m_s, ceiling());
+        let (status, answer) = post(&base, "/verify_physics", &request).await;
+        assert_eq!(status, 200, "{label}: {answer}");
+        let response: VerifyPhysicsResponse = serde_json::from_str(&answer).unwrap();
+        let beam = beam();
+        let mut state = CantileverState::try_phase(&beam, deflection_m, velocity_m_s).unwrap();
+        let mut frame = blank_frame(commit_request_proof(&request));
+        cantilever_eth::step(&beam, &mut state, &mut frame, NO_LOAD, ceiling()).unwrap();
+        assert_eq!(frame.flags, FLAG_ENVELOPE_ABOVE_COMPARED, "{label}");
+        assert_eq!(response.sha256_seal, sha256_hex(&frame.to_bytes()), "{label}");
+        assert!(response.residual_conservation_error <= limit, "{label}");
+
+        // A run of 2,000 steps, half a second, lands on the kernel loop's
+        // state; each frame carries the flag of its envelope, and every
+        // frame above the compared envelope carries the new one.
+        let request = run_body(deflection_m, velocity_m_s, ceiling(), 2_000, 10);
+        let (status, text) = post(&base, "/run_trajectory", &request).await;
+        assert_eq!(status, 200, "{label}: {text}");
+        let tape: Value = serde_json::from_str(&text).unwrap();
+        let direct = direct_loop(deflection_m, velocity_m_s, ceiling(), 2_000, 10);
+        assert_eq!(direct.reject, None, "{label}");
+        assert_eq!(tape["outcome"], "completed", "{label}: {}", tape["reject_detail"]);
+        assert_eq!(tape["steps_landed"], 2_000, "{label}");
+        assert_state_is(&tape["final_state"], &direct.state, &label);
+        assert!(published(&tape["final_state"], "residual_conservation_error") <= limit, "{label}");
+        let frames = tape["frames"].as_array().unwrap();
+        assert_eq!(frames.len(), 200, "{label}");
+        let mut flagged = 0;
+        for (index, frame) in frames.iter().enumerate() {
+            let (_, _, _, envelope, margin, flags) = slots(frame["frame_hex"].as_str().unwrap());
+            let kept = &direct.kept[index].0;
+            assert_eq!(flags, flags_for(kept), "{label}: frame {index}");
+            assert!(kept.residual_conservation_error <= limit, "{label}: frame {index}");
+            assert_eq!(envelope, kept.envelope_m as f32, "{label}: frame {index}");
+            assert_eq!(margin.to_bits(), ((COMPARED_M - kept.envelope_m) as f32).to_bits(), "{label}: frame {index}");
+            if flags == FLAG_ENVELOPE_ABOVE_COMPARED {
+                flagged += 1;
+                assert!(margin < 0.0, "{label}: frame {index}");
+            }
+        }
+        assert!(flagged > 0, "{label}");
+        // The tape verifies.
+        assert!(tape["run_seal"].as_str().is_some_and(|seal| seal.len() == 64));
+        let (status, report) = post(&base, "/verify_tape", &tape).await;
+        assert_eq!(status, 200, "{report}");
+        let report: Value = serde_json::from_str(&report).unwrap();
+        assert_eq!(report["holds"], true, "{label}: {report}");
+    }
+    // From rest at the ceiling the run rings down through the compared
+    // envelope: flagged frames first, then unflagged, every residual under
+    // the limit; 0.5 s holds the 1,149 flagged steps the card states.
+    let direct = direct_loop(CEILING_M, 0.0, ceiling(), 2_000, 1);
+    let flagged = direct.kept.iter().filter(|(state, _)| flags_for(state) == FLAG_ENVELOPE_ABOVE_COMPARED).count();
+    assert_eq!(flagged, 1_149);
+
+    // Above the ceiling the step, the run and a dataset row are refused by name.
+    for (deflection_m, velocity_m_s, sentence) in [
+        (above(CEILING_M), 0.0, format!("Physical Failure: 'deflection_m' {} m is above 0.01875 m, the inclusive maximum of the cantilever_eth card (EnvelopeAboveCard). That state is not sealed.", protocol_mcp_gateway::message_number(above(CEILING_M)))),
+        (-0.019, 0.0, "Physical Failure: 'deflection_m' -0.019 m is below -0.01875 m, the inclusive minimum of the cantilever_eth card: larger in size than the card takes (EnvelopeAboveCard). That state is not sealed.".to_string()),
+        (0.015, 0.6, ENVELOPE_ABOVE_THE_CEILING.to_string()),
+        (CEILING_M, 1.0e-3, ENVELOPE_ABOVE_THE_CEILING.to_string()),
+    ] {
+        let label = format!("{deflection_m:e} {velocity_m_s:e}");
+        assert!(CantileverState::try_phase(&beam(), deflection_m, velocity_m_s).is_none(), "{label}");
+        for (route, body) in [
+            ("/verify_physics", step_body(deflection_m, velocity_m_s, ceiling())),
+            ("/run_trajectory", run_body(deflection_m, velocity_m_s, ceiling(), 10, 1)),
+        ] {
+            let (status, text) = post(&base, route, &body).await;
+            assert_eq!(status, 422, "{label} {route}: {text}");
+            assert_eq!(text, sentence, "{label} {route}");
+            assert!(names(&text, "EnvelopeAboveCard"), "{label}: {text}");
+        }
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_start_under_the_compared_envelope_lands_flagged_and_a_ring_down_goes_on_toward_rest() {
     let base = spawn_app().await;
 
-    // Under 0.058 mm no step and no run starts, rest at zero included, and a
-    // deflection whose 32-bit copy would read as zero or as a subnormal.
+    // Under 0.058 mm a step and a run start, rest at zero included, and a
+    // deflection whose 32-bit copy would read as zero or as a subnormal:
+    // through engine 0.9 each was refused as DeflectionBelowCard. Each lands,
+    // the frame flagged, the proof over the frame as the kernel wrote it.
     for (deflection_m, velocity_m_s) in
         [(5.7e-5, 0.0), (-5.0e-5, 0.0), (0.0, 3.0e-3), (0.0, 0.0), (1.0e-6, 0.0), (1.0e-40, 0.0), (1.0e-200, 0.0)]
     {
         let label = format!("{deflection_m:e} {velocity_m_s:e}");
         assert!(beam().envelope_m(deflection_m, velocity_m_s) < FLOOR_M, "{label}");
-        assert!(CantileverState::try_phase(&beam(), deflection_m, velocity_m_s).is_none(), "{label}");
-        let (status, text) = post(&base, "/verify_physics", &step_body(deflection_m, velocity_m_s, ceiling())).await;
-        assert_eq!(status, 422, "{label}: {text}");
-        assert_eq!(text, ENVELOPE_BELOW_THE_FLOOR, "{label}");
-        assert!(names(&text, "DeflectionBelowCard"), "{label}: {text}");
+        let request = step_body(deflection_m, velocity_m_s, ceiling());
+        let (status, answer) = post(&base, "/verify_physics", &request).await;
+        assert_eq!(status, 200, "{label}: {answer}");
+        let response: VerifyPhysicsResponse = serde_json::from_str(&answer).unwrap();
+        let beam = beam();
+        let mut state = CantileverState::try_phase(&beam, deflection_m, velocity_m_s).unwrap();
+        let mut frame = blank_frame(commit_request_proof(&request));
+        cantilever_eth::step(&beam, &mut state, &mut frame, NO_LOAD, ceiling()).unwrap();
+        assert_eq!(frame.flags, FLAG_ENVELOPE_BELOW_COMPARED, "{label}");
+        assert_eq!(response.sha256_seal, sha256_hex(&frame.to_bytes()), "{label}");
         let (status, text) = post(&base, "/run_trajectory", &run_body(deflection_m, velocity_m_s, ceiling(), 10, 1)).await;
-        assert_eq!(status, 422, "{label}: {text}");
-        assert_eq!(text, ENVELOPE_BELOW_THE_FLOOR, "{label}");
+        assert_eq!(status, 200, "{label}: {text}");
+        let tape: Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(tape["outcome"], "completed", "{label}");
     }
+    // Rest at zero does not move.
+    let (status, text) = post(&base, "/run_trajectory", &run_body(0.0, 0.0, ceiling(), 10, 10)).await;
+    assert_eq!(status, 200, "{text}");
+    let rest: Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(published(&rest["final_state"], "deflection_m"), 0.0);
+    assert_eq!(published(&rest["final_state"], "velocity_m_s"), 0.0);
+    assert_eq!(published(&rest["final_state"], "heat_j_per_kg"), 0.0);
 
-    // At rest at the floor the start is made, and the first step, toward the
-    // rest position, lands under the floor: it is refused by name, unsealed.
-    assert!(CantileverState::try_phase(&beam(), FLOOR_M, 0.0).is_some());
-    let (status, text) = post(&base, "/verify_physics", &step_body(FLOOR_M, 0.0, ceiling())).await;
-    assert_eq!(status, 422, "{text}");
-    assert_eq!(text, ENVELOPE_BELOW_THE_FLOOR);
-
-    // Above the floor a step lands with no flag, and the proof is over the
-    // frame as the kernel wrote it.
+    // Above the floor a step lands with no flag.
     for (deflection_m, velocity_m_s) in [(6.5e-5, 0.0), (0.0, 3.1e-3), (1.0e-3, 0.0)] {
         let request = step_body(deflection_m, velocity_m_s, ceiling());
         let (status, answer) = post(&base, "/verify_physics", &request).await;
@@ -675,31 +805,27 @@ async fn a_start_under_the_floor_is_refused_by_name_and_a_ring_down_keeps_its_pr
         assert_eq!(response.sha256_seal, sha256_hex(&frame.to_bytes()));
     }
 
-    // A ring-down from 0.1 mm at rest lands until its envelope would pass
-    // under the floor, is refused there by name, keeps its proof up to the
-    // last step that landed, and its tape verifies.
+    // A ring-down from 0.1 mm at rest: through engine 0.9 it was refused after
+    // 12,024 steps. It lands all 20,000, on the kernel loop's state, every
+    // frame carrying the flag of its envelope, and its tape verifies.
     let request = run_body(1.0e-4, 0.0, ceiling(), 20_000, 1_000);
     let (status, answer) = post(&base, "/run_trajectory", &request).await;
     assert_eq!(status, 200, "{answer}");
     let tape: Value = serde_json::from_str(&answer).unwrap();
     let direct = direct_loop(1.0e-4, 0.0, ceiling(), 20_000, 1_000);
-    assert_eq!(direct.reject, Some(StepReject::DeflectionBelowCard));
-    assert_eq!(direct.landed, 12_024);
-    assert_eq!(tape["outcome"], "refused");
-    assert_eq!(tape["reject"], "DeflectionBelowCard");
-    assert_eq!(tape["reject_detail"], below_the_floor_at(12_024));
-    assert_eq!(tape["steps_landed"], 12_024);
-    assert_state_is(&tape["final_state"], &direct.state, "rang down to the floor");
-    assert!(published(&tape["final_state"], "envelope_m") >= FLOOR_M);
-    // A frame every 1,000th step, and the last landed step's frame.
+    assert_eq!(direct.reject, None);
+    assert_eq!(tape["outcome"], "completed");
+    assert_eq!(tape["steps_landed"], 20_000);
+    assert_state_is(&tape["final_state"], &direct.state, "rang down past the floor");
+    assert!(published(&tape["final_state"], "envelope_m") < FLOOR_M);
     let frames = tape["frames"].as_array().unwrap();
-    assert_eq!(frames.len(), 13);
-    assert_eq!(frames[11]["step"], 12_000);
-    assert_eq!(frames[12]["step"], 12_024);
+    assert_eq!(frames.len(), 20);
     for (index, frame) in frames.iter().enumerate() {
         let (_, _, _, _, _, flags) = slots(frame["frame_hex"].as_str().unwrap());
-        assert_eq!(flags, 0, "frame {index}");
+        assert_eq!(flags, flags_for(&direct.kept[index].0), "frame {index}");
     }
+    let flagged = frames.iter().filter(|frame| slots(frame["frame_hex"].as_str().unwrap()).5 != 0).count();
+    assert!(flagged >= 8, "{flagged}");
     assert!(tape["run_seal"].as_str().is_some_and(|seal| seal.len() == 64));
     let (status, report) = post(&base, "/verify_tape", &tape).await;
     assert_eq!(status, 200, "{report}");
@@ -756,16 +882,18 @@ async fn each_bound_lands_at_the_last_number_inside_and_is_refused_by_name_at_th
     assert!(described["load_fields"].as_array().unwrap().is_empty());
 
     // (deflection, speed, the words and the name of the refusal, or none)
+    // Below the negative end of its range a value is larger in size than the
+    // card takes: the name says the envelope, a size, is above the card.
     let own = |field: &str, value: f64, unit: &str, limit: f64| {
-        let (side, kind, limit) = if value > 0.0 { ("above", "maximum", limit) } else { ("below", "minimum", -limit) };
+        let (side, kind, limit, in_size) =
+            if value > 0.0 { ("above", "maximum", limit, "") } else { ("below", "minimum", -limit, ": larger in size than the card takes") };
         format!(
-            "Physical Failure: '{field}' {} {unit} is {side} {} {unit}, the inclusive {kind} of the cantilever_eth card (DeflectionAboveCard). That state is not sealed.",
+            "Physical Failure: '{field}' {} {unit} is {side} {} {unit}, the inclusive {kind} of the cantilever_eth card{in_size} (EnvelopeAboveCard). That state is not sealed.",
             protocol_mcp_gateway::message_number(value),
             protocol_mcp_gateway::message_number(limit)
         )
     };
-    let above_card = |sentence: String| Some((sentence, "DeflectionAboveCard"));
-    let below_card = Some((ENVELOPE_BELOW_THE_FLOOR.to_string(), "DeflectionBelowCard"));
+    let above_card = |sentence: String| Some((sentence, "EnvelopeAboveCard"));
     let cases: Vec<(f64, f64, Option<(String, &str)>)> = vec![
         // The deflection at rest, on either side.
         (CEILING_M, 0.0, None),
@@ -773,7 +901,12 @@ async fn each_bound_lands_at_the_last_number_inside_and_is_refused_by_name_at_th
         (-CEILING_M, 0.0, None),
         (-above(CEILING_M), 0.0, above_card(own("deflection_m", -above(CEILING_M), "m", CEILING_M))),
         (0.0189, 0.0, above_card(own("deflection_m", 0.0189, "m", CEILING_M))),
-        (0.0158, 0.0, above_card(own("deflection_m", 0.0158, "m", CEILING_M))),
+        (0.01876, 0.0, above_card(own("deflection_m", 0.01876, "m", CEILING_M))),
+        // Above the largest envelope compared and under the ceiling: refused
+        // through engine 0.11, now landed with the flag.
+        (0.0158, 0.0, None),
+        (above(COMPARED_M), 0.0, None),
+        (-0.0185, 0.0, None),
         // The speed at zero deflection, on either side.
         (0.0, largest_m_s, None),
         (0.0, above(largest_m_s), above_card(own("velocity_m_s", above(largest_m_s), "m/s", largest_m_s))),
@@ -781,18 +914,22 @@ async fn each_bound_lands_at_the_last_number_inside_and_is_refused_by_name_at_th
         (0.0, -above(largest_m_s), above_card(own("velocity_m_s", -above(largest_m_s), "m/s", largest_m_s))),
         (0.0, 0.9893, above_card(own("velocity_m_s", 0.9893, "m/s", largest_m_s))),
         // Each inside its own bound, and the two together past the ceiling.
-        (0.012, 0.6, above_card(ENVELOPE_ABOVE_THE_CEILING.to_string())),
-        (-0.012, -0.6, above_card(ENVELOPE_ABOVE_THE_CEILING.to_string())),
+        (0.015, 0.6, above_card(ENVELOPE_ABOVE_THE_CEILING.to_string())),
+        (-0.015, -0.6, above_card(ENVELOPE_ABOVE_THE_CEILING.to_string())),
         (CEILING_M, 1.0e-3, above_card(ENVELOPE_ABOVE_THE_CEILING.to_string())),
         (1.0e-4, largest_m_s, above_card(ENVELOPE_ABOVE_THE_CEILING.to_string())),
-        // Each inside its own bound, and the two together inside the ceiling.
+        // Each inside its own bound, and the two together inside the ceiling,
+        // under the compared envelope and above it.
         (0.01, 0.5, None),
         (-0.0095, -0.5, None),
-        // The two together under the floor, rest at zero included, and just above it.
-        (0.0, 0.0, below_card.clone()),
-        (below(FLOOR_M), 0.0, below_card.clone()),
-        (-below(FLOOR_M), 0.0, below_card.clone()),
-        (0.0, 3.0e-3, below_card.clone()),
+        (0.012, 0.6, None),
+        (-0.012, -0.6, None),
+        // The two together under the compared floor, rest at zero included,
+        // and just above it: all land.
+        (0.0, 0.0, None),
+        (below(FLOOR_M), 0.0, None),
+        (-below(FLOOR_M), 0.0, None),
+        (0.0, 3.0e-3, None),
         (0.0, 3.1e-3, None),
         (0.0, -3.1e-3, None),
     ];
@@ -889,13 +1026,13 @@ async fn a_missing_input_a_load_the_card_does_not_have_and_a_card_constant_are_r
         step["parameters"].as_object_mut().unwrap().remove(key);
         let (status, text) = post(&base, "/verify_physics", &step).await;
         assert_eq!(status, 422, "{key}: {text}");
-        assert_eq!(text, format!("Missing required parameter: '{key}'"));
+        assert_eq!(text, format!("Missing required parameter: '{key}' (InputMissing)."));
     }
     let mut run = run_body(1.0e-3, 0.0, ceiling(), 3, 1);
     run["initial"].as_object_mut().unwrap().remove("velocity_m_s");
     let (status, text) = post(&base, "/run_trajectory", &run).await;
     assert_eq!(status, 422, "{text}");
-    assert!(text.contains("Missing required parameter: 'velocity_m_s'"), "{text}");
+    assert!(text.contains("Missing required parameter: 'velocity_m_s' (InputMissing)."), "{text}");
     // A segment must carry its load object, and the object must be empty.
     let mut run = run_body(1.0e-3, 0.0, ceiling(), 3, 1);
     run["segments"][0].as_object_mut().unwrap().remove("load");
@@ -1070,8 +1207,8 @@ async fn a_small_grid_gives_rows_whose_run_seals_are_the_runs_alone_and_the_data
             "plan": { "kind": "grid",
                 "base": { "initial": {}, "dt_s": ceiling(),
                           "segments": [{ "steps": 5, "load": {} }], "record_every": 5 },
-                "axes": [{ "path": "initial.deflection_m", "values": [0.005, 0.014] },
-                         { "path": "initial.velocity_m_s", "values": [0.1, 0.45] }] },
+                "axes": [{ "path": "initial.deflection_m", "values": [0.005, 0.016] },
+                         { "path": "initial.velocity_m_s", "values": [0.1, 0.6] }] },
             "store": "none", "return": "inline", "answer": "full"
         }),
     )
@@ -1162,14 +1299,14 @@ async fn validate_series_compares_the_deflection_of_a_run_and_carries_its_run_se
     let refused = run_body(0.0, 0.99 * CEILING_M * beam().omega0_rad_s(), ceiling(), 500, 500);
     let probe = json!({
         "run": refused, "quantity": "deflection_m",
-        "measurements": [{ "step": 50, "value": 0.01 }, { "step": 104, "value": 0.014 }, { "step": 105, "value": 0.014 }]
+        "measurements": [{ "step": 50, "value": 0.01 }, { "step": 107, "value": 0.014 }, { "step": 108, "value": 0.014 }]
     });
     let (status, text) = post(&base, "/validate_series", &probe).await;
     assert_eq!(status, 200, "{text}");
     let answer: Value = serde_json::from_str(&text).unwrap();
     assert_eq!(answer["outcome"], "refused");
-    assert_eq!(answer["reject"], "DeflectionAboveCard");
-    assert_eq!(answer["steps_landed"], 104);
+    assert_eq!(answer["reject"], "EnvelopeAboveCard");
+    assert_eq!(answer["steps_landed"], 107);
     assert_eq!(answer["compared"], 2);
     assert_eq!(answer["not_reached"], 1);
 }
@@ -1223,7 +1360,7 @@ impl Local {
 
     /// The whole answer line of a tool call, as the hosted connection frames it.
     async fn call(&mut self, name: &str, arguments: &Value) -> String {
-        let line = json!({"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":name,"arguments":arguments}});
+        let line = answer_text::tool_call(7, name, arguments);
         self.raw(&line.to_string()).await
     }
 }
@@ -1272,7 +1409,7 @@ impl Hosted {
     }
 
     async fn call(&self, key: &str, tool: &str, arguments: &Value) -> String {
-        let body = json!({"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":tool,"arguments":arguments}});
+        let body = answer_text::tool_call(7, tool, arguments);
         let response = reqwest::Client::new()
             .post(format!("{}/mcp", self.base))
             .header("Content-Type", "application/json")
@@ -1295,6 +1432,7 @@ fn result_text(answer: &str) -> (String, bool) {
         .as_str()
         .unwrap_or_else(|| panic!("no text in {answer}"))
         .to_string();
+    answer_text::remember(&text);
     (text, value["result"]["isError"] == true)
 }
 
@@ -1308,7 +1446,7 @@ async fn the_three_connections_list_the_beam_and_give_the_same_bytes_for_its_des
     assert!(!error);
     let listed: Value = serde_json::from_str(&listed).unwrap();
     let cards = listed["cards"].as_array().unwrap();
-    assert_eq!(cards.len(), 31);
+    assert_eq!(cards.len(), 37);
     assert_eq!(cards[15]["domain"], "signal");
     assert_eq!(cards[15]["card"], "cantilever_eth");
     let on_web: Value = Client::new().get(format!("{web}/cards")).send().await.unwrap().json().await.unwrap();
@@ -1336,41 +1474,48 @@ async fn the_three_connections_list_the_beam_and_give_the_same_bytes_for_its_des
     }
 
     // What the description holds: two inputs with their bounds, no load,
-    // eight refusals each with its meaning, no flag, and the five parts of
+    // seven refusals each with its meaning, one flag, and the five parts of
     // the validation record.
     let description: Value = serde_json::from_str(&described).unwrap();
     let phase: Vec<&str> = description["phase_fields"].as_array().unwrap().iter().map(|field| field["name"].as_str().unwrap()).collect();
     assert_eq!(phase, ["deflection_m", "velocity_m_s"]);
     assert!(description["load_fields"].as_array().unwrap().is_empty());
     let refusals: Vec<&str> = description["rejects"].as_array().unwrap().iter().map(|reject| reject["name"].as_str().unwrap()).collect();
+    // After the kernel's seven names the list holds the gateway's own two, DtBelowFloor and DtAboveCeiling.
     assert_eq!(
         refusals,
-        ["NonFiniteInput", "NonFiniteState", "NonPositiveDt", "InvalidBeam", "DeflectionAboveCard", "DeflectionBelowCard", "SpontaneousGeneration", "FirstLawBreach"]
+        [
+            "NonFiniteInput", "NonFiniteState", "NonPositiveDt", "InvalidBeam", "EnvelopeAboveCard", "SpontaneousGeneration", "FirstLawBreach",
+            "DtBelowFloor", "DtAboveCeiling"
+        ]
     );
     for reject in description["rejects"].as_array().unwrap() {
         assert!(reject["meaning"].as_str().is_some_and(|meaning| !meaning.is_empty()), "{reject}");
     }
-    assert!(description["advisory_flags"].as_array().unwrap().is_empty());
+    let flags = description["advisory_flags"].as_array().unwrap();
+    assert_eq!(flags.len(), 2);
+    assert_eq!(flags[0]["name"], "FLAG_ENVELOPE_BELOW_COMPARED");
+    assert_eq!(flags[1]["name"], "FLAG_ENVELOPE_ABOVE_COMPARED");
     let record = description["validation"].as_object().unwrap();
     let parts: Vec<&str> = record.keys().map(String::as_str).collect();
     assert_eq!(parts, ["object", "data", "pass_line", "result", "limits"]);
     assert!(record["data"].as_str().unwrap().contains("doi 10.5281/zenodo.22723484"));
     assert!(record["pass_line"].as_str().unwrap().contains("d081cc5ae51b5de4a028cd17b4e1ae80b402f71fdc786f82876713f3b925d4a6"));
     // The one place the tests hold the words of the result: the comparison
-    // with the half that had been kept unread.
+    // with the held-back half.
     assert!(record["result"].as_str().unwrap().starts_with(
         "Compared with the held-back half on 2026-10-09, and by the rule fixed beforehand the comparison failed: three of the four lines were met and the amplitude line was missed."
     ));
 
     // The four tools that compute: the same bytes on the three connections.
-    let step = description["example_verify_step"].clone();
+    let step = description["example_compute_step"].clone();
     let run = run_body(START_DEFLECTION_M, START_VELOCITY_M_S, ceiling(), 800, 100);
     let dataset = json!({
         "domain": "signal", "card": "cantilever_eth",
         "plan": { "kind": "list", "runs": [
             { "initial": { "deflection_m": 0.01, "velocity_m_s": 0.0 }, "dt_s": ceiling(),
               "segments": [{ "steps": 200, "load": {} }], "record_every": 50 },
-            { "initial": { "deflection_m": 0.012, "velocity_m_s": 0.6 }, "dt_s": ceiling(),
+            { "initial": { "deflection_m": 0.015, "velocity_m_s": 0.6 }, "dt_s": ceiling(),
               "segments": [{ "steps": 200, "load": {} }], "record_every": 50 }
         ] },
         "store": "frames", "return": "inline", "answer": "full"
@@ -1425,7 +1570,7 @@ async fn the_three_connections_list_the_beam_and_give_the_same_bytes_for_its_des
 
     // A refusal is a tool result marked as an error, with the words of the
     // web connection, on the local and the hosted connection alike.
-    let bad = step_body(0.012, 0.6, ceiling());
+    let bad = step_body(0.015, 0.6, ceiling());
     let on_local = local.call("verify_step", &bad).await;
     let (text, error) = result_text(&on_local);
     assert!(error);
@@ -1467,7 +1612,7 @@ async fn the_three_connections_list_the_beam_and_give_the_same_bytes_for_its_des
         assert_eq!(on_hidden, on_fake, "{tool}");
         session.push(on_hidden);
     }
-    assert_eq!(result_text(&hosted.call(KEY_THERMAL, "describe_card", &pair).await).0, "Card not recognized");
+    assert_eq!(result_text(&hosted.call(KEY_THERMAL, "describe_card", &pair).await).0, "Card not recognized (UnknownCard).");
     session.push(hosted.call(KEY_THERMAL, "list_cards", &json!({})).await);
     let text = session.join("\n").to_lowercase();
     for word in ["cantilever", "deflection", "envelope", "zürich", "aluminium", "fitted_amplitude"] {

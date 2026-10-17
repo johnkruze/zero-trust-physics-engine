@@ -1,0 +1,359 @@
+//! The entry for `orifice_air_chamber`: the company's own pneumatic valve
+//! charging or venting a 100 cm^3 chamber of air. The numbers come from
+//! `genesis_solvers` constants.
+
+use genesis_solvers::orifice_air_chamber::{self as chamber, Chamber, ChamberQuestion, ChamberReject};
+use serde_json::{Value, json};
+
+use crate::solvers::{
+    Answer, Given, Input, Kind, Output, Published, Refusal, Refused, Sections, Shape, Solved,
+    Solver,
+};
+
+const ASK_HISTORIES: &str = "return_histories";
+
+const PRESSURE_MIN_PA: f64 = chamber::PRESSURE_MIN_PA;
+
+const fn one(name: &'static str, unit: &'static str, note: &'static str) -> Output {
+    Output { name, unit, shape: Shape::Number, each: &[], note, asked_by: None }
+}
+
+const fn many(name: &'static str, unit: &'static str, note: &'static str) -> Output {
+    Output { name, unit, shape: Shape::Numbers, each: &[], note, asked_by: None }
+}
+
+const fn history(name: &'static str, unit: &'static str, note: &'static str) -> Output {
+    Output { name, unit, shape: Shape::Numbers, each: &[], note, asked_by: Some(ASK_HISTORIES) }
+}
+
+pub const ORIFICE_AIR_CHAMBER: Solver = Solver {
+    name: "orifice_air_chamber",
+    summary: SUMMARY,
+    inputs: &[
+        Input {
+            name: "reservoir_pressure_pa",
+            kind: Kind::Number { minimum: PRESSURE_MIN_PA, maximum: chamber::ATMOSPHERE_PA + chamber::VALVE_RATING_GAUGE_PA, unit: "Pa" },
+            refusal: Some("PressureAboveValveRating"),
+            bound: "Absolute pressure of the air on the reservoir side of the valve, held at 293.15 K: a supply to charge the chamber, the atmosphere or a vacuum to vent it. At most 1,101,325 Pa, the valve's rating of 1.0 MPa over the atmosphere (PressureAboveValveRating); at least 268.98631344978776 Pa, the published minimum to the 64-bit number, where the mean free path is a hundredth of the 2.53 mm throat, Knudsen number 0.01, and slip flow begins: the ISO form is a law of flow with no slip at the walls (RarefiedFlow).",
+            only_when: None,
+            asked_by_check: true,
+        },
+        Input {
+            name: "chamber_start_pressure_pa",
+            kind: Kind::Number { minimum: PRESSURE_MIN_PA, maximum: chamber::ATMOSPHERE_PA + chamber::VALVE_RATING_GAUGE_PA, unit: "Pa" },
+            refusal: Some("PressureAboveValveRating"),
+            bound: "Absolute pressure of the chamber's air when the valve opens; the air is then at the wall's 293.15 K. The same bounds as the reservoir's (PressureAboveValveRating, RarefiedFlow).",
+            only_when: None,
+            asked_by_check: true,
+        },
+        Input {
+            name: "duration_s",
+            kind: Kind::NumberAbove { above: 0.0, maximum: chamber::DURATION_MAX_S, unit: "s" },
+            refusal: Some("DurationOutOfRange"),
+            bound: "Time computed from the valve's opening, above 0 and at most 20 s (DurationOutOfRange). Steps of 20 us, the last one what is left of it, so that the run ends at the asked time.",
+            only_when: None,
+            asked_by_check: true,
+        },
+        Input {
+            name: ASK_HISTORIES,
+            kind: Kind::Flag,
+            refusal: None,
+            bound: "true returns the chamber's pressure, temperature, mass flow and regime at up to 1001 samples; false leaves them out.",
+            only_when: None,
+            asked_by_check: false,
+        },
+    ],
+    kept_inside: "The valve's sonic conductance and critical pressure ratio, the chamber, the film coefficient, the air's constants, the step and the tolerances stay inside the solver.",
+    result: &[
+        one("start_mass_flow_kg_s", "kg/s", "Mass flow into the chamber the moment the valve opens; negative when the chamber vents."),
+        one("start_choked", "1", "1 when the flow is choked at the start (the lower pressure over the higher at most the critical ratio, 0.30), 0 when it is subsonic."),
+        one("choked_until_s", "s", "The last time the flow was choked; 0 when it never was."),
+        many("time_to_95_percent_s", "s", "When the chamber had covered 95 percent of the step from its start pressure to the reservoir's; empty when it had not, or when there was no step."),
+        one("final_pressure_pa", "Pa", "Chamber pressure at the end."),
+        one("final_temperature_k", "K", "Chamber temperature at the end."),
+        one("temperature_min_k", "K", "Lowest chamber temperature over the run: a vent cools the air."),
+        one("temperature_max_k", "K", "Highest chamber temperature over the run: a charge heats it."),
+        one("mass_through_valve_kg", "kg", "Mass that went through the valve into the chamber, net."),
+        one("enthalpy_through_valve_j", "J", "Enthalpy carried through the valve into the chamber, net: c_p T_r for air coming in, c_p T for air going out."),
+        one("heat_to_wall_j", "J", "Heat the chamber's air gave the wall."),
+        one("entropy_generated_j_k", "J/K", "Entropy generated by the throttling through the valve, whichever way the air went, the mixing of the air that came in and the heat that crossed a temperature difference."),
+        history("sample_times_s", "s", "Times of the samples, from 0."),
+        history("pressure_history_pa", "Pa", "Chamber pressure at each sample."),
+        history("temperature_history_k", "K", "Chamber temperature at each sample."),
+        history("mass_flow_history_kg_s", "kg/s", "Mass flow into the chamber at each sample."),
+        history("choked_history", "1", "1 where the flow was choked at that sample, 0 where it was subsonic."),
+    ],
+    invariants: &[
+        one("mass_ledger_residual", "1", "Largest, over every step, of m - m_0 - M_valve over the mass scale."),
+        one("energy_ledger_residual", "1", "Largest, over every step, of U - U_0 - H_valve + Q_wall, or of the enthalpy that came in less c_p T_r times the mass that came in, over the energy scale."),
+        one("largest_entropy_fall", "1", "Largest fall of the entropy generated in one step, over m c_p: zero or rounding."),
+    ],
+    iterations: "The pieces stepped: steps of fourth-order Runge-Kutta, 20 us each, their substeps where the chamber's own rate needs them near equal pressures, and backward-Euler steps where even sixteen substeps would not follow it. On a refusal it is null.",
+    field: field_words,
+    answer: "a run",
+    refusals: REFUSALS,
+    door_refusals: &[],
+    sections,
+    validation: Some(validation),
+    example,
+    further_examples: &[crate::solvers::FurtherExample { key: "example_solve_vent", parameters: example_vent }],
+    parts: &[],
+    check,
+    solve,
+};
+
+const SUMMARY: &str = "A rigid 100 cm^3 chamber of air charged or vented through the company's own pneumatic valve, in the ISO 6358-1:2013 form (sonic conductance 1.0e-8 m^3/(s Pa), critical pressure ratio 0.30, subsonic index 0.5), with heat exchanged with the wall at 293.15 K: pressure, temperature and mass flow over time, choked and subsonic flow as regimes, the chamber reaching the reservoir's pressure in a finite time; mass and energy ledgers closed at every step and the entropy generated, the valve's throttling either way among it, never falling; stops by name at the valve's rating and where slip flow begins at the valve's throat.";
+
+const REFUSALS: &[Refusal] = &[
+    Refusal { name: "InputNotFinite", meaning: "An input was NaN or infinite.", sealed: false },
+    Refusal { name: "PressureAboveValveRating", meaning: "A pressure is above the valve's rating, `VALVE_RATING_GAUGE_PA` over the atmosphere.", sealed: false },
+    Refusal { name: "RarefiedFlow", meaning: "A pressure is below `PRESSURE_MIN_PA`, where the mean free path is a hundredth of the valve's throat, Knudsen number `KNUDSEN_LIMIT`, and slip flow begins: the ISO form is a law of flow with no slip at the walls.", sealed: false },
+    Refusal { name: "DurationOutOfRange", meaning: "The duration is not above zero or is above `DURATION_MAX_S`.", sealed: false },
+    Refusal { name: "ChamberBelowCriticalTemperature", meaning: "The chamber's air cooled below the critical temperature of air, `AIR_CRITICAL_TEMPERATURE_K`, where it can condense. No admitted question reaches it: the coldest admitted run, a vent from the valve's rating to the lowest pressure, cools the air to 157.7 K.", sealed: true },
+    Refusal { name: "NonFiniteValue", meaning: "A value of the run was NaN or infinite.", sealed: true },
+    Refusal { name: "StepNotSettled", meaning: "The root of a backward-Euler step did not settle in `IMPLICIT_ITERATIONS_MAX` iterations.", sealed: true },
+    Refusal { name: "MassLedgerBroken", meaning: "The mass ledger did not close to `LEDGER_RESIDUAL_LIMIT` at a step.", sealed: true },
+    Refusal { name: "EnergyLedgerBroken", meaning: "The energy ledger did not close to `LEDGER_RESIDUAL_LIMIT` at a step, or the air that came in did not bring the reservoir's enthalpy.", sealed: true },
+    Refusal { name: "EntropyFell", meaning: "The entropy generated fell in a step by more than `ENTROPY_FALL_LIMIT` of its scale: the second law broken.", sealed: true },
+];
+
+pub fn reject_name(reject: &ChamberReject) -> &'static str {
+    match reject {
+        ChamberReject::InputNotFinite { .. } => "InputNotFinite",
+        ChamberReject::PressureAboveValveRating { .. } => "PressureAboveValveRating",
+        ChamberReject::RarefiedFlow { .. } => "RarefiedFlow",
+        ChamberReject::DurationOutOfRange { .. } => "DurationOutOfRange",
+        ChamberReject::ChamberBelowCriticalTemperature { .. } => "ChamberBelowCriticalTemperature",
+        ChamberReject::NonFiniteValue { .. } => "NonFiniteValue",
+        ChamberReject::StepNotSettled { .. } => "StepNotSettled",
+        ChamberReject::MassLedgerBroken { .. } => "MassLedgerBroken",
+        ChamberReject::EnergyLedgerBroken { .. } => "EnergyLedgerBroken",
+        ChamberReject::EntropyFell { .. } => "EntropyFell",
+    }
+}
+
+fn field_words() -> String {
+    "SHA-256 of the count of the numbers that follow as 8 little-endian bytes, then the chamber's pressure and temperature at the start and after every step, in pairs, all as little-endian f64 bytes.".to_string()
+}
+
+fn sections() -> Sections {
+    Sections {
+        locked: json!({
+            "specimen": "The company's own specimen: a pneumatic valve of sonic conductance 1.0e-8 m^3/(s Pa) (1.0 dm^3/(s bar)), critical pressure ratio 0.30 and subsonic index 0.5, the same either way, rated to 1.0 MPa over the atmosphere, between a reservoir of air at 293.15 K and a rigid chamber of 100 cm^3, a cylinder as long as it is wide (50.31 mm), its 0.01193 m^2 of wall held at 293.15 K with a film coefficient of 30 W/(m^2 K).",
+            "sonic_conductance_m3_s_pa": chamber::SONIC_CONDUCTANCE_M3_S_PA,
+            "critical_pressure_ratio": chamber::CRITICAL_PRESSURE_RATIO,
+            "subsonic_index": chamber::SUBSONIC_INDEX,
+            "reference_density_kg_m3": chamber::REFERENCE_DENSITY_KG_M3,
+            "reference_temperature_k": chamber::REFERENCE_TEMPERATURE_K,
+            "chamber_volume_m3": chamber::CHAMBER_VOLUME_M3,
+            "wall_temperature_k": chamber::WALL_TEMPERATURE_K,
+            "film_coefficient_w_m2_k": chamber::FILM_COEFFICIENT_W_M2_K,
+            "air_gas_constant_j_kg_k": chamber::AIR_GAS_CONSTANT_J_KG_K,
+            "air_gamma": chamber::AIR_GAMMA,
+            "throat_diameter_m": chamber::throat_diameter_m(),
+            "rarefied_below_pa": chamber::rarefied_below_pa(),
+            "time_step_s": chamber::TIME_STEP_S,
+            "substep_share": chamber::SUBSTEP_SHARE,
+            "implicit_share": chamber::IMPLICIT_SHARE,
+            "substeps_max": chamber::SUBSTEPS_MAX,
+            "equations": "ISO 6358-1:2013: q_m = C rho_0 p_1 sqrt(T_0/T_1) when p_2/p_1 <= b (choked) and q_m = C rho_0 p_1 sqrt(T_0/T_1) [1 - ((p_2/p_1 - b)/(1 - b))^2]^m above it, from the higher pressure to the lower. Chamber: dm/dt = q_in - q_out; dU/dt = q_in c_p T_r - q_out c_p T - h A (T - T_w); U = m c_v T; p V = m R T. Fourth-order Runge-Kutta with the chamber's mass and energy carried as their changes from the start and the mass and enthalpy through the valve, the heat to the wall and the mass and enthalpy that came in carried as states, each summed with its rounding; p = p_0 + (gamma - 1)(U - U_0)/V. Near equal pressures substeps, and backward Euler where the chamber's own rate outruns them.",
+            "fitted": "Nothing. Every constant is the specimen's declared value, the standard's reference air or a property of dry air.",
+        }),
+        invariants: json!([
+            {
+                "name": "mass_ledger_residual",
+                "rule": "The chamber's mass less its mass at the start equals the mass through the valve.",
+                "tolerance": chamber::LEDGER_RESIDUAL_LIMIT,
+                "scale": "The larger of the chamber's mass at the start or full at the reservoir's pressure, and the mass moved so far.",
+                "compared": "every step and substep",
+                "refusal": "MassLedgerBroken",
+            },
+            {
+                "name": "energy_ledger_residual",
+                "rule": "The chamber's internal energy less its energy at the start equals the enthalpy through the valve less the heat to the wall; and the enthalpy that came in is c_p T_r times the mass that came in.",
+                "tolerance": chamber::LEDGER_RESIDUAL_LIMIT,
+                "scale": "The larger of the chamber's energy at the start or full, and the enthalpy and heat moved so far.",
+                "compared": "every step and substep",
+                "refusal": "EnergyLedgerBroken",
+            },
+            {
+                "name": "largest_entropy_fall",
+                "rule": "The chamber's entropy less the entropy the air carried across the boundary of the chamber and its valve, on the reservoir's side (air that comes in brings the reservoir's entropy; air that leaves carries its own temperature at the reservoir's pressure, as an adiabatic throttle leaves it), and less the heat carried to the wall at its temperature, is the entropy generated: the throttling either way, the mixing and the film's. It never falls.",
+                "tolerance": chamber::ENTROPY_FALL_LIMIT,
+                "compared": "every step",
+                "refusal": "EntropyFell",
+            },
+        ]),
+        convergence: json!({
+            "rule": "A run is a march of 20 us steps, the last one what is left, so that the run ends at the asked time. Near equal pressures the subsonic flow falls as the square root of the difference and its slope has no bound, so the chamber reaches the reservoir's pressure in a finite time and its own rate (how fast its pressure answers a change of itself) outruns any fixed step: where that rate times the step passes 0.2 the step is cut into substeps of Runge-Kutta, and where it passes 1 over the time left, or past sixteen substeps, the rest of the step is one backward-Euler step, the flow and the heat taken at its end, its root found in the square root of the pressure difference to the reservoir. It cannot carry the chamber past the reservoir's pressure: every step's pressure lies between the two pressures given, to the rounding of the pressure moved.",
+            "refusal": "StepNotSettled",
+            "run_time": "About 0.25 s for a run of 20 s with its histories returned, on one core of an Apple M4 Pro.",
+        }),
+        reference: json!({
+            "name": chamber::REFERENCE_NAME,
+            "url": chamber::REFERENCE_URL,
+            "retrieved": chamber::REFERENCE_RETRIEVED,
+            "test": "the_first_law_of_a_fast_charge",
+            "covers": "The test holds the charge to the first law's closed form, T = gamma T_r p/(p - p0 + gamma p0) with no heat, from below: 381.5 K against 384.9 K after 60 ms. The source, charging and venting a tank through two proportional pressure regulators, measured the ISO form's two constants to move with the supply pressure: on the VPPM-6L-L-1-G18-0L10H from C = 0.90e-8 m^3/(s Pa) and b = 0.56 at 200 kPa to C = 1.55e-8 to 1.65e-8 and b = 0.36 to 0.46 from 400 to 800 kPa. A valve whose constants move like that is not this valve: this specimen's are one pair.",
+            "kind": "Measurements of other valves, stated as a limit of the form; and the first law's closed form for a charge. Record: evidence/research/hydraulics_robotics/.",
+        }),
+    }
+}
+
+fn validation() -> [String; 5] {
+    [
+        "The company's own specimen: a pneumatic valve in the ISO 6358 form, sonic conductance 1.0e-8 m^3/(s Pa) and critical pressure ratio 0.30, charging or venting a rigid 100 cm^3 chamber of air.".to_string(),
+        "The company's own specimen, its constants declared in its description; its comparison with measurement comes later. The form's two constants were measured to move with the supply pressure on two proportional regulators (Varga and Keski-Honkola 2012); that is under reference.".to_string(),
+        "The ledgers stated under invariants: the chamber's mass and energy closed at every step, and the entropy generated never falling.".to_string(),
+        crate::descriptor::OWN_SPECIMEN_SOLVER_RESULT.to_string(),
+        "The valve's constants are the company's, declared in its description, and are one pair at every pressure and in both directions. The chamber's air has one pressure and one temperature, and its heat goes to the wall through one film coefficient. No pipe lies between the valve and the chamber, and the valve is open from the start. A proof shows that an answer was not changed, not that the model matches a valve.".to_string(),
+    ]
+}
+
+fn example() -> Value {
+    json!({ "reservoir_pressure_pa": 7.0e5, "chamber_start_pressure_pa": 101325.0, "duration_s": 1.0, "return_histories": false })
+}
+
+fn example_vent() -> Value {
+    json!({ "reservoir_pressure_pa": 101325.0, "chamber_start_pressure_pa": 1.0e6, "duration_s": 2.0, "return_histories": true })
+}
+
+fn question(given: &Given) -> Result<ChamberQuestion, String> {
+    Ok(ChamberQuestion {
+        reservoir_pressure_pa: given.number("reservoir_pressure_pa")?,
+        chamber_start_pressure_pa: given.number("chamber_start_pressure_pa")?,
+        duration_s: given.number("duration_s")?,
+    })
+}
+
+fn check(given: &Given) -> Result<(), String> {
+    chamber::admit(&question(given)?).map_err(|reject| format!("Physical Violation: {reject} ({}).", reject_name(&reject)))
+}
+
+fn solve(given: &Given) -> Result<Solved, String> {
+    let histories = given.flag(ASK_HISTORIES)?;
+    Ok(solved(chamber::solve(&question(given)?), histories))
+}
+
+pub fn solved(returned: Result<Chamber, ChamberReject>, histories: bool) -> Solved {
+    let c = match returned {
+        Ok(c) => c,
+        Err(reject) => {
+            let name = reject_name(&reject);
+            let sealed = REFUSALS.iter().any(|refusal| refusal.name == name && refusal.sealed);
+            return Solved::Refused(Refused {
+                name,
+                sentence: if sealed { reject.to_string() } else { format!("{reject} ({name})") },
+                iterations: None,
+            });
+        }
+    };
+    let one = |name: &str, value: f64| (name.to_string(), Published::Number(value));
+    let many = |name: &str, values: &[f64]| (name.to_string(), Published::Numbers(values.to_vec()));
+    let mut result = vec![
+        one("start_mass_flow_kg_s", c.start_mass_flow_kg_s),
+        one("start_choked", if c.start_choked { 1.0 } else { 0.0 }),
+        one("choked_until_s", c.choked_until_s),
+        many("time_to_95_percent_s", &c.time_to_95_percent_s),
+        one("final_pressure_pa", c.final_pressure_pa),
+        one("final_temperature_k", c.final_temperature_k),
+        one("temperature_min_k", c.temperature_min_k),
+        one("temperature_max_k", c.temperature_max_k),
+        one("mass_through_valve_kg", c.mass_through_valve_kg),
+        one("enthalpy_through_valve_j", c.enthalpy_through_valve_j),
+        one("heat_to_wall_j", c.heat_to_wall_j),
+        one("entropy_generated_j_k", c.entropy_generated_j_k),
+    ];
+    if histories {
+        result.extend([
+            many("sample_times_s", &c.sample_times_s),
+            many("pressure_history_pa", &c.pressure_history_pa),
+            many("temperature_history_k", &c.temperature_history_k),
+            many("mass_flow_history_kg_s", &c.mass_flow_history_kg_s),
+            many("choked_history", &c.choked_history),
+        ]);
+    }
+    Solved::Answer(Answer {
+        iterations: c.steps,
+        result,
+        invariants: vec![
+            one("mass_ledger_residual", c.mass_ledger_residual),
+            one("energy_ledger_residual", c.energy_ledger_residual),
+            one("largest_entropy_fall", c.largest_entropy_fall),
+        ],
+        field: c.field,
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const SOLVER_SOURCE: &str = include_str!("../../genesis_solvers/src/orifice_air_chamber.rs");
+
+    fn documented_rejects() -> Vec<(String, String)> {
+        let start = SOLVER_SOURCE.find("pub enum ChamberReject {").expect("ChamberReject is in the solver");
+        let body = &SOLVER_SOURCE[start..];
+        let mut found = Vec::new();
+        let mut doc = String::new();
+        for line in body.lines().skip(1) {
+            if line == "}" {
+                break;
+            }
+            let Some(text) = line.strip_prefix("    ") else { continue };
+            if let Some(sentence) = text.strip_prefix("/// ") {
+                if !doc.is_empty() {
+                    doc.push(' ');
+                }
+                doc.push_str(sentence);
+            } else if text.starts_with(|first: char| first.is_ascii_uppercase()) {
+                let name: String = text.chars().take_while(|letter| letter.is_ascii_alphanumeric()).collect();
+                found.push((name, doc.replace("[`", "`").replace("`]", "`")));
+                doc.clear();
+            }
+        }
+        found
+    }
+
+    #[test]
+    fn every_refusal_carries_the_sentence_from_its_doc_comment() {
+        let documented = documented_rejects();
+        assert_eq!(documented.len(), REFUSALS.len());
+        for ((variant, sentence), refusal) in documented.iter().zip(REFUSALS) {
+            assert_eq!(variant, refusal.name);
+            assert_eq!(sentence, refusal.meaning, "{}", refusal.name);
+        }
+    }
+
+    #[test]
+    fn the_lowest_pressure_taken_is_the_solvers_knudsen_limit() {
+        // The published minimum is the computed limit to the bit; its words
+        // print it; it is taken, and one 64-bit number below it is refused
+        // by the name the input lists.
+        assert_eq!(PRESSURE_MIN_PA.to_bits(), chamber::rarefied_below_pa().to_bits());
+        let bound = ORIFICE_AIR_CHAMBER.inputs[0].bound;
+        assert!(bound.contains(&format!("at least {PRESSURE_MIN_PA} Pa")), "{bound}");
+        let q = ChamberQuestion { reservoir_pressure_pa: PRESSURE_MIN_PA, chamber_start_pressure_pa: PRESSURE_MIN_PA, duration_s: 1.0 };
+        chamber::admit(&q).unwrap();
+        for below in [ChamberQuestion { reservoir_pressure_pa: PRESSURE_MIN_PA.next_down(), ..q }, ChamberQuestion { chamber_start_pressure_pa: PRESSURE_MIN_PA.next_down(), ..q }] {
+            assert_eq!(reject_name(&chamber::admit(&below).unwrap_err()), "RarefiedFlow");
+        }
+    }
+
+    #[test]
+    fn every_published_name_is_in_the_entry_and_the_histories_only_when_asked() {
+        let q = ChamberQuestion { reservoir_pressure_pa: 7.0e5, chamber_start_pressure_pa: 101325.0, duration_s: 0.2 };
+        for histories in [false, true] {
+            let answer = match solved(chamber::solve(&q), histories) {
+                Solved::Answer(answer) => answer,
+                Solved::Refused(refused) => panic!("{}", refused.sentence),
+            };
+            let listed: Vec<&Output> = ORIFICE_AIR_CHAMBER.result.iter().filter(|o| histories || o.asked_by.is_none()).collect();
+            assert_eq!(answer.result.len(), listed.len());
+            for ((name, value), output) in answer.result.iter().zip(listed) {
+                assert_eq!(name, output.name);
+                assert_eq!(value.shape(), output.shape);
+            }
+        }
+    }
+}

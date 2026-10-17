@@ -224,7 +224,7 @@ pub fn plan_refusals() -> Vec<Refusal> {
             object.remove("answer");
             Value::Object(object)
         }).unwrap(),
-        "the gateway was started without a directory for dataset files.",
+        "this connection was started without a directory for dataset files.",
     ));
     cases
 }

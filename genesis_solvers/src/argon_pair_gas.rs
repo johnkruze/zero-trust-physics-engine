@@ -36,27 +36,30 @@
 //! nobody here fitted, do as well on the held-back speed of sound (0.0068 and
 //! 0.0136 m/s) and better on the viscosity (0.80 and 2.05 percent).
 //!
-//! **The range served** is the range compared, each property in its own.
-//! Temperature 250 K to 681.96 K, the union of the two compared spans: the
-//! speed of sound was compared from 250 K to 349.868 K, at 30.5 kPa to
-//! 467.2 kPa, the lowest and highest pressures of the 66 measured speeds of
-//! sound at or below 500 kPa, fitted and held back together; the viscosity
-//! was compared from 291.09 K to 681.96 K, asked at zero pressure, the limit
-//! of zero density. The pressure says which property a question asks. At
-//! 30.5 kPa to 467.2 kPa it asks the speed of sound, and above 349.868 K the
-//! solver refuses with `SoundSpeedNotCompared`. At zero it asks the gas at
-//! zero density, the viscosity and the second virial coefficient, and below
-//! 291.09 K the solver refuses with `ViscosityNotCompared`; the speed of
-//! sound it returns there is the ideal gas's. Between zero and 30.5 kPa and
-//! from 467.2 kPa to 500 kPa, where neither property was compared, it refuses
-//! with `PressureNotCompared`; below 0 kPa and above 500 kPa, where the
-//! pressure series is not written, with `PressureOutOfRange`. A question of
-//! the speed of sound below 291.09 K also returns the viscosity there, which
-//! no measurement here has checked.
+//! **The range compared.** The speed of sound was compared from 250 K to
+//! 349.868 K, at 30.5 kPa to 467.2 kPa, the lowest and highest pressures of
+//! the 66 measured speeds of sound at or below 500 kPa, fitted and held back
+//! together; the viscosity was compared from 291.09 K to 681.96 K, asked at
+//! zero pressure, the limit of zero density.
+//!
+//! **The range served** is where the physics holds: every temperature from
+//! 250 K, where the size of the series' left-out term is known, to 6000 K,
+//! where argon begins to ionize, and every pressure from 0 to 500 kPa, where
+//! the pressure series cut after its first term is written. Every property
+//! is returned at every question; at zero pressure the speed of sound is the
+//! ideal gas's. Through engine 0.8.0 a question outside the compared spans
+//! of its property was refused by name (`PressureNotCompared`,
+//! `SoundSpeedNotCompared`, `ViscosityNotCompared`), and nothing above
+//! 681.96 K was answered. Past the compared spans nothing was measured: the
+//! viscosity was high at every compared point, by 3.0 percent at 291 K to
+//! 0.3 percent at 682 K, and below 291.09 K and above 681.96 K its error is
+//! not known.
 //!
 //! Everything below is in reduced units unless a name carries a unit: lengths
 //! in σ, energies in ε, so the potential is `4 (r^-12 − r^-6)`.
 
+use genesis_kernel::math;
+use crate::normal::NormalOrZero;
 use std::fmt;
 
 const PI: f64 = std::f64::consts::PI;
@@ -76,21 +79,31 @@ pub const AVOGADRO_PER_MOL: f64 = 6.02214076e23;
 /// Ratio of the heat capacities of an ideal monatomic gas.
 pub const HEAT_CAPACITY_RATIO: f64 = 5.0 / 3.0;
 
-/// Lowest temperature of a question, kelvin: the lowest isotherm the solver was compared with.
+/// Lowest temperature of a question, kelvin: the lowest isotherm the solver
+/// was compared with. Below it the term the pressure series leaves out grows
+/// as the gas cools toward condensation, and its size is not known here.
 pub const TEMPERATURE_MIN_K: f64 = 250.0;
-/// Highest temperature of a question, kelvin: the highest viscosity point the solver was compared with.
-pub const TEMPERATURE_MAX_K: f64 = 681.96;
+/// Highest temperature of a question, kelvin. The model is a gas of neutral
+/// atoms in their ground state; above this argon begins to ionize (Saha's
+/// equation: an ionized fraction of 2e-5 at 6000 K and 100 kPa, 2e-4 at
+/// 7000 K, 2 percent at 10,000 K), which no pair potential holds. The
+/// quadratures settle to 20,000 K and not at 50,000 K. The highest
+/// temperature compared with measurement is 681.96 K, the highest viscosity
+/// point.
+pub const TEMPERATURE_MAX_K: f64 = 6000.0;
 /// Lowest pressure the pressure series is written for, kPa.
 pub const PRESSURE_MIN_KPA: f64 = 0.0;
 /// Highest pressure the pressure series is written for, kPa. Above it the term the pressure series leaves out is larger than the measurement uncertainty.
 pub const PRESSURE_MAX_KPA: f64 = 500.0;
-/// Lowest pressure of a question, kPa: the lowest pressure at which the speed of sound was compared with measurement.
+/// The lowest pressure at which the speed of sound was compared with measurement, kPa. Stated, not enforced.
 pub const PRESSURE_COMPARED_MIN_KPA: f64 = 30.5;
-/// Highest pressure of a question, kPa: the highest pressure at which the speed of sound was compared with measurement.
+/// The highest pressure at which the speed of sound was compared with measurement, kPa. Stated, not enforced.
 pub const PRESSURE_COMPARED_MAX_KPA: f64 = 467.2;
-/// Highest temperature at which the speed of sound was compared with measurement, kelvin.
+/// Highest temperature at which the speed of sound was compared with measurement, kelvin. Stated, not enforced.
 pub const SOUND_SPEED_COMPARED_MAX_K: f64 = 349.868;
-/// Lowest temperature at which the viscosity was compared with measurement, kelvin. It was asked at zero pressure.
+/// Highest temperature at which the viscosity was compared with measurement, kelvin. Stated, not enforced.
+pub const VISCOSITY_COMPARED_MAX_K: f64 = 681.96;
+/// Lowest temperature at which the viscosity was compared with measurement, kelvin. It was asked at zero pressure. Stated, not enforced.
 pub const VISCOSITY_COMPARED_MIN_K: f64 = 291.09;
 
 /// A second virial integral is settled when its two quadrature rules agree to this over the whole range, in reduced units.
@@ -170,16 +183,10 @@ pub const REFERENCE_TOLERANCE_COLLISION: f64 = 1.0e-3;
 /// Why a result was not returned.
 #[derive(Clone, Debug, PartialEq)]
 pub enum ArgonReject {
-    /// `temperature_k` is outside [`TEMPERATURE_MIN_K`]..=[`TEMPERATURE_MAX_K`].
+    /// `temperature_k` is outside [`TEMPERATURE_MIN_K`] to [`TEMPERATURE_MAX_K`]: below it the pressure series' left-out term is not known, above it argon begins to ionize.
     TemperatureOutOfRange { temperature_k: f64 },
-    /// `pressure_kpa` is outside [`PRESSURE_MIN_KPA`]..=[`PRESSURE_MAX_KPA`].
+    /// `pressure_kpa` is outside [`PRESSURE_MIN_KPA`] to [`PRESSURE_MAX_KPA`], where the pressure series cut after its first term is written.
     PressureOutOfRange { pressure_kpa: f64 },
-    /// `pressure_kpa` is above zero and outside [`PRESSURE_COMPARED_MIN_KPA`]..=[`PRESSURE_COMPARED_MAX_KPA`], the pressures at which the speed of sound was compared with measurement; the viscosity was compared at zero pressure only.
-    PressureNotCompared { pressure_kpa: f64 },
-    /// `pressure_kpa` asks the speed of sound and `temperature_k` is above [`SOUND_SPEED_COMPARED_MAX_K`], the highest temperature at which the speed of sound was compared with measurement.
-    SoundSpeedNotCompared { temperature_k: f64 },
-    /// `pressure_kpa` is zero, which asks the gas at zero density, and `temperature_k` is below [`VISCOSITY_COMPARED_MIN_K`], the lowest temperature at which the viscosity was compared with measurement.
-    ViscosityNotCompared { temperature_k: f64 },
     /// An intermediate value was NaN or infinite.
     NonFiniteValue,
     /// A second virial integral was still open after a panel had been halved [`MAX_REFINEMENTS`] times over.
@@ -201,23 +208,11 @@ impl fmt::Display for ArgonReject {
         match self {
             Self::TemperatureOutOfRange { temperature_k } => write!(
                 f,
-                "temperature {temperature_k} K is outside {TEMPERATURE_MIN_K}..={TEMPERATURE_MAX_K} K"
+                "temperature {temperature_k} K is outside {TEMPERATURE_MIN_K} to {TEMPERATURE_MAX_K} K: below it the left-out term of the pressure series is not known, above it argon begins to ionize"
             ),
             Self::PressureOutOfRange { pressure_kpa } => write!(
                 f,
-                "pressure {pressure_kpa} kPa is outside {PRESSURE_MIN_KPA}..={PRESSURE_MAX_KPA} kPa"
-            ),
-            Self::PressureNotCompared { pressure_kpa } => write!(
-                f,
-                "pressure {pressure_kpa} kPa is above zero and outside {PRESSURE_COMPARED_MIN_KPA}..={PRESSURE_COMPARED_MAX_KPA} kPa, the pressures at which the speed of sound was compared with measurement; the viscosity was compared at zero pressure only"
-            ),
-            Self::SoundSpeedNotCompared { temperature_k } => write!(
-                f,
-                "temperature {temperature_k} K is above {SOUND_SPEED_COMPARED_MAX_K} K, the highest at which the speed of sound was compared with measurement"
-            ),
-            Self::ViscosityNotCompared { temperature_k } => write!(
-                f,
-                "temperature {temperature_k} K at zero pressure is below {VISCOSITY_COMPARED_MIN_K} K, the lowest at which the viscosity was compared with measurement"
+                "pressure {pressure_kpa} kPa is outside {PRESSURE_MIN_KPA} to {PRESSURE_MAX_KPA} kPa, where the pressure series cut after its first term is written"
             ),
             Self::NonFiniteValue => write!(f, "an integrand or a result was not finite"),
             Self::VirialNotSettled { refinements } => write!(
@@ -330,8 +325,40 @@ impl Numerics {
 }
 
 /// Argon gas at one temperature and one pressure, or the named limit.
+///
+/// Each value of the answer below the normal range is written as zero
+/// with its sign ([`crate::normal`]).
 pub fn solve(question: Question) -> Result<ArgonGas, ArgonReject> {
+    crate::normal::held(solve_as_computed(question))
+}
+
+/// The answer as the equations compute it, before a value below the
+/// normal range is written as zero.
+fn solve_as_computed(question: Question) -> Result<ArgonGas, ArgonReject> {
     run(question, Numerics::LOCKED)
+}
+
+impl NormalOrZero for ArgonGas {
+    fn normal_or_zero(&mut self) {
+        self.temperature_k.normal_or_zero();
+        self.pressure_kpa.normal_or_zero();
+        self.reduced_temperature.normal_or_zero();
+        self.second_virial_cm3_per_mol.normal_or_zero();
+        self.second_virial_first_derivative_cm3_per_mol.normal_or_zero();
+        self.second_virial_second_derivative_cm3_per_mol.normal_or_zero();
+        self.acoustic_virial_cm3_per_mol.normal_or_zero();
+        self.sound_speed_m_per_s.normal_or_zero();
+        self.ideal_gas_sound_speed_m_per_s.normal_or_zero();
+        self.collision_integral_22.normal_or_zero();
+        self.collision_integral_23.normal_or_zero();
+        self.viscosity_second_approximation_factor.normal_or_zero();
+        self.viscosity_pa_s.normal_or_zero();
+        self.virial_forms_residual_cm3_per_mol.normal_or_zero();
+        self.least_turning_point_margin.normal_or_zero();
+        self.collision_integral_rule_gap.normal_or_zero();
+        self.collision_energies.normal_or_zero();
+        self.cross_sections.normal_or_zero();
+    }
 }
 
 /// The limits the question itself shows.
@@ -345,20 +372,6 @@ pub fn check(question: Question) -> Result<(), ArgonReject> {
     }
     if !(pressure_kpa >= PRESSURE_MIN_KPA && pressure_kpa <= PRESSURE_MAX_KPA) {
         return Err(ArgonReject::PressureOutOfRange { pressure_kpa });
-    }
-    if pressure_kpa == 0.0 {
-        // Zero pressure asks the gas at zero density, where the viscosity
-        // was compared.
-        if temperature_k < VISCOSITY_COMPARED_MIN_K {
-            return Err(ArgonReject::ViscosityNotCompared { temperature_k });
-        }
-    } else if pressure_kpa >= PRESSURE_COMPARED_MIN_KPA && pressure_kpa <= PRESSURE_COMPARED_MAX_KPA {
-        // A pressure where the speed of sound was compared asks it.
-        if temperature_k > SOUND_SPEED_COMPARED_MAX_K {
-            return Err(ArgonReject::SoundSpeedNotCompared { temperature_k });
-        }
-    } else {
-        return Err(ArgonReject::PressureNotCompared { pressure_kpa });
     }
     Ok(())
 }
@@ -526,13 +539,13 @@ where
 
 /// The reduced pair potential.
 fn potential(r: f64) -> f64 {
-    let q6 = r.powi(-6);
+    let q6 = math::powi(r, -6);
     4.0 * (q6 * q6 - q6)
 }
 
 /// `r` times the derivative of the reduced pair potential.
 fn potential_slope_times_r(r: f64) -> f64 {
-    let q6 = r.powi(-6);
+    let q6 = math::powi(r, -6);
     4.0 * (6.0 * q6 - 12.0 * q6 * q6)
 }
 
@@ -595,12 +608,12 @@ where
 
 fn second_virial(t: f64, numerics: Numerics) -> Result<Virial, ArgonReject> {
     // exp(-u/T) with u = +infinity at r = 0 is 0; the quadrature never lands on r = 0.
-    let boltzmann = |r: f64| (-potential(r) / t).exp();
+    let boltzmann = |r: f64| math::exp(-potential(r) / t);
     let (mayer, n0) =
-        over_all_distances(numerics, |r| -3.0 * (-potential(r) / t).exp_m1() * r * r)?;
+        over_all_distances(numerics, |r| -3.0 * math::exp_m1(-potential(r) / t) * r * r)?;
     let depth = numerics.force_form_well_depth;
     let (force, n1) = over_all_distances(numerics, |r| {
-        let e = (-depth * potential(r) / t).exp();
+        let e = math::exp(-depth * potential(r) / t);
         if e == 0.0 {
             0.0
         } else {
@@ -640,7 +653,7 @@ fn second_virial(t: f64, numerics: Numerics) -> Result<Virial, ArgonReject> {
 /// it in `φ = φ_min ± δ sinh y` with `δ = sqrt(H_min)`, which keeps the
 /// integrand smooth when the atoms nearly orbit.
 fn deflection(energy: f64, closest: f64, numerics: Numerics) -> Result<(f64, f64), ArgonReject> {
-    let q6 = closest.powi(-6);
+    let q6 = math::powi(closest, -6);
     let q12 = q6 * q6;
     let k = 4.0 / energy;
     let impact_over_closest_squared = 1.0 - k * (q12 - q6);
@@ -676,18 +689,18 @@ fn deflection(energy: f64, closest: f64, numerics: Numerics) -> Result<(f64, f64
     if !(h_min > 0.0) {
         return Err(not_outermost);
     }
-    let phi_min = t_min.sqrt().acos();
+    let phi_min = math::acos(t_min.sqrt());
     let delta = h_min.sqrt().min(1.0);
     let t2 = t_min * t_min;
     let t3 = t2 * t_min;
     let t4 = t3 * t_min;
     let integrand = |offset: f64, y: f64| -> Result<f64, ArgonReject> {
-        let e = y.exp();
+        let e = math::exp(y);
         let sinh = 0.5 * (e - 1.0 / e);
         let cosh = 0.5 * (e + 1.0 / e);
         let a = offset * delta * sinh;
         // t − t_min = cos²(φ_min + a) − cos²(φ_min) = −sin(a) sin(2 φ_min + a).
-        let dt = -a.sin() * (2.0 * phi_min + a).sin();
+        let dt = -math::sin(a) * math::sin(2.0 * phi_min + a);
         let t = t_min + dt;
         let divided = q12
             * (1.0
@@ -710,7 +723,7 @@ fn deflection(energy: f64, closest: f64, numerics: Numerics) -> Result<(f64, f64
         if span <= 0.0 {
             continue;
         }
-        let y_end = (span / delta).asinh();
+        let y_end = math::asinh(span / delta);
         let first = (0.5 * y_end).ceil() as usize;
         let outcome = settled(
             0.0,
@@ -732,7 +745,7 @@ fn deflection(energy: f64, closest: f64, numerics: Numerics) -> Result<(f64, f64
         }
     }
     let angle = PI - 2.0 * impact_over_closest_squared.sqrt() * total;
-    let sine = angle.sin();
+    let sine = math::sin(angle);
     if !sine.is_finite() {
         return Err(ArgonReject::NonFiniteValue);
     }
@@ -754,10 +767,10 @@ fn impact_squared(energy: f64, r: f64) -> f64 {
 /// logarithmically at the orbiting impact parameter between them.
 fn cross_section(energy: f64, numerics: Numerics) -> Result<(f64, f64), ArgonReject> {
     let k = 4.0 / energy;
-    let head_on = (0.5 * (1.0 + (1.0 + energy).sqrt())).powf(-1.0 / 6.0);
+    let head_on = math::powf(0.5 * (1.0 + (1.0 + energy).sqrt()), -1.0 / 6.0);
     let mut least_margin = f64::INFINITY;
     let weighted = |r: f64, margin: &mut f64| -> Result<f64, ArgonReject> {
-        let q6 = r.powi(-6);
+        let q6 = math::powi(r, -6);
         let weight = 2.0 * r * (1.0 + k * (5.0 * q6 * q6 - 2.0 * q6));
         let (sine_squared, h_min) = deflection(energy, r, numerics)?;
         if h_min < *margin {
@@ -799,14 +812,14 @@ fn cross_section(energy: f64, numerics: Numerics) -> Result<(f64, f64), ArgonRej
         let delta = (1.0 - ORBITING_ENERGY / energy).sqrt().max(1.0e-6);
         let sinh_map = |sign: f64| {
             move |y: f64| {
-                let e = y.exp();
+                let e = math::exp(y);
                 (
                     CRITICAL_APPROACH + sign * delta * 0.5 * (e - 1.0 / e),
                     delta * 0.5 * (e + 1.0 / e),
                 )
             }
         };
-        let inner_end = ((CRITICAL_APPROACH - head_on) / delta).asinh();
+        let inner_end = math::asinh((CRITICAL_APPROACH - head_on) / delta);
         total += piece(
             0.0,
             inner_end,
@@ -814,7 +827,7 @@ fn cross_section(energy: f64, numerics: Numerics) -> Result<(f64, f64), ArgonRej
             &mut least_margin,
             &sinh_map(-1.0),
         )?;
-        let outer_end = ((far - CRITICAL_APPROACH) / delta).asinh();
+        let outer_end = math::asinh((far - CRITICAL_APPROACH) / delta);
         total += piece(
             0.0,
             outer_end,
@@ -824,8 +837,8 @@ fn cross_section(energy: f64, numerics: Numerics) -> Result<(f64, f64), ArgonRej
         )?;
     } else {
         let root = (64.0 - 80.0 * energy).sqrt();
-        let barrier = ((8.0 - root) / 40.0).powf(-1.0 / 6.0);
-        let inner_top = ((8.0 + root) / 40.0).powf(-1.0 / 6.0);
+        let barrier = math::powf((8.0 - root) / 40.0, -1.0 / 6.0);
+        let inner_top = math::powf((8.0 + root) / 40.0, -1.0 / 6.0);
         let orbiting = impact_squared(energy, barrier);
         // The closest approach inside the barrier at the orbiting impact parameter.
         let (mut low, mut high) = (head_on, inner_top);
@@ -845,11 +858,11 @@ fn cross_section(energy: f64, numerics: Numerics) -> Result<(f64, f64), ArgonRej
             (0.5 * ORBIT_FOLDS_INNER) as usize,
             &mut least_margin,
             &|y: f64| {
-                let s = span * (-y).exp();
+                let s = span * math::exp(-y);
                 (inside - s, s)
             },
         )?;
-        let cut = inside - span * (-ORBIT_FOLDS_INNER).exp();
+        let cut = inside - span * math::exp(-ORBIT_FOLDS_INNER);
         total += 0.5 * (orbiting - impact_squared(energy, cut));
         far = 2.5 * barrier;
         let span = far - barrier;
@@ -859,11 +872,11 @@ fn cross_section(energy: f64, numerics: Numerics) -> Result<(f64, f64), ArgonRej
             (0.5 * ORBIT_FOLDS_OUTER).ceil() as usize,
             &mut least_margin,
             &|y: f64| {
-                let s = span * (-y).exp();
+                let s = span * math::exp(-y);
                 (barrier + s, s)
             },
         )?;
-        let cut = barrier + span * (-ORBIT_FOLDS_OUTER).exp();
+        let cut = barrier + span * math::exp(-ORBIT_FOLDS_OUTER);
         total += 0.5 * (impact_squared(energy, cut) - orbiting);
     }
     // Glancing collisions, in v = far/r.
@@ -897,7 +910,7 @@ struct Collisions {
 fn energy_edges(t: f64) -> Vec<f64> {
     let mut edges = vec![0.0, ORBITING_ENERGY];
     for step in (0..=ENERGY_GRADED_PANELS).rev() {
-        edges.push(ORBITING_ENERGY * (1.0 + 0.5_f64.powi(step)));
+        edges.push(ORBITING_ENERGY * (1.0 + math::powi(0.5_f64, step)));
     }
     let base = 2.0 * ORBITING_ENERGY;
     for edge in ENERGY_TAIL_EDGES {
@@ -946,7 +959,7 @@ fn energy_panel(
         least_margin = least_margin.min(margin);
         energies[place] = energy;
         cross_sections[place] = q;
-        let second = q * energy.powi(3) * (-energy / t).exp();
+        let second = q * math::powi(energy, 3) * math::exp(-energy / t);
         let third = second * energy;
         fifteen[0] += KRONROD_WEIGHTS[index] * second;
         fifteen[1] += KRONROD_WEIGHTS[index] * third;
@@ -1000,7 +1013,7 @@ fn collision_integrals(t: f64, numerics: Numerics) -> Result<Collisions, ArgonRe
     let mut cross_sections = Vec::new();
     while let Some(one) = open.pop() {
         let share = numerics.collision_integral_tolerance
-            / (count as f64 * 2.0_f64.powi(one.depth as i32));
+            / (count as f64 * math::powi(2.0_f64, one.depth as i32));
         if one.gaps[0] <= share * estimate[0] && one.gaps[1] <= share * estimate[1] {
             moments[0] += one.moments[0];
             moments[1] += one.moments[1];
@@ -1023,8 +1036,8 @@ fn collision_integrals(t: f64, numerics: Numerics) -> Result<Collisions, ArgonRe
         open.push(upper);
         open.push(lower);
     }
-    let omega_22 = moments[0] / (6.0 * t.powi(4));
-    let omega_23 = moments[1] / (24.0 * t.powi(5));
+    let omega_22 = moments[0] / (6.0 * math::powi(t, 4));
+    let omega_23 = moments[1] / (24.0 * math::powi(t, 5));
     if !(omega_22.is_finite() && omega_23.is_finite() && omega_22 > 0.0 && omega_23 > 0.0) {
         return Err(ArgonReject::NonFiniteValue);
     }
@@ -1095,7 +1108,7 @@ mod tests {
 
     #[test]
     fn a_question_outside_the_range_is_refused_by_name() {
-        for temperature_k in [249.999, 681.97, 0.0, -300.0, f64::NAN, f64::INFINITY] {
+        for temperature_k in [249.999, 6000.001, 0.0, -300.0, f64::NAN, f64::INFINITY] {
             match solve(question(temperature_k, 100.0)) {
                 Err(ArgonReject::TemperatureOutOfRange { .. }) => {}
                 other => panic!("{temperature_k}: {other:?}"),
@@ -1107,48 +1120,71 @@ mod tests {
                 other => panic!("{pressure_kpa}: {other:?}"),
             }
         }
-        // Above zero and outside the pressures the speed of sound was
-        // compared at, neither property was compared.
-        for pressure_kpa in [5.0e-324, 1.0, 30.499, 467.201, 500.0] {
-            match solve(question(300.0, pressure_kpa)) {
-                Err(ArgonReject::PressureNotCompared { pressure_kpa: refused }) => {
-                    assert_eq!(refused.to_bits(), pressure_kpa.to_bits())
-                }
-                other => panic!("{pressure_kpa}: {other:?}"),
-            }
+        // The ends of the served range are inside, and the sentences say
+        // their ranges in words.
+        for (temperature_k, pressure_kpa) in [(TEMPERATURE_MIN_K, 0.0), (TEMPERATURE_MAX_K, 0.0), (TEMPERATURE_MIN_K, PRESSURE_MAX_KPA), (TEMPERATURE_MAX_K, PRESSURE_MAX_KPA)] {
+            assert!(check(question(temperature_k, pressure_kpa)).is_ok(), "{temperature_k} {pressure_kpa}");
         }
         assert_eq!(
-            ArgonReject::PressureNotCompared { pressure_kpa: 500.0 }.to_string(),
-            "pressure 500 kPa is above zero and outside 30.5..=467.2 kPa, the pressures at which the speed of sound was compared with measurement; the viscosity was compared at zero pressure only"
+            check(question(TEMPERATURE_MAX_K.next_up(), 100.0)),
+            Err(ArgonReject::TemperatureOutOfRange { temperature_k: TEMPERATURE_MAX_K.next_up() })
         );
-        // The speed of sound above its compared temperatures, and the gas at
-        // zero density below the viscosity's.
-        for temperature_k in [SOUND_SPEED_COMPARED_MAX_K.next_up(), 400.0, TEMPERATURE_MAX_K] {
-            for pressure_kpa in [PRESSURE_COMPARED_MIN_KPA, 101.325, PRESSURE_COMPARED_MAX_KPA] {
-                assert_eq!(
-                    check(question(temperature_k, pressure_kpa)),
-                    Err(ArgonReject::SoundSpeedNotCompared { temperature_k })
-                );
-            }
-        }
-        for temperature_k in [TEMPERATURE_MIN_K, 291.0, VISCOSITY_COMPARED_MIN_K.next_down()] {
-            for pressure_kpa in [0.0, -0.0] {
-                assert_eq!(
-                    check(question(temperature_k, pressure_kpa)),
-                    Err(ArgonReject::ViscosityNotCompared { temperature_k })
-                );
-            }
-        }
-        // The compared span sits inside the series' range.
+        assert_eq!(
+            ArgonReject::PressureOutOfRange { pressure_kpa: 600.0 }.to_string(),
+            "pressure 600 kPa is outside 0 to 500 kPa, where the pressure series cut after its first term is written"
+        );
+        assert_eq!(
+            ArgonReject::TemperatureOutOfRange { temperature_k: 7000.0 }.to_string(),
+            "temperature 7000 K is outside 250 to 6000 K: below it the left-out term of the pressure series is not known, above it argon begins to ionize"
+        );
+        // The compared spans sit inside the served range.
         assert!(PRESSURE_MIN_KPA <= PRESSURE_COMPARED_MIN_KPA);
         assert!(PRESSURE_COMPARED_MAX_KPA <= PRESSURE_MAX_KPA);
-        // The ends of each compared region are inside.
-        assert!(check(question(TEMPERATURE_MIN_K, PRESSURE_COMPARED_MIN_KPA)).is_ok());
-        assert!(check(question(SOUND_SPEED_COMPARED_MAX_K, PRESSURE_COMPARED_MAX_KPA)).is_ok());
-        assert!(check(question(VISCOSITY_COMPARED_MIN_K, 0.0)).is_ok());
-        assert!(check(question(TEMPERATURE_MAX_K, 0.0)).is_ok());
-        assert!(check(question(TEMPERATURE_MIN_K, PRESSURE_COMPARED_MIN_KPA.next_down())).is_err());
-        assert!(check(question(TEMPERATURE_MIN_K, PRESSURE_COMPARED_MAX_KPA.next_up())).is_err());
+        assert!(VISCOSITY_COMPARED_MAX_K <= TEMPERATURE_MAX_K);
+    }
+
+    /// Past each compared span, where engine 0.8.0 refused by name: the
+    /// speed of sound below 30.5 kPa, above 467.2 kPa and above 349.868 K;
+    /// the gas at zero density below 291.09 K; and every property above
+    /// 681.96 K up to 6000 K. Each is answered, the two forms of the second
+    /// virial coefficient agreeing and every quadrature settled, and the
+    /// speed of sound departs from the ideal gas's by the first term of the
+    /// series, which vanishes at zero pressure.
+    #[test]
+    fn past_the_compared_spans_every_property_is_answered_to_the_limits_of_the_physics() {
+        for (temperature_k, pressure_kpa) in [
+            (300.0, 5.0e-324),
+            (300.0, 1.0),
+            (300.0, 30.499),
+            (300.0, 467.201),
+            (300.0, 500.0),
+            (SOUND_SPEED_COMPARED_MAX_K.next_up(), 101.325),
+            (681.96, 467.2),
+            (TEMPERATURE_MIN_K, 0.0),
+            (VISCOSITY_COMPARED_MIN_K.next_down(), 0.0),
+            (VISCOSITY_COMPARED_MAX_K.next_up(), 0.0),
+            (1000.0, 0.0),
+            (3000.0, 250.0),
+            (TEMPERATURE_MAX_K, 0.0),
+            (TEMPERATURE_MAX_K, PRESSURE_MAX_KPA),
+        ] {
+            let gas = solve(question(temperature_k, pressure_kpa)).unwrap_or_else(|reject| panic!("{temperature_k} {pressure_kpa}: {reject}"));
+            assert!(gas.virial_forms_residual_cm3_per_mol.abs() <= VIRIAL_FORMS_TOLERANCE_CM3_PER_MOL, "{temperature_k}");
+            assert!(gas.viscosity_pa_s > 0.0 && gas.viscosity_pa_s.is_finite());
+            let first_term = gas.sound_speed_m_per_s / gas.ideal_gas_sound_speed_m_per_s - 1.0;
+            if pressure_kpa == 0.0 {
+                assert_eq!(first_term, 0.0);
+            } else {
+                assert!(first_term.abs() < 1.0e-2, "{temperature_k} {pressure_kpa}: {first_term}");
+            }
+        }
+        // The viscosity rises with temperature over the whole range.
+        let mut last = 0.0;
+        for temperature_k in [250.0, 291.09, 681.96, 1000.0, 2000.0, 4000.0, 6000.0] {
+            let viscosity = solve(question(temperature_k, 0.0)).expect("settles").viscosity_pa_s;
+            assert!(viscosity > last, "{temperature_k}");
+            last = viscosity;
+        }
     }
 
     #[test]
@@ -1397,7 +1433,9 @@ mod tests {
             }
             compared += 1;
         }
-        assert_eq!(compared, 13);
+        // Every row of the table up to 7.5 (895 K): the served range now
+        // reaches 6000 K, a reduced temperature of 50.3, past the table's last.
+        assert_eq!(compared, 15);
         assert!(misses.is_empty(), "{misses:#?}");
         // What the comparison came to: the table's own rounding for B*, and
         // three parts in ten thousand at most for the integrals.

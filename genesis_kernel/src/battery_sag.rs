@@ -47,6 +47,7 @@ extern crate core;
 use core::prelude::v1::*;
 
 use crate::frame::LastStateFrame64;
+use crate::normal::normal_or_zero;
 
 /// Series count named by the campaign. The pack voltages below are the locked literals.
 pub const SERIES_CELLS: f64 = 12.0;
@@ -326,8 +327,25 @@ impl PackState {
 /// Advance one RK4 step and write the frame.
 ///
 /// A rejected step leaves `state` and `frame` as they were.
+///
+/// A value of the landed state below the normal range is written as zero
+/// with its sign ([`crate::normal`]).
 #[must_use]
 pub fn step(
+    pack: &LiIonPack,
+    state: &mut PackState,
+    frame: &mut LastStateFrame64,
+    load: PackLoad,
+    dt_s: f64,
+) -> Result<(), StepReject> {
+    step_as_computed(pack, state, frame, load, dt_s)?;
+    normal_or_zero_state(state);
+    Ok(())
+}
+
+/// The step as its equations compute it, before a value of the landed
+/// state below the normal range is written as zero.
+fn step_as_computed(
     pack: &LiIonPack,
     state: &mut PackState,
     frame: &mut LastStateFrame64,
@@ -340,6 +358,25 @@ pub fn step(
         Err(reject) => return Err(reject),
     };
     commit(pack, state, frame, load, dt_s, predicted)
+}
+
+/// Each value of a landed state below the normal range written as zero
+/// with its sign ([`crate::normal`]): the state carried to the next step
+/// and published holds no subnormal number.
+fn normal_or_zero_state(state: &mut PackState) {
+    state.t_s = normal_or_zero(state.t_s);
+    state.soc = normal_or_zero(state.soc);
+    state.current_a = normal_or_zero(state.current_a);
+    state.terminal_v = normal_or_zero(state.terminal_v);
+    state.open_circuit_v = normal_or_zero(state.open_circuit_v);
+    state.resistance_ohm = normal_or_zero(state.resistance_ohm);
+    state.chemical_energy_j = normal_or_zero(state.chemical_energy_j);
+    state.energy_anchor_j = normal_or_zero(state.energy_anchor_j);
+    state.electrical_work_j = normal_or_zero(state.electrical_work_j);
+    state.joule_j = normal_or_zero(state.joule_j);
+    state.energy_defect_j = normal_or_zero(state.energy_defect_j);
+    state.residual_conservation_error = normal_or_zero(state.residual_conservation_error);
+    state.cutoff_margin_v = normal_or_zero(state.cutoff_margin_v);
 }
 
 fn validate(

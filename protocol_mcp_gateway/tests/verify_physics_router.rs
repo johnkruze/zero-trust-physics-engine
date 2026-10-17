@@ -386,6 +386,7 @@ fn creep_probes(state: &creep_cmsx6::CreepState) -> Vec<(&'static str, Probe)> {
             state.residual_conservation_error,
         ),
         flag("creep_rate_rising", state.creep_rate_rising),
+        flag("outside_met_range", state.outside_met_range),
     ]
 }
 
@@ -1062,6 +1063,7 @@ fn fingerpad_probes(state: &fingerpad_p02_glass::FingerPadState) -> Vec<(&'stati
         num("held_twist_rate_deg_s", state.held_twist_rate_deg_s),
         num("stored_energy_at_start_j", state.stored_energy_at_start_j),
         flag("full_slip", state.full_slip),
+        flag("beyond_compared", state.beyond_compared),
     ]
 }
 
@@ -1105,6 +1107,7 @@ fn tire_probes(state: &tire_eve_r19_ice::TireState) -> Vec<(&'static str, Probe)
             state.residual_conservation_error,
         ),
         flag("load_above_fitted", state.load_above_fitted),
+        flag("beyond_compared", state.beyond_compared),
     ]
 }
 
@@ -1114,6 +1117,7 @@ fn los_probes(state: &los_jwst_fine_guide::LosState) -> Vec<(&'static str, Probe
         num("lock_x_arcsec", state.lock_x_arcsec),
         num("lock_y_arcsec", state.lock_y_arcsec),
         num("quiet_before_start_s", state.quiet_before_start_s),
+        num("since_disturbance_s", state.since_disturbance_s),
         num("slow_x_mas", state.x.slow_mas),
         num("fast_x_mas", state.x.fast_mas),
         num("mode_cos_x_mas", state.x.mode_cos_mas),
@@ -1163,6 +1167,9 @@ fn los_probes(state: &los_jwst_fine_guide::LosState) -> Vec<(&'static str, Probe
         num("residual_conservation_error", state.residual_conservation_error),
         num("unmeasured_in_row", state.unmeasured_in_row),
         flag("no_measurement", state.no_measurement),
+        flag("pointing_disturbed", state.pointing_disturbed),
+        flag("beyond_four_sigma", state.beyond_four_sigma),
+        flag("recovering", state.recovering),
     ]
 }
 
@@ -1227,6 +1234,7 @@ fn cantilever_probes(state: &cantilever_eth::CantileverState) -> Vec<(&'static s
             "residual_conservation_error",
             state.residual_conservation_error,
         ),
+        flag("envelope_below_compared", state.envelope_below_compared),
     ]
 }
 
@@ -1387,6 +1395,10 @@ fn satellite_probes(state: &satellite_lageos1::SatelliteState) -> Vec<(&'static 
         num("jacobi_anchor_j_per_kg", state.jacobi_anchor_j_per_kg),
         num("external_work_j_per_kg", state.external_work_j_per_kg),
         num("energy_defect_j_per_kg", state.energy_defect_j_per_kg),
+        num("angular_momentum_m2_s", state.angular_momentum_m2_s),
+        num("angular_momentum_anchor_m2_s", state.angular_momentum_anchor_m2_s),
+        num("external_torque_m2_s", state.external_torque_m2_s),
+        num("angular_momentum_defect_m2_s", state.angular_momentum_defect_m2_s),
         num(
             "residual_conservation_error",
             state.residual_conservation_error,
@@ -2105,7 +2117,14 @@ fn integrate(domain: &str, card: &str, params: &Value, proof: [u8; 16]) -> Oracl
                 scalar(params, "dt_s"),
             )
             .unwrap();
-            assert_eq!(frame.flags & !satellite_lageos1::FLAG_EARTH_SHADOW, 0);
+            assert_eq!(
+                frame.flags & !(satellite_lageos1::FLAG_EARTH_SHADOW | satellite_lageos1::FLAG_BELOW_COMPARED_RADIUS),
+                0
+            );
+            assert_eq!(
+                frame.flags & satellite_lageos1::FLAG_BELOW_COMPARED_RADIUS != 0,
+                state.radius_m < satellite_lageos1::COMPARED_RADIUS_MIN_M
+            );
             let residual = state.residual_conservation_error;
             Oracle {
                 frame,
@@ -2590,7 +2609,7 @@ async fn assert_real_seal(
     let response: VerifyPhysicsResponse = serde_json::from_str(&text).unwrap();
     assert_eq!(
         response.engine_version,
-        "genesis_kernel_v0.9.0"
+        "genesis_kernel_v0.12.0"
     );
     assert_eq!(response.inputs, parsed);
     assert_eq!(
@@ -2715,7 +2734,7 @@ async fn missing_parameter_is_422_and_does_not_seal() {
     .await;
     assert_eq!(status, 422, "{text}");
     assert!(
-        text.contains("Missing required parameter: 'dt_s'"),
+        text.contains("Missing required parameter: 'dt_s' (InputMissing)."),
         "{text}"
     );
     assert_no_seal(&text);
@@ -2775,7 +2794,7 @@ async fn unknown_card_is_404() {
     )
     .await;
     assert_eq!(status, 404, "{text}");
-    assert!(text.contains("Card not recognized"), "{text}");
+    assert!(text.contains("Card not recognized (UnknownCard)."), "{text}");
     assert_no_seal(&text);
 }
 
@@ -3120,7 +3139,7 @@ async fn bounded_card_rejects_are_422_name_the_refusal_and_do_not_seal() {
                 "accel_m_s2": 0.0,
                 "dt_s": dt_in_window(oscillator.gate_dt_s()),
             }),
-            "AmplitudeAboveCard",
+            "EnergyAboveCard",
         ),
         (
             "energy",
@@ -3257,7 +3276,7 @@ async fn an_old_domain_pair_is_not_recognized() {
         let (status, text) =
             post_json(&base, &request_body(old_domain, card, parameters.clone())).await;
         assert_eq!(status, 404, "{old_domain}/{card}: {text}");
-        assert_eq!(text, "Card not recognized", "{old_domain}/{card}");
+        assert_eq!(text, "Card not recognized (UnknownCard).", "{old_domain}/{card}");
         assert_no_seal(&text);
         // The same parameters seal under the pair the card now has.
         assert_real_seal(&base, domain, card, parameters).await;
@@ -3311,7 +3330,8 @@ async fn a_step_at_the_card_ceiling_lands_and_the_next_number_up_is_refused() {
         assert_eq!(
             text,
             format!(
-                "Physical Violation: 'dt_s' {} is above {} s, the step ceiling of the {card} card.",
+                // Re-pinned for 0.10.1: a step above the ceiling carries the name DtAboveCeiling.
+                "Physical Violation: 'dt_s' {} is above {} s, the step ceiling of the {card} card (DtAboveCeiling).",
                 protocol_mcp_gateway::message_number(above),
                 protocol_mcp_gateway::message_number(ceiling)
             )
@@ -3419,32 +3439,22 @@ async fn the_generator_flag_appears_after_day_2060_and_the_step_still_seals() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_generator_mission_time_off_the_card_is_refused_and_does_not_seal() {
     let base = spawn_app().await;
-    const OFF_CARD: &str = "Physical Failure: mission time is before landing or after mission day 4,087 (MissionTimeOutsideCard). That state is not sealed.";
+    let top = generator_mmrtg_f1::GeneratorMmrtgF1::curiosity().ledger_end_mission_time_s().unwrap();
     let off_card = |mission_time_s: f64| {
-        let (side, bound, end) = if mission_time_s < 0.0 {
-            ("below", 0.0, false)
-        } else {
-            ("above", generator_mmrtg_f1::MISSION_TIME_MAX_S, true)
-        };
-        if end {
+        if mission_time_s < 0.0 {
             format!(
-                "Physical Failure: '{}' {} s is above {} s, the end of the generator_mmrtg_f1 card (MissionTimeOutsideCard). That state is not sealed.",
-                "mission_time_s",
-                protocol_mcp_gateway::message_number(mission_time_s),
-                protocol_mcp_gateway::message_number(bound)
+                "Physical Failure: 'mission_time_s' {} s is below 0 s, the inclusive minimum of the generator_mmrtg_f1 card (MissionTimeBeforeLanding). That state is not sealed.",
+                protocol_mcp_gateway::message_number(mission_time_s)
             )
         } else {
             format!(
-                "Physical Failure: 'mission_time_s' {} s is {side} {} s, the inclusive minimum of the generator_mmrtg_f1 card (MissionTimeOutsideCard). That state is not sealed.",
+                "Physical Failure: 'mission_time_s' {} s is above {} s, the inclusive maximum of the generator_mmrtg_f1 card (DecayHeatBelowLedgerResolution). That state is not sealed.",
                 protocol_mcp_gateway::message_number(mission_time_s),
-                protocol_mcp_gateway::message_number(bound)
+                protocol_mcp_gateway::message_number(top)
             )
         }
     };
-    let last_s = generator_mmrtg_f1::MISSION_TIME_MAX_S;
-    assert_eq!(last_s, 353_116_800.0);
-    let above = f64::from_bits(last_s.to_bits() + 1);
-    for mission_time_s in [-1.0, -DAY_S, above, 2.0 * last_s] {
+    for mission_time_s in [-1.0, -DAY_S, f64::from_bits(top.to_bits() + 1), 2.0 * top] {
         let parameters = json!({ "mission_time_s": mission_time_s, "dt_s": DAY_S });
         let (status, text) = post_json(
             &base,
@@ -3455,7 +3465,9 @@ async fn a_generator_mission_time_off_the_card_is_refused_and_does_not_seal() {
         assert_eq!(text, off_card(mission_time_s), "{mission_time_s}");
         assert_no_seal(&text);
     }
-    // The last day is on the card. A step from it would leave, and is refused whole.
+    // The last day of the record is on the card, and a step from it lands.
+    let last_s = generator_mmrtg_f1::MISSION_TIME_MAX_S;
+    assert_eq!(last_s, 353_116_800.0);
     let (status, text) = post_json(
         &base,
         &request_body(
@@ -3465,9 +3477,7 @@ async fn a_generator_mission_time_off_the_card_is_refused_and_does_not_seal() {
         ),
     )
     .await;
-    assert_eq!(status, 422, "{text}");
-    assert_eq!(text, OFF_CARD);
-    assert_no_seal(&text);
+    assert_eq!(status, 200, "{text}");
 
     // A start time inside the published range is still refused when it is
     // not a normal number. The description states that rule once.
@@ -3535,7 +3545,7 @@ async fn the_generator_takes_mission_time_and_dt_and_nothing_else() {
         )
         .await;
         assert_eq!(status, 422, "{key}: {text}");
-        assert_eq!(text, format!("Missing required parameter: '{key}'"));
+        assert_eq!(text, format!("Missing required parameter: '{key}' (InputMissing)."));
         assert_no_seal(&text);
     }
 
@@ -3560,7 +3570,8 @@ async fn the_generator_takes_mission_time_and_dt_and_nothing_else() {
     assert_eq!(
         text,
         format!(
-            "Physical Violation: 'dt_s' {} is above {} s, the step ceiling of the generator_mmrtg_f1 card.",
+            // Re-pinned for 0.10.1: a step above the ceiling carries the name DtAboveCeiling.
+            "Physical Violation: 'dt_s' {} is above {} s, the step ceiling of the generator_mmrtg_f1 card (DtAboveCeiling).",
             protocol_mcp_gateway::message_number(above),
             protocol_mcp_gateway::message_number(ceiling)
         )
@@ -3626,10 +3637,10 @@ async fn the_capsule_flag_appears_near_the_drogue_condition_and_past_it_a_step_i
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_capsule_state_off_the_card_is_refused_and_does_not_seal() {
-    const ALTITUDE: &str = "Physical Failure: altitude is above 134.7 km or below 30 km (AltitudeOutsideCard). That state is not sealed.";
-    const MACH: &str = "Physical Failure: the Mach number is below 1.0, or is above 40 below 68.96 km, where the drag table by Mach number ends (MachOutsideCard). That state is not sealed.";
-    const AIR_SPEED: &str = "Physical Failure: above 68.96 km the speed through the air is below 11900 m/s or above 12575 m/s, outside the speeds the entry compared with the flight passed through there (AirSpeedOutsideCard). That state is not sealed.";
-    const CORRIDOR: &str = "Physical Failure: the state is off the corridor the entry compared with the flight flew from the locked entry state: below 68.96 km, or moving upward above it, it is under 31 km or above 69 km, or its speed through the air or its path angle is outside the corridor at its altitude (OffComparedCorridor). That state is not sealed.";
+    const ALTITUDE: &str = "Physical Failure: altitude is above 134.7 km, the top of the drag table read by altitude (AltitudeOutsideCard). That state is not sealed.";
+    const SEA: &str = "Physical Failure: altitude is below 0 m, the sea level of the 1976 standard's air and the ellipsoid under the path: the capsule is on or under the ground (BelowStandardSeaLevel). That state is not sealed.";
+    const MACH: &str = "Physical Failure: the Mach number is below 0.16, the first entry of the drag table read by Mach number, or is above 40 below 68.96 km, where that table ends (MachOutsideCard). That state is not sealed.";
+    const AIR_SPEED: &str = "Physical Failure: above 68.96 km the speed through the air is below 11900 m/s or above 12620 m/s, the highest speed the drag table by altitude was computed at (AirSpeedOutsideCard). That state is not sealed.";
     const PAST: &str = "Physical Failure: the state is under 31030 m and under Mach 1.23 at once, past the flown drogue deployment, where the capsule flew on a parachute (PastFlightDeployment). That state is not sealed.";
     let base = spawn_app().await;
     let earth_m = capsule_stardust::LOCAL_EARTH_RADIUS_M;
@@ -3640,11 +3651,12 @@ async fn a_capsule_state_off_the_card_is_refused_and_does_not_seal() {
     let cases = [
         (earth_m + 134_701.0, entry_radial, entry_transverse, ALTITUDE),
         (earth_m + 140_000.0, entry_radial, entry_transverse, ALTITUDE),
-        (earth_m + 29_999.0, -300.0, 400.0, ALTITUDE),
-        (earth_m - 1.0, -300.0, 400.0, ALTITUDE),
-        (-(earth_m + 40_000.0), -300.0, 400.0, ALTITUDE),
+        // Under the record's air tables at Mach 1.01: past the drogue condition.
+        (earth_m + 29_999.0, -300.0, 400.0, PAST),
+        (earth_m - 1.0, -300.0, 400.0, SEA),
+        (-(earth_m + 40_000.0), -300.0, 400.0, SEA),
         (earth_m + 40_000.0, 0.0, with_the_air, MACH),
-        (earth_m + 40_000.0, -100.0, with_the_air, MACH),
+        (earth_m + 40_000.0, -20.0, with_the_air, MACH),
         // Single steps that engine 0.6.0 sealed: 68.96 km at 20 km/s, at rest
         // in the fixed frame at 100 km, 300 m/s through the air at 130 km,
         // and 30.5 km at Mach 1.14.
@@ -3656,10 +3668,6 @@ async fn a_capsule_state_off_the_card_is_refused_and_does_not_seal() {
         (earth_m + 60_000.0, -2000.0, 20000.0, MACH),
         // Retrograde at the entry speed meets the air at about 13250 m/s.
         (earth_m + 100_000.0, entry_radial, -entry_transverse, AIR_SPEED),
-        // Off the corridor the locked entry flew: 40 km at the entry speed,
-        // and upward at the entry's air speed at 100 km.
-        (earth_m + 40_000.0, entry_radial, entry_transverse, CORRIDOR),
-        (earth_m + 100_000.0, -entry_radial, entry_transverse, CORRIDOR),
     ];
     for (radius_m, radial, transverse, message) in cases {
         let (status, text) = post_json(
@@ -3675,20 +3683,16 @@ async fn a_capsule_state_off_the_card_is_refused_and_does_not_seal() {
         assert_eq!(text, message, "{radius_m} {radial} {transverse}");
         assert_no_seal(&text);
     }
-    // The same place at 400 m/s straight down through the air is off the
-    // corridor the locked entry flew; engine 0.6.0 sealed it.
-    let (status, text) = post_json(
-        &base,
-        &request_body(
-            "aerospace",
-            "capsule_stardust",
-            capsule_parameters(earth_m + 40_000.0, -400.0, with_the_air),
-        ),
-    )
-    .await;
-    assert_eq!(status, 422, "{text}");
-    assert_eq!(text, CORRIDOR);
-    assert_no_seal(&text);
+    // Off the corridor the locked entry flew, where engines 0.7 to 0.9
+    // refused: 400 m/s straight down at 40 km, Mach 0.32 at 40 km, and upward
+    // at the entry's air speed at 100 km. Each is computed and sealed.
+    for (radius_m, radial, transverse) in [
+        (earth_m + 40_000.0, -400.0, with_the_air),
+        (earth_m + 40_000.0, -100.0, with_the_air),
+        (earth_m + 100_000.0, -entry_radial, entry_transverse),
+    ] {
+        assert_real_seal(&base, "aerospace", "capsule_stardust", capsule_parameters(radius_m, radial, transverse)).await;
+    }
     // At 1250 m/s through the air on a path sine of -0.2 it is inside the
     // corridor, 1147.51 to 1350.11 m/s at 40 km, and on the card.
     let along_m_s = (1250.0_f64 * 1250.0 - 250.0 * 250.0).sqrt();
@@ -3759,7 +3763,7 @@ async fn the_capsule_takes_its_three_phase_numbers_and_dt_and_nothing_else() {
         )
         .await;
         assert_eq!(status, 422, "{key}: {text}");
-        assert_eq!(text, format!("Missing required parameter: '{key}'"));
+        assert_eq!(text, format!("Missing required parameter: '{key}' (InputMissing)."));
         assert_no_seal(&text);
     }
 
@@ -3780,7 +3784,8 @@ async fn the_capsule_takes_its_three_phase_numbers_and_dt_and_nothing_else() {
     assert_eq!(
         text,
         format!(
-            "Physical Violation: 'dt_s' {} is above {} s, the step ceiling of the capsule_stardust card.",
+            // Re-pinned for 0.10.1: a step above the ceiling carries the name DtAboveCeiling.
+            "Physical Violation: 'dt_s' {} is above {} s, the step ceiling of the capsule_stardust card (DtAboveCeiling).",
             protocol_mcp_gateway::message_number(above),
             protocol_mcp_gateway::message_number(ceiling)
         )
@@ -3800,7 +3805,7 @@ async fn an_unknown_pair_in_aerospace_is_404() {
         let (status, text) =
             post_json(&base, &request_body(domain, card, capsule_entry_parameters())).await;
         assert_eq!(status, 404, "{domain}/{card}: {text}");
-        assert_eq!(text, "Card not recognized", "{domain}/{card}");
+        assert_eq!(text, "Card not recognized (UnknownCard).", "{domain}/{card}");
         assert_no_seal(&text);
     }
     assert_real_seal(
@@ -4067,9 +4072,11 @@ async fn a_step_at_each_card_floor_lands_and_the_next_number_down_is_refused() {
         assert_eq!(
             text,
             format!(
-                "Physical Violation: 'dt_s' {} is below {} s, the step floor of the {card} card.",
+                // Re-pinned for 0.10.1: a step below the floor carries a name, StepNotOneSecond on the 2170 cell and DtBelowFloor on every other card.
+                "Physical Violation: 'dt_s' {} is below {} s, the step floor of the {card} card ({}).",
                 protocol_mcp_gateway::message_number(below),
-                protocol_mcp_gateway::message_number(floor)
+                protocol_mcp_gateway::message_number(floor),
+                if card == "cell_2170_m80" { "StepNotOneSecond" } else { "DtBelowFloor" }
             )
         );
         assert_no_seal(&text);
@@ -4094,73 +4101,37 @@ async fn the_old_gateway_floor_is_below_every_card_floor() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_satellite_state_off_the_card_is_refused_and_does_not_seal() {
-    const RADIUS: &str = "Physical Failure: distance from the Earth's centre is below 11 997 km or above 12 327 km, the radii the compared runs reached (RadiusOutsideCard). That state is not sealed.";
-    const ORBIT: &str = "Physical Failure: the orbit is not closed, or is in neither of the two compared orbits: LAGEOS-1, semi-major axis 12 265 to 12 275 km, eccentricity 0.0034 to 0.0044 and inclination 109.80 to 109.83 degrees, and LAGEOS-2, 12 158 to 12 166 km, 0.0132 to 0.0138 and 52.63 to 52.66 degrees; no other orbit was compared (OrbitOutsideCard). That state is not sealed.";
+    const RADIUS: &str = "Physical Failure: distance from the Earth's centre is below 6 378.1363 km, the Earth's equatorial radius, to which the field is scaled: the satellite is under the sphere of the Earth's equator, where the card's field, the series of the Earth's field outside the Earth, is not the field (RadiusBelowEarthRadius). That state is not sealed.";
     let base = spawn_app().await;
     let nominal_m = satellite_lageos1::REFERENCE_RADIUS_M;
     let first_s = satellite_lageos1::EPOCH_MIN_S;
     let last_s = satellite_lageos1::EPOCH_MAX_S;
-    let described: Value = serde_json::from_str(
-        &Client::new()
-            .post(format!("{base}/describe_card"))
-            .header(reqwest::header::CONTENT_TYPE, "application/json")
-            .body(json!({ "domain": "aerospace", "card": "satellite_lageos1" }).to_string())
-            .send()
-            .await
-            .unwrap()
-            .text()
-            .await
-            .unwrap(),
-    )
-    .unwrap();
-    let published_last_s = described["phase_fields"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|field| field["name"] == "epoch_utc_s")
-        .unwrap()["maximum"]
-        .as_f64()
-        .unwrap();
     let say = |value: f64, side: &str, bound: f64, kind: &str| {
         format!(
-            "Physical Failure: 'epoch_utc_s' {} s is {side} {} s, the inclusive {kind} of the satellite_lageos1 card (EpochOutsideCard). That state is not sealed.",
+            "Physical Failure: 'epoch_utc_s' {} s is {side} {} s, the inclusive {kind} of the satellite_lageos1 card (EpochOutsideLeapSecondSpan). That state is not sealed.",
             protocol_mcp_gateway::message_number(value),
             protocol_mcp_gateway::message_number(bound)
         )
     };
     let epoch_early = say(first_s - 1.0, "below", first_s, "minimum");
     let epoch_late = format!(
-        "Physical Failure: 'epoch_utc_s' {} s is above {} s, the end of the satellite_lageos1 card (EpochOutsideCard). That state is not sealed.",
+        "Physical Failure: 'epoch_utc_s' {} s is above {} s, the end of the satellite_lageos1 card (EpochOutsideLeapSecondSpan). That state is not sealed.",
         protocol_mcp_gateway::message_number(last_s + 1.0),
         protocol_mcp_gateway::message_number(last_s)
     );
-    let _ = published_last_s;
     let escaping = {
         let (position_m, mut velocity_m_s) = satellite_orbit(nominal_m, nominal_m);
         velocity_m_s[2] *= 1.5;
         (position_m, velocity_m_s)
     };
     let cases = [
-        // One metre under the radius band and one metre over it.
-        (SATELLITE_EPOCH_UTC_S, satellite_lageos2_apsis(11_996_999.0), RADIUS),
-        (SATELLITE_EPOCH_UTC_S, satellite_lageos2_apsis(12_327_001.0), RADIUS),
-        // Inside the radius band on an orbit too small, too large, and open.
-        (SATELLITE_EPOCH_UTC_S, satellite_orbit(nominal_m, 12_099_000.0), ORBIT),
-        (SATELLITE_EPOCH_UTC_S, satellite_orbit(nominal_m, 12_331_000.0), ORBIT),
-        (SATELLITE_EPOCH_UTC_S, escaping, ORBIT),
-        // Inside the radius band on orbits never compared: a circle over the
-        // pole, as 0.6.0's examples were, an equatorial orbit, a retrograde
-        // one, and the size of LAGEOS-1 at the inclination of LAGEOS-2.
-        (SATELLITE_EPOCH_UTC_S, satellite_orbit_shaped(nominal_m, nominal_m, 0.0, 90.0), ORBIT),
-        (SATELLITE_EPOCH_UTC_S, satellite_orbit_shaped(nominal_m, nominal_m, 0.0039, 0.0), ORBIT),
-        (SATELLITE_EPOCH_UTC_S, satellite_orbit_shaped(nominal_m, nominal_m, 0.0039, 180.0), ORBIT),
-        (SATELLITE_EPOCH_UTC_S, satellite_orbit_shaped(nominal_m, nominal_m, 0.0039, 52.645), ORBIT),
+        // Under the Earth's equatorial radius.
+        (SATELLITE_EPOCH_UTC_S, satellite_orbit_shaped(6_378_136.0, 6_378_136.0, 0.0, 51.6), RADIUS),
         // One second before the first date and one second after the last.
         (first_s - 1.0, satellite_orbit(nominal_m, nominal_m), epoch_early.as_str()),
         (last_s + 1.0, satellite_orbit(nominal_m, nominal_m), epoch_late.as_str()),
-        // The card names the radius before the orbit and the orbit before the date.
-        (last_s + 1.0, satellite_lageos2_apsis(11_996_999.0), RADIUS),
-        (last_s + 1.0, satellite_orbit(nominal_m, 12_099_000.0), ORBIT),
+        // The card names the radius before the date.
+        (last_s + 1.0, satellite_orbit_shaped(6_378_136.0, 6_378_136.0, 0.0, 51.6), RADIUS),
     ];
     for (epoch_utc_s, (position_m, velocity_m_s), message) in cases {
         let (status, text) = post_json(
@@ -4175,6 +4146,34 @@ async fn a_satellite_state_off_the_card_is_refused_and_does_not_seal() {
         assert_eq!(status, 422, "{epoch_utc_s} {position_m:?}: {text}");
         assert_eq!(text, message, "{epoch_utc_s} {position_m:?}");
         assert_no_seal(&text);
+    }
+    // Where 0.10 refused: one metre over the highest compared radius, orbits
+    // too small, too large and open, and orbits never compared, a circle over
+    // the pole, an equatorial one, a retrograde one, and the size of LAGEOS-1
+    // at the inclination of LAGEOS-2. Each is computed and sealed.
+    // Where 0.11 refused: under the lowest compared radius, down to the
+    // Earth's equatorial radius. Each is computed and sealed.
+    for (position_m, velocity_m_s) in [
+        satellite_lageos2_apsis(11_996_999.0),
+        satellite_orbit_shaped(9_000_000.0, 9_000_000.0, 0.0, 98.0),
+        satellite_orbit_shaped(6_700_000.0, 6_700_000.0, 0.0, 51.6),
+        satellite_orbit_shaped(6_400_000.0, 6_400_000.0, 0.0, 51.6),
+        satellite_lageos2_apsis(12_327_001.0),
+        satellite_orbit(nominal_m, 12_099_000.0),
+        satellite_orbit(nominal_m, 12_331_000.0),
+        escaping,
+        satellite_orbit_shaped(nominal_m, nominal_m, 0.0, 90.0),
+        satellite_orbit_shaped(nominal_m, nominal_m, 0.0039, 0.0),
+        satellite_orbit_shaped(nominal_m, nominal_m, 0.0039, 180.0),
+        satellite_orbit_shaped(nominal_m, nominal_m, 0.0039, 52.645),
+    ] {
+        assert_real_seal(
+            &base,
+            "aerospace",
+            "satellite_lageos1",
+            satellite_parameters(SATELLITE_EPOCH_UTC_S, position_m, velocity_m_s),
+        )
+        .await;
     }
 
     // The first date is on the card. The last date is too, and a step from
@@ -4199,7 +4198,7 @@ async fn a_satellite_state_off_the_card_is_refused_and_does_not_seal() {
     assert_eq!(status, 422, "{text}");
     assert_eq!(
         text,
-        "Physical Failure: the time is before 2026-08-23 00:00 or after 2026-09-20 00:00 UTC, the dates of the compared runs (EpochOutsideCard). That state is not sealed."
+        "Physical Failure: the time is before 2017-01-01 00:00 UTC, the last leap second, or after 2027-06-28 00:00 UTC, when the IERS leap-second file of Bulletin C 72 expires: outside that span TT - UTC is not the card's 69.184 s, or is not yet known (EpochOutsideLeapSecondSpan). That state is not sealed."
     );
     assert_no_seal(&text);
 
@@ -4262,7 +4261,7 @@ async fn the_satellite_takes_an_epoch_a_position_a_velocity_and_dt_and_nothing_e
         )
         .await;
         assert_eq!(status, 422, "{key}: {text}");
-        assert_eq!(text, format!("Missing required parameter: '{key}'"));
+        assert_eq!(text, format!("Missing required parameter: '{key}' (InputMissing)."));
         assert_no_seal(&text);
     }
     let mut flat = satellite_example_parameters();
@@ -4294,7 +4293,8 @@ async fn the_satellite_takes_an_epoch_a_position_a_velocity_and_dt_and_nothing_e
     assert_eq!(
         text,
         format!(
-            "Physical Violation: 'dt_s' {} is above {} s, the step ceiling of the satellite_lageos1 card.",
+            // Re-pinned for 0.10.1: a step above the ceiling carries the name DtAboveCeiling.
+            "Physical Violation: 'dt_s' {} is above {} s, the step ceiling of the satellite_lageos1 card (DtAboveCeiling).",
             protocol_mcp_gateway::message_number(above),
             protocol_mcp_gateway::message_number(ceiling)
         )

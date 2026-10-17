@@ -1,0 +1,27 @@
+{
+ "model": "momentum_jwst_srp",
+ "verdict": "missed",
+ "protocol": {
+  "path": "evidence/research/momentum_jwst_srp/validation_protocol.md",
+  "sha256": "7f1c9ce668f6406b7a1f2f8ce7c153c1d18de6129e5d55809e91d8532bd3a6ed",
+  "committed": {
+   "crate": "genesis_kernel",
+   "commit": "b008e3091d187103d438da5526cbec65b1c346c0",
+   "utc": "2026-10-15T01:25:08Z",
+   "how": "The card's commit 'momentum_jwst_srp: JWST's total angular momentum ...' carries in its message 'Constants fixed before any held-back day was read: ... analysis/prereg.json SHA-256 ce62543c...1736c2, validation_protocol.md SHA-256 7f1c9ce6...3a6ed'; author and committer time are the same."
+  }
+ },
+ "held_back": [
+  {
+   "path": "evidence/research/momentum_jwst_srp/raw/fetch_log_held_back.csv",
+   "sha256": "9e671386fedeed9e28fcb1bdeefcb07570e9d864bbb5a51605f5891ff909b763"
+  }
+ ],
+ "scored": {
+  "utc": "2026-10-15T01:48:24Z",
+  "evidence": "Birth time of evidence/research/momentum_jwst_srp/analysis/out/engine_held_back/ (18:48:24 PDT; out/score_held_back.json 01:48:26Z); the held-back days were downloaded from 01:25:14Z to 01:46:58Z (raw/fetch_log_held_back.csv, retrieved_utc of 300 files). RESULT.md: 'Scored 2026-10-14' (Pacific)."
+ },
+ "forecast_first": "held",
+ "registered_by": "backfill from the record, 2026-10-15",
+ "notes": "Committed 6 s before the first held-back file was downloaded and 23 min before the scoring; validation_protocol.md and analysis/prereg.json (ce62543c..., also in the message) on disk still have the committed hashes. The held_back file above lists every held-back file with its retrieval time and SHA-256. Outside Git: analysis/prereg_hash.txt (born 01:24:59Z). The protocol's forecast (section 7) was computed on the fitted month only (analysis/out/forecast.json, 01:17:53Z), before the protocol was written; marks A to C are the scout's proposal and D and E were set from that forecast. The first gateway commit carrying the pass line, 9a619a2887e5bfe6570ff72aecb11f4d23770a1c (2026-10-15T01:59:51Z), is after the scoring. Commit times are the committer's clock. No mark for it in the local copy of the public pass-marks repository (command-center/sales/github/pass-marks/, posted 2026-10-13)."
+}

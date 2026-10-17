@@ -1,0 +1,21 @@
+{
+ "model": "fusion_pb11_lhd",
+ "verdict": "met in part",
+ "protocol": {
+  "path": "evidence/research/fusion_pb11/solver/validation_protocol.md",
+  "sha256": "8bd91c5c1328f461a268ccca6dc0f31c61b11ab95051da1fe260fe5c2841db90",
+  "committed": {
+   "crate": "protocol_mcp_gateway",
+   "commit": "ce5e5a0e35768330debd425e746a857133687ad1",
+   "utc": "2026-10-09T21:32:03Z",
+   "how": "The diff of 'Serve fusion_pb11_lhd and fusion_pb11_thermal ...' adds the validation record with pass_lines_fixed '2026-10-09T20:51:55Z, SHA-256 8bd91c5c...41db90 of validation_protocol.md', and already carries the scored result of the first line (solver over published 0.128, not met)."
+  }
+ },
+ "scored": {
+  "utc": "2026-10-09T20:56:59Z",
+  "evidence": "Birth time of evidence/research/fusion_pb11/solver/analysis/out/02_forecast_lhd.json (13:56:59 PDT), the forecast outside the engine that scored line A1 against the published calculation (ratio 0.128, A1_met false); the measured figures of Ogawa et al. 2024 were digitised into raw/digitised/ from 21:21:59Z to 21:26:44Z and the runs through the gateway began at 21:41:49Z (runs_2026-10-09/)."
+ },
+ "forecast_first": "not held",
+ "registered_by": "backfill from the record, 2026-10-15",
+ "notes": "The first crate commit carrying the hash is 35 min after the first line was scored and after the measured figures were read, and it states that line's result. It is 9 min 46 s before the gateway runs that scored the three measured lines (A3 to A6), but the figure values those runs were scored against had been on disk since 21:26:44Z. Outside Git: solver/prereg_hash.txt records validation_protocol.md at 2026-10-09T20:51:55Z (unchanged on disk) and protocol_notes_after_forecast_and_figures.md (475a2a8b..., 21:26:44Z), written after the forecast and the figures and before the gateway runs; it says no pass mark is moved, and is in no commit. The first line is against a reference calculation, not a measurement; the other three are against values digitised from published figures. The thermal solver fusion_pb11_thermal shares this protocol and is held to a reference calculation only. Rescorings: runs_integrated, runs_v060; second party evidence/verification/second_party/V-26/. Public mark: GitHub-signed commit 0d93d064097fcc46afd6609519017d21a8c65f2c at 2026-10-13T17:55:31Z."
+}

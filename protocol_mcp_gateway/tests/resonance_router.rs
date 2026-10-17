@@ -347,7 +347,7 @@ async fn a_stated_ledger_the_card_could_not_have_written_is_refused_by_name() {
     let over = new_start(0.03, 1.0);
     let (status, text) = post(&base, "/verify_physics", &step_body(&over, 0.0)).await;
     assert_eq!(status, 422, "{text}");
-    assert!(text.contains("AmplitudeAboveCard"), "{text}");
+    assert!(text.contains("EnergyAboveCard"), "{text}");
 }
 
 /// The answer of a continued step is the kernel's step from the kernel's
@@ -432,7 +432,7 @@ async fn the_description_says_the_ledger_runs_across_continued_requests() {
     assert!(all.contains("The engine keeps nothing between requests"));
     assert!(all.contains("a request at t_s 0 with no booked work is a new start with a full limit"));
     assert!(!all.contains("Time since the anchor"));
-    assert_eq!(body["example_verify_step"]["parameters"]["t_s"], json!(0.0));
-    assert_eq!(body["example_verify_step"]["parameters"]["energy_anchor_j"], json!(0.0));
-    assert_eq!(body["example_verify_step"]["parameters"]["boundary_work_j"], json!(0.0));
+    assert_eq!(body["example_compute_step"]["parameters"]["t_s"], json!(0.0));
+    assert_eq!(body["example_compute_step"]["parameters"]["energy_anchor_j"], json!(0.0));
+    assert_eq!(body["example_compute_step"]["parameters"]["boundary_work_j"], json!(0.0));
 }

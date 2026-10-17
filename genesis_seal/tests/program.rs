@@ -166,25 +166,108 @@ fn verify_dataset_holds_a_dataset_of_saved_runs_and_names_the_first_break() {
     assert_eq!(code, 1);
     assert!(out.starts_with("holds: false\ncause: dataset_seal\nrow: none\n"), "{out}");
 
-    // A sentence that no seal covers: the seals hold and the file is not
-    // the one the head names.
-    let unsealed = write(
+    // A refusal sentence is sealed by its row's leaf: one given to a row
+    // that had none breaks that leaf.
+    let detail = write(
         &folder,
         "rows_detail.jsonl",
         &edit_row(&files.rows, 0, |row| row["reject_detail"] = json!("a note")),
     );
-    let (code, out, _) = run(&["verify-dataset", &head, &unsealed, &frames]);
-    assert_eq!(code, 3);
-    assert!(out.starts_with("holds: true\n"), "{out}");
-    assert!(out.contains("rows_file: does not match the hash in the head\n"), "{out}");
+    let (code, out, _) = run(&["verify-dataset", &head, &detail, &frames]);
+    assert_eq!(code, 1);
+    assert!(out.starts_with("holds: false\ncause: leaf\nrow: 0\n"), "{out}");
+    assert!(out.ends_with("fault: A row was changed: the leaf of row 0 is not the leaf its number, its request, its outcome, its run_seal and its reject_detail give.\n"), "{out}");
 
     let (code, _, error) = run(&["verify-dataset", &rows, &head, &frames]);
     assert_eq!(code, 2);
     assert!(error.starts_with("refused: The head was not read."), "{error}");
 }
 
+/// The head of `rows`, with its rows_sha256 and its receipt worked out
+/// again, as a forger who changed the rows would write it.
+fn head_for(head: &[u8], rows: &[u8]) -> Vec<u8> {
+    let mut read = genesis_seal::dataset::Head::read(head).unwrap();
+    read.rows_sha256 = Some(genesis_seal::sealed_form::digest_hex(rows));
+    read.wire().into_bytes()
+}
+
 #[test]
-fn row_proof_writes_a_proof_that_check_proof_holds() {
+fn verify_dataset_names_the_row_of_a_dropped_or_repeated_row_and_of_a_decimal_that_is_not_its_hex() {
+    needs_saved_runs!();
+    let folder = folder("verify_dataset_rows");
+    let files = dataset_of(&eight_short_runs(), "none");
+    let lines = split_lines(&files.rows);
+    let ask = |name: &str, rows: Vec<u8>| -> (i32, String) {
+        let head = write(&folder, &format!("{name}_head.json"), &head_for(&files.head, &rows));
+        let rows = write(&folder, &format!("{name}_rows.jsonl"), &rows);
+        let (code, out, _) = run(&["verify-dataset", &head, &rows]);
+        (code, out)
+    };
+
+    // The last row dropped.
+    let (code, out) = ask("last_dropped", join_lines(&lines[..7]));
+    assert_eq!(code, 1);
+    assert!(out.starts_with("holds: false\ncause: plan\nrow: 7\n"), "{out}");
+    assert!(out.ends_with("fault: A row was dropped: every row read stands in its own place, and row 7 is the first row missing, after the last row read. Rows read: 7; rows in the plan: 8.\n"), "{out}");
+
+    // Row 2 dropped.
+    let mut dropped = lines.clone();
+    dropped.remove(2);
+    let (code, out) = ask("row_2_dropped", join_lines(&dropped));
+    assert_eq!(code, 1);
+    assert!(out.starts_with("holds: false\ncause: plan\nrow: 2\n"), "{out}");
+    assert!(out.contains("fault: A row was dropped: row 2 is the first row missing, and the row in its place is row 3. Rows read: 7; rows in the plan: 8.\n"), "{out}");
+
+    // The last row repeated at the end.
+    let mut repeated = lines.clone();
+    repeated.push(lines[7].clone());
+    let (code, out) = ask("last_repeated", join_lines(&repeated));
+    assert_eq!(code, 1);
+    assert!(out.starts_with("holds: false\ncause: plan\nrow: 8\n"), "{out}");
+    assert!(out.contains("fault: A row is repeated: row 7 stands in its own place and again in place 8, after the plan's last row. Rows read: 9; rows in the plan: 8.\n"), "{out}");
+
+    // Row 6 copied over row 4, the count unchanged.
+    let mut copied = lines.clone();
+    copied[4] = lines[6].clone();
+    let (code, out) = ask("copied", join_lines(&copied));
+    assert_eq!(code, 1);
+    assert!(out.starts_with("holds: false\ncause: plan\nrow: 4\n"), "{out}");
+    assert!(out.contains("fault: A row is repeated: row 6 stands in its own place and also in the place of row 4, so row 4 is missing.\n"), "{out}");
+
+    // A decimal of a final state changed, with the head's rows_sha256 and
+    // receipt worked out again: every seal holds, the decimal is named, and
+    // the exit code says the bytes are not the engine's.
+    let state = |row: &Value| row["final_state"].as_object().unwrap().clone();
+    let first: Value = serde_json::from_slice(&lines[3]).unwrap();
+    let key = state(&first)
+        .iter()
+        .find(|(key, value)| value.is_number() && !key.ends_with("_hex"))
+        .map(|(key, _)| key.clone())
+        .unwrap();
+    let rows = edit_row(&files.rows, 3, |row| {
+        let read = row["final_state"][&key].as_f64().unwrap();
+        row["final_state"][&key] = json!(read * 2.0 + 1.0);
+    });
+    let (code, out) = ask("decimal", rows);
+    assert_eq!(code, 3, "{out}");
+    assert!(out.starts_with("holds: true\ncause: none\nrow: 3\n"), "{out}");
+    assert!(out.contains("rows_file: matches the hash in the head\n"), "{out}");
+    assert!(out.contains(&format!("fault: A decimal was changed in row 3: final_state.{key} reads ")), "{out}");
+    // A decimal written as a string, or as null, is not its hex either.
+    for (name, written) in [("string", json!("1.0")), ("null", Value::Null)] {
+        let rows = edit_row(&files.rows, 5, |row| row["final_state"][&key] = written.clone());
+        let (code, out) = ask(name, rows);
+        if code == 2 {
+            // The row reader refuses a decimal of the wrong type by name.
+            continue;
+        }
+        assert_eq!(code, 3, "{name}: {out}");
+        assert!(out.starts_with("holds: true\ncause: none\nrow: 5\n"), "{name}: {out}");
+    }
+}
+
+#[test]
+fn row_proof_writes_a_proof_that_verify_proof_holds() {
     needs_saved_runs!();
     let folder = folder("row_proof");
     let files = dataset_of(&eight_short_runs()[..7], "frames");
@@ -197,8 +280,10 @@ fn row_proof_writes_a_proof_that_check_proof_holds() {
         let (code, out, _) = run(&["row-proof", &head, &rows, row, &frames]);
         assert_eq!(code, 0);
         let proof = write(&folder, &format!("proof_{row}.json"), out.as_bytes());
-        let (code, out, _) = run(&["check-proof", &proof]);
+        let (code, out, _) = run(&["verify-proof", &proof]);
         assert_eq!(code, 0, "{out}");
+        // check-proof, the earlier name, gives the same answer.
+        assert_eq!(run(&["check-proof", &proof]), (code, out.clone(), String::new()));
         assert_eq!(
             out,
             format!(
@@ -209,7 +294,7 @@ fn row_proof_writes_a_proof_that_check_proof_holds() {
     let (code, out, _) = run(&["row-proof", &head, &rows, "5"]);
     assert_eq!(code, 0);
     let proof = write(&folder, "proof_5_without_frames.json", out.as_bytes());
-    let (code, out, _) = run(&["check-proof", &proof]);
+    let (code, out, _) = run(&["verify-proof", &proof]);
     assert_eq!(code, 0);
     assert!(out.contains("chain: not rebuilt: the proof carries no frames\n"), "{out}");
 
@@ -219,7 +304,7 @@ fn row_proof_writes_a_proof_that_check_proof_holds() {
     let mut forged: Value = serde_json::from_str(&four).unwrap();
     forged["row"] = serde_json::from_str::<Value>(&five).unwrap()["row"].clone();
     let forged = write(&folder, "proof_forged.json", &serde_json::to_vec(&forged).unwrap());
-    let (code, out, _) = run(&["check-proof", &forged]);
+    let (code, out, _) = run(&["verify-proof", &forged]);
     assert_eq!(code, 1);
     assert!(out.starts_with("holds: false\ncause: root\nrow: 5\n"), "{out}");
 
@@ -341,6 +426,7 @@ fn validation_answer() -> Value {
         not_reached: 0,
         statistics: Some(&stats),
         model_values_hex: &hexes,
+        commitment: None,
     });
     json!({
         "inputs": {"run": {}, "quantity": "terminal_v", "measurements": measurements},
@@ -403,6 +489,118 @@ fn verify_validation_holds_an_answer_and_names_each_change_to_it() {
     let (code, _, err) = run(&["verify-validation", &path]);
     assert_eq!(code, 2);
     assert!(err.starts_with("refused: "), "{err}");
+}
+
+/// The answer of `validation_answer` with the commitment its measurements
+/// open under `salt`, sealed with it, or, given `opened`, with other data in
+/// place of the committed ones and every other part made again from them.
+fn committed_answer(salt: &str, opened: Option<Value>) -> Value {
+    use genesis_seal::commitment::{Commitment, commitment_sha256};
+    use genesis_seal::validation::{SealParts, bits_hex, measurements_sha256, statistics, validation_seal};
+    let committed = json!([{"step": 1, "value": 3.9}, {"step": 2, "value": 3.8}]);
+    let sha256 = commitment_sha256("terminal_v", &Value::Null, &committed, salt);
+    let commitment = Commitment { sha256, salt: salt.to_string() };
+    let measurements = opened.unwrap_or(committed);
+    let measured: Vec<f64> = measurements.as_array().unwrap().iter().map(|item| item["value"].as_f64().unwrap()).collect();
+    let steps: Vec<u64> = measurements.as_array().unwrap().iter().map(|item| item["step"].as_u64().unwrap()).collect();
+    let model = [3.9_f64, 3.7];
+    let hash = measurements_sha256(&measurements);
+    let stats = statistics(&steps, &model, &measured).unwrap().unwrap();
+    let hexes: Vec<String> = model.iter().map(|value| bits_hex(*value)).collect();
+    let mut answer = validation_answer();
+    answer["inputs"]["measurements"] = measurements;
+    answer["inputs"]["commitment"] = json!({"sha256": commitment.sha256, "salt": salt});
+    answer["commitment_opened"] = json!(genesis_seal::commitment::OPENED);
+    answer["measurements_sha256"] = json!(hash);
+    answer["rms_error_hex"] = json!(stats.rms_error_hex());
+    answer["mean_signed_error_hex"] = json!(stats.mean_signed_error_hex());
+    answer["max_abs_error_hex"] = json!(stats.max_abs_error_hex());
+    answer["max_abs_error_step"] = json!(stats.max_abs_error_step);
+    answer["validation_seal"] = json!(validation_seal(&SealParts {
+        run_seal: &"ab".repeat(32),
+        measurements_sha256: &hash,
+        quantity: "terminal_v",
+        component: None,
+        outcome: "completed",
+        steps_landed: 2,
+        reject: None,
+        compared: 2,
+        not_reached: 0,
+        statistics: Some(&stats),
+        model_values_hex: &hexes,
+        commitment: Some(&commitment),
+    }));
+    answer
+}
+
+#[test]
+fn verify_validation_opens_a_commitment_and_names_data_that_do_not_open_it() {
+    let folder = folder("verify_validation_commitment");
+    let salt = "000102030405060708090a0b0c0d0e0f";
+    let wire = |value: &Value| genesis_seal::receipt::with_receipt(&serde_json::to_string(value).unwrap());
+    let genuine = committed_answer(salt, None);
+    let committed = genuine["inputs"]["commitment"]["sha256"].as_str().unwrap().to_string();
+    let path = write(&folder, "genuine.json", wire(&genuine).as_bytes());
+    let (code, out, _) = run(&["verify-validation", &path]);
+    assert_eq!(code, 0, "{out}");
+    assert!(out.starts_with("holds: true\ncause: none\n"), "{out}");
+    assert!(out.contains(&format!("commitment_sha256: {committed}\ncommitment: opens\nreceipt: matches\n")), "{out}");
+
+    // One digit of one measurement, every other part made again from it,
+    // the receipt too: the commitment alone speaks.
+    let one_digit = committed_answer(salt, Some(json!([{"step": 1, "value": 3.8}, {"step": 2, "value": 3.8}])));
+    assert_eq!(one_digit["inputs"]["commitment"]["sha256"], committed.as_str());
+    let path = write(&folder, "one_digit.json", wire(&one_digit).as_bytes());
+    let (code, out, _) = run(&["verify-validation", &path]);
+    assert_eq!(code, 1, "{out}");
+    assert!(out.starts_with("holds: false\ncause: commitment\n"), "{out}");
+    assert!(out.contains(&format!("commitment_sha256: {committed}\ncommitment: does not open: ")), "{out}");
+
+    // Another salt under the sha256 committed.
+    let mut wrong_salt = committed_answer("ffeeddccbbaa99887766554433221100", None);
+    wrong_salt["inputs"]["commitment"]["sha256"] = json!(committed);
+    let path = write(&folder, "wrong_salt.json", wire(&wrong_salt).as_bytes());
+    let (code, out, _) = run(&["verify-validation", &path]);
+    assert_eq!(code, 1, "{out}");
+    assert!(out.starts_with("holds: false\ncause: commitment\n"), "{out}");
+
+    // A salt of fewer than 16 bytes is not read.
+    let mut short = genuine.clone();
+    short["inputs"]["commitment"]["salt"] = json!("00010203");
+    let path = write(&folder, "short.json", wire(&short).as_bytes());
+    let (code, _, err) = run(&["verify-validation", &path]);
+    assert_eq!(code, 2);
+    assert!(err.ends_with("(CommitmentSaltTooShort).\n"), "{err}");
+
+    // Without its receipt the note says the seal covers the commitment.
+    let path = write(&folder, "bare.json", serde_json::to_string(&genuine).unwrap().as_bytes());
+    let (code, out, _) = run(&["verify-validation", &path]);
+    assert_eq!(code, 0, "{out}");
+    assert!(out.contains("the component, the commitment, the outcome"), "{out}");
+
+    // An answer without a commitment prints no commitment line.
+    let path = write(&folder, "plain.json", wire(&validation_answer()).as_bytes());
+    let (code, out, _) = run(&["verify-validation", &path]);
+    assert_eq!(code, 0, "{out}");
+    assert!(!out.contains("commitment"), "{out}");
+
+    // The red team of 0.13.0: commitment_opened written into an answer that
+    // opened no commitment, the receipt made again, held; and left out of
+    // one that did. Each is named by cause, exit 1.
+    let mut claimed = validation_answer();
+    claimed["commitment_opened"] = json!(genesis_seal::commitment::OPENED);
+    let path = write(&folder, "claimed.json", wire(&claimed).as_bytes());
+    let (code, out, _) = run(&["verify-validation", &path]);
+    assert_eq!(code, 1, "{out}");
+    assert!(out.starts_with("holds: false\ncause: commitment_opened\n"), "{out}");
+    assert!(out.contains("commitment_opened: said, and the inputs carry no commitment\n"), "{out}");
+    let mut unsaid = genuine.clone();
+    unsaid.as_object_mut().unwrap().remove("commitment_opened");
+    let path = write(&folder, "unsaid.json", wire(&unsaid).as_bytes());
+    let (code, out, _) = run(&["verify-validation", &path]);
+    assert_eq!(code, 1, "{out}");
+    assert!(out.starts_with("holds: false\ncause: commitment_opened\n"), "{out}");
+    assert!(out.contains("commitment_opened: not said, and the inputs carry a commitment\n"), "{out}");
 }
 
 /// A genuine answer with every field the gateway writes: the decimal copies, the
@@ -565,7 +763,7 @@ fn a_named_pipe_a_device_and_a_link_are_refused_by_name_with_exit_2_and_no_wait(
     assert_eq!((code, out.as_str()), (2, ""));
     assert!(err.contains("is a named pipe") && err.starts_with("refused: "), "{err}");
     // As the head, and as the answer to check.
-    for command in ["verify-run", "verify-validation", "check-proof"] {
+    for command in ["verify-run", "verify-validation", "verify-proof", "check-proof"] {
         let (code, _, err) = run_within(&[command, &fifo], 10);
         assert_eq!(code, 2, "{command}");
         assert!(err.contains("a named pipe"), "{command}: {err}");

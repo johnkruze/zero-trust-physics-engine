@@ -1,6 +1,6 @@
 [package]
 name = "genesis_seal"
-version = "0.3.0"
+version = "0.6.0"
 edition = "2024"
 license = "Apache-2.0"
 rust-version = "1.88"
@@ -17,6 +17,15 @@ path = "src/bin/genesis_seal.rs"
 serde_json = { version = "1.0", features = ["preserve_order", "float_roundtrip"] }
 sha2 = "0.10.9"
 hex = "0.4.3"
+# A signed load: Ed25519 verification only (verify_strict), never signing.
+# curve25519-dalek is named for its version floor (RUSTSEC-2024-0344 is fixed
+# in 4.1.3) and for the check that a point is encoded canonically.
+ed25519-dalek = { version = "2.2", default-features = false }
+curve25519-dalek = { version = "4.1.3", default-features = false }
+
+[dev-dependencies]
+# The tests play the instrument: they sign readings with fixed test keys.
+ed25519-dalek = { version = "2.2", default-features = false }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

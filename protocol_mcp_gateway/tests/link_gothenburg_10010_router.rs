@@ -15,6 +15,8 @@
 //! round number chosen for the test. No received level of the link is read
 //! here.
 
+mod answer_text;
+
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::time::Duration;
@@ -57,7 +59,9 @@ async fn post_text(base: &str, path: &str, body: &str) -> (u16, String) {
         {
             Ok(response) => {
                 let status = response.status().as_u16();
-                return (status, response.text().await.unwrap());
+                let text = response.text().await.unwrap();
+                answer_text::remember(&text);
+                return (status, text);
             }
             Err(error) => {
                 last_error = Some(error);
@@ -69,7 +73,7 @@ async fn post_text(base: &str, path: &str, body: &str) -> (u16, String) {
 }
 
 async fn post(base: &str, path: &str, body: &Value) -> (u16, String) {
-    post_text(base, path, &serde_json::to_string(body).unwrap()).await
+    post_text(base, path, &answer_text::as_sent(body)).await
 }
 
 fn sha256_hex(bytes: &[u8]) -> String {
@@ -365,7 +369,7 @@ async fn a_rain_event_sent_minute_by_minute_ends_on_the_kernel_loop_and_its_tape
     let (status, report) = post(&base, "/verify_tape", &answer).await;
     assert_eq!(status, 200, "{report}");
     let report: Value = serde_json::from_str(&report).unwrap();
-    assert_eq!(report, json!({ "holds": true, "broken_link": null, "cause": null }));
+    assert_eq!(report, json!({ "holds": true, "values_hold": true, "broken_link": null, "cause": null, "compared": protocol_mcp_gateway::LONG_FORM_COMPUTED }));
     // One rain rate changed in the tape's inputs, and it no longer holds.
     let mut changed = answer.clone();
     changed["inputs"]["segments"][3]["load"]["rain_rate_mm_h"] = json!(12.0);
@@ -393,26 +397,29 @@ async fn each_bound_lands_at_the_last_number_inside_and_is_refused_by_name_at_th
     let (_, described) = post(&base, "/describe_card", &json!({"domain": "signal", "card": "link_gothenburg_10010"})).await;
     let described: Value = serde_json::from_str(&described).unwrap();
     let phase = |index: usize, key: &str| described["phase_fields"][index][key].as_f64().unwrap();
-    assert_eq!((phase(0, "minimum"), phase(0, "maximum")), (50.0, 54.0));
+    let floor_db = link_gothenburg_10010::DRY_PATH_LOSS_FLOOR_DB;
+    assert_eq!(phase(0, "minimum"), floor_db);
+    assert!(described["phase_fields"][0]["maximum"].is_null());
     assert_eq!((phase(1, "minimum"), phase(1, "maximum")), (0.0, 2.13));
     assert_eq!(described["load_fields"][0]["minimum"].as_f64().unwrap(), 0.0);
-    assert_eq!(described["load_fields"][0]["maximum"].as_f64().unwrap(), 84.0);
-    assert_eq!(described["dt_s"]["ceiling_s"].as_f64().unwrap(), 60.0);
+    assert!(described["load_fields"][0]["maximum"].is_null());
+    let ceiling = link_gothenburg_10010::GATE_DT_S;
+    assert_eq!(described["dt_s"]["ceiling_s"].as_f64().unwrap(), ceiling);
 
     // (dry level, antenna water, rain rate, the words of the refusal, or none)
     let cases: Vec<(f64, f64, f64, Option<String>)> = vec![
-        (50.0, 0.0, 6.0, None),
-        (below(50.0), 0.0, 6.0, Some(outside("dry_path_loss_db", below(50.0), "dB", false, 50.0, "DryPathLossOutsideCard"))),
-        (54.0, 0.0, 6.0, None),
-        (above(54.0), 0.0, 6.0, Some(outside("dry_path_loss_db", above(54.0), "dB", true, 54.0, "DryPathLossOutsideCard"))),
-        (124.667, 0.0, 6.0, Some(outside("dry_path_loss_db", 124.667, "dB", true, 54.0, "DryPathLossOutsideCard"))),
+        (floor_db, 0.0, 6.0, None),
+        (below(floor_db), 0.0, 6.0, Some(outside("dry_path_loss_db", below(floor_db), "dB", false, floor_db, "DryPathLossBelowFreeSpace"))),
+        (below(50.0), 0.0, 6.0, None),
+        (above(54.0), 0.0, 6.0, None),
+        (124.667, 0.0, 6.0, None),
         (52.0, 2.13, 6.0, None),
         (52.0, above(2.13), 6.0, Some(outside("antenna_water_db", above(2.13), "dB", true, 2.13, "AntennaWaterOutsideCard"))),
         (52.0, -0.01, 6.0, Some(outside("antenna_water_db", -0.01, "dB", false, 0.0, "AntennaWaterOutsideCard"))),
         (52.0, 0.0, 84.0, None),
-        (52.0, 0.0, above(84.0), Some(outside("rain_rate_mm_h", above(84.0), "mm/h", true, 84.0, "RainRateOutsideCard"))),
-        (52.0, 0.0, 150.0, Some(outside("rain_rate_mm_h", 150.0, "mm/h", true, 84.0, "RainRateOutsideCard"))),
-        (52.0, 0.0, -6.0, Some(outside("rain_rate_mm_h", -6.0, "mm/h", false, 0.0, "RainRateOutsideCard"))),
+        (52.0, 0.0, above(84.0), None),
+        (52.0, 0.0, 150.0, None),
+        (52.0, 0.0, -6.0, Some(outside("rain_rate_mm_h", -6.0, "mm/h", false, 0.0, "NegativeRainRate"))),
     ];
     for (dry_db, water_db, rain, refusal) in cases {
         let label = format!("{dry_db} {water_db} {rain}");
@@ -434,21 +441,27 @@ async fn each_bound_lands_at_the_last_number_inside_and_is_refused_by_name_at_th
         }
     }
 
-    // A rain rate past the card in a later segment is refused before any step.
-    let (status, text) = post(&base, "/run_trajectory", &run_body(52.0, 0.0, &[6.0, 12.0, 90.0], MINUTE_S)).await;
+    // A rain rate below zero in a later segment is refused before any step;
+    // one past the fitted 84 mm/h runs to the end.
+    let (status, text) = post(&base, "/run_trajectory", &run_body(52.0, 0.0, &[6.0, 12.0, -1.0], MINUTE_S)).await;
     assert_eq!(status, 422, "{text}");
-    assert!(text.contains("(RainRateOutsideCard)"), "{text}");
+    assert!(text.contains("(NegativeRainRate)"), "{text}");
     assert!(!text.contains("run_seal"), "{text}");
+    let (status, text) = post(&base, "/run_trajectory", &run_body(52.0, 0.0, &[6.0, 12.0, 90.0], MINUTE_S)).await;
+    assert_eq!(status, 200, "{text}");
+    assert!(text.contains("\"outcome\":\"completed\""), "{text}");
 
     // The step: the ceiling and the floor land, and the next number outside
     // each, zero and a negative step do not.
     let floor = link().floor_dt_s().unwrap();
     for (dt_s, lands) in [
         (MINUTE_S, true),
-        (above(MINUTE_S), false),
+        (above(MINUTE_S), true),
+        (3600.0, true),
+        (ceiling, true),
+        (above(ceiling), false),
         (floor, true),
         (below(floor), false),
-        (3600.0, false),
         (0.0, false),
         (-60.0, false),
     ] {
@@ -467,8 +480,12 @@ async fn each_bound_lands_at_the_last_number_inside_and_is_refused_by_name_at_th
     let mut state = LinkState::try_new(&link, 52.0, 0.0).unwrap();
     let mut frame = blank_frame([0; 16]);
     assert_eq!(
+        link_gothenburg_10010::step(&link, &mut state, &mut frame, LinkLoad { rain_rate_mm_h: -1.0 }, MINUTE_S),
+        Err(StepReject::NegativeRainRate)
+    );
+    assert_eq!(
         link_gothenburg_10010::step(&link, &mut state, &mut frame, LinkLoad { rain_rate_mm_h: above(84.0) }, MINUTE_S),
-        Err(StepReject::RainRateOutsideCard)
+        Ok(())
     );
 }
 
@@ -491,7 +508,7 @@ async fn a_missing_input_a_field_the_card_does_not_have_and_a_card_constant_are_
         step["parameters"].as_object_mut().unwrap().remove(key);
         let (status, text) = post(&base, "/verify_physics", &step).await;
         assert_eq!(status, 422, "{key}: {text}");
-        assert_eq!(text, format!("Missing required parameter: '{key}'"));
+        assert_eq!(text, format!("Missing required parameter: '{key}' (InputMissing)."));
     }
     // A segment with no rain rate: nothing is filled in.
     let mut run = run_body(52.0, 0.0, &[6.0, 6.0], MINUTE_S);
@@ -543,34 +560,30 @@ fn continued_step_body(water_db: f64, elapsed_s: f64, minute_mm_h: f64, rain_mm_
     body
 }
 
-const BELOW_GAUGE_COUNT: &str = "Physical Failure: the rain rate is above zero and below 6 mm/h, one count of the gauge in a minute: the gauge gives no such one-minute rate, and none was compared with the link (RainRateBelowGaugeCount). That state is not sealed.";
-const NOT_HELD: &str = "Physical Failure: the rain rate changed inside a gauge minute: it is not the rate held since the minute began, and only rain held through whole gauge minutes was compared with the link (RainNotHeldForGaugeMinute). That state is not sealed.";
-
 /// On engine 0.6.0 a rain of 1e-30 mm/h turned on the full wetting of the
-/// antennas with a proof. A rate above zero and under one gauge count a
-/// minute is now refused by name, in a step, in the first segment and in a
-/// later segment, before any step and with nothing sealed; 6 mm/h lands.
+/// antennas with a proof; in 0.10 a rate under one gauge count a minute was
+/// refused. Now it is computed, in a step and in a run, with the rain term at
+/// that rate and the antenna water building as at any rate above zero, and the
+/// run's tape verifies. 0 mm/h is dry.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn a_rain_rate_under_one_gauge_count_is_refused_by_name_before_any_step() {
+async fn a_rain_rate_under_one_gauge_count_is_computed_and_its_tape_verifies() {
     let base = spawn_app().await;
     for rate in [1.0e-30, 1.0e-46, 3.0, below(6.0)] {
         let (status, text) = post(&base, "/verify_physics", &step_body(52.9, 0.0, rate, MINUTE_S)).await;
-        assert_eq!(status, 422, "{rate}: {text}");
-        assert_eq!(text, BELOW_GAUGE_COUNT, "{rate}");
+        assert_eq!(status, 200, "{rate}: {text}");
         let mut run = run_body(52.9, 0.0, &[rate], MINUTE_S);
         run["segments"][0]["steps"] = json!(10);
         let (status, text) = post(&base, "/run_trajectory", &run).await;
-        assert_eq!(status, 422, "{rate}: {text}");
-        assert_eq!(text, BELOW_GAUGE_COUNT, "{rate}");
-        let (status, text) = post(&base, "/run_trajectory", &run_body(52.9, 0.0, &[6.0, 0.0, rate], MINUTE_S)).await;
-        assert_eq!(status, 422, "{rate}: {text}");
-        assert_eq!(text, BELOW_GAUGE_COUNT, "{rate}");
-        let (status, text) = post(&base, "/verify_physics", &continued_step_body(0.0, 0.0, rate, 0.0, MINUTE_S)).await;
-        assert_eq!(status, 422, "{rate}: {text}");
-        assert_eq!(text, BELOW_GAUGE_COUNT, "{rate}");
+        assert_eq!(status, 200, "{rate}: {text}");
+        let answer: Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(answer["outcome"], "completed", "{rate}");
+        let kept = direct_loop(52.9, 0.0, &[rate; 10], MINUTE_S);
+        assert_state_is(&answer["final_state"], &kept[9].0, "light rain");
+        assert!(published(&answer["final_state"], "residual_conservation_error") < 1.0e-12);
+        let (status, report) = post(&base, "/verify_tape", &answer).await;
+        assert_eq!(status, 200, "{report}");
+        assert_eq!(serde_json::from_str::<Value>(&report).unwrap()["holds"], true);
     }
-    let (status, text) = post(&base, "/verify_physics", &step_body(52.9, 0.0, 6.0, MINUTE_S)).await;
-    assert_eq!(status, 200, "{text}");
     let (status, text) = post(&base, "/verify_physics", &step_body(52.9, 0.0, 0.0, MINUTE_S)).await;
     assert_eq!(status, 200, "{text}");
     let answer: Value = serde_json::from_str(&text).unwrap();
@@ -611,12 +624,11 @@ async fn one_step_and_sixty_steps_report_the_same_energies() {
     assert!((x / y - 1.0).abs() < 1.0e-6, "{x} {y}");
 }
 
-/// A rain changed inside a gauge minute. In a run the segment that changes
-/// it is refused at its first step, by name, and the run is sealed with that
-/// refusal after the steps that landed. Rain held through whole minutes in
-/// 10 s steps lands, and ends where whole minutes do.
+/// A rain changed inside a gauge minute, where 0.10 refused the run, is
+/// computed: the run completes, lands on the kernel's own loop bit for bit,
+/// and its tape verifies.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn a_rain_changed_inside_a_gauge_minute_is_refused_by_name() {
+async fn a_rain_changed_inside_a_gauge_minute_is_computed_and_its_tape_verifies() {
     let base = spawn_app().await;
     let mut run = run_body(52.3, 0.0, &[36.0, 0.0], 10.0);
     run["segments"][1]["steps"] = json!(5);
@@ -624,39 +636,31 @@ async fn a_rain_changed_inside_a_gauge_minute_is_refused_by_name() {
     let (status, text) = post(&base, "/run_trajectory", &run).await;
     assert_eq!(status, 200, "{text}");
     let answer: Value = serde_json::from_str(&text).unwrap();
-    assert_eq!(answer["outcome"], "refused");
-    assert_eq!(answer["reject"], "RainNotHeldForGaugeMinute");
-    assert_eq!(answer["reject_detail"], NOT_HELD.replace("That state is not sealed.", "The run is sealed to step 1. The state at step 2 was refused and is not sealed."));
-    assert_eq!(answer["steps_landed"], 1);
-    assert_eq!(published(&answer["final_state"], "gauge_minute_elapsed_s"), 10.0);
-    assert_eq!(published(&answer["final_state"], "gauge_minute_rain_mm_h"), 36.0);
+    assert_eq!(answer["outcome"], "completed", "{text}");
+    assert_eq!(answer["steps_landed"], 6);
+    let mut kept = direct_loop(52.3, 0.0, &[36.0], 10.0);
+    let link = link();
+    let mut state = kept[0].0;
+    let mut frame = kept[0].1;
+    for _ in 0..5 {
+        link_gothenburg_10010::step(&link, &mut state, &mut frame, LinkLoad { rain_rate_mm_h: 0.0 }, 10.0).unwrap();
+    }
+    kept.push((state, frame));
+    assert_state_is(&answer["final_state"], &state, "changed inside the minute");
+    assert_eq!(published(&answer["final_state"], "gauge_minute_elapsed_s"), 0.0);
     let (status, report) = post(&base, "/verify_tape", &answer).await;
     assert_eq!(status, 200, "{report}");
     assert_eq!(serde_json::from_str::<Value>(&report).unwrap()["holds"], true);
-
-    // Held for six steps of 10 s, then changed on the boundary: completed,
-    // and the same water as two whole minutes.
-    let mut held = run_body(52.3, 0.0, &[36.0, 0.0], 10.0);
-    held["segments"][0]["steps"] = json!(6);
-    held["segments"][1]["steps"] = json!(6);
-    let (_, text) = post(&base, "/run_trajectory", &held).await;
-    let held: Value = serde_json::from_str(&text).unwrap();
-    assert_eq!(held["outcome"], "completed", "{text}");
-    let kept = direct_loop(52.3, 0.0, &[36.0, 0.0], MINUTE_S);
-    let water = published(&held["final_state"], "antenna_water_db");
-    assert!((water - kept[1].0.antenna_water_db).abs() < 1.0e-14);
-    assert_eq!(published(&held["final_state"], "gauge_minute_elapsed_s"), 0.0);
 }
 
-/// Restart family: the seconds spent in the gauge minute and its rain are
-/// continuation inputs. A run ended inside a minute and started again from
-/// its returned state cannot change the rain there, and neither can a
-/// chain of single steps shorter than a minute; a request without the two
-/// inputs is refused.
+/// Restart family: the seconds spent in the gauge minute and the rate of the
+/// last step are reported, and a start may state any value of them on the
+/// card without from: a single step of 10 s handed back as a new start may
+/// change its rain at once. The bounds of the clock are still refused by
+/// name, and so is a rate below zero.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn a_restart_inside_a_gauge_minute_carries_the_minute_and_cannot_change_its_rain() {
+async fn a_restart_inside_a_gauge_minute_may_change_its_rain() {
     let base = spawn_app().await;
-    // A single step of 10 s at 36 mm/h, handed back as a new start.
     let (status, first) = post(&base, "/verify_physics", &step_body(52.3, 0.0, 36.0, 10.0)).await;
     assert_eq!(status, 200, "{first}");
     let first: Value = serde_json::from_str(&first).unwrap();
@@ -666,57 +670,25 @@ async fn a_restart_inside_a_gauge_minute_carries_the_minute_and_cannot_change_it
     let water = published(state, "antenna_water_db");
     assert_eq!((elapsed, minute), (10.0, 36.0));
     let (status, text) = post(&base, "/verify_physics", &continued_step_body(water, elapsed, minute, 0.0, 10.0)).await;
-    assert_eq!(status, 422, "{text}");
-    assert_eq!(text, NOT_HELD);
-    // The same restart as a run is refused at the door, with nothing sealed.
+    assert_eq!(status, 200, "{text}");
     let mut run = run_body(52.3, water, &[0.0], 10.0);
     run["initial"]["gauge_minute_elapsed_s"] = json!(elapsed);
     run["initial"]["gauge_minute_rain_mm_h"] = json!(minute);
     let (status, text) = post(&base, "/run_trajectory", &run).await;
-    assert_eq!(status, 422, "{text}");
-    assert_eq!(text, NOT_HELD);
-    // Continued at the held rain to the end of the minute, it lands where
-    // one whole minute does, and the next minute may change the rain. Inside
-    // the minute each step carries the minute on, so it names in from the
-    // sealed run of the steps before it; without from it is refused by name.
-    let mut chain = water;
-    let mut clock = elapsed;
-    for before in 1..=5_u64 {
-        let mut upstream = run_body(52.3, 0.0, &[36.0], 10.0);
-        upstream["segments"][0]["steps"] = json!(before);
-        let (_, up) = post(&base, "/run_trajectory", &upstream).await;
-        let up: Value = serde_json::from_str(&up).unwrap();
-        let mut step = continued_step_body(chain, clock, 36.0, 36.0, 10.0);
-        let (status, text) = post(&base, "/verify_physics", &step).await;
-        assert_eq!(status, 422, "{text}");
-        assert!(text.ends_with("(ContinuationWithoutUpstream)."), "{text}");
-        step["from"] = json!({ "request": upstream, "run_seal": up["run_seal"] });
-        let (status, text) = post(&base, "/verify_physics", &step).await;
-        assert_eq!(status, 200, "{text}");
-        let answer: Value = serde_json::from_str(&text).unwrap();
-        chain = published(&answer["state"], "antenna_water_db");
-        clock = published(&answer["state"], "gauge_minute_elapsed_s");
-    }
-    assert_eq!(clock, 0.0);
-    let kept = direct_loop(52.3, 0.0, &[36.0], MINUTE_S);
-    assert!((chain - kept[0].0.antenna_water_db).abs() < 1.0e-14);
-    let (status, text) = post(&base, "/verify_physics", &continued_step_body(chain, clock, 36.0, 0.0, 10.0)).await;
     assert_eq!(status, 200, "{text}");
-
-    // The bounds of the minute's clock: the card takes the last number under
-    // 60 s (a start inside a minute, so the door then asks for from), and
-    // refuses 60 s and a negative number by name.
+    assert!(!text.contains("ContinuationWithoutUpstream"), "{text}");
     let (status, text) = post(&base, "/verify_physics", &continued_step_body(0.0, below(60.0), 0.0, 0.0, 1.0e-3)).await;
-    assert_eq!(status, 422, "{text}");
-    assert!(text.ends_with("(ContinuationWithoutUpstream)."), "{text}");
+    assert_eq!(status, 200, "{text}");
     for elapsed in [60.0, -0.5] {
         let (status, text) = post(&base, "/verify_physics", &continued_step_body(0.0, elapsed, 0.0, 0.0, 1.0)).await;
         assert_eq!(status, 422, "{elapsed}: {text}");
         assert!(text.contains("(GaugeMinuteOutsideCard)"), "{elapsed}: {text}");
     }
     let (status, text) = post(&base, "/verify_physics", &continued_step_body(0.0, 0.0, 90.0, 0.0, 1.0)).await;
+    assert_eq!(status, 200, "{text}");
+    let (status, text) = post(&base, "/verify_physics", &continued_step_body(0.0, 0.0, -1.0, 0.0, 1.0)).await;
     assert_eq!(status, 422, "{text}");
-    assert!(text.contains("(RainRateOutsideCard)"), "{text}");
+    assert!(text.contains("(NegativeRainRate)"), "{text}");
 }
 
 // ------------------------------------------------------- compared with a series
@@ -815,7 +787,7 @@ impl Local {
 
     /// The whole answer line of a tool call, as the hosted connection frames it.
     async fn call(&mut self, name: &str, arguments: &Value) -> String {
-        let line = json!({"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":name,"arguments":arguments}});
+        let line = answer_text::tool_call(7, name, arguments);
         self.raw(&line.to_string()).await
     }
 }
@@ -864,7 +836,7 @@ impl Hosted {
     }
 
     async fn call(&self, key: &str, tool: &str, arguments: &Value) -> String {
-        let body = json!({"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":tool,"arguments":arguments}});
+        let body = answer_text::tool_call(7, tool, arguments);
         let response = reqwest::Client::new()
             .post(format!("{}/mcp", self.base))
             .header("Content-Type", "application/json")
@@ -887,6 +859,7 @@ fn result_text(answer: &str) -> (String, bool) {
         .as_str()
         .unwrap_or_else(|| panic!("no text in {answer}"))
         .to_string();
+    answer_text::remember(&text);
     (text, value["result"]["isError"] == true)
 }
 
@@ -901,10 +874,10 @@ async fn the_three_connections_list_the_link_and_give_the_same_bytes_for_its_des
     assert!(!error);
     let listed: Value = serde_json::from_str(&listed).unwrap();
     let cards = listed["cards"].as_array().unwrap();
-    assert_eq!(cards.len(), 31);
-    assert_eq!(cards[21]["domain"], "signal");
-    assert_eq!(cards[21]["card"], "link_gothenburg_10010");
-    let line = cards[21]["specimen"].as_str().unwrap();
+    assert_eq!(cards.len(), 37);
+    assert_eq!(cards[24]["domain"], "signal");
+    assert_eq!(cards[24]["card"], "link_gothenburg_10010");
+    let line = cards[24]["specimen"].as_str().unwrap();
     assert!(line.contains("Recommendation ITU-R P.838-3 with nothing fitted"), "{line}");
     assert!(line.contains("fitted to this link's own readings of June and July 2015"), "{line}");
     let on_web: Value = Client::new().get(format!("{web}/cards")).send().await.unwrap().json().await.unwrap();
@@ -945,15 +918,16 @@ async fn the_three_connections_list_the_link_and_give_the_same_bytes_for_its_des
             "NonFiniteState",
             "NonPositiveDt",
             "InvalidLink",
-            "RainRateOutsideCard",
-            "RainRateBelowGaugeCount",
-            "RainNotHeldForGaugeMinute",
+            "NegativeRainRate",
             "GaugeMinuteOutsideCard",
-            "DryPathLossOutsideCard",
+            "DryPathLossBelowFreeSpace",
             "AntennaWaterOutsideCard",
             "SpontaneousGeneration",
             "FirstLawBreach",
-            "AntennaAccountBreach"
+            "AntennaAccountBreach",
+            // The gateway's own two for this card follow the kernel's eleven.
+            "DtBelowFloor",
+            "DtAboveCeiling"
         ]
     );
     for reject in description["rejects"].as_array().unwrap() {
@@ -967,7 +941,7 @@ async fn the_three_connections_list_the_link_and_give_the_same_bytes_for_its_des
     assert!(record["pass_line"].as_str().unwrap().contains("f60bfcc70553f95fef5d35963b6550120de3c67e712c057e40c5d37c51784625"));
 
     // The four tools that compute: the same bytes on the three connections.
-    let step = description["example_verify_step"].clone();
+    let step = description["example_compute_step"].clone();
     let run = run_body(DRY_DB, 0.0, &EVENT_MM_H, MINUTE_S);
     let dataset = json!({
         "domain": "signal", "card": "link_gothenburg_10010",
@@ -975,7 +949,7 @@ async fn the_three_connections_list_the_link_and_give_the_same_bytes_for_its_des
             { "initial": { "dry_path_loss_db": 52.0, "antenna_water_db": 0.0, "gauge_minute_elapsed_s": 0.0, "gauge_minute_rain_mm_h": 0.0 }, "dt_s": MINUTE_S,
               "segments": [{ "steps": 5, "load": { "rain_rate_mm_h": 12.0 } }, { "steps": 5, "load": { "rain_rate_mm_h": 0.0 } }], "record_every": 5 },
             { "initial": { "dry_path_loss_db": 52.0, "antenna_water_db": 0.0, "gauge_minute_elapsed_s": 0.0, "gauge_minute_rain_mm_h": 0.0 }, "dt_s": MINUTE_S,
-              "segments": [{ "steps": 5, "load": { "rain_rate_mm_h": 90.0 } }], "record_every": 5 }
+              "segments": [{ "steps": 5, "load": { "rain_rate_mm_h": -90.0 } }], "record_every": 5 }
         ] },
         "store": "frames", "return": "inline", "answer": "full"
     });
@@ -1003,14 +977,14 @@ async fn the_three_connections_list_the_link_and_give_the_same_bytes_for_its_des
             tape_text = text;
         }
     }
-    // The dataset's second row rains harder than the card: not admitted, by name.
+    // The dataset's second row rains upward: not admitted, by name.
     let (text, _) = result_text(&local.call("run_dataset", &dataset).await);
     let answer: Value = serde_json::from_str(&text).unwrap();
     assert_eq!(answer["rows"][0]["outcome"], "completed");
     assert_eq!(answer["rows"][1]["outcome"], "unadmitted");
     assert_eq!(
         answer["rows"][1]["reject_detail"],
-        outside("rain_rate_mm_h", 90.0, "mm/h", true, 84.0, "RainRateOutsideCard")
+        outside("rain_rate_mm_h", -90.0, "mm/h", false, 0.0, "NegativeRainRate")
     );
 
     let tape: Value = serde_json::from_str(&tape_text).unwrap();
@@ -1031,14 +1005,14 @@ async fn the_three_connections_list_the_link_and_give_the_same_bytes_for_its_des
 
     // A refusal is a tool result marked as an error, with the words of the
     // web connection, on the local and the hosted connection alike.
-    let bad = step_body(52.0, 0.0, 90.0, MINUTE_S);
+    let bad = step_body(52.0, 0.0, -90.0, MINUTE_S);
     let on_local = local.call("verify_step", &bad).await;
     let (text, error) = result_text(&on_local);
     assert!(error);
     let (status, on_web) = post(&web, "/verify_physics", &bad).await;
     assert_eq!(status, 422);
     assert_eq!(text, on_web);
-    assert_eq!(text, outside("rain_rate_mm_h", 90.0, "mm/h", true, 84.0, "RainRateOutsideCard"));
+    assert_eq!(text, outside("rain_rate_mm_h", -90.0, "mm/h", false, 0.0, "NegativeRainRate"));
     assert_eq!(hosted.call(KEY_LINK, "verify_step", &bad).await, on_local);
 
     // The key that lists the link alone sees one card.
@@ -1068,7 +1042,7 @@ async fn the_three_connections_list_the_link_and_give_the_same_bytes_for_its_des
         assert_eq!(on_hidden, on_fake, "{tool}");
         session.push(on_hidden);
     }
-    assert_eq!(result_text(&hosted.call(KEY_THERMAL, "describe_card", &pair).await).0, "Card not recognized");
+    assert_eq!(result_text(&hosted.call(KEY_THERMAL, "describe_card", &pair).await).0, "Card not recognized (UnknownCard).");
     session.push(hosted.call(KEY_THERMAL, "list_cards", &json!({})).await);
     let text = session.join("\n").to_lowercase();
     for word in ["gothenburg", "antenna", "rain_rate", "openmrg", "path_loss", "p.838"] {

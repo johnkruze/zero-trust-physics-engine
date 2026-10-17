@@ -1,0 +1,43 @@
+{
+ "model": "accumulator_sbo450",
+ "verdict": "missed",
+ "protocol": {
+  "path": "evidence/research/accumulator_darmstadt_sbo450/validation_protocol.md",
+  "sha256": "721d88a5264b0e15342824290e6305db1df27fab76011333b49d5ed253b38323",
+  "committed": {
+   "crate": "protocol_mcp_gateway",
+   "commit": "b9aa12cffa896e207e289d63d38c5ac8e5ab74ab",
+   "utc": "2026-10-10T01:15:04Z",
+   "how": "The diff of 'Serve the accumulator_sbo450 card ... and that it is not yet compared with the held-back runs' adds the pass line 'Fixed before any held-back file was downloaded (protocol SHA-256 721d88a5...b38323)'; author and committer time are the same."
+  }
+ },
+ "held_back": [
+  {
+   "path": "evidence/research/accumulator_darmstadt_sbo450/raw/zenodo_11265391/MANIFEST.json",
+   "sha256": "facdb517e314c296f6c639cb45fe0a9f9dbdc99a3bb5b612cfaff2aade3c9161"
+  },
+  {
+   "path": "evidence/research/accumulator_darmstadt_sbo450/raw/zenodo_11265436/MANIFEST.json",
+   "sha256": "8338c292858e21e9d4802f9b1028c7e38cda7cc761c9cfb68959a701b840f592"
+  },
+  {
+   "path": "evidence/research/accumulator_darmstadt_sbo450/raw/zenodo_11265491/MANIFEST.json",
+   "sha256": "02eb4ae274d54dabe4922546636e8eca7050ebb8f42816b0aa014384f0ef50fc"
+  },
+  {
+   "path": "evidence/research/accumulator_darmstadt_sbo450/raw/zenodo_11265583/MANIFEST.json",
+   "sha256": "442205fa406b1e91ea80230b15ff3ed5d869f5832755d2a0c81e00b64f6477c4"
+  },
+  {
+   "path": "evidence/research/accumulator_darmstadt_sbo450/raw/zenodo_11265625/MANIFEST.json",
+   "sha256": "4a2ef2ec072ff420eb6815a902e2b71c68fde84ef54839cb6dcd0ddec311e21d"
+  }
+ ],
+ "scored": {
+  "utc": "2026-10-10T01:17:42Z",
+  "evidence": "Birth time of evidence/research/accumulator_darmstadt_sbo450/runs/held_back/11265391.jsonl (18:17:42 PDT), the first file of the held-back run through the gateway; RESULTS.md: 'Scored once, on 2026-10-09 at 18:17 PDT, by analysis/05_score.py'."
+ },
+ "forecast_first": "held",
+ "registered_by": "backfill from the record, 2026-10-15",
+ "notes": "Committed 2 min 38 s before the held-back run; validation_protocol.md on disk still has the committed hash. But the five held-back records were downloaded after the protocol's fingerprint and before the commit, from 2026-10-10T00:45:34Z to 01:04:03Z (file birth times; raw/SOURCES.md: 'the five held-back records after it'), each with a MANIFEST.json of SHA-256 written at download (above). Nothing on the record says they were opened before 01:17:42Z, but they were on disk 10 to 30 min before the commit. Outside Git: analysis/prereg_hash.txt (born 00:45:25Z) gives validation_protocol.md and analysis/prereg.json (98f7f6b2..., unchanged on disk). The amendment of 2026-10-09 (amendment_2026-10-09.md, ba073e2a..., born 02:39:48Z) was made after the scoring and the second party's rescoring and says it is not a blind test; it first appears in the result commit 73f52aeb (genesis_kernel) / a8e55ad6 (gateway). Later runs: runs/after_the_fact, after_the_fact_v060; second party evidence/verification/second_party/V-39/; fresh eyes evidence/verification/fresh_eyes_0.6.0/accumulator_sbo450/. Commit times are the committer's clock. Public mark: GitHub-signed commit 5ac2abaab45795c7dd6fb46781ad2fca91e239e9 at 2026-10-13T17:54:50Z."
+}

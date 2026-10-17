@@ -1,0 +1,27 @@
+{
+ "model": "junction_nist_b7_s2",
+ "verdict": "missed",
+ "protocol": {
+  "path": "evidence/research/junction_nist_nb_asi_nb/analysis/prereg.json",
+  "sha256": "27ad14413a30eed6e939afd1e1603ddaf4fb3d829d6823b8f5887a0f03e6238b",
+  "committed": {
+   "crate": "protocol_mcp_gateway",
+   "commit": "9619d6fa03764546394f7292c1633321d53e7eef",
+   "utc": "2026-10-14T23:27:16Z",
+   "how": "The diff of 'Serve junction_nist_b7_s2: its entry ...' adds the pass line 'Fixed on 2026-10-06 (analysis/prereg.json, SHA-256 27ad1441...e6238b) before any model output was compared with any zero-field voltage'; it is the gateway commit DECLARATION.txt names for the scored binary."
+  }
+ },
+ "held_back": [
+  {
+   "path": "evidence/research/junction_nist_nb_asi_nb/raw/extracted/DataSet/Fig9/Fig9a-IV-D220831b-B7_S2_1.5.dat",
+   "sha256": "54b620687284a023c523c92e68834545a3fb77ccf99949b56fa9d2fdd4966f80"
+  }
+ ],
+ "scored": {
+  "utc": "2026-10-14T23:27:48Z",
+  "evidence": "Birth time of evidence/research/junction_nist_nb_asi_nb/engine_run_2026-10-14/sealed_output.txt (16:27:48 PDT), the one sealed comparison by sealed_run.py; DECLARATION.txt and FINGERPRINT.txt, 'before any voltage of Fig9a-IV-D220831b-B7_S2_1.5.dat was read by anyone', were written at 23:27:44Z; sealed_result.json at 23:28:57Z."
+ },
+ "forecast_first": "held",
+ "registered_by": "backfill from the record, 2026-10-15",
+ "notes": "Committed 32 s before the sealed comparison; prereg.json on disk still has the committed hash, written on 2026-10-06 (file born 2026-10-06T18:32:23Z) and named in DECLARATION.txt 'as hashed on 2026-10-06'. The held-back file (no fingerprint file names its SHA-256; computed today) was on disk from the download of 2026-10-06 under the loader's procedural seal. The forecast, on three sibling junctions outside the engine, was made on 2026-10-06. DECLARATION.txt (c48e87a7..., fingerprinted outside Git at 23:27:44Z, in no commit) records departures from the protocol decided before the comparison: a solver instead of a card, a finer time step, the slope above the table, a dropped clause on cutting the range (John Kruze's decision of 14 October), and the falling sweep's start voltage. validation_protocol.md (c35812d0...) is named there as it stood then and is unchanged. The solver's commit genesis_solvers 84fd4066bf13e70602d307c5a5385a0d74ed0d8d (23:19:16Z) does not carry the hash. Commit times are the committer's clock. No mark for it in the local copy of the public pass-marks repository (command-center/sales/github/pass-marks/, posted 2026-10-13)."
+}

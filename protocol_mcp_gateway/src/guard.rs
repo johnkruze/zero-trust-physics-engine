@@ -15,7 +15,7 @@ use crate::json_text::{self, Scan};
 /// message, the JSON-RPC envelope included, without the line break.
 pub const LINE_LIMIT: usize = 16 * 1024 * 1024;
 
-/// The HTTP default for every other route (`verify_step`, `describe_card`,
+/// The HTTP default for every other route (`compute_step`, `describe_card`,
 /// `describe_solver`, `solve`, `verify_solution`): 2 MiB. A `tools/call`
 /// message longer than this for one of those tools is answered with an error.
 pub const NARROW_LIMIT: usize = 2 * 1024 * 1024;
@@ -46,7 +46,7 @@ pub enum Inspection {
 /// `LINE_LIMIT` bytes of it.
 pub fn too_long_response(kept: &[u8]) -> String {
     let text = format!(
-        "Request too large: a line is at most {LINE_LIMIT} bytes (16 MiB) on this door, as the largest request is on the HTTP door. This line is longer and was not read."
+        "Request too large: a line is at most {LINE_LIMIT} bytes (16 MiB) on this connection, as the largest request is on the web connection. This line is longer and was not read."
     );
     invalid_request(&answer_id(kept, false), &text)
 }
@@ -63,7 +63,7 @@ pub fn inspect(line: &[u8]) -> Inspection {
     if payload.len() > NARROW_LIMIT {
         if let Some(tool) = narrow_tool(payload) {
             let text = format!(
-                "Request too large: {tool} takes at most {NARROW_LIMIT} bytes (2 MiB) on this door, as on the HTTP door. This line has {} bytes and was not read.",
+                "Request too large: {tool} takes at most {NARROW_LIMIT} bytes (2 MiB) on this connection, as on the web connection. This line has {} bytes and was not read.",
                 payload.len()
             );
             return Inspection::Answer(invalid_request(&answer_id(payload, true), &text));
@@ -244,6 +244,51 @@ pub fn tool_call_fault(payload: &[u8]) -> Option<String> {
         )),
         _ => None,
     }
+}
+
+/// The tools whose long form holds the answer sent to the engine's byte for
+/// byte, and so reads the text of their arguments as it came.
+pub const TEXT_TOOLS: [&str; 3] = ["verify_tape", "verify_solution", "verify_dataset"];
+
+/// The `_meta` key under which the stdio door hands the MCP library a
+/// `tools/call` of a [`TEXT_TOOLS`] tool together with the exact text of its
+/// arguments, which the library itself reads only as values. The door always
+/// writes it, over any value the caller put there.
+pub const ARGUMENTS_TEXT: &str = "com.zerotrustphysics/arguments_text";
+
+/// The exact text of a `tools/call`'s `arguments` and the tool's name, when
+/// the message is one; `None` for any other message.
+pub fn arguments_text(payload: &[u8]) -> Option<(String, String)> {
+    let body = payload.strip_prefix(b"\xEF\xBB\xBF".as_slice()).unwrap_or(payload);
+    let top: Top = serde_json::from_slice(json_line(body)).ok()?;
+    let method: String = serde_json::from_str(top.method?.get()).ok()?;
+    if method != "tools/call" {
+        return None;
+    }
+    let parts: CallParams = serde_json::from_str(top.params?.get()).ok()?;
+    let name: String = serde_json::from_str(parts.name?.get()).ok()?;
+    Some((name, parts.arguments?.get().to_string()))
+}
+
+/// A `tools/call` of a [`TEXT_TOOLS`] tool written again with the exact text
+/// of its arguments under `params._meta`, [`ARGUMENTS_TEXT`], and a line
+/// break; `None` for any other message, which the door forwards as it came.
+pub fn with_arguments_text(line: &[u8]) -> Option<Vec<u8>> {
+    let (name, text) = arguments_text(line)?;
+    if !TEXT_TOOLS.contains(&name.as_str()) {
+        return None;
+    }
+    let body = line.strip_prefix(b"\xEF\xBB\xBF".as_slice()).unwrap_or(line);
+    let mut message: serde_json::Value = serde_json::from_slice(json_line(body)).ok()?;
+    let params = message.get_mut("params")?.as_object_mut()?;
+    let meta = params
+        .entry("_meta")
+        .or_insert_with(|| serde_json::Value::Object(serde_json::Map::new()))
+        .as_object_mut()?;
+    meta.insert(ARGUMENTS_TEXT.to_string(), serde_json::Value::String(text));
+    let mut written = serde_json::to_vec(&message).ok()?;
+    written.push(b'\n');
+    Some(written)
 }
 
 /// A library answer that has no `id` member (a message the library could not
@@ -744,6 +789,34 @@ fn read_utf8<'a>(bytes: &'a [u8], index: &mut usize, first: u8) -> Option<&'a st
 
 #[cfg(test)]
 mod tests {
+    /// The stdio door hands a verification the exact text of its arguments
+    /// under params._meta, over any value the caller put there, and passes
+    /// every other message as it came.
+    #[test]
+    fn a_verification_carries_the_exact_text_of_its_arguments() {
+        let arguments = r#"{"inputs":{"solver":"x"},"result":{"v":1.0e-4,"s":"\u0063onverged"},"receipt_sha256":"ab"}"#;
+        let line = format!(r#"{{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{{"name":"verify_solution","arguments":{arguments},"_meta":{{"{}":"forged","progressToken":1}}}}}}"#, super::ARGUMENTS_TEXT);
+        let carried = super::with_arguments_text(format!("{line}\n").as_bytes()).expect("a verification is carried");
+        assert!(carried.ends_with(b"\n"));
+        let message: serde_json::Value = serde_json::from_slice(&carried).unwrap();
+        assert_eq!(message["params"]["_meta"][super::ARGUMENTS_TEXT], arguments);
+        assert_eq!(message["params"]["_meta"]["progressToken"], 1);
+        assert_eq!(message["params"]["arguments"], serde_json::from_str::<serde_json::Value>(arguments).unwrap());
+        assert_eq!(message["id"], 3);
+        for tool in ["verify_tape", "verify_dataset"] {
+            let line = format!(r#"{{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{{"name":"{tool}","arguments":{arguments}}}}}"#);
+            let carried: serde_json::Value = serde_json::from_slice(&super::with_arguments_text(line.as_bytes()).unwrap()).unwrap();
+            assert_eq!(carried["params"]["_meta"][super::ARGUMENTS_TEXT], arguments, "{tool}");
+        }
+        for line in [
+            format!(r#"{{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{{"name":"solve","arguments":{arguments}}}}}"#),
+            r#"{"jsonrpc":"2.0","id":6,"method":"tools/list"}"#.to_string(),
+            r#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#.to_string(),
+        ] {
+            assert!(super::with_arguments_text(line.as_bytes()).is_none(), "{line}");
+        }
+    }
+
     /// Stepping over a string follows the rules of reading one: the same
     /// strings are taken and refused, and the same bytes are passed.
     #[test]

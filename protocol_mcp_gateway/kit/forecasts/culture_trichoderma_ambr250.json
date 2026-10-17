@@ -1,0 +1,21 @@
+{
+ "model": "culture_trichoderma_ambr250",
+ "verdict": "missed",
+ "protocol": {
+  "path": "evidence/research/bioreactor_trichoderma_ambr250/validation_protocol.md",
+  "sha256": "68b833108c589ce7a6e063ec84b21483fa50c7cffa145108e69ed0de816c92db",
+  "committed": {
+   "crate": "protocol_mcp_gateway",
+   "commit": "fc77fc0377a175d4121ae954d8d4355ff9ad025c",
+   "utc": "2026-10-10T01:48:21Z",
+   "how": "The diff of 'Serve culture_trichoderma_ambr250 as the tenth solver ... it has not yet been compared with the held-back cultures' adds the pass line 'Fixed on 2026-10-09 before any held-back number was read (protocol SHA-256 68b83310...6c92db)'; author and committer time are the same."
+  }
+ },
+ "scored": {
+  "utc": "2026-10-10T01:49:44Z",
+  "evidence": "Birth time of evidence/research/bioreactor_trichoderma_ambr250/analysis/out/06_sealed/ and out/06_sealed_stdout.txt (18:49:44 PDT), the held-back run; the comparison script was frozen at 01:49:35Z (analysis/06_engine_comparison_frozen_sha256.txt) after the rehearsal on the opened cultures (out/06_rehearsal, 01:49:36Z)."
+ },
+ "forecast_first": "held",
+ "registered_by": "backfill from the record, 2026-10-15",
+ "notes": "Committed 83 s before the held-back run; validation_protocol.md on disk still has the committed hash. Outside Git: analysis/prereg_hash.txt (no time in it; born 2026-10-10T01:33:55Z) gives validation_protocol.md and analysis/prereg.json (f941c3ff..., unchanged on disk). prereg.json fingerprints the forecast's analysis/model.py as 311a52bd...; model.py was modified 46 s after the fingerprint (mtime 01:34:41Z) and is now b94747c1..., the version the frozen comparison record names; the protocol text and the marks are unchanged. The held-back cultures were in the one spreadsheet downloaded to raw/ at 00:49:37Z, before the protocol; the seal is procedural. Rescorings: 06_sealed_v060, 06_rehearsal_v060_to_215h; second party evidence/verification/second_party/V-41. Commit times are the committer's clock. Public mark: GitHub-signed commit db9f20f19be4aa8a7291797c2273dca042419d8b at 2026-10-13T17:54:47Z."
+}

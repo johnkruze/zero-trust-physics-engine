@@ -7,7 +7,7 @@
 //! 162173 Ryugu near 6 degrees north, 303 degrees east. Ryugu is a pile of
 //! rubble held together by its own gravity, about 9.3e-5 m/s² at that place.
 //! The card steps the radius of the growing crater, measured at the level of
-//! the undisturbed surface, from 1.75 m until it stops.
+//! the undisturbed surface, from 0.1622 m until it stops.
 //!
 //! The model is the law of crater size for a dry granular bed with no
 //! cohesion, held by gravity alone, fitted on Earth in sand. NOTHING IN THIS
@@ -49,8 +49,23 @@
 //! What is left out: cohesion and strength, the boulders (the measured crater
 //! is a half circle, stopped on its south side by a block), the 60 degree
 //! angle of the impact, the projectile's hollow shape, the rim, the depth,
-//! the ejecta. The first 1.75 m of growth, 0.917 s by the card's clock, is
-//! outside the card.
+//! the ejecta. Only the final radius was compared with Ryugu; the growth and
+//! its clock were not compared with anything.
+//!
+//! The smallest radius is set by the ledger's arithmetic. Near the impact the
+//! wall is fast and the energy it has yet to give up, `−W(R)`, is large, while
+//! the ledger's limit is a fixed 5.064e-11 J/kg. At [`RADIUS_FLOOR_M`],
+//! 0.1622 m, `−W` is 22 800 J/kg, the wall moves at 214 m/s, and one rounding
+//! of `W` in 64 bits, one part in 2^52, is a tenth of the ledger's limit:
+//! closer to the impact the ledger can no longer tell a right step from a
+//! wrong one, and the start is [`StepReject::RadiusBelowLedgerResolution`].
+//! That radius is 4.3 radii of the projectile's equivalent sphere, outside the
+//! 1.2 radii from which point-source laws of cratering are used (Housen and
+//! Holsapple 2011, Icarus 211, 856), and the wall there is a tenth of the
+//! projectile's 2 km/s. From the floor the wall runs to its stop in steps that
+//! grow with the radius; at the ceiling of 0.25 s a step near the floor is
+//! refused by the ledger, and a smaller one lands. The card served from 1.75 m
+//! until engine 0.9; that floor had no recorded reason.
 //!
 //! The equations. `R` is the crater radius, `V` the speed of its wall,
 //! `Rf` = 8.571 m the radius the law of size gives, `p = (1 − α)/α` = 5.0219,
@@ -84,6 +99,7 @@ extern crate core;
 use core::prelude::v1::*;
 
 use crate::frame::LastStateFrame64;
+use crate::normal::normal_or_zero;
 
 /// Mass of the copper projectile, kg. JAXA briefing of 2019-03-18.
 pub const PROJECTILE_MASS_KG: f64 = 2.0;
@@ -114,9 +130,11 @@ pub const GROWTH_POWER: f64 = 5.021920510750073;
 /// `kg`: the clock's share of gravity, m/s². `kg = g · J² / (2 · cT²)`, with
 /// `J = B((p/2+1)/(p+1), ½)/(p+1)` = 0.469702. Copied from the same working.
 pub const GRAVITY_WORK_M_S2: f64 = 5.9082861135460726e-6;
-/// Smallest radius the card accepts, m. 0.917 s after the impact by the
-/// card's clock; the wall's speed there is 0.5437 m/s.
-pub const RADIUS_FLOOR_M: f64 = 1.75;
+/// Smallest radius the card accepts, m: where one rounding of `W(R)` in 64
+/// bits, one part in 2^52 of 22 807 J/kg, is a tenth of the ledger's limit,
+/// 0.16213973 m, rounded up at the fourth decimal. The wall's speed there is
+/// 213.6 m/s.
+pub const RADIUS_FLOOR_M: f64 = 0.1622;
 /// Step ceiling, s. About 1600 steps from the floor to the stop.
 pub const GATE_DT_S: f64 = 0.25;
 /// Step ceiling divided by step floor: 2^20.
@@ -139,8 +157,8 @@ pub enum StepReject {
     NonPositiveDt,
     /// A recorded constant is not this crater's.
     InvalidCrater,
-    /// The radius is under 1.75 m, the smallest the card covers.
-    RadiusBelowCard,
+    /// The radius is under 0.1622 m: there the energy the wall has yet to give up is so large that one rounding of it in 64 bits passes a tenth of the ledger's limit, and the ledger cannot tell a right step from a wrong one.
+    RadiusBelowLedgerResolution,
     /// The radius is above 8.571304329477922 m, where this crater stops.
     RadiusAboveFinal,
     /// The wall's speed is below zero. A crater does not shrink in this model.
@@ -342,8 +360,25 @@ impl CraterState {
 ///
 /// A rejected step leaves `state` and `frame` as they were. A stage of the
 /// step that is not finite is [`StepReject::NonFiniteState`].
+///
+/// A value of the landed state below the normal range is written as zero
+/// with its sign ([`crate::normal`]).
 #[must_use]
 pub fn step(
+    crater: &CraterRyuguSci,
+    state: &mut CraterState,
+    frame: &mut LastStateFrame64,
+    load: CraterLoad,
+    dt_s: f64,
+) -> Result<(), StepReject> {
+    step_as_computed(crater, state, frame, load, dt_s)?;
+    normal_or_zero_state(state);
+    Ok(())
+}
+
+/// The step as its equations compute it, before a value of the landed
+/// state below the normal range is written as zero.
+fn step_as_computed(
     crater: &CraterRyuguSci,
     state: &mut CraterState,
     frame: &mut LastStateFrame64,
@@ -359,6 +394,21 @@ pub fn step(
         None => return Err(StepReject::NonFiniteState),
     };
     commit(crater, state, frame, dt_s, advanced)
+}
+
+/// Each value of a landed state below the normal range written as zero
+/// with its sign ([`crate::normal`]): the state carried to the next step
+/// and published holds no subnormal number.
+fn normal_or_zero_state(state: &mut CraterState) {
+    state.t_s = normal_or_zero(state.t_s);
+    state.radius_m = normal_or_zero(state.radius_m);
+    state.wall_speed_m_s = normal_or_zero(state.wall_speed_m_s);
+    state.radius_over_final = normal_or_zero(state.radius_over_final);
+    state.radius_to_go_m = normal_or_zero(state.radius_to_go_m);
+    state.kinetic_j_per_kg = normal_or_zero(state.kinetic_j_per_kg);
+    state.given_up_j_per_kg = normal_or_zero(state.given_up_j_per_kg);
+    state.energy_defect_j_per_kg = normal_or_zero(state.energy_defect_j_per_kg);
+    state.residual_conservation_error = normal_or_zero(state.residual_conservation_error);
 }
 
 fn validate(
@@ -380,7 +430,7 @@ fn validate(
         return Err(StepReject::InvalidCrater);
     }
     if !(state.radius_m >= crater.radius_floor_m) {
-        return Err(StepReject::RadiusBelowCard);
+        return Err(StepReject::RadiusBelowLedgerResolution);
     }
     if !(state.radius_m <= crater.final_radius_m) {
         return Err(StepReject::RadiusAboveFinal);
@@ -448,7 +498,7 @@ fn commit(
     }
     if !(state.radius_m >= crater.radius_floor_m) {
         *state = saved;
-        return Err(StepReject::RadiusBelowCard);
+        return Err(StepReject::RadiusBelowLedgerResolution);
     }
     publish(state, frame);
     Ok(())
@@ -586,9 +636,13 @@ mod tests {
         (got - expected).abs() <= tolerance * expected.abs()
     }
 
+    /// The start the research record's reference run was made from, 1.75 m,
+    /// the card's floor until engine 0.9.
+    const REFERENCE_START_M: f64 = 1.75;
+
     fn start() -> (CraterRyuguSci, CraterState) {
         let crater = CraterRyuguSci::sci_impact();
-        let state = CraterState::try_radius(&crater, RADIUS_FLOOR_M).unwrap();
+        let state = CraterState::try_radius(&crater, REFERENCE_START_M).unwrap();
         (crater, state)
     }
 
@@ -630,7 +684,7 @@ mod tests {
         assert_eq!(crater.final_radius_m.to_bits(), 8.571304329477922_f64.to_bits());
         assert_eq!(crater.growth_power.to_bits(), 5.021920510750073_f64.to_bits());
         assert_eq!(crater.gravity_work_m_s2.to_bits(), 5.9082861135460726e-6_f64.to_bits());
-        assert_eq!(crater.radius_floor_m, 1.75);
+        assert_eq!(crater.radius_floor_m, 0.1622);
         assert_eq!(crater.gate_dt_s, 0.25);
         assert_eq!(crater.residual_conservation_limit, 1.0e-6);
         assert!(within(crater.ledger_scale_j_per_kg(), 5.064171834483174e-5, 1.0e-15));
@@ -643,7 +697,7 @@ mod tests {
                 0 => other.final_radius_m = 7.25,
                 1 => other.growth_power = 5.0,
                 2 => other.gravity_work_m_s2 *= 2.0,
-                3 => other.radius_floor_m = 0.1,
+                3 => other.radius_floor_m = 0.16,
                 4 => other.gate_dt_s = 1.0,
                 5 => other.gate_over_floor = 2.0,
                 _ => other.residual_conservation_limit = 1.0,
@@ -917,9 +971,9 @@ mod tests {
         attempt(&|s| s.radius_m = f64::NAN, GATE_DT_S, StepReject::NonFiniteState);
         attempt(&|s| s.wall_speed_m_s = f64::INFINITY, GATE_DT_S, StepReject::NonFiniteState);
         attempt(&|s| s.t_s = f64::NAN, GATE_DT_S, StepReject::NonFiniteState);
-        attempt(&|s| s.radius_m = 1.7499, GATE_DT_S, StepReject::RadiusBelowCard);
-        attempt(&|s| s.radius_m = 0.0, GATE_DT_S, StepReject::RadiusBelowCard);
-        attempt(&|s| s.radius_m = -3.0, GATE_DT_S, StepReject::RadiusBelowCard);
+        attempt(&|s| s.radius_m = 0.1621, GATE_DT_S, StepReject::RadiusBelowLedgerResolution);
+        attempt(&|s| s.radius_m = 0.0, GATE_DT_S, StepReject::RadiusBelowLedgerResolution);
+        attempt(&|s| s.radius_m = -3.0, GATE_DT_S, StepReject::RadiusBelowLedgerResolution);
         attempt(&|s| s.radius_m = 8.5714, GATE_DT_S, StepReject::RadiusAboveFinal);
         attempt(&|s| s.wall_speed_m_s = -s.wall_speed_m_s, GATE_DT_S, StepReject::WallMovingInward);
         // A step far above the ceiling is not clamped: the ledger names it.
@@ -927,10 +981,11 @@ mod tests {
         // A step so long that a stage leaves the positive numbers.
         attempt(&|_| {}, 1.0e6, StepReject::NonFiniteState);
         // The starting state is refused the same way.
-        for radius_m in [f64::NAN, f64::INFINITY, 1.7499, 0.0, -1.0, 8.5714, 100.0] {
+        for radius_m in [f64::NAN, f64::INFINITY, 0.1621, 0.0, -1.0, 8.5714, 100.0] {
             assert!(CraterState::try_radius(&crater, radius_m).is_none(), "{radius_m}");
         }
         assert!(CraterState::try_radius(&crater, 1.75).is_some());
+        assert!(CraterState::try_radius(&crater, RADIUS_FLOOR_M).is_some());
         assert!(CraterState::try_radius(&crater, FINAL_RADIUS_M).unwrap().stopped);
         proof_intact(&frame);
     }
@@ -974,6 +1029,68 @@ mod tests {
         assert_eq!(frame.flags, FLAG_STOPPED);
         assert_eq!(FLAG_STOPPED, 1);
         proof_intact(&frame);
+    }
+
+    /// The floor is where one rounding of `W` is a tenth of the ledger's
+    /// limit, and it lies outside the projectile and the wall there is slower
+    /// than the projectile.
+    #[test]
+    fn the_floor_is_where_the_ledger_still_resolves_the_wall() {
+        let crater = CraterRyuguSci::sci_impact();
+        let gate = RESIDUAL_CONSERVATION_LIMIT * crater.ledger_scale_j_per_kg();
+        let rounding = |r: f64| -crater.given_up_j_per_kg(r) * f64::EPSILON;
+        assert!(rounding(RADIUS_FLOOR_M) <= 0.1 * gate);
+        assert!(rounding(0.1621) > 0.1 * gate);
+        let a = raised(3.0 * PROJECTILE_MASS_KG / (4.0 * core::f64::consts::PI * PROJECTILE_DENSITY_KG_M3), 1.0 / 3.0);
+        assert!(RADIUS_FLOOR_M > 4.0 * a && RADIUS_FLOOR_M > 1.2 * a);
+        assert!(within(crater.wall_speed_m_s(RADIUS_FLOOR_M), 213.5, 2.0e-3));
+        assert!(crater.wall_speed_m_s(RADIUS_FLOOR_M) < 0.2 * PROJECTILE_SPEED_M_S);
+    }
+
+    /// Where the card stood at 1.75 m, a crater from 0.1622 m, 0.5 m and 1 m
+    /// grows to the same stop under the ledger's limit, in steps that grow
+    /// with the radius to the ceiling; the run from the floor matches the run
+    /// from 1.75 m once it passes 1.75 m in the energy it holds. At the ceiling
+    /// the first step from the floor is refused by the ledger, by name, with
+    /// the state and the frame kept.
+    #[test]
+    fn a_crater_from_the_floor_grows_to_the_same_stop_under_the_ledger() {
+        let crater = CraterRyuguSci::sci_impact();
+        for radius_m in [RADIUS_FLOOR_M, 0.5, 1.0] {
+            let mut state = CraterState::try_radius(&crater, radius_m).unwrap();
+            let mut frame = blank_frame();
+            let mut count = 0_u32;
+            let mut worst: f64 = 0.0;
+            while !state.stopped {
+                let dt_s = if state.wall_speed_m_s > 0.0 {
+                    f64::min(GATE_DT_S, 2.0e-3 * state.radius_m / state.wall_speed_m_s)
+                } else {
+                    GATE_DT_S
+                };
+                step(&crater, &mut state, &mut frame, NO_LOAD, dt_s).unwrap();
+                worst = worst.max(state.residual_conservation_error);
+                count += 1;
+                assert!(count < 20_000, "{radius_m}");
+            }
+            assert!(worst < 0.6 * RESIDUAL_CONSERVATION_LIMIT, "{radius_m}: {worst:e}");
+            assert_eq!(state.radius_m.to_bits(), FINAL_RADIUS_M.to_bits());
+            assert_eq!(frame.flags, FLAG_STOPPED);
+            // The time to the stop is the clock's time, to within a second: the time
+            // before the start is under a millisecond.
+            let clock = CLOCK_CONSTANT * f64::sqrt(FINAL_RADIUS_M / SITE_GRAVITY_M_S2);
+            assert!((state.t_s - clock).abs() < 1.0, "{radius_m}: {}", state.t_s);
+        }
+        let mut state = CraterState::try_radius(&crater, RADIUS_FLOOR_M).unwrap();
+        let before = state_bits(&state);
+        let mut frame = blank_frame();
+        let held = frame.to_bytes();
+        let named = step(&crater, &mut state, &mut frame, NO_LOAD, GATE_DT_S);
+        assert!(
+            core::matches!(named, Err(StepReject::SpontaneousGeneration | StepReject::FirstLawBreach | StepReject::NonFiniteState)),
+            "{named:?}"
+        );
+        assert_eq!(state_bits(&state), before);
+        assert_eq!(frame.to_bytes(), held);
     }
 
     #[test]

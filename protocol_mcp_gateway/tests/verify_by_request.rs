@@ -5,6 +5,7 @@
 //! full-answer forms still answer as before.
 
 mod hosted_support;
+use hosted_support::answer_text;
 
 use std::io::{BufRead, BufReader};
 use std::process::{Child, Command, Stdio};
@@ -65,11 +66,14 @@ async fn post(base: &str, tool: &str, body: &Value) -> (u16, String) {
     let response = reqwest::Client::new()
         .post(format!("{base}/{tool}"))
         .header(reqwest::header::CONTENT_TYPE, "application/json")
-        .body(body.to_string())
+        .body(answer_text::as_sent(body))
         .send()
         .await
         .unwrap();
-    (response.status().as_u16(), response.text().await.unwrap())
+    let status = response.status().as_u16();
+    let text = response.text().await.unwrap();
+    answer_text::remember(&text);
+    (status, text)
 }
 
 fn run_request(ambient: Value) -> Value {
@@ -150,7 +154,7 @@ async fn a_check_by_request_gives_the_same_bytes_on_every_connection() {
             assert!(!holds || answer.get("not_held").is_none(), "{local}");
             assert!(holds || !local.contains(&given), "{tool} {label}: the seal came back: {local}");
             assert_eq!(answer["cause"], if holds { Value::Null } else { json!(seal_key) }, "{tool} {label}");
-            assert!(answer["checked"].as_str().unwrap().contains("310 and 310.0"), "{local}");
+            assert!(answer["compared"].as_str().unwrap().contains("310 and 310.0"), "{local}");
 
             let (status, over_web) = post(&base, tool, arguments).await;
             assert_eq!((status, over_web.as_str()), (200, local.as_str()), "{tool} {label} web");
@@ -184,7 +188,7 @@ fn a_run_and_a_solve_check_by_request_give_the_receipt_of_the_answer_sent_in_the
     assert_eq!(report["holds"], json!(true), "{text}");
     assert_eq!(report["recomputed_receipt_sha256"], solved["receipt_sha256"], "{text}");
     let keys: Vec<&str> = report.as_object().unwrap().keys().map(String::as_str).collect();
-    assert_eq!(keys, ["holds", "cause", "recomputed_solution_seal", "recomputed_receipt_sha256", "checked", "text_not_compared"]);
+    assert_eq!(keys, ["holds", "cause", "recomputed_solution_seal", "recomputed_receipt_sha256", "compared", "text_not_compared"]);
 }
 
 #[test]
@@ -232,52 +236,60 @@ fn a_check_by_request_is_refused_as_the_tool_that_computes_would_refuse_it() {
     let (error, text) = stdio.tool("verify_tape", &json!({ "request": run_request(json!(310.0)), "run_seal": "AB".repeat(32) }));
     assert_eq!((error, text.as_str()), (true, "Physical Violation: 'run_seal' must be 64 lowercase hex digits."));
     let (error, text) = stdio.tool("verify_solution", &json!({ "request": solve_request() }));
-    assert_eq!((error, text.as_str()), (true, "Missing required parameter: 'solution_seal'"));
+    assert_eq!((error, text.as_str()), (true, "Missing required parameter: 'solution_seal' (InputMissing)."));
     let (error, text) = stdio.tool("verify_tape", &json!({ "request": run_request(json!(310.0)), "run_seal": seal, "frames": [] }));
     assert!(error);
-    assert_eq!(text, "Physical Violation: 'frames' is not a field of a check by request: send 'request' and 'run_seal' alone, or the whole run_trajectory answer without 'request'.");
+    assert_eq!(text, "Physical Violation: 'frames' is not a field of a verification by request: send 'request' and 'run_seal' alone, or the whole run_trajectory answer without 'request'.");
     let (error, text) = stdio.tool("verify_dataset", &json!({ "request": dataset_request(), "dataset_seal": seal, "head": {} }));
     assert!(error);
-    assert!(text.starts_with("Physical Violation: 'head' is not a field of a check by request"), "{text}");
+    assert!(text.starts_with("Physical Violation: 'head' is not a field of a verification by request"), "{text}");
 
     // The request sent under the answer's own name is pointed to 'request'.
     let (error, text) = stdio.tool("verify_tape", &json!({ "inputs": run_request(json!(310.0)), "run_seal": seal }));
     assert!(error);
-    assert!(text.starts_with("Missing required parameter: 'frames'. A check by request sends the request under 'request'"), "{text}");
+    assert!(text.starts_with("Missing required parameter: 'frames' (InputMissing). A verification by request sends the request under 'request'"), "{text}");
 }
 
 #[test]
-fn the_check_of_a_whole_solution_says_what_it_did_not_check() {
+fn the_verification_of_a_whole_solution_says_what_it_did_not_compare() {
     let mut stdio = Stdio2::start(None);
     let (_, solved) = stdio.tool("solve", &solve_request());
     let mut answer = parsed(&solved);
     let (_, text) = stdio.tool("verify_solution", &answer);
     let report = parsed(&text);
     assert_eq!(report["holds"], json!(true), "{text}");
-    let checked = report["checked"].as_str().unwrap();
-    assert!(checked.starts_with("Only the exact hex values and the seals were checked: the decimal copies of the values and the receipt were not"), "{checked}");
-    // A decimal changed: the whole-answer check still holds, and says why.
+    let compared = report["compared"].as_str().unwrap();
+    // Since 0.11.0 the whole answer is compared, its decimals and its receipt
+    // included; since 0.12.0 its request is solved again and the engine's
+    // answer compared byte for byte, and the sentence says so.
+    assert!(compared.starts_with("The solution seal and each of its parts were recomputed from the answer's exact hex values. Then its request, the answer's inputs, was solved again under a physics permit"), "{compared}");
+    assert!(compared.contains("value by value, and then byte for byte, its words, decimals and receipt included"), "{compared}");
+    // A decimal changed: the seal holds, and the decimal is named.
     let result = answer["result"].as_object_mut().unwrap();
     let name = result.keys().find(|key| !key.ends_with("_hex") && result[*key].is_f64()).unwrap().clone();
     result[&name] = json!(result[&name].as_f64().unwrap() * 2.0);
     let (_, text) = stdio.tool("verify_solution", &answer);
-    assert_eq!(parsed(&text)["holds"], json!(true), "{text}");
+    let report = parsed(&text);
+    assert_eq!((report["holds"].clone(), report["cause"].clone(), report["differs_at"].clone()), (json!(false), json!("answer_text"), json!(format!("result.{name}"))), "{text}");
 }
 
 #[test]
 fn the_descriptions_lead_with_the_short_form_and_name_the_receipt_rule() {
     let listed = stdio_tools();
+    // Since 0.10.1 each opens with what the tool does, and the worked example,
+    // whose length follows the worked request, is said at the request input.
     for (tool, lead) in [
-        ("verify_tape", "Check a run's seal. Short form, which needs only what is short"),
-        ("verify_solution", "Check a solution's seal. Short form, which needs only what is short"),
-        ("verify_dataset", "Check a dataset's seal. Short form, which needs only what is short"),
+        ("verify_tape", "Verifies the seal of a run. Short form"),
+        ("verify_solution", "Verifies the seal of a solution. Short form"),
+        ("verify_dataset", "Verifies the seal of a dataset. Short form"),
     ] {
-        let text = listed[tool].as_str().unwrap();
+        let text = listed[tool]["description"].as_str().unwrap();
         assert!(text.starts_with(lead), "{tool}: {text}");
-        assert_eq!(text.matches("Worked example: {\"request\":").count(), 1, "{tool}: {text}");
+        let at_request = listed[tool]["inputSchema"]["properties"]["request"]["description"].as_str().unwrap();
+        assert_eq!(at_request.matches("Worked example of the short form, as the whole arguments: {\"request\":").count(), 1, "{tool}: {at_request}");
     }
     for tool in ["verify_receipt", "solve"] {
-        assert!(listed[tool].as_str().unwrap().contains("310 and the same request sent with 310.0 give different receipts and the same seal"), "{tool}");
+        assert!(listed[tool]["description"].as_str().unwrap().contains("310 and the same request sent with 310.0 give different receipts and the same seal"), "{tool}");
     }
 }
 
@@ -305,6 +317,60 @@ fn stdio_tools() -> serde_json::Map<String, Value> {
         .as_array()
         .unwrap()
         .iter()
-        .map(|tool| (tool["name"].as_str().unwrap().to_string(), tool["description"].clone()))
+        .map(|tool| (tool["name"].as_str().unwrap().to_string(), tool.clone()))
         .collect()
+}
+
+/// The long form holds the answer sent byte for byte, on the local, the web
+/// and the open connection alike: the solve's answer as it came holds; the
+/// same answer with its first decimal spelled another way (the same 64-bit
+/// number), with its outcome written with a unicode escape, or with its
+/// receipt worked out again over a re-spelled text does not, and each is
+/// named where it differs. The three connections give the same bytes.
+#[tokio::test]
+async fn the_long_form_holds_the_bytes_sent_on_every_connection() {
+    let base = web().await;
+    let open = Open::start();
+    let mut local = Stdio2::start(None);
+    let (_, honest) = local.tool("solve", &json!({ "solver": "atom_dft", "parameters": { "atomic_number": 1 } }));
+    let answer: Value = serde_json::from_str(&honest).unwrap();
+    let value = answer["result"]["total_energy_ha"].as_f64().unwrap();
+    let at = honest.find("\"total_energy_ha\":").unwrap() + "\"total_energy_ha\":".len();
+    let end = at + honest[at..].find(',').unwrap();
+    let respelled = format!("{}{:.25e}{}", &honest[..at], value, &honest[end..]);
+    assert_ne!(respelled, honest);
+    let escaped = honest.replacen("\"outcome\":\"converged\"", "\"outcome\":\"\\u0063onverged\"", 1);
+    assert_ne!(escaped, honest);
+    let resigned = {
+        let tail = ",\"receipt_sha256\":\"";
+        let cut = respelled.rfind(tail).unwrap();
+        format!("{}{tail}{}\"}}", &respelled[..cut], sha(&format!("{}}}", &respelled[..cut])))
+    };
+    // Since values_hold: the first three hold every value, the last carries a receipt that is not the engine's.
+    for (label, text, expected) in [
+        ("as it came", honest.clone(), (json!(true), json!(true), Value::Null, Value::Null)),
+        ("a decimal spelled another way", respelled, (json!(false), json!(true), json!("answer_text"), json!("result.total_energy_ha"))),
+        ("the outcome with an escape", escaped, (json!(false), json!(true), json!("answer_text"), json!("outcome"))),
+        ("re-spelled and its receipt worked out again", resigned, (json!(false), json!(false), json!("answer_text"), json!("receipt_sha256"))),
+    ] {
+        let (error, on_local) = local.tool_raw("verify_solution", &text);
+        assert!(!error, "{label}: {on_local}");
+        let on_web = reqwest::Client::new()
+            .post(format!("{base}/verify_solution"))
+            .header(reqwest::header::CONTENT_TYPE, "application/json")
+            .body(text.clone())
+            .send()
+            .await
+            .unwrap()
+            .text()
+            .await
+            .unwrap();
+        let body = format!("{{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{{\"name\":\"verify_solution\",\"arguments\":{text}}}}}");
+        let reply = parse_reply(&raw(open.port, &request_bytes(None, &body), 120));
+        let (_, on_open) = tool_result(&reply);
+        assert_eq!(on_local, on_web, "{label}");
+        assert_eq!(on_local, on_open, "{label}");
+        let report: Value = serde_json::from_str(&on_local).unwrap();
+        assert_eq!((report["holds"].clone(), report["values_hold"].clone(), report["cause"].clone(), report["differs_at"].clone()), expected, "{label}: {report}");
+    }
 }

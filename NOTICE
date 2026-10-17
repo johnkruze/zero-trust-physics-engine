@@ -18,7 +18,7 @@ This file names the code and the numbers of other people that the source
 holds. Each entry says what it is, whose it is, where it sits, whether the
 code needs it or only a test does, and the licence in the source's own words.
 "The source states no licence" means the source's own file or page states
-none. No entry is in genesis_seal or genesis_seal_parquet.
+none. No entry is in genesis_seal_parquet.
 
 ------------------------------------------------------------------------------
 Third-party code
@@ -27,12 +27,28 @@ Third-party code
 genesis_kernel/src/math.rs
   Functions taken from rust-lang/libm, version 0.2.16, used under the MIT
   licence, which derive from musl libc and FreeBSD msun (Sun Microsystems and
-  others). The licence text and every copyright notice are kept in that file.
+  others), and cbrt from CORE-MATH (Copyright (c) 2021-2022 Alexei
+  Sibidanov; ported to Rust by Trevor Gross), also under the MIT licence.
+  The licence text and every copyright notice are kept in that file.
   The code needs it.
 
 ------------------------------------------------------------------------------
 Third-party data
 ------------------------------------------------------------------------------
+
+genesis_seal
+============
+
+vectors/ed25519.txt
+  RFC 8032 (Josefsson and Liusvaara, 2017), section 7.1: the five Ed25519
+  test vectors. Copyright (c) 2017 IETF Trust and the persons identified as
+  the document authors.
+  The twelve cases of "Taming the many EdDSAs" (Chalkias, Garillot and
+  Nikolaenko, 2020), https://github.com/novifinancial/ed25519-speccheck,
+  cases.json. Licence: Apache License, Version 2.0.
+  Only a test reads them (tests/ed25519_vectors.rs). The verification of a
+  signed load itself is ed25519-dalek's and curve25519-dalek's (BSD-3-Clause),
+  dependencies whose code is not in the source.
 
 genesis_kernel
 ==============
@@ -86,6 +102,30 @@ src/link_gothenburg_10010.rs
   in tests the coefficients of its Tables 2 and 4 for vertical polarisation
   and four values of its Table 5. The source states no licence; its page reads
   "Copyright © ITU 2008 All Rights Reserved".
+
+src/tokamak_vde_mast.rs
+  Jackson, S.; Khan, S.; Cummings, N.; Hodson, J.; de Witt, S.; Pamela, S.;
+  Akers, R.; Thiyagalingam, J.; the MAST Team (2024). FAIR-MAST: A fusion
+  device data management system. SoftwareX 27, 101869.
+  https://doi.org/10.1016/j.softx.2024.101869 ; and the same authors (2025),
+  IEEE Transactions on Plasma Science, https://doi.org/10.1109/TPS.2025.3583419
+  (UKAEA and the MAST Team). MAST shot 15045, level 2.
+  In the source: constants derived from the data by the company (the plasma's
+  current and mass, one wall circuit and the P6 circuit, two contact heights,
+  the Alfven speed, and four Chebyshev series of 124 numbers in the
+  displacement), which the code needs. No measured trace is stored.
+  Licence of the data set: Creative Commons Attribution Share Alike 4.0
+  International (https://creativecommons.org/licenses/by-sa/4.0). The derived
+  constants are shared under the same licence, with this attribution.
+  Source: FAIR-MAST level 2,
+  https://s3.echo.stfc.ac.uk/mast/level2/shots/15045.zarr/
+  Changes: the numbers are the company's derivation from the data, not the
+  measured data. The same derived constants, and single values of the shot,
+  are also in protocol_mcp_gateway/src/descriptor.rs (TOKAMAK_VDE_MAST_DATA)
+  and protocol_mcp_gateway/tests/tokamak_vde_mast_router.rs.
+  Only these constants are under CC BY-SA 4.0; the code around them is under
+  the Apache License 2.0. The data are provided as-is, without warranties, as
+  section 5 of CC BY-SA 4.0 states.
 
 src/grid_gb.rs
   National Energy System Operator, System Frequency,
@@ -564,6 +604,44 @@ src/culture_trichoderma_ambr250_reference.rs
   eleven times) and the operating records of the eight fitted cultures.
   Licence: Creative Commons Attribution 4.0 International.
 
+src/ln2_line_dlr_fttf.rs
+src/ln2_nitrogen.rs
+src/ln2_nitrogen_nist.tsv
+  Klein, S.; Traudt, T.; Deeken, J. (2025). Liquid Nitrogen Fluid Hammer:
+  PS-LN2-Set1 (Version 1.0.0) [Data set]. Zenodo.
+  https://doi.org/10.5281/zenodo.15526459 (DLR Institute of Space
+  Propulsion, Lampoldshausen).
+  In the source: the line's geometry and stations, the valve's measured
+  stroke, and three constants fitted to three of its tests (a roughness and
+  two of the valve), which the code needs; and, in tests, the scored values
+  of its six held-back tests. src/water_hammer_oil_line.rs holds the overview
+  table's steady and surge values of its nine tests, in a test only.
+  Licence of the data set: Creative Commons Attribution 4.0 International
+  (https://creativecommons.org/licenses/by/4.0).
+  The table src/ln2_nitrogen_nist.tsv, 43 isotherms of liquid nitrogen's
+  density, speed of sound and viscosity and its vapour pressure, which the
+  code needs, is from the NIST Chemistry WebBook, cited as it asks: Eric W.
+  Lemmon, Ian H. Bell, Marcia L. Huber, and Mark O. McLinden,
+  "Thermophysical Properties of Fluid Systems" in NIST Chemistry WebBook,
+  NIST Standard Reference Database Number 69, Eds. P.J. Linstrom and W.G.
+  Mallard, National Institute of Standards and Technology, Gaithersburg MD,
+  20899, https://doi.org/10.18434/T4D303, (retrieved 14 October 2026). It
+  evaluates the equation of state of Span, Lemmon, Jacobsen, Wagner and
+  Yokozeki (2000), J. Phys. Chem. Ref. Data 29(6), 1361-1433,
+  https://doi.org/10.1063/1.1349047 , and the viscosity of Lemmon and
+  Jacobsen (2004), Int. J. Thermophys. 25, 21-69,
+  https://doi.org/10.1023/B:IJOT.0000022327.04529.f3 ; their melting line's
+  two constants are in the source too. The WebBook's page reads: "© 2026 by
+  the U.S. Secretary of Commerce on behalf of the United States of America.
+  All rights reserved." (the same page as accumulator_sbo450's entry above).
+  Five coefficients of the fit of Young's modulus of 304 stainless steel
+  from 57 to 293 K, which the code needs, are from NIST, Material
+  Properties: 304 Stainless (UNS S30400), NIST Cryogenic Material
+  Properties Database,
+  https://trc.nist.gov/cryogenics/materials/304Stainless/304Stainless_rev.htm
+  (retrieved 14 October 2026). The licence words of that page were not
+  recorded when it was read; they are to be read again before a release.
+
 src/step_flow_armaly.rs
   Erturk, E. (2008). Numerical solutions of 2-D steady incompressible flow
   over a backward-facing step, Part I: High Reynolds number solutions.
@@ -577,6 +655,39 @@ src/step_flow_armaly.rs
   Erturk: the source states no licence; the copy read is marked "(c) 2007
   Elsevier Ltd, all rights reserved". Armaly and others: "© 1983 Cambridge
   University Press".
+
+src/air11.rs
+src/plasma_sheath_ram_c2.rs
+(and protocol_mcp_gateway: src/solver_plasma_sheath_ram_c2.rs,
+ tests/plasma_sheath_ram_c2_router.rs)
+  Thermodynamic coefficients copied from thermo.inp, the database of NASA's
+  CEA code (https://github.com/nasa/cea, data/thermo.inp, commit
+  985fd33368b2334c4162a586c499e0ab41d12bd3), generated from it by script:
+  the nine-coefficient fits of the eleven species of air, 297 numbers, which
+  the code needs. Their form is NASA/TP-2002-211556 (McBride, Zehe and
+  Gordon), NTRS 20020085330, marked "GOV_PUBLIC_USE_PERMITTED". Used under
+  the Apache License, Version 2.0. The notice of CEA: "Copyright (c) 2025,
+  United States Government as represented by the Administrator of the
+  National Aeronautics and Space Administration. Licensed under the Apache
+  License, Version 2.0."
+  Dunn, M. G. and Kang, S.-W. (1973). Theoretical and Experimental Studies of
+  Reentry Plasmas. NASA CR-2232: the 26 reactions of its Table I and their
+  rate constants, which the code needs. Grantham, W. L. (1970). Flight
+  Results of a 25 000-Foot-Per-Second Reentry Experiment Using Microwave
+  Reflectometers to Measure Plasma Electron Density and Standoff Distance.
+  NASA TN D-6062, https://ntrs.nasa.gov/citations/19710004000 : the vehicle
+  and its stations (Tables I and III) and the reflectometer bands, which the
+  code needs, and in tests the trajectory and the onset altitudes (Tables IX
+  and X). U.S. Standard Atmosphere, 1962 (NASA, USAF, U.S. Weather Bureau),
+  NTRS 19630003300: its constants and layers, which the code needs, and in
+  tests its printed tables. Huber, P. W. (1963). Hypersonic Shock-Heated Flow
+  Parameters for Velocities to 46,000 Feet per Second and Altitudes to
+  323,000 Feet. NASA TR R-163, NTRS 19640014678: one row of its Table IV, in
+  a test only. Works of the United States Government; the NTRS records of
+  TP-2002-211556, TR R-163, the 1962 standard, TN D-6062 and CR-2232
+  (19730013358) read "GOV_PUBLIC_USE_PERMITTED" (evidence/research/
+  hgv_plasma_ramc2/raw/SOURCES.md and scout_2026-10-14/hgv_plasma/raw/
+  SOURCES.md).
 
 protocol_mcp_gateway
 ====================

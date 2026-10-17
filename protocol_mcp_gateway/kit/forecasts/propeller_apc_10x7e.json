@@ -1,0 +1,43 @@
+{
+ "model": "propeller_apc_10x7e",
+ "verdict": "missed",
+ "protocol": {
+  "path": "evidence/research/propeller_apc_thin_electric_10x7/analysis/prereg.json",
+  "sha256": "dbe10f7246bea774fc7fb9d64e4c4173efad6d08a0d2530bbd239c30392b86d2",
+  "committed": {
+   "crate": "protocol_mcp_gateway",
+   "commit": "9a1a01f501f2855af47bfc819a2ee774f5e30422",
+   "utc": "2026-10-09T21:30:18Z",
+   "how": "The diff of 'Serve propeller_apc_10x7e as the third solver ... a validation record that states the two fitted constants and that the held-back measurements are not yet compared' adds HELD_BACK_RESULT 'Not yet compared with the held-back measurements: this is the solver as frozen for that comparison ... (SHA-256 of the protocol record dbe10f72...2b86d2)'."
+  }
+ },
+ "held_back": [
+  {
+   "path": "evidence/research/propeller_apc_thin_electric_10x7/raw/apce_10x7_pg0816_6015.txt",
+   "sha256": "3a2c0217fda81bdf10c054ce55e1821ffebf674fd869944d4f4c9cfd2bbfeb24"
+  },
+  {
+   "path": "evidence/research/propeller_apc_thin_electric_10x7/raw/apce_10x7_pg0815_6020.txt",
+   "sha256": "0b4db99396e5e9fec47950fcd082e585fb530c430d8e3f9ff039d4ae7f7ef16d"
+  },
+  {
+   "path": "evidence/research/propeller_apc_thin_electric_10x7/raw/apce_10x7_pg0818_6519.txt",
+   "sha256": "2a22ec9c14716249e46ceb16ff3146d7a3f9706a9ec979d28a9bb4c3bcd81da0"
+  },
+  {
+   "path": "evidence/research/propeller_apc_thin_electric_10x7/raw/apce_10x7_pg0817_6531.txt",
+   "sha256": "128215766526442a355d134534f00fccf2f9a296951c5d279e785ddf15670959"
+  },
+  {
+   "path": "evidence/research/propeller_apc_thin_electric_10x7/raw/apce_10x7_static_pg0811.txt",
+   "sha256": "736915625a2541d2b083053767a86e605f1650a7f676d30d1db7e7e827eeb9d1"
+  }
+ ],
+ "scored": {
+  "utc": "2026-10-09T21:35:26Z",
+  "evidence": "Birth time of evidence/research/propeller_apc_thin_electric_10x7/analysis/out/09_held_back.log (14:35:26 PDT); analysis/09_engine_comparison_frozen_sha256.txt, frozen at 21:35:26Z 'before the held-back files were read', names the binary as built from protocol_mcp_gateway 9a1a01f, the committed solver."
+ },
+ "forecast_first": "held",
+ "registered_by": "backfill from the record, 2026-10-15",
+ "notes": "Committed 5 min 8 s before the held-back run, and the held-back binary was built from that commit; prereg.json on disk still has the committed hash, and every hash it holds (validation_protocol.md 9b6561a5..., the data files, bem.py, common.py, 04_forecast.py) matches the disk. Outside Git: analysis/prereg_hash.txt at 2026-10-09T21:02:45Z. The held-back sweeps were downloaded into raw/ at 20:54:05Z, before the hash; the seal is procedural. validation_protocol_note_1.md (630651a4..., 22:21:29Z) was written after the scoring and the second scoring, records trial fits made before the fingerprint that the protocol does not mention, and changes no mark; it is in no commit. Second party: evidence/verification/second_party/V-27/. Commit times are the committer's clock. Public mark: GitHub-signed commit 9bc49a23f0b61c59dd08d2c97503400994a8090f at 2026-10-13T17:56:01Z."
+}

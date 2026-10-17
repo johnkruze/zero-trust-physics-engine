@@ -12,6 +12,9 @@ use std::time::Duration;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 
+#[path = "../answer_text/mod.rs"]
+pub mod answer_text;
+
 static COUNTER: AtomicUsize = AtomicUsize::new(0);
 
 pub fn scratch(name: &str) -> PathBuf {
@@ -111,17 +114,23 @@ pub fn request_bytes(key: Option<&str>, body: &str) -> Vec<u8> {
     head.into_bytes()
 }
 
+/// A tools/call message, with every answer the engine gave inside its
+/// arguments written as it came (`answer_text`).
 pub fn tool_body(id: u64, tool: &str, arguments: &Value) -> String {
-    json!({"jsonrpc":"2.0","id":id,"method":"tools/call","params":{"name":tool,"arguments":arguments}}).to_string()
+    format!(
+        "{{\"jsonrpc\":\"2.0\",\"id\":{id},\"method\":\"tools/call\",\"params\":{{\"name\":{},\"arguments\":{}}}}}",
+        serde_json::to_string(tool).unwrap(),
+        answer_text::as_sent(arguments)
+    )
 }
 
-/// `(is_error, text)` of a tool answer.
+/// `(is_error, text)` of a tool answer. An answer is remembered, so it is
+/// sent back as it came.
 pub fn tool_result(reply: &Reply) -> (bool, String) {
     let value: Value = serde_json::from_str(&reply.body).unwrap_or_else(|_| panic!("not JSON: {reply:?}"));
-    (
-        value["result"]["isError"] == json!(true),
-        value["result"]["content"][0]["text"].as_str().unwrap_or("").to_string(),
-    )
+    let text = value["result"]["content"][0]["text"].as_str().unwrap_or("").to_string();
+    answer_text::remember(&text);
+    (value["result"]["isError"] == json!(true), text)
 }
 
 pub struct Hosted {
@@ -213,21 +222,37 @@ impl Stdio2 {
         self.next += 1;
         let answer = self.line(&tool_body(self.next, tool, arguments));
         let value: Value = serde_json::from_str(&answer).unwrap();
-        value["result"]["content"]
+        let blocks: Vec<String> = value["result"]["content"]
             .as_array()
             .map(|blocks| blocks.iter().map(|block| block["text"].as_str().unwrap_or("").to_string()).collect())
-            .unwrap_or_default()
+            .unwrap_or_default();
+        blocks.iter().for_each(|block| answer_text::remember(block));
+        blocks
     }
 
-    /// `(is_error, text)`.
+    /// `(is_error, text)` of a call whose arguments are the text given, byte
+    /// for byte.
+    pub fn tool_raw(&mut self, tool: &str, arguments_text: &str) -> (bool, String) {
+        self.next += 1;
+        let line = format!(
+            "{{\"jsonrpc\":\"2.0\",\"id\":{},\"method\":\"tools/call\",\"params\":{{\"name\":{},\"arguments\":{arguments_text}}}}}",
+            self.next,
+            serde_json::to_string(tool).unwrap()
+        );
+        let answer = self.line(&line);
+        let value: Value = serde_json::from_str(&answer).unwrap();
+        let text = value["result"]["content"][0]["text"].as_str().unwrap_or("").to_string();
+        (value["result"]["isError"] == json!(true), text)
+    }
+
+    /// `(is_error, text)`. An answer is remembered, so it is sent back as it came.
     pub fn tool(&mut self, tool: &str, arguments: &Value) -> (bool, String) {
         self.next += 1;
         let answer = self.line(&tool_body(self.next, tool, arguments));
         let value: Value = serde_json::from_str(&answer).unwrap();
-        (
-            value["result"]["isError"] == json!(true),
-            value["result"]["content"][0]["text"].as_str().unwrap_or("").to_string(),
-        )
+        let text = value["result"]["content"][0]["text"].as_str().unwrap_or("").to_string();
+        answer_text::remember(&text);
+        (value["result"]["isError"] == json!(true), text)
     }
 }
 

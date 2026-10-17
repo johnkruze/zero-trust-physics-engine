@@ -27,7 +27,7 @@
 //! | Conductivity, char | TACOT 3.0's curve times 0.745 | **fitted** to four arc-jet thermocouple records; see [`CHAR_CONDUCTIVITY_SCALE`] |
 //! | Emissivity | 0.8 virgin (TACOT), 0.9 char (Milos and Chen 2010) | |
 //! | Conductivity against pressure (from version 3 on) | virgin falls by 0.042 and char by 0.024 W/m/K between 1 atm and 0.001 atm at room temperature | Monk and others 2022, Table 3; see [`VIRGIN_DROP_1_ATM_TO_0P001_ATM_W_PER_M_K`] |
-//! | Above 3333 K, where TACOT's tables stop | specific heat held; conductivity continued along its last straight line to 3975 K. Not measured; the served entry refuses a PICA run above `ablator_slab::COMPARED_TEMPERATURE_MAX_K`, the hottest compared run | see [`TABLE_TOP_K`] |
+//! | Above 3333 K, where TACOT's tables stop | specific heat held; conductivity continued along its last straight line to 3975 K. Not measured; no compared run went above `ablator_slab::COMPARED_TEMPERATURE_MAX_K`, about 3412 K, and a run above 3975 K is refused as `TemperatureOutOfBounds` | see [`TABLE_TOP_K`] |
 //! | Surface chemistry | the stream's gas with TACOT's decomposition gas, 23 pressures from 0.00001 to 1 atm | computed from NASA's open thermodynamic file: for air by the table code in `evidence/research/heatshield_surface_model`, locked in `surface_air_tacotgas.bin`; for any other stream of oxygen, nitrogen and argon by the same calculation in `wall_gas.rs` when a question asks for it |
 
 use crate::ablator_slab::{GasBesideUnusedOxygen, Material, PoreGas, ResinPart, SurfaceOptions};
@@ -68,8 +68,9 @@ pub const RESIN_ENTHALPY_AT_298_K_J_PER_KG: f64 = -2.0e6;
 /// classical limit for carbon, 2078), so it is held. Conductivity in a
 /// porous char at these temperatures is carried mostly by radiation between
 /// fibres and keeps rising, so its last straight line is continued. No
-/// measurement stands above 3333 K; the served entry refuses a PICA run
-/// above `ablator_slab::COMPARED_TEMPERATURE_MAX_K`, about 3412 K.
+/// measurement stands above 3333 K, and no compared run went above
+/// `ablator_slab::COMPARED_TEMPERATURE_MAX_K`, about 3412 K. A run above this
+/// top is refused by name.
 pub const TABLE_TOP_K: f64 = 3975.0;
 
 /// Version 3: conductivity that depends on pressure.

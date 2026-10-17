@@ -1,0 +1,16 @@
+{
+ "model": "cell_18650pf",
+ "verdict": "met",
+ "protocol": {
+  "path": "evidence/research/panasonic_18650pf/analysis/prereg.json",
+  "sha256": "045d5e3ac26e1e2a73d2745a5ec3d361296b4256a92ecc6c67b2f1f7a166e622",
+  "committed": null
+ },
+ "scored": {
+  "utc": "2026-10-06T17:06:29Z",
+  "evidence": "Birth time of evidence/research/panasonic_18650pf/analysis/out/06_engine_comparison_sealed.log (10:06:29 PDT), the sealed engine run on the eleven held-back 1C discharges, whose first line names prereg_sha256 045d5e3a...; an earlier attempt stopped before scoring. The forecast outside the engine (analysis/out/forecast.json, born 2026-10-06T03:34:51Z) scored only 3349_Dis1C_1.mat, a test held back from fitting and opened for the forecast, not one of the eleven."
+ },
+ "forecast_first": "not shown",
+ "registered_by": "backfill from the record, 2026-10-15",
+ "notes": "No commit in genesis_kernel, genesis_solvers or protocol_mcp_gateway carries 045d5e3a (prereg.json) or bef6f5d8 (validation_protocol.md); the served pass line states no hash. Outside Git: prereg.json born 2026-10-06T03:33:22Z and its hash written in validation_protocol.md (born 03:43:19Z), file times on one machine only; the protocol itself says the folder is not under version control. Not a committed fingerprint: the mark was posted to github.com/johnkruze/zero-trust-physics-pass-marks with this SHA-256 in GitHub-signed commit 400b7cafdadc6aed877a8db66f5011a9d6fb727f at 2026-10-13T17:54:54Z, after the scoring. Later comparisons: a second scoring at the protocol's 1 s step (capacity +0.014 percent) and a comparison on 2026-10-10 with a held 0.87 A discharge outside the protocol's held-back set, under its own rule evidence/research/panasonic_18650pf/held_0p87A_comparison/RULE.md (written 2026-10-10 before the run; no hash of it in any commit), which missed. Second party repeat: evidence/verification/second_party/V-07. The pass line's text, with no hash, first enters a commit in protocol_mcp_gateway 5fe78e256745fbafda10971bf539f9b30acef726 at 2026-10-07T20:15:14Z, after the scoring."
+}

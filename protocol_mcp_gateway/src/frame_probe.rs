@@ -148,9 +148,13 @@ async fn the_published_layout_reads_the_frames_of_a_real_run_on_every_card() {
         let rule = description["frame_rule"].as_str().unwrap();
         assert!(rule.contains(FRAME_ROUNDING_SENTENCE), "{}", card.card);
         let label = description["time_label"].as_str().unwrap();
-        assert!(label.starts_with(TIME_LABEL_SENTENCE), "{}", card.card);
+        if descriptor::COMPENSATED_CLOCKS.contains(&card.card) {
+            assert_eq!(label, descriptor::COMPENSATED_TIME_LABEL_SENTENCE, "{}", card.card);
+        } else {
+            assert!(label.starts_with(TIME_LABEL_SENTENCE), "{}", card.card);
+        }
     }
-    assert_eq!(checked, 62);
+    assert_eq!(checked, 74);
 }
 
 /// Ten steps of 0.1 s read 0.9999999999999999 s: the sentence is true.

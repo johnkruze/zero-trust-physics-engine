@@ -2,6 +2,8 @@
 //! `genesis_solvers`, its refusals at the door, and `POST /verify_solution`
 //! against edits of a sealed solution.
 
+mod answer_text;
+
 use std::time::Duration;
 
 use genesis_solvers::propeller_apc_10x7e::{self as propeller, PropellerQuestion};
@@ -24,7 +26,7 @@ async fn spawn_app() -> String {
 async fn post(base: &str, path: &str, body: &Value) -> (u16, String) {
     let client = Client::new();
     let url = format!("{base}{path}");
-    let text = serde_json::to_string(body).unwrap();
+    let text = answer_text::as_sent(body);
     let mut last_error = None;
     for _ in 0..20 {
         match client
@@ -36,7 +38,9 @@ async fn post(base: &str, path: &str, body: &Value) -> (u16, String) {
         {
             Ok(response) => {
                 let status = response.status().as_u16();
-                return (status, response.text().await.unwrap());
+                let text = response.text().await.unwrap();
+                answer_text::remember(&text);
+                return (status, text);
             }
             Err(error) => {
                 last_error = Some(error);
@@ -138,32 +142,36 @@ async fn a_moving_and_a_resting_propeller_match_the_solver_bit_for_bit() {
 async fn a_question_outside_the_range_is_refused_by_name_with_no_seal() {
     let base = spawn_app().await;
     for (request, name) in [
-        (ask(4006.0, 8.0, 1.225), "RotationalSpeedOutOfRange"),
-        (ask(6532.0, 8.0, 1.225), "RotationalSpeedOutOfRange"),
-        (ask(4100.0, 0.0, 1.225), "RotationalSpeedOutOfRange"),
-        (ask(6600.0, 0.0, 1.225), "RotationalSpeedOutOfRange"),
+        (ask(0.0, 8.0, 1.225), "RotationalSpeedNotPositive"),
+        (ask(-100.0, 8.0, 1.225), "RotationalSpeedNotPositive"),
+        // At rest at 1.225 kg/m³ the Reynolds band holds about 4014 to 6828 rev/min.
+        (ask(3900.0, 0.0, 1.225), "ReynoldsNumberOutOfRange"),
+        (ask(7000.0, 0.0, 1.225), "ReynoldsNumberOutOfRange"),
+        // Past the top, about 7676 rev/min, the tip passes Mach 0.3 with the air still.
+        (ask(7677.0, 0.0, 0.9), "TipMachAboveIncompressible"),
         (ask(4007.0, 1.8829, 1.225), "ReynoldsNumberOutOfRange"),
         (ask(4500.0, 4.8, 1.0), "ReynoldsNumberOutOfRange"),
         (ask(6500.0, 8.0, 1.3), "ReynoldsNumberOutOfRange"),
-        (ask(5000.0, 8.0, 0.9), "AirDensityOutOfRange"),
-        (ask(5000.0, 8.0, 1.31), "AirDensityOutOfRange"),
+        (ask(5000.0, 8.0, 0.9), "ReynoldsNumberOutOfRange"),
+        (ask(5000.0, 8.0, 0.0), "AirDensityNotPositive"),
+        (ask(5000.0, 8.0, -1.225), "AirDensityNotPositive"),
         (ask(5000.0, -1.0, 1.225), "AirspeedNegative"),
-        (ask(5000.0, 1.0, 1.225), "AdvanceRatioOutOfRange"),
-        (ask(5000.0, 16.0, 1.225), "AdvanceRatioOutOfRange"),
-        (ask(5000.0, 1.0e-12, 1.225), "AdvanceRatioOutOfRange"),
+        (ask(6531.0, 60.0, 1.0), "TipMachAboveIncompressible"),
+        (ask(4007.0, 102.1, 0.2), "TipMachAboveIncompressible"),
     ] {
         let (status, text) = post(&base, "/solve", &request).await;
         assert_eq!(status, 422, "{request}: {text}");
         assert!(text.starts_with("Physical Violation: "), "{text}");
         assert!(text.ends_with(&format!("({name}).")), "{text}");
         assert!(!text.contains("solution_seal"), "{text}");
+        assert!(!text.contains("..="), "{text}");
     }
     // A rotational speed and a density both outside: the solver names the first it asks.
-    let (status, text) = post(&base, "/solve", &ask(100.0, 8.0, 5.0)).await;
+    let (status, text) = post(&base, "/solve", &ask(0.0, 8.0, -5.0)).await;
     assert_eq!(status, 422);
     assert_eq!(
         text,
-        "Physical Violation: rotational speed 100 rev/min is outside 4007..=6531 rev/min, the speeds compared with measurement with the air moving (RotationalSpeedOutOfRange)."
+        "Physical Violation: rotational speed 0 rev/min is not above zero: the coefficients are per turn of the blades, and the rings' angular momentum is that of blades turning forward (RotationalSpeedNotPositive)."
     );
     // Nothing is filled in and nothing else is taken.
     let mut missing = ask(5000.0, 8.0, 1.225);
@@ -178,11 +186,17 @@ async fn a_question_outside_the_range_is_refused_by_name_with_no_seal() {
     assert!(text.contains("alpha_zero_lift_deg"), "{text}");
 }
 
-/// A question at an end of the advance-ratio range is answered at its own
-/// computed advance ratio, sealed with it, and never moved to the end; one
-/// beyond the allowance is refused with the sentence that names it.
+/// A question at an end of the compared advance ratios, and past them,
+/// where engine 0.8.0 refused by name, is answered at its own computed
+/// advance ratio and sealed with it: below 0.111 to the first airspeed
+/// above zero, above 0.748 into the windmill state, and densities outside
+/// 1.0 to 1.3 kg/m³ where the Reynolds band holds. So are rotational speeds
+/// outside the compared 4007 to 6531 rev/min moving and 4144 to 6542 at
+/// rest, refused until this version, where the Reynolds band and the tip
+/// Mach number hold: 4006 and 6532 moving, 4100 and 6600 at rest, 3000 in
+/// dense air and 7600 in thin. Each seal holds.
 #[tokio::test]
-async fn an_advance_ratio_at_an_end_is_answered_at_its_own_value() {
+async fn an_advance_ratio_at_and_past_the_compared_ends_is_answered_at_its_own_value() {
     let base = spawn_app().await;
     for (speed, airspeed, density) in [
         (6000.0, 18.9992, 1.225),
@@ -193,9 +207,22 @@ async fn an_advance_ratio_at_an_end_is_answered_at_its_own_value() {
         (6531.0, 3.069, 1.225),
         (4007.0, 1.8829, 1.226),
         (6531.0, 20.6806, 1.22),
-        (6531.0, propeller::AIRSPEED_MAX_M_S, 1.2),
         (4008.0, 0.111 * (4008.0 / 60.0) * 0.254, 1.25),
         (4009.0, 0.748 * (4009.0 / 60.0) * 0.254, 1.225),
+        (5000.0, 1.0, 1.225),
+        (5000.0, 16.0, 1.225),
+        (5000.0, 1.0e-12, 1.225),
+        (6000.0, 18.9993, 1.2),
+        (4007.0, 30.0, 1.225),
+        (5000.0, 8.0, 1.31),
+        (6531.0, 27.6, 0.8),
+        (4006.0, 8.0, 1.225),
+        (6532.0, 8.0, 1.225),
+        (4100.0, 0.0, 1.225),
+        (6600.0, 0.0, 1.225),
+        (3000.0, 0.0, 1.8),
+        (7600.0, 0.0, 1.0),
+        (7600.0, 0.2 * (7600.0 / 60.0) * 0.254, 1.0),
     ] {
         let request = ask(speed, airspeed, density);
         let (status, text) = post(&base, "/solve", &request).await;
@@ -211,35 +238,10 @@ async fn an_advance_ratio_at_an_end_is_answered_at_its_own_value() {
         assert_eq!(body["result"]["advance_ratio_hex"], format!("{:016x}", own.to_bits()), "{request}");
         let direct = propeller::solve(&question).expect("direct");
         assert_eq!(body["result"]["thrust_n_hex"], format!("{:016x}", direct.thrust_n.to_bits()));
-    }
-    // Some of these are not the end itself: they would be refused without the allowance.
-    let off = |speed: f64, airspeed: f64| {
-        propeller::advance_ratio(&PropellerQuestion {
-            rotational_speed_rev_per_min: speed,
-            airspeed_m_s: airspeed,
-            air_density_kg_m3: 1.225,
-        })
-    };
-    assert!(off(6531.0, propeller::AIRSPEED_MAX_M_S) > propeller::ADVANCE_RATIO_MAX);
-    let beyond = [4007.0, 4008.0, 4009.0, 4010.0, 4011.0, 4012.0]
-        .into_iter()
-        .filter(|speed| off(*speed, 0.111 * (speed / 60.0) * 0.254) < propeller::ADVANCE_RATIO_MIN)
-        .count();
-    assert!(beyond >= 1, "{beyond} of six speeds compute an advance ratio below 0.111 from it");
-    for (speed, airspeed, density) in [
-        (4007.0, 1.8828, 1.25),
-        (6000.0, 18.9993, 1.2),
-        (6000.0, 2.8193, 1.2),
-        (6531.0, 20.6807, 1.2),
-        (6531.0, propeller::AIRSPEED_MAX_M_S.next_up(), 1.2),
-    ] {
-        let (status, text) = post(&base, "/solve", &ask(speed, airspeed, density)).await;
-        assert_eq!(status, 422, "{text}");
-        assert!(
-            text.ends_with("by more than the allowance of 5 units in the last place below (ADVANCE_RATIO_MIN_ALLOWANCE_ULP) and 4 above (ADVANCE_RATIO_MAX_ALLOWANCE_ULP), and the airspeed is not zero (AdvanceRatioOutOfRange)."),
-            "{text}"
-        );
-        assert!(!text.contains("solution_seal"), "{text}");
+        assert!(body["invariants"]["thrust_balance_gap"].as_f64().unwrap() <= propeller::BALANCE_TOLERANCE);
+        let (status, checked) = post(&base, "/verify_solution", &body).await;
+        assert_eq!(status, 200, "{checked}");
+        assert_eq!(serde_json::from_str::<Value>(&checked).unwrap()["holds"], true, "{checked}");
     }
 }
 

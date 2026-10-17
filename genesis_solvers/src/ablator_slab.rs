@@ -190,8 +190,8 @@
 //! fast the surface reactions can go and any loss of solid char; the PICA
 //! model has both. Wall pressures outside the material's surface table
 //! (TACOT 0.001 to 1 atm; PICA 0.00001 to 1 atm). Temperatures above the
-//! material's tables (TACOT 3333 K), and for PICA above
-//! [`COMPARED_TEMPERATURE_MAX_K`]. Streams of anything but
+//! material's tables (TACOT 3333 K; PICA 3975 K, continued from 3333 K by a
+//! stated rule). Streams of anything but
 //! oxygen, nitrogen and argon (carbon dioxide, for one); for TACOT, any
 //! stream but air.
 //!
@@ -346,7 +346,8 @@
 //!   percent on 24 of 28 where 23 were needed, mean +4.1 percent against
 //!   3.5 allowed: misses on the mean, as on the 36 (+3.8). By the rule fixed
 //!   beforehand the model as a whole does not pass. One test, in pure
-//!   nitrogen, was refused (`StreamOxygenOutOfRange`) and counts as outside.
+//!   nitrogen, was refused at the time (the stream's oxygen was then held to
+//!   5 to 40 percent) and counts as outside; it is answered now.
 //!   The face misses are above about 45 kPa, at 190 and 970 W/cm²; two long
 //!   exposures in one facility miss on wear. The 31 are spent, and 26 of
 //!   them repeat a condition and exposure of the 36.
@@ -437,13 +438,26 @@
 //!   case with measured radiative heating; TACOT versions 1.5 and 2.2, which
 //!   the workshop codes used.
 //!
-//! # The range of a PICA question is what was compared
+//! # What a PICA question may be, and what was compared
 //!
-//! Since engine 0.7.0 a PICA question outside what was compared with
-//! measurement is refused by name, where before it was answered with an
-//! account of the seconds it spent outside. Three envelopes were compared,
-//! and a gas-stream question is answered when it lies wholly inside one of
-//! them, its slab, start and surroundings included:
+//! From engine 0.7.0 until this version the entry refused a PICA question outside what was compared
+//! with measurement. Now the PICA model answers on its whole declared range,
+//! with the same equations and the same accounts at every step, and stops
+//! only at a limit of the physics or the arithmetic, or at the end of the
+//! event: the slab worn away, where the run ends and is answered
+//! ([`Summary::worn_away`]), a face that boils
+//! ([`SlabReject::FaceBeyondSurfaceTable`]), a temperature above the top of
+//! its tables, 3975 K ([`SlabReject::TemperatureOutOfBounds`]), a step that
+//! does not settle, or a broken account. Measured before the lift, with
+//! these walls off: 294 PICA questions across the declared range of the
+//! time, 269 answered with every account closed and 25 refused as worn
+//! away, hardest step 11 Newton passes; 350 in seven streams that are not
+//! air, all answered. The answer says which envelope compared with
+//! measurement the question lies wholly inside, its slab, start and
+//! surroundings included ([`Summary::inside_arc_jet_comparison`],
+//! [`Summary::inside_stardust_comparison`],
+//! [`Summary::inside_thermocouple_block_comparison`]). Three envelopes were
+//! compared:
 //!
 //! - **The arc-jet tests** (the 36 and the 31): thickness 0.06 m, start
 //!   300 K, surroundings 300 K; wall pressure 2.3 to
@@ -466,16 +480,30 @@
 //!   then falling to zero over 0.5 s; cooling to 152 s; no radiative
 //!   heating.
 //!
-//! Common to all three: a face that wears, and no temperature above
-//! [`COMPARED_TEMPERATURE_MAX_K`]. A value of thickness, start or
-//! surroundings in no envelope is refused by its own name; values that each
-//! lie in some envelope but not all in one are refused as
-//! [`SlabReject::QuestionNotCompared`]. A held face on PICA was never compared and
-//! is refused. From 3333 K, where TACOT's tables stop, to that limit the PICA
-//! tables are extended: the specific heat held at its 3333 K value and the
-//! conductivity continued along its last straight line. TACOT, compared with
-//! other codes only, keeps its whole declared range.
+//! Common to all three: a face that wears; no PICA case held its face at a
+//! temperature or kept it from wearing. No compared run went above
+//! [`COMPARED_TEMPERATURE_MAX_K`], about 3412 K. From 3333 K, where TACOT's
+//! tables stop, to 3975 K the PICA tables are extended: the specific heat
+//! held at its 3333 K value and the conductivity continued along its last
+//! straight line; nothing was measured there.
+//!
+//! # The declared range
+//!
+//! A thickness of 0.2 mm to 1 m (below 0.2 mm the grid holds no more than
+//! [`CELLS_MIN`] cells; 1 m is a size cap on the request); a start from
+//! 260 to 800 K (above it untouched material decomposes so fast from the
+//! first step that the step fails); a held face from 260 to
+//! 3300 K, for 1 s to an hour, and up to an hour after it; a heating history
+//! of up to an hour, with any finite coefficient, flow enthalpy and
+//! radiative heating, surroundings from 250 K to the top of the tables, and
+//! a stream of any make-up of oxygen, argon and nitrogen. The hour and the
+//! metre are size caps on the request, neither physics nor a compared range.
+//! The numerics were measured on 0.01 to 0.10 m, starts of 260 to 400 K,
+//! holds of 1 to 300 s, histories to 600 s, coefficients to 1 kg/m²/s, flow
+//! enthalpies to 100 MJ/kg and radiative heating to 10 MW/m².
 
+use genesis_kernel::math;
+use crate::normal::NormalOrZero;
 use std::fmt;
 
 /// The material.
@@ -491,26 +519,71 @@ pub const REFERENCE_RETRIEVED: &str = "2026-10-09";
 // The question a caller may ask, and its declared range.
 // ---------------------------------------------------------------------------
 
-/// Thinnest slab, metres.
-pub const THICKNESS_MIN_M: f64 = 0.01;
-/// Thickest slab, metres.
-pub const THICKNESS_MAX_M: f64 = 0.10;
-/// Coldest uniform start temperature, kelvin.
+/// Thinnest slab, metres: 0.2 mm, the thinnest the grid holds in more than
+/// [`CELLS_MIN`] cells (the first eight cells of the grid span 0.178 mm). A
+/// limit of the grid, not of the physics.
+pub const THICKNESS_MIN_M: f64 = 2.0e-4;
+/// Thickest slab, metres: 1 m. A size cap on the request, neither physics nor
+/// a compared range: the cells, and so the work of every step, grow with the
+/// thickness (10,000 cells for 1 m under a gas stream). The numerics were
+/// measured on 0.01 to 0.10 m.
+pub const THICKNESS_MAX_M: f64 = 1.0;
+/// Coldest uniform start temperature, kelvin: just above the bottom of the
+/// solid property tables, 255.6 K.
 pub const START_TEMPERATURE_MIN_K: f64 = 260.0;
-/// Warmest uniform start temperature, kelvin.
-pub const START_TEMPERATURE_MAX_K: f64 = 400.0;
-/// Lowest temperature the heated face may be held at, kelvin.
-pub const HELD_TEMPERATURE_MIN_K: f64 = 400.0;
-/// Highest temperature the heated face may be held at, kelvin.
+/// Warmest uniform start temperature, kelvin: 800 K, a limit of the
+/// arithmetic. The start is untouched material at one temperature. Above the
+/// temperature at which its resin begins to decompose (333 K for TACOT,
+/// 556 K for PICA versions 4 and 5) it decomposes from the first step; the
+/// warmer the start, the faster. Measured on held faces and gas streams of
+/// TACOT and PICA: every start to 850 K answered with its accounts closed;
+/// from 900 K a PICA slab, and from 1000 K a TACOT slab, blows its
+/// decomposition gas out at kilograms per square metre per second in the
+/// first steps, and the step fails ([`SlabReject::NonFiniteValue`],
+/// [`SlabReject::StepNotConverged`] or [`SlabReject::TemperatureOutOfBounds`]
+/// by a hundredth of a kelvin). 800 K is under the lowest of those.
+pub const START_TEMPERATURE_MAX_K: f64 = 800.0;
+/// Lowest temperature the heated face may be held at, kelvin: the coldest
+/// start, [`START_TEMPERATURE_MIN_K`]. A face held below the start
+/// temperature cools the slab.
+pub const HELD_TEMPERATURE_MIN_K: f64 = START_TEMPERATURE_MIN_K;
+/// Highest temperature the heated face may be held at, kelvin: 33 K under
+/// the top of TACOT's property tables, 3333 K.
 pub const HELD_TEMPERATURE_MAX_K: f64 = 3300.0;
-/// Shortest hold, seconds, counted from the start of the ramp.
+/// Shortest hold, seconds, counted from the start of the ramp: above the
+/// 0.1 s ramp up ([`SURFACE_RAMP_S`]) and the 0.1 s ramp down.
 pub const HOLD_DURATION_MIN_S: f64 = 1.0;
-/// Longest hold, seconds.
-pub const HOLD_DURATION_MAX_S: f64 = 300.0;
-/// Longest time computed after the hold, seconds. Zero is allowed.
-pub const CONTINUE_AFTER_MAX_S: f64 = 300.0;
+/// Longest hold, seconds: an hour. A size cap on the request, neither
+/// physics nor a compared range: a run takes a step of at most
+/// [`LARGEST_STEP_S`] and keeps a report every second. The numerics were
+/// measured on holds of 1 to 300 s.
+pub const HOLD_DURATION_MAX_S: f64 = 3600.0;
+/// Longest time computed after the hold, seconds: an hour, a size cap on
+/// the request as [`HOLD_DURATION_MAX_S`] is. Zero is allowed.
+pub const CONTINUE_AFTER_MAX_S: f64 = 3600.0;
 /// Most thermocouple depths in one question.
 pub const THERMOCOUPLES_MAX: usize = 8;
+
+// The ranges the numerics were measured on, before the walls at their ends
+// came down: the sweeps of the tests ask them.
+#[cfg(test)]
+const MEASURED_THICKNESS_MIN_M: f64 = 0.01;
+#[cfg(test)]
+const MEASURED_THICKNESS_MAX_M: f64 = 0.10;
+#[cfg(test)]
+const MEASURED_START_TEMPERATURE_MAX_K: f64 = 400.0;
+#[cfg(test)]
+const MEASURED_HELD_TEMPERATURE_MIN_K: f64 = 400.0;
+#[cfg(test)]
+const MEASURED_HOLD_DURATION_MAX_S: f64 = 300.0;
+#[cfg(test)]
+const MEASURED_CONTINUE_AFTER_MAX_S: f64 = 300.0;
+#[cfg(test)]
+const MEASURED_COEFFICIENT_MAX_KG_PER_M2_S: f64 = 1.0;
+#[cfg(test)]
+const MEASURED_FLOW_ENTHALPY_MAX_J_PER_KG: f64 = 1.0e8;
+#[cfg(test)]
+const MEASURED_RADIATIVE_HEATING_MAX_W_PER_M2: f64 = 1.0e7;
 /// The face goes from the start temperature to the held temperature in a
 /// straight line over this time, and back again after the hold. Seconds.
 pub const SURFACE_RAMP_S: f64 = 0.1;
@@ -522,9 +595,11 @@ pub const REPORT_INTERVAL_S: f64 = 1.0;
 pub const HISTORY_ROWS_MIN: usize = 2;
 pub const HISTORY_ROWS_MAX: usize = 256;
 /// Shortest and longest heating history, seconds, from its first row (at
-/// zero) to its last.
+/// zero) to its last. The longest, an hour, is a size cap on the request as
+/// [`HOLD_DURATION_MAX_S`] is; the numerics were measured on histories to
+/// 600 s, the end of the Stardust run.
 pub const HISTORY_DURATION_MIN_S: f64 = 1.0;
-pub const HISTORY_DURATION_MAX_S: f64 = 600.0;
+pub const HISTORY_DURATION_MAX_S: f64 = 3600.0;
 /// Least time between two rows of a heating history, seconds: a
 /// millisecond. Between two rows every column runs along a straight line,
 /// so a row a vanishing time after the one before it is a jump, and the
@@ -555,15 +630,27 @@ pub const STREAM_PRESSURE_MAX_PA: f64 = 101325.0;
 pub const PICA_STREAM_PRESSURE_MIN_PA: f64 = 1.01325;
 pub const PICA_STREAM_PRESSURE_MAX_PA: f64 = 101325.0;
 /// Largest heat-transfer coefficient `ρ_e u_e C_H` in a heating history,
-/// kg/m²/s. The smallest is zero: no stream.
-pub const HEAT_TRANSFER_COEFFICIENT_MAX_KG_PER_M2_S: f64 = 1.0;
-/// Largest flow enthalpy in a heating history, J/kg. The smallest is zero.
-pub const FLOW_ENTHALPY_MAX_J_PER_KG: f64 = 1.0e8;
-/// Largest radiative heating in a heating history, W/m². The smallest is zero.
-pub const RADIATIVE_HEATING_MAX_W_PER_M2: f64 = 1.0e7;
-/// Coldest and warmest surroundings the face radiates to, kelvin.
+/// kg/m²/s: any finite number. The smallest is zero: no stream. A stream
+/// too strong for the slab stops the run at a limit of the physics: the face
+/// boils ([`SlabReject::FaceBeyondSurfaceTable`]), or the slab wears away
+/// and the run ends there ([`Summary::worn_away`]). The numerics were
+/// measured to 1 kg/m²/s.
+pub const HEAT_TRANSFER_COEFFICIENT_MAX_KG_PER_M2_S: f64 = f64::MAX;
+/// Largest flow enthalpy in a heating history, J/kg: any finite number. The
+/// smallest is zero. The numerics were measured to 100 MJ/kg.
+pub const FLOW_ENTHALPY_MAX_J_PER_KG: f64 = f64::MAX;
+/// Largest radiative heating in a heating history, W/m²: any finite number.
+/// The smallest is zero. The numerics were measured to 10 MW/m².
+pub const RADIATIVE_HEATING_MAX_W_PER_M2: f64 = f64::MAX;
+/// Coldest surroundings the face radiates to, kelvin: near the bottom of the
+/// solid property tables, 255.6 K.
 pub const SURROUNDINGS_TEMPERATURE_MIN_K: f64 = 250.0;
-pub const SURROUNDINGS_TEMPERATURE_MAX_K: f64 = 400.0;
+/// Warmest surroundings, kelvin, for TACOT: the top of its property tables,
+/// 3333.33 K; a PICA question's may be as warm as the top of its own tables,
+/// 3975 K ([`solid_table_top_k`]). The face radiates toward its
+/// surroundings, and past the top of the tables the material has no
+/// properties.
+pub const SURROUNDINGS_TEMPERATURE_MAX_K: f64 = crate::tacot::SOLID_TABLE_K[crate::tacot::SOLID_NODES - 1];
 /// λ in the blowing correction `Ω = ln(1 + 2λB') / (2λB')`.
 pub const BLOWING_CORRECTION_LAMBDA: f64 = 0.5;
 /// Stefan-Boltzmann constant, W/m²/K⁴ (CODATA 2018).
@@ -665,7 +752,7 @@ impl PoreGas {
     /// temperature and pore pressure, W/m/K, and the slopes in temperature.
     fn departure(&self, temperature_k: f64, pressure_pa: f64) -> [(f64, f64); 2] {
         let ratio = temperature_k / 300.0;
-        let growth = ratio.powf(0.8);
+        let growth = math::powf(ratio, 0.8);
         let half = self.half_pressure_pa_at_300_k * ratio;
         let share = |p: f64| {
             (
@@ -819,10 +906,6 @@ struct Terms {
     char_rate_along_straight_lines: bool,
     /// When set, the face stops at this depth below the original face, metres.
     face_stops_at_m: Option<f64>,
-    /// When set, a gas-stream run hotter than this anywhere is refused as
-    /// [`SlabReject::TemperatureAboveCompared`]. The served entry sets it
-    /// for PICA to [`COMPARED_TEMPERATURE_MAX_K`]. Kelvin.
-    compared_temperature_top_k: Option<f64>,
 }
 
 impl Terms {
@@ -839,7 +922,6 @@ impl Terms {
         gases_take_heat_at_face: true,
         char_rate_along_straight_lines: false,
         face_stops_at_m: None,
-        compared_temperature_top_k: None,
     };
 }
 
@@ -883,11 +965,34 @@ pub const AIR_OXYGEN_MASS_FRACTION: f64 = 0.23291751145757963;
 /// streams the PICA model was developed on were made up with: air with
 /// argon mixed in has `0.2314 × (1 − argon)` of oxygen.
 pub const ARCJET_AIR_OXYGEN_MASS_FRACTION: f64 = 0.2314;
-/// Least and most oxygen a stream may hold, by mass.
-pub const STREAM_OXYGEN_MASS_FRACTION_MIN: f64 = 0.05;
-pub const STREAM_OXYGEN_MASS_FRACTION_MAX: f64 = 0.40;
-/// Most argon a stream may hold, by mass. The least is none.
-pub const STREAM_ARGON_MASS_FRACTION_MAX: f64 = 0.50;
+
+/// A stream's oxygen and argon are each a mass fraction, 0 to 1, and the
+/// nitrogen left, one less the two, is not below zero: the physical limits of
+/// a make-up, and the only ones. Pure nitrogen (no oxygen, no argon), pure
+/// argon and pure oxygen are streams. Whether the wall's equilibrium can be
+/// computed for one is decided where it is computed
+/// ([`SlabReject::SurfaceChemistryNotConverged`]).
+fn ensure_stream_gas(stream_gas: &StreamGas) -> Result<(), SlabReject> {
+    let (oxygen, argon) = (stream_gas.oxygen_mass_fraction, stream_gas.argon_mass_fraction);
+    if !(0.0..=1.0).contains(&oxygen) {
+        return Err(SlabReject::StreamOxygenNotAMassFraction {
+            oxygen_mass_fraction: oxygen,
+        });
+    }
+    if !(0.0..=1.0).contains(&argon) {
+        return Err(SlabReject::StreamArgonNotAMassFraction {
+            argon_mass_fraction: argon,
+        });
+    }
+    // The nitrogen as the wall gas takes it.
+    if 1.0 - oxygen - argon < 0.0 {
+        return Err(SlabReject::StreamOxygenAndArgonAboveOne {
+            oxygen_mass_fraction: oxygen,
+            argon_mass_fraction: argon,
+        });
+    }
+    Ok(())
+}
 
 impl StreamGas {
     /// Air: 21 percent oxygen and 79 percent nitrogen by mole (23.29
@@ -1089,18 +1194,21 @@ pub fn ablation_workshop_test_case_2_3() -> SlabQuestion {
 /// Why a result was not returned.
 #[derive(Clone, Debug, PartialEq)]
 pub enum SlabReject {
-    /// `thickness_m` is outside [`THICKNESS_MIN_M`]..=[`THICKNESS_MAX_M`].
+    /// `thickness_m` is outside 0.0002 to 1 m. Below 0.2 mm the grid holds
+    /// no more than 8 cells; 1 m is a size cap on the request.
     ThicknessOutOfRange { thickness_m: f64 },
-    /// `start_temperature_k` is outside
-    /// [`START_TEMPERATURE_MIN_K`]..=[`START_TEMPERATURE_MAX_K`].
+    /// `start_temperature_k` is outside 260 to 800 K. The bottom is just
+    /// above the bottom of the property tables, 255.6 K. Above 800 K untouched
+    /// material decomposes so fast from the first step that the step fails.
     StartTemperatureOutOfRange { start_temperature_k: f64 },
-    /// `held_temperature_k` is outside
-    /// [`HELD_TEMPERATURE_MIN_K`]..=[`HELD_TEMPERATURE_MAX_K`].
+    /// `held_temperature_k` is outside 260 to 3300 K. The top is 33 K under
+    /// the top of TACOT's property tables.
     HeldTemperatureOutOfRange { held_temperature_k: f64 },
-    /// `hold_duration_s` is outside
-    /// [`HOLD_DURATION_MIN_S`]..=[`HOLD_DURATION_MAX_S`].
+    /// `hold_duration_s` is outside 1 to 3600 s. The hold is longer than
+    /// the 0.1 s ramps up and down; an hour is a size cap on the request.
     HoldDurationOutOfRange { hold_duration_s: f64 },
-    /// `continue_after_s` is outside 0..=[`CONTINUE_AFTER_MAX_S`].
+    /// `continue_after_s` is outside 0 to 3600 s. An hour is a size cap on
+    /// the request.
     ContinueAfterOutOfRange { continue_after_s: f64 },
     /// More than [`THERMOCOUPLES_MAX`] thermocouple depths were given.
     TooManyThermocouples { count: usize },
@@ -1110,16 +1218,15 @@ pub enum SlabReject {
     StepNotConverged { time_s: f64, passes: u32 },
     /// A temperature, a density or a flux was NaN or infinite.
     NonFiniteValue { time_s: f64 },
-    /// A temperature left its band by more than
-    /// [`TEMPERATURE_BOUND_TOLERANCE_K`]. For a held face the bottom of the
-    /// band is the start temperature, and the top is the held temperature,
-    /// or the temperature below which decomposition gives off heat (about
-    /// 939 K) when that is higher: a slab held below it can be warmer inside
-    /// than at its face. In a gas stream the bottom is the lower of the start
-    /// and the surroundings temperatures, and the top is the top of the
-    /// material's tables (3333 K for TACOT); a PICA run above
-    /// [`COMPARED_TEMPERATURE_MAX_K`] is refused as
-    /// `TemperatureAboveCompared` first.
+    /// A temperature left its band by more than 0.000001 K. For a held face
+    /// the bottom of the band is the lower of the start and the held
+    /// temperature, and the top is the higher, or the temperature below which
+    /// decomposition gives off heat (about 920 to 950 K, by material) when
+    /// that is higher: a slab below it can be warmer inside than at its face.
+    /// In a gas stream the bottom is the lower of the start and the
+    /// surroundings temperatures, and the top is the top of the material's
+    /// property tables: 3333.33 K for TACOT 3.0, 3975 K for a PICA model,
+    /// past which the material has no properties.
     TemperatureOutOfBounds {
         time_s: f64,
         depth_m: f64,
@@ -1140,47 +1247,49 @@ pub enum SlabReject {
         residual_j_per_m2: f64,
         tolerance_j_per_m2: f64,
     },
-    /// The heating history has fewer than [`HISTORY_ROWS_MIN`] or more than
-    /// [`HISTORY_ROWS_MAX`] rows.
+    /// The heating history has fewer than 2 or more than 256 rows.
     HistoryRowsOutOfRange { rows: usize },
     /// The first row of the heating history is not at time zero, or a row is
     /// not later than the one before it.
     HistoryTimesOutOfOrder { row: usize, time_s: f64 },
-    /// The heating history's last row is outside
-    /// [`HISTORY_DURATION_MIN_S`]..=[`HISTORY_DURATION_MAX_S`].
+    /// The heating history's last row is outside 1 to 3600 s. An hour is a
+    /// size cap on the request.
     HistoryDurationOutOfRange { duration_s: f64 },
-    /// A row of the heating history is less than [`HISTORY_ROW_SPAN_MIN_S`]
-    /// after the row before it. A row at the same time as the one before
+    /// A row of the heating history is less than 0.001 s after the row
+    /// before it. A row at the same time as the one before
     /// it, or earlier, is `HistoryTimesOutOfOrder`.
     HistoryRowsTooClose { row: usize, span_s: f64 },
     /// A wall pressure is outside the surface table of the material that
-    /// was asked for; the refusal carries that table's two ends
-    /// ([`stream_pressure_range_pa`]).
+    /// was asked for: 101.325 to 101325 Pa for TACOT 3.0, 1.01325 to 101325 Pa
+    /// for a PICA model. The refusal carries that table's two ends.
     StreamPressureOutOfRange {
         row: usize,
         pressure_pa: f64,
         lowest_pressure_pa: f64,
         highest_pressure_pa: f64,
     },
-    /// A heat-transfer coefficient is outside
-    /// 0..=[`HEAT_TRANSFER_COEFFICIENT_MAX_KG_PER_M2_S`].
+    /// A heat-transfer coefficient is below zero or not a finite number.
     HeatTransferCoefficientOutOfRange {
         row: usize,
         heat_transfer_coefficient_kg_per_m2_s: f64,
     },
-    /// A flow enthalpy is outside 0..=[`FLOW_ENTHALPY_MAX_J_PER_KG`].
+    /// A flow enthalpy is below zero or not a finite number.
     FlowEnthalpyOutOfRange {
         row: usize,
         flow_enthalpy_j_per_kg: f64,
     },
-    /// A radiative heating is outside 0..=[`RADIATIVE_HEATING_MAX_W_PER_M2`].
+    /// A radiative heating is below zero or not a finite number.
     RadiativeHeatingOutOfRange {
         row: usize,
         radiative_heating_w_per_m2: f64,
     },
-    /// `surroundings_temperature_k` is outside
-    /// [`SURROUNDINGS_TEMPERATURE_MIN_K`]..=[`SURROUNDINGS_TEMPERATURE_MAX_K`].
-    SurroundingsTemperatureOutOfRange { surroundings_temperature_k: f64 },
+    /// `surroundings_temperature_k` is outside 250 K to the top of the
+    /// material's property tables: 3333.33 K for TACOT 3.0, 3975 K for a
+    /// PICA model.
+    SurroundingsTemperatureOutOfRange {
+        surroundings_temperature_k: f64,
+        highest_k: f64,
+    },
     /// `continue_after_s` is not zero with a gas stream. The heating history
     /// is the whole run.
     ContinueAfterWithStream { continue_after_s: f64 },
@@ -1190,23 +1299,29 @@ pub enum SlabReject {
         time_s: f64,
         face_temperature_k: f64,
     },
-    /// The face has worn to within [`CELLS_MIN`] cells of the back wall.
-    SlabWornAway { time_s: f64, recession_m: f64 },
     /// The char flux at the face came out negative.
     FaceMovedBackward { time_s: f64 },
     /// The material name is not one the solver holds.
     UnknownMaterial { name: String },
-    /// The stream's oxygen is outside
-    /// [`STREAM_OXYGEN_MASS_FRACTION_MIN`]..=[`STREAM_OXYGEN_MASS_FRACTION_MAX`].
-    StreamOxygenOutOfRange { oxygen_mass_fraction: f64 },
-    /// The stream's argon is outside 0..=[`STREAM_ARGON_MASS_FRACTION_MAX`].
-    StreamArgonOutOfRange { argon_mass_fraction: f64 },
+    /// The stream's oxygen is not a mass fraction: below 0 or above 1, or
+    /// not a number.
+    StreamOxygenNotAMassFraction { oxygen_mass_fraction: f64 },
+    /// The stream's argon is not a mass fraction: below 0 or above 1, or not
+    /// a number.
+    StreamArgonNotAMassFraction { argon_mass_fraction: f64 },
+    /// The stream's oxygen and argon together are more than the whole
+    /// stream: their mass fractions add to more than 1, which leaves less
+    /// than no nitrogen.
+    StreamOxygenAndArgonAboveOne {
+        oxygen_mass_fraction: f64,
+        argon_mass_fraction: f64,
+    },
     /// The stream is not air and the material's surface table is for air
     /// alone (TACOT's published table).
     StreamNotAirForThisMaterial { stream_gas: StreamGas },
     /// The chemical equilibrium of the wall gas did not converge at a state
-    /// of the surface table being computed for the stream. None has been
-    /// seen inside the declared range.
+    /// of the surface table being computed for the stream, or for the
+    /// stream's own gas at a wall.
     SurfaceChemistryNotConverged {
         pressure_pa: f64,
         blowing: f64,
@@ -1227,41 +1342,6 @@ pub enum SlabReject {
         wall_enthalpy_j_per_kg: f64,
         wall_temperature_k: f64,
     },
-    /// A held face on a PICA material. The PICA model was compared with
-    /// measurement in gas streams only.
-    HeldFaceNotCompared,
-    /// `face_wears` is false on a PICA material. Every measured case wore its
-    /// face.
-    FaceNotWearingNotCompared,
-    /// A PICA slab's thickness is in no envelope compared with measurement:
-    /// not [`ARC_JET_THICKNESS_M`], not [`STARDUST_THICKNESS_M`], and outside
-    /// [`THERMOCOUPLE_BLOCK_THICKNESS_MIN_M`]..=[`THERMOCOUPLE_BLOCK_THICKNESS_MAX_M`].
-    ThicknessNotCompared { thickness_m: f64 },
-    /// A PICA slab's start temperature is in no envelope compared with
-    /// measurement: not [`ARC_JET_START_TEMPERATURE_K`],
-    /// [`STARDUST_START_TEMPERATURE_K`] or [`THERMOCOUPLE_BLOCK_START_TEMPERATURE_K`].
-    StartTemperatureNotCompared { start_temperature_k: f64 },
-    /// A PICA question's surroundings temperature is in no envelope compared
-    /// with measurement: not [`ARC_JET_SURROUNDINGS_TEMPERATURE_K`],
-    /// [`STARDUST_SURROUNDINGS_TEMPERATURE_K`] or
-    /// [`THERMOCOUPLE_BLOCK_SURROUNDINGS_TEMPERATURE_K`].
-    SurroundingsNotCompared { surroundings_temperature_k: f64 },
-    /// A PICA gas-stream question lies wholly inside no envelope compared
-    /// with measurement, its slab, start and surroundings included: not the
-    /// arc-jet tests, not the Stardust flight, not the thermocouple blocks.
-    /// The refusal says why for each.
-    QuestionNotCompared {
-        arc_jet: String,
-        stardust: String,
-        thermocouple_blocks: String,
-    },
-    /// A PICA temperature rose above [`COMPARED_TEMPERATURE_MAX_K`], the
-    /// hottest any compared run reached.
-    TemperatureAboveCompared {
-        time_s: f64,
-        depth_m: f64,
-        temperature_k: f64,
-    },
 }
 
 impl fmt::Display for SlabReject {
@@ -1269,25 +1349,25 @@ impl fmt::Display for SlabReject {
         match self {
             Self::ThicknessOutOfRange { thickness_m } => write!(
                 f,
-                "thickness {thickness_m} m is outside {THICKNESS_MIN_M}..={THICKNESS_MAX_M}"
+                "thickness {thickness_m} m is outside {THICKNESS_MIN_M} to {THICKNESS_MAX_M} m: below {THICKNESS_MIN_M} m the grid holds no more than {CELLS_MIN} cells, and {THICKNESS_MAX_M} m is a size cap on the request"
             ),
             Self::StartTemperatureOutOfRange {
                 start_temperature_k,
             } => write!(
                 f,
-                "start temperature {start_temperature_k} K is outside {START_TEMPERATURE_MIN_K}..={START_TEMPERATURE_MAX_K}"
+                "start temperature {start_temperature_k} K is outside {START_TEMPERATURE_MIN_K} to {START_TEMPERATURE_MAX_K} K: above {START_TEMPERATURE_MAX_K} K untouched material decomposes so fast from the first step that the step fails"
             ),
             Self::HeldTemperatureOutOfRange { held_temperature_k } => write!(
                 f,
-                "held temperature {held_temperature_k} K is outside {HELD_TEMPERATURE_MIN_K}..={HELD_TEMPERATURE_MAX_K}"
+                "held temperature {held_temperature_k} K is outside {HELD_TEMPERATURE_MIN_K} to {HELD_TEMPERATURE_MAX_K} K"
             ),
             Self::HoldDurationOutOfRange { hold_duration_s } => write!(
                 f,
-                "hold duration {hold_duration_s} s is outside {HOLD_DURATION_MIN_S}..={HOLD_DURATION_MAX_S}"
+                "hold duration {hold_duration_s} s is outside {HOLD_DURATION_MIN_S} to {HOLD_DURATION_MAX_S} s: the hold is longer than the {SURFACE_RAMP_S} s ramps, and an hour is a size cap on the request"
             ),
             Self::ContinueAfterOutOfRange { continue_after_s } => write!(
                 f,
-                "time after the hold {continue_after_s} s is outside 0..={CONTINUE_AFTER_MAX_S}"
+                "time after the hold {continue_after_s} s is outside 0 to {CONTINUE_AFTER_MAX_S} s, an hour being a size cap on the request"
             ),
             Self::TooManyThermocouples { count } => write!(
                 f,
@@ -1334,7 +1414,7 @@ impl fmt::Display for SlabReject {
             ),
             Self::HistoryRowsOutOfRange { rows } => write!(
                 f,
-                "the heating history has {rows} rows; it may have {HISTORY_ROWS_MIN}..={HISTORY_ROWS_MAX}"
+                "the heating history has {rows} rows; it may have {HISTORY_ROWS_MIN} to {HISTORY_ROWS_MAX}"
             ),
             Self::HistoryTimesOutOfOrder { row, time_s } => write!(
                 f,
@@ -1342,7 +1422,7 @@ impl fmt::Display for SlabReject {
             ),
             Self::HistoryDurationOutOfRange { duration_s } => write!(
                 f,
-                "the heating history lasts {duration_s} s, outside {HISTORY_DURATION_MIN_S}..={HISTORY_DURATION_MAX_S}"
+                "the heating history lasts {duration_s} s, outside {HISTORY_DURATION_MIN_S} to {HISTORY_DURATION_MAX_S} s, an hour being a size cap on the request"
             ),
             Self::HistoryRowsTooClose { row, span_s } => write!(
                 f,
@@ -1355,34 +1435,35 @@ impl fmt::Display for SlabReject {
                 highest_pressure_pa,
             } => write!(
                 f,
-                "row {row} of the heating history has pressure {pressure_pa} Pa, outside this material's surface table, {lowest_pressure_pa}..={highest_pressure_pa} Pa"
+                "row {row} of the heating history has pressure {pressure_pa} Pa, outside this material's surface table, {lowest_pressure_pa} to {highest_pressure_pa} Pa"
             ),
             Self::HeatTransferCoefficientOutOfRange {
                 row,
                 heat_transfer_coefficient_kg_per_m2_s,
             } => write!(
                 f,
-                "row {row} of the heating history has heat-transfer coefficient {heat_transfer_coefficient_kg_per_m2_s} kg/m2/s, outside 0..={HEAT_TRANSFER_COEFFICIENT_MAX_KG_PER_M2_S}"
+                "row {row} of the heating history has heat-transfer coefficient {heat_transfer_coefficient_kg_per_m2_s} kg/m2/s; it is zero or more and finite"
             ),
             Self::FlowEnthalpyOutOfRange {
                 row,
                 flow_enthalpy_j_per_kg,
             } => write!(
                 f,
-                "row {row} of the heating history has flow enthalpy {flow_enthalpy_j_per_kg} J/kg, outside 0..={FLOW_ENTHALPY_MAX_J_PER_KG}"
+                "row {row} of the heating history has flow enthalpy {flow_enthalpy_j_per_kg} J/kg; it is zero or more and finite"
             ),
             Self::RadiativeHeatingOutOfRange {
                 row,
                 radiative_heating_w_per_m2,
             } => write!(
                 f,
-                "row {row} of the heating history has radiative heating {radiative_heating_w_per_m2} W/m2, outside 0..={RADIATIVE_HEATING_MAX_W_PER_M2}"
+                "row {row} of the heating history has radiative heating {radiative_heating_w_per_m2} W/m2; it is zero or more and finite"
             ),
             Self::SurroundingsTemperatureOutOfRange {
                 surroundings_temperature_k,
+                highest_k,
             } => write!(
                 f,
-                "surroundings temperature {surroundings_temperature_k} K is outside {SURROUNDINGS_TEMPERATURE_MIN_K}..={SURROUNDINGS_TEMPERATURE_MAX_K}"
+                "surroundings temperature {surroundings_temperature_k} K is outside {SURROUNDINGS_TEMPERATURE_MIN_K} to {highest_k} K, the top of this material's property tables"
             ),
             Self::ContinueAfterWithStream { continue_after_s } => write!(
                 f,
@@ -1395,24 +1476,24 @@ impl fmt::Display for SlabReject {
                 f,
                 "at {time_s} s the face is at {face_temperature_k} K, hotter than the surface table goes at this pressure"
             ),
-            Self::SlabWornAway {
-                time_s,
-                recession_m,
-            } => write!(
-                f,
-                "at {time_s} s the face had worn {recession_m} m, to within {CELLS_MIN} cells of the back wall"
-            ),
-            Self::StreamOxygenOutOfRange {
+            Self::StreamOxygenNotAMassFraction {
                 oxygen_mass_fraction,
             } => write!(
                 f,
-                "the stream's oxygen mass fraction is {oxygen_mass_fraction}, outside {STREAM_OXYGEN_MASS_FRACTION_MIN}..={STREAM_OXYGEN_MASS_FRACTION_MAX}"
+                "the stream's oxygen mass fraction is {oxygen_mass_fraction}; a mass fraction is 0 to 1"
             ),
-            Self::StreamArgonOutOfRange {
+            Self::StreamArgonNotAMassFraction {
                 argon_mass_fraction,
             } => write!(
                 f,
-                "the stream's argon mass fraction is {argon_mass_fraction}, outside 0..={STREAM_ARGON_MASS_FRACTION_MAX}"
+                "the stream's argon mass fraction is {argon_mass_fraction}; a mass fraction is 0 to 1"
+            ),
+            Self::StreamOxygenAndArgonAboveOne {
+                oxygen_mass_fraction,
+                argon_mass_fraction,
+            } => write!(
+                f,
+                "the stream's oxygen mass fraction {oxygen_mass_fraction} and argon mass fraction {argon_mass_fraction} add to more than 1, the whole stream"
             ),
             Self::StreamNotAirForThisMaterial { stream_gas } => write!(
                 f,
@@ -1453,46 +1534,6 @@ impl fmt::Display for SlabReject {
                 f,
                 "row {row} of the heating history has a stream of flow enthalpy {flow_enthalpy_j_per_kg} J/kg, below {wall_enthalpy_j_per_kg} J/kg, the enthalpy of the stream's gas at a wall at {wall_temperature_k} K"
             ),
-            Self::HeldFaceNotCompared => write!(
-                f,
-                "a held face on PICA was never compared with measurement; the PICA model takes a gas stream"
-            ),
-            Self::FaceNotWearingNotCompared => write!(
-                f,
-                "a PICA face that does not wear was never compared with measurement"
-            ),
-            Self::ThicknessNotCompared { thickness_m } => write!(
-                f,
-                "thickness {thickness_m} m is in no PICA envelope compared with measurement: {ARC_JET_THICKNESS_M} m for the arc-jet tests, {STARDUST_THICKNESS_M} m for the Stardust flight, {THERMOCOUPLE_BLOCK_THICKNESS_MIN_M}..={THERMOCOUPLE_BLOCK_THICKNESS_MAX_M} m for the thermocouple blocks"
-            ),
-            Self::StartTemperatureNotCompared {
-                start_temperature_k,
-            } => write!(
-                f,
-                "start temperature {start_temperature_k} K is in no PICA envelope compared with measurement: {ARC_JET_START_TEMPERATURE_K} K for the arc-jet tests, {STARDUST_START_TEMPERATURE_K} K for the Stardust flight, {THERMOCOUPLE_BLOCK_START_TEMPERATURE_K} K for the thermocouple blocks"
-            ),
-            Self::SurroundingsNotCompared {
-                surroundings_temperature_k,
-            } => write!(
-                f,
-                "surroundings temperature {surroundings_temperature_k} K is in no PICA envelope compared with measurement: {ARC_JET_SURROUNDINGS_TEMPERATURE_K} K for the arc-jet tests, {STARDUST_SURROUNDINGS_TEMPERATURE_K} K for the Stardust flight, {THERMOCOUPLE_BLOCK_SURROUNDINGS_TEMPERATURE_K} K for the thermocouple blocks"
-            ),
-            Self::QuestionNotCompared {
-                arc_jet,
-                stardust,
-                thermocouple_blocks,
-            } => write!(
-                f,
-                "the question lies inside no envelope the PICA model was compared with measurement on: for the arc-jet tests, {arc_jet}; for the Stardust flight, {stardust}; for the thermocouple blocks, {thermocouple_blocks}"
-            ),
-            Self::TemperatureAboveCompared {
-                time_s,
-                depth_m,
-                temperature_k,
-            } => write!(
-                f,
-                "temperature {temperature_k} K at depth {depth_m} m and {time_s} s is above {COMPARED_TEMPERATURE_MAX_K} K, the hottest any PICA run compared with measurement reached"
-            ),
         }
     }
 }
@@ -1527,23 +1568,16 @@ impl SlabReject {
             Self::SurroundingsTemperatureOutOfRange { .. } => "SurroundingsTemperatureOutOfRange",
             Self::ContinueAfterWithStream { .. } => "ContinueAfterWithStream",
             Self::FaceBeyondSurfaceTable { .. } => "FaceBeyondSurfaceTable",
-            Self::SlabWornAway { .. } => "SlabWornAway",
             Self::FaceMovedBackward { .. } => "FaceMovedBackward",
             Self::FaceOutranItsCell { .. } => "FaceOutranItsCell",
             Self::UnknownMaterial { .. } => "UnknownMaterial",
-            Self::StreamOxygenOutOfRange { .. } => "StreamOxygenOutOfRange",
-            Self::StreamArgonOutOfRange { .. } => "StreamArgonOutOfRange",
+            Self::StreamOxygenNotAMassFraction { .. } => "StreamOxygenNotAMassFraction",
+            Self::StreamArgonNotAMassFraction { .. } => "StreamArgonNotAMassFraction",
+            Self::StreamOxygenAndArgonAboveOne { .. } => "StreamOxygenAndArgonAboveOne",
             Self::StreamNotAirForThisMaterial { .. } => "StreamNotAirForThisMaterial",
             Self::SurfaceChemistryNotConverged { .. } => "SurfaceChemistryNotConverged",
             Self::SurfaceBundleUnreadable { .. } => "SurfaceBundleUnreadable",
             Self::FlowEnthalpyBelowWall { .. } => "FlowEnthalpyBelowWall",
-            Self::HeldFaceNotCompared => "HeldFaceNotCompared",
-            Self::FaceNotWearingNotCompared => "FaceNotWearingNotCompared",
-            Self::ThicknessNotCompared { .. } => "ThicknessNotCompared",
-            Self::StartTemperatureNotCompared { .. } => "StartTemperatureNotCompared",
-            Self::SurroundingsNotCompared { .. } => "SurroundingsNotCompared",
-            Self::QuestionNotCompared { .. } => "QuestionNotCompared",
-            Self::TemperatureAboveCompared { .. } => "TemperatureAboveCompared",
         }
     }
 }
@@ -1645,6 +1679,10 @@ pub(crate) struct SlabResult {
     /// from char to virgin, and within 2 percent of virgin density, metres.
     pub depth_half_way_to_virgin_m: f64,
     pub depth_within_2_percent_of_virgin_m: f64,
+    /// When the face wore to within [`CELLS_MIN`] cells of the back wall,
+    /// seconds: the slab is worn away and the run ended there. `None` when
+    /// the run reached the end of its time.
+    pub worn_away_at_s: Option<f64>,
 }
 
 // ---------------------------------------------------------------------------
@@ -1893,7 +1931,7 @@ fn decomposed(
     if !active || remaining <= 0.0 {
         return (remaining, 0.0);
     }
-    let rate = part.rate_constant_per_s * (-part.activation_temperature_k / temperature_k).exp();
+    let rate = part.rate_constant_per_s * math::exp(-part.activation_temperature_k / temperature_k);
     let used = rate * step_s * remaining * remaining;
     let growth = 1.0 + 2.0 * used;
     let root = growth.sqrt();
@@ -2039,7 +2077,7 @@ impl<'m> SurfaceLookup<'m> {
         Self {
             table,
             share,
-            log_pressure: table.pressure_pa.iter().map(|p| p.ln()).collect(),
+            log_pressure: table.pressure_pa.iter().map(|p| math::log(*p)).collect(),
             last_own_node,
         }
     }
@@ -2069,7 +2107,7 @@ impl<'m> SurfaceLookup<'m> {
             (0, 0.0)
         } else {
             let ip = segment(t.pressure_pa, pressure_pa);
-            let w = (pressure_pa.ln() - self.log_pressure[ip])
+            let w = (math::log(pressure_pa) - self.log_pressure[ip])
                 / (self.log_pressure[ip + 1] - self.log_pressure[ip]);
             (ip, w)
         };
@@ -2166,7 +2204,7 @@ fn blowing_correction(blowing_total: f64) -> (f64, f64) {
             2.0 * BLOWING_CORRECTION_LAMBDA * (-0.5 + 2.0 * x / 3.0 - 0.75 * x * x),
         )
     } else {
-        let log = x.ln_1p();
+        let log = math::ln_1p(x);
         (
             log / x,
             2.0 * BLOWING_CORRECTION_LAMBDA * (x / (1.0 + x) - log) / (x * x),
@@ -2420,13 +2458,13 @@ const GAS_CONSTANT_J_PER_MOL_K: f64 = 8.31446261815324;
 
 /// Probability that an oxygen atom striking carbon reacts (Park, as printed in Johnston 2014).
 fn oxygen_atom_reaction_probability(temperature_k: f64) -> f64 {
-    0.63 * (-1160.0 / temperature_k).exp()
+    0.63 * math::exp(-1160.0 / temperature_k)
 }
 
 /// Probability that an oxygen molecule striking carbon reacts (Park, as printed in Johnston 2014).
 fn oxygen_molecule_reaction_probability(temperature_k: f64) -> f64 {
-    (1.43e-3 + 0.01 * (-1450.0 / temperature_k).exp())
-        / (1.0 + 2.0e-4 * (13000.0 / temperature_k).exp())
+    (1.43e-3 + 0.01 * math::exp(-1450.0 / temperature_k))
+        / (1.0 + 2.0e-4 * math::exp(13000.0 / temperature_k))
 }
 
 /// A surface table with what the options need, for one stream gas and one
@@ -2587,7 +2625,7 @@ impl SurfaceBundle {
             }
         }
         Ok(Self {
-            log_pressure: pressure_pa.iter().map(|p| p.ln()).collect(),
+            log_pressure: pressure_pa.iter().map(|p| math::log(*p)).collect(),
             pressure_pa,
             blowing,
             temperature_k,
@@ -2682,7 +2720,7 @@ impl SurfaceBundle {
                 .collect()
         };
         let bundle = std::sync::Arc::new(SurfaceBundle {
-            log_pressure: pressure_pa.iter().map(|p| p.ln()).collect(),
+            log_pressure: pressure_pa.iter().map(|p| math::log(*p)).collect(),
             pressure_pa,
             blowing: self.blowing.clone(),
             temperature_k: self.temperature_k.clone(),
@@ -2724,7 +2762,7 @@ impl SurfaceBundle {
     /// One field along straight lines in the logarithm of pressure, in B'g
     /// and in temperature, held at the ends of each.
     fn read(&self, field: &[f64], pressure_pa: f64, blowing: f64, temperature_k: f64) -> f64 {
-        let (i0, i1, fp) = bracket(&self.log_pressure, pressure_pa.ln());
+        let (i0, i1, fp) = bracket(&self.log_pressure, math::log(pressure_pa));
         let (j0, j1, fb) = bracket(&self.blowing, blowing);
         let (k0, k1, ft) = bracket(&self.temperature_k, temperature_k);
         let (nb, nt) = (self.blowing.len(), self.temperature_k.len());
@@ -2754,7 +2792,7 @@ impl SurfaceBundle {
 
     fn gas_alone(&self, pressure_pa: f64, temperature_k: f64) -> f64 {
         let nt = self.temperature_k.len();
-        let (i0, i1, fp) = bracket(&self.log_pressure, pressure_pa.ln());
+        let (i0, i1, fp) = bracket(&self.log_pressure, math::log(pressure_pa));
         let (k0, k1, ft) = bracket(&self.temperature_k, temperature_k);
         let line = |i: usize| {
             self.gas_alone_enthalpy[i * nt + k0] * (1.0 - ft)
@@ -2766,8 +2804,8 @@ impl SurfaceBundle {
     /// Fraction of the stream's oxygen that arrives as atoms.
     fn oxygen_atom_fraction(&self, flow_enthalpy_j_per_kg: f64, pressure_pa: f64) -> f64 {
         let nh = self.atom_enthalpy_j_per_kg.len();
-        let log: Vec<f64> = self.atom_pressure_pa.iter().map(|p| p.ln()).collect();
-        let (i0, i1, fp) = bracket(&log, pressure_pa.ln());
+        let log: Vec<f64> = self.atom_pressure_pa.iter().map(|p| math::log(*p)).collect();
+        let (i0, i1, fp) = bracket(&log, math::log(pressure_pa));
         let (k0, k1, fh) = bracket(&self.atom_enthalpy_j_per_kg, flow_enthalpy_j_per_kg);
         let line = |i: usize| {
             self.atom_fraction[i * nh + k0] * (1.0 - fh) + self.atom_fraction[i * nh + k1] * fh
@@ -2785,14 +2823,13 @@ impl SurfaceBundle {
         let ns = self.vapour_species;
         let mut flux = 0.0;
         for species in 0..ns {
-            let free = held_line(
+            let free = math::exp(held_line(
                 &self.vapour_temperature_k,
                 &self.vapour_log_flux,
                 ns,
                 species,
                 temperature_k,
-            )
-            .exp();
+            ));
             let by_diffusion = equilibrium_flux
                 * held_line(
                     &self.vapour_temperature_k,
@@ -3786,14 +3823,14 @@ fn step(
             FaceDrive::Stream(stream) => {
                 let (emissivity, emissivity_density) = material.emissivity(density_0);
                 let emissivity_t0 = emissivity_density * work.density_slope[0];
-                let fourth = face_temperature_k.powi(4) - stream.surroundings_temperature_k.powi(4);
+                let fourth = math::powi(face_temperature_k, 4) - math::powi(stream.surroundings_temperature_k, 4);
                 let sigma = if terms.reradiation {
                     STEFAN_BOLTZMANN_W_PER_M2_K4
                 } else {
                     0.0
                 };
                 let radiated = emissivity * sigma * fourth;
-                let radiated_face_t = 4.0 * emissivity * sigma * face_temperature_k.powi(3);
+                let radiated_face_t = 4.0 * emissivity * sigma * math::powi(face_temperature_k, 3);
                 let absorbed = emissivity * stream.radiative_heating_w_per_m2;
                 let radiation_t0 =
                     emissivity_t0 * (sigma * fourth - stream.radiative_heating_w_per_m2);
@@ -4186,7 +4223,7 @@ fn step(
         };
         let radiated = emissivity
             * sigma
-            * (face_temperature_k.powi(4) - stream.surroundings_temperature_k.powi(4));
+            * (math::powi(face_temperature_k, 4) - math::powi(stream.surroundings_temperature_k, 4));
         let absorbed = emissivity * stream.radiative_heating_w_per_m2;
         let mut from_stream = 0.0;
         let mut taken = 0.0;
@@ -4295,18 +4332,7 @@ pub const COLD_WALL_TEMPERATURE_K: f64 = 300.0;
 /// test's heat-transfer coefficient is its cold-wall heating divided by its
 /// flow enthalpy less this: the rule the PICA model was developed with.
 pub fn stream_enthalpy_at_cold_wall_j_per_kg(stream_gas: &StreamGas) -> Result<f64, SlabReject> {
-    if !(STREAM_OXYGEN_MASS_FRACTION_MIN..=STREAM_OXYGEN_MASS_FRACTION_MAX)
-        .contains(&stream_gas.oxygen_mass_fraction)
-    {
-        return Err(SlabReject::StreamOxygenOutOfRange {
-            oxygen_mass_fraction: stream_gas.oxygen_mass_fraction,
-        });
-    }
-    if !(0.0..=STREAM_ARGON_MASS_FRACTION_MAX).contains(&stream_gas.argon_mass_fraction) {
-        return Err(SlabReject::StreamArgonOutOfRange {
-            argon_mass_fraction: stream_gas.argon_mass_fraction,
-        });
-    }
+    ensure_stream_gas(stream_gas)?;
     crate::wall_gas::stream_enthalpy_at_wall(
         stream_gas.oxygen_mass_fraction,
         stream_gas.argon_mass_fraction,
@@ -4320,31 +4346,74 @@ pub fn stream_enthalpy_at_cold_wall_j_per_kg(stream_gas: &StreamGas) -> Result<f
 }
 
 /// Whether a question for the material named is inside the declared range,
-/// decided before anything is computed. For a PICA material the declared
-/// range is what was compared with measurement (see
-/// [`ARC_JET_THICKNESS_M`] and the envelopes after it). `Ok` means
-/// [`answer`] will start computing; it may still refuse later for what
-/// happens in the run (a slab worn away, a PICA temperature above
-/// [`COMPARED_TEMPERATURE_MAX_K`], a TACOT temperature above its tables). An
-/// `Err` is the same refusal, with the same name and sentence, that
-/// [`answer`] gives for the same material and question.
+/// decided before anything is computed. `Ok` means [`answer`] will start
+/// computing; it may still refuse later for what happens in the run (a slab
+/// worn away, a face that boils, a temperature above the material's
+/// tables). An `Err` is the same refusal, with the same name and sentence,
+/// that [`answer`] gives for the same material and question. Whether a PICA
+/// question lies inside what was compared with measurement is not a limit:
+/// the answer says so ([`Summary::inside_arc_jet_comparison`] and the two
+/// after it).
 pub fn check_question(material_name: &str, question: &SlabQuestion) -> Result<(), SlabReject> {
     compared_envelopes(material_name, question).map(|_| ())
 }
 
-/// The check of [`check_question`], and for a PICA material whether the
-/// question lies inside the arc-jet envelope, inside the Stardust one and
-/// inside the thermocouple-block one.
+/// [`check_question`], and for a PICA material whether the question lies
+/// inside the arc-jet envelope, inside the Stardust one and inside the
+/// thermocouple-block one.
 fn compared_envelopes(material_name: &str, question: &SlabQuestion) -> Result<(bool, bool, bool), SlabReject> {
+    let (material, _) = material_of(material_name)?;
     ensure_question(
         question,
+        material,
         stream_pressure_range_pa(material_name)?,
         material_name != MATERIAL_TACOT,
     )?;
     if material_name == MATERIAL_TACOT {
         Ok((false, false, false))
     } else {
-        ensure_compared(question)
+        compared_flags(question)
+    }
+}
+
+/// The top of the solid property tables of the material named, kelvin:
+/// 3333.33 K for TACOT 3.0 ([`SURROUNDINGS_TEMPERATURE_MAX_K`]) and 3975 K
+/// for every PICA version ([`crate::pica::TABLE_TOP_K`]), which continues
+/// TACOT's tables by a stated rule. The warmest surroundings a question may
+/// have, and the top of a gas stream's band.
+pub fn solid_table_top_k(material_name: &str) -> Result<f64, SlabReject> {
+    let (material, _) = material_of(material_name)?;
+    Ok(material.solid_table_k[material.solid_table_k.len() - 1])
+}
+
+/// The band every temperature of a run must stay in, kelvin: lowest and
+/// highest. Decomposition gives off heat below the temperature
+/// [`heat_release_ends_k`] gives (about 920 to 950 K, by material) and takes
+/// it up above, so a slab can be warmer inside than anything around it
+/// below that temperature. For a held face the band runs from the lower of
+/// the start and the held temperature to the highest of the two and that
+/// temperature. In a gas stream it runs from the lower of the start and the
+/// surroundings to the top of the material's tables. The start is at most
+/// [`START_TEMPERATURE_MAX_K`], below that temperature, so no decomposition
+/// takes up heat below the bottom of the band.
+fn band_k(material: &Material, question: &SlabQuestion) -> (f64, f64) {
+    let start_k = question.start_temperature_k;
+    match &question.surface {
+        SurfaceCondition::HeldTemperature {
+            held_temperature_k, ..
+        } => (
+            start_k.min(*held_temperature_k),
+            start_k
+                .max(*held_temperature_k)
+                .max(heat_release_ends_k(&SolidEnthalpyNodes::of(material))),
+        ),
+        SurfaceCondition::GasStream {
+            surroundings_temperature_k,
+            ..
+        } => (
+            start_k.min(*surroundings_temperature_k),
+            material.solid_table_k[material.solid_table_k.len() - 1],
+        ),
     }
 }
 
@@ -4352,16 +4421,17 @@ fn compared_envelopes(material_name: &str, question: &SlabQuestion) -> Result<(b
 /// stream that is not air.
 fn ensure_question(
     question: &SlabQuestion,
+    material: &Material,
     pressure_range_pa: (f64, f64),
     any_stream_gas: bool,
 ) -> Result<(), SlabReject> {
+    let table_top_k = material.solid_table_k[material.solid_table_k.len() - 1];
     if !(THICKNESS_MIN_M..=THICKNESS_MAX_M).contains(&question.thickness_m) {
         return Err(SlabReject::ThicknessOutOfRange {
             thickness_m: question.thickness_m,
         });
     }
-    if !(START_TEMPERATURE_MIN_K..=START_TEMPERATURE_MAX_K).contains(&question.start_temperature_k)
-    {
+    if !(START_TEMPERATURE_MIN_K..=START_TEMPERATURE_MAX_K).contains(&question.start_temperature_k) {
         return Err(SlabReject::StartTemperatureOutOfRange {
             start_temperature_k: question.start_temperature_k,
         });
@@ -4393,18 +4463,7 @@ fn ensure_question(
             stream_gas,
             ..
         } => {
-            if !(STREAM_OXYGEN_MASS_FRACTION_MIN..=STREAM_OXYGEN_MASS_FRACTION_MAX)
-                .contains(&stream_gas.oxygen_mass_fraction)
-            {
-                return Err(SlabReject::StreamOxygenOutOfRange {
-                    oxygen_mass_fraction: stream_gas.oxygen_mass_fraction,
-                });
-            }
-            if !(0.0..=STREAM_ARGON_MASS_FRACTION_MAX).contains(&stream_gas.argon_mass_fraction) {
-                return Err(SlabReject::StreamArgonOutOfRange {
-                    argon_mass_fraction: stream_gas.argon_mass_fraction,
-                });
-            }
+            ensure_stream_gas(stream_gas)?;
             if !any_stream_gas && !stream_gas.is_air() {
                 return Err(SlabReject::StreamNotAirForThisMaterial {
                     stream_gas: *stream_gas,
@@ -4436,8 +4495,8 @@ fn ensure_question(
                         highest_pressure_pa: highest_pressure,
                     });
                 }
-                if !(0.0..=HEAT_TRANSFER_COEFFICIENT_MAX_KG_PER_M2_S)
-                    .contains(&entry.heat_transfer_coefficient_kg_per_m2_s)
+                if !(entry.heat_transfer_coefficient_kg_per_m2_s >= 0.0
+                    && entry.heat_transfer_coefficient_kg_per_m2_s.is_finite())
                 {
                     return Err(SlabReject::HeatTransferCoefficientOutOfRange {
                         row,
@@ -4445,14 +4504,14 @@ fn ensure_question(
                             .heat_transfer_coefficient_kg_per_m2_s,
                     });
                 }
-                if !(0.0..=FLOW_ENTHALPY_MAX_J_PER_KG).contains(&entry.flow_enthalpy_j_per_kg) {
+                if !(entry.flow_enthalpy_j_per_kg >= 0.0 && entry.flow_enthalpy_j_per_kg.is_finite()) {
                     return Err(SlabReject::FlowEnthalpyOutOfRange {
                         row,
                         flow_enthalpy_j_per_kg: entry.flow_enthalpy_j_per_kg,
                     });
                 }
-                if !(0.0..=RADIATIVE_HEATING_MAX_W_PER_M2)
-                    .contains(&entry.radiative_heating_w_per_m2)
+                if !(entry.radiative_heating_w_per_m2 >= 0.0
+                    && entry.radiative_heating_w_per_m2.is_finite())
                 {
                     return Err(SlabReject::RadiativeHeatingOutOfRange {
                         row,
@@ -4473,11 +4532,10 @@ fn ensure_question(
                     return Err(SlabReject::HistoryRowsTooClose { row, span_s });
                 }
             }
-            if !(SURROUNDINGS_TEMPERATURE_MIN_K..=SURROUNDINGS_TEMPERATURE_MAX_K)
-                .contains(surroundings_temperature_k)
-            {
+            if !(SURROUNDINGS_TEMPERATURE_MIN_K..=table_top_k).contains(surroundings_temperature_k) {
                 return Err(SlabReject::SurroundingsTemperatureOutOfRange {
                     surroundings_temperature_k: *surroundings_temperature_k,
+                    highest_k: table_top_k,
                 });
             }
             if question.continue_after_s != 0.0 {
@@ -4491,7 +4549,7 @@ fn ensure_question(
                 .iter()
                 .any(|entry| entry.heat_transfer_coefficient_kg_per_m2_s > 0.0)
             {
-                let wall_temperature_k = question.start_temperature_k.min(*surroundings_temperature_k);
+                let (wall_temperature_k, _) = band_k(material, question);
                 let wall_enthalpy_j_per_kg = crate::wall_gas::stream_enthalpy_at_wall(
                     stream_gas.oxygen_mass_fraction,
                     stream_gas.argon_mass_fraction,
@@ -4680,14 +4738,13 @@ pub(crate) fn solve_material(
     solve_material_with(material_name, question, &Terms::ALL)
 }
 
-/// The same with the terms given.
-fn solve_material_with(
+/// The material named, with the surface bundle and the options of a PICA
+/// model; TACOT reads its published table and has none.
+fn material_of(
     material_name: &str,
-    question: &SlabQuestion,
-    terms: &Terms,
-) -> Result<SlabResult, SlabReject> {
+) -> Result<(&'static Material, Option<(&'static SurfaceBundle, SurfaceOptions)>), SlabReject> {
     if material_name == MATERIAL_TACOT {
-        run(question, &NUMERICS, terms)
+        Ok((&TACOT, None))
     } else if material_name == MATERIAL_PICA_VERSION_5 || material_name == MATERIAL_PICA_VERSION_4 {
         static MODEL: std::sync::OnceLock<Material> = std::sync::OnceLock::new();
         let material = MODEL.get_or_init(|| crate::pica::material(&crate::pica::VERSION_4));
@@ -4697,37 +4754,33 @@ fn solve_material_with(
         } else {
             crate::pica::SURFACE_OPTIONS
         };
-        run_model(
-            material,
-            Some((bundle, options)),
-            question,
-            &NUMERICS,
-            terms,
-        )
+        Ok((material, Some((bundle, options))))
     } else if material_name == MATERIAL_PICA_VERSION_3 {
         static MODEL: std::sync::OnceLock<Material> = std::sync::OnceLock::new();
         let material = MODEL.get_or_init(|| crate::pica::material(&crate::pica::VERSION_3));
         let (_, bundle) = frozen_pica();
-        run_model(
-            material,
-            Some((bundle, crate::pica::SURFACE_OPTIONS)),
-            question,
-            &NUMERICS,
-            terms,
-        )
+        Ok((material, Some((bundle, crate::pica::SURFACE_OPTIONS))))
     } else if material_name == MATERIAL_PICA {
         let (material, bundle) = frozen_pica();
-        run_model(
-            material,
-            Some((bundle, crate::pica::SURFACE_OPTIONS)),
-            question,
-            &NUMERICS,
-            terms,
-        )
+        Ok((material, Some((bundle, crate::pica::SURFACE_OPTIONS))))
     } else {
         Err(SlabReject::UnknownMaterial {
             name: material_name.to_string(),
         })
+    }
+}
+
+/// The same with the terms given.
+fn solve_material_with(
+    material_name: &str,
+    question: &SlabQuestion,
+    terms: &Terms,
+) -> Result<SlabResult, SlabReject> {
+    match material_of(material_name)? {
+        (_, None) => run(question, &NUMERICS, terms),
+        (material, Some((bundle, options))) => {
+            run_model(material, Some((bundle, options)), question, &NUMERICS, terms)
+        }
     }
 }
 
@@ -4783,27 +4836,23 @@ pub(crate) fn solve_pica_study_refined(
 // The served entry.
 // ---------------------------------------------------------------------------
 
-/// What the PICA model has been compared with measurement on. A PICA
-/// question is answered only inside it; outside it the question is refused
-/// by name. Three envelopes were compared: the arc-jet tests, the Stardust
-/// flight and the thermocouple blocks. A gas-stream question is answered
-/// when it lies wholly inside one of them, its slab, start and surroundings
-/// included, and the answer says which ([`Summary::inside_arc_jet_comparison`],
+/// What the PICA model has been compared with measurement on. Three
+/// envelopes were compared: the arc-jet tests, the Stardust flight and the
+/// thermocouple blocks. A PICA question is answered inside them and outside
+/// them alike, with the same equations and the same accounts; the answer
+/// says which envelope it lies wholly inside, its slab, start and
+/// surroundings included ([`Summary::inside_arc_jet_comparison`],
 /// [`Summary::inside_stardust_comparison`],
-/// [`Summary::inside_thermocouple_block_comparison`]). TACOT, compared with
-/// other codes only, is not held to them.
+/// [`Summary::inside_thermocouple_block_comparison`]), and a question in
+/// none has all three false. TACOT, compared with other codes only, is in
+/// none.
 ///
 /// Each envelope has its own slab, start and surroundings: the arc-jet
 /// tests were 0.06 m thick, started at 300 K and radiated to 300 K; the
 /// Stardust cores were 0.0582 m thick, started at 260 K and radiated to
 /// 266.48 K; the thermocouple blocks were 0.0224 to 0.0325 m thick, started
 /// at 303.15 K and radiated to 300 K. Every one wore its face, and none held
-/// its face at a temperature. A value inside no envelope at all is refused
-/// by its own name ([`SlabReject::ThicknessNotCompared`],
-/// [`SlabReject::StartTemperatureNotCompared`],
-/// [`SlabReject::SurroundingsNotCompared`]); a question whose values each lie
-/// in some envelope but not all in one is refused as
-/// [`SlabReject::QuestionNotCompared`].
+/// its face at a temperature.
 pub const ARC_JET_THICKNESS_M: f64 = 0.06;
 pub const ARC_JET_START_TEMPERATURE_K: f64 = 300.0;
 pub const ARC_JET_SURROUNDINGS_TEMPERATURE_K: f64 = 300.0;
@@ -4817,11 +4866,11 @@ pub const THERMOCOUPLE_BLOCK_SURROUNDINGS_TEMPERATURE_K: f64 = 300.0;
 /// The hottest temperature any accepted step reached in the compared runs
 /// (the 67 arc-jet tests and the two Stardust cores, as the entry asks them;
 /// the thermocouple blocks stay below 3,000 K), kelvin: the Stardust
-/// near-nose run. A PICA run hotter than this anywhere is refused
-/// ([`SlabReject::TemperatureAboveCompared`]). From 3333 K, where TACOT's
-/// tables stop, to this limit the PICA tables hold the specific heat at its
-/// 3333 K value and continue the conductivity along its last straight line
-/// (`pica.rs`); nothing measured stands there.
+/// near-nose run. A PICA run may go hotter, to the top of its tables,
+/// 3975 K ([`crate::pica::TABLE_TOP_K`]). From 3333 K, where TACOT's tables
+/// stop, the PICA tables hold the specific heat at its 3333 K value and
+/// continue the conductivity along its last straight line (`pica.rs`);
+/// nothing measured stands there.
 pub const COMPARED_TEMPERATURE_MAX_K: f64 = 3412.366092194615;
 /// A value within this share of a compared end counts as at that end, so
 /// that a compared test made into a question by its recipe lands inside.
@@ -4945,7 +4994,7 @@ fn arc_jet_miss(history: &[StreamRow], stream_gas: &StreamGas) -> Result<Option<
         ARC_JET_STREAM_OXYGEN_MASS_FRACTION_MAX,
     ) {
         return Ok(Some(format!(
-            "oxygen mass fraction {} is outside {ARC_JET_STREAM_OXYGEN_MASS_FRACTION_MIN}..={ARC_JET_STREAM_OXYGEN_MASS_FRACTION_MAX}",
+            "oxygen mass fraction {} is outside {ARC_JET_STREAM_OXYGEN_MASS_FRACTION_MIN} to {ARC_JET_STREAM_OXYGEN_MASS_FRACTION_MAX}",
             stream_gas.oxygen_mass_fraction
         )));
     }
@@ -4964,7 +5013,7 @@ fn arc_jet_miss(history: &[StreamRow], stream_gas: &StreamGas) -> Result<Option<
     for (row, entry) in history.iter().enumerate() {
         if !within(entry.pressure_pa, ARC_JET_PRESSURE_MIN_PA, ARC_JET_PRESSURE_MAX_PA) {
             return Ok(Some(format!(
-                "row {row} has wall pressure {} Pa, outside {ARC_JET_PRESSURE_MIN_PA}..={ARC_JET_PRESSURE_MAX_PA} Pa",
+                "row {row} has wall pressure {} Pa, outside {ARC_JET_PRESSURE_MIN_PA} to {ARC_JET_PRESSURE_MAX_PA} Pa",
                 entry.pressure_pa
             )));
         }
@@ -4974,7 +5023,7 @@ fn arc_jet_miss(history: &[StreamRow], stream_gas: &StreamGas) -> Result<Option<
             ARC_JET_FLOW_ENTHALPY_MAX_J_PER_KG,
         ) {
             return Ok(Some(format!(
-                "row {row} has flow enthalpy {} J/kg, outside {ARC_JET_FLOW_ENTHALPY_MIN_J_PER_KG}..={ARC_JET_FLOW_ENTHALPY_MAX_J_PER_KG} J/kg",
+                "row {row} has flow enthalpy {} J/kg, outside {ARC_JET_FLOW_ENTHALPY_MIN_J_PER_KG} to {ARC_JET_FLOW_ENTHALPY_MAX_J_PER_KG} J/kg",
                 entry.flow_enthalpy_j_per_kg
             )));
         }
@@ -5016,7 +5065,7 @@ fn stardust_miss(history: &[StreamRow], stream_gas: &StreamGas) -> Result<Option
     for (row, entry) in history.iter().enumerate() {
         if !within(entry.pressure_pa, STARDUST_PRESSURE_MIN_PA, STARDUST_PRESSURE_MAX_PA) {
             return Ok(Some(format!(
-                "row {row} has wall pressure {} Pa, outside {STARDUST_PRESSURE_MIN_PA}..={STARDUST_PRESSURE_MAX_PA} Pa",
+                "row {row} has wall pressure {} Pa, outside {STARDUST_PRESSURE_MIN_PA} to {STARDUST_PRESSURE_MAX_PA} Pa",
                 entry.pressure_pa
             )));
         }
@@ -5026,7 +5075,7 @@ fn stardust_miss(history: &[StreamRow], stream_gas: &StreamGas) -> Result<Option
             STARDUST_FLOW_ENTHALPY_MAX_J_PER_KG,
         ) {
             return Ok(Some(format!(
-                "row {row} has flow enthalpy {} J/kg, outside {STARDUST_FLOW_ENTHALPY_MIN_J_PER_KG}..={STARDUST_FLOW_ENTHALPY_MAX_J_PER_KG} J/kg",
+                "row {row} has flow enthalpy {} J/kg, outside {STARDUST_FLOW_ENTHALPY_MIN_J_PER_KG} to {STARDUST_FLOW_ENTHALPY_MAX_J_PER_KG} J/kg",
                 entry.flow_enthalpy_j_per_kg
             )));
         }
@@ -5083,7 +5132,7 @@ fn thermocouple_block_miss(history: &[StreamRow], stream_gas: &StreamGas) -> Res
     let pressure_pa = history[0].pressure_pa;
     if !within(pressure_pa, THERMOCOUPLE_BLOCK_PRESSURE_MIN_PA, THERMOCOUPLE_BLOCK_PRESSURE_MAX_PA) {
         return Ok(Some(format!(
-            "row 0 has wall pressure {pressure_pa} Pa, outside {THERMOCOUPLE_BLOCK_PRESSURE_MIN_PA}..={THERMOCOUPLE_BLOCK_PRESSURE_MAX_PA} Pa"
+            "row 0 has wall pressure {pressure_pa} Pa, outside {THERMOCOUPLE_BLOCK_PRESSURE_MIN_PA} to {THERMOCOUPLE_BLOCK_PRESSURE_MAX_PA} Pa"
         )));
     }
     let end_s = history[history.len() - 1].time_s;
@@ -5136,7 +5185,7 @@ fn thermocouple_block_miss(history: &[StreamRow], stream_gas: &StreamGas) -> Res
     let held_until_s = history[last].time_s;
     if !within(held_until_s, THERMOCOUPLE_BLOCK_EXPOSURE_MIN_S, THERMOCOUPLE_BLOCK_EXPOSURE_MAX_S) {
         return Ok(Some(format!(
-            "the stream is held until {held_until_s} s, outside the exposures compared, {THERMOCOUPLE_BLOCK_EXPOSURE_MIN_S}..={THERMOCOUPLE_BLOCK_EXPOSURE_MAX_S} s"
+            "the stream is held until {held_until_s} s, outside the exposures compared, {THERMOCOUPLE_BLOCK_EXPOSURE_MIN_S} to {THERMOCOUPLE_BLOCK_EXPOSURE_MAX_S} s"
         )));
     }
     let ramp_s = history[last + 1].time_s - held_until_s;
@@ -5184,7 +5233,7 @@ fn slab_miss(
             format!("thickness {} m is not the {thickness_min_m} m compared", question.thickness_m)
         } else {
             format!(
-                "thickness {} m is outside {thickness_min_m}..={thickness_max_m} m",
+                "thickness {} m is outside {thickness_min_m} to {thickness_max_m} m",
                 question.thickness_m
             )
         });
@@ -5245,60 +5294,23 @@ fn envelope_misses(
     Ok((arc_jet, stardust, thermocouple_blocks))
 }
 
-/// The limits of what was compared with measurement, for a PICA material:
-/// refused by name outside them. Asked after [`ensure_question`]. Returns
-/// whether the question lies inside the arc-jet, the Stardust and the
-/// thermocouple-block envelope.
-fn ensure_compared(question: &SlabQuestion) -> Result<(bool, bool, bool), SlabReject> {
-    let (history, surroundings_temperature_k, face_wears, stream_gas) = match &question.surface {
-        SurfaceCondition::HeldTemperature { .. } => return Err(SlabReject::HeldFaceNotCompared),
+/// Whether a PICA question lies inside the arc-jet, the Stardust and the
+/// thermocouple-block envelope compared with measurement. Asked after
+/// [`ensure_question`]. A question in none is answered as any other; these
+/// say where it stands. Every compared case was a gas stream on a face that
+/// wore, so a held face, or a face that does not wear, lies in none.
+fn compared_flags(question: &SlabQuestion) -> Result<(bool, bool, bool), SlabReject> {
+    match &question.surface {
+        SurfaceCondition::HeldTemperature { .. } => Ok((false, false, false)),
+        SurfaceCondition::GasStream { face_wears: false, .. } => Ok((false, false, false)),
         SurfaceCondition::GasStream {
             history,
             surroundings_temperature_k,
-            face_wears,
             stream_gas,
-        } => (history, *surroundings_temperature_k, *face_wears, stream_gas),
-    };
-    if !face_wears {
-        return Err(SlabReject::FaceNotWearingNotCompared);
-    }
-    let thickness_m = question.thickness_m;
-    if !(within(thickness_m, ARC_JET_THICKNESS_M, ARC_JET_THICKNESS_M)
-        || within(thickness_m, STARDUST_THICKNESS_M, STARDUST_THICKNESS_M)
-        || within(thickness_m, THERMOCOUPLE_BLOCK_THICKNESS_MIN_M, THERMOCOUPLE_BLOCK_THICKNESS_MAX_M))
-    {
-        return Err(SlabReject::ThicknessNotCompared { thickness_m });
-    }
-    let start_temperature_k = question.start_temperature_k;
-    if ![
-        ARC_JET_START_TEMPERATURE_K,
-        STARDUST_START_TEMPERATURE_K,
-        THERMOCOUPLE_BLOCK_START_TEMPERATURE_K,
-    ]
-    .iter()
-    .any(|&compared| within(start_temperature_k, compared, compared))
-    {
-        return Err(SlabReject::StartTemperatureNotCompared { start_temperature_k });
-    }
-    if ![
-        ARC_JET_SURROUNDINGS_TEMPERATURE_K,
-        STARDUST_SURROUNDINGS_TEMPERATURE_K,
-        THERMOCOUPLE_BLOCK_SURROUNDINGS_TEMPERATURE_K,
-    ]
-    .iter()
-    .any(|&compared| within(surroundings_temperature_k, compared, compared))
-    {
-        return Err(SlabReject::SurroundingsNotCompared {
-            surroundings_temperature_k,
-        });
-    }
-    match envelope_misses(question, history, surroundings_temperature_k, stream_gas)? {
-        (Some(arc_jet), Some(stardust), Some(thermocouple_blocks)) => Err(SlabReject::QuestionNotCompared {
-            arc_jet,
-            stardust,
-            thermocouple_blocks,
-        }),
-        (arc_jet, stardust, thermocouple_blocks) => {
+            ..
+        } => {
+            let (arc_jet, stardust, thermocouple_blocks) =
+                envelope_misses(question, history, *surroundings_temperature_k, stream_gas)?;
             Ok((arc_jet.is_none(), stardust.is_none(), thermocouple_blocks.is_none()))
         }
     }
@@ -5380,6 +5392,10 @@ pub struct Summary {
     pub cells_at_end: u32,
     pub time_steps: u32,
     pub hardest_step_newton_passes: u32,
+    /// The face wore to within [`CELLS_MIN`] cells of the back wall: the
+    /// slab is worn away, the event is over, and the run ended there, at
+    /// `duration_s`, with its accounts closed.
+    pub worn_away: bool,
 }
 
 /// Face quantities against time, at most [`HISTORY_POINTS_MAX`] points.
@@ -5438,46 +5454,95 @@ fn thinned(n: usize, cap: usize) -> Vec<usize> {
 /// [`MATERIAL_PICA_SERVED`], or an earlier PICA version by its own name, as
 /// it was flown), a slab and what is done to its face, and what to
 /// return beside the summary. A converged, checked answer or a refusal by name.
+///
+/// Each value of the answer below the normal range is written as zero
+/// with its sign ([`crate::normal`]).
 pub fn answer(
     material_name: &str,
     question: &SlabQuestion,
     wanted: &Wanted,
 ) -> Result<Answer, SlabReject> {
-    let inside = compared_envelopes(material_name, question)?;
-    let terms = if material_name == MATERIAL_TACOT {
-        Terms::ALL
-    } else {
-        Terms {
-            compared_temperature_top_k: Some(COMPARED_TEMPERATURE_MAX_K),
-            ..Terms::ALL
-        }
-    };
-    answer_with(material_name, question, wanted, &terms, inside)
+    crate::normal::held(answer_as_computed(material_name, question, wanted))
 }
 
-/// For studies of the physics, not for serving: [`answer`] without the
-/// limits of what was compared with measurement, as the entry was before
-/// engine 0.7.0. Both envelope flags are false.
-#[cfg(test)]
-pub(crate) fn answer_beyond_compared(
+/// The answer as the equations compute it, before a value below the
+/// normal range is written as zero.
+fn answer_as_computed(
     material_name: &str,
     question: &SlabQuestion,
     wanted: &Wanted,
 ) -> Result<Answer, SlabReject> {
-    answer_with(material_name, question, wanted, &Terms::ALL, (false, false, false))
+    let inside = compared_envelopes(material_name, question)?;
+    answer_with(material_name, question, wanted, &Terms::ALL, inside)
 }
 
-/// For studies: [`check_question`] without the limits of what was compared.
-#[cfg(test)]
-pub(crate) fn check_beyond_compared(
-    material_name: &str,
-    question: &SlabQuestion,
-) -> Result<(), SlabReject> {
-    ensure_question(
-        question,
-        stream_pressure_range_pa(material_name)?,
-        material_name != MATERIAL_TACOT,
-    )
+impl NormalOrZero for Summary {
+    fn normal_or_zero(&mut self) {
+        self.duration_s.normal_or_zero();
+        self.wear_m.normal_or_zero();
+        self.peak_face_temperature_k.normal_or_zero();
+        self.peak_face_temperature_at_s.normal_or_zero();
+        self.final_face_temperature_k.normal_or_zero();
+        self.final_back_temperature_k.normal_or_zero();
+        self.depth_half_way_to_virgin_m.normal_or_zero();
+        self.depth_within_2_percent_of_virgin_m.normal_or_zero();
+        self.heat_from_stream_j_per_m2.normal_or_zero();
+        self.heat_absorbed_from_radiation_j_per_m2.normal_or_zero();
+        self.heat_radiated_away_j_per_m2.normal_or_zero();
+        self.heat_taken_at_face_by_gases_j_per_m2.normal_or_zero();
+        self.heat_in_through_face_j_per_m2.normal_or_zero();
+        self.heat_stored_in_solid_j_per_m2.normal_or_zero();
+        self.heat_taken_by_gas_j_per_m2.normal_or_zero();
+        self.heat_given_off_by_decomposition_j_per_m2.normal_or_zero();
+        self.char_enthalpy_removed_j_per_m2.normal_or_zero();
+        self.energy_account_residual_j_per_m2.normal_or_zero();
+        self.energy_account_tolerance_j_per_m2.normal_or_zero();
+        self.face_balance_residual_j_per_m2.normal_or_zero();
+        self.face_balance_tolerance_j_per_m2.normal_or_zero();
+        self.solid_mass_lost_kg_per_m2.normal_or_zero();
+        self.gas_mass_out_kg_per_m2.normal_or_zero();
+        self.char_mass_removed_kg_per_m2.normal_or_zero();
+        self.mass_account_residual_kg_per_m2.normal_or_zero();
+        self.mass_account_tolerance_kg_per_m2.normal_or_zero();
+    }
+}
+
+impl NormalOrZero for Answer {
+    fn normal_or_zero(&mut self) {
+        self.summary.normal_or_zero();
+        self.face_history.normal_or_zero();
+        self.thermocouple_histories.normal_or_zero();
+        self.final_profile.normal_or_zero();
+    }
+}
+
+impl NormalOrZero for FaceHistory {
+    fn normal_or_zero(&mut self) {
+        self.time_s.normal_or_zero();
+        self.face_temperature_k.normal_or_zero();
+        self.recession_m.normal_or_zero();
+        self.char_front_depth_m.normal_or_zero();
+        self.virgin_front_depth_m.normal_or_zero();
+        self.gas_mass_flux_kg_per_m2_s.normal_or_zero();
+        self.char_mass_flux_kg_per_m2_s.normal_or_zero();
+    }
+}
+
+impl NormalOrZero for ThermocoupleHistory {
+    fn normal_or_zero(&mut self) {
+        self.depth_m.normal_or_zero();
+        self.covered_until_s.normal_or_zero();
+        self.time_s.normal_or_zero();
+        self.temperature_k.normal_or_zero();
+    }
+}
+
+impl NormalOrZero for FinalProfile {
+    fn normal_or_zero(&mut self) {
+        self.depth_m.normal_or_zero();
+        self.temperature_k.normal_or_zero();
+        self.density_kg_per_m3.normal_or_zero();
+    }
 }
 
 fn answer_with(
@@ -5535,6 +5600,7 @@ fn answer_with(
         cells_at_end: r.cells_at_end,
         time_steps: r.time_steps,
         hardest_step_newton_passes: r.hardest_step_newton_passes,
+        worn_away: r.worn_away_at_s.is_some(),
     };
     let pick = |values: &[f64], at: &[usize]| at.iter().map(|&k| values[k]).collect::<Vec<f64>>();
     let face_history = wanted.face_history.then(|| {
@@ -5620,6 +5686,7 @@ fn run_model(
 ) -> Result<SlabResult, SlabReject> {
     ensure_question(
         question,
+        material,
         match bundle {
             Some((bundle, _)) => bundle.pressure_range_pa(),
             None => (
@@ -5651,27 +5718,8 @@ fn run_model(
     };
     let nodes = SolidEnthalpyNodes::of(material);
     let start_k = question.start_temperature_k;
-    let table_top_k = material.solid_table_k[material.solid_table_k.len() - 1];
-    let (lowest_k, highest_k, streamed) = match &question.surface {
-        SurfaceCondition::HeldTemperature {
-            held_temperature_k, ..
-        } => (
-            start_k,
-            held_temperature_k.max(heat_release_ends_k(&nodes)),
-            false,
-        ),
-        SurfaceCondition::GasStream {
-            surroundings_temperature_k,
-            ..
-        } => (
-            start_k.min(*surroundings_temperature_k),
-            match terms.compared_temperature_top_k {
-                Some(top) => top.min(table_top_k),
-                None => table_top_k,
-            },
-            true,
-        ),
-    };
+    let (lowest_k, highest_k) = band_k(material, question);
+    let streamed = matches!(question.surface, SurfaceCondition::GasStream { .. });
     let end_s = question.surface.heating_ends_s() + question.continue_after_s;
 
     let largest_cell_m = if streamed {
@@ -5744,6 +5792,7 @@ fn run_model(
         cells_at_end: n as u32,
         depth_half_way_to_virgin_m: 0.0,
         depth_within_2_percent_of_virgin_m: 0.0,
+        worn_away_at_s: None,
     };
 
     // State functions at the start, for the accounts at the end.
@@ -5787,7 +5836,7 @@ fn run_model(
     // the history that the time is in.
     let mut unforced_step_s = numerics.first_step_s;
     let mut row_before = 0usize;
-    for &(target_s, is_corner, is_reported) in &landings {
+    'run: for &(target_s, is_corner, is_reported) in &landings {
         while time_s < target_s {
             let natural = match &question.surface {
                 SurfaceCondition::HeldTemperature { .. } => (numerics.step_fraction
@@ -5815,10 +5864,13 @@ fn run_model(
                     if *face_wears {
                         while slab.width_m(0) < FRONT_CELL_MERGE_FRACTION * slab.width_m(1) {
                             if slab.cells() <= CELLS_MIN {
-                                return Err(SlabReject::SlabWornAway {
-                                    time_s,
-                                    recession_m: slab.face_depth_m[0],
-                                });
+                                // The slab is worn away: the event is over,
+                                // and the run ends here with its accounts.
+                                result.worn_away_at_s = Some(time_s);
+                                if result.report_time_s.last() != Some(&time_s) {
+                                    record(&slab, &mut result, time_s);
+                                }
+                                break 'run;
                             }
                             slab.join_front_cells(&nodes, terms.properties_frozen_at_k);
                         }
@@ -5886,21 +5938,7 @@ fn run_model(
                 lowest_k,
                 highest_k,
             )
-            .map_err(|reject| match (reject, terms.compared_temperature_top_k) {
-                (
-                    SlabReject::TemperatureOutOfBounds {
-                        time_s,
-                        depth_m,
-                        temperature_k,
-                    },
-                    Some(top),
-                ) if temperature_k > top => SlabReject::TemperatureAboveCompared {
-                    time_s,
-                    depth_m,
-                    temperature_k,
-                },
-                (reject, _) => reject,
-            })?;
+            ?;
             total.heat_in_j += account.heat_in_j;
             total.heat_stored_j += account.heat_stored_j;
             total.heat_taken_by_gas_j += account.heat_taken_by_gas_j;
@@ -5937,6 +5975,8 @@ fn run_model(
 
     // The accounts of the whole run. The solid's mass and enthalpy are read
     // from the first and last states alone; the rest was summed step by step.
+    // A slab worn away ends its run at that time.
+    let end_s = result.worn_away_at_s.unwrap_or(end_s);
     let n = slab.cells();
     let mut mass_at_end = 0.0;
     let mut enthalpy_at_end = 0.0;
@@ -7318,7 +7358,7 @@ mod tests {
         for held in [
             HELD_TEMPERATURE_MIN_K - 0.01,
             HELD_TEMPERATURE_MAX_K + 0.01,
-            298.0,
+            0.0,
             f64::NAN,
         ] {
             let err =
@@ -7367,16 +7407,35 @@ mod tests {
     #[test]
     fn the_edges_of_the_declared_range_are_answered() {
         // No thermocouples, eight thermocouples, the face and the back wall.
+        for thickness_m in [THICKNESS_MIN_M, THICKNESS_MAX_M] {
+            let r = solve(&question(
+                thickness_m,
+                START_TEMPERATURE_MIN_K,
+                HELD_TEMPERATURE_MAX_K,
+                HOLD_DURATION_MIN_S,
+                0.0,
+                &[],
+            ))
+            .expect("corner");
+            assert!(r.thermocouple_temperature_k.is_empty());
+            assert!(r.cells as usize > CELLS_MIN, "{thickness_m} m: {} cells", r.cells);
+        }
+        // The thinnest slab is the thinnest whose grid holds more than eight
+        // cells.
+        assert_eq!(cell_faces(THICKNESS_MIN_M, &NUMERICS).len() - 1, CELLS_MIN + 1);
+        assert_eq!(cell_faces(THICKNESS_MIN_M * 0.85, &NUMERICS).len() - 1, CELLS_MIN);
+        // The warmest start held at the coldest face: the slab cools.
         let r = solve(&question(
-            THICKNESS_MIN_M,
-            START_TEMPERATURE_MIN_K,
-            HELD_TEMPERATURE_MAX_K,
+            0.02,
+            START_TEMPERATURE_MAX_K,
+            HELD_TEMPERATURE_MIN_K,
             HOLD_DURATION_MIN_S,
-            0.0,
-            &[],
+            1.0,
+            &[0.0, 0.02],
         ))
-        .expect("corner");
-        assert!(r.thermocouple_temperature_k.is_empty());
+        .expect("warmest start, coldest face");
+        assert_eq!(r.surface_temperature_k[r.surface_temperature_k.len() - 1], START_TEMPERATURE_MAX_K);
+        assert!(r.thermocouple_temperature_k[0].iter().any(|&t| t < 300.0));
         let depths = [
             0.0,
             0.001,
@@ -7385,12 +7444,12 @@ mod tests {
             0.004,
             0.005,
             0.006,
-            THICKNESS_MIN_M,
+            0.01,
         ];
         let r = solve(&question(
-            THICKNESS_MIN_M,
-            START_TEMPERATURE_MAX_K,
-            HELD_TEMPERATURE_MIN_K,
+            0.01,
+            400.0,
+            400.0,
             HOLD_DURATION_MIN_S,
             1.5,
             &depths,
@@ -7693,10 +7752,10 @@ mod tests {
     #[ignore]
     fn a_sweep_of_the_declared_range_refuses_nothing() {
         let mut questions = Vec::new();
-        for &thickness in &[THICKNESS_MIN_M, 0.02, 0.05, THICKNESS_MAX_M] {
-            for &start in &[START_TEMPERATURE_MIN_K, 298.0, START_TEMPERATURE_MAX_K] {
+        for &thickness in &[MEASURED_THICKNESS_MIN_M, 0.02, 0.05, MEASURED_THICKNESS_MAX_M] {
+            for &start in &[START_TEMPERATURE_MIN_K, 298.0, MEASURED_START_TEMPERATURE_MAX_K] {
                 for &held in &[
-                    HELD_TEMPERATURE_MIN_K,
+                    MEASURED_HELD_TEMPERATURE_MIN_K,
                     600.0,
                     900.0,
                     1200.0,
@@ -7727,10 +7786,10 @@ mod tests {
             }
         }
         // The longest runs, at the corners.
-        for &thickness in &[THICKNESS_MIN_M, THICKNESS_MAX_M] {
-            for &start in &[START_TEMPERATURE_MIN_K, START_TEMPERATURE_MAX_K] {
+        for &thickness in &[MEASURED_THICKNESS_MIN_M, MEASURED_THICKNESS_MAX_M] {
+            for &start in &[START_TEMPERATURE_MIN_K, MEASURED_START_TEMPERATURE_MAX_K] {
                 for &held in &[
-                    HELD_TEMPERATURE_MIN_K,
+                    MEASURED_HELD_TEMPERATURE_MIN_K,
                     900.0,
                     1644.0,
                     HELD_TEMPERATURE_MAX_K,
@@ -7739,8 +7798,8 @@ mod tests {
                         thickness,
                         start,
                         held,
-                        HOLD_DURATION_MAX_S,
-                        CONTINUE_AFTER_MAX_S,
+                        MEASURED_HOLD_DURATION_MAX_S,
+                        MEASURED_CONTINUE_AFTER_MAX_S,
                         &[0.0, 0.001, thickness],
                     ));
                 }
@@ -7761,11 +7820,11 @@ mod tests {
         };
         for index in 1..=200u32 {
             let thickness =
-                THICKNESS_MIN_M + (THICKNESS_MAX_M - THICKNESS_MIN_M) * spread(index, 2);
+                MEASURED_THICKNESS_MIN_M + (MEASURED_THICKNESS_MAX_M - MEASURED_THICKNESS_MIN_M) * spread(index, 2);
             let start = START_TEMPERATURE_MIN_K
-                + (START_TEMPERATURE_MAX_K - START_TEMPERATURE_MIN_K) * spread(index, 3);
-            let held = HELD_TEMPERATURE_MIN_K
-                + (HELD_TEMPERATURE_MAX_K - HELD_TEMPERATURE_MIN_K) * spread(index, 5);
+                + (MEASURED_START_TEMPERATURE_MAX_K - START_TEMPERATURE_MIN_K) * spread(index, 3);
+            let held = MEASURED_HELD_TEMPERATURE_MIN_K
+                + (HELD_TEMPERATURE_MAX_K - MEASURED_HELD_TEMPERATURE_MIN_K) * spread(index, 5);
             let hold = HOLD_DURATION_MIN_S * (60.0f64 / HOLD_DURATION_MIN_S).powf(spread(index, 7));
             let after = 60.0 * spread(index, 11) * spread(index, 11);
             let depth = thickness * spread(index, 13);
@@ -8980,8 +9039,8 @@ mod stream_tests {
             SlabReject::HistoryTimesOutOfOrder { row: 2, .. }
         ));
         assert_eq!(
-            with(&|h, _| h[4].time_s = 600.5),
-            SlabReject::HistoryDurationOutOfRange { duration_s: 600.5 }
+            with(&|h, _| h[4].time_s = 3600.5),
+            SlabReject::HistoryDurationOutOfRange { duration_s: 3600.5 }
         );
         assert_eq!(
             with(&|h, _| h.truncate(2)),
@@ -9039,7 +9098,7 @@ mod stream_tests {
             }
         );
         let mut q = good();
-        q.thickness_m = 0.2;
+        q.thickness_m = 1.5;
         assert!(matches!(
             solve(&q).expect_err("thickness"),
             SlabReject::ThicknessOutOfRange { .. }
@@ -9115,18 +9174,19 @@ mod stream_tests {
         );
 
         // A millisecond exactly is answered, with the numbers the crate
-        // gave before this floor: 2,511 time steps, and these bits.
+        // gave before this floor: 2,511 time steps, and these bits, as
+        // genesis_kernel::math computes them (since genesis_solvers 0.12.0).
         assert_eq!(check_question(MATERIAL_TACOT, &jump(HISTORY_ROW_SPAN_MIN_S)), Ok(()));
         let exact = answer(MATERIAL_TACOT, &jump(HISTORY_ROW_SPAN_MIN_S), &Wanted::default()).expect("a millisecond is answered");
         assert_eq!(exact.summary.time_steps, 2511);
         assert_eq!((exact.summary.cells, exact.summary.cells_at_end), (528, 483));
         for (value, bits) in [
-            (exact.summary.wear_m, 0x3f5eb54587526ad7_u64),
+            (exact.summary.wear_m, 0x3f5eb54587526ad4_u64),
             (exact.summary.peak_face_temperature_k, 0x40993fe2c203b36c),
             (exact.summary.final_face_temperature_k, 0x40993fe2c203b36c),
             (exact.summary.final_back_temperature_k, 0x4072c00000000000),
-            (exact.summary.heat_from_stream_j_per_m2, 0x41539ae6e8b4cdd4),
-            (exact.summary.heat_stored_in_solid_j_per_m2, 0x414311ecb9c197eb),
+            (exact.summary.heat_from_stream_j_per_m2, 0x41539ae6e8b4cdd6),
+            (exact.summary.heat_stored_in_solid_j_per_m2, 0x414311ecb9c197f0),
             (exact.summary.solid_mass_lost_kg_per_m2, 0x3fe48235fb32abf0),
         ] {
             assert_eq!(value.to_bits(), bits, "{value}");
@@ -9269,21 +9329,20 @@ mod stream_tests {
             matches!(err, SlabReject::FaceBeyondSurfaceTable { face_temperature_k, .. } if face_temperature_k > 2900.0),
             "{err:?}"
         );
-        // A thin slab under case 2.3's stream wears through.
-        let err =
-            solve(&stream(0.01, 0.3, 2.5e7, 101325.0, 0.0, 60.0, true)).expect_err("worn away");
-        assert!(
-            matches!(err, SlabReject::SlabWornAway { recession_m, .. } if recession_m > 0.008),
-            "{err:?}"
-        );
+        // A thin slab under case 2.3's stream wears through: the event is
+        // over, and the run ends there with its accounts closed.
+        let worn = solve(&stream(0.01, 0.3, 2.5e7, 101325.0, 0.0, 60.0, true)).expect("worn away, an end");
+        let at = worn.worn_away_at_s.expect("worn away");
+        assert!(at < 60.0 && worn.report_time_s.last() == Some(&at), "{at}");
+        assert!(*worn.recession_m.last().unwrap() > 0.008, "{:?}", worn.recession_m.last());
+        assert!(worn.cells_at_end as usize <= CELLS_MIN);
+        assert!(worn.mass_account_residual_kg_per_m2.abs() <= worn.mass_account_tolerance_kg_per_m2);
+        assert!(worn.energy_account_residual_j_per_m2.abs() <= worn.energy_account_tolerance_j_per_m2);
+        assert!(worn.face_balance_residual_j_per_m2.abs() <= worn.face_balance_tolerance_j_per_m2);
         for refusal in [
             SlabReject::FaceBeyondSurfaceTable {
                 time_s: 1.0,
                 face_temperature_k: 3100.0,
-            },
-            SlabReject::SlabWornAway {
-                time_s: 1.0,
-                recession_m: 0.009,
             },
             SlabReject::FaceMovedBackward { time_s: 1.0 },
             SlabReject::FaceOutranItsCell { time_s: 1.0 },
@@ -9459,11 +9518,15 @@ mod stream_tests {
     // The declared range.
     // -----------------------------------------------------------------------
 
-    /// 3,456 heating histories across the declared range. About 17 minutes
-    /// with `--release`. Measured: 2,145 answered; 751 refused because a
-    /// temperature passed the top of the material's tables, 402 because the
-    /// face passed the top of the surface table at its pressure, 158 because
-    /// the slab wore away, none for any other reason; hardest step 6 passes.
+    /// 3,456 heating histories across the ranges the numerics were measured
+    /// on. About 17 minutes with `--release`. Measured when written: 2,145
+    /// answered; 751 refused because a temperature passed the top of the
+    /// material's tables, 402 because the face passed the top of the surface
+    /// table at its pressure, 158 because the slab wore away, none for any
+    /// other reason; hardest step 6 passes. Since `FlowEnthalpyBelowWall` the
+    /// 864 at zero flow enthalpy are refused before computing, and of the
+    /// rest 1,479 are answered, 648, 333 and 132 refused for those three
+    /// reasons; hardest step 6 passes.
     #[test]
     #[ignore]
     fn a_sweep_of_heating_histories_refuses_only_what_the_tables_cannot_hold() {
@@ -9473,17 +9536,18 @@ mod stream_tests {
         let mut too_hot = 0;
         let mut past_surface_table = 0;
         let mut worn_away = 0;
+        let mut colder_than_the_wall = 0;
         let mut other = Vec::new();
-        for &thickness in &[THICKNESS_MIN_M, 0.05, THICKNESS_MAX_M] {
-            for &coefficient in &[0.003, 0.03, 0.3, HEAT_TRANSFER_COEFFICIENT_MAX_KG_PER_M2_S] {
-                for &enthalpy in &[0.0, 1.5e6, 2.5e7, FLOW_ENTHALPY_MAX_J_PER_KG] {
+        for &thickness in &[MEASURED_THICKNESS_MIN_M, 0.05, MEASURED_THICKNESS_MAX_M] {
+            for &coefficient in &[0.003, 0.03, 0.3, MEASURED_COEFFICIENT_MAX_KG_PER_M2_S] {
+                for &enthalpy in &[0.0, 1.5e6, 2.5e7, MEASURED_FLOW_ENTHALPY_MAX_J_PER_KG] {
                     for &pressure in &[
                         STREAM_PRESSURE_MIN_PA,
                         2000.0,
                         23811.0,
                         STREAM_PRESSURE_MAX_PA,
                     ] {
-                        for &heating in &[0.0, 1.0e6, RADIATIVE_HEATING_MAX_W_PER_M2] {
+                        for &heating in &[0.0, 1.0e6, MEASURED_RADIATIVE_HEATING_MAX_W_PER_M2] {
                             for &(end, cools) in &[(3.0, false), (40.0, true), (40.0, false)] {
                                 for &wears in &[true, false] {
                                     let mut q = stream(
@@ -9517,6 +9581,7 @@ mod stream_tests {
                                     match solve(&q) {
                                         Ok(r) => {
                                             answered += 1;
+                                            worn_away += r.worn_away_at_s.is_some() as u32;
                                             passes[r.hardest_step_newton_passes as usize] += 1;
                                             assert!(r
                                                 .recession_m
@@ -9542,7 +9607,12 @@ mod stream_tests {
                                         Err(SlabReject::FaceBeyondSurfaceTable { .. }) => {
                                             past_surface_table += 1
                                         }
-                                        Err(SlabReject::SlabWornAway { .. }) => worn_away += 1,
+                                        // A stream at zero enthalpy, colder than the
+                                        // wall, refused before computing since
+                                        // FlowEnthalpyBelowWall was written.
+                                        Err(SlabReject::FlowEnthalpyBelowWall { .. }) if enthalpy == 0.0 => {
+                                            colder_than_the_wall += 1
+                                        }
                                         Err(err) => other.push(format!("{q:?}: {err}")),
                                     }
                                 }
@@ -9553,7 +9623,7 @@ mod stream_tests {
             }
         }
         eprintln!(
-            "{asked} heating histories: {answered} answered; refused because a temperature passed the top of the material's tables (3333 K): {too_hot}; because the face passed the top of the surface table at its pressure: {past_surface_table}; because the slab wore away: {worn_away}; for any other reason: {}. Answered runs by Newton passes in their hardest step: {passes:?}",
+            "{asked} heating histories: {answered} answered, {worn_away} of them ended where the slab wore away; refused before computing because the stream at zero enthalpy is colder than the wall: {colder_than_the_wall}; refused because a temperature passed the top of the material's tables (3333 K): {too_hot}; because the face passed the top of the surface table at its pressure: {past_surface_table}; for any other reason: {}. Answered runs by Newton passes in their hardest step: {passes:?}",
             other.len()
         );
         assert!(other.is_empty(), "{:#?}", &other[..other.len().min(10)]);
@@ -10281,68 +10351,96 @@ mod served_tests {
         }
     }
 
+    /// The three envelope flags of a PICA question the served entry takes.
+    fn flags(q: &SlabQuestion) -> (bool, bool, bool) {
+        compared_envelopes(MATERIAL_PICA_SERVED, q).expect("inside the declared range")
+    }
+
+    /// A question inside no compared envelope: taken all the same, all three
+    /// flags false.
+    fn in_none(q: &SlabQuestion) -> bool {
+        named(MATERIAL_PICA_SERVED, q) == "answered" && flags(q) == (false, false, false)
+    }
+
+    /// Why a PICA stream question is outside each envelope, the three
+    /// reasons joined.
+    fn misses(q: &SlabQuestion) -> String {
+        match &q.surface {
+            SurfaceCondition::GasStream { history, surroundings_temperature_k, stream_gas, .. } => {
+                let (a, b, c) = envelope_misses(q, history, *surroundings_temperature_k, stream_gas).unwrap();
+                format!(
+                    "for the arc-jet tests, {}; for the Stardust flight, {}; for the thermocouple blocks, {}",
+                    a.unwrap_or_default(),
+                    b.unwrap_or_default(),
+                    c.unwrap_or_default()
+                )
+            }
+            SurfaceCondition::HeldTemperature { .. } => String::new(),
+        }
+    }
+
     #[test]
-    fn a_pica_question_outside_what_was_compared_is_refused_by_name() {
+    fn a_pica_question_outside_what_was_compared_is_answered_and_says_so() {
         // The recipe's question for the lowest heating compared is inside the
         // arc-jet envelope; a thousandth less heating is not, and its slab is
         // not the Stardust cores' or the blocks', so it is inside none.
-        assert_eq!(named(MATERIAL_PICA_SERVED, &arc_jet_row_1(1.0, 55.0)), "answered");
+        assert_eq!(flags(&arc_jet_row_1(1.0, 55.0)), (true, false, false));
         let low = arc_jet_row_1(0.999, 55.0);
-        assert_eq!(named(MATERIAL_PICA_SERVED, &low), "QuestionNotCompared");
-        let sentence = check_question(MATERIAL_PICA_SERVED, &low).unwrap_err().to_string();
+        assert!(in_none(&low));
+        let sentence = misses(&low);
         assert!(sentence.contains("below 1070000 W/m2") && sentence.contains("not the 0.0582 m compared"), "{sentence}");
-        // 10 W/cm² in the arc-jet gas: refused.
-        assert_eq!(named(MATERIAL_PICA_SERVED, &arc_jet_row_1(0.0934579, 10.0)), "QuestionNotCompared");
+        // 10 W/cm² in the arc-jet gas: in none.
+        assert!(in_none(&arc_jet_row_1(0.0934579, 10.0)));
         // The same in air on the Stardust slab lies inside the Stardust
         // envelope, whose tails run below 107 W/cm²; on the arc-jet slab it
         // lies in none, since each envelope has its own slab.
         assert_eq!(
-            named(MATERIAL_PICA_SERVED, &on_stardust_slab(with_gas(arc_jet_row_1(0.0934579, 10.0), StreamGas::AIR))),
-            "answered"
+            flags(&on_stardust_slab(with_gas(arc_jet_row_1(0.0934579, 10.0), StreamGas::AIR))),
+            (false, true, false)
         );
         let mixed = with_gas(arc_jet_row_1(0.0934579, 10.0), StreamGas::AIR);
-        assert_eq!(named(MATERIAL_PICA_SERVED, &mixed), "QuestionNotCompared");
-        let sentence = check_question(MATERIAL_PICA_SERVED, &mixed).unwrap_err().to_string();
+        assert!(in_none(&mixed));
+        let sentence = misses(&mixed);
         assert!(sentence.contains("thickness 0.06 m is not the 0.0582 m compared"), "{sentence}");
-        // Below the lowest heating only in the swing-in: answered.
+        // Below the lowest heating only in the swing-in: inside.
         let mut swing = arc_jet_row_1(1.0, 55.0);
         if let SurfaceCondition::GasStream { history, .. } = &mut swing.surface {
             history.insert(1, stream_rows(&[(0.25, 2300.0, 0.01, 1.52e7, 0.0)])[0]);
         }
-        assert_eq!(named(MATERIAL_PICA_SERVED, &swing), "answered");
+        assert_eq!(flags(&swing), (true, false, false));
         // Longer than the longest arc-jet test, in the arc-jet gas.
-        assert_eq!(named(MATERIAL_PICA_SERVED, &arc_jet_row_1(1.0, 401.0)), "QuestionNotCompared");
+        assert!(in_none(&arc_jet_row_1(1.0, 401.0)));
         // The slab, its start, its surroundings, the face: a value in no
-        // envelope is refused by its own name.
+        // envelope puts the question in none.
         let mut q = arc_jet_row_1(1.0, 55.0);
         q.thickness_m = 0.05;
-        assert_eq!(named(MATERIAL_PICA_SERVED, &q), "ThicknessNotCompared");
-        // A value in another envelope is refused as a question not compared:
-        // the arc-jet stream on the Stardust slab, from 260 K, or from 300 K.
-        assert_eq!(named(MATERIAL_PICA_SERVED, &on_stardust_slab(arc_jet_row_1(1.0, 55.0))), "QuestionNotCompared");
+        assert!(in_none(&q));
+        // A value of another envelope puts it in none too: the arc-jet
+        // stream on the Stardust slab, from 260 K, or from 300 K.
+        assert!(in_none(&on_stardust_slab(arc_jet_row_1(1.0, 55.0))));
         let mut q = arc_jet_row_1(1.0, 55.0);
         q.thickness_m = STARDUST_THICKNESS_M;
-        assert_eq!(named(MATERIAL_PICA_SERVED, &q), "QuestionNotCompared");
+        assert!(in_none(&q));
         let mut q = arc_jet_row_1(1.0, 55.0);
         q.start_temperature_k = STARDUST_START_TEMPERATURE_K;
-        assert_eq!(named(MATERIAL_PICA_SERVED, &q), "QuestionNotCompared");
+        assert!(in_none(&q));
         let mut q = arc_jet_row_1(1.0, 55.0);
         q.start_temperature_k = 280.0;
-        assert_eq!(named(MATERIAL_PICA_SERVED, &q), "StartTemperatureNotCompared");
+        assert!(in_none(&q));
         let mut q = arc_jet_row_1(1.0, 55.0);
         q.start_temperature_k = 400.0;
-        assert_eq!(named(MATERIAL_PICA_SERVED, &q), "StartTemperatureNotCompared");
+        assert!(in_none(&q));
         let mut q = arc_jet_row_1(1.0, 55.0);
         if let SurfaceCondition::GasStream { surroundings_temperature_k, face_wears, .. } = &mut q.surface {
             *surroundings_temperature_k = 250.0;
             assert!(*face_wears);
         }
-        assert_eq!(named(MATERIAL_PICA_SERVED, &q), "SurroundingsNotCompared");
+        assert!(in_none(&q));
         let mut q = arc_jet_row_1(1.0, 55.0);
         if let SurfaceCondition::GasStream { face_wears, .. } = &mut q.surface {
             *face_wears = false;
         }
-        assert_eq!(named(MATERIAL_PICA_SERVED, &q), "FaceNotWearingNotCompared");
+        assert!(in_none(&q));
         let held = SlabQuestion {
             thickness_m: 0.06,
             start_temperature_k: 300.0,
@@ -10353,11 +10451,14 @@ mod served_tests {
             continue_after_s: 300.0,
             thermocouple_depths_m: vec![],
         };
+        // A held face and a face that does not wear were never compared:
+        // every PICA version takes them, in no envelope.
         for material in &MATERIAL_NAMES[1..] {
-            assert_eq!(named(material, &held), "HeldFaceNotCompared");
-            assert_eq!(named(material, &q), "FaceNotWearingNotCompared");
+            assert_eq!(named(material, &held), "answered");
+            assert_eq!(named(material, &q), "answered");
+            assert_eq!(compared_envelopes(material, &held), Ok((false, false, false)));
+            assert_eq!(compared_envelopes(material, &q), Ok((false, false, false)));
         }
-        // TACOT, compared with other codes only, keeps its declared range.
         assert_eq!(named(MATERIAL_TACOT, &held), "answered");
         let mut tacot = with_gas(arc_jet_row_1(0.0934579, 10.0), StreamGas::AIR);
         tacot.thickness_m = 0.01;
@@ -10374,7 +10475,7 @@ mod served_tests {
         if let SurfaceCondition::GasStream { history, .. } = &mut q.surface {
             history[2].radiative_heating_w_per_m2 = 8.0e5;
         }
-        assert_eq!(named(MATERIAL_PICA_SERVED, &q), "QuestionNotCompared");
+        assert!(in_none(&q));
         let b12 = with_gas(
             under_stream(
                 0.06,
@@ -10383,7 +10484,7 @@ mod served_tests {
             ),
             StreamGas::AIR,
         );
-        assert_eq!(named(MATERIAL_PICA_SERVED, &b12), "QuestionNotCompared");
+        assert!(in_none(&b12));
         // A stream that stops and comes back is outside the flight's one
         // stretch; one that runs past 134 s in air at 3 kPa and 50 W/cm² is
         // past the flight's and below the arc jet's heating.
@@ -10392,19 +10493,19 @@ mod served_tests {
             stream_rows(&[(0.0, 3000.0, 0.02, 2.5e7, 0.0), (10.0, 3000.0, 0.0, 2.5e7, 0.0), (20.0, 3000.0, 0.02, 2.5e7, 0.0)]),
             &[],
         ));
-        let sentence = check_question(MATERIAL_PICA_SERVED, &stops).unwrap_err().to_string();
+        let sentence = misses(&stops);
         assert!(sentence.contains("comes back on"), "{sentence}");
         let long = on_stardust_slab(under_stream(
             0.06,
             stream_rows(&[(0.0, 3000.0, 0.02, 2.5e7, 0.0), (200.0, 3000.0, 0.02, 2.5e7, 0.0)]),
             &[],
         ));
-        let sentence = check_question(MATERIAL_PICA_SERVED, &long).unwrap_err().to_string();
+        let sentence = misses(&long);
         assert!(sentence.contains("later than 134 s"), "{sentence}");
     }
 
     #[test]
-    fn the_four_thermocouple_blocks_stay_answered_inside_their_own_envelope() {
+    fn the_four_thermocouple_blocks_are_answered_inside_their_own_envelope() {
         for block in ["9B", "7B", "3B", "6A"] {
             assert_eq!(named(MATERIAL_PICA_SERVED, &thermocouple_block(block)), "answered", "{block}");
             let (arc_jet, stardust, blocks) = compared_envelopes(MATERIAL_PICA_SERVED, &thermocouple_block(block)).unwrap();
@@ -10420,7 +10521,8 @@ mod served_tests {
         assert!(!a.summary.inside_arc_jet_comparison && !a.summary.inside_stardust_comparison);
         assert!(a.summary.peak_face_temperature_k > 2900.0 && a.summary.peak_face_temperature_k < COMPARED_TEMPERATURE_MAX_K);
         assert_eq!(a.thermocouple_histories.as_ref().map(|h| h.len()), Some(2));
-        // Each part of the envelope refuses by name what was not compared.
+        // Each part of the envelope sets the flag down where a question
+        // leaves it.
         let edit = |block: &str, change: &dyn Fn(&mut SlabQuestion, &mut Vec<StreamRow>)| {
             let mut q = thermocouple_block(block);
             let mut rows = match &q.surface {
@@ -10431,15 +10533,15 @@ mod served_tests {
             if let SurfaceCondition::GasStream { history, .. } = &mut q.surface {
                 *history = rows;
             }
-            check_question(MATERIAL_PICA_SERVED, &q)
+            q
         };
         let outside = |block: &str, change: &dyn Fn(&mut SlabQuestion, &mut Vec<StreamRow>), why: &str| {
-            let reject = edit(block, change).unwrap_err();
-            assert_eq!(reject.name(), "QuestionNotCompared", "{why}");
-            let sentence = reject.to_string();
+            let q = edit(block, change);
+            assert!(in_none(&q), "{why}");
+            let sentence = misses(&q);
             assert!(sentence.contains(&format!("for the thermocouple blocks, {why}")), "{sentence}");
         };
-        outside("3B", &|q, _| q.thickness_m = STARDUST_THICKNESS_M, "thickness 0.0582 m is outside 0.0224..=0.0325 m");
+        outside("3B", &|q, _| q.thickness_m = STARDUST_THICKNESS_M, "thickness 0.0582 m is outside 0.0224 to 0.0325 m");
         outside("3B", &|_, rows| rows[4].time_s = 153.0, "the heating history lasts 153 s, longer than 152 s");
         outside("7B", &|_, rows| { rows[2].time_s = 14.0; rows[3].time_s = 14.5; }, "the stream is held until 14 s");
         outside("7B", &|_, rows| rows[3].time_s = 16.0, "the stream falls to zero over 1 s from 15 s");
@@ -10450,23 +10552,18 @@ mod served_tests {
         outside("6A", &|_, rows| rows[4].radiative_heating_w_per_m2 = 1.0, "row 4 has radiative heating 1 W/m2");
         outside("6A", &|_, rows| { for row in rows.iter_mut() { row.flow_enthalpy_j_per_kg = 2.0e7; } }, "row 0 has flow enthalpy 20000000 J/kg");
         // The block streams on another envelope's slab, start or surroundings
-        // are refused: no comparison had them.
-        assert_eq!(edit("9B", &|q, _| q.thickness_m = ARC_JET_THICKNESS_M).unwrap_err().name(), "QuestionNotCompared");
-        assert_eq!(edit("9B", &|q, _| q.start_temperature_k = 300.0).unwrap_err().name(), "QuestionNotCompared");
-        assert_eq!(
-            edit("9B", &|q, _| if let SurfaceCondition::GasStream { surroundings_temperature_k, .. } = &mut q.surface {
-                *surroundings_temperature_k = STARDUST_SURROUNDINGS_TEMPERATURE_K;
-            })
-            .unwrap_err()
-            .name(),
-            "QuestionNotCompared"
-        );
-        assert_eq!(edit("9B", &|q, _| q.start_temperature_k = 290.0).unwrap_err().name(), "StartTemperatureNotCompared");
-        // An arc-jet stream on a block's slab from 303.15 K is refused too.
+        // lie in none: no comparison had them.
+        assert!(in_none(&edit("9B", &|q, _| q.thickness_m = ARC_JET_THICKNESS_M)));
+        assert!(in_none(&edit("9B", &|q, _| q.start_temperature_k = 300.0)));
+        assert!(in_none(&edit("9B", &|q, _| if let SurfaceCondition::GasStream { surroundings_temperature_k, .. } = &mut q.surface {
+            *surroundings_temperature_k = STARDUST_SURROUNDINGS_TEMPERATURE_K;
+        })));
+        assert!(in_none(&edit("9B", &|q, _| q.start_temperature_k = 290.0)));
+        // An arc-jet stream on a block's slab from 303.15 K lies in none too.
         let mut q = arc_jet_row_1(1.0, 55.0);
         q.thickness_m = 0.03;
         q.start_temperature_k = THERMOCOUPLE_BLOCK_START_TEMPERATURE_K;
-        assert_eq!(named(MATERIAL_PICA_SERVED, &q), "QuestionNotCompared");
+        assert!(in_none(&q));
     }
 
     #[test]
@@ -10506,28 +10603,6 @@ mod served_tests {
         assert_eq!(check_question(MATERIAL_TACOT, &cold).unwrap_err().name(), "FlowEnthalpyBelowWall");
         // The workshop cases ramp from no stream at zero enthalpy and are answered.
         assert_eq!(check_question(MATERIAL_TACOT, &ablation_workshop_test_case_2_2()), Ok(()));
-    }
-
-    #[test]
-    fn a_pica_run_hotter_than_any_compared_run_is_refused_by_name() {
-        // The limit is the Stardust near-nose run's hottest step.
-        assert!(COMPARED_TEMPERATURE_MAX_K > 3412.0 && COMPARED_TEMPERATURE_MAX_K < 3413.0);
-        assert!(COMPARED_TEMPERATURE_MAX_K < crate::pica::TABLE_TOP_K);
-        // The mechanism, with a lower top on a short arc-jet question.
-        let q = arc_jet_row_1(1.0, 3.0);
-        let terms = Terms {
-            compared_temperature_top_k: Some(1200.0),
-            ..Terms::ALL
-        };
-        let reject = solve_material_with(MATERIAL_PICA_SERVED, &q, &terms).unwrap_err();
-        assert!(
-            matches!(reject, SlabReject::TemperatureAboveCompared { temperature_k, depth_m, .. } if temperature_k > 1200.0 && depth_m < 1.0e-4),
-            "{reject:?}"
-        );
-        // The served entry answers it and says which envelope it lies in.
-        let a = answer(MATERIAL_PICA_SERVED, &q, &Wanted::default()).expect("inside the arc jet");
-        assert!(a.summary.inside_arc_jet_comparison && !a.summary.inside_stardust_comparison);
-        assert!(a.summary.material_compared_with_measurement);
     }
 
     #[test]
@@ -10605,6 +10680,7 @@ mod served_tests {
             },
             SlabReject::SurroundingsTemperatureOutOfRange {
                 surroundings_temperature_k: 10.0,
+                highest_k: 3975.0,
             },
             SlabReject::ContinueAfterWithStream {
                 continue_after_s: 1.0,
@@ -10613,20 +10689,20 @@ mod served_tests {
                 time_s: 1.0,
                 face_temperature_k: 3800.0,
             },
-            SlabReject::SlabWornAway {
-                time_s: 1.0,
-                recession_m: 0.009,
-            },
             SlabReject::FaceMovedBackward { time_s: 1.0 },
             SlabReject::FaceOutranItsCell { time_s: 1.0 },
             SlabReject::UnknownMaterial {
                 name: "x".to_string(),
             },
-            SlabReject::StreamOxygenOutOfRange {
-                oxygen_mass_fraction: 0.5,
+            SlabReject::StreamOxygenNotAMassFraction {
+                oxygen_mass_fraction: 1.5,
             },
-            SlabReject::StreamArgonOutOfRange {
-                argon_mass_fraction: 0.6,
+            SlabReject::StreamArgonNotAMassFraction {
+                argon_mass_fraction: -0.1,
+            },
+            SlabReject::StreamOxygenAndArgonAboveOne {
+                oxygen_mass_fraction: 0.6,
+                argon_mass_fraction: 0.5,
             },
             SlabReject::StreamNotAirForThisMaterial {
                 stream_gas: StreamGas::air_with_argon(0.1),
@@ -10645,27 +10721,8 @@ mod served_tests {
                 wall_enthalpy_j_per_kg: 1620.0,
                 wall_temperature_k: 300.0,
             },
-            SlabReject::HeldFaceNotCompared,
-            SlabReject::FaceNotWearingNotCompared,
-            SlabReject::ThicknessNotCompared { thickness_m: 0.01 },
-            SlabReject::StartTemperatureNotCompared {
-                start_temperature_k: 400.0,
-            },
-            SlabReject::SurroundingsNotCompared {
-                surroundings_temperature_k: 250.0,
-            },
-            SlabReject::QuestionNotCompared {
-                arc_jet: "the stream is too cold".to_string(),
-                stardust: "the stream is not air".to_string(),
-                thermocouple_blocks: "the stream is not air".to_string(),
-            },
-            SlabReject::TemperatureAboveCompared {
-                time_s: 1.0,
-                depth_m: 0.0,
-                temperature_k: 3500.0,
-            },
         ];
-        assert_eq!(all.len(), 41);
+        assert_eq!(all.len(), 34);
         let mut names: Vec<&str> = all.iter().map(|r| r.name()).collect();
         for refusal in &all {
             let sentence = refusal.to_string();
@@ -10685,7 +10742,7 @@ mod served_tests {
         }
         names.sort();
         names.dedup();
-        assert_eq!(names.len(), 41);
+        assert_eq!(names.len(), 34);
     }
 
     #[test]
@@ -10755,16 +10812,16 @@ mod served_tests {
                     assert_eq!(answered.expect_err("outside"), refusal, "{name} {pressure}");
                     let sentence = refusal.to_string();
                     let range = if name == MATERIAL_TACOT {
-                        "101.325..=101325 Pa"
+                        "101.325 to 101325 Pa"
                     } else {
-                        "1.01325..=101325 Pa"
+                        "1.01325 to 101325 Pa"
                     };
                     assert!(sentence.ends_with(range), "{sentence}");
                 }
             }
             // Every other refusal of a question comes from the same check.
             let mut thick = at(5000.0);
-            thick.thickness_m = 0.2;
+            thick.thickness_m = 1.5;
             let mut deep = at(5000.0);
             deep.thermocouple_depths_m = vec![0.07];
             let mut late = at(5000.0);
@@ -10775,48 +10832,30 @@ mod served_tests {
                 assert_eq!(checked, answered, "{name}");
             }
         }
-        // Inside the range and refused in the run: the check passes, the
-        // entry refuses by name.
+        // Inside the range and stopped in the run: the check passes, and the
+        // run ends where the slab wears away, the event over.
         let hard = under_stream(
-            THICKNESS_MIN_M,
+            0.01,
             stream_rows(&[
                 (0.0, 101_325.0, 0.0, 5.0e7, 0.0),
-                (
-                    0.5,
-                    101_325.0,
-                    HEAT_TRANSFER_COEFFICIENT_MAX_KG_PER_M2_S,
-                    5.0e7,
-                    0.0,
-                ),
-                (
-                    120.0,
-                    101_325.0,
-                    HEAT_TRANSFER_COEFFICIENT_MAX_KG_PER_M2_S,
-                    5.0e7,
-                    0.0,
-                ),
+                (0.5, 101_325.0, 1.0, 5.0e7, 0.0),
+                (120.0, 101_325.0, 1.0, 5.0e7, 0.0),
             ]),
             &[],
         );
-        // Beyond what was compared, so the served entry refuses it at the
-        // door; the physics without that limit refuses it in the run.
-        assert_eq!(
-            check_question(MATERIAL_PICA_SERVED, &hard).unwrap_err().name(),
-            "ThicknessNotCompared"
-        );
-        assert_eq!(check_beyond_compared(MATERIAL_PICA_SERVED, &hard), Ok(()));
-        let err = answer_beyond_compared(MATERIAL_PICA_SERVED, &hard, &Wanted::default())
-            .expect_err("too much");
+        assert_eq!(check_question(MATERIAL_PICA_SERVED, &hard), Ok(()));
+        let ended = answer(MATERIAL_PICA_SERVED, &hard, &Wanted::default())
+            .expect("worn away, an end");
         eprintln!(
-            "inside the range, refused in the run: {} ({err})",
-            err.name()
+            "inside the range, ended in the run where the slab wore away at {} s",
+            ended.summary.duration_s
         );
-        assert!(!err.name().ends_with("OutOfRange"), "{}", err.name());
+        assert!(ended.summary.worn_away && ended.summary.duration_s < 120.0, "{ended:?}");
     }
 
     /// 294 questions for the PICA model a caller is pointed to (version 5)
     /// across the range its physics takes, beyond what was compared and so
-    /// asked through [`answer_beyond_compared`], six of them flight-shaped, and the same
+    /// asked through [`answer`] (until this version through a study entry without the limits of what was compared), six of them flight-shaped, and the same
     /// 294 for versions 4 and 3. About 8 minutes with `--release`. Measured
     /// for version 5: 269 answered, all six flights among them; 25 refused
     /// because the slab wore away; none for any other reason; hardest step
@@ -10825,9 +10864,9 @@ mod served_tests {
     #[ignore]
     fn a_sweep_of_the_pica_model_refuses_only_what_the_tables_cannot_hold() {
         let mut questions = Vec::new();
-        for &thickness in &[THICKNESS_MIN_M, 0.058, THICKNESS_MAX_M] {
-            for &coefficient in &[0.003, 0.3, HEAT_TRANSFER_COEFFICIENT_MAX_KG_PER_M2_S] {
-                for &enthalpy in &[1.5e6, 2.5e7, FLOW_ENTHALPY_MAX_J_PER_KG] {
+        for &thickness in &[MEASURED_THICKNESS_MIN_M, 0.058, MEASURED_THICKNESS_MAX_M] {
+            for &coefficient in &[0.003, 0.3, MEASURED_COEFFICIENT_MAX_KG_PER_M2_S] {
+                for &enthalpy in &[1.5e6, 2.5e7, MEASURED_FLOW_ENTHALPY_MAX_J_PER_KG] {
                     for &pressure in &[1.02, 500.0, 23_811.0, STREAM_PRESSURE_MAX_PA] {
                         for &heating in &[0.0, 3.0e6] {
                             let on = (0.5, pressure, coefficient, enthalpy, heating);
@@ -10883,9 +10922,10 @@ mod served_tests {
             let mut other = Vec::new();
             for (index, q) in questions.iter().enumerate() {
                 let flight = index + 6 >= questions.len();
-                match answer_beyond_compared(material, q, &all) {
+                match answer(material, q, &all) {
                     Ok(a) => {
                         answered += 1;
+                        worn += a.summary.worn_away as u32;
                         flights += flight as u32;
                         passes[a.summary.hardest_step_newton_passes as usize] += 1;
                         let s = &a.summary;
@@ -10920,12 +10960,11 @@ mod served_tests {
                         too_hot += 1
                     }
                     Err(SlabReject::FaceBeyondSurfaceTable { .. }) => past_table += 1,
-                    Err(SlabReject::SlabWornAway { .. }) => worn += 1,
                     Err(err) => other.push(format!("{q:?}: {} ({err})", err.name())),
                 }
             }
             eprintln!(
-            "{material}: {} questions: {answered} answered ({flights} of the 6 flight-shaped); refused because a temperature passed the top of the material's tables (3975 K): {too_hot}; because the face reached the table's boiling point: {past_table}; because the slab wore away: {worn}; for any other reason: {}. Answered runs by Newton passes in their hardest step: {passes:?}",
+            "{material}: {} questions: {answered} answered ({flights} of the 6 flight-shaped), {worn} of them ended where the slab wore away; refused because a temperature passed the top of the material's tables (3975 K): {too_hot}; because the face reached the table's boiling point: {past_table}; for any other reason: {}. Answered runs by Newton passes in their hardest step: {passes:?}",
             questions.len(),
             other.len()
         );
@@ -10939,7 +10978,7 @@ mod served_tests {
     /// The same sweep for streams that are not air, on the PICA model a
     /// caller is pointed to: seven gases at the corners and inside of the
     /// declared range (three of them arc-jet streams), asked through
-    /// [`answer_beyond_compared`], each with 48 short
+    /// [`answer`], each with 48 short
     /// histories at one pressure and two flight-shaped ones over many
     /// pressures. 350 questions; about 3 minutes with `--release`.
     /// Measured: 350 answered, none refused; hardest step 9 passes.
@@ -10954,16 +10993,10 @@ mod served_tests {
             StreamGas::air_with_argon(0.276),
             gas(0.10, 0.0),
             gas(0.30, 0.0),
-            gas(STREAM_OXYGEN_MASS_FRACTION_MIN, 0.0),
-            gas(
-                STREAM_OXYGEN_MASS_FRACTION_MIN,
-                STREAM_ARGON_MASS_FRACTION_MAX,
-            ),
-            gas(STREAM_OXYGEN_MASS_FRACTION_MAX, 0.0),
-            gas(
-                STREAM_OXYGEN_MASS_FRACTION_MAX,
-                STREAM_ARGON_MASS_FRACTION_MAX,
-            ),
+            gas(0.05, 0.0),
+            gas(0.05, 0.50),
+            gas(0.40, 0.0),
+            gas(0.40, 0.50),
         ];
         let mut passes = [0u32; NEWTON_PASS_LIMIT as usize + 1];
         let (mut asked, mut answered, mut too_hot, mut past_table, mut worn) = (0, 0, 0, 0, 0);
@@ -10972,7 +11005,7 @@ mod served_tests {
         for stream_gas in gases {
             let mut questions = Vec::new();
             for &coefficient in &[0.003, 0.3] {
-                for &enthalpy in &[1.5e6, 2.5e7, FLOW_ENTHALPY_MAX_J_PER_KG] {
+                for &enthalpy in &[1.5e6, 2.5e7, MEASURED_FLOW_ENTHALPY_MAX_J_PER_KG] {
                     for &pressure in &[1.02, 500.0, 23_811.0, STREAM_PRESSURE_MAX_PA] {
                         for &heating in &[0.0, 3.0e6] {
                             let on = (0.5, pressure, coefficient, enthalpy, heating);
@@ -10996,11 +11029,12 @@ mod served_tests {
                     *g = stream_gas;
                 }
                 asked += 1;
-                assert_eq!(check_beyond_compared(MATERIAL_PICA_SERVED, &q), Ok(()));
-                match answer_beyond_compared(MATERIAL_PICA_SERVED, &q, &Wanted::default()) {
+                assert_eq!(check_question(MATERIAL_PICA_SERVED, &q), Ok(()));
+                match answer(MATERIAL_PICA_SERVED, &q, &Wanted::default()) {
                     Ok(a) => {
                         answered += 1;
                         let s = &a.summary;
+                        worn += s.worn_away as u32;
                         passes[s.hardest_step_newton_passes as usize] += 1;
                         assert!(
                             s.energy_account_residual_j_per_m2.abs()
@@ -11022,13 +11056,12 @@ mod served_tests {
                         too_hot += 1
                     }
                     Err(SlabReject::FaceBeyondSurfaceTable { .. }) => past_table += 1,
-                    Err(SlabReject::SlabWornAway { .. }) => worn += 1,
                     Err(err) => other.push(format!("{stream_gas:?}: {} ({err})", err.name())),
                 }
             }
         }
         eprintln!(
-            "{asked} questions in seven streams that are not air, in {:.0} s: {answered} answered; refused because a temperature passed the top of the material's tables: {too_hot}; because the face reached the table's boiling point: {past_table}; because the slab wore away: {worn}; for any other reason: {}. Answered runs by Newton passes in their hardest step: {passes:?}",
+            "{asked} questions in seven streams that are not air, in {:.0} s: {answered} answered, {worn} of them ended where the slab wore away; refused because a temperature passed the top of the material's tables: {too_hot}; because the face reached the table's boiling point: {past_table}; for any other reason: {}. Answered runs by Newton passes in their hardest step: {passes:?}",
             started.elapsed().as_secs_f64(),
             other.len()
         );
@@ -11267,8 +11300,8 @@ mod study_runner {
             continue_after_s: 0.0,
             thermocouple_depths_m: vec![],
         };
-        let four = answer_beyond_compared(MATERIAL_PICA_VERSION_4, &q, &Wanted::default()).expect("version 4");
-        let three = answer_beyond_compared(MATERIAL_PICA_VERSION_3, &q, &Wanted::default()).expect("version 3");
+        let four = answer(MATERIAL_PICA_VERSION_4, &q, &Wanted::default()).expect("version 4");
+        let three = answer(MATERIAL_PICA_VERSION_3, &q, &Wanted::default()).expect("version 3");
         assert!(four.summary.wear_m > 0.0 && four.summary.wear_m != three.summary.wear_m);
         assert!(
             four.summary.energy_account_residual_j_per_m2.abs()
@@ -11761,7 +11794,7 @@ mod stream_gas_tests {
     fn less_oxygen_in_the_stream_wears_the_face_less() {
         // A study of the physics beyond what was compared: 0.03 m.
         let wear = |gas: StreamGas| {
-            let a = answer_beyond_compared(
+            let a = answer(
                 MATERIAL_PICA_SERVED,
                 &in_stream(gas, 20_000.0),
                 &Wanted::default(),
@@ -11857,13 +11890,17 @@ mod stream_gas_tests {
             oxygen_mass_fraction: oxygen,
             argon_mass_fraction: argon,
         };
+        // Only the physical limits of a make-up: each fraction 0 to 1, and
+        // the two together no more than the whole stream.
         for (g, name) in [
-            (gas(0.049, 0.0), "StreamOxygenOutOfRange"),
-            (gas(0.401, 0.0), "StreamOxygenOutOfRange"),
-            (gas(f64::NAN, 0.0), "StreamOxygenOutOfRange"),
-            (gas(0.2, -1.0e-9), "StreamArgonOutOfRange"),
-            (gas(0.2, 0.501), "StreamArgonOutOfRange"),
-            (gas(0.2, f64::NAN), "StreamArgonOutOfRange"),
+            (gas(-1.0e-9, 0.0), "StreamOxygenNotAMassFraction"),
+            (gas(1.001, 0.0), "StreamOxygenNotAMassFraction"),
+            (gas(f64::NAN, 0.0), "StreamOxygenNotAMassFraction"),
+            (gas(0.2, -1.0e-9), "StreamArgonNotAMassFraction"),
+            (gas(0.0, 1.001), "StreamArgonNotAMassFraction"),
+            (gas(0.2, f64::NAN), "StreamArgonNotAMassFraction"),
+            (gas(0.6, 0.400001), "StreamOxygenAndArgonAboveOne"),
+            (gas(0.5, 0.75), "StreamOxygenAndArgonAboveOne"),
         ] {
             for material in MATERIAL_NAMES {
                 let q = in_stream(g, 20_000.0);
@@ -11892,23 +11929,20 @@ mod stream_gas_tests {
             check_question(MATERIAL_TACOT, &in_stream(StreamGas::AIR, 20_000.0)),
             Ok(())
         );
-        // Every PICA version's physics takes it, at the ends of the range
-        // too; the served entry refuses this 0.03 m slab as never compared.
+        // Every PICA version takes any make-up inside those limits, the
+        // corners included: pure nitrogen, pure argon, pure oxygen, and
+        // oxygen and argon that make up the whole stream. This 0.03 m slab
+        // lies in no compared envelope and is asked all the same.
         for material in &MATERIAL_NAMES[1..] {
             for g in [
-                gas(STREAM_OXYGEN_MASS_FRACTION_MIN, 0.0),
-                gas(
-                    STREAM_OXYGEN_MASS_FRACTION_MAX,
-                    STREAM_ARGON_MASS_FRACTION_MAX,
-                ),
+                gas(0.0, 0.0),
+                gas(0.0, 1.0),
+                gas(1.0, 0.0),
+                gas(0.6, 0.4),
+                gas(0.05, 0.0),
+                gas(0.40, 0.50),
             ] {
-                assert_eq!(check_beyond_compared(material, &in_stream(g, 20_000.0)), Ok(()));
-                // 0.03 m lies in the thermocouple blocks' thicknesses, but
-                // its start, gas and history are not theirs.
-                assert_eq!(
-                    check_question(material, &in_stream(g, 20_000.0)).unwrap_err().name(),
-                    "QuestionNotCompared"
-                );
+                assert_eq!(check_question(material, &in_stream(g, 20_000.0)), Ok(()), "{material} {g:?}");
             }
         }
         // A held face has no stream and no gas to state.
@@ -11974,7 +12008,318 @@ mod stream_gas_tests {
             continue_after_s: 0.0,
             thermocouple_depths_m: vec![],
         };
-        let a = answer_beyond_compared(MATERIAL_PICA_SERVED, &q, &Wanted::default()).expect("answer");
+        let a = answer(MATERIAL_PICA_SERVED, &q, &Wanted::default()).expect("answer");
         assert!(a.summary.wear_m > 0.0 && a.summary.peak_face_temperature_k > 1500.0);
+    }
+}
+
+#[cfg(test)]
+mod lifted_tests {
+    use super::*;
+
+    fn held(thickness_m: f64, start_k: f64, held_k: f64, hold_s: f64, after_s: f64) -> SlabQuestion {
+        SlabQuestion {
+            thickness_m,
+            start_temperature_k: start_k,
+            surface: SurfaceCondition::HeldTemperature {
+                held_temperature_k: held_k,
+                hold_duration_s: hold_s,
+            },
+            continue_after_s: after_s,
+            thermocouple_depths_m: vec![],
+        }
+    }
+
+    fn rows(rows: &[(f64, f64, f64, f64, f64)]) -> Vec<StreamRow> {
+        rows.iter()
+            .map(|&(time_s, pressure_pa, c, h, q)| StreamRow {
+                time_s,
+                pressure_pa,
+                heat_transfer_coefficient_kg_per_m2_s: c,
+                flow_enthalpy_j_per_kg: h,
+                radiative_heating_w_per_m2: q,
+            })
+            .collect()
+    }
+
+    fn streamed(
+        thickness_m: f64,
+        start_k: f64,
+        surroundings_k: f64,
+        face_wears: bool,
+        stream_gas: StreamGas,
+        history: Vec<StreamRow>,
+    ) -> SlabQuestion {
+        SlabQuestion {
+            thickness_m,
+            start_temperature_k: start_k,
+            surface: SurfaceCondition::GasStream {
+                history,
+                surroundings_temperature_k: surroundings_k,
+                face_wears,
+                stream_gas,
+            },
+            continue_after_s: 0.0,
+            thermocouple_depths_m: vec![],
+        }
+    }
+
+    fn gas(oxygen: f64, argon: f64) -> StreamGas {
+        StreamGas {
+            oxygen_mass_fraction: oxygen,
+            argon_mass_fraction: argon,
+        }
+    }
+
+    /// A short arc-jet-like stream: off at 0, on from 0.5 s to `end_s`.
+    fn on(pressure_pa: f64, c: f64, h: f64, q: f64, end_s: f64) -> Vec<StreamRow> {
+        rows(&[(0.0, pressure_pa, 0.0, h, 0.0), (0.5, pressure_pa, c, h, q), (end_s, pressure_pa, c, h, q)])
+    }
+
+    /// The answer, its three accounts closed within their tolerances, or the
+    /// refusal. Every step's accounts were held while computing; these are
+    /// the whole run's.
+    fn closed(label: &str, material: &str, q: &SlabQuestion) -> Result<Summary, SlabReject> {
+        let a = answer(material, q, &Wanted::default())?;
+        let s = a.summary;
+        assert!(s.energy_account_residual_j_per_m2.abs() <= s.energy_account_tolerance_j_per_m2, "{label}: energy");
+        assert!(s.face_balance_residual_j_per_m2.abs() <= s.face_balance_tolerance_j_per_m2, "{label}: face");
+        assert!(s.mass_account_residual_kg_per_m2.abs() <= s.mass_account_tolerance_kg_per_m2, "{label}: mass");
+        assert!(s.hardest_step_newton_passes < NEWTON_PASS_LIMIT, "{label}");
+        eprintln!(
+            "{label}: wear {:.4} mm, peak face {:.1} K, back {:.1} K, {} cells, {} steps, hardest step {} passes",
+            s.wear_m * 1e3,
+            s.peak_face_temperature_k,
+            s.final_back_temperature_k,
+            s.cells,
+            s.time_steps,
+            s.hardest_step_newton_passes
+        );
+        Ok(s)
+    }
+
+    /// The limits of the physics and the arithmetic a run may stop at, and
+    /// no other.
+    const PHYSICAL_LIMITS: [&str; 4] = [
+        "FaceBeyondSurfaceTable",
+        "TemperatureOutOfBounds",
+        "StepNotConverged",
+        "NonFiniteValue",
+    ];
+
+    /// Answered with the accounts closed, or stopped at a limit of the
+    /// physics or the arithmetic: never at a limit of the request.
+    fn answered_or_stopped(label: &str, material: &str, q: &SlabQuestion) -> Result<Summary, SlabReject> {
+        assert_eq!(check_question(material, q), Ok(()), "{label}");
+        let got = closed(label, material, q);
+        if let Err(reject) = &got {
+            eprintln!("{label}: stopped as {}: {reject}", reject.name());
+            assert!(PHYSICAL_LIMITS.contains(&reject.name()), "{label}: {reject:?}");
+        }
+        got
+    }
+
+    #[test]
+    fn a_held_slab_past_the_old_thickness_and_time_ranges_keeps_its_accounts() {
+        // Thinner than the old 0.01 m, down to the 0.2 mm the grid holds;
+        // thicker than the old 0.10 m.
+        for thickness_m in [THICKNESS_MIN_M, 0.005, 0.2] {
+            let s = closed(&format!("TACOT {thickness_m} m"), MATERIAL_TACOT, &held(thickness_m, 298.0, 1644.0, 60.0, 0.0)).expect("answered");
+            assert_eq!(s.peak_face_temperature_k, 1644.0);
+        }
+        // A thin slab is heated through; a thick one is not.
+        let thin = closed("TACOT 5 mm", MATERIAL_TACOT, &held(0.005, 298.0, 1644.0, 60.0, 0.0)).unwrap();
+        let thick = closed("TACOT 0.2 m", MATERIAL_TACOT, &held(0.2, 298.0, 1644.0, 60.0, 0.0)).unwrap();
+        assert!(thin.final_back_temperature_k > 1600.0 && thick.final_back_temperature_k < 299.0);
+        // A hold longer than the old 300 s, and longer than the old 300 s after.
+        let long = closed("TACOT hold 400 s, 400 s after", MATERIAL_TACOT, &held(0.02, 298.0, 1644.0, 400.0, 400.0)).unwrap();
+        assert_eq!(long.duration_s, 800.0);
+        assert!(long.final_face_temperature_k == 298.0 && long.final_back_temperature_k > 298.0);
+        // Past the size caps: refused by name, the cap said as a cap.
+        let too_thick = check_question(MATERIAL_TACOT, &held(1.0001, 298.0, 1644.0, 60.0, 0.0)).unwrap_err();
+        assert_eq!(too_thick.name(), "ThicknessOutOfRange");
+        assert!(too_thick.to_string().contains("1 m is a size cap on the request"), "{too_thick}");
+        let too_thin = check_question(MATERIAL_TACOT, &held(1.9e-4, 298.0, 1644.0, 60.0, 0.0)).unwrap_err();
+        assert!(too_thin.to_string().contains("the grid holds no more than 8 cells"), "{too_thin}");
+        let too_long = check_question(MATERIAL_TACOT, &held(0.02, 298.0, 1644.0, 3600.5, 0.0)).unwrap_err();
+        assert_eq!(too_long.name(), "HoldDurationOutOfRange");
+        assert!(too_long.to_string().contains("size cap"), "{too_long}");
+        assert_eq!(check_question(MATERIAL_TACOT, &held(0.02, 298.0, 1644.0, 60.0, 3600.5)).unwrap_err().name(), "ContinueAfterOutOfRange");
+        // The 1 s floor stays above the 0.1 s ramps up and down.
+        assert!(HOLD_DURATION_MIN_S > 2.0 * SURFACE_RAMP_S);
+        assert_eq!(check_question(MATERIAL_TACOT, &held(0.02, 298.0, 1644.0, 0.9, 0.0)).unwrap_err().name(), "HoldDurationOutOfRange");
+    }
+
+    #[test]
+    fn a_face_held_below_the_start_cools_the_slab_and_a_warm_start_decomposes() {
+        // Held below 400 K, the old floor, and below the start.
+        let cooled = closed("TACOT held at 260 K from 400 K", MATERIAL_TACOT, &held(0.05, 400.0, 260.0, 60.0, 60.0)).unwrap();
+        assert!(cooled.final_back_temperature_k < 400.0);
+        // Started above the old 400 K, to the 800 K limit: the resin
+        // decomposes from the first step and the accounts hold it.
+        for material in [MATERIAL_TACOT, MATERIAL_PICA_SERVED] {
+            for (start_k, held_k) in [(600.0, 1644.0), (START_TEMPERATURE_MAX_K, 1644.0), (START_TEMPERATURE_MAX_K, 300.0)] {
+                closed(&format!("{material} held at {held_k} K from {start_k} K"), material, &held(0.05, start_k, held_k, 30.0, 0.0)).expect("answered");
+            }
+        }
+        let warm = closed("PICA held at 800 K from 800 K", MATERIAL_PICA_SERVED, &held(0.05, 800.0, 800.0, 30.0, 0.0)).unwrap();
+        // The resin gives off heat below about 922 K for PICA as it
+        // decomposes, so the inside warms past the start.
+        assert!(warm.final_back_temperature_k > 800.0 && warm.solid_mass_lost_kg_per_m2 > 0.0);
+        let hot = check_question(MATERIAL_TACOT, &held(0.05, 800.01, 1644.0, 30.0, 0.0)).unwrap_err();
+        assert_eq!(hot.name(), "StartTemperatureOutOfRange");
+        assert!(hot.to_string().contains("decomposes so fast from the first step that the step fails"), "{hot}");
+        assert_eq!(check_question(MATERIAL_TACOT, &held(0.05, 400.0, 259.99, 30.0, 0.0)).unwrap_err().name(), "HeldTemperatureOutOfRange");
+        assert_eq!(check_question(MATERIAL_TACOT, &held(0.05, 400.0, 3300.01, 30.0, 0.0)).unwrap_err().name(), "HeldTemperatureOutOfRange");
+    }
+
+    #[test]
+    fn a_gas_stream_past_the_old_ranges_is_answered_or_stops_at_a_physical_limit() {
+        let air = StreamGas::AIR;
+        let p = MATERIAL_PICA_SERVED;
+        // A TACOT slab thicker than 0.10 m and thinner than 0.01 m.
+        for thickness_m in [0.005, 0.2] {
+            let s = answered_or_stopped(&format!("TACOT stream {thickness_m} m"), MATERIAL_TACOT, &streamed(thickness_m, 300.0, 300.0, true, air, on(101325.0, 0.1, 2.5e7, 0.0, 10.0))).expect("answered");
+            assert!(s.wear_m > 0.0);
+        }
+        // A history longer than the old 600 s.
+        let long = answered_or_stopped("TACOT history 700 s", MATERIAL_TACOT, &streamed(0.03, 300.0, 300.0, true, air, on(10000.0, 0.01, 1.0e7, 0.0, 700.0))).expect("answered");
+        assert_eq!(long.duration_s, 700.0);
+        // A coefficient above the old 1 kg/m²/s, an enthalpy above the old
+        // 100 MJ/kg, radiation above the old 10 MW/m². TACOT's face reaches
+        // the top of its tables, 3333 K, and stops there by name; the PICA
+        // model, whose tables reach 3975 K, answers.
+        for (label, c, h, q) in [("coefficient 3", 3.0, 2.5e7, 0.0), ("enthalpy 200 MJ/kg", 0.1, 2.0e8, 0.0), ("radiation 20 MW/m²", 0.0, 1.0e7, 2.0e7)] {
+            let tacot = answered_or_stopped(&format!("TACOT {label}"), MATERIAL_TACOT, &streamed(0.05, 300.0, 300.0, true, air, on(101325.0, c, h, q, 3.0)));
+            match tacot {
+                Err(SlabReject::TemperatureOutOfBounds { temperature_k, .. }) => assert!(temperature_k > SURROUNDINGS_TEMPERATURE_MAX_K, "{label}"),
+                other => panic!("TACOT {label}: {other:?}"),
+            }
+        }
+        for (label, c, h, q) in [("coefficient 1.5", 1.5, 5.0e7, 0.0), ("enthalpy 200 MJ/kg", 0.1, 2.0e8, 0.0), ("radiation 20 MW/m²", 0.05, 2.0e7, 2.0e7)] {
+            let s = answered_or_stopped(&format!("PICA {label}"), p, &streamed(0.06, 300.0, 300.0, true, air, on(101325.0, c, h, q, 3.0))).expect("answered");
+            assert!(s.peak_face_temperature_k > COMPARED_TEMPERATURE_MAX_K, "{label}: {}", s.peak_face_temperature_k);
+        }
+        // More heating than the slab can take for long: worn away.
+        let worn = answered_or_stopped("PICA coefficient 3 at 100 MJ/kg", p, &streamed(0.06, 300.0, 300.0, true, air, on(101325.0, 3.0, 1.0e8, 0.0, 10.0))).expect("worn away, an end");
+        assert!(worn.worn_away && worn.duration_s < 10.0 && worn.wear_m > 0.05, "{worn:?}");
+        // Numbers past any sense stop at once, by name.
+        for (c, h, q) in [(1.0e300, 2.5e7, 0.0), (0.1, 1.0e300, 0.0), (0.0, 1.0e7, 1.0e300)] {
+            let _ = answered_or_stopped("TACOT 1e300", MATERIAL_TACOT, &streamed(0.05, 300.0, 300.0, true, air, on(101325.0, c, h, q, 3.0)));
+        }
+        // Not finite, or below zero: refused before computing.
+        for (c, h, q, name) in [
+            (f64::INFINITY, 1.0e7, 0.0, "HeatTransferCoefficientOutOfRange"),
+            (-0.1, 1.0e7, 0.0, "HeatTransferCoefficientOutOfRange"),
+            (0.1, f64::INFINITY, 0.0, "FlowEnthalpyOutOfRange"),
+            (0.1, 1.0e7, f64::NAN, "RadiativeHeatingOutOfRange"),
+            (0.1, 1.0e7, -1.0, "RadiativeHeatingOutOfRange"),
+        ] {
+            let q = streamed(0.05, 300.0, 300.0, true, air, on(101325.0, c, h, q, 3.0));
+            assert_eq!(check_question(MATERIAL_TACOT, &q).unwrap_err().name(), name);
+        }
+        let too_long = streamed(0.05, 300.0, 300.0, true, air, on(10000.0, 0.01, 1.0e7, 0.0, 3600.5));
+        assert_eq!(check_question(MATERIAL_TACOT, &too_long).unwrap_err().name(), "HistoryDurationOutOfRange");
+        // Warm surroundings, above the old 400 K: radiation heats the face.
+        let warmed = answered_or_stopped("TACOT radiating to 3000 K", MATERIAL_TACOT, &streamed(0.05, 400.0, 3000.0, true, air, on(101325.0, 0.0, 2.5e7, 0.0, 30.0))).expect("answered");
+        assert!(warmed.peak_face_temperature_k > 2900.0);
+        for (material, top) in [(MATERIAL_TACOT, SURROUNDINGS_TEMPERATURE_MAX_K), (p, crate::pica::TABLE_TOP_K)] {
+            assert_eq!(solid_table_top_k(material), Ok(top));
+            let past = streamed(0.05, 300.0, top + 0.01, true, air, on(101325.0, 0.0, 2.5e7, 0.0, 3.0));
+            assert_eq!(check_question(material, &past).unwrap_err().name(), "SurroundingsTemperatureOutOfRange");
+            let at = streamed(0.05, 300.0, top, true, air, on(101325.0, 0.0, 2.5e7, 0.0, 3.0));
+            assert_eq!(check_question(material, &at), Ok(()));
+        }
+        // A warm start in a stream with warm surroundings.
+        answered_or_stopped("PICA stream from 800 K, radiating to 800 K", p, &streamed(0.06, START_TEMPERATURE_MAX_K, START_TEMPERATURE_MAX_K, true, air, on(20000.0, 0.1, 2.5e7, 0.0, 10.0))).expect("answered");
+    }
+
+    #[test]
+    fn the_pica_model_answers_outside_every_compared_envelope_and_says_so() {
+        let air = StreamGas::AIR;
+        let p = MATERIAL_PICA_SERVED;
+        let arc_gas = StreamGas::air_with_argon(0.276);
+        let arc_c = 0.07040224291374243;
+        // Inside: the first development arc-jet test, as recorded.
+        let inside = answered_or_stopped("arc-jet test 1", p, &streamed(0.06, 300.0, 300.0, true, arc_gas, on(2300.0, arc_c, 1.52e7, 0.0, 55.0))).unwrap();
+        assert!(inside.inside_arc_jet_comparison && !inside.inside_stardust_comparison && !inside.inside_thermocouple_block_comparison);
+        assert!((inside.wear_m - 2.0047e-3).abs() < 1.0e-6, "{}", inside.wear_m);
+        let none = |s: &Summary| !s.inside_arc_jet_comparison && !s.inside_stardust_comparison && !s.inside_thermocouple_block_comparison;
+        // A held face, which no PICA case had.
+        let s = answered_or_stopped("PICA held at 1644 K", p, &held(0.05, 298.0, 1644.0, 60.0, 0.0)).unwrap();
+        assert!(none(&s) && s.wear_m == 0.0 && s.solid_mass_lost_kg_per_m2 > 0.0);
+        // A face that does not wear: the same test with the face kept.
+        let s = answered_or_stopped("arc-jet test 1, face kept", p, &streamed(0.06, 300.0, 300.0, false, arc_gas, on(2300.0, arc_c, 1.52e7, 0.0, 55.0))).unwrap();
+        assert!(none(&s) && s.wear_m == 0.0 && s.char_mass_removed_kg_per_m2 == 0.0);
+        assert!(s.peak_face_temperature_k > inside.peak_face_temperature_k);
+        // A thickness, a start and surroundings outside the compared ones.
+        let s = answered_or_stopped("PICA 0.1 m", p, &streamed(0.10, 300.0, 300.0, true, air, on(20000.0, 0.2, 2.5e7, 0.0, 30.0))).unwrap();
+        assert!(none(&s) && s.wear_m > 0.004);
+        let s = answered_or_stopped("PICA from 400 K radiating to 350 K", p, &streamed(0.06, 400.0, 350.0, true, air, on(20000.0, 0.2, 2.5e7, 0.0, 30.0))).unwrap();
+        assert!(none(&s) && s.final_back_temperature_k == 400.0);
+        // A slab thinner than any compared wears through.
+        let thin = answered_or_stopped("PICA 5 mm", p, &streamed(0.005, 300.0, 300.0, true, air, on(20000.0, 0.2, 2.5e7, 0.0, 30.0))).expect("worn away, an end");
+        assert!(thin.worn_away && thin.duration_s < 30.0 && thin.wear_m > 0.004, "{thin:?}");
+        // A stream outside all three envelopes in every way at once: 90 kPa,
+        // 40 MJ/kg, 1 MW/m² of radiation, 0.04 m from 280 K. Its face runs
+        // past the hottest compared run, 3412 K.
+        let s = answered_or_stopped("PICA outside all three", p, &streamed(0.04, 280.0, 290.0, true, air, on(90000.0, 0.3, 4.0e7, 1.0e6, 30.0))).unwrap();
+        assert!(none(&s));
+        assert!(s.peak_face_temperature_k > COMPARED_TEMPERATURE_MAX_K, "{}", s.peak_face_temperature_k);
+        // Above 3412 K, answered to the top of the tables, 3975 K; past it
+        // refused by name.
+        let s = answered_or_stopped("PICA at 1 atm, 1 kg/m²/s, 100 MJ/kg", p, &streamed(0.1, 300.0, 300.0, true, air, on(101325.0, 1.0, 1.0e8, 0.0, 3.0))).unwrap();
+        assert!(s.peak_face_temperature_k > 3700.0 && s.peak_face_temperature_k < crate::pica::TABLE_TOP_K, "{}", s.peak_face_temperature_k);
+        let past = answered_or_stopped("PICA under 200 MW/m² of radiation", p, &streamed(0.06, 300.0, 300.0, true, air, on(101325.0, 0.2, 5.0e7, 2.0e8, 1.0)));
+        match past {
+            Err(SlabReject::TemperatureOutOfBounds { temperature_k, .. }) => {
+                assert!(temperature_k > crate::pica::TABLE_TOP_K && temperature_k < crate::pica::TABLE_TOP_K + 5.0, "{temperature_k}")
+            }
+            other => panic!("{other:?}"),
+        }
+    }
+
+    #[test]
+    fn the_warmest_start_is_below_where_decomposition_stops_giving_off_heat() {
+        // So no decomposition takes up heat below the bottom of a band.
+        for name in MATERIAL_NAMES {
+            let (material, _) = material_of(name).unwrap();
+            let release_k = heat_release_ends_k(&SolidEnthalpyNodes::of(material));
+            assert!(START_TEMPERATURE_MAX_K < release_k - 100.0, "{name}: {release_k}");
+            assert!((900.0..960.0).contains(&release_k), "{name}: {release_k}");
+        }
+    }
+
+    #[test]
+    fn a_stream_of_any_make_up_is_answered_and_more_than_the_whole_is_refused() {
+        let p = MATERIAL_PICA_SERVED;
+        // Pure nitrogen, refused until this version, and oxygen and argon
+        // that make up the whole stream with no nitrogen.
+        let n2 = answered_or_stopped("PICA in pure nitrogen", p, &streamed(0.06, 300.0, 300.0, true, gas(0.0, 0.0), on(5000.0, 0.1, 2.0e7, 0.0, 30.0))).unwrap();
+        let mixed = answered_or_stopped("PICA in oxygen 0.6, argon 0.4", p, &streamed(0.06, 300.0, 300.0, true, gas(0.6, 0.4), on(5000.0, 0.1, 2.0e7, 0.0, 30.0))).unwrap();
+        let argon = answered_or_stopped("PICA in pure argon", p, &streamed(0.06, 300.0, 300.0, true, gas(0.0, 1.0), on(5000.0, 0.1, 2.0e7, 0.0, 30.0))).unwrap();
+        // With no oxygen the char is not burnt: what wears is the char lost
+        // as solid, a twentieth of what is taken from the face.
+        assert!(n2.wear_m < 1.0e-6 && argon.wear_m < 1.0e-6, "{} {}", n2.wear_m, argon.wear_m);
+        assert!(mixed.wear_m > 1.0e-3);
+        assert_eq!(gas(0.6, 0.4).oxygen_mass_fraction + gas(0.6, 0.4).argon_mass_fraction, 1.0);
+        // The held-back arc-jet test in pure nitrogen (row 65: TP2, 416
+        // W/cm², 17.9 kPa, 18.4 MJ/kg, 120 s), asked by the recipe: 0.22 mm
+        // of wear against 1.75 mm measured. Its neighbour in nitrogen with 23
+        // percent oxygen (row 67) gives the 20.79 mm the record holds.
+        let nitrogen = gas(0.0, 0.0);
+        let c = 416.0e4 / (18.4e6 - stream_enthalpy_at_cold_wall_j_per_kg(&nitrogen).unwrap());
+        let row_65 = answered_or_stopped("row 65", p, &streamed(0.06, 300.0, 300.0, true, nitrogen, on(17.9e3, c, 18.4e6, 0.0, 120.0))).unwrap();
+        assert!((row_65.wear_m * 1e3 - 0.2249).abs() < 0.001, "{}", row_65.wear_m);
+        assert!(row_65.inside_arc_jet_comparison == false);
+        // More than the whole stream, by name, for every material.
+        for material in MATERIAL_NAMES {
+            for (o, a) in [(0.6, 0.400001), (0.7, 0.4), (1.0, 1.0)] {
+                let q = streamed(0.06, 300.0, 300.0, true, gas(o, a), on(5000.0, 0.1, 2.0e7, 0.0, 3.0));
+                let reject = check_question(material, &q).unwrap_err();
+                assert_eq!(reject.name(), "StreamOxygenAndArgonAboveOne", "{material}");
+                assert!(reject.to_string().contains("add to more than 1, the whole stream"), "{reject}");
+            }
+        }
     }
 }

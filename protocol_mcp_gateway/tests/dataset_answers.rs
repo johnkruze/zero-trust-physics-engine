@@ -261,13 +261,13 @@ fn a_plan_of_solves_is_sealed_row_by_row_and_compared_with_measurements() {
     assert_eq!(summary["head"], full["head"]);
     assert_eq!(summary["summary"][1]["set"], json!({ "parameters.atomic_number": 2 }));
     assert!(summary["summary"][1]["result"]["total_energy_ha"].is_number());
-    // A dataset of solves is checked by request, not by parts.
+    // A dataset of solves is verified by request, not by parts.
     let (error, text) = stdio.tool(
         "verify_dataset",
         &json!({ "head": full["head"], "rows": full["rows"], "frames_hex": null }),
     );
     assert!(error, "{text}");
-    assert!(text.contains("Check it by sending its run_dataset request"), "{text}");
+    assert!(text.contains("Verify it by sending its run_dataset request"), "{text}");
     // A store or a return is not a field of a plan of solves.
     let mut stored = solve_grid(None);
     stored["return"] = json!("file");
@@ -299,10 +299,45 @@ fn the_description_says_where_steps_come_from_and_what_the_answer_holds() {
     let tools = protocol_mcp_gateway::mcp_server::tools_in(&protocol_mcp_gateway::view::View::full());
     let description = |name: &str| tools.iter().find(|tool| tool.name == name).unwrap().description.clone().unwrap().to_string();
     let run = description("run_dataset");
-    assert!(run.contains("steps and record_every are not paths and cannot vary: every row of a grid or a sample takes them from the base run."), "{run}");
-    assert!(run.contains("replaces the base's value of that field"), "{run}");
     assert!(run.contains("one summary row per run"), "{run}");
     assert!(run.contains("A plan of solves names solver"), "{run}");
-    assert!(run.contains("Each row of a grid is held to the card's bounds alone"), "{run}");
+    // Since 0.10.1 a description stays inside the length a client shows, and
+    // how a plan is written is said at the plan input.
+    let schema = &tools.iter().find(|tool| tool.name == "run_dataset").unwrap().input_schema;
+    let plan = schema["properties"]["plan"]["description"].as_str().unwrap();
+    assert!(plan.contains("steps and record_every are not paths and cannot vary: every row of a grid or a sample takes them from the base run."), "{plan}");
+    assert!(plan.contains("replaces the base's value of that field"), "{plan}");
+    assert!(plan.contains("Each row of a grid is held to the card's bounds alone"), "{plan}");
     assert!(description("validate_series").contains("In place of run, solves takes a plan of solves"));
+}
+
+/// The red team of 0.13.0, D3: plans of solves the open connection's count
+/// admits are answered when their answer is under the limit, and a plan over
+/// it is counted once made, with the characters it came to. 50 solves of the
+/// elastic plate come to about 36,750 characters, and 64 of the propeller,
+/// the engine's own count on every connection, to about 32,000; 64 of the
+/// blast wave come to more than 40,000 and are refused once solved.
+#[test]
+fn plans_of_solves_under_the_limit_are_answered_and_one_over_it_is_counted_once_made() {
+    let mut stdio = Stdio2::start(None);
+    let list = |solver: &str, rows: Vec<Value>| {
+        let solves: Vec<Value> = rows.into_iter().map(|parameters| json!({ "parameters": parameters })).collect();
+        json!({ "solver": solver, "plan": { "kind": "list", "solves": solves } })
+    };
+    let elastic: Vec<Value> =
+        (0..50).map(|i| json!({ "traction_mpa": 106.26 + f64::from(i) * 0.01, "points_x_mm": [], "points_y_mm": [] })).collect();
+    let (error, text) = stdio.tool("run_dataset", &list("stress_plate_hole_s235_elastic", elastic));
+    assert!(!error, "{text}");
+    assert!(text.len() < 40_000 && parsed(&text)["summary"].as_array().unwrap().len() == 50, "{}", text.len());
+    let (_, described) = stdio.tool("describe_solver", &json!({ "solver": "propeller_apc_10x7e", "form": "short" }));
+    let example = parsed(&described)["example_solve"]["parameters"].clone();
+    let (error, text) = stdio.tool("run_dataset", &list("propeller_apc_10x7e", vec![example; 64]));
+    assert!(!error, "{text}");
+    assert_eq!(parsed(&text)["head"]["completed"], json!(64));
+    let (_, described) = stdio.tool("describe_solver", &json!({ "solver": "blast_wave_tnt_air", "form": "short" }));
+    let example = parsed(&described)["example_solve"]["parameters"].clone();
+    let (error, text) = stdio.tool("run_dataset", &list("blast_wave_tnt_air", vec![example; 64]));
+    assert!(error, "{text}");
+    assert!(text.starts_with("Physical Violation: the answer comes to "), "{text}");
+    assert!(text.contains("characters, more than the 40000 one inline answer may have. Its summary was counted once the plan was solved, and none is returned. To make it smaller: send fewer solves."), "{text}");
 }

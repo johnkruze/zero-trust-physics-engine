@@ -3,6 +3,8 @@
 //! side, a constant of a solver sent as a field, each description, a sealed
 //! refusal, and `POST /verify_solution` against edits of a sealed answer.
 
+mod answer_text;
+
 use std::time::Duration;
 
 use genesis_solvers::fusion_pb11_lhd::{self as lhd, LhdQuestion};
@@ -26,7 +28,7 @@ async fn spawn_app() -> String {
 async fn post(base: &str, path: &str, body: &Value) -> (u16, String) {
     let client = Client::new();
     let url = format!("{base}{path}");
-    let text = serde_json::to_string(body).unwrap();
+    let text = answer_text::as_sent(body);
     let mut last_error = None;
     for _ in 0..20 {
         match client
@@ -38,7 +40,9 @@ async fn post(base: &str, path: &str, body: &Value) -> (u16, String) {
         {
             Ok(response) => {
                 let status = response.status().as_u16();
-                return (status, response.text().await.unwrap());
+                let text = response.text().await.unwrap();
+                answer_text::remember(&text);
+                return (status, text);
             }
             Err(error) => {
                 last_error = Some(error);
@@ -147,21 +151,16 @@ fn field_hash(samples: &[f64]) -> String {
 #[tokio::test]
 async fn two_beams_match_the_solver_bit_for_bit() {
     let base = spawn_app().await;
-    // The 45 keV beam of Ogawa et al. 2024, Figure 6, at 7.8 s, as run A5 sent it.
-    let positive_ion = LhdQuestion {
-        beam_energy_kev: 45.0,
-        beam_power_w: 4.515e6,
-        electron_density_per_m3: 4.502e18,
-        electron_temperature_kev: 2.1252,
-        boron_density_per_m3: 8.1234e16,
-    };
+    // A 45 keV beam of a megawatt in the same plasma: the positive-ion beam,
+    // which 0.7.0 to this version answered in one plasma only.
+    let positive_ion = LhdQuestion { beam_energy_kev: 45.0, beam_power_w: 1.0e6, ..BEAM };
     for question in [BEAM, positive_ion] {
         let request = beam(&question);
         let (text, body) = solved(&base, &request).await;
         let direct = lhd::solve(&question).expect("the solver settles");
 
         assert_eq!(body["inputs"], request);
-        assert_eq!(body["engine_version"], "genesis_solvers_v0.8.0");
+        assert_eq!(body["engine_version"], "genesis_solvers_v0.12.0");
         assert_eq!(body["outcome"], "converged");
         assert!(body["reject"].is_null());
         assert_eq!(body["iterations"], direct.refinements);
@@ -178,9 +177,10 @@ async fn two_beams_match_the_solver_bit_for_bit() {
         assert_number(result, "peak_alpha_emissivity_per_m3_s", direct.peak_alpha_emissivity_per_m3_s);
         assert_number(result, "peak_emissivity_radius", direct.peak_emissivity_radius);
         assert_number(result, "slowing_time_s", direct.slowing_time_s);
+        assert_number(result, "fast_proton_fraction_max", direct.fast_proton_fraction_max);
         assert_number(result, "energy_fraction_to_electrons", direct.energy_fraction_to_electrons);
         assert_number(result, "energy_fraction_to_ions", direct.energy_fraction_to_ions);
-        assert_eq!(result.as_object().unwrap().len(), 18, "a number and its hex for each");
+        assert_eq!(result.as_object().unwrap().len(), 20, "a number and its hex for each");
 
         let invariants = &body["invariants"];
         assert_number(invariants, "proton_ledger_residual", direct.proton_ledger_residual);
@@ -193,7 +193,7 @@ async fn two_beams_match_the_solver_bit_for_bit() {
         assert_eq!(body["field_sha256"], field_hash(&direct.alpha_emissivity_per_m3_s));
         assert_eq!(body["solution_seal"].as_str().unwrap().len(), 64);
         assert_receipt(&text, &body);
-        assert_eq!(verdict(&base, &body).await, json!({ "holds": true, "cause": null, "checked": protocol_mcp_gateway::WHOLE_SOLUTION_CHECKED }));
+        assert_eq!(verdict(&base, &body).await, json!({ "holds": true, "values_hold": true, "cause": null, "compared": protocol_mcp_gateway::WHOLE_SOLUTION_COMPUTED }));
     }
 }
 
@@ -240,7 +240,7 @@ async fn two_plasmas_match_the_solver_bit_for_bit() {
         assert_eq!(direct.balance_terms_w_per_m3.len(), 9);
         assert_eq!(body["field_sha256"], field_hash(&direct.balance_terms_w_per_m3));
         assert_receipt(&text, &body);
-        assert_eq!(verdict(&base, &body).await, json!({ "holds": true, "cause": null, "checked": protocol_mcp_gateway::WHOLE_SOLUTION_CHECKED }));
+        assert_eq!(verdict(&base, &body).await, json!({ "holds": true, "values_hold": true, "cause": null, "compared": protocol_mcp_gateway::WHOLE_SOLUTION_COMPUTED }));
     }
     // The switch has no default: left out it is named at the door, and the
     // switch off and the switch on are different sealed requests with
@@ -252,7 +252,7 @@ async fn two_plasmas_match_the_solver_bit_for_bit() {
     left_out["parameters"].as_object_mut().unwrap().remove("kinetic_enhancement");
     let (status, text) = post(&base, "/solve", &left_out).await;
     assert_eq!(status, 422, "{text}");
-    assert_eq!(text, "Missing required parameter: 'kinetic_enhancement'");
+    assert_eq!(text, "Missing required parameter: 'kinetic_enhancement' (InputMissing).");
     let (_, on) = solved(&base, &plasma(&PLASMA)).await;
     assert_ne!(written["solution_seal"], on["solution_seal"]);
     assert_ne!(on["result"]["reactivity_m3_per_s_hex"], written["result"]["reactivity_m3_per_s_hex"]);
@@ -283,27 +283,16 @@ async fn the_bounds_hold_at_the_last_number_on_each_side() {
     let above = |value: f64| f64::from_bits(value.to_bits() + 1);
     // Every limit of the beam is asked by the solver's own check and refused
     // in the solver's words, with the solver's name for the refusal. Each
-    // range is the envelope compared with measurement.
-    let beams: [(fn(&mut LhdQuestion, f64), f64, &str, &str); 17] = [
-        (|q, v| q.beam_energy_kev = v, below(lhd::POSITIVE_ION_BEAM_ENERGY_KEV), "beam energy", "BeamEnergyOutOfRange"),
-        (|q, v| q.beam_energy_kev = v, above(lhd::POSITIVE_ION_BEAM_ENERGY_KEV), "beam energy", "BeamEnergyOutOfRange"),
-        (|q, v| q.beam_energy_kev = v, below(lhd::BEAM_ENERGY_MIN_KEV), "beam energy", "BeamEnergyOutOfRange"),
+    // end is a physical one, said in the sentence.
+    let beams: [(fn(&mut LhdQuestion, f64), f64, &str, &str); 8] = [
+        (|q, v| q.beam_energy_kev = v, lhd::BEAM_ENERGY_MIN_KEV, "beam energy", "BeamEnergyOutOfRange"),
         (|q, v| q.beam_energy_kev = v, above(lhd::BEAM_ENERGY_MAX_KEV), "beam energy", "BeamEnergyOutOfRange"),
-        (|q, v| q.beam_power_w = v, below(lhd::BEAM_POWER_MIN_W), "beam power", "BeamPowerOutOfRange"),
         (|q, v| q.beam_power_w = v, 0.0, "beam power", "BeamPowerOutOfRange"),
-        (|q, v| q.beam_power_w = v, above(lhd::BEAM_POWER_MAX_W), "beam power", "BeamPowerOutOfRange"),
         (|q, v| q.electron_density_per_m3 = v, below(lhd::ELECTRON_DENSITY_MIN_PER_M3), "electron density", "ElectronDensityOutOfRange"),
         (|q, v| q.electron_density_per_m3 = v, above(lhd::ELECTRON_DENSITY_MAX_PER_M3), "electron density", "ElectronDensityOutOfRange"),
         (|q, v| q.electron_temperature_kev = v, below(lhd::ELECTRON_TEMPERATURE_MIN_KEV), "electron temperature", "ElectronTemperatureOutOfRange"),
         (|q, v| q.electron_temperature_kev = v, above(lhd::ELECTRON_TEMPERATURE_MAX_KEV), "electron temperature", "ElectronTemperatureOutOfRange"),
-        (|q, v| q.boron_density_per_m3 = v, above(lhd::BORON_DENSITY_MAX_PER_M3), "boron density", "BoronDensityOutOfRange"),
-        (|q, v| q.boron_density_per_m3 = v, 2.5e17, "peak boron density over line-averaged electron density", "BoronShareOutOfRange"),
-        // The 45 keV plasma's temperature and power under a negative-ion beam: never compared there.
-        (|q, v| q.electron_temperature_kev = v, lhd::POSITIVE_ION_ELECTRON_TEMPERATURE_KEV, "electron temperature", "ElectronTemperatureOutOfRange"),
-        (|q, v| q.electron_temperature_kev = v, 2.5, "electron temperature", "ElectronTemperatureOutOfRange"),
-        (|q, v| q.beam_power_w = v, lhd::POSITIVE_ION_BEAM_POWER_W, "beam power", "BeamPowerOutOfRange"),
-        // A 45 keV beam in a plasma it was never compared in.
-        (|q, v| q.beam_energy_kev = v, lhd::POSITIVE_ION_BEAM_ENERGY_KEV, "beam power", "BeamPowerOutOfRange"),
+        (|q, v| q.boron_density_per_m3 = v, -1.0, "boron density", "BoronDensityOutOfRange"),
     ];
     for (change, value, word, name) in beams {
         let mut question = BEAM;
@@ -311,75 +300,70 @@ async fn the_bounds_hold_at_the_last_number_on_each_side() {
         let (status, text) = post(&base, "/solve", &beam(&question)).await;
         assert_eq!(status, 422, "{word} {value}: {text}");
         assert!(text.starts_with(&format!("Physical Violation: {word} ")), "{text}");
-        assert!(text.contains("compared with measurement"), "{text}");
+        assert!(!text.contains("compared"), "{text}");
         assert!(text.ends_with(&format!("({name}).")), "{text}");
         assert!(!text.contains("solution_seal"), "{text}");
     }
-    // The ends of each range are inside it and answered with a proof.
-    let ends: [(fn(&mut LhdQuestion, f64), f64); 8] = [
-        (|q, v| q.beam_energy_kev = v, lhd::BEAM_ENERGY_MIN_KEV),
+    // The ends of each range are inside it: answered with a proof, or a
+    // sealed physical limit of the solve.
+    let ends: [(fn(&mut LhdQuestion, f64), f64); 6] = [
+        (|q, v| q.beam_energy_kev = v, above(lhd::BEAM_ENERGY_MIN_KEV)),
         (|q, v| q.beam_energy_kev = v, lhd::BEAM_ENERGY_MAX_KEV),
-        (|q, v| q.beam_power_w = v, lhd::BEAM_POWER_MIN_W),
-        (|q, v| q.beam_power_w = v, lhd::BEAM_POWER_MAX_W),
         (|q, v| q.electron_density_per_m3 = v, lhd::ELECTRON_DENSITY_MIN_PER_M3),
         (|q, v| q.electron_density_per_m3 = v, lhd::ELECTRON_DENSITY_MAX_PER_M3),
         (|q, v| q.electron_temperature_kev = v, lhd::ELECTRON_TEMPERATURE_MIN_KEV),
         (|q, v| q.electron_temperature_kev = v, lhd::ELECTRON_TEMPERATURE_MAX_KEV),
     ];
     for (change, value) in ends {
-        // Boron the thinnest compared plasma can carry.
-        let mut question = LhdQuestion { boron_density_per_m3: 5.0e16, ..BEAM };
+        let mut question = LhdQuestion { boron_density_per_m3: 5.0e16, beam_power_w: 1.0e5, ..BEAM };
         change(&mut question, value);
         let (_, body) = solved(&base, &beam(&question)).await;
         assert_eq!(body["outcome"], "converged", "{value}");
     }
-    // The 45 keV beam in the one plasma it was compared in (run A5).
-    let positive_ion = LhdQuestion {
-        beam_energy_kev: lhd::POSITIVE_ION_BEAM_ENERGY_KEV,
-        beam_power_w: lhd::POSITIVE_ION_BEAM_POWER_W,
-        electron_density_per_m3: lhd::POSITIVE_ION_ELECTRON_DENSITY_PER_M3,
-        electron_temperature_kev: lhd::POSITIVE_ION_ELECTRON_TEMPERATURE_KEV,
-        boron_density_per_m3: lhd::POSITIVE_ION_BORON_DENSITY_PER_M3,
-    };
-    let (_, body) = solved(&base, &beam(&positive_ion)).await;
-    assert_eq!(body["outcome"], "converged");
+    // The 45 keV beam of run A5, in the plasma it was compared in, leaves
+    // more fast protons than electrons at the axis: a sealed refusal.
+    let positive_ion = json!({ "solver": "fusion_pb11_lhd", "parameters": {"beam_energy_kev":45,"beam_power_w":4515000,"electron_density_per_m3":4.502e18,"electron_temperature_kev":2.1252,"boron_density_per_m3":8.1234e16} });
+    let (_, body) = solved(&base, &positive_ion).await;
+    assert_eq!(body["outcome"], "refused");
+    assert_eq!(body["reject"], "FastProtonChargeExceedsElectrons");
     // The most boron for its electrons compared, at its own point.
     let most_boron = LhdQuestion {
         beam_energy_kev: 127.45,
         beam_power_w: 1.4056e6,
-        electron_density_per_m3: lhd::ELECTRON_DENSITY_MAX_PER_M3,
+        electron_density_per_m3: 6.872e18,
         electron_temperature_kev: 3.3333,
-        boron_density_per_m3: lhd::BORON_DENSITY_MAX_PER_M3,
+        boron_density_per_m3: 2.84682e17,
     };
     let (_, body) = solved(&base, &beam(&most_boron)).await;
     assert_eq!(body["outcome"], "converged");
     // Four requests that 0.6.0 answered with a proof outside every
-    // comparison, and a subnormal power, are refused at the door with no
-    // seal.
-    for (parameters, name) in [
-        (json!({"beam_energy_kev":100,"beam_power_w":1000000,"electron_density_per_m3":3e19,"electron_temperature_kev":8,"boron_density_per_m3":7e17}), "BeamEnergyOutOfRange"),
-        (json!({"beam_energy_kev":190,"beam_power_w":1000000,"electron_density_per_m3":1e18,"electron_temperature_kev":8,"boron_density_per_m3":1e17}), "BeamEnergyOutOfRange"),
-        (json!({"beam_energy_kev":160,"beam_power_w":1000000,"electron_density_per_m3":1e18,"electron_temperature_kev":3,"boron_density_per_m3":1.036081e17}), "ElectronDensityOutOfRange"),
-        (json!({"beam_energy_kev":161.5,"beam_power_w":1000000,"electron_density_per_m3":1e18,"electron_temperature_kev":1,"boron_density_per_m3":1e17}), "BeamEnergyOutOfRange"),
-        (json!({"beam_energy_kev":180,"beam_power_w":5e-324,"electron_density_per_m3":1.96e19,"electron_temperature_kev":5.4,"boron_density_per_m3":6.3e16}), "number rule"),
-        (json!({"beam_energy_kev":160,"beam_power_w":5e-324,"electron_density_per_m3":3.137e18,"electron_temperature_kev":3.2438,"boron_density_per_m3":8.6706e16}), "number rule"),
+    // comparison, refused at the door from 0.7.0 to this version, are
+    // admitted again; a subnormal power is refused by the number rule.
+    for (parameters, answered) in [
+        (json!({"beam_energy_kev":100,"beam_power_w":1000000,"electron_density_per_m3":3e19,"electron_temperature_kev":6,"boron_density_per_m3":7e17}), true),
+        (json!({"beam_energy_kev":190,"beam_power_w":1000000,"electron_density_per_m3":1e18,"electron_temperature_kev":6,"boron_density_per_m3":1e17}), false),
+        (json!({"beam_energy_kev":160,"beam_power_w":1000000,"electron_density_per_m3":1e18,"electron_temperature_kev":3,"boron_density_per_m3":1.036081e17}), false),
+        (json!({"beam_energy_kev":180,"beam_power_w":4330000,"electron_density_per_m3":1.96e19,"electron_temperature_kev":5.4,"boron_density_per_m3":6.3e16}), true),
     ] {
         let request = json!({ "solver": "fusion_pb11_lhd", "parameters": parameters });
-        let (status, text) = post(&base, "/solve", &request).await;
-        assert_eq!(status, 422, "{text}");
-        if name == "number rule" {
-            // The subnormal power is refused first by the number rule every request follows.
-            assert_eq!(text, "Physical Violation: 'beam_power_w' is not a finite normal number.");
+        let (_, body) = solved(&base, &request).await;
+        if answered {
+            assert_eq!(body["outcome"], "converged", "{request}");
         } else {
-            assert!(text.ends_with(&format!("({name}).")), "{text}");
+            assert_eq!(body["outcome"], "refused", "{request}");
+            assert_eq!(body["reject"], "FastProtonChargeExceedsElectrons", "{request}");
         }
-        assert!(!text.contains("solution_seal"), "{text}");
     }
+    let subnormal = json!({ "solver": "fusion_pb11_lhd", "parameters": {"beam_energy_kev":160,"beam_power_w":5e-324,"electron_density_per_m3":3.137e18,"electron_temperature_kev":3.2438,"boron_density_per_m3":8.6706e16} });
+    let (status, text) = post(&base, "/solve", &subnormal).await;
+    assert_eq!(status, 422, "{text}");
+    assert_eq!(text, "Physical Violation: 'beam_power_w' is not a finite normal number.");
 
-    // Each range of the plasma is refused as the field list reads it: by
-    // the field's name, with the solver's name for the refusal.
-    // Each range is the envelope compared with published calculations.
-    let plasmas: [(fn(&mut ThermalQuestion, f64), f64, &str, &str); 16] = [
+    // Each closed range of the plasma is refused as the field list reads
+    // it: by the field's name, with the solver's name for the refusal. The
+    // field and the confinement time, open above zero, are asked of the
+    // solver's own check and refused in its words.
+    let plasmas: [(fn(&mut ThermalQuestion, f64), f64, &str, &str); 12] = [
         (|q, v| q.ion_temperature_kev = v, below(thermal::ION_TEMPERATURE_MIN_KEV), "ion_temperature_kev", "IonTemperatureOutOfRange"),
         (|q, v| q.ion_temperature_kev = v, above(thermal::ION_TEMPERATURE_MAX_KEV), "ion_temperature_kev", "IonTemperatureOutOfRange"),
         (|q, v| q.electron_density_per_m3 = v, below(thermal::ELECTRON_DENSITY_MIN_PER_M3), "electron_density_per_m3", "ElectronDensityOutOfRange"),
@@ -387,16 +371,11 @@ async fn the_bounds_hold_at_the_last_number_on_each_side() {
         (|q, v| q.boron_fraction = v, below(thermal::BORON_FRACTION_MIN), "boron_fraction", "BoronFractionOutOfRange"),
         (|q, v| q.boron_fraction = v, above(thermal::BORON_FRACTION_MAX), "boron_fraction", "BoronFractionOutOfRange"),
         (|q, v| q.ash_fraction = v, -1.0e-9, "ash_fraction", "AshFractionOutOfRange"),
-        // The ash's maximum is zero; the next number the number rule takes above it is the smallest normal one.
-        (|q, v| q.ash_fraction = v, f64::MIN_POSITIVE, "ash_fraction", "AshFractionOutOfRange"),
-        (|q, v| q.magnetic_field_t = v, below(thermal::MAGNETIC_FIELD_MIN_T), "magnetic_field_t", "MagneticFieldOutOfRange"),
-        (|q, v| q.magnetic_field_t = v, above(thermal::MAGNETIC_FIELD_MAX_T), "magnetic_field_t", "MagneticFieldOutOfRange"),
+        (|q, v| q.ash_fraction = v, above(thermal::ASH_FRACTION_MAX), "ash_fraction", "AshFractionOutOfRange"),
         (|q, v| q.minor_radius_m = v, below(thermal::MINOR_RADIUS_MIN_M), "minor_radius_m", "MinorRadiusOutOfRange"),
         (|q, v| q.minor_radius_m = v, above(thermal::MINOR_RADIUS_MAX_M), "minor_radius_m", "MinorRadiusOutOfRange"),
-        (|q, v| q.wall_reflectivity = v, below(thermal::WALL_REFLECTIVITY_MIN), "wall_reflectivity", "WallReflectivityOutOfRange"),
+        (|q, v| q.wall_reflectivity = v, -1.0e-9, "wall_reflectivity", "WallReflectivityOutOfRange"),
         (|q, v| q.wall_reflectivity = v, above(thermal::WALL_REFLECTIVITY_MAX), "wall_reflectivity", "WallReflectivityOutOfRange"),
-        (|q, v| q.energy_confinement_time_s = v, below(thermal::CONFINEMENT_TIME_MIN_S), "energy_confinement_time_s", "ConfinementTimeOutOfRange"),
-        (|q, v| q.energy_confinement_time_s = v, above(thermal::CONFINEMENT_TIME_MAX_S), "energy_confinement_time_s", "ConfinementTimeOutOfRange"),
     ];
     for (change, value, word, name) in plasmas {
         let mut question = PLASMA;
@@ -408,7 +387,22 @@ async fn the_bounds_hold_at_the_last_number_on_each_side() {
         assert!(text.ends_with(&format!("({name}).")), "{text}");
         assert!(!text.contains("solution_seal"), "{text}");
     }
-    // The ends of each range are inside it and answered with a proof.
+    let open: [(fn(&mut ThermalQuestion, f64), f64, &str, &str); 3] = [
+        (|q, v| q.magnetic_field_t = v, 0.0, "magnetic field", "MagneticFieldOutOfRange"),
+        (|q, v| q.magnetic_field_t = v, above(thermal::MAGNETIC_FIELD_MAX_T), "magnetic field", "MagneticFieldOutOfRange"),
+        (|q, v| q.energy_confinement_time_s = v, 0.0, "energy confinement time", "ConfinementTimeOutOfRange"),
+    ];
+    for (change, value, word, name) in open {
+        let mut question = PLASMA;
+        change(&mut question, value);
+        let (status, text) = post(&base, "/solve", &plasma(&question)).await;
+        assert_eq!(status, 422, "{word} {value}: {text}");
+        assert!(text.starts_with(&format!("Physical Violation: {word} ")), "{text}");
+        assert!(text.ends_with(&format!("({name}).")), "{text}");
+        assert!(!text.contains("solution_seal"), "{text}");
+    }
+    // The ends of each range are inside it: answered with a proof, or a
+    // sealed physical limit of the solve.
     let ends: [(fn(&mut ThermalQuestion, f64), f64); 10] = [
         (|q, v| q.ion_temperature_kev = v, thermal::ION_TEMPERATURE_MIN_KEV),
         (|q, v| q.ion_temperature_kev = v, thermal::ION_TEMPERATURE_MAX_KEV),
@@ -416,7 +410,7 @@ async fn the_bounds_hold_at_the_last_number_on_each_side() {
         (|q, v| q.electron_density_per_m3 = v, thermal::ELECTRON_DENSITY_MAX_PER_M3),
         (|q, v| q.boron_fraction = v, thermal::BORON_FRACTION_MIN),
         (|q, v| q.boron_fraction = v, thermal::BORON_FRACTION_MAX),
-        (|q, v| q.magnetic_field_t = v, thermal::MAGNETIC_FIELD_MIN_T),
+        (|q, v| q.ash_fraction = v, thermal::ASH_FRACTION_MAX),
         (|q, v| q.magnetic_field_t = v, thermal::MAGNETIC_FIELD_MAX_T),
         (|q, v| q.wall_reflectivity = v, thermal::WALL_REFLECTIVITY_MIN),
         (|q, v| q.wall_reflectivity = v, thermal::WALL_REFLECTIVITY_MAX),
@@ -425,30 +419,36 @@ async fn the_bounds_hold_at_the_last_number_on_each_side() {
         let mut question = PLASMA;
         change(&mut question, value);
         let (_, body) = solved(&base, &plasma(&question)).await;
-        assert_eq!(body["outcome"], "converged", "{value}");
+        let named = ["PressureExceedsField", "ElectronTemperatureOutOfRange", "SynchrotronAboveUnabsorbedEmission"];
+        assert!(body["outcome"] == "converged" || named.contains(&body["reject"].as_str().unwrap_or("")), "{value}: {body}");
     }
-    // A corner of the 0.6.0 range, once sealed, is refused at the door with no seal.
+    // A corner of the 0.6.0 range, refused at the door from 0.7.0 to this version, is answered with a proof.
     let corner = json!({ "solver": "fusion_pb11_thermal", "parameters": {"ion_temperature_kev":300,"electron_density_per_m3":1e21,"boron_fraction":0.5,"ash_fraction":0.1,"magnetic_field_t":40,"minor_radius_m":10,"wall_reflectivity":0,"energy_confinement_time_s":100000,"kinetic_enhancement":true} });
-    let (status, text) = post(&base, "/solve", &corner).await;
-    assert_eq!(status, 422, "{text}");
-    assert!(text.ends_with("(ElectronDensityOutOfRange)."), "{text}");
-    assert!(!text.contains("solution_seal"), "{text}");
+    let (_, body) = solved(&base, &corner).await;
+    assert_eq!(body["outcome"], "converged");
+    // Below 10 keV, refused at the door until this version, down to the
+    // electrons' 1 keV floor: answered with a proof that holds.
+    for ion_temperature_kev in [1.25, 2.0, 5.0, 9.99] {
+        let (_, body) = solved(&base, &plasma(&ThermalQuestion { ion_temperature_kev, ..PLASMA })).await;
+        assert_eq!(body["outcome"], "converged", "{ion_temperature_kev}: {body}");
+        assert_eq!(verdict(&base, &body).await["holds"], true, "{ion_temperature_kev}");
+    }
 }
 
 /// The plasma the 2026-10-09 run sent at 4 T, a sealed
-/// `PressureExceedsField` then, is below the compared fields: it is refused
-/// at the door by the field's name, with no seal. Inside the compared
-/// envelope the field holds every plasma.
+/// `PressureExceedsField` then and refused at the door from 0.7.0 to this
+/// version, is a sealed `PressureExceedsField` again: the field cannot hold
+/// it.
 #[tokio::test]
-async fn a_plasma_below_the_compared_fields_is_refused_at_the_door() {
+async fn a_plasma_the_field_cannot_hold_is_a_sealed_refusal() {
     let base = spawn_app().await;
     let question = ThermalQuestion { magnetic_field_t: 4.0, ..PLASMA };
-    let (status, text) = post(&base, "/solve", &plasma(&question)).await;
-    assert_eq!(status, 422, "{text}");
-    assert!(text.starts_with("Physical Violation: 'magnetic_field_t' "), "{text}");
-    assert!(text.ends_with("(MagneticFieldOutOfRange)."), "{text}");
-    assert!(!text.contains("solution_seal"), "{text}");
-    assert!(matches!(thermal::solve(&question), Err(thermal::ThermalReject::MagneticFieldOutOfRange { .. })));
+    let (text, body) = solved(&base, &plasma(&question)).await;
+    assert_eq!(body["outcome"], "refused", "{text}");
+    assert_eq!(body["reject"], "PressureExceedsField");
+    assert_eq!(body["solution_seal"].as_str().unwrap().len(), 64);
+    assert!(matches!(thermal::solve(&question), Err(thermal::ThermalReject::PressureExceedsField { .. })));
+    assert_eq!(verdict(&base, &body).await["holds"], true);
 }
 
 #[tokio::test]
@@ -469,9 +469,9 @@ async fn what_is_not_a_question_of_these_solvers_is_refused_before_the_solver() 
     for (request, message) in [
         (with(&good_beam, "beam_energy_kev", json!("160")), "'beam_energy_kev' must be a number"),
         (with(&good_beam, "boron_density_per_m3", json!(null)), "'boron_density_per_m3' must be a number"),
-        (without(&good_beam, "beam_power_w"), "Missing required parameter: 'beam_power_w'"),
-        (without(&good_beam, "boron_density_per_m3"), "Missing required parameter: 'boron_density_per_m3'"),
-        (json!({ "solver": "fusion_pb11_lhd" }), "Missing required parameter: 'parameters' (or 'example', the name of a worked example describe_solver lists)"),
+        (without(&good_beam, "beam_power_w"), "Missing required parameter: 'beam_power_w' (InputMissing)."),
+        (without(&good_beam, "boron_density_per_m3"), "Missing required parameter: 'boron_density_per_m3' (InputMissing)."),
+        (json!({ "solver": "fusion_pb11_lhd" }), "Missing required parameter: 'parameters' (or 'example', the name of a worked example describe_solver lists) (InputMissing)."),
         // A constant of the solver sent as a field.
         (with(&good_beam, "boron11_fraction", json!(1.0)), "'boron11_fraction' is not an input of this solver"),
         (with(&good_beam, "shells", json!(4)), "'shells' is not an input of this solver"),
@@ -479,9 +479,9 @@ async fn what_is_not_a_question_of_these_solvers_is_refused_before_the_solver() 
         // The other solver's question, and the atom's.
         (with(&good_beam, "wall_reflectivity", json!(0.9)), "'wall_reflectivity' is not an input of this solver"),
         (with(&good_beam, "atomic_number", json!(5)), "'atomic_number' is not an input of this solver"),
-        (without(&good_plasma, "wall_reflectivity"), "Missing required parameter: 'wall_reflectivity'"),
-        (without(&good_plasma, "energy_confinement_time_s"), "Missing required parameter: 'energy_confinement_time_s'"),
-        (without(&good_plasma, "kinetic_enhancement"), "Missing required parameter: 'kinetic_enhancement'"),
+        (without(&good_plasma, "wall_reflectivity"), "Missing required parameter: 'wall_reflectivity' (InputMissing)."),
+        (without(&good_plasma, "energy_confinement_time_s"), "Missing required parameter: 'energy_confinement_time_s' (InputMissing)."),
+        (without(&good_plasma, "kinetic_enhancement"), "Missing required parameter: 'kinetic_enhancement' (InputMissing)."),
         (with(&good_plasma, "kinetic_enhancement", json!("true")), "'kinetic_enhancement' must be true or false"),
         (with(&good_plasma, "kinetic_enhancement", json!(1)), "'kinetic_enhancement' must be true or false"),
         (with(&good_plasma, "electron_temperature_kev", json!(150)), "'electron_temperature_kev' is not an input of this solver"),
@@ -506,7 +506,7 @@ async fn both_are_listed_and_described_and_each_example_runs_unchanged() {
     let listed = reqwest::get(format!("{base}/solvers")).await.unwrap();
     let listed: Value = serde_json::from_str(&listed.text().await.unwrap()).unwrap();
     let solvers = listed["solvers"].as_array().expect("solvers");
-    assert_eq!(solvers.len(), 13);
+    assert_eq!(solvers.len(), 24);
     assert_eq!(solvers[7]["solver"], "fusion_pb11_lhd");
     assert_eq!(solvers[8]["solver"], "fusion_pb11_thermal");
     for listed in &solvers[7..9] {
@@ -514,13 +514,14 @@ async fn both_are_listed_and_described_and_each_example_runs_unchanged() {
         assert!(summary.ends_with('.'));
         assert!(summary.contains("No constant is fitted"), "{summary}");
     }
-    assert!(solvers[8]["summary"].as_str().unwrap().contains("published calculations only"));
-    assert!(solvers[7]["summary"].as_str().unwrap().contains("missed three of its four pass lines"));
-    assert!(solvers[7]["summary"].as_str().unwrap().ends_with("It is not validated against measurement."));
-    assert!(solvers[8]["summary"].as_str().unwrap().ends_with("of its eight gated pass lines seven were met and one was missed."));
+    assert!(solvers[8]["summary"].as_str().unwrap().contains("Compared with the published calculations of Ochs et al. (2022)"));
+    assert!(solvers[7]["summary"].as_str().unwrap().contains("one of its four lines met"));
+    for place in [7, 8] {
+        assert!(!solvers[place]["summary"].as_str().unwrap().contains("missed"), "{place}");
+    }
 
     for (solver, inputs, results, invariants, refusals) in
-        [("fusion_pb11_lhd", 5, 9, 2, 12), ("fusion_pb11_thermal", 9, 15, 3, 15)]
+        [("fusion_pb11_lhd", 5, 10, 2, 13), ("fusion_pb11_thermal", 9, 15, 3, 16)]
     {
         let (status, text) = post(&base, "/describe_solver", &json!({ "solver": solver })).await;
         assert_eq!(status, 200, "{text}");
@@ -552,39 +553,38 @@ async fn both_are_listed_and_described_and_each_example_runs_unchanged() {
             }
             assert_eq!(body[section].as_object().unwrap().len(), 2 * count);
         }
-        assert_eq!(verdict(&base, &body).await, json!({ "holds": true, "cause": null, "checked": protocol_mcp_gateway::WHOLE_SOLUTION_CHECKED }));
+        assert_eq!(verdict(&base, &body).await, json!({ "holds": true, "values_hold": true, "cause": null, "compared": protocol_mcp_gateway::WHOLE_SOLUTION_COMPUTED }));
     }
     let (_, text) = post(&base, "/describe_solver", &json!({ "solver": "fusion_pb11_lhd" })).await;
     let described: Value = serde_json::from_str(&text).unwrap();
-    assert_eq!(described["inputs"][0]["minimum"], 45.0);
-    assert_eq!(described["inputs"][0]["maximum"], 160.25);
-    assert!(described["inputs"][0].get("minimum_exclusive").is_none());
-    assert!(described["inputs"][0]["bound"].as_str().unwrap().contains("Every energy between 45 and 127.45 keV is refused by name"));
-    // The beam power's range is the powers compared with measurement, both ends inside.
+    // The beam energy is above 10 keV to 190 keV, and the 45 keV beam joins the band.
+    assert_eq!(described["inputs"][0]["minimum"], 10.0);
+    assert_eq!(described["inputs"][0]["minimum_exclusive"], true);
+    assert_eq!(described["inputs"][0]["maximum"], 190.0);
+    // The beam power is any power above zero, to the capacity of the input.
     assert_eq!(described["inputs"][1]["name"], "beam_power_w");
-    assert_eq!(described["inputs"][1]["minimum"], 938_900.0);
-    assert_eq!(described["inputs"][1]["maximum"], 4_515_000.0);
-    assert!(described["inputs"][1].get("minimum_exclusive").is_none());
-    // The smallest number above zero, once answered with a gain of 0 and a proof, is refused by name.
+    assert_eq!(described["inputs"][1]["minimum"], 0.0);
+    assert_eq!(described["inputs"][1]["minimum_exclusive"], true);
+    assert_eq!(described["inputs"][1]["maximum"], 1.0e300);
+    // No power is no beam; the 0.9389 MW floor of 0.7.0 to this version is gone.
     let mut tiny: Value = serde_json::from_str(r#"{"solver":"fusion_pb11_lhd","parameters":{"beam_energy_kev":160,"beam_power_w":0,"electron_density_per_m3":5e18,"electron_temperature_kev":3,"boron_density_per_m3":1e17}}"#).unwrap();
-    for power in [json!(0), json!(938899.9)] {
-        tiny["parameters"]["beam_power_w"] = power;
-        let (status, text) = post(&base, "/solve", &tiny).await;
-        assert_eq!(status, 422, "{text}");
-        assert!(text.contains("BeamPowerOutOfRange"), "{text}");
-    }
+    let (status, text) = post(&base, "/solve", &tiny).await;
+    assert_eq!(status, 422, "{text}");
+    assert!(text.contains("BeamPowerOutOfRange"), "{text}");
+    tiny["parameters"]["beam_power_w"] = json!(938899.9);
+    let (_, body) = solved(&base, &tiny).await;
+    assert_eq!(body["outcome"], "converged");
     // The smallest number above zero is a subnormal, refused first by the
     // number rule every request follows.
     tiny["parameters"]["beam_power_w"] = json!(5e-324);
     let (status, text) = post(&base, "/solve", &tiny).await;
     assert_eq!(status, 422, "{text}");
     assert_eq!(text, "Physical Violation: 'beam_power_w' is not a finite normal number.");
-    // The published calculation's plasma is refused, and the reference says so.
-    assert!(described["reference"]["covers"].as_str().unwrap().contains("The served solver refuses this case by name"));
+    // The published calculation's plasma is answered, and the reference says so.
+    assert!(described["reference"]["covers"].as_str().unwrap().contains("The served solver answers this case"));
     let limits = described["validation"]["limits"].as_str().unwrap();
-    assert!(limits.contains("The negative-ion beams, 127.45 to 160.25 keV, are held to the envelope of their own runs, each input on its own: power 0.9389 to 3.97 MW"), "{limits}");
-    assert!(limits.contains("The 45 keV beam was compared in one plasma only, Figure 6 at 7.8 s, and is answered only there"), "{limits}");
-    assert!(!limits.contains("both lie inside the declared ranges"), "{limits}");
+    assert!(limits.contains("The declared range is where the solver's equations hold"), "{limits}");
+    assert!(limits.contains("both beam families now share one range"), "{limits}");
     assert_eq!(described["locked"]["boron11_fraction"], 0.80);
     assert_eq!(described["locked"]["shells"], 20);
     // The comparison with the published calculation is stated as it came out: missed.
@@ -603,11 +603,12 @@ async fn both_are_listed_and_described_and_each_example_runs_unchanged() {
     let described: Value = serde_json::from_str(&text).unwrap();
     let result = described["validation"]["result"].as_str().unwrap();
     assert!(result.contains("Missed: ") && result.contains("7.9 percent off"), "{result}");
-    assert!(described["validation"]["data"].as_str().unwrap().starts_with("Nothing."));
-    assert!(described["validation"]["object"].as_str().unwrap().starts_with("None:"));
+    assert!(described["validation"]["data"].as_str().unwrap().starts_with("Published calculations:"));
+    assert!(described["validation"]["object"].as_str().unwrap().starts_with("A uniform thermal plasma"));
     // The switch is a field like the others: true or false, with no default.
     assert_eq!(described["inputs"][8]["name"], "kinetic_enhancement");
-    assert!(described["inputs"][8]["bound"].as_str().unwrap().starts_with("Required, true or false. It has no default, and a request that leaves it out is refused by name"));
+    // A request without the flag is a request with a key missing; its sentence names the key, as InputMissing.
+    assert!(described["inputs"][8]["bound"].as_str().unwrap().starts_with("Required, true or false. It has no default, and a request that leaves it out is refused as a missing key, in a sentence that names the key, as InputMissing"));
     assert_eq!(described["inputs"][8]["type"], "true or false");
     assert!(described["inputs"][8]["bound"].as_str().unwrap().contains("It is theory"));
     // Five comparisons with published calculations, each met.
@@ -622,8 +623,8 @@ async fn both_are_listed_and_described_and_each_example_runs_unchanged() {
 
 /// A 4.7 T, 0.1 m bare-wall plasma, which 0.6.0 refused as
 /// `PressureExceedsField` although the field holds a balance near 105.6 keV,
-/// is outside the compared envelope and is refused at the door by name with
-/// no seal. The door says how the first of several balances is chosen, what
+/// and which 0.7.0 to this version refused at the door, is answered with a
+/// proof. The door says how the first of several balances is chosen, what
 /// the ignition loss rate is over, and which region was compared.
 #[tokio::test]
 async fn requests_at_the_edges_of_the_range_are_answered_truly_and_described() {
@@ -640,17 +641,19 @@ async fn requests_at_the_edges_of_the_range_are_answered_truly_and_described() {
         kinetic_enhancement: false,
     };
     for field in [4.7, 4.701] {
-        let (status, text) = post(&base, "/solve", &plasma(&ThermalQuestion { magnetic_field_t: field, ..question })).await;
-        assert_eq!(status, 422, "{text}");
-        assert!(text.ends_with("(MagneticFieldOutOfRange)."), "{text}");
-        assert!(!text.contains("PressureExceedsField") && !text.contains("solution_seal"), "{text}");
+        let asked = ThermalQuestion { magnetic_field_t: field, ..question };
+        let (_, body) = solved(&base, &plasma(&asked)).await;
+        assert_eq!(body["outcome"], "converged", "{field}");
+        let direct = thermal::solve(&asked).expect("settles");
+        assert_number(&body["result"], "electron_temperature_kev", direct.electron_temperature_kev);
+        assert!((direct.electron_temperature_kev - 105.6).abs() < 0.2, "{}", direct.electron_temperature_kev);
     }
-    // One over the ignition loss rate as the confinement time is refused by name.
+    // One over the ignition loss rate as the confinement time is answered: the auxiliary power is below zero there.
     let mut d2 = plasma(&ThermalQuestion { magnetic_field_t: 20.0, wall_reflectivity: 1.0, ..PLASMA });
     d2["parameters"]["energy_confinement_time_s"] = json!(532.3461727957897);
-    let (status, text) = post(&base, "/solve", &d2).await;
-    assert_eq!(status, 422, "{text}");
-    assert!(text.ends_with("(ConfinementTimeOutOfRange)."), "{text}");
+    let (_, body) = solved(&base, &d2).await;
+    assert_eq!(body["outcome"], "converged");
+    assert!(body["result"]["auxiliary_power_w_per_m3"].as_f64().unwrap() < 0.0);
 
     let (_, text) = post(&base, "/describe_solver", &json!({ "solver": "fusion_pb11_thermal" })).await;
     let described: Value = serde_json::from_str(&text).unwrap();
@@ -669,21 +672,21 @@ async fn requests_at_the_edges_of_the_range_are_answered_truly_and_described() {
     assert!(!rate.contains("One over the confinement time"), "{rate}");
     assert_eq!(described["locked"]["electron_grid_step_kev"], thermal::ELECTRON_GRID_STEP_KEV);
     assert!(described["validation"]["result"].as_str().unwrap().contains("Total-energy ignition confinement time"));
-    // The declared range is the compared one, and the record says so.
+    // The declared range is where the physics holds; the compared one is stated beside it.
     let limits = described["validation"]["limits"].as_str().unwrap();
-    assert!(limits.contains("The declared range is the envelope of the inputs of the comparison, each input on its own"), "{limits}");
-    assert!(limits.contains("were not compared"), "{limits}");
-    assert!(described["summary"].as_str().unwrap().contains("ion temperature 200 to 450 keV"));
+    assert!(limits.contains("The declared range is where the balance's own forms hold"), "{limits}");
+    assert!(limits.contains("The comparison covered ion temperature 200 to 450 keV"), "{limits}");
+    assert!(described["summary"].as_str().unwrap().contains("ion temperature 1 to 1000 keV"));
     let inputs = described["inputs"].as_array().unwrap();
     for (index, name, minimum, maximum) in [
-        (0, "ion_temperature_kev", 200.0, 450.0),
-        (1, "electron_density_per_m3", 1.52e20, 1.6e20),
-        (2, "boron_fraction", 0.13, 0.15),
-        (3, "ash_fraction", 0.0, 0.0),
-        (4, "magnetic_field_t", 6.661098700751347, 20.0),
-        (5, "minor_radius_m", 2.0, 2.0),
-        (6, "wall_reflectivity", 0.95, 1.0),
-        (7, "energy_confinement_time_s", 100.0, 100.0),
+        (0, "ion_temperature_kev", 1.0, 1000.0),
+        (1, "electron_density_per_m3", 1.0e18, 1.0e22),
+        (2, "boron_fraction", 0.01, 0.9),
+        (3, "ash_fraction", 0.0, 1.0),
+        (4, "magnetic_field_t", 0.0, 1.0e6),
+        (5, "minor_radius_m", 0.1, 10.0),
+        (6, "wall_reflectivity", 0.0, 1.0),
+        (7, "energy_confinement_time_s", 0.0, 1.0e300),
     ] {
         assert_eq!(inputs[index]["name"], name);
         assert_eq!(inputs[index]["minimum"], minimum, "{name}");
@@ -702,10 +705,13 @@ async fn an_edited_answer_is_named_by_its_part() {
     more["result"]["alpha_emission_rate_per_s_hex"] = json!(hex_of(10.0 * rate));
     assert_fails(&base, &more, "result", "ten times the alphas").await;
 
-    // The decimal alone is not in the seal; the hex is the value.
+    // The decimal alone is not in the seal; the hex is the value. Since
+    // 0.11.0 the long form writes the answer again from the hex and names
+    // the decimal that is not its value.
     let mut decimal = body.clone();
     decimal["result"]["alpha_emission_rate_per_s"] = json!(10.0 * rate);
-    assert_eq!(verdict(&base, &decimal).await["holds"], true);
+    let report = verdict(&base, &decimal).await;
+    assert_eq!((report["holds"].clone(), report["cause"].clone(), report["differs_at"].clone()), (json!(false), json!("answer_text"), json!("result.alpha_emission_rate_per_s")), "{report}");
 
     let mut closed = body.clone();
     closed["invariants"]["energy_ledger_residual_hex"] = json!(hex_of(0.0));
@@ -740,4 +746,31 @@ async fn an_edited_answer_is_named_by_its_part() {
     let mut shown_off = on.clone();
     shown_off["inputs"]["parameters"]["kinetic_enhancement"] = json!(false);
     assert_fails(&base, &shown_off, "inputs", "the switch turned off afterwards").await;
+}
+
+/// The thermal solver's summary names two requests and the numbers of each:
+/// the comparison's request of Ochs et al. (2022) at 300 keV, and the worked
+/// example, another plasma. Each is solved here to the numbers it states.
+#[tokio::test]
+async fn the_summary_states_the_numbers_of_the_comparison_and_of_the_worked_example() {
+    let base = spawn_app().await;
+    let (status, described) = post(&base, "/describe_solver", &json!({ "solver": "fusion_pb11_thermal" })).await;
+    assert_eq!(status, 200, "{described}");
+    let described: Value = serde_json::from_str(&described).unwrap();
+    let summary = described["summary"].as_str().unwrap();
+    let ochs = json!({ "solver": "fusion_pb11_thermal", "parameters": {
+        "ion_temperature_kev": 300, "electron_density_per_m3": 1.52e20, "boron_fraction": 0.13, "ash_fraction": 0,
+        "magnetic_field_t": 20, "minor_radius_m": 2, "wall_reflectivity": 1, "energy_confinement_time_s": 100,
+        "kinetic_enhancement": true } });
+    let (_, compared) = solved(&base, &ochs).await;
+    let electrons = compared["result"]["electron_temperature_kev"].as_f64().unwrap();
+    assert_eq!(format!("{electrons:.2}"), "159.33");
+    assert_eq!(format!("{:.3}", compared["result"]["ignition_margin"].as_f64().unwrap()), "0.037");
+    assert!(summary.contains("gives an electron temperature of 159.33 keV against a published 163.0, and an ignition margin of 0.037"), "{summary}");
+    let (_, worked) = solved(&base, &described["example_solve"]).await;
+    let electrons = worked["result"]["electron_temperature_kev"].as_f64().unwrap();
+    let margin = worked["result"]["ignition_margin"].as_f64().unwrap();
+    assert_eq!((format!("{electrons:.3}"), format!("{margin:.3}")), ("113.152".to_string(), "-1.042".to_string()));
+    assert!(margin < 0.0);
+    assert!(summary.contains("an electron temperature of 113.152 keV and an ignition margin of -1.042, so it does not ignite"), "{summary}");
 }

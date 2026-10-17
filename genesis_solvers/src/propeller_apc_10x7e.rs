@@ -33,22 +33,43 @@
 //! before any comparison.
 //!
 //! The model has no Reynolds-number and no Mach-number dependence: its
-//! thrust and power coefficients depend on the advance ratio alone. The
-//! range of rotational speed is therefore a limit, and it is enforced.
+//! thrust and power coefficients depend on the advance ratio alone. A
+//! rotational speed acts on a real section through those two numbers, so
+//! the rotational speed is held by them: the chord Reynolds number inside
+//! the band the section's two constants are taken over, and the tip Mach
+//! number at or below [`TIP_MACH_MAX`], because the section law is
+//! incompressible. Any speed above zero is otherwise answered, up to
+//! [`ROTATIONAL_SPEED_MAX_REV_PER_MIN`], where the tip meets Mach 0.3 with
+//! the air still.
 //!
-//! **What is answered is what was compared.** With the air moving, the
+//! **What was compared, and what is answered.** With the air moving, the
 //! measured points span 4007 to 6531 rev/min and advance ratio 0.111 to
-//! 0.748; at zero airspeed, 4144 to 6542 rev/min. Those are the ranges, and
-//! outside them a question is refused by name. The measurements give thrust
-//! and power coefficients only: the density of the tunnel air was not
-//! recorded, and every comparison was sent at 1.225 kg/m³. Density enters
-//! this model only by scaling thrust and power, but it moves the chord
-//! Reynolds number the measured coefficients depend on. That Reynolds number
-//! at three quarters of the radius, formed at the question's own density, is
-//! therefore held inside [`REYNOLDS_NUMBER_MIN`]..=[`REYNOLDS_NUMBER_MAX`],
-//! the band the compared points span at 1.225 kg/m³. The comparison that
-//! fixed these numbers is `fix_0.7.0/compared_envelope.py` in the evidence
-//! folder.
+//! 0.748; at zero airspeed, 4144 to 6542 rev/min. Until this version the
+//! rotational speed was held to those spans. It is now answered past them
+//! wherever the Reynolds band and the tip Mach number hold: at 1.225 kg/m³
+//! and zero airspeed that is about 4014 to 6828 rev/min, and in thinner or
+//! denser air, or with the air moving, other speeds. Nothing outside the
+//! compared speeds was compared. The advance ratio is answered across its
+//! range too: blade-element momentum theory and the section hold across it,
+//! from zero airspeed up, and a ring whose equations have no root stops by
+//! name (`NoBalance`). The
+//! measurements give thrust and power coefficients only: the density of the
+//! tunnel air was not recorded, and every comparison was sent at
+//! 1.225 kg/m³. Density enters this model only by scaling thrust and power,
+//! and any density above zero is answered, but it moves the chord Reynolds
+//! number the section's coefficients depend on. The section has one
+//! zero-lift angle and one minimum drag and no law for how they move with
+//! the Reynolds number, so that Reynolds number at three quarters of the
+//! radius, formed at the question's own density, is held inside
+//! [`REYNOLDS_NUMBER_MIN`] to [`REYNOLDS_NUMBER_MAX`], the band its two
+//! constants are taken over: the band the compared points span at
+//! 1.225 kg/m³, over which the zero-lift angle that fits each sweep alone
+//! already drifts from about −2.6 to −3.8 degrees. The section is
+//! incompressible, so the tip Mach number is held to [`TIP_MACH_MAX`].
+//! Through engine 0.8.0 an advance ratio outside 0.111 to 0.748 and a
+//! density outside 1.0 to 1.3 kg/m³ were refused by name. The comparison
+//! that fixed the compared numbers is `fix_0.7.0/compared_envelope.py` in
+//! the evidence folder.
 //!
 //! **Compared once with the held-back measurements on 2026-10-09, it missed
 //! both lines fixed beforehand** (mean error at most 4.0 percent of full
@@ -61,19 +82,13 @@
 //! and this model has no term for that. The miss at rest has another cause:
 //! the model's static shaft power is about 9 percent of full scale low at
 //! every speed. A second party scored the same answers on 2026-10-09 and
-//! found the same numbers (`evidence/checks/second_party/V-27/`).
-//!
-//! **The ends of the advance-ratio range.** The advance ratio is computed
-//! from the airspeed and the rotational speed and used as computed; it is
-//! never moved to an end. The comparison with each end carries a named
-//! allowance, [`ADVANCE_RATIO_MIN_ALLOWANCE_ULP`] and
-//! [`ADVANCE_RATIO_MAX_ALLOWANCE_ULP`], for the rounding of that arithmetic
-//! alone, so that an advance ratio of exactly 0.111 or 0.748 is answered at
-//! every rotational speed.
+//! found the same numbers (`evidence/verification/second_party/V-27/`).
 //!
 //! The work that fixed the constants, the protocol and its fingerprint, and
 //! every result are in `evidence/research/propeller_apc_thin_electric_10x7/`.
 
+use genesis_kernel::math;
+use crate::normal::NormalOrZero;
 use std::fmt;
 
 const PI: f64 = std::f64::consts::PI;
@@ -125,20 +140,40 @@ pub const DRAG_DUE_TO_LIFT: f64 = 0.02;
 /// Drag coefficient of the section broadside to the flow.
 pub const CD_FLAT_PLATE: f64 = 2.0;
 
-/// Lowest and highest rotational speed with the air moving, rev/min: the
-/// slowest and the fastest measured sweep compared. The fitted sweeps are at
-/// 4007 to 5018 and the held-back sweeps at 6015 to 6531.
-pub const ROTATIONAL_SPEED_MIN_REV_PER_MIN: f64 = 4007.0;
-pub const ROTATIONAL_SPEED_MAX_REV_PER_MIN: f64 = 6531.0;
-/// Lowest and highest rotational speed at zero airspeed, rev/min: the
-/// slowest and the fastest static row compared.
-pub const STATIC_ROTATIONAL_SPEED_MIN_REV_PER_MIN: f64 = 4144.0;
-pub const STATIC_ROTATIONAL_SPEED_MAX_REV_PER_MIN: f64 = 6542.0;
-/// Lowest and highest air density, kg/m³. No density was measured: the
+/// The rotational speed must be above this, rev/min: the coefficients are
+/// per turn of the blades, and the rings' angular momentum is that of blades
+/// turning forward.
+pub const ROTATIONAL_SPEED_ABOVE_REV_PER_MIN: f64 = 0.0;
+/// The highest rotational speed answered, rev/min: at it, with the air
+/// still, the tip meets the air at [`TIP_MACH_MAX`] of [`SPEED_OF_SOUND_M_S`],
+/// 102.087 m/s, about 7676 rev/min. Every question with the air moving meets
+/// the tip Mach limit at a lower speed. Inside it the rotational speed is
+/// held by the chord Reynolds number ([`REYNOLDS_NUMBER_MIN`] to
+/// [`REYNOLDS_NUMBER_MAX`]) and the tip Mach number, the two things through
+/// which a rotational speed acts on a section whose coefficients depend on
+/// the advance ratio alone.
+pub const ROTATIONAL_SPEED_MAX_REV_PER_MIN: f64 = TIP_MACH_MAX * SPEED_OF_SOUND_M_S / (PI * DIAMETER_M) * 60.0;
+/// Lowest and highest rotational speed compared with the air moving, rev/min:
+/// the slowest and the fastest measured sweep. The fitted sweeps are at 4007
+/// to 5018 and the held-back sweeps at 6015 to 6531. Stated, not enforced:
+/// until this version a speed outside them was refused by name.
+pub const COMPARED_ROTATIONAL_SPEED_MIN_REV_PER_MIN: f64 = 4007.0;
+pub const COMPARED_ROTATIONAL_SPEED_MAX_REV_PER_MIN: f64 = 6531.0;
+/// Lowest and highest rotational speed compared at zero airspeed, rev/min:
+/// the slowest and the fastest static row. Stated, not enforced.
+pub const COMPARED_STATIC_ROTATIONAL_SPEED_MIN_REV_PER_MIN: f64 = 4144.0;
+pub const COMPARED_STATIC_ROTATIONAL_SPEED_MAX_REV_PER_MIN: f64 = 6542.0;
+/// The air density must be above this, kg/m³. No density was measured: the
 /// measurements give coefficients only, and every comparison was sent at
-/// 1.225. Inside this range the chord Reynolds number is the limit.
-pub const AIR_DENSITY_MIN_KG_M3: f64 = 1.0;
-pub const AIR_DENSITY_MAX_KG_M3: f64 = 1.3;
+/// 1.225. Above zero the chord Reynolds number is the limit.
+pub const AIR_DENSITY_ABOVE_KG_M3: f64 = 0.0;
+/// Speed of sound in the tip Mach number, m/s: dry air at 15 °C, the
+/// standard atmosphere at sea level. The question holds no temperature.
+pub const SPEED_OF_SOUND_M_S: f64 = 340.29;
+/// Highest tip Mach number answered, the relative speed of the air at the
+/// tip over [`SPEED_OF_SOUND_M_S`]: the blade section is incompressible.
+/// At 6531 rev/min and zero airspeed the tip Mach number is 0.255.
+pub const TIP_MACH_MAX: f64 = 0.3;
 /// Viscosity of the air in the chord Reynolds number, Pa·s.
 pub const AIR_VISCOSITY_PA_S: f64 = 1.81e-5;
 /// Chord at three quarters of the radius, m: 0.129 R from the geometry.
@@ -146,58 +181,23 @@ pub const CHORD_AT_THREE_QUARTERS_M: f64 = GEOMETRY[12].1 * DIAMETER_M / 2.0;
 /// The density every comparison was sent at, kg/m³.
 pub const COMPARED_AIR_DENSITY_KG_M3: f64 = 1.225;
 /// Lowest and highest chord Reynolds number at three quarters of the radius
-/// ([`chord_reynolds_number`]) answered: the lowest and highest of the 116
-/// compared points at 1.225 kg/m³, 44399.03 (4007 rev/min, advance ratio
+/// ([`chord_reynolds_number`]) answered, the band the section's two
+/// constants are taken over: the section has no Reynolds-number law to carry
+/// them past it. The band is the lowest and highest of the 116 compared
+/// points at 1.225 kg/m³, 44399.03 (4007 rev/min, advance ratio
 /// 0.144) and 75515.76 (6519 rev/min, advance ratio 0.734), each rounded
 /// outward to a whole number.
 pub const REYNOLDS_NUMBER_MIN: f64 = 44_399.0;
 pub const REYNOLDS_NUMBER_MAX: f64 = 75_516.0;
-/// With the air moving, the advance ratio J = V / (n D) must lie in this
-/// range: the lowest and highest measured advance ratio compared, 0.111 at
-/// 6531 rev/min and 0.748 at 6015 rev/min. An airspeed of exactly zero is
-/// also a question.
+/// The lowest and highest measured advance ratio J = V / (n D) compared
+/// with the air moving, 0.111 at 6531 rev/min and 0.748 at 6015 rev/min.
+/// Stated, not enforced.
 pub const ADVANCE_RATIO_MIN: f64 = 0.111;
 pub const ADVANCE_RATIO_MAX: f64 = 0.748;
-/// A question whose advance ratio, as computed here, lies below
-/// [`ADVANCE_RATIO_MIN`] by no more than this many units in the last place
-/// of that end is answered, at its own computed advance ratio; nothing is
-/// moved to the end. A unit in the last place is the gap between two
-/// neighbouring 64-bit numbers: 2^-56 at 0.111 and 2^-53 at 0.748.
-pub const ADVANCE_RATIO_MIN_ALLOWANCE_ULP: u32 = 5;
-/// The same allowance above [`ADVANCE_RATIO_MAX`].
-///
-/// The allowance is the rounding of the arithmetic between a caller's
-/// advance ratio and the one computed here, and nothing more. A caller who
-/// asks an advance ratio J forms the airspeed V = J (N / 60) D in three
-/// rounded operations, in whatever order; [`advance_ratio`] forms N / 60,
-/// times D, and V divided by that: three more. Each is rounded to the
-/// nearest 64-bit number, so each result is its exact value times a factor
-/// between 1 - u and 1 + u with u = 2^-53. The computed advance ratio is
-/// therefore J times at most six such factors, and differs from J by less
-/// than ((1 - u)^-6 - 1) J = (6u + 21u² + ...) J. In units in the last place
-/// that is 0.111 × 6 × 2^-53 / 2^-56 = 5.3 at the lower end and
-/// 0.748 × 6 × 2^-53 / 2^-53 = 4.5 at the upper. The computed value is itself
-/// a 64-bit number in the same binade as the end, a whole number of units
-/// from it, so it is at most 5 units away at the lower end and 4 at the
-/// upper. When the caller's N / 60 is the same 64-bit number as the one
-/// formed here it cancels exactly, four factors remain, the bounds are 3.6
-/// and 3.0, and the computed value is at most 3 and 2 units away. The test
-/// `both_ends_are_answered_at_every_whole_rotational_speed` prints the
-/// largest distance met over every whole rotational speed of the range.
-pub const ADVANCE_RATIO_MAX_ALLOWANCE_ULP: u32 = 4;
-/// The lowest and the highest computed advance ratio that is answered:
-/// [`ADVANCE_RATIO_MIN`] less [`ADVANCE_RATIO_MIN_ALLOWANCE_ULP`] units in
-/// the last place, and [`ADVANCE_RATIO_MAX`] plus
-/// [`ADVANCE_RATIO_MAX_ALLOWANCE_ULP`].
-pub const ADVANCE_RATIO_LOWEST_ANSWERED: f64 =
-    f64::from_bits(ADVANCE_RATIO_MIN.to_bits() - ADVANCE_RATIO_MIN_ALLOWANCE_ULP as u64);
-pub const ADVANCE_RATIO_HIGHEST_ANSWERED: f64 =
-    f64::from_bits(ADVANCE_RATIO_MAX.to_bits() + ADVANCE_RATIO_MAX_ALLOWANCE_ULP as u64);
-/// The highest airspeed answered, m/s: the largest 64-bit airspeed whose
-/// advance ratio at [`ROTATIONAL_SPEED_MAX_REV_PER_MIN`], as computed here,
-/// is not above [`ADVANCE_RATIO_HIGHEST_ANSWERED`]. The next 64-bit number up
-/// is refused at every rotational speed.
-pub const AIRSPEED_MAX_M_S: f64 = 20.680629200000013;
+/// The highest airspeed answered, m/s: at a tip Mach number of
+/// [`TIP_MACH_MAX`] the airspeed alone, with the blades still, is this.
+/// Every turning propeller meets the tip Mach limit at a lower airspeed.
+pub const AIRSPEED_MAX_M_S: f64 = TIP_MACH_MAX * SPEED_OF_SOUND_M_S;
 
 /// The inflow angle is first looked for at this many equal steps between
 /// [`ANGLE_LOW_RAD`] and a quarter turn less [`ANGLE_LOW_RAD`].
@@ -248,7 +248,9 @@ pub struct PropellerSolution {
     pub thrust_n: f64,
     pub torque_n_m: f64,
     pub shaft_power_w: f64,
-    /// Thrust times airspeed over shaft power. Zero at zero airspeed.
+    /// Thrust times airspeed over shaft power. Zero at zero airspeed. It is
+    /// an efficiency only while thrust and shaft power are both positive:
+    /// past zero thrust, near advance ratio 0.83, the air drives the blades.
     pub efficiency: f64,
     /// |blade thrust − momentum thrust| over the whole disc, as a fraction
     /// of the sum over the rings of the larger of each ring's two sides.
@@ -270,15 +272,15 @@ pub struct PropellerSolution {
 pub enum PropellerReject {
     /// A number of the question is NaN or infinite.
     NonFiniteInput,
-    /// The rotational speed is outside [`ROTATIONAL_SPEED_MIN_REV_PER_MIN`]..=[`ROTATIONAL_SPEED_MAX_REV_PER_MIN`] with the air moving, or outside [`STATIC_ROTATIONAL_SPEED_MIN_REV_PER_MIN`]..=[`STATIC_ROTATIONAL_SPEED_MAX_REV_PER_MIN`] at zero airspeed.
-    RotationalSpeedOutOfRange { rotational_speed_rev_per_min: f64, at_rest: bool },
-    /// The air density is outside [`AIR_DENSITY_MIN_KG_M3`]..=[`AIR_DENSITY_MAX_KG_M3`].
-    AirDensityOutOfRange { air_density_kg_m3: f64 },
+    /// The rotational speed is not above [`ROTATIONAL_SPEED_ABOVE_REV_PER_MIN`]: the coefficients are per turn of the blades, and the rings' angular momentum is that of blades turning forward.
+    RotationalSpeedNotPositive { rotational_speed_rev_per_min: f64 },
+    /// The air density is not above [`AIR_DENSITY_ABOVE_KG_M3`]: no air.
+    AirDensityNotPositive { air_density_kg_m3: f64 },
     /// The airspeed is negative.
     AirspeedNegative { airspeed_m_s: f64 },
-    /// The air is moving and the advance ratio is below [`ADVANCE_RATIO_MIN`] by more than [`ADVANCE_RATIO_MIN_ALLOWANCE_ULP`] or above [`ADVANCE_RATIO_MAX`] by more than [`ADVANCE_RATIO_MAX_ALLOWANCE_ULP`] units in the last place of the end.
-    AdvanceRatioOutOfRange { advance_ratio: f64 },
-    /// The chord Reynolds number at three quarters of the radius, at the question's density, is outside [`REYNOLDS_NUMBER_MIN`]..=[`REYNOLDS_NUMBER_MAX`], the band the compared measurements span at [`COMPARED_AIR_DENSITY_KG_M3`].
+    /// The relative speed of the air at the tip over [`SPEED_OF_SOUND_M_S`] is above [`TIP_MACH_MAX`]: the flow over the blade is compressible, and the section is not.
+    TipMachAboveIncompressible { tip_mach_number: f64 },
+    /// The chord Reynolds number at three quarters of the radius, at the question's density, is outside [`REYNOLDS_NUMBER_MIN`] to [`REYNOLDS_NUMBER_MAX`], the band the blade section's two constants are taken over: the section has one zero-lift angle and one minimum drag and no law for how they move with the Reynolds number, and across this band alone the zero-lift angle that fits each sweep alone drifts from about −2.6 to −3.8 degrees.
     ReynoldsNumberOutOfRange { reynolds_number: f64 },
     /// An intermediate value in a ring was NaN or infinite.
     NonFiniteValue { ring: u32 },
@@ -296,34 +298,24 @@ impl fmt::Display for PropellerReject {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::NonFiniteInput => write!(f, "a number of the question is not finite"),
-            Self::RotationalSpeedOutOfRange {
-                rotational_speed_rev_per_min,
-                at_rest: false,
-            } => write!(
+            Self::RotationalSpeedNotPositive { rotational_speed_rev_per_min } => write!(
                 f,
-                "rotational speed {rotational_speed_rev_per_min} rev/min is outside {ROTATIONAL_SPEED_MIN_REV_PER_MIN}..={ROTATIONAL_SPEED_MAX_REV_PER_MIN} rev/min, the speeds compared with measurement with the air moving"
+                "rotational speed {rotational_speed_rev_per_min} rev/min is not above zero: the coefficients are per turn of the blades, and the rings' angular momentum is that of blades turning forward"
             ),
-            Self::RotationalSpeedOutOfRange {
-                rotational_speed_rev_per_min,
-                at_rest: true,
-            } => write!(
+            Self::AirDensityNotPositive { air_density_kg_m3 } => write!(
                 f,
-                "rotational speed {rotational_speed_rev_per_min} rev/min is outside {STATIC_ROTATIONAL_SPEED_MIN_REV_PER_MIN}..={STATIC_ROTATIONAL_SPEED_MAX_REV_PER_MIN} rev/min, the speeds compared with measurement at zero airspeed"
-            ),
-            Self::AirDensityOutOfRange { air_density_kg_m3 } => write!(
-                f,
-                "air density {air_density_kg_m3} kg/m³ is outside {AIR_DENSITY_MIN_KG_M3}..={AIR_DENSITY_MAX_KG_M3} kg/m³"
+                "air density {air_density_kg_m3} kg/m³ is not above zero"
             ),
             Self::AirspeedNegative { airspeed_m_s } => {
                 write!(f, "airspeed {airspeed_m_s} m/s is negative")
             }
-            Self::AdvanceRatioOutOfRange { advance_ratio } => write!(
+            Self::TipMachAboveIncompressible { tip_mach_number } => write!(
                 f,
-                "advance ratio {advance_ratio} is outside {ADVANCE_RATIO_MIN}..={ADVANCE_RATIO_MAX}, the advance ratios compared with measurement, by more than the allowance of {ADVANCE_RATIO_MIN_ALLOWANCE_ULP} units in the last place below (ADVANCE_RATIO_MIN_ALLOWANCE_ULP) and {ADVANCE_RATIO_MAX_ALLOWANCE_ULP} above (ADVANCE_RATIO_MAX_ALLOWANCE_ULP), and the airspeed is not zero"
+                "tip Mach number {tip_mach_number} is above {TIP_MACH_MAX}, at a speed of sound of {SPEED_OF_SOUND_M_S} m/s: the flow over the blade is compressible, and the section is not"
             ),
             Self::ReynoldsNumberOutOfRange { reynolds_number } => write!(
                 f,
-                "chord Reynolds number {reynolds_number} at three quarters of the radius is outside {REYNOLDS_NUMBER_MIN}..={REYNOLDS_NUMBER_MAX}, the band the compared measurements span at {COMPARED_AIR_DENSITY_KG_M3} kg/m³"
+                "chord Reynolds number {reynolds_number} at three quarters of the radius is outside {REYNOLDS_NUMBER_MIN} to {REYNOLDS_NUMBER_MAX}, the band the blade section's two constants are taken over: the section has no law for how its zero-lift angle and minimum drag move with the Reynolds number"
             ),
             Self::NonFiniteValue { ring } => {
                 write!(f, "a value in ring {ring} was not finite")
@@ -364,6 +356,14 @@ pub fn chord_reynolds_number(question: &PropellerQuestion) -> f64 {
     question.air_density_kg_m3 * speed * CHORD_AT_THREE_QUARTERS_M / AIR_VISCOSITY_PA_S
 }
 
+/// The relative speed of the air at the tip over [`SPEED_OF_SOUND_M_S`].
+pub fn tip_mach_number(question: &PropellerQuestion) -> f64 {
+    let revolutions_per_second = question.rotational_speed_rev_per_min / 60.0;
+    let tangential = 2.0 * PI * revolutions_per_second * (DIAMETER_M / 2.0);
+    let airspeed = question.airspeed_m_s;
+    (tangential * tangential + airspeed * airspeed).sqrt() / SPEED_OF_SOUND_M_S
+}
+
 /// Every limit a question itself shows, in the order they are asked.
 pub fn check_question(question: &PropellerQuestion) -> Result<(), PropellerReject> {
     let PropellerQuestion {
@@ -380,30 +380,15 @@ pub fn check_question(question: &PropellerQuestion) -> Result<(), PropellerRejec
     if airspeed_m_s < 0.0 {
         return Err(PropellerReject::AirspeedNegative { airspeed_m_s });
     }
-    let at_rest = airspeed_m_s == 0.0;
-    let speeds = if at_rest {
-        STATIC_ROTATIONAL_SPEED_MIN_REV_PER_MIN..=STATIC_ROTATIONAL_SPEED_MAX_REV_PER_MIN
-    } else {
-        ROTATIONAL_SPEED_MIN_REV_PER_MIN..=ROTATIONAL_SPEED_MAX_REV_PER_MIN
-    };
-    if !speeds.contains(&rotational_speed_rev_per_min) {
-        return Err(PropellerReject::RotationalSpeedOutOfRange {
-            rotational_speed_rev_per_min,
-            at_rest,
-        });
+    if !(rotational_speed_rev_per_min > ROTATIONAL_SPEED_ABOVE_REV_PER_MIN) {
+        return Err(PropellerReject::RotationalSpeedNotPositive { rotational_speed_rev_per_min });
     }
-    if !(AIR_DENSITY_MIN_KG_M3..=AIR_DENSITY_MAX_KG_M3).contains(&air_density_kg_m3) {
-        return Err(PropellerReject::AirDensityOutOfRange { air_density_kg_m3 });
+    if !(air_density_kg_m3 > AIR_DENSITY_ABOVE_KG_M3) {
+        return Err(PropellerReject::AirDensityNotPositive { air_density_kg_m3 });
     }
-    if !at_rest {
-        let advance_ratio = advance_ratio(question);
-        // The question's own J against each end with the named allowance.
-        // J itself is not changed, here or in the solve.
-        if !(ADVANCE_RATIO_LOWEST_ANSWERED..=ADVANCE_RATIO_HIGHEST_ANSWERED)
-            .contains(&advance_ratio)
-        {
-            return Err(PropellerReject::AdvanceRatioOutOfRange { advance_ratio });
-        }
+    let tip_mach_number = tip_mach_number(question);
+    if !(tip_mach_number <= TIP_MACH_MAX) {
+        return Err(PropellerReject::TipMachAboveIncompressible { tip_mach_number });
     }
     let reynolds_number = chord_reynolds_number(question);
     if !(REYNOLDS_NUMBER_MIN..=REYNOLDS_NUMBER_MAX).contains(&reynolds_number) {
@@ -448,7 +433,7 @@ fn geometry_at(x: f64) -> (f64, f64) {
 /// Lift and drag coefficient of the section at angle of attack `alpha`, rad.
 fn section(alpha: f64, settings: &Settings) -> (f64, f64) {
     let cl_linear = LIFT_SLOPE_PER_RAD * (alpha - settings.alpha_zero_lift_rad);
-    let sin_alpha = alpha.sin();
+    let sin_alpha = math::sin(alpha);
     let cd_plate = CD_FLAT_PLATE * sin_alpha * sin_alpha;
     let cl = if cl_linear.abs() <= CL_MAX {
         cl_linear
@@ -489,9 +474,9 @@ fn ring_state(
 ) -> Option<RingState> {
     let blades = f64::from(BLADES);
     let sigma = blades * chord / (2.0 * PI * x);
-    let (sin_phi, cos_phi) = (phi.sin(), phi.cos());
+    let (sin_phi, cos_phi) = (math::sin(phi), math::cos(phi));
     let exponent = (blades / 2.0) * (1.0 - x) / (x * sin_phi);
-    let tip_loss = (2.0 / PI) * (-exponent).exp().acos();
+    let tip_loss = (2.0 / PI) * math::acos(math::exp(-exponent));
     let (cl, cd) = section(beta - phi, settings);
     let cn = cl * cos_phi - cd * sin_phi;
     let ct = cl * sin_phi + cd * cos_phi;
@@ -517,8 +502,34 @@ fn ring_state(
 
 /// Thrust and shaft power of the propeller at one rotational speed, airspeed
 /// and air density, or the named reason there is none.
+///
+/// Each value of the answer below the normal range is written as zero
+/// with its sign ([`crate::normal`]).
 pub fn solve(question: &PropellerQuestion) -> Result<PropellerSolution, PropellerReject> {
+    crate::normal::held(solve_as_computed(question))
+}
+
+/// The answer as the equations compute it, before a value below the
+/// normal range is written as zero.
+fn solve_as_computed(question: &PropellerQuestion) -> Result<PropellerSolution, PropellerReject> {
     solve_with(question, &Settings::LOCKED)
+}
+
+impl NormalOrZero for PropellerSolution {
+    fn normal_or_zero(&mut self) {
+        self.advance_ratio.normal_or_zero();
+        self.thrust_coefficient.normal_or_zero();
+        self.power_coefficient.normal_or_zero();
+        self.thrust_n.normal_or_zero();
+        self.torque_n_m.normal_or_zero();
+        self.shaft_power_w.normal_or_zero();
+        self.efficiency.normal_or_zero();
+        self.thrust_balance_gap.normal_or_zero();
+        self.worst_ring_balance_gap.normal_or_zero();
+        self.inflow_angle_rad.normal_or_zero();
+        self.ring_thrust_n.normal_or_zero();
+        self.ring_torque_n_m.normal_or_zero();
+    }
 }
 
 fn solve_with(
@@ -759,11 +770,11 @@ mod tests {
     #[test]
     fn every_ring_balances_over_the_whole_range() {
         let mut questions = vec![
-            ask(STATIC_ROTATIONAL_SPEED_MIN_REV_PER_MIN, 0.0),
+            ask(COMPARED_STATIC_ROTATIONAL_SPEED_MIN_REV_PER_MIN, 0.0),
             ask(5000.0, 0.0),
-            ask(STATIC_ROTATIONAL_SPEED_MAX_REV_PER_MIN, 0.0),
+            ask(COMPARED_STATIC_ROTATIONAL_SPEED_MAX_REV_PER_MIN, 0.0),
         ];
-        for speed in [ROTATIONAL_SPEED_MIN_REV_PER_MIN, 5000.0, ROTATIONAL_SPEED_MAX_REV_PER_MIN] {
+        for speed in [COMPARED_ROTATIONAL_SPEED_MIN_REV_PER_MIN, 5000.0, COMPARED_ROTATIONAL_SPEED_MAX_REV_PER_MIN] {
             for k in 0..=64 {
                 let j = (ADVANCE_RATIO_MIN + 0.01 * f64::from(k)).min(ADVANCE_RATIO_MAX);
                 questions.push(ask_at(speed, j));
@@ -832,23 +843,28 @@ mod tests {
         let good = ask(5000.0, 0.4);
         let rest = ask(5000.0, 0.0);
         let cases: Vec<(PropellerQuestion, &str)> = vec![
-            (PropellerQuestion { rotational_speed_rev_per_min: 4006.999, ..good }, "RotationalSpeedOutOfRange"),
-            (PropellerQuestion { rotational_speed_rev_per_min: 6531.001, ..good }, "RotationalSpeedOutOfRange"),
-            (PropellerQuestion { rotational_speed_rev_per_min: 4143.999, ..rest }, "RotationalSpeedOutOfRange"),
-            (PropellerQuestion { rotational_speed_rev_per_min: 6542.001, ..rest }, "RotationalSpeedOutOfRange"),
-            (PropellerQuestion { rotational_speed_rev_per_min: 4100.0, ..rest }, "RotationalSpeedOutOfRange"),
-            (PropellerQuestion { air_density_kg_m3: 0.999, ..good }, "AirDensityOutOfRange"),
-            (PropellerQuestion { air_density_kg_m3: 1.301, ..good }, "AirDensityOutOfRange"),
+            (PropellerQuestion { rotational_speed_rev_per_min: 0.0, ..good }, "RotationalSpeedNotPositive"),
+            (PropellerQuestion { rotational_speed_rev_per_min: -0.0, ..rest }, "RotationalSpeedNotPositive"),
+            (PropellerQuestion { rotational_speed_rev_per_min: -5000.0, ..good }, "RotationalSpeedNotPositive"),
+            // the least speed above zero, the air still: the section meets no Reynolds number in the band
+            (PropellerQuestion { rotational_speed_rev_per_min: f64::from_bits(1), ..rest }, "ReynoldsNumberOutOfRange"),
+            // past the top: the tip above Mach 0.3 with the air still
+            (PropellerQuestion { rotational_speed_rev_per_min: ROTATIONAL_SPEED_MAX_REV_PER_MIN.next_up(), air_density_kg_m3: 0.9, ..rest }, "TipMachAboveIncompressible"),
+            (PropellerQuestion { rotational_speed_rev_per_min: 8000.0, air_density_kg_m3: 0.9, ..rest }, "TipMachAboveIncompressible"),
+            // 4100 rev/min at rest, under the compared 4144, is inside the Reynolds band; 3900 is not
+            (PropellerQuestion { rotational_speed_rev_per_min: 3900.0, ..rest }, "ReynoldsNumberOutOfRange"),
+            (PropellerQuestion { air_density_kg_m3: 0.0, ..good }, "AirDensityNotPositive"),
+            (PropellerQuestion { air_density_kg_m3: -1.225, ..good }, "AirDensityNotPositive"),
             (PropellerQuestion { airspeed_m_s: -0.001, ..good }, "AirspeedNegative"),
-            (PropellerQuestion { airspeed_m_s: 1.0e-9, ..good }, "AdvanceRatioOutOfRange"),
-            (ask(5000.0, 0.10), "AdvanceRatioOutOfRange"),
-            (ask(5000.0, 0.1109), "AdvanceRatioOutOfRange"),
-            (ask(5000.0, 0.7481), "AdvanceRatioOutOfRange"),
-            (ask(5000.0, 0.75), "AdvanceRatioOutOfRange"),
+            // past the tip Mach number of an incompressible section
+            (ask(6531.0, 2.0), "TipMachAboveIncompressible"),
+            (PropellerQuestion { airspeed_m_s: AIRSPEED_MAX_M_S.next_up(), air_density_kg_m3: 0.6, ..good }, "TipMachAboveIncompressible"),
+            // dense air at a high airspeed, past the Reynolds band
+            (ask(5000.0, 2.5), "ReynoldsNumberOutOfRange"),
             // never compared: the slowest sweep at the lowest advance ratio,
             // the fastest at the highest, at 1.225 kg/m³
-            (ask(ROTATIONAL_SPEED_MIN_REV_PER_MIN, ADVANCE_RATIO_MIN), "ReynoldsNumberOutOfRange"),
-            (ask(ROTATIONAL_SPEED_MAX_REV_PER_MIN, ADVANCE_RATIO_MAX), "ReynoldsNumberOutOfRange"),
+            (ask(COMPARED_ROTATIONAL_SPEED_MIN_REV_PER_MIN, ADVANCE_RATIO_MIN), "ReynoldsNumberOutOfRange"),
+            (ask(COMPARED_ROTATIONAL_SPEED_MAX_REV_PER_MIN, ADVANCE_RATIO_MAX), "ReynoldsNumberOutOfRange"),
             // thin air at a low speed, dense air at a high one
             (PropellerQuestion { air_density_kg_m3: 1.0, ..ask(4500.0, 0.3) }, "ReynoldsNumberOutOfRange"),
             (PropellerQuestion { air_density_kg_m3: 1.3, ..ask(6531.0, 0.4) }, "ReynoldsNumberOutOfRange"),
@@ -863,25 +879,22 @@ mod tests {
             assert_eq!(check_question(&question), Err(reject));
             assert!(!reject.to_string().ends_with('.'));
         }
-        // The sentence names which range of rotational speed was broken.
-        let moving = check_question(&PropellerQuestion { rotational_speed_rev_per_min: 4000.0, ..good }).unwrap_err();
+        // The sentence names the limit and no data.
+        let still = check_question(&PropellerQuestion { rotational_speed_rev_per_min: 0.0, ..good }).unwrap_err();
         assert_eq!(
-            moving.to_string(),
-            "rotational speed 4000 rev/min is outside 4007..=6531 rev/min, the speeds compared with measurement with the air moving"
+            still.to_string(),
+            "rotational speed 0 rev/min is not above zero: the coefficients are per turn of the blades, and the rings' angular momentum is that of blades turning forward"
         );
-        let resting = check_question(&PropellerQuestion { rotational_speed_rev_per_min: 4100.0, ..rest }).unwrap_err();
-        assert_eq!(
-            resting.to_string(),
-            "rotational speed 4100 rev/min is outside 4144..=6542 rev/min, the speeds compared with measurement at zero airspeed"
-        );
+        // The top is the tip Mach limit with the air still: about 7676 rev/min.
+        assert!((ROTATIONAL_SPEED_MAX_REV_PER_MIN - 7676.0).abs() < 0.5, "{ROTATIONAL_SPEED_MAX_REV_PER_MIN}");
         // the ends of each range are inside it
         for question in [
-            ask_at(ROTATIONAL_SPEED_MIN_REV_PER_MIN, ADVANCE_RATIO_MIN),
-            ask(ROTATIONAL_SPEED_MIN_REV_PER_MIN, ADVANCE_RATIO_MAX),
-            ask(ROTATIONAL_SPEED_MAX_REV_PER_MIN, ADVANCE_RATIO_MIN),
-            ask_at(ROTATIONAL_SPEED_MAX_REV_PER_MIN, ADVANCE_RATIO_MAX),
-            ask(STATIC_ROTATIONAL_SPEED_MIN_REV_PER_MIN, 0.0),
-            ask(STATIC_ROTATIONAL_SPEED_MAX_REV_PER_MIN, 0.0),
+            ask_at(COMPARED_ROTATIONAL_SPEED_MIN_REV_PER_MIN, ADVANCE_RATIO_MIN),
+            ask(COMPARED_ROTATIONAL_SPEED_MIN_REV_PER_MIN, ADVANCE_RATIO_MAX),
+            ask(COMPARED_ROTATIONAL_SPEED_MAX_REV_PER_MIN, ADVANCE_RATIO_MIN),
+            ask_at(COMPARED_ROTATIONAL_SPEED_MAX_REV_PER_MIN, ADVANCE_RATIO_MAX),
+            ask(COMPARED_STATIC_ROTATIONAL_SPEED_MIN_REV_PER_MIN, 0.0),
+            ask(COMPARED_STATIC_ROTATIONAL_SPEED_MAX_REV_PER_MIN, 0.0),
             PropellerQuestion { air_density_kg_m3: 1.0, ..good },
             PropellerQuestion { air_density_kg_m3: 1.3, ..good },
             PropellerQuestion { airspeed_m_s: 0.0, ..good },
@@ -889,30 +902,69 @@ mod tests {
         ] {
             solve(&question).unwrap_or_else(|reject| panic!("{question:?}: {reject}"));
         }
-        // The published highest airspeed is answered at the top rotational
-        // speed (at a density that keeps the Reynolds number in its band),
-        // the next 64-bit number up is refused at every rotational speed,
-        // and it is the largest airspeed whose computed advance ratio there
-        // is not above the highest answered.
-        let top = PropellerQuestion {
-            rotational_speed_rev_per_min: ROTATIONAL_SPEED_MAX_REV_PER_MIN,
-            airspeed_m_s: AIRSPEED_MAX_M_S,
-            air_density_kg_m3: 1.2,
-        };
-        assert_eq!(advance_ratio(&top), ADVANCE_RATIO_HIGHEST_ANSWERED);
-        solve(&top).unwrap_or_else(|reject| panic!("{reject}"));
-        for speed in [ROTATIONAL_SPEED_MIN_REV_PER_MIN, 5000.0, ROTATIONAL_SPEED_MAX_REV_PER_MIN] {
-            for density in [1.0, 1.2, 1.3] {
+        // No airspeed above the published highest is answered at any
+        // rotational speed or density: its tip Mach number is already above
+        // the limit.
+        for speed in [COMPARED_ROTATIONAL_SPEED_MIN_REV_PER_MIN, 5000.0, COMPARED_ROTATIONAL_SPEED_MAX_REV_PER_MIN] {
+            for density in [0.1, 1.225, 2.0] {
                 let above = PropellerQuestion {
                     rotational_speed_rev_per_min: speed,
                     airspeed_m_s: AIRSPEED_MAX_M_S.next_up(),
                     air_density_kg_m3: density,
                 };
-                assert!(matches!(check_question(&above), Err(PropellerReject::AdvanceRatioOutOfRange { .. })));
+                assert!(matches!(check_question(&above), Err(PropellerReject::TipMachAboveIncompressible { .. })));
             }
         }
-        let caller = ADVANCE_RATIO_MAX * (ROTATIONAL_SPEED_MAX_REV_PER_MIN / 60.0) * DIAMETER_M;
-        assert!(caller <= AIRSPEED_MAX_M_S && AIRSPEED_MAX_M_S - caller < 1e-13, "{caller}");
+        assert_eq!(
+            PropellerReject::TipMachAboveIncompressible { tip_mach_number: 0.31 }.to_string(),
+            "tip Mach number 0.31 is above 0.3, at a speed of sound of 340.29 m/s: the flow over the blade is compressible, and the section is not"
+        );
+    }
+
+    /// Past the advance ratios and densities compared, where engine 0.8.0
+    /// refused by name: below 0.111 down to the first airspeed above zero,
+    /// above 0.748 into the windmill state where the air drives the blades,
+    /// and densities outside 1.0 to 1.3 kg/m³. Every ring balances and the
+    /// disc's thrust meets the momentum it gives the air; the coefficients
+    /// are the advance ratio's alone and thrust goes with density.
+    #[test]
+    fn past_the_compared_advance_ratios_and_densities_every_ring_balances() {
+        let mut questions = vec![
+            PropellerQuestion { airspeed_m_s: 1.0e-9, ..ask(5000.0, 0.0) },
+            ask(5000.0, 0.05),
+            ask(5000.0, 0.1109),
+            ask(5000.0, 0.7481),
+            ask(5000.0, 0.83),
+            ask(5000.0, 1.5),
+            ask(4007.0, 3.0),
+        ];
+        // At 5000 rev/min and 0.4 the Reynolds band holds 0.97 to 1.65 kg/m³;
+        // thin air is answered where the blade meets it faster.
+        for density in [0.98, 0.999, 1.301, 1.6, 1.64] {
+            questions.push(PropellerQuestion { air_density_kg_m3: density, ..ask(5000.0, 0.4) });
+        }
+        questions.push(PropellerQuestion { air_density_kg_m3: 0.8, ..ask(6531.0, 1.0) });
+        let reference = solve(&ask(5000.0, 0.4)).expect("inside");
+        for question in questions {
+            let solved = solve(&question).unwrap_or_else(|reject| panic!("{question:?}: {reject}"));
+            assert!(solved.worst_ring_balance_gap <= BALANCE_TOLERANCE, "{question:?}");
+            assert!(solved.thrust_balance_gap <= BALANCE_TOLERANCE, "{question:?}");
+            let sum: f64 = solved.ring_thrust_n.iter().sum();
+            assert!((sum - solved.thrust_n).abs() <= 1e-12 * solved.thrust_n.abs().max(1e-6));
+            if question.airspeed_m_s == ask(5000.0, 0.4).airspeed_m_s {
+                assert_eq!(solved.thrust_coefficient, reference.thrust_coefficient);
+                let ratio = solved.thrust_n / reference.thrust_n;
+                assert!((ratio - question.air_density_kg_m3 / 1.225).abs() < 1e-12, "{ratio}");
+            }
+        }
+        // Between zero airspeed and 0.111 the thrust coefficient joins the
+        // static one; past about 0.83 the thrust is negative, and past about
+        // 0.88 so is the shaft power: the air drives the propeller.
+        let rest = solve(&ask(5000.0, 0.0)).expect("at rest");
+        let creeping = solve(&PropellerQuestion { airspeed_m_s: 1.0e-9, ..ask(5000.0, 0.0) }).expect("creeping");
+        assert!((creeping.thrust_coefficient / rest.thrust_coefficient - 1.0).abs() < 1e-6);
+        let windmill = solve(&ask(5000.0, 1.0)).expect("windmill");
+        assert!(windmill.thrust_n < 0.0 && windmill.shaft_power_w < 0.0);
     }
 
     /// Every point the 0.6.0 comparison scored, the 43 fitted, the 64 held
@@ -931,6 +983,56 @@ mod tests {
     ];
     const COMPARED_STATIC_REV_PER_MIN: [f64; 9] =
         [4144.0, 4409.0, 4711.0, 5011.0, 5325.0, 5624.0, 5938.0, 6231.0, 6542.0];
+
+    /// Past the rotational speeds compared, where engine 0.12.0 refused by
+    /// name, the speed is held by the chord Reynolds number and the tip Mach
+    /// number alone: at rest at 1.225 kg/m³ down to 4100 rev/min and up to
+    /// 6800; in denser air down to 3000 rev/min; in thinner air up to 7600,
+    /// a tip Mach number of 0.298; and 1000 rev/min with the air at 40 m/s,
+    /// the blades nearly windmilling. Each is answered with every ring and
+    /// the disc in balance, or stopped by a limit of the ring equations by
+    /// name; none is pulled back to a compared speed.
+    #[test]
+    fn past_the_compared_rotational_speeds_every_ring_balances() {
+        let questions = [
+            ask(4100.0, 0.0),
+            ask(6800.0, 0.0),
+            PropellerQuestion { air_density_kg_m3: 1.7, ..ask(3000.0, 0.3) },
+            PropellerQuestion { air_density_kg_m3: 1.8, ..ask(3000.0, 0.0) },
+            PropellerQuestion { air_density_kg_m3: 1.0, ..ask(7600.0, 0.2) },
+            PropellerQuestion { air_density_kg_m3: 1.0, ..ask(7600.0, 0.0) },
+            PropellerQuestion { rotational_speed_rev_per_min: 1000.0, airspeed_m_s: 40.0, air_density_kg_m3: 1.2 },
+        ];
+        let mut answered = 0;
+        for question in questions {
+            assert_eq!(check_question(&question), Ok(()), "{question:?}");
+            let reynolds = chord_reynolds_number(&question);
+            assert!((REYNOLDS_NUMBER_MIN..=REYNOLDS_NUMBER_MAX).contains(&reynolds) && tip_mach_number(&question) <= TIP_MACH_MAX);
+            match solve(&question) {
+                Ok(solved) => {
+                    answered += 1;
+                    assert!(solved.worst_ring_balance_gap <= BALANCE_TOLERANCE, "{question:?}");
+                    assert!(solved.thrust_balance_gap <= BALANCE_TOLERANCE, "{question:?}");
+                    assert_eq!(solved.inflow_angle_rad.len(), ANNULI);
+                    let sum: f64 = solved.ring_thrust_n.iter().sum();
+                    assert!((sum - solved.thrust_n).abs() <= 1e-12 * solved.thrust_n.abs().max(1e-6), "{question:?}");
+                    let torque: f64 = solved.ring_torque_n_m.iter().sum();
+                    assert!((torque - solved.torque_n_m).abs() <= 1e-12 * solved.torque_n_m.abs().max(1e-6), "{question:?}");
+                    // The coefficients are the advance ratio's alone: the same as at a compared speed.
+                    if question.airspeed_m_s == 0.0 {
+                        let compared = solve(&ask(5000.0, 0.0)).expect("compared");
+                        assert_eq!(solved.thrust_coefficient, compared.thrust_coefficient, "{question:?}");
+                    }
+                }
+                Err(PropellerReject::NoBalance { .. } | PropellerReject::NotSettled { .. }) => {}
+                Err(other) => panic!("{question:?}: {other}"),
+            }
+        }
+        assert!(answered >= 6, "{answered}");
+        // The lowest and highest static speeds the band holds at 1.225 kg/m³, about 4014 and 6828 rev/min.
+        let band = |rev_per_min: f64| check_question(&ask(rev_per_min, 0.0)).is_ok();
+        assert!(band(4015.0) && !band(4013.0) && band(6827.0) && !band(6830.0));
+    }
 
     #[test]
     fn every_compared_point_is_answered_and_the_ranges_are_their_extremes() {
@@ -957,231 +1059,14 @@ mod tests {
         let speeds = |list: &[PropellerQuestion]| {
             list.iter().map(|q| q.rotational_speed_rev_per_min).fold((f64::INFINITY, 0.0f64), |(a, b), s| (a.min(s), b.max(s)))
         };
-        assert_eq!(speeds(&moving), (ROTATIONAL_SPEED_MIN_REV_PER_MIN, ROTATIONAL_SPEED_MAX_REV_PER_MIN));
-        assert_eq!(speeds(&questions[107..]), (STATIC_ROTATIONAL_SPEED_MIN_REV_PER_MIN, STATIC_ROTATIONAL_SPEED_MAX_REV_PER_MIN));
+        assert_eq!(speeds(&moving), (COMPARED_ROTATIONAL_SPEED_MIN_REV_PER_MIN, COMPARED_ROTATIONAL_SPEED_MAX_REV_PER_MIN));
+        assert_eq!(speeds(&questions[107..]), (COMPARED_STATIC_ROTATIONAL_SPEED_MIN_REV_PER_MIN, COMPARED_STATIC_ROTATIONAL_SPEED_MAX_REV_PER_MIN));
         let ratios: Vec<f64> = COMPARED_SWEEPS.iter().flat_map(|(_, r)| r.iter().copied()).collect();
         assert_eq!(ratios.iter().copied().fold(f64::INFINITY, f64::min), ADVANCE_RATIO_MIN);
         assert_eq!(ratios.iter().copied().fold(0.0, f64::max), ADVANCE_RATIO_MAX);
         assert!((CHORD_AT_THREE_QUARTERS_M - 0.016383).abs() < 1e-15);
     }
 
-    /// The airspeed whose computed advance ratio at `rev_per_min` is exactly
-    /// the 64-bit number `wanted`, found by stepping the airspeed one 64-bit
-    /// number at a time from the caller's product.
-    fn airspeed_computing_to(rev_per_min: f64, wanted: f64) -> Option<f64> {
-        let mut question = ask(rev_per_min, wanted);
-        for _ in 0..64 {
-            let computed = advance_ratio(&question);
-            if computed == wanted {
-                return Some(question.airspeed_m_s);
-            }
-            question.airspeed_m_s = if computed < wanted {
-                question.airspeed_m_s.next_up()
-            } else {
-                question.airspeed_m_s.next_down()
-            };
-        }
-        None
-    }
-
-    fn units_from(end: f64, value: f64) -> i64 {
-        value.to_bits() as i64 - end.to_bits() as i64
-    }
-
-    /// The allowances are the published numbers of units, and the two
-    /// answered ends are that many 64-bit numbers beyond the ends of the range.
-    #[test]
-    fn the_allowance_is_five_units_below_and_four_above() {
-        assert_eq!((ADVANCE_RATIO_MIN_ALLOWANCE_ULP, ADVANCE_RATIO_MAX_ALLOWANCE_ULP), (5, 4));
-        let unit_low = ADVANCE_RATIO_MIN.next_up() - ADVANCE_RATIO_MIN;
-        let unit_high = ADVANCE_RATIO_MAX.next_up() - ADVANCE_RATIO_MAX;
-        assert_eq!(unit_low, 2.0f64.powi(-56));
-        assert_eq!(unit_high, 2.0f64.powi(-53));
-        assert_eq!(ADVANCE_RATIO_MIN - ADVANCE_RATIO_LOWEST_ANSWERED, 5.0 * unit_low);
-        assert_eq!(ADVANCE_RATIO_HIGHEST_ANSWERED - ADVANCE_RATIO_MAX, 4.0 * unit_high);
-        assert_eq!(units_from(ADVANCE_RATIO_MIN, ADVANCE_RATIO_LOWEST_ANSWERED), -5);
-        assert_eq!(units_from(ADVANCE_RATIO_MAX, ADVANCE_RATIO_HIGHEST_ANSWERED), 4);
-        // The bound of the derivation, six roundings of 2^-53 each, in units
-        // in the last place of each end: its whole part is each allowance.
-        let u = 2.0f64.powi(-53);
-        let six = (1.0 - u).powi(-6) - 1.0;
-        assert!(six >= 6.0 * u && six < 6.0 * u * (1.0 + 1e-9));
-        let low_units = ADVANCE_RATIO_MIN * six / unit_low;
-        let high_units = ADVANCE_RATIO_MAX * six / unit_high;
-        assert!((low_units - 5.328).abs() < 1e-9 && (high_units - 4.488).abs() < 1e-9);
-        assert_eq!(low_units.floor(), f64::from(ADVANCE_RATIO_MIN_ALLOWANCE_ULP));
-        assert_eq!(high_units.floor(), f64::from(ADVANCE_RATIO_MAX_ALLOWANCE_ULP));
-    }
-
-    fn allowance(end: f64) -> i64 {
-        if end == ADVANCE_RATIO_MIN {
-            i64::from(ADVANCE_RATIO_MIN_ALLOWANCE_ULP)
-        } else {
-            i64::from(ADVANCE_RATIO_MAX_ALLOWANCE_ULP)
-        }
-    }
-
-    /// An advance ratio of exactly 0.111 and of exactly 0.748, asked as a
-    /// caller asks it, V = J (N / 60) D in 64-bit arithmetic, is answered at
-    /// every whole rotational speed of the range, and at the advance ratio
-    /// the solver itself computed from that airspeed.
-    #[test]
-    fn both_ends_are_answered_at_every_whole_rotational_speed() {
-        for end in [ADVANCE_RATIO_MIN, ADVANCE_RATIO_MAX] {
-            let (mut off_the_end, mut beyond, mut farthest) = (0, 0, 0i64);
-            let mut speeds = 0;
-            for whole in 4007..=6531u32 {
-                let speed = f64::from(whole);
-                let question = ask_at(speed, end);
-                let computed = advance_ratio(&question);
-                let units = units_from(end, computed);
-                if units != 0 {
-                    off_the_end += 1;
-                }
-                let outside = if end == ADVANCE_RATIO_MIN { units < 0 } else { units > 0 };
-                if outside {
-                    beyond += 1;
-                }
-                farthest = farthest.max(units.abs());
-                check_question(&question).unwrap_or_else(|reject| panic!("{whole} {end}: {reject}"));
-                let solved = solve(&question).unwrap_or_else(|reject| panic!("{whole} {end}: {reject}"));
-                // answered at its own computed advance ratio, not at the end
-                assert_eq!(solved.advance_ratio.to_bits(), computed.to_bits(), "{whole} {end}");
-                assert!(solved.thrust_n.is_finite() && solved.shaft_power_w > 0.0, "{whole} {end}");
-                assert!(solved.worst_ring_balance_gap <= BALANCE_TOLERANCE, "{whole} {end}");
-                speeds += 1;
-            }
-            println!(
-                "J {end}: {speeds} whole speeds, {off_the_end} computed off the end, {beyond} beyond it, farthest {farthest} units in the last place"
-            );
-            assert_eq!(speeds, 2525);
-            // without the allowance these would be refused: 600 at 0.111 and 446 at 0.748
-            assert_eq!(beyond, if end == ADVANCE_RATIO_MIN { 600 } else { 446 });
-            assert!(farthest <= 3, "{farthest}");
-        }
-        // Exact decimal questions at both ends.
-        for (speed, airspeed) in [(6000.0, 18.9992), (6000.0, 2.8194), (4500.0, 14.2494), (4500.0, 2.11455)] {
-            let question = PropellerQuestion {
-                rotational_speed_rev_per_min: speed,
-                airspeed_m_s: airspeed,
-                air_density_kg_m3: 1.225,
-            };
-            let solved = solve(&question).unwrap_or_else(|reject| panic!("{speed} {airspeed}: {reject}"));
-            assert_eq!(solved.advance_ratio.to_bits(), advance_ratio(&question).to_bits());
-        }
-        // The other orders of the caller's three operations stay inside too.
-        for whole in 4007..=6531u32 {
-            let speed = f64::from(whole);
-            for end in [ADVANCE_RATIO_MIN, ADVANCE_RATIO_MAX] {
-                for airspeed in [
-                    end * speed * DIAMETER_M / 60.0,
-                    end * speed / 60.0 * DIAMETER_M,
-                    end * DIAMETER_M * speed / 60.0,
-                    end * (speed * DIAMETER_M / 60.0),
-                    end * (DIAMETER_M / 60.0) * speed,
-                ] {
-                    let question = PropellerQuestion {
-                        rotational_speed_rev_per_min: speed,
-                        airspeed_m_s: airspeed,
-                        air_density_kg_m3: density_for(speed),
-                    };
-                    check_question(&question).unwrap_or_else(|reject| panic!("{whole} {end}: {reject}"));
-                    assert!(units_from(end, advance_ratio(&question)).abs() <= allowance(end));
-                }
-            }
-        }
-    }
-
-    /// A question inside the allowance is solved at its own advance ratio:
-    /// the advance ratio it reports is the one computed, bit for bit, never
-    /// the end, and its efficiency is formed with that advance ratio.
-    #[test]
-    fn inside_the_allowance_the_answer_is_at_the_questions_own_advance_ratio() {
-        for (end, outward) in [(ADVANCE_RATIO_MIN, -1i64), (ADVANCE_RATIO_MAX, 1)] {
-            let units = allowance(end);
-            let mut found = [0u32; 6];
-            for speed in [4007.0, 4008.0, 5000.0, 5018.0, 6015.0, 6530.0, 6531.0] {
-                for step in 1..=units {
-                    let wanted = f64::from_bits((end.to_bits() as i64 + outward * step) as u64);
-                    // Not every 64-bit advance ratio is the quotient of some
-                    // airspeed at a given speed; those that are, are asked.
-                    let Some(airspeed) = airspeed_computing_to(speed, wanted) else {
-                        continue;
-                    };
-                    let question = PropellerQuestion {
-                        rotational_speed_rev_per_min: speed,
-                        airspeed_m_s: airspeed,
-                        air_density_kg_m3: density_for(speed),
-                    };
-                    let solved = solve(&question).unwrap_or_else(|reject| panic!("{speed} {end} {step}: {reject}"));
-                    assert_eq!(solved.advance_ratio.to_bits(), wanted.to_bits());
-                    assert_ne!(solved.advance_ratio.to_bits(), end.to_bits());
-                    let own = solved.thrust_coefficient * wanted / solved.power_coefficient;
-                    assert_eq!(solved.efficiency.to_bits(), own.to_bits());
-                    found[step as usize] += 1;
-                }
-            }
-            // every distance up to the allowance itself was met and answered
-            for step in 1..=units {
-                assert!(found[step as usize] >= 1, "{end}: {step} units never asked");
-            }
-        }
-    }
-
-    /// One unit in the last place beyond the allowance, and a little more,
-    /// is refused by name, with both allowances in the sentence.
-    #[test]
-    fn beyond_the_allowance_is_refused_and_the_sentence_names_the_allowance() {
-        let past_low = u64::from(ADVANCE_RATIO_MIN_ALLOWANCE_ULP) + 1;
-        let past_high = u64::from(ADVANCE_RATIO_MAX_ALLOWANCE_ULP) + 1;
-        let just_below = f64::from_bits(ADVANCE_RATIO_MIN.to_bits() - past_low);
-        let just_above = f64::from_bits(ADVANCE_RATIO_MAX.to_bits() + past_high);
-        assert!(just_below < ADVANCE_RATIO_LOWEST_ANSWERED && just_above > ADVANCE_RATIO_HIGHEST_ANSWERED);
-        assert_eq!(ADVANCE_RATIO_LOWEST_ANSWERED.next_down(), just_below);
-        assert_eq!(ADVANCE_RATIO_HIGHEST_ANSWERED.next_up(), just_above);
-        let (mut refused, mut one_past_below, mut one_past_above) = (0, 0, 0);
-        for speed in [4007.0, 4008.0, 5000.0, 5018.0, 6000.0, 6530.0, 6531.0] {
-            for wanted in [
-                just_below,
-                just_above,
-                f64::from_bits(ADVANCE_RATIO_MIN.to_bits() - past_low - 3),
-                f64::from_bits(ADVANCE_RATIO_MAX.to_bits() + past_high + 3),
-                ADVANCE_RATIO_MIN * (1.0 - 1.0e-12),
-                ADVANCE_RATIO_MAX * (1.0 + 1.0e-12),
-            ] {
-                // Not every 64-bit advance ratio is the quotient of some
-                // airspeed at a given speed; those that are, are asked.
-                let Some(airspeed) = airspeed_computing_to(speed, wanted) else {
-                    continue;
-                };
-                let question = PropellerQuestion {
-                    rotational_speed_rev_per_min: speed,
-                    airspeed_m_s: airspeed,
-                    air_density_kg_m3: density_for(speed),
-                };
-                let reject = solve(&question).expect_err("beyond the allowance");
-                assert_eq!(reject, PropellerReject::AdvanceRatioOutOfRange { advance_ratio: wanted });
-                assert_eq!(check_question(&question), Err(reject));
-                let sentence = reject.to_string();
-                assert!(
-                    sentence.contains(
-                        "by more than the allowance of 5 units in the last place below (ADVANCE_RATIO_MIN_ALLOWANCE_ULP) and 4 above (ADVANCE_RATIO_MAX_ALLOWANCE_ULP)"
-                    ),
-                    "{sentence}"
-                );
-                assert!(sentence.contains("is outside 0.111..=0.748, the advance ratios compared with measurement"), "{sentence}");
-                refused += 1;
-                one_past_below += u32::from(wanted == just_below);
-                one_past_above += u32::from(wanted == just_above);
-            }
-        }
-        assert!(refused >= 20, "{refused}");
-        assert!(one_past_below >= 1 && one_past_above >= 1, "{one_past_below} {one_past_above}");
-    }
-
-    /// The balance over the whole disc is checked at acceptance with its own
-    /// name: with its tolerance set to zero and the rings' left as they are,
-    /// every answer whose disc gap is not exactly zero is refused.
     #[test]
     fn a_disc_balance_that_cannot_be_met_is_broken_by_name() {
         let strict = Settings { disc_balance_tolerance: 0.0, ..Settings::LOCKED };

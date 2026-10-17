@@ -30,9 +30,9 @@
     "bibtex": "@misc{kruze2026zerotrustphysics,\n  author       = {Kruze, John},\n  title        = {Zero-Trust Physics: a verifier for the physical answers of Super Intelligence},\n  year         = {2026},\n  month        = oct,\n  version      = {1.0},\n  howpublished = {Preprint},\n  publisher    = {Zenodo},\n  organization = {Protocol Company},\n  doi          = {10.5281/zenodo.23305697},\n  url          = {https://doi.org/10.5281/zenodo.23305697},\n  note         = {Byline on the paper: John Kruze, with Super Intelligence}\n}"
   },
   "counts": {
-    "cards": 31,
-    "solvers": 13,
-    "models": 44
+    "cards": 37,
+    "solvers": 24,
+    "models": 61
   },
   "models": {
     "materials/ti64_lattice": {
@@ -503,7 +503,7 @@
           "bibtex": "@article{lai2020fullfield,\n  author = {Lai, Zhilu and Alzugaray, Ignacio and Chli, Margarita and Chatzi, Eleni},\n  title = {{Full-field structural monitoring using event cameras and physics-informed sparse identification}},\n  journal = {Mechanical Systems and Signal Processing},\n  volume = {145},\n  pages = {106905},\n  year = {2020},\n  doi = {10.1016/j.ymssp.2020.106905}\n}"
         }
       ],
-      "how_used": "The card's six constants were fitted to one recording, test1a (0.863 s to 24 s); a second ring-down of the same strip, test1b, was held back: its first 12 s were opened for a forecast outside the engine and its next 12 s were kept unread until the card was compared with them.",
+      "how_used": "The card's six constants were fitted to one recording, test1a (0.863 s to 24 s); a second ring-down of the same strip, test1b, was held back: its first 12 s were opened for a forecast outside the engine and its next 12 s were held back from the fitting and the forecast and compared with the card once; their coarse envelope on Laser_1 had been printed by mistake on 2026-10-06, before the split was written, and no fit was made to it.",
       "not_held_to_a_measurement": false,
       "cite_also": "paper"
     },
@@ -735,6 +735,225 @@
       "not_held_to_a_measurement": false,
       "cite_also": "paper"
     },
+    "materials/grasp_lift_glass_4tu": {
+      "kind": "card",
+      "real_thing": "A 0.2 kg glass-faced object, the company's own specimen, lifted from a table between two finger pads whose friction and tangential stiffness are those of the human index finger pads of the 4TU set on glass, TU Delft and Aix-Marseille Université",
+      "sources": [
+        {
+          "role": "measurements",
+          "authors": "Willemet, Laurence",
+          "title": "Data underlying the publication entitled \"Efficient tactile encoding of object slippage\"",
+          "year": 2022,
+          "publisher_or_venue": "4TU.ResearchData",
+          "identifier": "10.4121/19329506.v1",
+          "url": "https://doi.org/10.4121/19329506.v1",
+          "requested_acknowledgment": null,
+          "citation_text": "Willemet, L. (2022). Data underlying the publication entitled \"Efficient tactile encoding of object slippage\" [data set]. 4TU.ResearchData. https://doi.org/10.4121/19329506.v1",
+          "bibtex": "@misc{willemet2022slippagedata,\n  author = {Willemet, Laurence},\n  title = {Data underlying the publication entitled ``Efficient tactile encoding of object slippage''},\n  year = {2022},\n  publisher = {4TU.ResearchData},\n  doi = {10.4121/19329506.v1},\n  url = {https://doi.org/10.4121/19329506.v1}\n}"
+        },
+        {
+          "role": "measurements",
+          "authors": "Willemet, Laurence; Huloux, Nicolas; Wiertlewski, Michaël",
+          "title": "Efficient tactile encoding of object slippage",
+          "year": 2022,
+          "publisher_or_venue": "Scientific Reports 12, 13192",
+          "identifier": "10.1038/s41598-022-16938-1",
+          "url": "https://doi.org/10.1038/s41598-022-16938-1",
+          "requested_acknowledgment": null,
+          "citation_text": "Willemet, L., Huloux, N. and Wiertlewski, M. (2022). Efficient tactile encoding of object slippage. Scientific Reports, 12, 13192. https://doi.org/10.1038/s41598-022-16938-1",
+          "bibtex": "@article{willemet2022slippage,\n  author = {Willemet, Laurence and Huloux, Nicolas and Wiertlewski, Micha{\\\"e}l},\n  title = {Efficient tactile encoding of object slippage},\n  journal = {Scientific Reports},\n  volume = {12},\n  pages = {13192},\n  year = {2022},\n  doi = {10.1038/s41598-022-16938-1}\n}"
+        }
+      ],
+      "how_used": "The pads' Coulomb friction coefficient and tangential stiffness are fitted to the set's development trials on natural glass (S1 whole, S4 to S11 at levels 1, 2, 3, 5, 6 and 7); S2, S3 and S12 whole and level 4 of S4 to S11 were held back and scored through the engine: one of four pass lines met. The object, its mass and faces are the company's own.",
+      "not_held_to_a_measurement": false,
+      "cite_also": "paper"
+    },
+    "aerospace/momentum_jwst_dihedral": {
+      "kind": "card",
+      "real_thing": "The total angular momentum of the James Webb Space Telescope at Sun-Earth L2 between momentum unloads, May to September 2023, as its flight software telemeters it, with the sunshield's first layer as two plane slopes",
+      "sources": [
+        {
+          "role": "measurements",
+          "authors": "Space Telescope Science Institute; JWST flight operations",
+          "title": "JWST engineering database: SA_ZMOMMAG, SA_ZMOMECIX/Y/Z, SA_ZATTEST1-4, SA_ZSLEWST, SA_ZMOMUNLST, 2023-05-12 to 2023-08-14",
+          "year": 2023,
+          "publisher_or_venue": "Mikulski Archive for Space Telescopes (MAST), Space Telescope Science Institute",
+          "identifier": null,
+          "url": "https://mast.stsci.edu/jwst/api/v0.1/Download/file?uri=mast:jwstedb/",
+          "requested_acknowledgment": "This work is based in part on engineering telemetry of the NASA/ESA/CSA James Webb Space Telescope, obtained from the Mikulski Archive for Space Telescopes at the Space Telescope Science Institute, which is operated by the Association of Universities for Research in Astronomy, Inc., under NASA contract NAS5-03127 for JWST.",
+          "citation_text": "Space Telescope Science Institute (2023). JWST engineering database, mnemonics SA_ZMOMMAG, SA_ZMOMECIX, SA_ZMOMECIY, SA_ZMOMECIZ, SA_ZATTEST1-4, SA_ZSLEWST and SA_ZMOMUNLST, 2023-05-12 to 2023-08-14. Mikulski Archive for Space Telescopes. https://mast.stsci.edu (retrieved 2026-10-14 and 2026-10-16).",
+          "bibtex": "@misc{jwst_edb_momentum_2023_dihedral,\n  author = {{Space Telescope Science Institute}},\n  title = {{JWST} engineering database: observatory momentum, attitude, slew and unload status, 2023-05-12 to 2023-08-14},\n  howpublished = {Mikulski Archive for Space Telescopes (MAST)},\n  url = {https://mast.stsci.edu},\n  note = {Mnemonics SA\\_ZMOMMAG, SA\\_ZMOMECIX/Y/Z, SA\\_ZATTEST1-4, SA\\_ZSLEWST, SA\\_ZMOMUNLST; retrieved 2026-10-14 and 2026-10-16}\n}"
+        },
+        {
+          "role": "ephemeris",
+          "authors": "Jet Propulsion Laboratory, Solar System Dynamics Group",
+          "title": "JPL Horizons: James Webb Space Telescope (-170), vectors from the Sun, ICRF",
+          "year": 2026,
+          "publisher_or_venue": "NASA Jet Propulsion Laboratory",
+          "identifier": null,
+          "url": "https://ssd.jpl.nasa.gov/horizons/",
+          "requested_acknowledgment": null,
+          "citation_text": "JPL Horizons On-Line Ephemeris System, target -170 (JWST), centre 500@10, ICRF, hourly, 2023-05-01 to 2023-09-01 (retrieved 2026-10-16). https://ssd.jpl.nasa.gov/horizons/",
+          "bibtex": "@misc{jpl_horizons_jwst_2023_dihedral,\n  author = {{Jet Propulsion Laboratory Solar System Dynamics Group}},\n  title = {{JPL Horizons}: James Webb Space Telescope (-170)},\n  url = {https://ssd.jpl.nasa.gov/horizons/},\n  note = {Vectors from the Sun, ICRF, hourly, 2023-05-01 to 2023-09-01; retrieved 2026-10-16}\n}"
+        },
+        {
+          "role": "constants",
+          "authors": "Arenberg, J.; Flynn, J.; Cohen, A.; Lynch, R.; Cooper, J.",
+          "title": "Status of the JWST sunshield and spacecraft",
+          "year": 2016,
+          "publisher_or_venue": "Proceedings of SPIE 9904, Space Telescopes and Instrumentation 2016: Optical, Infrared, and Millimeter Wave",
+          "identifier": "10.1117/12.2234481",
+          "url": "https://doi.org/10.1117/12.2234481",
+          "requested_acknowledgment": null,
+          "citation_text": "Arenberg, J. et al. (2016). Status of the JWST sunshield and spacecraft. Proc. SPIE 9904, 990405. https://doi.org/10.1117/12.2234481",
+          "bibtex": "@inproceedings{arenberg2016sunshield,\n  author = {Arenberg, Jonathan and others},\n  title = {Status of the {JWST} sunshield and spacecraft},\n  booktitle = {Proc. SPIE 9904},\n  pages = {990405},\n  year = {2016},\n  doi = {10.1117/12.2234481}\n}"
+        },
+        {
+          "role": "constants",
+          "authors": "Meixner, M.; Cooray, A.; Leisawitz, D.; Staguhn, J.; et al.",
+          "title": "Origins Space Telescope Mission Concept Study Report, appendix C (JWST sunshield layer 1 end-of-life optical properties; VDA)",
+          "year": 2019,
+          "publisher_or_venue": "arXiv",
+          "identifier": "arXiv:1912.06213",
+          "url": "https://arxiv.org/abs/1912.06213",
+          "requested_acknowledgment": null,
+          "citation_text": "Meixner, M. et al. (2019). Origins Space Telescope Mission Concept Study Report. arXiv:1912.06213.",
+          "bibtex": "@misc{meixner2019origins,\n  author = {Meixner, Margaret and others},\n  title = {Origins Space Telescope Mission Concept Study Report},\n  year = {2019},\n  eprint = {1912.06213},\n  archivePrefix = {arXiv}\n}"
+        },
+        {
+          "role": "constants",
+          "authors": "Kopp, G.; Lean, J. L.",
+          "title": "A new, lower value of total solar irradiance: Evidence and climate significance",
+          "year": 2011,
+          "publisher_or_venue": "Geophysical Research Letters 38, L01706",
+          "identifier": "10.1029/2010GL045777",
+          "url": "https://doi.org/10.1029/2010GL045777",
+          "requested_acknowledgment": null,
+          "citation_text": "Kopp, G. and Lean, J. L. (2011). A new, lower value of total solar irradiance: Evidence and climate significance. Geophys. Res. Lett. 38, L01706.",
+          "bibtex": "@article{kopp2011tsi,\n  author = {Kopp, Greg and Lean, Judith L.},\n  title = {A new, lower value of total solar irradiance: Evidence and climate significance},\n  journal = {Geophysical Research Letters},\n  volume = {38},\n  pages = {L01706},\n  year = {2011},\n  doi = {10.1029/2010GL045777}\n}"
+        },
+        {
+          "role": "constants",
+          "authors": "Space Telescope Science Institute",
+          "title": "JWST calibration pipeline, jwst/lib/set_telescope_pointing.py, calc_eci2j_matrix (Eq. 24 of JWST-STScI-003222, SM-12)",
+          "year": 2026,
+          "publisher_or_venue": "github.com/spacetelescope/jwst",
+          "identifier": null,
+          "url": "https://github.com/spacetelescope/jwst/blob/main/jwst/lib/set_telescope_pointing.py",
+          "requested_acknowledgment": null,
+          "citation_text": "Space Telescope Science Institute. JWST calibration pipeline, set_telescope_pointing.py, calc_eci2j_matrix (read 2026-10-14).",
+          "bibtex": "@misc{stsci_set_telescope_pointing,\n  author = {{Space Telescope Science Institute}},\n  title = {{JWST} calibration pipeline: set\\_telescope\\_pointing.py},\n  url = {https://github.com/spacetelescope/jwst/blob/main/jwst/lib/set_telescope_pointing.py},\n  note = {calc\\_eci2j\\_matrix; read 2026-10-14}\n}"
+        },
+        {
+          "role": "constants",
+          "authors": "Menzel, M.; Davis, M.; Parrish, K.; Lawrence, J.; Stewart, A.; Cooper, J.; et al.",
+          "title": "The Design, Verification, and Performance of the James Webb Space Telescope (figure 7: the sunshield, 21.1 m by 14.6 m; section 4.5.1: the Momentum Trim Flap)",
+          "year": 2023,
+          "publisher_or_venue": "Publications of the Astronomical Society of the Pacific 135, 058002",
+          "identifier": "10.1088/1538-3873/acbb9f",
+          "url": "https://doi.org/10.1088/1538-3873/acbb9f",
+          "requested_acknowledgment": null,
+          "citation_text": "Menzel, M. et al. (2023). The Design, Verification, and Performance of the James Webb Space Telescope. PASP 135, 058002. https://doi.org/10.1088/1538-3873/acbb9f",
+          "bibtex": "@article{menzel2023jwst,\n  author = {Menzel, Michael and others},\n  title = {The Design, Verification, and Performance of the {James Webb Space Telescope}},\n  journal = {Publications of the Astronomical Society of the Pacific},\n  volume = {135},\n  pages = {058002},\n  year = {2023},\n  doi = {10.1088/1538-3873/acbb9f}\n}"
+        },
+        {
+          "role": "constants",
+          "authors": "Fellini, R. A.; Kropp, Y. L.",
+          "title": "James Webb Space Telescope Sunshield: Challenges in Analysis of Gossamer Structures (the five layers fan out from the bus with dihedral angles)",
+          "year": 2008,
+          "publisher_or_venue": "Northrop Grumman Technology Review Journal, Spring/Summer 2008",
+          "identifier": null,
+          "url": "https://www.ryanfellini.com/publications/08SS_Fellini.pdf",
+          "requested_acknowledgment": null,
+          "citation_text": "Fellini, R. A. and Kropp, Y. L. (2008). James Webb Space Telescope Sunshield: Challenges in Analysis of Gossamer Structures. Northrop Grumman Technology Review Journal, Spring/Summer 2008, 17.",
+          "bibtex": "@article{fellini2008sunshield,\n  author = {Fellini, Ryan A. and Kropp, Yury L.},\n  title = {James Webb Space Telescope Sunshield: Challenges in Analysis of Gossamer Structures},\n  journal = {Northrop Grumman Technology Review Journal},\n  note = {Spring/Summer 2008},\n  pages = {17},\n  year = {2008}\n}"
+        },
+        {
+          "role": "constants",
+          "authors": "Bely, P. Y.; Illingworth, G. D.; Arenberg, J. W.; et al.",
+          "title": "Genesis of the James Webb Space Telescope architecture: the designers' story (the sunshield's 3-plane configuration; the momentum flap)",
+          "year": 2025,
+          "publisher_or_venue": "arXiv (draft submitted to the Journal of Astronomical Telescopes, Instruments and Systems)",
+          "identifier": "arXiv:2501.09072",
+          "url": "https://arxiv.org/abs/2501.09072",
+          "requested_acknowledgment": null,
+          "citation_text": "Bely, P. Y. et al. (2025). Genesis of the James Webb Space Telescope architecture: the designers' story. arXiv:2501.09072.",
+          "bibtex": "@misc{bely2025genesis,\n  author = {Bely, Pierre Y. and others},\n  title = {Genesis of the {James Webb Space Telescope} architecture: the designers' story},\n  year = {2025},\n  eprint = {2501.09072},\n  archivePrefix = {arXiv}\n}"
+        }
+      ],
+      "how_used": "The card's four fitted numbers, the ridge's point from the centre of mass and the dihedral angle of the sunshield's two slopes, were fitted to the momentum changes over the hourly blocks of the UTC days 2023-05-12 to 2023-07-14; the days 2023-07-15 to 2023-08-14 were downloaded unread, fingerprinted with the protocol and held back for one comparison, and the days 2023-08-15 to 2023-09-14 the same way for a second. The sunshield's area, width and optical numbers, the layers' dihedral form and the Sun's irradiance are the published figures above, not fitted.",
+      "not_held_to_a_measurement": false,
+      "cite_also": "paper"
+    },
+    "energy/generator_mmrtg_seebeck": {
+      "kind": "card",
+      "real_thing": "The Multi-Mission Radioisotope Thermoelectric Generator, flight unit F1, on NASA's Curiosity rover: its daily-average electrical output on Mars since the landing of 6 August 2012, in the Seebeck matched-load form; the companion of generator_mmrtg_f1, the model of the same generator compared blind",
+      "sources": [
+        {
+          "role": "measurements",
+          "authors": "Whiting, Christofer; Woerner, David",
+          "title": "Historical RTG performance data through 2023",
+          "year": 2024,
+          "publisher_or_venue": "Dryad",
+          "identifier": "10.5061/dryad.1zcrjdfw2",
+          "url": "https://doi.org/10.5061/dryad.1zcrjdfw2",
+          "requested_acknowledgment": "We only ask that any publication, report, or presentation that directly, or indirectly, uses any values from this dataset reference the book where this data is presented in a copyrighted graphical format. We also ask that any uses of post-2020 performance data cite this updated dataset as described on the dataset's webpage. Please Reference: C.E. Whiting and D.F. Woerner, \"Chapter 8: Lifetime Performance of Spaceborne RTGs,\" The Technology of Discovery: Radioisotope Thermoelectric Generators and Thermoelectric Technologies for Space Exploration, D.F. Woerner, Ed., John Wiley & Sons, 2023. ISBN: 9781119811367",
+          "citation_text": "Whiting, Christofer; Woerner, David (2024). Historical RTG performance data through 2023 [Dataset]. Dryad. https://doi.org/10.5061/dryad.1zcrjdfw2",
+          "bibtex": "@misc{whiting2024rtg,\n  author = {Whiting, Christofer and Woerner, David},\n  title = {{Historical RTG performance data through 2023}},\n  year = {2024},\n  publisher = {Dryad},\n  doi = {10.5061/dryad.1zcrjdfw2},\n  url = {https://doi.org/10.5061/dryad.1zcrjdfw2},\n  note = {Dataset, version 6 (published 2024-02-13)}\n}"
+        },
+        {
+          "role": "measurements",
+          "authors": "Whiting, Christofer E.; Woerner, David Friedrich",
+          "title": "Lifetime Performance of Spaceborne RTGs",
+          "year": 2023,
+          "publisher_or_venue": "Chapter 8 in: The Technology of Discovery: Radioisotope Thermoelectric Generators and Thermoelectric Technologies for Space Exploration, D.F. Woerner, Ed., John Wiley & Sons, pp. 183-212",
+          "identifier": "10.1002/9781119811398.ch8; ISBN 9781119811367",
+          "url": "https://doi.org/10.1002/9781119811398.ch8",
+          "requested_acknowledgment": "This is the reference the dataset's authors ask every user to give (see the dataset entry).",
+          "citation_text": "Whiting, C.E.; Woerner, D.F. (2023). Chapter 8: Lifetime Performance of Spaceborne RTGs. In: Woerner, D.F. (Ed.), The Technology of Discovery: Radioisotope Thermoelectric Generators and Thermoelectric Technologies for Space Exploration. John Wiley & Sons, pp. 183-212. ISBN 9781119811367. https://doi.org/10.1002/9781119811398.ch8",
+          "bibtex": "@incollection{whiting2023lifetime,\n  author = {Whiting, Christofer E. and Woerner, David F.},\n  title = {{Lifetime Performance of Spaceborne RTGs}},\n  booktitle = {The Technology of Discovery: Radioisotope Thermoelectric Generators and Thermoelectric Technologies for Space Exploration},\n  editor = {Woerner, David F.},\n  chapter = {8},\n  pages = {183--212},\n  publisher = {John Wiley \\& Sons},\n  year = {2023},\n  isbn = {9781119811367},\n  doi = {10.1002/9781119811398.ch8}\n}"
+        },
+        {
+          "role": "measurements",
+          "authors": "Whiting, Christofer E.; Woerner, David F.",
+          "title": "The Graph Becomes the Dataset: Compiling Historical and Current RTG Data into One Place",
+          "year": 2024,
+          "publisher_or_venue": "Nuclear Technology 211 (sup2)",
+          "identifier": "10.1080/00295450.2024.2410606",
+          "url": "https://doi.org/10.1080/00295450.2024.2410606",
+          "requested_acknowledgment": null,
+          "citation_text": "Whiting, Christofer E.; Woerner, David F. (2024). The Graph Becomes the Dataset: Compiling Historical and Current RTG Data into One Place. Nuclear Technology 211 (sup2). https://doi.org/10.1080/00295450.2024.2410606",
+          "bibtex": "@article{whiting2024graph,\n  author = {Whiting, Christofer E. and Woerner, David F.},\n  title = {{The Graph Becomes the Dataset: Compiling Historical and Current RTG Data into One Place}},\n  journal = {Nuclear Technology},\n  volume = {211},\n  number = {sup2},\n  year = {2024},\n  doi = {10.1080/00295450.2024.2410606}\n}"
+        },
+        {
+          "role": "design data",
+          "authors": "Woerner, David; Moreno, Victor; Jones, Loren; Zimmerman, Robert; Wood, Eric",
+          "title": "The Mars Science Laboratory (MSL) MMRTG in-flight: a power update",
+          "year": 2013,
+          "publisher_or_venue": "Nuclear and Emerging Technologies for Space 2013 (NETS 2013), Albuquerque, New Mexico, February 25-28, 2013; JPL Open Repository",
+          "identifier": "hdl:2014/44945; NTRS 20150008726",
+          "url": "https://hdl.handle.net/2014/44945",
+          "requested_acknowledgment": null,
+          "citation_text": "Woerner, David; Moreno, Victor; Jones, Loren; Zimmerman, Robert; Wood, Eric (2013). The Mars Science Laboratory (MSL) MMRTG in-flight: a power update. Nuclear and Emerging Technologies for Space 2013 (NETS 2013), Albuquerque, New Mexico, February 25-28, 2013. JPL Open Repository. https://hdl.handle.net/2014/44945",
+          "bibtex": "@inproceedings{woerner2013mmrtg,\n  author = {Woerner, David and Moreno, Victor and Jones, Loren and Zimmerman, Robert and Wood, Eric},\n  title = {{The Mars Science Laboratory (MSL) MMRTG in-flight: a power update}},\n  booktitle = {Nuclear and Emerging Technologies for Space 2013 (NETS 2013), Albuquerque, New Mexico, February 25--28, 2013},\n  year = {2013},\n  publisher = {Jet Propulsion Laboratory, National Aeronautics and Space Administration},\n  url = {https://hdl.handle.net/2014/44945},\n  note = {NTRS 20150008726}\n}"
+        },
+        {
+          "role": "constants",
+          "authors": "Browne, E.; Tuli, J.K.",
+          "title": "Nuclear Data Sheets for A = 234",
+          "year": 2007,
+          "publisher_or_venue": "Nuclear Data Sheets 108(3), 681-772; read through NNDC NuDat 3 (National Nuclear Data Center, Brookhaven National Laboratory)",
+          "identifier": "10.1016/j.nds.2007.02.003",
+          "url": "https://doi.org/10.1016/j.nds.2007.02.003",
+          "requested_acknowledgment": null,
+          "citation_text": "Browne, E.; Tuli, J.K. (2007). Nuclear Data Sheets for A = 234. Nuclear Data Sheets 108(3), 681-772. https://doi.org/10.1016/j.nds.2007.02.003. Read through NuDat 3, National Nuclear Data Center, https://www.nndc.bnl.gov/nudat3/",
+          "bibtex": "@article{browne2007a234,\n  author = {Browne, E. and Tuli, J. K.},\n  title = {{Nuclear Data Sheets for A = 234}},\n  journal = {Nuclear Data Sheets},\n  volume = {108},\n  number = {3},\n  pages = {681--772},\n  year = {2007},\n  doi = {10.1016/j.nds.2007.02.003}\n}"
+        }
+      ],
+      "how_used": "Calibrated to the record, not a blind test: three constants were fitted to every day of the dataset's Curiosity power readings, mission days 0 to 4,087, after generator_mmrtg_f1 had been compared with days 2,809 to 4,087, so the comparison with those days is after the fact; generator_mmrtg_f1, compared blind, is served beside it, and the sources are generator_mmrtg_f1's. The forecast of the days after 4,087 was registered before any of their values was published as a number (a July 2025 NASA memorandum shows them only in a plot, and no value is read off a plot), for the dataset's next release. The plutonium-238 half-life (Browne and Tuli, through NuDat 3) and the thermal power at landing (Woerner et al. 2013) are locked constants, not fitted.",
+      "not_held_to_a_measurement": false,
+      "cite_also": "paper"
+    },
     "aerospace/crater_ryugu_sci": {
       "kind": "card",
       "real_thing": "The crater made on asteroid 162173 Ryugu on 5 April 2019 by the Small Carry-on Impactor of JAXA's Hayabusa2",
@@ -825,6 +1044,87 @@
         }
       ],
       "how_used": "The law of crater size and its two constants are from Schmidt's thirteen centrifuge craters in Ottawa sand; the clock from seven points of Gault and Wedekind's Fig. 4; projectile and target from JAXA's pre-impact briefing; Ryugu's properties from the JPL Small-Body Database (Watanabe et al. 2019). Held back, and no part of any constant: the measured crater of Arakawa et al. (2020), as given in JAXA's summary.",
+      "not_held_to_a_measurement": false,
+      "cite_also": "paper"
+    },
+    "aerospace/momentum_jwst_srp": {
+      "kind": "card",
+      "real_thing": "The total angular momentum of the James Webb Space Telescope at Sun-Earth L2 between momentum unloads, May to September 2023, as its flight software telemeters it",
+      "sources": [
+        {
+          "role": "measurements",
+          "authors": "Space Telescope Science Institute; JWST flight operations",
+          "title": "JWST engineering database: SA_ZMOMMAG, SA_ZMOMECIX/Y/Z, SA_ZATTEST1-4, SA_ZSLEWST, SA_ZMOMUNLST, 2023-05-12 to 2023-07-14",
+          "year": 2023,
+          "publisher_or_venue": "Mikulski Archive for Space Telescopes (MAST), Space Telescope Science Institute",
+          "identifier": null,
+          "url": "https://mast.stsci.edu/jwst/api/v0.1/Download/file?uri=mast:jwstedb/",
+          "requested_acknowledgment": "This work is based in part on engineering telemetry of the NASA/ESA/CSA James Webb Space Telescope, obtained from the Mikulski Archive for Space Telescopes at the Space Telescope Science Institute, which is operated by the Association of Universities for Research in Astronomy, Inc., under NASA contract NAS5-03127 for JWST.",
+          "citation_text": "Space Telescope Science Institute (2023). JWST engineering database, mnemonics SA_ZMOMMAG, SA_ZMOMECIX, SA_ZMOMECIY, SA_ZMOMECIZ, SA_ZATTEST1-4, SA_ZSLEWST and SA_ZMOMUNLST, 2023-05-12 to 2023-07-14. Mikulski Archive for Space Telescopes. https://mast.stsci.edu (retrieved 2026-10-14).",
+          "bibtex": "@misc{jwst_edb_momentum_2023,\n  author = {{Space Telescope Science Institute}},\n  title = {{JWST} engineering database: observatory momentum, attitude, slew and unload status, 2023-05-12 to 2023-07-14},\n  howpublished = {Mikulski Archive for Space Telescopes (MAST)},\n  url = {https://mast.stsci.edu},\n  note = {Mnemonics SA\\_ZMOMMAG, SA\\_ZMOMECIX/Y/Z, SA\\_ZATTEST1-4, SA\\_ZSLEWST, SA\\_ZMOMUNLST; retrieved 2026-10-14}\n}"
+        },
+        {
+          "role": "ephemeris",
+          "authors": "Jet Propulsion Laboratory, Solar System Dynamics Group",
+          "title": "JPL Horizons: James Webb Space Telescope (-170), vectors from the Sun, ICRF",
+          "year": 2026,
+          "publisher_or_venue": "NASA Jet Propulsion Laboratory",
+          "identifier": null,
+          "url": "https://ssd.jpl.nasa.gov/horizons/",
+          "requested_acknowledgment": null,
+          "citation_text": "JPL Horizons On-Line Ephemeris System, target -170 (JWST), centre 500@10, ICRF, hourly, 2023-05-01 to 2023-08-01 (retrieved 2026-10-14). https://ssd.jpl.nasa.gov/horizons/",
+          "bibtex": "@misc{jpl_horizons_jwst,\n  author = {{Jet Propulsion Laboratory Solar System Dynamics Group}},\n  title = {{JPL Horizons}: James Webb Space Telescope (-170)},\n  url = {https://ssd.jpl.nasa.gov/horizons/},\n  note = {Vectors from the Sun, ICRF, hourly, 2023-05-01 to 2023-08-01; retrieved 2026-10-14}\n}"
+        },
+        {
+          "role": "constants",
+          "authors": "Arenberg, J.; Flynn, J.; Cohen, A.; Lynch, R.; Cooper, J.",
+          "title": "Status of the JWST sunshield and spacecraft",
+          "year": 2016,
+          "publisher_or_venue": "Proceedings of SPIE 9904, Space Telescopes and Instrumentation 2016: Optical, Infrared, and Millimeter Wave",
+          "identifier": "10.1117/12.2234481",
+          "url": "https://doi.org/10.1117/12.2234481",
+          "requested_acknowledgment": null,
+          "citation_text": "Arenberg, J. et al. (2016). Status of the JWST sunshield and spacecraft. Proc. SPIE 9904, 990405. https://doi.org/10.1117/12.2234481",
+          "bibtex": "@inproceedings{arenberg2016sunshield,\n  author = {Arenberg, Jonathan and others},\n  title = {Status of the {JWST} sunshield and spacecraft},\n  booktitle = {Proc. SPIE 9904},\n  pages = {990405},\n  year = {2016},\n  doi = {10.1117/12.2234481}\n}"
+        },
+        {
+          "role": "constants",
+          "authors": "Meixner, M.; Cooray, A.; Leisawitz, D.; Staguhn, J.; et al.",
+          "title": "Origins Space Telescope Mission Concept Study Report, appendix C (JWST sunshield layer 1 end-of-life optical properties; VDA)",
+          "year": 2019,
+          "publisher_or_venue": "arXiv",
+          "identifier": "arXiv:1912.06213",
+          "url": "https://arxiv.org/abs/1912.06213",
+          "requested_acknowledgment": null,
+          "citation_text": "Meixner, M. et al. (2019). Origins Space Telescope Mission Concept Study Report. arXiv:1912.06213.",
+          "bibtex": "@misc{meixner2019origins,\n  author = {Meixner, Margaret and others},\n  title = {Origins Space Telescope Mission Concept Study Report},\n  year = {2019},\n  eprint = {1912.06213},\n  archivePrefix = {arXiv}\n}"
+        },
+        {
+          "role": "constants",
+          "authors": "Kopp, G.; Lean, J. L.",
+          "title": "A new, lower value of total solar irradiance: Evidence and climate significance",
+          "year": 2011,
+          "publisher_or_venue": "Geophysical Research Letters 38, L01706",
+          "identifier": "10.1029/2010GL045777",
+          "url": "https://doi.org/10.1029/2010GL045777",
+          "requested_acknowledgment": null,
+          "citation_text": "Kopp, G. and Lean, J. L. (2011). A new, lower value of total solar irradiance: Evidence and climate significance. Geophys. Res. Lett. 38, L01706.",
+          "bibtex": "@article{kopp2011tsi,\n  author = {Kopp, Greg and Lean, Judith L.},\n  title = {A new, lower value of total solar irradiance: Evidence and climate significance},\n  journal = {Geophysical Research Letters},\n  volume = {38},\n  pages = {L01706},\n  year = {2011},\n  doi = {10.1029/2010GL045777}\n}"
+        },
+        {
+          "role": "constants",
+          "authors": "Space Telescope Science Institute",
+          "title": "JWST calibration pipeline, jwst/lib/set_telescope_pointing.py, calc_eci2j_matrix (Eq. 24 of JWST-STScI-003222, SM-12)",
+          "year": 2026,
+          "publisher_or_venue": "github.com/spacetelescope/jwst",
+          "identifier": null,
+          "url": "https://github.com/spacetelescope/jwst/blob/main/jwst/lib/set_telescope_pointing.py",
+          "requested_acknowledgment": null,
+          "citation_text": "Space Telescope Science Institute. JWST calibration pipeline, set_telescope_pointing.py, calc_eci2j_matrix (read 2026-10-14).",
+          "bibtex": "@misc{stsci_set_telescope_pointing,\n  author = {{Space Telescope Science Institute}},\n  title = {{JWST} calibration pipeline: set\\_telescope\\_pointing.py},\n  url = {https://github.com/spacetelescope/jwst/blob/main/jwst/lib/set_telescope_pointing.py},\n  note = {calc\\_eci2j\\_matrix; read 2026-10-14}\n}"
+        }
+      ],
+      "how_used": "The card's three fitted numbers, the centre of pressure in the J-frame, were fitted to the momentum changes over the hourly blocks of the UTC days 2023-05-12 to 2023-06-14; the days 2023-06-15 to 2023-07-14 were held back for the comparison, and the days 2023-07-15 to 2023-09-14, downloaded unread and fingerprinted, were scored blind after it. The sunshield's area, its optical numbers and the Sun's irradiance are the published figures above, not fitted.",
       "not_held_to_a_measurement": false,
       "cite_also": "paper"
     },
@@ -1242,6 +1542,51 @@
       "not_held_to_a_measurement": false,
       "cite_also": "paper"
     },
+    "energy/tokamak_vde_mast": {
+      "kind": "card",
+      "real_thing": "The MAST spherical tokamak (UKAEA, Culham) in shot 15045, in which the vertical-position feedback was cut at 0.250 s to make an upward vertical displacement event: the company's own derivation of a rigid plasma, the passive structure and the P6 coils from that shot's open data",
+      "sources": [
+        {
+          "role": "measurements",
+          "authors": "Jackson, Samuel; Khan, Saiful; Cummings, Nathan; Hodson, James; de Witt, Shaun; Pamela, Stanislas; Akers, Rob; Thiyagalingam, Jeyan; the MAST Team",
+          "title": "FAIR-MAST: A fusion device data management system",
+          "year": 2024,
+          "publisher_or_venue": "SoftwareX 27, 101869",
+          "identifier": "10.1016/j.softx.2024.101869",
+          "url": "https://doi.org/10.1016/j.softx.2024.101869",
+          "requested_acknowledgment": "If you use the data from this service for a scientific publication, we would appreciate citations to the service and the following papers",
+          "citation_text": "Jackson, S.; Khan, S.; Cummings, N.; Hodson, J.; de Witt, S.; Pamela, S.; Akers, R.; Thiyagalingam, J.; the MAST Team (2024). FAIR-MAST: A fusion device data management system. SoftwareX 27, 101869. https://doi.org/10.1016/j.softx.2024.101869",
+          "bibtex": "@article{jackson2024fair,\n  author = {Jackson, Samuel and Khan, Saiful and Cummings, Nathan and Hodson, James and de Witt, Shaun and Pamela, Stanislas and Akers, Rob and Thiyagalingam, Jeyan and {The MAST Team}},\n  title = {{FAIR-MAST}: A fusion device data management system},\n  journal = {SoftwareX},\n  volume = {27},\n  pages = {101869},\n  year = {2024},\n  doi = {10.1016/j.softx.2024.101869}\n}"
+        },
+        {
+          "role": "measurements",
+          "authors": "Jackson, Samuel; Khan, Saiful; Cummings, Nathan; Hodson, James; de Witt, Shaun; Pamela, Stanislas; Akers, Rob; Thiyagalingam, Jeyan",
+          "title": "An Open Data Service for Supporting Research in Machine Learning on Tokamak Data",
+          "year": 2025,
+          "publisher_or_venue": "IEEE Transactions on Plasma Science",
+          "identifier": "10.1109/TPS.2025.3583419",
+          "url": "https://ieeexplore.ieee.org/document/11128905",
+          "requested_acknowledgment": "If you use the data from this service for a scientific publication, we would appreciate citations to the service and the following papers",
+          "citation_text": "Jackson, S.; Khan, S.; Cummings, N.; Hodson, J.; de Witt, S.; Pamela, S.; Akers, R.; Thiyagalingam, J. (2025). An Open Data Service for Supporting Research in Machine Learning on Tokamak Data. IEEE Transactions on Plasma Science. https://doi.org/10.1109/TPS.2025.3583419",
+          "bibtex": "@article{jackson_open_2025,\n  author = {Jackson, Samuel and Khan, Saiful and Cummings, Nathan and Hodson, James and de Witt, Shaun and Pamela, Stanislas and Akers, Rob and Thiyagalingam, Jeyan},\n  title = {An Open Data Service for Supporting Research in Machine Learning on Tokamak Data},\n  journal = {IEEE Transactions on Plasma Science},\n  year = {2025},\n  doi = {10.1109/TPS.2025.3583419},\n  url = {https://ieeexplore.ieee.org/document/11128905}\n}"
+        },
+        {
+          "role": "measurements",
+          "authors": "Windridge, M. J.; Hender, T. C.; Cunningham, G.; Lister, J. B.; Lukash, V.; Khayrutdinov, R.; Dokuka, V.",
+          "title": "MAST Halo Current Simulations with DINA-CH",
+          "year": 2007,
+          "publisher_or_venue": "34th EPS Conference on Plasma Physics, Warsaw, ECA Vol. 31F, P-1.108",
+          "identifier": null,
+          "url": "https://lac913.epfl.ch/epsppd3/2007/pdf/P1_108.pdf",
+          "requested_acknowledgment": null,
+          "citation_text": "Windridge, M. J.; Hender, T. C.; Cunningham, G.; Lister, J. B.; Lukash, V.; Khayrutdinov, R.; Dokuka, V. (2007). MAST Halo Current Simulations with DINA-CH. 34th EPS Conference on Plasma Physics, Warsaw, ECA Vol. 31F, P-1.108. https://lac913.epfl.ch/epsppd3/2007/pdf/P1_108.pdf",
+          "bibtex": "@inproceedings{windridge2007mast,\n  author = {Windridge, M. J. and Hender, T. C. and Cunningham, G. and Lister, J. B. and Lukash, V. and Khayrutdinov, R. and Dokuka, V.},\n  title = {{MAST} Halo Current Simulations with {DINA-CH}},\n  booktitle = {34th EPS Conference on Plasma Physics},\n  series = {ECA},\n  volume = {31F},\n  pages = {P-1.108},\n  address = {Warsaw},\n  year = {2007},\n  url = {https://lac913.epfl.ch/epsppd3/2007/pdf/P1_108.pdf}\n}"
+        }
+      ],
+      "how_used": "The open data of shot 15045 at 0.250 s (EFIT's current density and flux, the PF coil currents and geometry, the passive structure's geometry and AMM currents, the limiter, the density): the card's constants are derived from them by the Green's functions of coaxial filaments, with nothing fitted to the motion. The centre-column Bv probes and the P6 currents of the event, and Windridge's growth rate, are what the card was compared with.",
+      "not_held_to_a_measurement": false,
+      "cite_also": "paper"
+    },
     "materials/fingerpad_p02_glass": {
       "kind": "card",
       "real_thing": "The right index finger pad of participant P02 pressed by a robot-held glass plate and twisted through 80 degrees, Université catholique de Louvain",
@@ -1469,7 +1814,7 @@
           "bibtex": "@misc{ravnik_triga_description,\n  author = {Ravnik, Matjaž},\n  title = {Description of {TRIGA} Reactor},\n  howpublished = {Course note, ``Jožef Stefan'' Institute, Reactor Infrastructure Centre, Ljubljana},\n  url = {https://ric.ijs.si/wp-content/uploads/2026/04/Description_TRIGA_Reactor.pdf}\n}"
         }
       ],
-      "how_used": "From the JSI pulse database: 43 per-pulse records of cores 215, 217 and 231, all opened; ten constants fitted on 36 of them; held back by rule, the table's peak power, energy and thermocouple maximum for 20 rows of the same cores whose records were never fetched. Constants from the 2024 article (Table 2, heat-capacity line) and the hot-rod factor 1.387 from the 2019 thesis (Table 4). None of the site's measured values is stored in the card.",
+      "how_used": "From the JSI pulse database: 43 per-pulse records of cores 215, 217 and 231, all opened; ten constants fitted on 36 of them; held back by rule, the table's peak power, energy and thermocouple maximum for 20 rows of the same cores whose records had not been fetched when they were scored; 15 of those records were fetched on 2026-10-11, after the scoring, and the peak power of every row held back had been printed beside the first card before the protocol was fixed. Constants from the 2024 article (Table 2, heat-capacity line) and the hot-rod factor 1.387 from the 2019 thesis (Table 4). None of the site's measured values is stored in the card.",
       "not_held_to_a_measurement": false,
       "cite_also": "paper"
     },
@@ -1517,6 +1862,99 @@
       "how_used": "The 126 step transients of IDO-16918's appendix: 15 rows excluded before any run, 72 fitted (two constants), 39 held back (every third remaining row and the whole 1000 psig series). Core constants from IDO-17138 Table B-1; delayed-neutron set from Keepin.",
       "not_held_to_a_measurement": false,
       "cite_also": "paper"
+    },
+    "energy/runaway_18650_lco": {
+      "kind": "card",
+      "real_thing": "One 18650 lithium-ion cell, LiCoO2 against graphite, fully charged, in thermal abuse: the lumped four-stage model of Hatchard et al. (2001) and Kim et al. (2007), compared with open records of LiCoO2 18650 oven, ramp and heat-wait-seek tests",
+      "how_used": "No constant is fitted. The kinetics, heats, contents and starting amounts are Ostanek's (2025) Table 2; the jelly roll's density and specific heat are Hatchard's as Coman et al. (2017) Table I reprint them; the oven's convective coefficient and emissivity are Hatchard's as Lopez et al. (2015) state them. Compared after it was built, by lines fixed beforehand, with Hatchard's oven tests at 145, 150 and 155 degC (reprinted by Lopez et al. 2015, Fig. 2a, timed by Ostanek et al. 2023), Golubkov et al. (2014) Table 3, Mendoza-Hernandez et al. (2017) Table 1, and the LiCoO2 rows Lei et al. (2017) Table 1 reprint: 8 of 23 lines met.",
+      "not_held_to_a_measurement": false,
+      "cite_also": "paper",
+      "sources": [
+        {
+          "role": "constants",
+          "authors": "Ostanek, J. K.",
+          "title": "Simulink Model for Thermal Runaway of a Single Li-ion Cell using the Hatchard-Kim Reaction Mechanism and 0D Lumped Body Approach",
+          "year": 2025,
+          "publisher_or_venue": "Purdue University Research Repository",
+          "identifier": "10.4231/NWZX-2675",
+          "url": "https://doi.org/10.4231/NWZX-2675",
+          "requested_acknowledgment": null,
+          "citation_text": "Ostanek, J. K. (2025). Simulink Model for Thermal Runaway of a Single Li-ion Cell using the Hatchard-Kim Reaction Mechanism and 0D Lumped Body Approach, Version 1.0. Purdue University Research Repository. https://doi.org/10.4231/NWZX-2675",
+          "bibtex": "@misc{ostanek2025hatchardkim,\n  author = {Ostanek, J. K.},\n  title = {Simulink Model for Thermal Runaway of a Single Li-ion Cell using the {Hatchard-Kim} Reaction Mechanism and {0D} Lumped Body Approach},\n  howpublished = {Purdue University Research Repository},\n  year = {2025},\n  doi = {10.4231/NWZX-2675},\n  url = {https://doi.org/10.4231/NWZX-2675}\n}"
+        },
+        {
+          "role": "constants",
+          "authors": "Coman, P. T.; Darcy, E. C.; Veje, C. T.; White, R. E.",
+          "title": "Modelling Li-Ion Cell Thermal Runaway Triggered by an Internal Short Circuit Device Using an Efficiency Factor and Arrhenius Formulations",
+          "year": 2017,
+          "publisher_or_venue": "Journal of The Electrochemical Society 164(4), A587-A593",
+          "identifier": "10.1149/2.0341704jes",
+          "url": "https://doi.org/10.1149/2.0341704jes",
+          "requested_acknowledgment": null,
+          "citation_text": "Coman, P. T.; Darcy, E. C.; Veje, C. T.; White, R. E. (2017). Modelling Li-Ion Cell Thermal Runaway Triggered by an Internal Short Circuit Device Using an Efficiency Factor and Arrhenius Formulations. Journal of The Electrochemical Society 164(4), A587-A593. https://doi.org/10.1149/2.0341704jes",
+          "bibtex": "@article{coman2017modelling,\n  author = {Coman, P. T. and Darcy, E. C. and Veje, C. T. and White, R. E.},\n  title = {Modelling {Li-Ion} Cell Thermal Runaway Triggered by an Internal Short Circuit Device Using an Efficiency Factor and {Arrhenius} Formulations},\n  journal = {Journal of The Electrochemical Society},\n  volume = {164},\n  number = {4},\n  pages = {A587--A593},\n  year = {2017},\n  doi = {10.1149/2.0341704jes}\n}"
+        },
+        {
+          "role": "measurements",
+          "authors": "Lopez, C. F.; Jeevarajan, J. A.; Mukherjee, P. P.",
+          "title": "Characterization of Lithium-Ion Battery Thermal Abuse Behavior Using Experimental and Computational Analysis",
+          "year": 2015,
+          "publisher_or_venue": "Journal of The Electrochemical Society 162(10), A2163-A2173",
+          "identifier": "10.1149/2.0751510jes",
+          "url": "https://doi.org/10.1149/2.0751510jes",
+          "requested_acknowledgment": null,
+          "citation_text": "Lopez, C. F.; Jeevarajan, J. A.; Mukherjee, P. P. (2015). Characterization of Lithium-Ion Battery Thermal Abuse Behavior Using Experimental and Computational Analysis. Journal of The Electrochemical Society 162(10), A2163-A2173. https://doi.org/10.1149/2.0751510jes",
+          "bibtex": "@article{lopez2015characterization,\n  author = {Lopez, C. F. and Jeevarajan, J. A. and Mukherjee, P. P.},\n  title = {Characterization of Lithium-Ion Battery Thermal Abuse Behavior Using Experimental and Computational Analysis},\n  journal = {Journal of The Electrochemical Society},\n  volume = {162},\n  number = {10},\n  pages = {A2163--A2173},\n  year = {2015},\n  doi = {10.1149/2.0751510jes}\n}"
+        },
+        {
+          "role": "measurements",
+          "authors": "Ostanek, J. K.; Parhizi, M.; Li, W.; Kilaz, G.; Crompton, K. R.",
+          "title": "CFD-Based Thermal Abuse Simulations including Gas Generation and Venting of an 18650 Li-Ion Battery Cell",
+          "year": 2023,
+          "publisher_or_venue": "Journal of The Electrochemical Society 170, 090512",
+          "identifier": "10.1149/1945-7111/acf4c1",
+          "url": "https://doi.org/10.1149/1945-7111/acf4c1",
+          "requested_acknowledgment": null,
+          "citation_text": "Ostanek, J. K.; Parhizi, M.; Li, W.; Kilaz, G.; Crompton, K. R. (2023). CFD-Based Thermal Abuse Simulations including Gas Generation and Venting of an 18650 Li-Ion Battery Cell. Journal of The Electrochemical Society 170, 090512. https://doi.org/10.1149/1945-7111/acf4c1",
+          "bibtex": "@article{ostanek2023cfd,\n  author = {Ostanek, J. K. and Parhizi, M. and Li, W. and Kilaz, G. and Crompton, K. R.},\n  title = {{CFD}-Based Thermal Abuse Simulations including Gas Generation and Venting of an 18650 {Li-Ion} Battery Cell},\n  journal = {Journal of The Electrochemical Society},\n  volume = {170},\n  pages = {090512},\n  year = {2023},\n  doi = {10.1149/1945-7111/acf4c1}\n}"
+        },
+        {
+          "role": "measurements",
+          "authors": "Golubkov, A. W.; Fuchs, D.; Wagner, J.; Wiltsche, H.; Stangl, C.; Fauler, G.; Voitic, G.; Thaler, A.; Hacker, V.",
+          "title": "Thermal-runaway experiments on consumer Li-ion batteries with metal-oxide and olivin-type cathodes",
+          "year": 2014,
+          "publisher_or_venue": "RSC Advances 4, 3633-3642",
+          "identifier": "10.1039/c3ra45748f",
+          "url": "https://doi.org/10.1039/c3ra45748f",
+          "requested_acknowledgment": null,
+          "citation_text": "Golubkov, A. W.; Fuchs, D.; Wagner, J.; Wiltsche, H.; Stangl, C.; Fauler, G.; Voitic, G.; Thaler, A.; Hacker, V. (2014). Thermal-runaway experiments on consumer Li-ion batteries with metal-oxide and olivin-type cathodes. RSC Advances 4, 3633-3642. https://doi.org/10.1039/c3ra45748f",
+          "bibtex": "@article{golubkov2014thermal,\n  author = {Golubkov, A. W. and Fuchs, D. and Wagner, J. and Wiltsche, H. and Stangl, C. and Fauler, G. and Voitic, G. and Thaler, A. and Hacker, V.},\n  title = {Thermal-runaway experiments on consumer {Li-ion} batteries with metal-oxide and olivin-type cathodes},\n  journal = {RSC Advances},\n  volume = {4},\n  pages = {3633--3642},\n  year = {2014},\n  doi = {10.1039/c3ra45748f}\n}"
+        },
+        {
+          "role": "measurements",
+          "authors": "Mendoza-Hernandez, O. S.; Taniguchi, S.; Ishikawa, H.; Tanaka, K.; Fukuda, S.; Sone, Y.; Umeda, M.",
+          "title": "Accelerating Rate Calorimetry Tests of Lithium-Ion Cells Before and After Storage Degradation at High Temperature",
+          "year": 2017,
+          "publisher_or_venue": "E3S Web of Conferences 16, 07001",
+          "identifier": "10.1051/e3sconf/20171607001",
+          "url": "https://doi.org/10.1051/e3sconf/20171607001",
+          "requested_acknowledgment": null,
+          "citation_text": "Mendoza-Hernandez, O. S.; Taniguchi, S.; Ishikawa, H.; Tanaka, K.; Fukuda, S.; Sone, Y.; Umeda, M. (2017). Accelerating Rate Calorimetry Tests of Lithium-Ion Cells Before and After Storage Degradation at High Temperature. E3S Web of Conferences 16, 07001. https://doi.org/10.1051/e3sconf/20171607001",
+          "bibtex": "@article{mendoza2017arc,\n  author = {Mendoza-Hernandez, O. S. and Taniguchi, S. and Ishikawa, H. and Tanaka, K. and Fukuda, S. and Sone, Y. and Umeda, M.},\n  title = {Accelerating Rate Calorimetry Tests of Lithium-Ion Cells Before and After Storage Degradation at High Temperature},\n  journal = {E3S Web of Conferences},\n  volume = {16},\n  pages = {07001},\n  year = {2017},\n  doi = {10.1051/e3sconf/20171607001}\n}"
+        },
+        {
+          "role": "measurements",
+          "authors": "Lei, B.; Zhao, W.; Ziebert, C.; Uhlmann, N.; Rohde, M.; Seifert, H. J.",
+          "title": "Experimental Analysis of Thermal Runaway in 18650 Cylindrical Li-Ion Cells Using an Accelerating Rate Calorimeter",
+          "year": 2017,
+          "publisher_or_venue": "Batteries 3(2), 14",
+          "identifier": "10.3390/batteries3020014",
+          "url": "https://doi.org/10.3390/batteries3020014",
+          "requested_acknowledgment": null,
+          "citation_text": "Lei, B.; Zhao, W.; Ziebert, C.; Uhlmann, N.; Rohde, M.; Seifert, H. J. (2017). Experimental Analysis of Thermal Runaway in 18650 Cylindrical Li-Ion Cells Using an Accelerating Rate Calorimeter. Batteries 3(2), 14. https://doi.org/10.3390/batteries3020014",
+          "bibtex": "@article{lei2017experimental,\n  author = {Lei, B. and Zhao, W. and Ziebert, C. and Uhlmann, N. and Rohde, M. and Seifert, H. J.},\n  title = {Experimental Analysis of Thermal Runaway in 18650 Cylindrical {Li-Ion} Cells Using an Accelerating Rate Calorimeter},\n  journal = {Batteries},\n  volume = {3},\n  number = {2},\n  pages = {14},\n  year = {2017},\n  doi = {10.3390/batteries3020014}\n}"
+        }
+      ]
     },
     "atom_dft": {
       "kind": "solver",
@@ -2730,6 +3168,231 @@
       "not_held_to_a_measurement": false,
       "cite_also": "paper"
     },
+    "blast_wave_tnt_air": {
+      "kind": "solver",
+      "real_thing": "The incident blast wave of a charge of TNT equivalent in still sea-level air, a sphere in free air or a hemisphere on rigid ground; compared with the gauge records of 0.37 g propane/oxygen surface bursts of J. M. Dewey and I. Sochet",
+      "sources": [
+        {
+          "role": "measurements",
+          "authors": "Dewey, John M.; Sochet, Isabelle",
+          "title": "Database from an analysis of pressure measurements of the blast waves from the explosions of 0.3 g charges of stoichiometric, rich and lean propane/oxygen mixtures",
+          "year": 2020,
+          "publisher_or_venue": "Borealis (University of Victoria Dataverse)",
+          "identifier": "10.5683/SP2/VHN1UQ",
+          "url": "https://doi.org/10.5683/SP2/VHN1UQ",
+          "requested_acknowledgment": null,
+          "citation_text": "Dewey, J. M., & Sochet, I. (2020). Database from an analysis of pressure measurements of the blast waves from the explosions of 0.3 g charges of stoichiometric, rich and lean propane/oxygen mixtures. Borealis. https://doi.org/10.5683/SP2/VHN1UQ (retrieved 2026-10-14).",
+          "bibtex": "@misc{dewey2020propane,\n  author = {Dewey, John M. and Sochet, Isabelle},\n  title = {Database from an analysis of pressure measurements of the blast waves from the explosions of 0.3 g charges of stoichiometric, rich and lean propane/oxygen mixtures},\n  year = {2020},\n  publisher = {Borealis},\n  doi = {10.5683/SP2/VHN1UQ},\n  note = {Retrieved 2026-10-14}\n}"
+        },
+        {
+          "role": "reference",
+          "authors": "Dewey, John M.",
+          "title": "TNT Free-Field Blast Wave Properties Interface (TNTFFI 1.1c)",
+          "year": 2021,
+          "publisher_or_venue": "Borealis",
+          "identifier": "10.5683/SP2/WB8JKO",
+          "url": "https://doi.org/10.5683/SP2/WB8JKO",
+          "requested_acknowledgment": null,
+          "citation_text": "Dewey, J. M. (2021). TNT Free-Field Blast Wave Properties Interface (TNTFFI 1.1c). Borealis. https://doi.org/10.5683/SP2/WB8JKO (retrieved 2026-10-14).",
+          "bibtex": "@misc{dewey2021tntffi,\n  author = {Dewey, John M.},\n  title = {{TNT} Free-Field Blast Wave Properties Interface ({TNTFFI} 1.1c)},\n  year = {2021},\n  publisher = {Borealis},\n  doi = {10.5683/SP2/WB8JKO},\n  note = {Retrieved 2026-10-14}\n}"
+        },
+        {
+          "role": "reference",
+          "authors": "Kingery, Charles N.; Bulmash, Gerald; as simplified by Swisdak, Michael M.; coded by fcento100",
+          "title": "Airblast parameters from TNT spherical air burst and hemispherical surface burst (ARBRL-TR-02555, 1984); Simplified Kingery Airblast Calculations (1994, DTIC ADA526744); kingery-bulmash (Python)",
+          "year": 2024,
+          "publisher_or_venue": "GitHub, fcento100/kingery-bulmash, commit 194c3c7",
+          "identifier": null,
+          "url": "https://github.com/fcento100/kingery-bulmash",
+          "requested_acknowledgment": null,
+          "citation_text": "Kingery, C. N., & Bulmash, G. (1984). Airblast parameters from TNT spherical air burst and hemispherical surface burst. ARBRL-TR-02555, US Army BRL; Swisdak, M. M. (1994). Simplified Kingery Airblast Calculations. DTIC ADA526744; as coded in fcento100, kingery-bulmash, https://github.com/fcento100/kingery-bulmash (retrieved 2026-10-14). The coded coefficients have not been compared with either original.",
+          "bibtex": "@misc{fcento100kb,\n  author = {fcento100},\n  title = {kingery-bulmash: {Kingery-Bulmash} blast parameters after {Swisdak} (1994)},\n  year = {2024},\n  howpublished = {GitHub},\n  url = {https://github.com/fcento100/kingery-bulmash},\n  note = {Commit 194c3c7. Retrieved 2026-10-14}\n}"
+        }
+      ],
+      "how_used": "Nothing is fitted. The model is the company's own derivation (a point source of the charge's energy, Sedov-Taylor, the Euler equations and weak-shock theory). Dewey's TNT interface and the Kingery-Bulmash correlation are references the tests compare with; the Dewey-Sochet gauge records, rich and lean held back, were compared once with pass marks fixed before scoring, and the comparison missed.",
+      "not_held_to_a_measurement": false,
+      "cite_also": "paper"
+    },
+    "stress_plate_hole_s235": {
+      "kind": "solver",
+      "real_thing": "A flat tensile bar of S235 low-carbon steel, 3.05 mm thick, with a hole of radius 4 mm in its parallel length 20.05 mm wide, pulled to 106.26 N/mm² and its surface displacement measured by stereo digital image correlation at the Institute of Applied Mechanics, Clausthal University of Technology, on 2023-11-16",
+      "sources": [
+        {
+          "role": "measurements",
+          "authors": "Tröger, Jendrik-Alexander; Hartmann, Stefan; Anton, David; Wessels, Henning",
+          "title": "Digital image correlation measurement of linear elastic steel specimen",
+          "year": 2024,
+          "publisher_or_venue": "Zenodo, version 1.0",
+          "identifier": "10.5281/zenodo.11257192",
+          "url": "https://doi.org/10.5281/zenodo.11257192",
+          "requested_acknowledgment": "If you use this dataset, please cite it using the metadata from this file.",
+          "citation_text": "Tröger, J.-A., Hartmann, S., Anton, D., & Wessels, H. (2024). Digital image correlation measurement of linear elastic steel specimen (1.0) [Data set]. Zenodo. https://doi.org/10.5281/zenodo.11257192",
+          "bibtex": "@misc{troger2024dic,\n  author = {Tr{\\\"o}ger, Jendrik-Alexander and Hartmann, Stefan and Anton, David and Wessels, Henning},\n  title = {{Digital image correlation measurement of linear elastic steel specimen}},\n  year = {2024},\n  publisher = {Zenodo},\n  version = {1.0},\n  doi = {10.5281/zenodo.11257192},\n  url = {https://doi.org/10.5281/zenodo.11257192},\n  note = {Dataset}\n}"
+        },
+        {
+          "role": "measurements",
+          "authors": "Anton, David; Tröger, Jendrik-Alexander; Wessels, Henning; Römer, Ulrich; Henkes, Alexander; Hartmann, Stefan",
+          "title": "Deterministic and statistical calibration of constitutive models from full-field data with parametric physics-informed neural networks",
+          "year": 2025,
+          "publisher_or_venue": "Advanced Modeling and Simulation in Engineering Sciences 12, 12",
+          "identifier": "10.1186/s40323-025-00285-7",
+          "url": "https://doi.org/10.1186/s40323-025-00285-7",
+          "requested_acknowledgment": null,
+          "citation_text": "Anton, D., Tröger, J.-A., Wessels, H., Römer, U., Henkes, A., & Hartmann, S. (2025). Deterministic and statistical calibration of constitutive models from full-field data with parametric physics-informed neural networks. Advanced Modeling and Simulation in Engineering Sciences, 12, 12. https://doi.org/10.1186/s40323-025-00285-7 (preprint arXiv:2405.18311, section 6.1: the traction of 106.26 N/mm²)",
+          "bibtex": "@article{anton2025calibration,\n  author = {Anton, David and Tr{\\\"o}ger, Jendrik-Alexander and Wessels, Henning and R{\\\"o}mer, Ulrich and Henkes, Alexander and Hartmann, Stefan},\n  title = {Deterministic and statistical calibration of constitutive models from full-field data with parametric physics-informed neural networks},\n  journal = {Advanced Modeling and Simulation in Engineering Sciences},\n  volume = {12},\n  pages = {12},\n  year = {2025},\n  doi = {10.1186/s40323-025-00285-7}\n}"
+        },
+        {
+          "role": "constants",
+          "authors": "CEN, European Committee for Standardization",
+          "title": "EN 10025-2, Hot rolled products of structural steels, Part 2: Technical delivery conditions for non-alloy structural steels",
+          "year": 2019,
+          "publisher_or_venue": "CEN",
+          "identifier": "EN 10025-2:2019",
+          "url": null,
+          "requested_acknowledgment": null,
+          "citation_text": "EN 10025-2:2019, Hot rolled products of structural steels, Part 2: Technical delivery conditions for non-alloy structural steels. CEN. The least upper yield strength of S235 of nominal thickness up to 16 mm, 235 MPa.",
+          "bibtex": "@techreport{en10025-2,\n  institution = {CEN},\n  title = {{EN 10025-2: Hot rolled products of structural steels, Part 2: Technical delivery conditions for non-alloy structural steels}},\n  year = {2019}\n}"
+        }
+      ],
+      "how_used": "Young's modulus and Poisson's ratio were fitted to the opened band of the measured field (the points 16 mm or more from the hole along the bar); the 1,189 points 4.5 to 12 mm from the hole's centre were held back and opened once, on 2026-10-14, after the protocol was fingerprinted and the solver committed. The comparison is not blind in that ring: before the protocol was fixed, the builder had read in the scout's dossier its local strains of 1.3e-3 to 3.0e-3, 0.5 to 1 mm from the hole's edge, and line P3 is the dossier's own, proposed with those strains in view. The yield strength is EN 10025-2's least value for the grade, not this sheet's.",
+      "not_held_to_a_measurement": false,
+      "cite_also": "paper"
+    },
+    "stress_plate_hole_s235_elastic": {
+      "kind": "solver",
+      "real_thing": "A flat tensile bar of S235 low-carbon steel, 3.05 mm thick, with a hole of radius 4 mm in its parallel length 20.05 mm wide, pulled to 106.26 N/mm² and its surface displacement measured by stereo digital image correlation at the Institute of Applied Mechanics, Clausthal University of Technology, on 2023-11-16",
+      "sources": [
+        {
+          "role": "measurements",
+          "authors": "Tröger, Jendrik-Alexander; Hartmann, Stefan; Anton, David; Wessels, Henning",
+          "title": "Digital image correlation measurement of linear elastic steel specimen",
+          "year": 2024,
+          "publisher_or_venue": "Zenodo, version 1.0",
+          "identifier": "10.5281/zenodo.11257192",
+          "url": "https://doi.org/10.5281/zenodo.11257192",
+          "requested_acknowledgment": "If you use this dataset, please cite it using the metadata from this file.",
+          "citation_text": "Tröger, J.-A., Hartmann, S., Anton, D., & Wessels, H. (2024). Digital image correlation measurement of linear elastic steel specimen (1.0) [Data set]. Zenodo. https://doi.org/10.5281/zenodo.11257192",
+          "bibtex": "@misc{troger2024dic,\n  author = {Tr{\\\"o}ger, Jendrik-Alexander and Hartmann, Stefan and Anton, David and Wessels, Henning},\n  title = {{Digital image correlation measurement of linear elastic steel specimen}},\n  year = {2024},\n  publisher = {Zenodo},\n  version = {1.0},\n  doi = {10.5281/zenodo.11257192},\n  url = {https://doi.org/10.5281/zenodo.11257192},\n  note = {Dataset}\n}"
+        },
+        {
+          "role": "measurements",
+          "authors": "Anton, David; Tröger, Jendrik-Alexander; Wessels, Henning; Römer, Ulrich; Henkes, Alexander; Hartmann, Stefan",
+          "title": "Deterministic and statistical calibration of constitutive models from full-field data with parametric physics-informed neural networks",
+          "year": 2025,
+          "publisher_or_venue": "Advanced Modeling and Simulation in Engineering Sciences 12, 12",
+          "identifier": "10.1186/s40323-025-00285-7",
+          "url": "https://doi.org/10.1186/s40323-025-00285-7",
+          "requested_acknowledgment": null,
+          "citation_text": "Anton, D., Tröger, J.-A., Wessels, H., Römer, U., Henkes, A., & Hartmann, S. (2025). Deterministic and statistical calibration of constitutive models from full-field data with parametric physics-informed neural networks. Advanced Modeling and Simulation in Engineering Sciences, 12, 12. https://doi.org/10.1186/s40323-025-00285-7 (preprint arXiv:2405.18311, section 6.1: the traction of 106.26 N/mm²)",
+          "bibtex": "@article{anton2025calibration,\n  author = {Anton, David and Tr{\\\"o}ger, Jendrik-Alexander and Wessels, Henning and R{\\\"o}mer, Ulrich and Henkes, Alexander and Hartmann, Stefan},\n  title = {Deterministic and statistical calibration of constitutive models from full-field data with parametric physics-informed neural networks},\n  journal = {Advanced Modeling and Simulation in Engineering Sciences},\n  volume = {12},\n  pages = {12},\n  year = {2025},\n  doi = {10.1186/s40323-025-00285-7}\n}"
+        }
+      ],
+      "how_used": "Calibrated to the record, not a blind test: the same measured field as stress_plate_hole_s235's, read with that solver's scored comparison open. Young's modulus and Poisson's ratio are stress_plate_hole_s235's, fitted to the opened band of the measured field (the points 16 mm or more from the hole along the bar) before its held-back ring was scored; nothing is fitted here. Its structure, no yield, was chosen after the ring of 1,189 points 4.5 to 12 mm from the hole's centre had been scored, and it was scored on that ring after the fact by stress_plate_hole_s235's lines; stress_plate_hole_s235, the scored original, compared before this companion was built and not blind in that ring by its own record, is served beside it. The record gives no yield strength of this sheet.",
+      "not_held_to_a_measurement": false,
+      "cite_also": "paper"
+    },
+    "plasma_sheath_ram_c2": {
+      "kind": "solver",
+      "real_thing": "NASA Langley's RAM C-II re-entry probe, flown 22 August 1968: a 15.24 cm hemispherical nose with a beryllium cap on a 9 degree cone, re-entering at 7.65 km/s, and the plasma sheath its microwave reflectometers measured",
+      "sources": [
+        {
+          "role": "measurements",
+          "authors": "Grantham, William L.",
+          "title": "Flight results of a 25 000-foot-per-second reentry experiment using microwave reflectometers to measure plasma electron density and standoff distance",
+          "year": 1970,
+          "publisher_or_venue": "NASA Technical Note D-6062, Langley Research Center",
+          "identifier": "NTRS 19710004000",
+          "url": "https://ntrs.nasa.gov/citations/19710004000",
+          "requested_acknowledgment": null,
+          "citation_text": "Grantham, W. L. (1970). Flight results of a 25 000-foot-per-second reentry experiment using microwave reflectometers to measure plasma electron density and standoff distance. NASA TN D-6062. https://ntrs.nasa.gov/citations/19710004000",
+          "bibtex": "@techreport{grantham1970ramc2,\n  author = {Grantham, William L.},\n  title = {Flight results of a 25 000-foot-per-second reentry experiment using microwave reflectometers to measure plasma electron density and standoff distance},\n  institution = {NASA Langley Research Center},\n  number = {TN D-6062},\n  year = {1970},\n  url = {https://ntrs.nasa.gov/citations/19710004000}\n}"
+        },
+        {
+          "role": "constants",
+          "authors": "Dunn, Michael G.; Kang, Sang-Wook",
+          "title": "Theoretical and experimental studies of reentry plasmas",
+          "year": 1973,
+          "publisher_or_venue": "NASA Contractor Report CR-2232, Cornell Aeronautical Laboratory",
+          "identifier": "NTRS 19730013358",
+          "url": "https://ntrs.nasa.gov/citations/19730013358",
+          "requested_acknowledgment": null,
+          "citation_text": "Dunn, M. G., & Kang, S.-W. (1973). Theoretical and experimental studies of reentry plasmas. NASA CR-2232. https://ntrs.nasa.gov/citations/19730013358",
+          "bibtex": "@techreport{dunn1973reentry,\n  author = {Dunn, Michael G. and Kang, Sang-Wook},\n  title = {Theoretical and experimental studies of reentry plasmas},\n  institution = {Cornell Aeronautical Laboratory for NASA},\n  number = {CR-2232},\n  year = {1973},\n  url = {https://ntrs.nasa.gov/citations/19730013358}\n}"
+        },
+        {
+          "role": "constants",
+          "authors": "McBride, Bonnie J.; Zehe, Michael J.; Gordon, Sanford",
+          "title": "NASA Glenn coefficients for calculating thermodynamic properties of individual species",
+          "year": 2002,
+          "publisher_or_venue": "NASA TP-2002-211556, Glenn Research Center",
+          "identifier": "NTRS 20020085330",
+          "url": "https://ntrs.nasa.gov/citations/20020085330",
+          "requested_acknowledgment": null,
+          "citation_text": "McBride, B. J., Zehe, M. J., & Gordon, S. (2002). NASA Glenn coefficients for calculating thermodynamic properties of individual species. NASA TP-2002-211556. https://ntrs.nasa.gov/citations/20020085330",
+          "bibtex": "@techreport{mcbride2002glenn,\n  author = {McBride, Bonnie J. and Zehe, Michael J. and Gordon, Sanford},\n  title = {{NASA} {Glenn} coefficients for calculating thermodynamic properties of individual species},\n  institution = {NASA Glenn Research Center},\n  number = {TP-2002-211556},\n  year = {2002},\n  url = {https://ntrs.nasa.gov/citations/20020085330}\n}"
+        },
+        {
+          "role": "constants",
+          "authors": "NASA, U.S. Air Force, U.S. Weather Bureau",
+          "title": "U.S. Standard Atmosphere, 1962",
+          "year": 1962,
+          "publisher_or_venue": "U.S. Government Printing Office",
+          "identifier": "NTRS 19630003300",
+          "url": "https://ntrs.nasa.gov/citations/19630003300",
+          "requested_acknowledgment": null,
+          "citation_text": "NASA, U.S. Air Force, & U.S. Weather Bureau (1962). U.S. Standard Atmosphere, 1962. https://ntrs.nasa.gov/citations/19630003300",
+          "bibtex": "@book{usstandard1962,\n  author = {{NASA} and {U.S. Air Force} and {U.S. Weather Bureau}},\n  title = {{U.S.} Standard Atmosphere, 1962},\n  publisher = {U.S. Government Printing Office},\n  year = {1962},\n  url = {https://ntrs.nasa.gov/citations/19630003300}\n}"
+        },
+        {
+          "role": "reference calculation",
+          "authors": "Huber, Paul W.",
+          "title": "Hypersonic shock-heated flow parameters for velocities to 46,000 feet per second and altitudes to 323,000 feet",
+          "year": 1963,
+          "publisher_or_venue": "NASA Technical Report R-163, Langley Research Center",
+          "identifier": "NTRS 19640014678",
+          "url": "https://ntrs.nasa.gov/citations/19640014678",
+          "requested_acknowledgment": null,
+          "citation_text": "Huber, P. W. (1963). Hypersonic shock-heated flow parameters for velocities to 46,000 feet per second and altitudes to 323,000 feet. NASA TR R-163. https://ntrs.nasa.gov/citations/19640014678",
+          "bibtex": "@techreport{huber1963shock,\n  author = {Huber, Paul W.},\n  title = {Hypersonic shock-heated flow parameters for velocities to 46,000 feet per second and altitudes to 323,000 feet},\n  institution = {NASA Langley Research Center},\n  number = {TR R-163},\n  year = {1963},\n  url = {https://ntrs.nasa.gov/citations/19640014678}\n}"
+        }
+      ],
+      "how_used": "The vehicle, its reflectometer stations and bands, the trajectory, and the held-back onset altitudes from Grantham (TN D-6062 Tables I, III, IX, X); the 26 reactions from Dunn and Kang's Table I; the eleven species' thermodynamics from the NASA Glenn coefficients; the air from the 1962 standard. Nothing is fitted. Huber's equilibrium shock tables are a reference calculation the solver is held to in a test.",
+      "not_held_to_a_measurement": false,
+      "cite_also": "paper"
+    },
+    "culture_trichoderma_atp": {
+      "kind": "solver",
+      "real_thing": "Fed-batch cultures of the marine fungus Trichoderma sp. VTT D-221704 making mucic acid in Sartorius ambr 250 vessels at VTT, Finland, at pH 4.0, 3.5 and 3.0",
+      "sources": [
+        {
+          "role": "measurements",
+          "authors": "Tamminen, Anu; Turunen, Rosalina; Barth, Dorothee; Vidgren, Virve; Wiebe, Marilyn G.",
+          "title": "Data for growth of marine Trichoderma sp. T2 in ambr250 to produce mucic acid",
+          "year": 2022,
+          "publisher_or_venue": "Zenodo",
+          "identifier": "10.5281/zenodo.5846028",
+          "url": "https://doi.org/10.5281/zenodo.5846028",
+          "requested_acknowledgment": null,
+          "citation_text": "Tamminen, A., Turunen, R., Barth, D., Vidgren, V. and Wiebe, M. G. (2022). Data for growth of marine Trichoderma sp. T2 in ambr250 to produce mucic acid. Zenodo. https://doi.org/10.5281/zenodo.5846028",
+          "bibtex": "@misc{tamminen2022ambrdata,\n  author = {Tamminen, Anu and Turunen, Rosalina and Barth, Dorothee and Vidgren, Virve and Wiebe, Marilyn G.},\n  title = {Data for growth of marine {Trichoderma} sp. {T2} in ambr250 to produce mucic acid},\n  year = {2022},\n  publisher = {Zenodo},\n  doi = {10.5281/zenodo.5846028},\n  url = {https://doi.org/10.5281/zenodo.5846028}\n}"
+        },
+        {
+          "role": "measurements",
+          "authors": "Tamminen, Anu; Turunen, Rosaliina; Barth, Dorothee; Vidgren, Virve; Wiebe, Marilyn G.",
+          "title": "Use of ambr®250 to assess mucic acid production in fed-batch cultures of a marine Trichoderma sp. D-221704",
+          "year": 2022,
+          "publisher_or_venue": "AMB Express 12, 90",
+          "identifier": "10.1186/s13568-022-01436-4",
+          "url": "https://doi.org/10.1186/s13568-022-01436-4",
+          "requested_acknowledgment": null,
+          "citation_text": "Tamminen, A., Turunen, R., Barth, D., Vidgren, V. and Wiebe, M. G. (2022). Use of ambr®250 to assess mucic acid production in fed-batch cultures of a marine Trichoderma sp. D-221704. AMB Express, 12, 90. https://doi.org/10.1186/s13568-022-01436-4",
+          "bibtex": "@article{tamminen2022ambr,\n  author = {Tamminen, Anu and Turunen, Rosaliina and Barth, Dorothee and Vidgren, Virve and Wiebe, Marilyn G.},\n  title = {Use of ambr\\textregistered{}250 to assess mucic acid production in fed-batch cultures of a marine {Trichoderma} sp. {D-221704}},\n  journal = {AMB Express},\n  volume = {12},\n  number = {1},\n  pages = {90},\n  year = {2022},\n  doi = {10.1186/s13568-022-01436-4}\n}"
+        }
+      ],
+      "how_used": "Daily samples (dry biomass, glucose, galacturonate, mucic acid), off-gas every five minutes and the pumped feeds; fitted on the twelve cultures at pH 4.0, fed about 10 to 52 g/L glucose with 0 to 2 g/L yeast extract; the four cultures at pH 3.5 and 3.0 held back whole and scored once.",
+      "not_held_to_a_measurement": false,
+      "cite_also": "paper"
+    },
     "pipe_flow_superpipe": {
       "kind": "solver",
       "real_thing": "The Princeton Superpipe of A. J. Smits' group, Princeton University: a compressed-air pipe-flow facility with a smooth test section of 129.36 mm bore",
@@ -2832,6 +3495,312 @@
         }
       ],
       "how_used": "Nothing is fitted to a constant; the twelve Zagarola-Smits Pitot profiles below Reynolds number 1e6 were opened and used to choose the outer shape of the mixing length; the 25 McKeon profiles and the nine smooth-pipe NSTAP profiles of Hultmark and others were held back until the protocol was fingerprinted; the 14 Zagarola-Smits profiles above 1e6 are reported and not gated.",
+      "not_held_to_a_measurement": false,
+      "cite_also": "paper"
+    },
+    "junction_nist_b7_s2": {
+      "kind": "solver",
+      "real_thing": "Josephson junction D220831b-B7_S2_1.5 of NIST Boulder: niobium electrodes, an amorphous-silicon barrier, nominal diameter 1.5 um, measured at 4 K",
+      "sources": [
+        {
+          "role": "measurements",
+          "authors": "Hopkins, Pete",
+          "title": "Nb/a-Si/Nb Josephson junctions for high-density superconducting circuits",
+          "year": 2023,
+          "publisher_or_venue": "National Institute of Standards and Technology, NIST Public Data Repository",
+          "identifier": "10.18434/mds2-2921",
+          "url": "https://doi.org/10.18434/mds2-2921",
+          "requested_acknowledgment": "This data/work was created by employees of the National Institute of Standards and Technology (NIST), an agency of the Federal Government. Pursuant to title 17 United States Code Section 105, works of NIST employees are not subject to copyright protection in the United States. This data/work may be subject to foreign copyright.",
+          "citation_text": "Hopkins, P. (2023). Nb/a-Si/Nb Josephson junctions for high-density superconducting circuits [Data set]. National Institute of Standards and Technology. https://doi.org/10.18434/mds2-2921",
+          "bibtex": "@misc{hopkins2023nbasinb,\n  author = {Hopkins, Pete},\n  title = {Nb/a-Si/Nb Josephson junctions for high-density superconducting circuits},\n  year = {2023},\n  howpublished = {NIST Public Data Repository},\n  publisher = {National Institute of Standards and Technology},\n  doi = {10.18434/mds2-2921}\n}"
+        },
+        {
+          "role": "measurements",
+          "authors": "Olaya, David; Biesecker, John; Castellanos-Beltran, Manuel A.; Sirois, Adam J.; Hopkins, Peter F.; Dresselhaus, Paul D.; Benz, Samuel P.",
+          "title": "Nb/a-Si/Nb Josephson junctions for high-density superconducting circuits",
+          "year": 2023,
+          "publisher_or_venue": "Applied Physics Letters 122, 182601",
+          "identifier": "10.1063/5.0148250",
+          "url": "https://doi.org/10.1063/5.0148250",
+          "requested_acknowledgment": null,
+          "citation_text": "Olaya, D., Biesecker, J., Castellanos-Beltran, M. A., Sirois, A. J., Hopkins, P. F., Dresselhaus, P. D., & Benz, S. P. (2023). Nb/a-Si/Nb Josephson junctions for high-density superconducting circuits. Applied Physics Letters, 122, 182601. https://doi.org/10.1063/5.0148250",
+          "bibtex": "@article{olaya2023nbasinb,\n  author = {Olaya, David and Biesecker, John and Castellanos-Beltran, Manuel A. and Sirois, Adam J. and Hopkins, Peter F. and Dresselhaus, Paul D. and Benz, Samuel P.},\n  title = {Nb/a-Si/Nb Josephson junctions for high-density superconducting circuits},\n  journal = {Applied Physics Letters},\n  volume = {122},\n  pages = {182601},\n  year = {2023},\n  doi = {10.1063/5.0148250}\n}"
+        }
+      ],
+      "how_used": "The critical current is the one the dataset states; the dissipative table is the junction's own field-suppressed curve; the capacitance is fitted to two bias currents of the zero-field curve, its return bracket; every other voltage of the zero-field curve was held back and compared once. The paper was not obtained; only its abstract was read.",
+      "not_held_to_a_measurement": false,
+      "cite_also": "paper"
+    },
+    "water_hammer_oil_line": {
+      "kind": "solver",
+      "real_thing": "A 4.0 m steel hydraulic line of mineral oil, 12 x 1.5 mm tube, between a held supply and a valve that closes: the company's own specimen",
+      "sources": [
+        {
+          "role": "measurements",
+          "authors": "Lewandowski, Mariusz; Adamkowski, Adam",
+          "title": "Experimental Verification of 1D-Simulation Method of Water Hammer Induced in Two Series-Connected Pipes of Different Diameters: Determination of the Pressure Wave Speed",
+          "year": 2024,
+          "publisher_or_venue": "Applied Sciences 14(16), 7173",
+          "identifier": "10.3390/app14167173",
+          "url": "https://doi.org/10.3390/app14167173",
+          "requested_acknowledgment": null,
+          "citation_text": "Lewandowski, M., & Adamkowski, A. (2024). Experimental Verification of 1D-Simulation Method of Water Hammer Induced in Two Series-Connected Pipes of Different Diameters: Determination of the Pressure Wave Speed. Applied Sciences, 14(16), 7173. https://doi.org/10.3390/app14167173",
+          "bibtex": "@article{lewandowski2024waterhammer,\n  author = {Lewandowski, Mariusz and Adamkowski, Adam},\n  title = {Experimental Verification of 1D-Simulation Method of Water Hammer Induced in Two Series-Connected Pipes of Different Diameters: Determination of the Pressure Wave Speed},\n  journal = {Applied Sciences},\n  volume = {14},\n  number = {16},\n  pages = {7173},\n  year = {2024},\n  doi = {10.3390/app14167173}\n}"
+        },
+        {
+          "role": "measurements",
+          "authors": "Klein, Sebastian; Traudt, Tobias; Deeken, Jan",
+          "title": "Liquid Nitrogen Fluid Hammer: PS-LN2-Set1",
+          "year": 2025,
+          "publisher_or_venue": "Zenodo, DLR Institute of Space Propulsion, version 1.0.0",
+          "identifier": "10.5281/zenodo.15526459",
+          "url": "https://doi.org/10.5281/zenodo.15526459",
+          "requested_acknowledgment": null,
+          "citation_text": "Klein, S., Traudt, T., & Deeken, J. (2025). Liquid Nitrogen Fluid Hammer: PS-LN2-Set1 (Version 1.0.0) [Data set]. Zenodo. https://doi.org/10.5281/zenodo.15526459",
+          "bibtex": "@misc{klein2025ln2hammer,\n  author = {Klein, Sebastian and Traudt, Tobias and Deeken, Jan},\n  title = {Liquid Nitrogen Fluid Hammer: PS-LN2-Set1},\n  year = {2025},\n  publisher = {Zenodo},\n  version = {1.0.0},\n  doi = {10.5281/zenodo.15526459}\n}"
+        },
+        {
+          "role": "constants",
+          "authors": "Span, Roland; Lemmon, Eric W.; Jacobsen, Richard T.; Wagner, Wolfgang; Yokozeki, Akimichi",
+          "title": "A Reference Equation of State for the Thermodynamic Properties of Nitrogen for Temperatures from 63.151 to 1000 K and Pressures to 2200 MPa",
+          "year": 2000,
+          "publisher_or_venue": "Journal of Physical and Chemical Reference Data 29(6), 1361-1433, as served by the NIST Chemistry WebBook",
+          "identifier": "10.1063/1.1349047",
+          "url": "https://doi.org/10.1063/1.1349047",
+          "requested_acknowledgment": null,
+          "citation_text": "Span, R., Lemmon, E. W., Jacobsen, R. T., Wagner, W., & Yokozeki, A. (2000). A Reference Equation of State for the Thermodynamic Properties of Nitrogen for Temperatures from 63.151 to 1000 K and Pressures to 2200 MPa. Journal of Physical and Chemical Reference Data, 29(6), 1361-1433. https://doi.org/10.1063/1.1349047",
+          "bibtex": "@article{span2000nitrogen,\n  author = {Span, Roland and Lemmon, Eric W. and Jacobsen, Richard T. and Wagner, Wolfgang and Yokozeki, Akimichi},\n  title = {A Reference Equation of State for the Thermodynamic Properties of Nitrogen for Temperatures from 63.151 to 1000 K and Pressures to 2200 MPa},\n  journal = {Journal of Physical and Chemical Reference Data},\n  volume = {29},\n  number = {6},\n  pages = {1361--1433},\n  year = {2000},\n  doi = {10.1063/1.1349047}\n}"
+        },
+        {
+          "role": "method",
+          "authors": "Churchill, Stuart W.",
+          "title": "Friction-factor equation spans all fluid-flow regimes",
+          "year": 1977,
+          "publisher_or_venue": "Chemical Engineering 84(24), 91-92",
+          "identifier": null,
+          "url": null,
+          "requested_acknowledgment": null,
+          "citation_text": "Churchill, S. W. (1977). Friction-factor equation spans all fluid-flow regimes. Chemical Engineering, 84(24), 91-92.",
+          "bibtex": "@article{churchill1977friction,\n  author = {Churchill, Stuart W.},\n  title = {Friction-factor equation spans all fluid-flow regimes},\n  journal = {Chemical Engineering},\n  volume = {84},\n  number = {24},\n  pages = {91--92},\n  year = {1977}\n}"
+        }
+      ],
+      "how_used": "The line's constants are the specimen's declared values. Its method and wave-speed law were run on two measured lines with those lines' own constants: the copper water rig of Lewandowski and Adamkowski (wave speeds and free-oscillation periods of four runs) and the liquid-nitrogen line of Klein, Traudt and Deeken (first surges of nine tests, front speeds of three), with nitrogen's properties from the equation of state of Span and others. Churchill's friction factor is used as published.",
+      "not_held_to_a_measurement": true,
+      "cite_also": "paper"
+    },
+    "orifice_air_chamber": {
+      "kind": "solver",
+      "real_thing": "A rigid 100 cm^3 chamber of air charged or vented through a pneumatic valve of sonic conductance 1.0e-8 m^3/(s Pa) and critical pressure ratio 0.30: the company's own specimen",
+      "sources": [
+        {
+          "role": "method",
+          "authors": "ISO/TC 131/SC 5",
+          "title": "Pneumatic fluid power: Determination of flow-rate characteristics of components using compressible fluids, Part 1: General rules and test methods for steady-state flow (ISO 6358-1:2013)",
+          "year": 2013,
+          "publisher_or_venue": "International Organization for Standardization, Geneva",
+          "identifier": null,
+          "url": "https://www.iso.org/standard/56612.html",
+          "requested_acknowledgment": null,
+          "citation_text": "ISO 6358-1:2013. Pneumatic fluid power: Determination of flow-rate characteristics of components using compressible fluids, Part 1: General rules and test methods for steady-state flow. International Organization for Standardization.",
+          "bibtex": "@techreport{iso6358_1_2013,\n  institution = {International Organization for Standardization},\n  title = {Pneumatic fluid power -- Determination of flow-rate characteristics of components using compressible fluids -- Part 1: General rules and test methods for steady-state flow},\n  number = {ISO 6358-1:2013},\n  year = {2013}\n}"
+        },
+        {
+          "role": "measurements",
+          "authors": "Varga, Zdenek; Keski-Honkola, Petri",
+          "title": "Determination of flow rate characteristics for pneumatic valves",
+          "year": 2012,
+          "publisher_or_venue": "EPJ Web of Conferences 25, 01096",
+          "identifier": "10.1051/epjconf/20122501096",
+          "url": "https://doi.org/10.1051/epjconf/20122501096",
+          "requested_acknowledgment": null,
+          "citation_text": "Varga, Z., & Keski-Honkola, P. (2012). Determination of flow rate characteristics for pneumatic valves. EPJ Web of Conferences, 25, 01096. https://doi.org/10.1051/epjconf/20122501096",
+          "bibtex": "@article{varga2012pneumatic,\n  author = {Varga, Zden{\\v{e}}k and Keski-Honkola, Petri},\n  title = {Determination of flow rate characteristics for pneumatic valves},\n  journal = {EPJ Web of Conferences},\n  volume = {25},\n  pages = {01096},\n  year = {2012},\n  doi = {10.1051/epjconf/20122501096}\n}"
+        }
+      ],
+      "how_used": "The valve's flow is the form of ISO 6358-1:2013 with the specimen's declared constants. Varga and Keski-Honkola's measured constants of two proportional regulators, which move with the supply pressure, are stated as a limit of that form.",
+      "not_held_to_a_measurement": true,
+      "cite_also": "paper"
+    },
+    "pneumatic_hose_resonance": {
+      "kind": "solver",
+      "real_thing": "A 2.0 m polyamide 12 hose, 6 x 4 mm, feeding a closed 20 cm^3 volume of air: the company's own specimen",
+      "sources": [
+        {
+          "role": "method",
+          "authors": "Nichols, N. B.",
+          "title": "The linear properties of pneumatic transmission lines",
+          "year": 1962,
+          "publisher_or_venue": "ISA Transactions 1(1), 5-14",
+          "identifier": null,
+          "url": null,
+          "requested_acknowledgment": null,
+          "citation_text": "Nichols, N. B. (1962). The linear properties of pneumatic transmission lines. ISA Transactions, 1(1), 5-14.",
+          "bibtex": "@article{nichols1962pneumatic,\n  author = {Nichols, N. B.},\n  title = {The linear properties of pneumatic transmission lines},\n  journal = {ISA Transactions},\n  volume = {1},\n  number = {1},\n  pages = {5--14},\n  year = {1962}\n}"
+        },
+        {
+          "role": "reference calculation",
+          "authors": "Kirchhoff, Gustav",
+          "title": "Ueber den Einfluss der Wärmeleitung in einem Gase auf die Schallbewegung",
+          "year": 1868,
+          "publisher_or_venue": "Annalen der Physik 210(6), 177-193",
+          "identifier": "10.1002/andp.18682100602",
+          "url": "https://doi.org/10.1002/andp.18682100602",
+          "requested_acknowledgment": null,
+          "citation_text": "Kirchhoff, G. (1868). Ueber den Einfluss der Wärmeleitung in einem Gase auf die Schallbewegung. Annalen der Physik, 210(6), 177-193. https://doi.org/10.1002/andp.18682100602",
+          "bibtex": "@article{kirchhoff1868schall,\n  author = {Kirchhoff, Gustav},\n  title = {Ueber den Einfluss der W{\\\"a}rmeleitung in einem Gase auf die Schallbewegung},\n  journal = {Annalen der Physik},\n  volume = {210},\n  number = {6},\n  pages = {177--193},\n  year = {1868},\n  doi = {10.1002/andp.18682100602}\n}"
+        }
+      ],
+      "how_used": "The line is Nichols' dissipative laminar model with the specimen's declared constants. Kirchhoff's closed form for the attenuation of sound in a wide tube is a test the model is held to.",
+      "not_held_to_a_measurement": true,
+      "cite_also": "paper"
+    },
+    "icf_hotspot_burn": {
+      "kind": "solver",
+      "real_thing": "The stagnated deuterium-tritium hot spots of the indirect-drive implosions of the National Ignition Facility (Lawrence Livermore National Laboratory), from the burning-plasma shots of 2020 and 2021 to the first target gain above one, N221204",
+      "sources": [
+        {
+          "role": "measurements",
+          "authors": "H. Abu-Shawareb et al. (Indirect Drive ICF Collaboration)",
+          "title": "Achievement of target gain larger than unity in an inertial fusion experiment",
+          "year": 2024,
+          "publisher_or_venue": "Physical Review Letters 132, 065102",
+          "identifier": "10.1103/PhysRevLett.132.065102",
+          "url": "https://doi.org/10.1103/PhysRevLett.132.065102",
+          "requested_acknowledgment": null,
+          "citation_text": "H. Abu-Shawareb et al. (Indirect Drive ICF Collaboration), Achievement of target gain larger than unity in an inertial fusion experiment, Phys. Rev. Lett. 132, 065102 (2024). https://doi.org/10.1103/PhysRevLett.132.065102",
+          "bibtex": "@article{abushawareb2024gain,\n  author = {Abu-Shawareb, H. and others},\n  collaboration = {Indirect Drive ICF Collaboration},\n  title = {Achievement of target gain larger than unity in an inertial fusion experiment},\n  journal = {Physical Review Letters},\n  volume = {132},\n  pages = {065102},\n  year = {2024},\n  doi = {10.1103/PhysRevLett.132.065102}\n}"
+        },
+        {
+          "role": "measurements",
+          "authors": "A. B. Zylstra, O. A. Hurricane, D. A. Callahan, A. L. Kritcher, J. E. Ralph, H. F. Robey, J. S. Ross, C. V. Young et al.",
+          "title": "Burning plasma achieved in inertial fusion",
+          "year": 2022,
+          "publisher_or_venue": "Nature 601, 542-548",
+          "identifier": "10.1038/s41586-021-04281-w",
+          "url": "https://doi.org/10.1038/s41586-021-04281-w",
+          "requested_acknowledgment": null,
+          "citation_text": "A. B. Zylstra et al., Burning plasma achieved in inertial fusion, Nature 601, 542-548 (2022). https://doi.org/10.1038/s41586-021-04281-w",
+          "bibtex": "@article{zylstra2022burning,\n  author = {Zylstra, A. B. and Hurricane, O. A. and Callahan, D. A. and others},\n  title = {Burning plasma achieved in inertial fusion},\n  journal = {Nature},\n  volume = {601},\n  pages = {542--548},\n  year = {2022},\n  doi = {10.1038/s41586-021-04281-w}\n}"
+        },
+        {
+          "role": "measurements",
+          "authors": "A. Pak, A. B. Zylstra et al.",
+          "title": "Observations and properties of the first laboratory fusion experiment to exceed a target gain of unity",
+          "year": 2024,
+          "publisher_or_venue": "Physical Review E 109, 025203",
+          "identifier": "10.1103/PhysRevE.109.025203",
+          "url": "https://doi.org/10.1103/PhysRevE.109.025203",
+          "requested_acknowledgment": null,
+          "citation_text": "A. Pak, A. B. Zylstra et al., Observations and properties of the first laboratory fusion experiment to exceed a target gain of unity, Phys. Rev. E 109, 025203 (2024). https://doi.org/10.1103/PhysRevE.109.025203",
+          "bibtex": "@article{pak2024observations,\n  author = {Pak, A. and Zylstra, A. B. and others},\n  title = {Observations and properties of the first laboratory fusion experiment to exceed a target gain of unity},\n  journal = {Physical Review E},\n  volume = {109},\n  pages = {025203},\n  year = {2024},\n  doi = {10.1103/PhysRevE.109.025203}\n}"
+        },
+        {
+          "role": "method",
+          "authors": "R. Betti, K. Anderson, V. N. Goncharov, R. L. McCrory, D. D. Meyerhofer, S. Skupsky, R. P. J. Town",
+          "title": "Deceleration phase of inertial confinement fusion implosions",
+          "year": 2002,
+          "publisher_or_venue": "Physics of Plasmas 9, 2277",
+          "identifier": "10.1063/1.1459458",
+          "url": "https://doi.org/10.1063/1.1459458",
+          "requested_acknowledgment": null,
+          "citation_text": "R. Betti et al., Deceleration phase of inertial confinement fusion implosions, Phys. Plasmas 9, 2277 (2002). https://doi.org/10.1063/1.1459458",
+          "bibtex": "@article{betti2002deceleration,\n  author = {Betti, R. and Anderson, K. and Goncharov, V. N. and McCrory, R. L. and Meyerhofer, D. D. and Skupsky, S. and Town, R. P. J.},\n  title = {Deceleration phase of inertial confinement fusion implosions},\n  journal = {Physics of Plasmas},\n  volume = {9},\n  pages = {2277},\n  year = {2002},\n  doi = {10.1063/1.1459458}\n}"
+        },
+        {
+          "role": "method",
+          "authors": "R. Betti, A. R. Christopherson, B. K. Spears, R. Nora, A. Bose, J. Howard, K. M. Woo, M. J. Edwards, J. Sanz",
+          "title": "Alpha heating and burning plasmas in inertial confinement fusion",
+          "year": 2015,
+          "publisher_or_venue": "Physical Review Letters 114, 255003",
+          "identifier": "10.1103/PhysRevLett.114.255003",
+          "url": "https://doi.org/10.1103/PhysRevLett.114.255003",
+          "requested_acknowledgment": null,
+          "citation_text": "R. Betti et al., Alpha heating and burning plasmas in inertial confinement fusion, Phys. Rev. Lett. 114, 255003 (2015). https://doi.org/10.1103/PhysRevLett.114.255003",
+          "bibtex": "@article{betti2015alpha,\n  author = {Betti, R. and Christopherson, A. R. and Spears, B. K. and others},\n  title = {Alpha heating and burning plasmas in inertial confinement fusion},\n  journal = {Physical Review Letters},\n  volume = {114},\n  pages = {255003},\n  year = {2015},\n  doi = {10.1103/PhysRevLett.114.255003}\n}"
+        }
+      ],
+      "how_used": "The published neutron-averaged hot-spot temperature (from the DD neutrons), pressure, neutron-image volume, down-scatter ratio and fuel mass of seven shots made the solver's stagnation questions; the measured yield, burn width and burn-up, and the inferred yield amplification, are what it was compared with, under pass marks fixed before it was run on them. Nothing is fitted. Bosch-Hale D-T reactivity; Krokhin-Rozanov alpha deposition with NRL Formulary slowing-down rates; Braginskii conductivity and the ablation of Betti et al. (2002); Svensson bremsstrahlung with free-free absorption; the Lawson parameter of Betti et al. (2015).",
+      "not_held_to_a_measurement": false,
+      "cite_also": "paper"
+    },
+    "ln2_line_dlr_fttf": {
+      "kind": "solver",
+      "real_thing": "The liquid-nitrogen line of DLR's Fluid Transient Test Facility, Lampoldshausen: 9.29 m of stainless steel 1.4541 tube, 19 x 1.5 mm, closed by a fast valve",
+      "sources": [
+        {
+          "role": "measurements",
+          "authors": "Klein, Sebastian; Traudt, Tobias; Deeken, Jan",
+          "title": "Liquid Nitrogen Fluid Hammer: PS-LN2-Set1",
+          "year": 2025,
+          "publisher_or_venue": "Zenodo, DLR Institute of Space Propulsion, version 1.0.0",
+          "identifier": "10.5281/zenodo.15526459",
+          "url": "https://doi.org/10.5281/zenodo.15526459",
+          "requested_acknowledgment": null,
+          "citation_text": "Klein, S., Traudt, T., & Deeken, J. (2025). Liquid Nitrogen Fluid Hammer: PS-LN2-Set1 (Version 1.0.0) [Data set]. Zenodo. https://doi.org/10.5281/zenodo.15526459",
+          "bibtex": "@misc{klein2025ln2hammer,\n  author = {Klein, Sebastian and Traudt, Tobias and Deeken, Jan},\n  title = {Liquid Nitrogen Fluid Hammer: PS-LN2-Set1},\n  year = {2025},\n  publisher = {Zenodo},\n  version = {1.0.0},\n  doi = {10.5281/zenodo.15526459}\n}"
+        },
+        {
+          "role": "constants",
+          "authors": "Span, Roland; Lemmon, Eric W.; Jacobsen, Richard T.; Wagner, Wolfgang; Yokozeki, Akimichi",
+          "title": "A Reference Equation of State for the Thermodynamic Properties of Nitrogen for Temperatures from 63.151 to 1000 K and Pressures to 2200 MPa",
+          "year": 2000,
+          "publisher_or_venue": "Journal of Physical and Chemical Reference Data 29(6), 1361-1433, as served by the NIST Chemistry WebBook",
+          "identifier": "10.1063/1.1349047",
+          "url": "https://doi.org/10.1063/1.1349047",
+          "requested_acknowledgment": null,
+          "citation_text": "Span, R., Lemmon, E. W., Jacobsen, R. T., Wagner, W., & Yokozeki, A. (2000). A Reference Equation of State for the Thermodynamic Properties of Nitrogen for Temperatures from 63.151 to 1000 K and Pressures to 2200 MPa. Journal of Physical and Chemical Reference Data, 29(6), 1361-1433. https://doi.org/10.1063/1.1349047",
+          "bibtex": "@article{span2000nitrogen,\n  author = {Span, Roland and Lemmon, Eric W. and Jacobsen, Richard T. and Wagner, Wolfgang and Yokozeki, Akimichi},\n  title = {A Reference Equation of State for the Thermodynamic Properties of Nitrogen for Temperatures from 63.151 to 1000 K and Pressures to 2200 MPa},\n  journal = {Journal of Physical and Chemical Reference Data},\n  volume = {29},\n  number = {6},\n  pages = {1361--1433},\n  year = {2000},\n  doi = {10.1063/1.1349047}\n}"
+        },
+        {
+          "role": "constants",
+          "authors": "Lemmon, Eric W.; Jacobsen, Richard T.",
+          "title": "Viscosity and Thermal Conductivity Equations for Nitrogen, Oxygen, Argon, and Air",
+          "year": 2004,
+          "publisher_or_venue": "International Journal of Thermophysics 25(1), 21-69, as served by the NIST Chemistry WebBook",
+          "identifier": "10.1023/B:IJOT.0000022327.04529.f3",
+          "url": "https://doi.org/10.1023/B:IJOT.0000022327.04529.f3",
+          "requested_acknowledgment": null,
+          "citation_text": "Lemmon, E. W., & Jacobsen, R. T. (2004). Viscosity and Thermal Conductivity Equations for Nitrogen, Oxygen, Argon, and Air. International Journal of Thermophysics, 25(1), 21-69. https://doi.org/10.1023/B:IJOT.0000022327.04529.f3",
+          "bibtex": "@article{lemmon2004viscosity,\n  author = {Lemmon, Eric W. and Jacobsen, Richard T.},\n  title = {Viscosity and Thermal Conductivity Equations for Nitrogen, Oxygen, Argon, and Air},\n  journal = {International Journal of Thermophysics},\n  volume = {25},\n  number = {1},\n  pages = {21--69},\n  year = {2004},\n  doi = {10.1023/B:IJOT.0000022327.04529.f3}\n}"
+        },
+        {
+          "role": "constants",
+          "authors": "Lemmon, Eric W.; McLinden, Mark O.; Friend, Daniel G.",
+          "title": "Thermophysical Properties of Fluid Systems, in NIST Chemistry WebBook, NIST Standard Reference Database Number 69",
+          "year": 2026,
+          "publisher_or_venue": "National Institute of Standards and Technology, Gaithersburg MD (retrieved 2026-10-14)",
+          "identifier": "10.18434/T4D303",
+          "url": "https://webbook.nist.gov/chemistry/fluid/",
+          "requested_acknowledgment": null,
+          "citation_text": "Lemmon, E. W., McLinden, M. O., & Friend, D. G. Thermophysical Properties of Fluid Systems. In P. J. Linstrom & W. G. Mallard (Eds.), NIST Chemistry WebBook, NIST Standard Reference Database Number 69. National Institute of Standards and Technology. https://doi.org/10.18434/T4D303 (retrieved 2026-10-14).",
+          "bibtex": "@incollection{nistwebbook_fluid,\n  author = {Lemmon, Eric W. and McLinden, Mark O. and Friend, Daniel G.},\n  title = {Thermophysical Properties of Fluid Systems},\n  booktitle = {NIST Chemistry WebBook, NIST Standard Reference Database Number 69},\n  editor = {Linstrom, P. J. and Mallard, W. G.},\n  publisher = {National Institute of Standards and Technology},\n  doi = {10.18434/T4D303},\n  note = {Retrieved 2026-10-14}\n}"
+        },
+        {
+          "role": "constants",
+          "authors": "National Institute of Standards and Technology, Cryogenics Technologies Group",
+          "title": "Material Properties: 304 Stainless (UNS S30400), Young's modulus",
+          "year": 2026,
+          "publisher_or_venue": "NIST Cryogenic Material Properties Database (retrieved 2026-10-14)",
+          "identifier": null,
+          "url": "https://trc.nist.gov/cryogenics/materials/304Stainless/304Stainless_rev.htm",
+          "requested_acknowledgment": null,
+          "citation_text": "National Institute of Standards and Technology. Material Properties: 304 Stainless (UNS S30400). NIST Cryogenic Material Properties Database. https://trc.nist.gov/cryogenics/materials/304Stainless/304Stainless_rev.htm (retrieved 2026-10-14).",
+          "bibtex": "@misc{nist_cryogenic_304,\n  author = {{National Institute of Standards and Technology}},\n  title = {Material Properties: 304 Stainless (UNS S30400)},\n  howpublished = {NIST Cryogenic Material Properties Database},\n  url = {https://trc.nist.gov/cryogenics/materials/304Stainless/304Stainless_rev.htm},\n  note = {Retrieved 2026-10-14}\n}"
+        },
+        {
+          "role": "method",
+          "authors": "Churchill, Stuart W.",
+          "title": "Friction-factor equation spans all fluid-flow regimes",
+          "year": 1977,
+          "publisher_or_venue": "Chemical Engineering 84(24), 91-92",
+          "identifier": null,
+          "url": null,
+          "requested_acknowledgment": null,
+          "citation_text": "Churchill, S. W. (1977). Friction-factor equation spans all fluid-flow regimes. Chemical Engineering, 84(24), 91-92.",
+          "bibtex": "@article{churchill1977friction,\n  author = {Churchill, Stuart W.},\n  title = {Friction-factor equation spans all fluid-flow regimes},\n  journal = {Chemical Engineering},\n  volume = {84},\n  number = {24},\n  pages = {91--92},\n  year = {1977}\n}"
+        }
+      ],
+      "how_used": "The line's geometry, stations, steady conditions and records are Klein, Traudt and Deeken's. Liquid nitrogen's density, speed of sound, viscosity and vapour pressure come from the NIST Chemistry WebBook, which evaluates the equation of state of Span and others and the viscosity of Lemmon and Jacobsen; the steel's Young's modulus at the liquid's temperature from NIST's cryogenic fit for 304 stainless; Churchill's friction factor as published. Three of the nine tests' traces fixed the roughness and the valve's seat and series ratio; the other six were held back and scored once against marks committed before they were opened, in the engine's own record and not in the public pass-marks repository.",
       "not_held_to_a_measurement": false,
       "cite_also": "paper"
     }

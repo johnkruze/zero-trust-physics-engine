@@ -4,7 +4,7 @@ use genesis_kernel::frame::LastStateFrame64;
 use genesis_kernel::{
     battery_sag, cable_stretch, cantilever_eth, capsule_stardust, cell_18650pf, cell_2170_m80,
     cell_2170_model3, generator_mmrtg_f1, grid_node, hydraulic_fluid, reactor_spert3,
-    reactor_spert3_fuel, reactor_spert3_ccore, reactor_triga_jsi, resonance, satellite_lageos1, swing, tesseract, thermal, ti64_lattice,
+    reactor_spert3_fuel, reactor_spert3_ccore, reactor_triga_jsi, runaway_18650_lco, resonance, satellite_lageos1, swing, tesseract, thermal, ti64_lattice,
     creep_cmsx6,
     capsule_insight,
     crater_ryugu_sci,
@@ -15,6 +15,7 @@ use genesis_kernel::{
     accumulator_sbo450,
     los_jwst_fine_guide,
     tokamak_jet_dte1,
+    tokamak_vde_mast,
     fingerpad_p02_glass,
 };
 use serde_json::Value;
@@ -25,10 +26,11 @@ use crate::{
     GeneratorCall, GridCall, GridGbCall,
     CreepCall,
     CapsuleInsightCall,
-    HydraulicCall, ReactorCall, ReactorCcoreCall, ReactorFuelCall, ReactorTrigaCall, ResonanceCall, SatelliteCall, SwingCall, TesseractCall, ThermalCall, Ti64Call,
+    HydraulicCall, ReactorCall, ReactorCcoreCall, RunawayCall, runaway_published_is_finite, runaway_state, ReactorFuelCall, ReactorTrigaCall, ResonanceCall, SatelliteCall, SwingCall, TesseractCall, ThermalCall, Ti64Call,
     SolarSystemCall,
     LosCall,
     TokamakCall,
+    VdeCall,
     FingerPadCall, fingerpad_published_is_finite, fingerpad_state,
     advisory_flags, battery_published_is_finite, battery_state, cable_published_is_finite,
     cable_state, cantilever_published_is_finite, cantilever_state, capsule_insight_published_is_finite,
@@ -43,6 +45,7 @@ use crate::{
     satellite_state, solar_system_published_is_finite, solar_system_state, swing_published_is_finite, swing_state, tesseract_published_is_finite,
     los_published_is_finite, los_state,
     tokamak_published_is_finite, tokamak_state,
+    vde_published_is_finite, vde_state,
     tesseract_state, thermal_published_is_finite, thermal_state,
     ti64_published_is_finite, ti64_state, tire_published_is_finite, tire_state, TireCall,
     accumulator_published_is_finite, accumulator_state, AccumulatorCall,
@@ -117,12 +120,18 @@ pub enum Live {
     CapsuleInsight(Box<CapsuleInsightCall>),
     ReactorFuel(ReactorFuelCall),
     Crater(CraterCall),
+    GeneratorMmrtgSeebeck(crate::card_generator_mmrtg_seebeck::GeneratorMmrtgSeebeckCall),
+    MomentumJwstDihedral(crate::card_momentum_jwst_dihedral::MomentumJwstDihedralCall),
+    GraspLiftGlass4tu(crate::card_grasp_lift_glass_4tu::GraspLiftGlass4tuCall),
+    MomentumJwstSrp(crate::card_momentum_jwst_srp::MomentumJwstSrpCall),
     Tire(TireCall),
     Accumulator(AccumulatorCall),
     Tokamak(TokamakCall),
+    Vde(VdeCall),
     FingerPad(FingerPadCall),
     ReactorTriga(ReactorTrigaCall),
     ReactorCcore(ReactorCcoreCall),
+    Runaway(RunawayCall),
 }
 
 pub(crate) enum PhaseSnap {
@@ -151,12 +160,18 @@ pub(crate) enum PhaseSnap {
     CapsuleInsight(capsule_insight::CapsuleState),
     ReactorFuel(reactor_spert3_fuel::ReactorState),
     Crater(crater_ryugu_sci::CraterState),
+    GeneratorMmrtgSeebeck(genesis_kernel::generator_mmrtg_seebeck::GeneratorMmrtgSeebeckState),
+    MomentumJwstDihedral(genesis_kernel::momentum_jwst_dihedral::MomentumJwstDihedralState),
+    GraspLiftGlass4tu(genesis_kernel::grasp_lift_glass_4tu::GraspLiftGlass4tuState),
+    MomentumJwstSrp(genesis_kernel::momentum_jwst_srp::MomentumState),
     Tire(tire_eve_r19_ice::TireState),
     Accumulator(accumulator_sbo450::GasState),
     Tokamak(tokamak_jet_dte1::TokamakState),
+    Vde(tokamak_vde_mast::VdeState),
     FingerPad(fingerpad_p02_glass::FingerPadState),
     ReactorTriga(reactor_triga_jsi::ReactorState),
     ReactorCcore(reactor_spert3_ccore::ReactorState),
+    Runaway(runaway_18650_lco::RunawayState),
 }
 
 impl Live {
@@ -217,9 +232,14 @@ impl Live {
             ("energy", "reactor_triga_jsi") => {
                 Ok(Live::ReactorTriga(ReactorTrigaCall::from_parameters(params)?))
             }
+            ("energy", "runaway_18650_lco") => Ok(Live::Runaway(RunawayCall::from_parameters(params)?)),
             ("energy", "reactor_spert3_ccore") => {
                 Ok(Live::ReactorCcore(ReactorCcoreCall::from_parameters(params)?))
             }
+            ("materials", "grasp_lift_glass_4tu") => Ok(Live::GraspLiftGlass4tu(crate::card_grasp_lift_glass_4tu::GraspLiftGlass4tuCall::from_parameters(params)?)),
+            ("aerospace", "momentum_jwst_srp") => Ok(Live::MomentumJwstSrp(crate::card_momentum_jwst_srp::MomentumJwstSrpCall::from_parameters(params)?)),
+            ("aerospace", "momentum_jwst_dihedral") => Ok(Live::MomentumJwstDihedral(crate::card_momentum_jwst_dihedral::MomentumJwstDihedralCall::from_parameters(params)?)),
+            ("energy", "generator_mmrtg_seebeck") => Ok(Live::GeneratorMmrtgSeebeck(crate::card_generator_mmrtg_seebeck::GeneratorMmrtgSeebeckCall::from_parameters(params)?)),
             ("aerospace", "crater_ryugu_sci") => {
                 Ok(Live::Crater(CraterCall::from_parameters(params)?))
             }
@@ -227,13 +247,16 @@ impl Live {
             ("energy", "accumulator_sbo450") => {
                 Ok(Live::Accumulator(AccumulatorCall::from_parameters(params)?))
             }
+            ("energy", "tokamak_vde_mast") => {
+                Ok(Live::Vde(VdeCall::from_parameters(params)?))
+            }
             ("energy", "tokamak_jet_dte1") => {
                 Ok(Live::Tokamak(TokamakCall::from_parameters(params)?))
             }
             ("materials", "fingerpad_p02_glass") => {
                 Ok(Live::FingerPad(FingerPadCall::from_parameters(params)?))
             }
-            _ => Err("Card not recognized".to_string()),
+            _ => Err(crate::CARD_NOT_RECOGNIZED.to_string()),
         }
     }
 
@@ -265,10 +288,16 @@ impl Live {
             Live::ReactorFuel(call) => call.replace_load(params),
             Live::ReactorTriga(call) => call.replace_load(params),
             Live::ReactorCcore(call) => call.replace_load(params),
+            Live::Runaway(call) => call.replace_load(params),
             Live::Crater(call) => call.replace_load(params),
+            Live::GeneratorMmrtgSeebeck(call) => call.replace_load(params),
+            Live::MomentumJwstDihedral(call) => call.replace_load(params),
+            Live::GraspLiftGlass4tu(call) => call.replace_load(params),
+            Live::MomentumJwstSrp(call) => call.replace_load(params),
             Live::Tire(call) => call.replace_load(params),
             Live::Accumulator(call) => call.replace_load(params),
             Live::Tokamak(call) => call.replace_load(params),
+            Live::Vde(call) => call.replace_load(params),
             Live::FingerPad(call) => call.replace_load(params),
         }
     }
@@ -301,10 +330,16 @@ impl Live {
             Live::ReactorFuel(call) => PhaseSnap::ReactorFuel(call.state),
             Live::ReactorTriga(call) => PhaseSnap::ReactorTriga(call.state),
             Live::ReactorCcore(call) => PhaseSnap::ReactorCcore(call.state),
+            Live::Runaway(call) => PhaseSnap::Runaway(call.state),
             Live::Crater(call) => PhaseSnap::Crater(call.state),
+            Live::GeneratorMmrtgSeebeck(call) => PhaseSnap::GeneratorMmrtgSeebeck(call.state),
+            Live::MomentumJwstDihedral(call) => PhaseSnap::MomentumJwstDihedral(call.state),
+            Live::GraspLiftGlass4tu(call) => PhaseSnap::GraspLiftGlass4tu(call.state),
+            Live::MomentumJwstSrp(call) => PhaseSnap::MomentumJwstSrp(call.state),
             Live::Tire(call) => PhaseSnap::Tire(call.state),
             Live::Accumulator(call) => PhaseSnap::Accumulator(call.state),
             Live::Tokamak(call) => PhaseSnap::Tokamak(call.state),
+            Live::Vde(call) => PhaseSnap::Vde(call.state),
             Live::FingerPad(call) => PhaseSnap::FingerPad(call.state),
         }
     }
@@ -337,10 +372,16 @@ impl Live {
             (Live::ReactorFuel(call), PhaseSnap::ReactorFuel(state)) => call.state = state,
             (Live::ReactorTriga(call), PhaseSnap::ReactorTriga(state)) => call.state = state,
             (Live::ReactorCcore(call), PhaseSnap::ReactorCcore(state)) => call.state = state,
+            (Live::Runaway(call), PhaseSnap::Runaway(state)) => call.state = state,
             (Live::Crater(call), PhaseSnap::Crater(state)) => call.state = state,
+            (Live::GeneratorMmrtgSeebeck(call), PhaseSnap::GeneratorMmrtgSeebeck(state)) => call.state = state,
+            (Live::MomentumJwstDihedral(call), PhaseSnap::MomentumJwstDihedral(state)) => call.state = state,
+            (Live::GraspLiftGlass4tu(call), PhaseSnap::GraspLiftGlass4tu(state)) => call.state = state,
+            (Live::MomentumJwstSrp(call), PhaseSnap::MomentumJwstSrp(state)) => call.state = state,
             (Live::Tire(call), PhaseSnap::Tire(state)) => call.state = state,
             (Live::Accumulator(call), PhaseSnap::Accumulator(state)) => call.state = state,
             (Live::Tokamak(call), PhaseSnap::Tokamak(state)) => call.state = state,
+            (Live::Vde(call), PhaseSnap::Vde(state)) => call.state = state,
             (Live::FingerPad(call), PhaseSnap::FingerPad(state)) => call.state = state,
             _ => unreachable!("snapshot does not belong to this specimen"),
         }
@@ -374,10 +415,16 @@ impl Live {
             Live::ReactorFuel(call) => call.step_into(frame),
             Live::ReactorTriga(call) => call.step_into(frame),
             Live::ReactorCcore(call) => call.step_into(frame),
+            Live::Runaway(call) => call.step_into(frame),
             Live::Crater(call) => call.step_into(frame),
+            Live::GeneratorMmrtgSeebeck(call) => call.step_into(frame),
+            Live::MomentumJwstDihedral(call) => call.step_into(frame),
+            Live::GraspLiftGlass4tu(call) => call.step_into(frame),
+            Live::MomentumJwstSrp(call) => call.step_into(frame),
             Live::Tire(call) => call.step_into(frame),
             Live::Accumulator(call) => call.step_into(frame),
             Live::Tokamak(call) => call.step_into(frame),
+            Live::Vde(call) => call.step_into(frame),
             Live::FingerPad(call) => call.step_into(frame),
         }
     }
@@ -602,6 +649,10 @@ impl Live {
                     call.state.residual_conservation_error,
                 )
             }
+            Live::Runaway(call) => {
+                runaway_published_is_finite(&call.state).map_err(StepFailure::flag)?;
+                finish_audit(frame, "energy", "runaway_18650_lco", call.state.residual_conservation_error)
+            }
             Live::ReactorCcore(call) => {
                 reactor_ccore_published_is_finite(&call.state).map_err(StepFailure::flag)?;
                 finish_audit(
@@ -619,6 +670,22 @@ impl Live {
                     "reactor_spert3_fuel",
                     call.state.residual_conservation_error,
                 )
+            }
+            Live::GraspLiftGlass4tu(call) => {
+                crate::card_grasp_lift_glass_4tu::published_is_finite(&call.state).map_err(StepFailure::flag)?;
+                finish_audit(frame, "materials", "grasp_lift_glass_4tu", call.state.residual_conservation_error)
+            }
+            Live::MomentumJwstSrp(call) => {
+                crate::card_momentum_jwst_srp::published_is_finite(&call.state).map_err(StepFailure::flag)?;
+                finish_audit(frame, "aerospace", "momentum_jwst_srp", call.state.residual_conservation_error)
+            }
+            Live::MomentumJwstDihedral(call) => {
+                crate::card_momentum_jwst_dihedral::published_is_finite(&call.state).map_err(StepFailure::flag)?;
+                finish_audit(frame, "aerospace", "momentum_jwst_dihedral", call.state.residual_conservation_error)
+            }
+            Live::GeneratorMmrtgSeebeck(call) => {
+                crate::card_generator_mmrtg_seebeck::published_is_finite(&call.state).map_err(StepFailure::flag)?;
+                finish_audit(frame, "energy", "generator_mmrtg_seebeck", call.state.residual_conservation_error)
             }
             Live::Crater(call) => {
                 crater_published_is_finite(&call.state).map_err(StepFailure::flag)?;
@@ -656,6 +723,15 @@ impl Live {
                     call.state.residual_conservation_error,
                 )
             }
+            Live::Vde(call) => {
+                vde_published_is_finite(&call.state).map_err(StepFailure::flag)?;
+                finish_audit(
+                    frame,
+                    "energy",
+                    "tokamak_vde_mast",
+                    call.state.residual_conservation_error,
+                )
+            }
             Live::FingerPad(call) => {
                 fingerpad_published_is_finite(&call.state).map_err(StepFailure::flag)?;
                 finish_audit(
@@ -665,6 +741,19 @@ impl Live {
                     call.state.residual_conservation_error,
                 )
             }
+        }
+    }
+
+    /// The name of the end its card declares that the landed state stands
+    /// at, for a card whose end is a step that lands: the capsules, whose
+    /// step that first crosses the flown deployment lands (`src/ends.rs`).
+    /// A run whose last step lands there has reached that end (rule 13).
+    /// Every other card's end is a step that is not taken, so `None`.
+    pub(crate) fn landed_at_end(&self) -> Option<&'static str> {
+        match self {
+            Live::Capsule(call) => call.past_flight_deployment().then_some("PastFlightDeployment"),
+            Live::CapsuleInsight(call) => call.past_flight_deployment().then_some("PastFlightDeployment"),
+            _ => None,
         }
     }
 
@@ -701,10 +790,16 @@ impl Live {
             Live::ReactorFuel(call) => reactor_fuel_state(&call.state).map_err(StepFailure::flag),
             Live::ReactorTriga(call) => reactor_triga_state(&call.state).map_err(StepFailure::flag),
             Live::ReactorCcore(call) => reactor_ccore_state(&call.state).map_err(StepFailure::flag),
+            Live::Runaway(call) => runaway_state(&call.state).map_err(StepFailure::flag),
             Live::Crater(call) => crater_state(&call.state).map_err(StepFailure::flag),
+            Live::GeneratorMmrtgSeebeck(call) => crate::card_generator_mmrtg_seebeck::state(&call.state).map_err(StepFailure::flag),
+            Live::MomentumJwstDihedral(call) => crate::card_momentum_jwst_dihedral::state(&call.state).map_err(StepFailure::flag),
+            Live::GraspLiftGlass4tu(call) => crate::card_grasp_lift_glass_4tu::state(&call.state).map_err(StepFailure::flag),
+            Live::MomentumJwstSrp(call) => crate::card_momentum_jwst_srp::state(&call.state).map_err(StepFailure::flag),
             Live::Tire(call) => tire_state(&call.state).map_err(StepFailure::flag),
             Live::Accumulator(call) => accumulator_state(&call.state).map_err(StepFailure::flag),
             Live::Tokamak(call) => tokamak_state(&call.state).map_err(StepFailure::flag),
+            Live::Vde(call) => vde_state(&call.state).map_err(StepFailure::flag),
             Live::FingerPad(call) => fingerpad_state(&call.state).map_err(StepFailure::flag),
         }
     }

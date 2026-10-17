@@ -57,6 +57,8 @@
 //! returned: it is a small difference of two larger numbers, known on these
 //! bars to 13 % of its value.
 
+use genesis_kernel::math;
+use crate::normal::NormalOrZero;
 use std::fmt;
 
 const PI: f64 = std::f64::consts::PI;
@@ -93,22 +95,22 @@ pub const ENERGY_BALANCE_TOLERANCE: f64 = 1.0e-8;
 pub const FREE_END_TOLERANCE: f64 = 1.0e-8;
 /// The model at the returned `E` and `G` must give back each frequency it was fitted to within this fraction.
 pub const ROUND_TRIP_TOLERANCE: f64 = 1.0e-10;
-/// A supplied edgewise frequency further than this fraction from the predicted one refuses the run.
-/// It is line P2 of the validation protocol, the line the prediction was compared at.
+/// Line P2 of the validation protocol, the line the edgewise prediction was
+/// compared at: within this fraction of the supplied edgewise frequency. On
+/// the four held-back scans it was met, within 0.114 percent. Stated, not
+/// enforced: a supplied edgewise frequency is answered with its residual.
 pub const EDGEWISE_LIMIT_FRACTION: f64 = 0.0025;
 
-/// Declared range of each measured frequency, Hz: the envelope of the eight
-/// scans compared with measurement, two of each of ERX1, ERX2, ERY1 and ERY2.
+/// The compared range of each measured frequency, Hz: the envelope of the
+/// eight scans compared with measurement, two of each of ERX1, ERX2, ERY1 and
+/// ERY2. Stated, not enforced: any finite frequency above zero is answered.
 /// Flatwise runs from ERX1's single scan (1587.428 Hz) to ERY1's single scan
 /// (1608.28 Hz), and torsion from ERX2's whole-spectrum scan (8899.446 Hz) to
 /// ERY2's whole-spectrum scan (8966.189 Hz).
 pub const FLATWISE_RANGE_HZ: (f64, f64) = (1587.428, 1608.28);
 /// Edgewise runs from the lowest predicted edgewise frequency of those scans,
 /// ERX1's single scan (4695.0353 Hz, cut to the readings' 0.001 Hz), to the
-/// highest measured one, ERY1's single scan (4755.856 Hz). The predicted
-/// edgewise frequency of every answer must lie inside it too, so that a bar
-/// whose two frequencies are answered can be asked again with the edgewise
-/// frequency it predicts.
+/// highest measured one, ERY1's single scan (4755.856 Hz).
 pub const EDGEWISE_RANGE_HZ: (f64, f64) = (4695.035, 4755.856);
 pub const TORSION_RANGE_HZ: (f64, f64) = (8899.446, 8966.189);
 
@@ -253,8 +255,8 @@ pub struct Reading {
 pub enum ModulusReject {
     /// The series names one mode twice.
     RepeatedMode { mode: Mode },
-    /// A measured frequency is not a finite number inside the declared range of its mode.
-    FrequencyOutOfRange { mode: Mode, frequency_hz: f64 },
+    /// A frequency of the series is not a finite number above zero.
+    FrequencyNotPositive { mode: Mode, frequency_hz: f64 },
     /// Not identifiable: the series holds no flatwise frequency, and Young's modulus is recovered from that mode.
     YoungsModulusNotIdentifiable,
     /// Not identifiable: the series holds no torsion frequency, and bending alone fixes the shear modulus only to 19 to 27 % of its value.
@@ -282,10 +284,6 @@ pub enum ModulusReject {
     RoundTripBroken { mode: Mode, residual: f64 },
     /// `E / (2 G) − 1` is not strictly between 0 and 0.5: the frequencies are not those of a uniform bar that is the same in every direction.
     PoissonRatioOutOfRange { poisson_ratio: f64 },
-    /// The supplied edgewise frequency is further than [`EDGEWISE_LIMIT_FRACTION`] from the one the recovered `E` and `G` predict.
-    ModesInconsistent { residual_fraction: f64 },
-    /// The edgewise frequency the recovered `E` and `G` predict is outside [`EDGEWISE_RANGE_HZ`], the declared range of a measured edgewise frequency.
-    PredictedEdgewiseOutOfRange { predicted_hz: f64 },
 }
 
 impl fmt::Display for ModulusReject {
@@ -294,14 +292,11 @@ impl fmt::Display for ModulusReject {
             Self::RepeatedMode { mode } => {
                 write!(f, "the series names the {} mode twice", mode.name())
             }
-            Self::FrequencyOutOfRange { mode, frequency_hz } => {
-                let (low, high) = mode.range_hz();
-                write!(
-                    f,
-                    "{} frequency {frequency_hz} Hz is outside {low} to {high} Hz",
-                    mode.name()
-                )
-            }
+            Self::FrequencyNotPositive { mode, frequency_hz } => write!(
+                f,
+                "{} frequency {frequency_hz} Hz is not a finite number above zero",
+                mode.name()
+            ),
             Self::YoungsModulusNotIdentifiable => write!(
                 f,
                 "Young's modulus is not identifiable: the series holds no flatwise frequency"
@@ -349,17 +344,6 @@ impl fmt::Display for ModulusReject {
                 f,
                 "E / (2 G) - 1 = {poisson_ratio} is not between 0 and 0.5"
             ),
-            Self::ModesInconsistent { residual_fraction } => write!(
-                f,
-                "the supplied edgewise frequency is {residual_fraction} of itself away from the predicted one, past {EDGEWISE_LIMIT_FRACTION}"
-            ),
-            Self::PredictedEdgewiseOutOfRange { predicted_hz } => {
-                let (low, high) = EDGEWISE_RANGE_HZ;
-                write!(
-                    f,
-                    "the predicted edgewise frequency {predicted_hz} Hz is outside the declared edgewise range {low} to {high} Hz"
-                )
-            }
         }
     }
 }
@@ -418,7 +402,16 @@ enum Fault {
 /// `E` and `G` of one bar from a series of its measured resonant frequencies.
 /// The bar's size and mass, the start, the tolerances and the iteration cap
 /// are the constants in this file.
+///
+/// Each value of the answer below the normal range is written as zero
+/// with its sign ([`crate::normal`]).
 pub fn solve(bar: Bar, series: &[Reading]) -> Result<BarModuli, ModulusReject> {
+    crate::normal::held(solve_as_computed(bar, series))
+}
+
+/// The answer as the equations compute it, before a value below the
+/// normal range is written as zero.
+fn solve_as_computed(bar: Bar, series: &[Reading]) -> Result<BarModuli, ModulusReject> {
     let (flatwise_hz, edgewise_hz, torsion_hz) = read_series(series)?;
     recover(
         bar,
@@ -431,6 +424,26 @@ pub fn solve(bar: Bar, series: &[Reading]) -> Result<BarModuli, ModulusReject> {
     )
 }
 
+impl NormalOrZero for BarModuli {
+    fn normal_or_zero(&mut self) {
+        self.youngs_modulus_pa.normal_or_zero();
+        self.shear_modulus_pa.normal_or_zero();
+        self.youngs_modulus_method_uncertainty_pa.normal_or_zero();
+        self.shear_modulus_method_uncertainty_pa.normal_or_zero();
+        self.shear_modulus_method_uncertainty_ceiling_pa.normal_or_zero();
+        self.edgewise_predicted_hz.normal_or_zero();
+        self.edgewise_residual_fraction.normal_or_zero();
+        self.flatwise_residual_fraction.normal_or_zero();
+        self.torsion_residual_fraction.normal_or_zero();
+        self.last_step.normal_or_zero();
+        self.flatwise_energy_balance.normal_or_zero();
+        self.edgewise_energy_balance.normal_or_zero();
+        self.flatwise_free_end.normal_or_zero();
+        self.edgewise_free_end.normal_or_zero();
+        self.mode_shapes.normal_or_zero();
+    }
+}
+
 /// What the series itself shows, before anything is computed: a mode named
 /// twice, a frequency outside its declared range, or a modulus the series
 /// cannot fix.
@@ -438,8 +451,8 @@ pub fn check_series(series: &[Reading]) -> Result<(), ModulusReject> {
     read_series(series).map(|_| ())
 }
 
-/// The flatwise, edgewise and torsion frequency of a series, each inside its
-/// declared range, or the name of what the series lacks.
+/// The flatwise, edgewise and torsion frequency of a series, each a finite
+/// number above zero, or the name of what the series lacks.
 fn read_series(series: &[Reading]) -> Result<(f64, Option<f64>, f64), ModulusReject> {
     let mut found: [Option<f64>; 3] = [None; 3];
     for reading in series {
@@ -451,9 +464,8 @@ fn read_series(series: &[Reading]) -> Result<(f64, Option<f64>, f64), ModulusRej
         if found[slot].is_some() {
             return Err(ModulusReject::RepeatedMode { mode: reading.mode });
         }
-        let (low, high) = reading.mode.range_hz();
-        if !(reading.frequency_hz >= low && reading.frequency_hz <= high) {
-            return Err(ModulusReject::FrequencyOutOfRange {
+        if !(reading.frequency_hz > 0.0 && reading.frequency_hz.is_finite()) {
+            return Err(ModulusReject::FrequencyNotPositive {
                 mode: reading.mode,
                 frequency_hz: reading.frequency_hz,
             });
@@ -475,8 +487,8 @@ fn recover(
     fault: Fault,
 ) -> Result<BarModuli, ModulusReject> {
     let constants = bar.constants();
-    let targets = [flatwise_hz.ln(), torsion_hz.ln()];
-    let mut x = [start_pa.0.ln(), start_pa.1.ln()];
+    let targets = [math::log(flatwise_hz), math::log(torsion_hz)];
+    let mut x = [math::log(start_pa.0), math::log(start_pa.1)];
     if !x.iter().chain(&targets).all(|value| value.is_finite()) {
         return Err(ModulusReject::NonFiniteValue);
     }
@@ -487,11 +499,11 @@ fn recover(
         }
         iterations += 1;
         // The trial point is checked before it is used: bracket, energy, free end.
-        let flatwise = bending_mode(&constants, Mode::Flatwise, x[0].exp(), x[1].exp(), fault)?;
+        let flatwise = bending_mode(&constants, Mode::Flatwise, math::exp(x[0]), math::exp(x[1]), fault)?;
         check_mode(Mode::Flatwise, &flatwise)?;
         let here = [
-            flatwise.frequency_hz.ln() - targets[0],
-            torsion_frequency_hz(&constants, x[1].exp()).ln() - targets[1],
+            math::log(flatwise.frequency_hz) - targets[0],
+            math::log(torsion_frequency_hz(&constants, math::exp(x[1]))) - targets[1],
         ];
         let mut jacobian = [[0.0_f64; 2]; 2];
         for column in 0..2 {
@@ -514,7 +526,7 @@ fn recover(
             return Err(ModulusReject::NonFiniteValue);
         }
         x = [x[0] + step[0], x[1] + step[1]];
-        let (youngs_modulus_pa, shear_modulus_pa) = (x[0].exp(), x[1].exp());
+        let (youngs_modulus_pa, shear_modulus_pa) = (math::exp(x[0]), math::exp(x[1]));
         let inside = youngs_modulus_pa >= YOUNGS_MODULUS_SEARCH_PA.0
             && youngs_modulus_pa <= YOUNGS_MODULUS_SEARCH_PA.1
             && shear_modulus_pa >= SHEAR_MODULUS_SEARCH_PA.0
@@ -531,7 +543,7 @@ fn recover(
         }
     };
 
-    let (youngs_modulus_pa, shear_modulus_pa) = (x[0].exp(), x[1].exp());
+    let (youngs_modulus_pa, shear_modulus_pa) = (math::exp(x[0]), math::exp(x[1]));
     let flatwise = bending_mode(
         &constants,
         Mode::Flatwise,
@@ -569,20 +581,9 @@ fn recover(
     let edgewise_residual_fraction = match edgewise_hz {
         None => None,
         Some(supplied) => {
-            let residual_fraction = edgewise.frequency_hz / supplied - 1.0;
-            if !(residual_fraction.abs() <= EDGEWISE_LIMIT_FRACTION) {
-                return Err(ModulusReject::ModesInconsistent { residual_fraction });
-            }
-            Some(residual_fraction)
+            Some(edgewise.frequency_hz / supplied - 1.0)
         }
     };
-    // The same range a supplied edgewise frequency is held to: an answer whose
-    // prediction lies outside it names a bar that could not be asked again with
-    // the edgewise frequency it predicts.
-    let predicted_hz = edgewise.frequency_hz;
-    if !(predicted_hz >= EDGEWISE_RANGE_HZ.0 && predicted_hz <= EDGEWISE_RANGE_HZ.1) {
-        return Err(ModulusReject::PredictedEdgewiseOutOfRange { predicted_hz });
-    }
     let mut mode_shapes = flatwise.samples.clone();
     mode_shapes.extend_from_slice(&edgewise.samples);
     Ok(BarModuli {
@@ -613,7 +614,7 @@ fn log_frequencies(
     x: [f64; 2],
     fault: Fault,
 ) -> Result<[f64; 2], ModulusReject> {
-    let (youngs_modulus_pa, shear_modulus_pa) = (x[0].exp(), x[1].exp());
+    let (youngs_modulus_pa, shear_modulus_pa) = (math::exp(x[0]), math::exp(x[1]));
     let flatwise = bending_root(
         constants,
         Mode::Flatwise,
@@ -622,8 +623,8 @@ fn log_frequencies(
         fault,
     )?;
     let out = [
-        flatwise.frequency_hz.ln(),
-        torsion_frequency_hz(constants, shear_modulus_pa).ln(),
+        math::log(flatwise.frequency_hz),
+        math::log(torsion_frequency_hz(constants, shear_modulus_pa)),
     ];
     if out.iter().all(|value| value.is_finite()) {
         Ok(out)
@@ -681,8 +682,8 @@ fn transfer(lam: f64, r2: f64, s2: f64, fraction: f64) -> Option<Matrix4> {
     let a = a_squared.sqrt() * fraction;
     let b = b_squared.sqrt() * fraction;
     let (a2, b2) = (a * a, b * b);
-    let (cosh_a, sinh_over_a) = (a.cosh(), a.sinh() / a);
-    let (cos_b, sin_over_b) = (b.cos(), b.sin() / b);
+    let (cosh_a, sinh_over_a) = (math::cosh(a), math::sinh(a) / a);
+    let (cos_b, sin_over_b) = (math::cos(b), math::sin(b) / b);
     let whole = a2 + b2;
     let c0 = (b2 * cosh_a + a2 * cos_b) / whole;
     let c1 = (b2 * sinh_over_a + a2 * sin_over_b) / whole;
@@ -737,7 +738,7 @@ fn free_free_determinant(lam: f64, r2: f64, s2: f64) -> Option<f64> {
 /// First root `lam` of the free-free frequency equation, by bisection.
 /// `None` when the bracket does not hold a sign change.
 fn first_lambda(r2: f64, s2: f64) -> Option<f64> {
-    let euler_bernoulli = EULER_BERNOULLI_FREE_FREE_ROOT.powi(4);
+    let euler_bernoulli = math::powi(EULER_BERNOULLI_FREE_FREE_ROOT, 4);
     let mut low = LAMBDA_BRACKET_LOW * euler_bernoulli;
     let mut high = LAMBDA_BRACKET_HIGH * euler_bernoulli;
     let mut at_low = free_free_determinant(low, r2, s2)?;
@@ -817,7 +818,7 @@ fn bending_root(
     if let Fault::ShiftedRoot(by) = fault {
         lam *= 1.0 + by;
     }
-    let omega = (lam * youngs_modulus_pa * inertia / (density * area * length.powi(4))).sqrt();
+    let omega = (lam * youngs_modulus_pa * inertia / (density * area * math::powi(length, 4))).sqrt();
     let frequency_hz = omega / (2.0 * PI);
     if !(frequency_hz.is_finite() && frequency_hz > 0.0) {
         return Err(ModulusReject::NonFiniteValue);
@@ -844,8 +845,8 @@ fn bending_mode(
     // Start free: M = Q = 0, with [w, φ] the direction the frequency equation leaves undetermined.
     let rows = [[whole[2][0], whole[2][1]], [whole[3][0], whole[3][1]]];
     let norms = [
-        rows[0][0].hypot(rows[0][1]),
-        rows[1][0].hypot(rows[1][1]),
+        math::hypot(rows[0][0], rows[0][1]),
+        math::hypot(rows[1][0], rows[1][1]),
     ];
     let pick = if norms[0] >= norms[1] { 0 } else { 1 };
     if !(norms[pick] > 0.0 && norms[pick].is_finite()) {
@@ -928,9 +929,9 @@ fn torsion_constant(width: f64, thickness: f64) -> f64 {
     let mut total = 0.0;
     for k in 0..TORSION_SERIES_TERMS {
         let n = (2 * k + 1) as f64;
-        total += (n * PI * width / (2.0 * thickness)).tanh() / n.powi(5);
+        total += math::tanh(n * PI * width / (2.0 * thickness)) / math::powi(n, 5);
     }
-    width * thickness.powi(3) / 3.0 * (1.0 - 192.0 * thickness / (PI.powi(5) * width) * total)
+    width * math::powi(thickness, 3) / 3.0 * (1.0 - 192.0 * thickness / (math::powi(PI, 5) * width) * total)
 }
 
 /// Empirical end correction `A` of ASTM E1875, as printed in Rehmer et al.,
@@ -944,7 +945,7 @@ fn torsion_frequency_hz(constants: &BarConstants, shear_modulus_pa: f64) -> f64 
     let (width, thickness) = (constants.width_m, constants.thickness_m);
     let area = width * thickness;
     let density = constants.mass_kg / (area * constants.length_m);
-    let polar = (width * thickness.powi(3) + thickness * width.powi(3)) / 12.0;
+    let polar = (width * math::powi(thickness, 3) + thickness * math::powi(width, 3)) / 12.0;
     let plain = (shear_modulus_pa * torsion_constant(width, thickness) / (density * polar)).sqrt()
         / (2.0 * constants.length_m);
     plain * (1.0 + torsion_end_correction(width, thickness)).sqrt()
@@ -1091,85 +1092,55 @@ mod tests {
         assert!((worst - 0.00114).abs() < 1.0e-5, "{worst}");
     }
 
-    /// The two routes agree everywhere in the declared ranges: a pair of
-    /// frequencies is answered exactly when the same pair with the edgewise
-    /// frequency it predicts is answered, with the same bits. A prediction
-    /// outside the edgewise range is refused by name on both routes.
+    /// The two routes agree at every corner of the compared ranges, and past
+    /// them: a pair of frequencies and the same pair with the edgewise
+    /// frequency it predicts give the same bits, and the residual is zero.
+    /// Engine 0.8.0 refused the corners whose prediction fell outside the
+    /// compared edgewise range; they are answered.
     #[test]
-    fn two_frequencies_and_the_three_they_imply_are_answered_or_refused_together() {
-        let points = |range: (f64, f64)| [range.0, 0.5 * (range.0 + range.1), range.1];
-        let mut refused = 0;
+    fn two_frequencies_and_the_three_they_imply_are_answered_together() {
+        let points = |range: (f64, f64)| [range.0 * 0.98, range.0, 0.5 * (range.0 + range.1), range.1, range.1 * 1.02];
+        let mut outside = 0;
         for bar in BARS {
             for flatwise in points(FLATWISE_RANGE_HZ) {
                 for torsion in points(TORSION_RANGE_HZ) {
-                    match solve(bar, &two(flatwise, torsion)) {
-                        Ok(pair) => {
-                            let predicted = pair.edgewise_predicted_hz;
-                            let whole = solve(bar, &three(flatwise, torsion, predicted))
-                                .unwrap_or_else(|reject| {
-                                    panic!("{} {flatwise} {torsion} {predicted}: {reject}", bar.name())
-                                });
-                            assert_eq!(
-                                pair.youngs_modulus_pa.to_bits(),
-                                whole.youngs_modulus_pa.to_bits()
-                            );
-                            assert_eq!(whole.edgewise_residual_fraction, Some(0.0));
-                        }
-                        Err(ModulusReject::PredictedEdgewiseOutOfRange { predicted_hz }) => {
-                            refused += 1;
-                            assert!(
-                                predicted_hz < EDGEWISE_RANGE_HZ.0
-                                    || predicted_hz > EDGEWISE_RANGE_HZ.1
-                            );
-                            match solve(bar, &three(flatwise, torsion, predicted_hz)) {
-                                Err(ModulusReject::FrequencyOutOfRange {
-                                    mode: Mode::Edgewise,
-                                    frequency_hz,
-                                }) => assert_eq!(frequency_hz.to_bits(), predicted_hz.to_bits()),
-                                other => panic!("{other:?}"),
-                            }
-                        }
-                        Err(other) => panic!("{} {flatwise} {torsion}: {other}", bar.name()),
+                    let pair = solve(bar, &two(flatwise, torsion))
+                        .unwrap_or_else(|reject| panic!("{} {flatwise} {torsion}: {reject}", bar.name()));
+                    let predicted = pair.edgewise_predicted_hz;
+                    if !(predicted >= EDGEWISE_RANGE_HZ.0 && predicted <= EDGEWISE_RANGE_HZ.1) {
+                        outside += 1;
                     }
+                    let whole = solve(bar, &three(flatwise, torsion, predicted))
+                        .unwrap_or_else(|reject| panic!("{} {flatwise} {torsion} {predicted}: {reject}", bar.name()));
+                    assert_eq!(pair.youngs_modulus_pa.to_bits(), whole.youngs_modulus_pa.to_bits());
+                    assert_eq!(whole.edgewise_residual_fraction, Some(0.0));
+                    assert!(whole.flatwise_residual_fraction.abs() <= ROUND_TRIP_TOLERANCE);
+                    assert!(whole.torsion_residual_fraction.abs() <= ROUND_TRIP_TOLERANCE);
                 }
             }
         }
-        // The corners where one bar's flatwise reading meets the other direction's
-        // bars are outside the comparison, and some of them are refused.
-        assert!(refused > 0);
-        match solve(
-            Bar::Erx1,
-            &two(FLATWISE_RANGE_HZ.0, TORSION_RANGE_HZ.0),
-        ) {
-            Err(ModulusReject::PredictedEdgewiseOutOfRange { predicted_hz }) => {
-                assert!(predicted_hz < EDGEWISE_RANGE_HZ.0, "{predicted_hz}")
-            }
-            other => panic!("{other:?}"),
-        }
+        assert!(outside > 0);
+        let corner = solve(Bar::Erx1, &two(FLATWISE_RANGE_HZ.0, TORSION_RANGE_HZ.0)).expect("answered");
+        assert!(corner.edgewise_predicted_hz < EDGEWISE_RANGE_HZ.0, "{}", corner.edgewise_predicted_hz);
     }
 
-    /// Line P2: a supplied edgewise frequency within 0.25 percent of the
-    /// prediction is answered, and one past it is refused by name.
+    /// Line P2 is a line the prediction was compared at, not a limit: a
+    /// supplied edgewise frequency within 0.25 percent of the prediction and
+    /// one past it are both answered, with the same moduli and the residual
+    /// as it is.
     #[test]
-    fn the_edgewise_check_is_held_at_line_p2() {
+    fn the_edgewise_residual_is_returned_on_both_sides_of_line_p2() {
         assert_eq!(EDGEWISE_LIMIT_FRACTION, 0.0025);
-        // ERX2's single scan reads low and ERY1's single scan reads high, so each
-        // edgewise frequency that is moved stays inside the declared range.
         for ((bar, flatwise, _, torsion), sign) in
             [(COMPARED_SCANS[3], -1.0), (COMPARED_SCANS[5], 1.0)]
         {
-            let predicted = solve(bar, &two(flatwise, torsion))
-                .expect("solved")
-                .edgewise_predicted_hz;
-            let inside = predicted / (1.0 + sign * 0.0024);
-            let past = predicted / (1.0 + sign * 0.0026);
-            let answered = solve(bar, &three(flatwise, torsion, inside)).expect("inside P2");
-            assert!((answered.edgewise_residual_fraction.unwrap() - sign * 0.0024).abs() < 1.0e-9);
-            match solve(bar, &three(flatwise, torsion, past)) {
-                Err(ModulusReject::ModesInconsistent { residual_fraction }) => {
-                    assert!((residual_fraction - sign * 0.0026).abs() < 1.0e-9, "{residual_fraction}")
-                }
-                other => panic!("{other:?}"),
+            let pair = solve(bar, &two(flatwise, torsion)).expect("solved");
+            let predicted = pair.edgewise_predicted_hz;
+            for fraction in [0.0024, 0.0026, 0.05] {
+                let supplied = predicted / (1.0 + sign * fraction);
+                let answered = solve(bar, &three(flatwise, torsion, supplied)).expect("answered");
+                assert!((answered.edgewise_residual_fraction.unwrap() - sign * fraction).abs() < 1.0e-9);
+                assert_eq!(answered.youngs_modulus_pa.to_bits(), pair.youngs_modulus_pa.to_bits());
             }
         }
     }
@@ -1382,79 +1353,63 @@ mod tests {
         );
     }
 
+    /// A frequency that is not a finite number above zero is refused and
+    /// not moved; past the compared ranges, where engine 0.8.0 refused by
+    /// name, every frequency of the bar is answered, the round trip closed,
+    /// and Young's modulus rises with the flatwise frequency.
     #[test]
-    fn a_frequency_outside_its_declared_range_is_refused_and_not_moved_to_the_limit() {
+    fn a_frequency_that_is_not_above_zero_is_refused_and_past_the_compared_ranges_is_answered() {
         let scan = &published_scans()[0];
-        for bad in [
-            f64::NAN,
-            f64::INFINITY,
-            -1588.627,
-            0.0,
-            FLATWISE_RANGE_HZ.0 - 1.0e-9,
-            FLATWISE_RANGE_HZ.1 + 1.0e-9,
-        ] {
+        for bad in [f64::NAN, f64::INFINITY, -1588.627, 0.0, -0.0] {
             match solve(scan.bar, &two(bad, scan.torsion_hz)) {
-                Err(ModulusReject::FrequencyOutOfRange {
+                Err(ModulusReject::FrequencyNotPositive {
                     mode: Mode::Flatwise,
                     frequency_hz,
                 }) => assert!(frequency_hz.to_bits() == bad.to_bits()),
                 other => panic!("{bad} gave {other:?}"),
             }
         }
-        // The limits themselves are inside, and the answer at a limit is the
-        // answer for that frequency: the low end is ERX1's single scan.
+        // The ends of the compared ranges and the next numbers past them.
         let lowest = &published_scans()[1];
-        let at_limit = solve(lowest.bar, &two(FLATWISE_RANGE_HZ.0, lowest.torsion_hz))
-            .expect("the low end of the flatwise range is answered");
-        let just_inside = solve(lowest.bar, &two(FLATWISE_RANGE_HZ.0 + 1.0e-3, lowest.torsion_hz))
-            .expect("just inside is answered");
+        let at_limit = solve(lowest.bar, &two(FLATWISE_RANGE_HZ.0, lowest.torsion_hz)).expect("the end");
+        let below = solve(lowest.bar, &two(FLATWISE_RANGE_HZ.0 - 1.0e-9, lowest.torsion_hz)).expect("past the end");
+        let just_inside = solve(lowest.bar, &two(FLATWISE_RANGE_HZ.0 + 1.0e-3, lowest.torsion_hz)).expect("just inside");
+        assert!(below.youngs_modulus_pa < at_limit.youngs_modulus_pa);
         assert!(at_limit.youngs_modulus_pa < just_inside.youngs_modulus_pa);
         assert_eq!(
             at_limit.youngs_modulus_pa.to_bits(),
             solve(lowest.bar, &series(lowest)).unwrap().youngs_modulus_pa.to_bits()
         );
-        for (mode, range) in [
-            (Mode::Edgewise, EDGEWISE_RANGE_HZ),
-            (Mode::Torsion, TORSION_RANGE_HZ),
-        ] {
-            for bad in [range.0 - 1.0e-9, range.1 + 1.0e-9] {
-                let mut moved = series(scan);
-                for reading in &mut moved {
-                    if reading.mode == mode {
-                        reading.frequency_hz = bad;
-                    }
-                }
-                match solve(scan.bar, &moved) {
-                    Err(ModulusReject::FrequencyOutOfRange {
-                        mode: refused,
-                        frequency_hz,
-                    }) => {
-                        assert_eq!(refused, mode);
-                        assert_eq!(frequency_hz.to_bits(), bad.to_bits());
-                    }
-                    other => panic!("{bad} gave {other:?}"),
+        // Through engine 0.6.0 the declared ranges were 1200 to 2000 Hz
+        // flatwise and 6700 to 11200 Hz in torsion: a softer and a stiffer
+        // bar of the same shape are answered, each round trip closed.
+        let mut last = 0.0;
+        for (flatwise, torsion) in [(1400.0, 7800.0), (scan.flatwise_hz, scan.torsion_hz), (1800.0, 10050.0)] {
+            let answered = solve(scan.bar, &two(flatwise, torsion)).unwrap_or_else(|reject| panic!("{flatwise} {torsion}: {reject}"));
+            assert!(answered.flatwise_residual_fraction.abs() <= ROUND_TRIP_TOLERANCE);
+            assert!(answered.torsion_residual_fraction.abs() <= ROUND_TRIP_TOLERANCE);
+            assert!(answered.youngs_modulus_pa > last);
+            last = answered.youngs_modulus_pa;
+        }
+        for (mode, bad) in [(Mode::Edgewise, -1.0), (Mode::Torsion, f64::NEG_INFINITY)] {
+            let mut moved = series(scan);
+            for reading in &mut moved {
+                if reading.mode == mode {
+                    reading.frequency_hz = bad;
                 }
             }
+            match solve(scan.bar, &moved) {
+                Err(ModulusReject::FrequencyNotPositive { mode: refused, frequency_hz }) => {
+                    assert_eq!(refused, mode);
+                    assert_eq!(frequency_hz.to_bits(), bad.to_bits());
+                }
+                other => panic!("{bad} gave {other:?}"),
+            }
         }
-        match solve(
-            scan.bar,
-            &[
-                Reading {
-                    mode: Mode::Torsion,
-                    frequency_hz: TORSION_RANGE_HZ.1 * 1.01,
-                },
-                Reading {
-                    mode: Mode::Flatwise,
-                    frequency_hz: scan.flatwise_hz,
-                },
-            ],
-        ) {
-            Err(ModulusReject::FrequencyOutOfRange {
-                mode: Mode::Torsion,
-                ..
-            }) => {}
-            other => panic!("{other:?}"),
-        }
+        assert_eq!(
+            ModulusReject::FrequencyNotPositive { mode: Mode::Torsion, frequency_hz: -1.0 }.to_string(),
+            "torsion frequency -1 Hz is not a finite number above zero"
+        );
     }
 
     #[test]
@@ -1479,39 +1434,33 @@ mod tests {
                 }
                 other => panic!("{other:?}"),
             }
-            // The public solver refuses the same pair at its declared range.
-            assert!(matches!(
-                solve(scan.bar, &two(flatwise, torsion)),
-                Err(ModulusReject::FrequencyOutOfRange { .. })
-            ));
+            // The public solver refuses the same pair by the same name.
+            assert_eq!(solve(scan.bar, &two(flatwise, torsion)).map(|moduli| moduli.youngs_modulus_pa), run.map(|moduli| moduli.youngs_modulus_pa));
         }
     }
 
     #[test]
-    fn an_edgewise_frequency_that_disagrees_is_refused() {
+    fn an_edgewise_frequency_that_disagrees_is_answered_with_its_residual() {
         let scan = &published_scans()[0];
         let mut moved = series(scan);
         moved[1].frequency_hz *= 1.003;
-        match solve(scan.bar, &moved) {
-            Err(ModulusReject::ModesInconsistent { residual_fraction }) => {
-                assert!(residual_fraction < -EDGEWISE_LIMIT_FRACTION, "{residual_fraction}")
-            }
-            other => panic!("{other:?}"),
-        }
+        let answered = solve(scan.bar, &moved).expect("answered");
+        let residual_fraction = answered.edgewise_residual_fraction.expect("supplied");
+        assert!(residual_fraction < -EDGEWISE_LIMIT_FRACTION, "{residual_fraction}");
         // Without the edgewise frequency the same two frequencies are answered.
         let solved = solve(scan.bar, &two(scan.flatwise_hz, scan.torsion_hz)).expect("solved");
         assert_eq!(solved.edgewise_residual_fraction, None);
     }
 
+    /// A model without the shear and rotary-inertia correction misses the
+    /// edgewise frequency by more than 2 percent, eight times line P2: the
+    /// residual returned shows it.
     #[test]
-    fn a_model_without_shear_misses_the_edgewise_frequency_and_is_refused() {
+    fn a_model_without_shear_misses_the_edgewise_frequency_and_the_residual_shows_it() {
         for scan in published_scans() {
-            match faulted(&scan, Fault::NoShear) {
-                Err(ModulusReject::ModesInconsistent { residual_fraction }) => {
-                    assert!(residual_fraction > 0.02, "{residual_fraction}")
-                }
-                other => panic!("{other:?}"),
-            }
+            let answered = faulted(&scan, Fault::NoShear).expect("answered");
+            let residual_fraction = answered.edgewise_residual_fraction.expect("supplied");
+            assert!(residual_fraction > 0.02, "{residual_fraction}");
         }
     }
 

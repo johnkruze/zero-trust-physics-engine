@@ -2,17 +2,20 @@
 //!
 //! A step is bit-checked against the compiled kernel step with the same proof
 //! bytes. A run from 0.1 percent creep extension under a held stress ends in
-//! the sealed refusal at the limit for its stress, 5 percent from 170 MPa and
-//! 0.2 percent below it, and its last landed state is the kernel loop's, to
-//! the bit. The tape of that run verifies and its receipt matches. A start
-//! below 0.1 percent, zero among them, is refused by name and carries no
-//! proof, as a step, as a run and as a row of a dataset. A later segment with
+//! the sealed refusal at 5 percent at every stress, and its last landed state
+//! is the kernel loop's, to the bit; below 170 MPa its frames past 0.2 percent
+//! carry FLAG_OUTSIDE_MET_RANGE. The tape of that run verifies and its
+//! receipt matches. A start below 0.1 percent, zero among them, lands with
+//! the same flag, as a step, as a run and as a row of a dataset, and a start
+//! below zero is refused by name and carries no proof. A later segment with
 //! another stress refuses the whole run before its first step. Every
 //! published bound is refused by name at the last representable number on
 //! each side. A constant of the card sent as a field is refused.
 //!
 //! The stresses of the runs are those of the fitted tests (140, 170 and
 //! 230 MPa) and values between them. No measured value is in this file.
+
+mod answer_text;
 
 use std::time::Duration;
 
@@ -50,7 +53,9 @@ async fn post_text(base: &str, path: &str, body: &str) -> (u16, String) {
         {
             Ok(response) => {
                 let status = response.status().as_u16();
-                return (status, response.text().await.unwrap());
+                let text = response.text().await.unwrap();
+                answer_text::remember(&text);
+                return (status, text);
             }
             Err(error) => {
                 last_error = Some(error);
@@ -62,7 +67,7 @@ async fn post_text(base: &str, path: &str, body: &str) -> (u16, String) {
 }
 
 async fn post(base: &str, path: &str, body: &Value) -> (u16, String) {
-    post_text(base, path, &serde_json::to_string(body).unwrap()).await
+    post_text(base, path, &answer_text::as_sent(body)).await
 }
 
 fn sha256_hex(bytes: &[u8]) -> String {
@@ -90,12 +95,12 @@ fn floor() -> f64 {
 }
 
 /// The one advisory flag the card declares. No other bit may be set.
-const DECLARED_FLAGS: u64 = creep_cmsx6::FLAG_CREEP_RATE_RISING;
+const DECLARED_FLAGS: u64 = creep_cmsx6::FLAG_CREEP_RATE_RISING | creep_cmsx6::FLAG_OUTSIDE_MET_RANGE;
 
 /// The lowest creep extension of the card: every run here starts at or above it.
 const START: f64 = creep_cmsx6::CREEP_EXTENSION_MIN_PERCENT;
 
-const STEPS_ASKED: u64 = 40_000;
+const STEPS_ASKED: u64 = 110_000;
 const RECORD_EVERY: u64 = 1_000;
 
 fn step_body(extension_percent: f64, stress_mpa: f64, dt_s: f64) -> Value {
@@ -183,7 +188,9 @@ fn assert_state_is(published_state: &Value, state: &CreepState, label: &str) {
     }
     assert_eq!(object["creep_rate_rising"], state.creep_rate_rising, "{label}");
     keys.insert("creep_rate_rising".to_string());
-    assert!(state.creep_extension_percent >= START, "{label}");
+    assert_eq!(object["outside_met_range"], state.outside_met_range, "{label}");
+    keys.insert("outside_met_range".to_string());
+    assert!(state.creep_extension_percent >= 0.0, "{label}");
     let found: std::collections::BTreeSet<String> = object.keys().cloned().collect();
     assert_eq!(found, keys, "{label}: the published names drifted from the card");
 }
@@ -295,10 +302,12 @@ async fn single_steps_chain_through_the_creep_extension() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_run_under_a_held_stress_ends_in_the_sealed_refusal_at_the_limit_for_its_stress_with_the_state_of_the_kernel_loop() {
     let base = spawn_app().await;
-    // (stress, limit of creep extension, steps the run lands at the ceiling from 0.1 percent)
+    // (stress, limit of creep extension, steps the run lands at the ceiling
+    // from 0.1 percent). Through engine 0.9 the limit below 170 MPa was 0.2
+    // percent, and the 140 MPa run ended after 5,159 steps.
     for (stress, limit, steps) in [
-        (140.0, 0.2, 5_159_u64),
-        (169.0, 0.2, 0),
+        (140.0, 5.0, 102_748_u64),
+        (169.0, 5.0, 0),
         (170.0, 5.0, 30_506),
         (200.0, 5.0, 11_031),
         (230.0, 5.0, 4_462),
@@ -317,7 +326,7 @@ async fn a_run_under_a_held_stress_ends_in_the_sealed_refusal_at_the_limit_for_i
         assert_eq!(tape["reject"], "CreepExtensionBeyondCard", "{stress}");
         assert_eq!(
             tape["reject_detail"],
-            format!("Physical Failure: the step would pass the limit of creep extension for the held stress, 0.2 percent below 170 MPa, 5 percent from 170 MPa (CreepExtensionBeyondCard). The run is sealed to step {landed}. The state at step {} was refused and is not sealed.", landed + 1),
+            format!("Physical Failure: the step would pass the limit of creep extension, 5 percent, the largest level of the protocol (CreepExtensionBeyondCard). The run is sealed to step {landed}. The state at step {} was refused and is not sealed.", landed + 1),
             "{stress}"
         );
         assert_eq!(tape["steps_landed"], landed, "{stress}");
@@ -329,8 +338,10 @@ async fn a_run_under_a_held_stress_ends_in_the_sealed_refusal_at_the_limit_for_i
         // Rule 6: the run passed a limit part way and keeps its proof up to the last landed step.
         assert!(tape["run_seal"].as_str().is_some_and(|seal| seal.len() == 64));
         assert!(!tape["frames"].as_array().unwrap().is_empty());
-        // The law's rate has passed its minimum by 5 percent and has not by 0.2 percent.
-        assert_eq!(last["creep_rate_rising"], limit == 5.0, "{stress}");
+        // The law's rate has passed its minimum by 5 percent; below 170 MPa the
+        // frame past 0.2 percent is where the law missed the measured curves.
+        assert_eq!(last["creep_rate_rising"], true, "{stress}");
+        assert_eq!(last["outside_met_range"], stress < 170.0, "{stress}");
         // The clock is the time since the full load: the run started at the law's
         // own time to 0.1 percent and ends within one step of its time to the limit.
         let started = alloy().law_time_since_load_s(stress, START);
@@ -366,25 +377,36 @@ async fn a_run_under_a_held_stress_ends_in_the_sealed_refusal_at_the_limit_for_i
 }
 
 /// The saved requests of the first held-back run started at zero extension.
-/// Sent again, each is refused by name before a step and carries no proof.
+/// Through engine 0.9 each was refused as CreepExtensionBelowCard; sent again,
+/// each lands, its frames under 0.1 percent flagged as where the law missed
+/// the measured curves, and a start below zero is refused by name.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn a_start_below_a_tenth_of_a_percent_is_refused_by_name_as_a_step_a_run_and_a_dataset_row() {
+async fn a_start_below_a_tenth_of_a_percent_lands_flagged_and_one_below_zero_is_refused_by_name() {
     let base = spawn_app().await;
-    let names = |text: &str| {
-        text.contains("(CreepExtensionBelowCard). That state is not sealed.")
-            && !text.contains("sha256_seal")
-            && !text.contains("run_seal\":\"")
-    };
     for stress in [140.0, 170.0, 200.0, 230.0] {
         for start in [0.0, 1.0e-9, 0.05, 0.0999, below(START)] {
-            let (status, text) = post(&base, "/verify_physics", &step_body(start, stress, ceiling())).await;
-            assert_eq!(status, 422, "{stress} {start}: {text}");
-            assert!(names(&text), "{stress} {start}: {text}");
-            let (status, text) = post(&base, "/run_trajectory", &run_body(start, stress, ceiling(), 100, 10)).await;
-            assert_eq!(status, 422, "{stress} {start}: {text}");
-            assert!(names(&text), "{stress} {start}: {text}");
+            let (status, text) = post(&base, "/verify_physics", &step_body(start, stress, 5.0)).await;
+            assert_eq!(status, 200, "{stress} {start}: {text}");
+            let answer: Value = serde_json::from_str(&text).unwrap();
+            assert_eq!(answer["state"]["outside_met_range"], true, "{stress} {start}");
+            let (status, text) = post(&base, "/run_trajectory", &run_body(start, stress, 5.0, 100, 10)).await;
+            assert_eq!(status, 200, "{stress} {start}: {text}");
+            let tape: Value = serde_json::from_str(&text).unwrap();
+            assert_eq!(tape["outcome"], "completed", "{stress} {start}");
+            let (state, landed, reject) = direct_loop(start, stress, 5.0, 100);
+            assert_eq!((landed, reject), (100, None));
+            assert_state_is(&tape["final_state"], &state, &format!("{stress} {start}"));
+            for frame in tape["frames"].as_array().unwrap() {
+                let bytes: [u8; 64] = hex::decode(frame["frame_hex"].as_str().unwrap()).unwrap().try_into().unwrap();
+                let frame = LastStateFrame64::from_bytes(bytes);
+                assert_eq!(frame.flags & !DECLARED_FLAGS, 0);
+            }
         }
-        // 0.1 percent itself starts, at every tested stress.
+        // A start at zero is at the moment the full load is applied: its clock is zero.
+        let (_, text) = post(&base, "/verify_physics", &step_body(0.0, stress, 5.0)).await;
+        let answer: Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(published(&answer["state"], "t_s"), 5.0, "{stress}");
+        // 0.1 percent itself starts with no flag.
         let (status, text) = post(&base, "/run_trajectory", &run_body(START, stress, ceiling(), 100, 10)).await;
         assert_eq!(status, 200, "{stress}: {text}");
         let tape: Value = serde_json::from_str(&text).unwrap();
@@ -393,22 +415,27 @@ async fn a_start_below_a_tenth_of_a_percent_is_refused_by_name_as_a_step_a_run_a
             let bytes: [u8; 64] = hex::decode(frame["frame_hex"].as_str().unwrap()).unwrap().try_into().unwrap();
             let frame = LastStateFrame64::from_bytes(bytes);
             assert!(frame.pos[0] >= START as f32);
-            assert_eq!(frame.flags & !DECLARED_FLAGS, 0);
+            assert_eq!(frame.flags & creep_cmsx6::FLAG_OUTSIDE_MET_RANGE, 0);
         }
     }
-    let (status, text) = post(&base, "/verify_physics", &step_body(0.0, 200.0, ceiling())).await;
+    // A step of the ceiling from zero at 230 MPa leaves more than the ledger's
+    // limit: it is refused by the ledger, by name, and carries no proof.
+    let (status, text) = post(&base, "/verify_physics", &step_body(0.0, 230.0, ceiling())).await;
+    assert_eq!(status, 422, "{text}");
+    assert!((text.contains("(FirstLawBreach)") || text.contains("(SpontaneousGeneration)")) && !text.contains("sha256_seal"), "{text}");
+    let (status, text) = post(&base, "/verify_physics", &step_body(-1.0e-9, 200.0, ceiling())).await;
     assert_eq!(status, 422);
     assert_eq!(
         text,
-        "Physical Failure: 'creep_extension_percent' 0 % is below 0.1 %, the inclusive minimum of the creep_cmsx6 card (CreepExtensionBelowCard). That state is not sealed."
+        "Physical Failure: 'creep_extension_percent' -1e-9 % is below 0 %, the inclusive minimum of the creep_cmsx6 card (CreepExtensionBelowZero). That state is not sealed."
     );
-    // A dataset row that starts at zero is not admitted; its neighbour at 0.1 percent runs.
-    let runs: Vec<Value> = [0.0, START]
+    // A dataset row that starts at zero runs, and one below zero is not admitted.
+    let runs: Vec<Value> = [0.0, -1.0e-3]
         .iter()
         .map(|start| {
             json!({
                 "initial": { "creep_extension_percent": start },
-                "dt_s": ceiling(),
+                "dt_s": 5.0,
                 "segments": [{ "steps": 10, "load": { "stress_mpa": 200.0 } }],
                 "record_every": 10
             })
@@ -424,23 +451,27 @@ async fn a_start_below_a_tenth_of_a_percent_is_refused_by_name_as_a_step_a_run_a
     let (status, text) = post(&base, "/run_dataset", &plan).await;
     assert_eq!(status, 200, "{text}");
     let answer: Value = serde_json::from_str(&text).unwrap();
-    assert_eq!(answer["rows"][0]["outcome"], "unadmitted", "{text}");
-    assert!(answer["rows"][0]["run_seal"].is_null(), "{text}");
-    assert!(answer["rows"][0]["reject_detail"].as_str().unwrap().contains("(CreepExtensionBelowCard)"), "{text}");
-    assert_eq!(answer["rows"][1]["outcome"], "completed", "{text}");
-    // The description names the one flag that is left.
+    assert_eq!(answer["rows"][0]["outcome"], "completed", "{text}");
+    assert_eq!(answer["rows"][1]["outcome"], "unadmitted", "{text}");
+    assert!(answer["rows"][1]["run_seal"].is_null(), "{text}");
+    assert!(answer["rows"][1]["reject_detail"].as_str().unwrap().contains("(CreepExtensionBelowZero)"), "{text}");
+    // The description names its two flags.
     let (_, described) = post(&base, "/describe_card", &json!({"domain": "materials", "card": "creep_cmsx6"})).await;
     let described: Value = serde_json::from_str(&described).unwrap();
     let flags = described["advisory_flags"].as_array().unwrap();
-    assert_eq!(flags.len(), 1);
+    assert_eq!(flags.len(), 2);
     assert_eq!(flags[0]["name"], "FLAG_CREEP_RATE_RISING");
     assert_eq!(flags[0]["mask"], 1);
+    assert_eq!(flags[1]["name"], "FLAG_OUTSIDE_MET_RANGE");
+    assert_eq!(flags[1]["mask"], 2);
     assert!(!described.to_string().contains("FLAG_BELOW_COMPARED_EXTENSION"));
     let rejects: Vec<&str> = described["rejects"].as_array().unwrap().iter().map(|r| r["name"].as_str().unwrap()).collect();
-    assert_eq!(rejects.len(), 12);
-    for name in ["CreepExtensionBelowCard", "CreepExtensionOutsideCard", "CreepExtensionBeyondCard", "StressNotHeld"] {
+    // After the kernel's 12 names the list holds the gateway's own two, DtBelowFloor and DtAboveCeiling.
+    assert_eq!(rejects.len(), 14);
+    for name in ["CreepExtensionBelowZero", "CreepExtensionOutsideCard", "CreepExtensionBeyondCard", "StressNotHeld"] {
         assert!(rejects.contains(&name), "{name}");
     }
+    assert!(!rejects.contains(&"CreepExtensionBelowCard"));
     assert!(!rejects.contains(&"TimeBeyondCard"));
 }
 
@@ -505,7 +536,7 @@ async fn each_bound_lands_at_the_last_number_inside_and_is_refused_by_name_at_th
     let (_, described) = post(&base, "/describe_card", &json!({"domain": "materials", "card": "creep_cmsx6"})).await;
     let described: Value = serde_json::from_str(&described).unwrap();
     let published = |list: &str, key: &str| described[list][0][key].as_f64().unwrap();
-    assert_eq!(published("phase_fields", "minimum").to_bits(), START.to_bits());
+    assert_eq!(published("phase_fields", "minimum").to_bits(), 0.0_f64.to_bits());
     assert_eq!(published("phase_fields", "maximum").to_bits(), extension_max.to_bits());
     assert_eq!(published("load_fields", "minimum").to_bits(), stress_min.to_bits());
     assert_eq!(published("load_fields", "maximum").to_bits(), stress_max.to_bits());
@@ -519,29 +550,29 @@ async fn each_bound_lands_at_the_last_number_inside_and_is_refused_by_name_at_th
     // (extension, stress, the refusal, or none when the start is inside the card)
     let cases: [(f64, f64, Option<&str>); 18] = [
         (START, 185.0, None),
-        (below(START), 185.0, Some("CreepExtensionBelowCard")),
+        (below(START), 185.0, None),
         (START, stress_min, None),
-        (below(START), stress_min, Some("CreepExtensionBelowCard")),
-        (-f64::MIN_POSITIVE, 185.0, Some("CreepExtensionBelowCard")),
-        // The upper limit from 170 MPa: 5 percent.
+        (below(START), stress_min, None),
+        (0.0, stress_min, None),
+        (-f64::MIN_POSITIVE, 185.0, Some("CreepExtensionBelowZero")),
+        // The upper limit at every stress: 5 percent.
         (below(extension_max), full_reach, None),
         (extension_max, full_reach, None),
         (above(extension_max), 185.0, Some("CreepExtensionOutsideCard")),
-        // The upper limit below 170 MPa: 0.2 percent, to the last stress under 170 MPa.
-        (below(extension_max_low), stress_min, None),
-        (extension_max_low, stress_min, None),
-        (above(extension_max_low), stress_min, Some("CreepExtensionOutsideCard")),
-        (extension_max_low, below(full_reach), None),
-        (above(extension_max_low), below(full_reach), Some("CreepExtensionOutsideCard")),
-        (above(extension_max_low), full_reach, None),
-        (0.5, 155.0, Some("CreepExtensionOutsideCard")),
+        (below(extension_max), stress_min, None),
+        (extension_max, stress_min, None),
+        (above(extension_max), stress_min, Some("CreepExtensionOutsideCard")),
+        // Past 0.2 percent below 170 MPa: the law missed there, and the card answers.
+        (above(extension_max_low), stress_min, None),
+        (above(extension_max_low), below(full_reach), None),
+        (0.5, 155.0, None),
         // The stress span.
         (0.15, below(stress_min), Some("StressOutsideCard")),
         (0.3, stress_max, None),
         (0.3, above(stress_max), Some("StressOutsideCard")),
     ];
     for (extension, stress, refusal) in cases {
-        let limit = if stress >= full_reach { extension_max } else { extension_max_low };
+        let limit = extension_max;
         // One second from just under the limit at the lowest stress of its reach stays under it;
         // from the limit itself, and from the last number under it, no step stays inside.
         let at_the_limit = extension >= below(limit);
@@ -597,10 +628,13 @@ async fn each_bound_lands_at_the_last_number_inside_and_is_refused_by_name_at_th
             }
         }
     }
-    let (_, text) = post(&base, "/verify_physics", &step_body(0.5, 155.0, ceiling())).await;
+    let (_, text) = post(&base, "/verify_physics", &step_body(above(extension_max), 155.0, ceiling())).await;
     assert_eq!(
         text,
-        "Physical Failure: the creep extension is above the limit for the held stress, 0.2 percent below 170 MPa, 5 percent from 170 MPa (CreepExtensionOutsideCard). That state is not sealed."
+        format!(
+            "Physical Failure: 'creep_extension_percent' {} % is above 5 %, the inclusive maximum of the creep_cmsx6 card (CreepExtensionOutsideCard). That state is not sealed.",
+            above(extension_max)
+        )
     );
     // A clock under the floor or over the ceiling is named as well.
     let (status, text) = post(&base, "/verify_physics", &step_body(0.3, 185.0, below(floor()))).await;
@@ -625,7 +659,7 @@ async fn each_bound_lands_at_the_last_number_inside_and_is_refused_by_name_at_th
     )
     .await;
     assert_eq!(status, 422);
-    assert!(text.contains("Missing required parameter: 'stress_mpa'"), "{text}");
+    assert!(text.contains("Missing required parameter: 'stress_mpa' (InputMissing)."), "{text}");
     let (status, text) = post(
         &base,
         "/verify_physics",
@@ -634,7 +668,7 @@ async fn each_bound_lands_at_the_last_number_inside_and_is_refused_by_name_at_th
     )
     .await;
     assert_eq!(status, 422);
-    assert!(text.contains("Missing required parameter: 'creep_extension_percent'"), "{text}");
+    assert!(text.contains("Missing required parameter: 'creep_extension_percent' (InputMissing)."), "{text}");
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -691,7 +725,7 @@ async fn a_grid_of_four_stresses_gives_rows_whose_run_seals_are_the_runs_alone()
                 "base": {
                     "initial": { "creep_extension_percent": START },
                     "dt_s": ceiling(),
-                    "segments": [{ "steps": STEPS_ASKED, "load": {} }],
+                    "segments": [{ "steps": 40_000, "load": {} }],
                     "record_every": RECORD_EVERY
                 },
                 "axes": [{ "path": "segments[0].load.stress_mpa", "values": stresses }]
@@ -708,7 +742,7 @@ async fn a_grid_of_four_stresses_gives_rows_whose_run_seals_are_the_runs_alone()
         for (row, stress) in rows.iter().zip(stresses) {
             assert_eq!(row["outcome"], "refused", "{row}");
             assert_eq!(row["reject"], "CreepExtensionBeyondCard", "{row}");
-            let alone = run_body(START, stress, ceiling(), STEPS_ASKED, RECORD_EVERY);
+            let alone = run_body(START, stress, ceiling(), 40_000, RECORD_EVERY);
             let (status, alone) = post(&base, "/run_trajectory", &alone).await;
             assert_eq!(status, 200, "{alone}");
             let alone: Value = serde_json::from_str(&alone).unwrap();
@@ -781,7 +815,7 @@ async fn the_creep_card_is_listed_in_the_materials_domain_as_the_eighteenth_card
     let client = Client::new();
     let listed: Value = client.get(format!("{base}/cards")).send().await.unwrap().json().await.unwrap();
     let all_pairs = listed["cards"].as_array().unwrap();
-    assert_eq!(all_pairs.len(), 31);
+    assert_eq!(all_pairs.len(), 37);
     let listed = &all_pairs[17];
     assert_eq!(listed["domain"], "materials");
     assert_eq!(listed["card"], "creep_cmsx6");

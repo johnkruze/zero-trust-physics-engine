@@ -23,9 +23,26 @@
 //! Above 9760 keV the fit is not defined and [`cross_section_barn`] names it.
 //! The Maxwellian reactivity is the integral of that fit,
 //! `⟨σv⟩ = √(8/(π μc²)) · c · T^(−3/2) ∫ σ E e^(−E/T) dE`, with the papers'
-//! `μc² = 859 526 keV` and `E_G = 22 589 keV`. It is declared from 10 to
-//! 500 keV; the evaluations differ by about ±10 % from 10 to 60 keV and by
-//! −15 % / +5 % from 70 to 500 keV. The research record is
+//! `μc² = 859 526 keV` and `E_G = 22 589 keV`. It is declared from 1 to
+//! 1000 keV, each end by the integral's own arithmetic. The energies that
+//! carry the rate, the Gamow window `E₀ ± Δ/2`, `E₀ = (E_G T²/4)^(1/3)`,
+//! `Δ = 4 √(E₀ T / 3)`, run from 12.9 to 22.7 keV at 1 keV, from 50 to
+//! 116 keV at 10 keV and from 241 to 3321 keV at 1000 keV. At the bottom the
+//! panels, 1 keV wide below 400 keV, hold that window within 1e-13 of a rule
+//! a hundred times finer. At the top the integral stops where the fit does,
+//! 9760 keV, and the part of the rate above it, which the integral leaves
+//! out, is 1.7e-5 at 1000 keV and grows past it (3.6e-4 at 1500 keV). The
+//! fit rests on measured points from 22 keV (Becker 1987) to 3481 keV
+//! (Sikora and Weller 2016): the window leaves the last of them at about
+//! 1060 keV, and falls below the first under about 3 keV, where the rate
+//! rests on the fit's S-factor near zero energy, 197 MeV b (NACRE II:
+//! 210, +20 or −30). Until this version the bottom was 10 keV. A second
+//! quadrature, Simpson's rule on its own grid, gives the same integral
+//! within 1e-10 from 1 to 1000 keV (test
+//! `a_second_quadrature_gives_the_same_reactivity_to_1000_kev`). The
+//! evaluations differ by about ±10 % from 10 to 60 keV and by −15 % / +5 %
+//! from 70 to 500 keV; above 500 keV and below 10 keV no other evaluation
+//! was integrated. The research record is
 //! `evidence/research/fusion_pb11/reaction_rates/FINDINGS.md`.
 //!
 //! The D-T card `tokamak_jet_dte1` of `genesis_kernel` uses the same units
@@ -45,6 +62,7 @@
 //! relativistic factor of Putvinski, Ryutov and Yushmanov (2019) as written
 //! in Ochs et al. (2022), equation A7.
 
+use genesis_kernel::math;
 use std::f64::consts::PI;
 
 /// Elementary charge, C (SI 2019, exact).
@@ -82,10 +100,33 @@ pub const GAMOW_ENERGY_KEV: f64 = 22_589.0;
 pub const REDUCED_MASS_KEV: f64 = 859_526.0;
 /// Highest centre-of-mass energy of the cross-section fit, keV.
 pub const CROSS_SECTION_ENERGY_MAX_KEV: f64 = 9760.0;
-/// Lowest temperature of the declared reactivity, keV.
-pub const REACTIVITY_TEMPERATURE_MIN_KEV: f64 = 10.0;
-/// Highest temperature of the declared reactivity, keV.
-pub const REACTIVITY_TEMPERATURE_MAX_KEV: f64 = 500.0;
+/// Lowest temperature of the declared reactivity, keV: the quadrature's
+/// panels, 1 keV wide below 400 keV, hold the Gamow window there (12.9 to
+/// 22.7 keV) within 1e-13 of a rule a hundred times finer (test
+/// `the_ends_of_the_reactivity_are_where_its_integral_holds`). It was 10 keV
+/// until this version.
+pub const REACTIVITY_TEMPERATURE_MIN_KEV: f64 = 1.0;
+/// Highest temperature of the declared reactivity, keV: the integral stops at
+/// the top of the cross-section fit, [`CROSS_SECTION_ENERGY_MAX_KEV`], and the
+/// part of the rate above it, which the integral leaves out, is 1.7e-5 of the
+/// rate here and grows past it (3.6e-4 at 1500 keV). At about 1060 keV the
+/// Gamow window also reaches past the fit's last measured point, 3481 keV
+/// (Sikora and Weller 2016), into the digitised curve. It was 500 keV, the
+/// top of the published reactivity fit's comparison, until engine 0.11.0.
+pub const REACTIVITY_TEMPERATURE_MAX_KEV: f64 = 1000.0;
+/// Lowest and highest centre-of-mass energies of the measured points the
+/// cross-section fit was made on, keV (Tentori and Belloni 2023: Becker 1987
+/// from 22 keV, Sikora and Weller 2016 to 3481 keV).
+pub const MEASURED_POINTS_MIN_KEV: f64 = 22.0;
+pub const MEASURED_POINTS_MAX_KEV: f64 = 3481.0;
+
+/// The Gamow window at `temperature_kev`, keV: its centre `E₀ = (E_G T²/4)^(1/3)`
+/// and its width `Δ = 4 √(E₀ T / 3)`, the energies that carry most of the
+/// Maxwellian rate of a reaction of Gamow energy `E_G`.
+pub fn gamow_window_kev(temperature_kev: f64) -> (f64, f64) {
+    let centre = math::cbrt(GAMOW_ENERGY_KEV * temperature_kev * temperature_kev / 4.0);
+    (centre, 4.0 * (centre * temperature_kev / 3.0).sqrt())
+}
 
 /// The published fit the reactivity is checked against.
 pub const REFERENCE_NAME: &str = "Tentori and Belloni (2023), 11B(p,α)2α reactivity revisited, Nucl. Fusion 63, 086001: the reactivity fit of Table 2, stated by its authors to be within 1 % of their integral from 70 to 500 keV";
@@ -160,7 +201,7 @@ pub fn cross_section_barn(energy_kev: f64) -> Option<f64> {
     if !(energy_kev > 0.0 && energy_kev <= CROSS_SECTION_ENERGY_MAX_KEV) {
         return None;
     }
-    Some(s_factor_mev_b(energy_kev) * 1.0e3 / energy_kev * (-(GAMOW_ENERGY_KEV / energy_kev).sqrt()).exp())
+    Some(s_factor_mev_b(energy_kev) * 1.0e3 / energy_kev * math::exp(-(GAMOW_ENERGY_KEV / energy_kev).sqrt()))
 }
 
 /// The cross-section inside an integral: zero where the fit is not defined.
@@ -175,7 +216,7 @@ fn cross_section_or_zero(energy_kev: f64) -> f64 {
 /// 4 keV to 1500 keV and 20 keV above, and split at the joins of the fit.
 pub(crate) fn reactivity_integral_m3_per_s(temperature_kev: f64) -> f64 {
     let t = temperature_kev;
-    let weight = |e: f64| cross_section_or_zero(e) * e * (-e / t).exp();
+    let weight = |e: f64| cross_section_or_zero(e) * e * math::exp(-e / t);
     let integral = integrate(0.0, 400.0, 400, weight)
         + integrate(400.0, 668.0, 67, weight)
         + integrate(668.0, 1500.0, 208, weight)
@@ -247,7 +288,7 @@ pub fn beam_target_rate_for_m3_per_s(
     let integral = integrate(low, high, panels, |u| {
         let near = (u - beam_speed) / thermal_speed;
         let far = (u + beam_speed) / thermal_speed;
-        cross_section_barn(to_centre_of_mass_kev * u * u) * 1.0e-28 * u * u * ((-near * near).exp() - (-far * far).exp())
+        cross_section_barn(to_centre_of_mass_kev * u * u) * 1.0e-28 * u * u * (math::exp(-near * near) - math::exp(-far * far))
     });
     integral / (PI.sqrt() * beam_speed * thermal_speed)
 }
@@ -256,7 +297,7 @@ pub fn beam_target_rate_for_m3_per_s(
 /// function of order 3/2, and its derivative `ψ′(x) = (2/√π) √x e^(−x)`.
 /// A series below `x = 2.5`, a continued fraction above.
 pub fn psi_and_derivative(x: f64) -> (f64, f64) {
-    let derivative = 2.0 / PI.sqrt() * x.sqrt() * (-x).exp();
+    let derivative = 2.0 / PI.sqrt() * x.sqrt() * math::exp(-x);
     if x <= 0.0 {
         return (0.0, 0.0);
     }
@@ -309,7 +350,7 @@ pub fn psi_and_derivative(x: f64) -> (f64, f64) {
 /// Coulomb logarithm of electrons with ions, NRL Plasma Formulary, the branch
 /// for `T_e` above `10 Z²` eV: `24 − ln(√n_e[cm⁻³] / T_e[eV])`.
 pub fn coulomb_logarithm_electron(electron_density_per_m3: f64, electron_temperature_kev: f64) -> f64 {
-    24.0 - ((electron_density_per_m3 * 1.0e-6).sqrt() / (electron_temperature_kev * 1.0e3)).ln()
+    24.0 - math::log((electron_density_per_m3 * 1.0e-6).sqrt() / (electron_temperature_kev * 1.0e3))
 }
 
 /// Coulomb logarithm of a fast ion with a thermal ion species, NRL Plasma
@@ -325,9 +366,8 @@ pub fn coulomb_logarithm_fast_ion(
     let mu = fast.mass_kg / PROTON_MASS_KG;
     let mu_field = field.mass_kg / PROTON_MASS_KG;
     let beta = speed_m_per_s / SPEED_OF_LIGHT_M_PER_S;
-    43.0 - (fast.charge * field.charge * (mu + mu_field) / (mu * mu_field * beta * beta)
+    43.0 - math::log(fast.charge * field.charge * (mu + mu_field) / (mu * mu_field * beta * beta)
         * (electron_density_per_m3 * 1.0e-6 / (electron_temperature_kev * 1.0e3)).sqrt())
-    .ln()
 }
 
 /// The relativistic factor on the energy flow between ions and electrons,
@@ -336,7 +376,7 @@ pub fn coulomb_logarithm_fast_ion(
 pub fn relativistic_exchange_factor(electron_temperature_kev: f64) -> f64 {
     let t = electron_temperature_kev / ELECTRON_REST_KEV;
     let top = ((1.0 + 45.0 * t) * (1.0 + 45.0 * t) - 1.0).sqrt();
-    let integral = integrate(0.0, top, 64, |u| u * u * (-((1.0 + u * u).sqrt() - 1.0) / t).exp());
+    let integral = integrate(0.0, top, 64, |u| u * u * math::exp(-((1.0 + u * u).sqrt() - 1.0) / t));
     (1.0 + 2.0 * t + 2.0 * t * t) * (PI * t * t * t / 2.0).sqrt() / integral
 }
 
@@ -485,11 +525,129 @@ mod tests {
         assert_eq!(cross_section_barn(-1.0), None);
         assert_eq!(cross_section_barn(9760.1), None);
         assert_eq!(cross_section_barn(f64::NAN), None);
-        assert_eq!(reactivity_pb11_m3_per_s(9.99), None);
-        assert_eq!(reactivity_pb11_m3_per_s(500.1), None);
+        assert_eq!(reactivity_pb11_m3_per_s(0.99), None);
+        assert_eq!(reactivity_pb11_m3_per_s(f64::from_bits(1.0_f64.to_bits() - 1)), None);
+        assert!(reactivity_pb11_m3_per_s(1.0).is_some());
+        assert!(reactivity_pb11_m3_per_s(9.99).is_some());
+        assert_eq!(reactivity_pb11_m3_per_s(f64::from_bits(1000.0_f64.to_bits() + 1)), None);
         assert_eq!(reactivity_pb11_m3_per_s(f64::NAN), None);
         assert!(reactivity_pb11_m3_per_s(10.0).is_some());
         assert!(reactivity_pb11_m3_per_s(500.0).is_some());
+        assert!(reactivity_pb11_m3_per_s(500.1).is_some());
+        assert!(reactivity_pb11_m3_per_s(1000.0).is_some());
+    }
+
+    /// Simpson's rule, `steps` intervals (made even) from `low` to `high`.
+    fn simpson(low: f64, high: f64, steps: usize, f: &impl Fn(f64) -> f64) -> f64 {
+        let steps = steps + steps % 2;
+        let h = (high - low) / steps as f64;
+        // The fit steps at its joins: each piece starts on its own branch.
+        let mut sum = f(f64::from_bits(low.to_bits() + 1)) + f(high);
+        for i in 1..steps {
+            sum += if i % 2 == 1 { 4.0 } else { 2.0 } * f(low + i as f64 * h);
+        }
+        sum * h / 3.0
+    }
+
+    /// The Maxwellian integral by a second rule written apart from
+    /// [`reactivity_integral_m3_per_s`]: Simpson's rule, not Gauss-Legendre,
+    /// on its own breaks (the 148 keV term taken on 0.01 keV steps from 128
+    /// to 168 keV), with the cross-section of the published formula and the
+    /// constants of the paper. `refine` divides every step.
+    fn simpson_reactivity_m3_per_s(t: f64, refine: usize) -> f64 {
+        let weight = |e: f64| if e > 1.0e-3 { cross_section_barn(e).unwrap_or(0.0) * e * (-e / t).exp() } else { 0.0 };
+        let pieces: [(f64, f64, f64); 7] = [
+            (0.0, 128.0, 0.25),
+            (128.0, 168.0, 0.01),
+            (168.0, 400.0, 0.25),
+            (400.0, 668.0, 0.5),
+            (668.0, 1500.0, 1.0),
+            (1500.0, 4000.0, 2.0),
+            (4000.0, CROSS_SECTION_ENERGY_MAX_KEV, 5.0),
+        ];
+        let mut integral = 0.0;
+        for (low, high, step) in pieces {
+            integral += simpson(low, high, ((high - low) / step).round() as usize * refine, &weight);
+        }
+        (8.0 / (PI * REDUCED_MASS_KEV)).sqrt() * SPEED_OF_LIGHT_M_PER_S * integral * 1.0e-28 / (t * t.sqrt())
+    }
+
+    /// The reactivity is confirmed above 500 keV and below 10 keV by a
+    /// second, independent quadrature: every 1 keV from 1 to 9 keV, then
+    /// from 10 to 1000 keV every 10 keV, the two rules agree
+    /// within 1e-10 (6.7e-12 at worst when written), and Simpson's rule with
+    /// every step halved moves by less than 1e-9, so the agreement is not
+    /// that of two rules equally wrong.
+    /// At 700 and 1000 keV both meet the research's 30-digit integral
+    /// (`REFERENCE_TABLE`) to its five printed figures.
+    #[test]
+    fn a_second_quadrature_gives_the_same_reactivity_to_1000_kev() {
+        let mut worst: f64 = 0.0;
+        let mut worst_halving: f64 = 0.0;
+        for t in (1..=9).map(f64::from).chain((1..=100).map(|step| 10.0 * f64::from(step))) {
+            let gauss = reactivity_pb11_m3_per_s(t).expect("declared");
+            let coarse = simpson_reactivity_m3_per_s(t, 1);
+            let fine = simpson_reactivity_m3_per_s(t, 2);
+            assert!(gauss.is_finite() && coarse.is_finite() && fine.is_finite(), "{t}");
+            worst = worst.max((gauss / fine - 1.0).abs());
+            worst_halving = worst_halving.max((coarse / fine - 1.0).abs());
+        }
+        println!("Gauss against Simpson, 1 to 1000 keV: worst {worst:e}; Simpson halved: {worst_halving:e}");
+        assert!(worst < 1.0e-10, "{worst}");
+        assert!(worst_halving < 1.0e-9, "{worst_halving}");
+        for (t, table_cm3_per_s) in [(700.0, 6.2428e-16), (1000.0, 6.7905e-16)] {
+            let off = simpson_reactivity_m3_per_s(t, 2) * 1.0e6 / table_cm3_per_s - 1.0;
+            assert!(off.abs() < 1.0e-4, "{t}: {off}");
+        }
+    }
+
+    /// The reason for each end of the declared reactivity, the integral's
+    /// own. At the bottom, 1 keV, the Gamow window is 12.9 to 22.7 keV, and
+    /// the served panels, 1 keV wide, hold the integral within 1e-13 of
+    /// panels a hundredth as wide. At the top, 1000 keV, the part of the rate
+    /// above the fit's top, 9760 keV, which the integral leaves out, is
+    /// estimated with the cross-section continued as `σ(9760 keV) · 9760 / E`:
+    /// under 2e-5 at 1000 keV, about 3.6e-4 at 1500 keV. The window lies
+    /// inside the fit's measured points from about 3 keV to between 1000 and
+    /// 1100 keV.
+    #[test]
+    fn the_ends_of_the_reactivity_are_where_its_integral_holds() {
+        let inside = |t: f64| {
+            let (centre, width) = gamow_window_kev(t);
+            centre - 0.5 * width >= MEASURED_POINTS_MIN_KEV && centre + 0.5 * width <= MEASURED_POINTS_MAX_KEV
+        };
+        assert!(inside(3.0) && inside(10.0));
+        assert!(!inside(REACTIVITY_TEMPERATURE_MIN_KEV) && !inside(2.0));
+        assert!(inside(REACTIVITY_TEMPERATURE_MAX_KEV));
+        assert!(!inside(1100.0));
+        let (centre, width) = gamow_window_kev(REACTIVITY_TEMPERATURE_MIN_KEV);
+        assert!((centre - 0.5 * width - 12.9).abs() < 0.05 && (centre + 0.5 * width - 22.7).abs() < 0.05, "{centre} {width}");
+        for t in [REACTIVITY_TEMPERATURE_MIN_KEV, 2.0, 5.0] {
+            let weight = |e: f64| cross_section_or_zero(e) * e * (-e / t).exp();
+            let fine = integrate(0.0, 400.0, 40_000, weight)
+                + integrate(400.0, 668.0, 6_700, weight)
+                + integrate(668.0, 1500.0, 20_800, weight)
+                + integrate(1500.0, CROSS_SECTION_ENERGY_MAX_KEV, 41_300, weight);
+            let fine = (8.0 / (PI * REDUCED_MASS_KEV)).sqrt() * SPEED_OF_LIGHT_M_PER_S * fine * 1.0e-28 / (t * t.sqrt());
+            let served = reactivity_pb11_m3_per_s(t).expect("declared");
+            assert!((served / fine - 1.0).abs() < 1.0e-13, "{t}: {}", served / fine - 1.0);
+        }
+        let (centre, width) = gamow_window_kev(10.0);
+        assert!((centre - 82.7).abs() < 0.1 && (width - 66.4).abs() < 0.2, "{centre} {width}");
+        let (centre, width) = gamow_window_kev(1000.0);
+        assert!((centre + 0.5 * width - 3321.0).abs() < 2.0, "{centre} {width}");
+        let top = cross_section_barn(CROSS_SECTION_ENERGY_MAX_KEV).expect("in range");
+        let t = REACTIVITY_TEMPERATURE_MAX_KEV;
+        let tail = integrate(CROSS_SECTION_ENERGY_MAX_KEV, 60_000.0, 2000, |e| top * CROSS_SECTION_ENERGY_MAX_KEV / e * e * (-e / t).exp());
+        let whole = integrate(0.0, 400.0, 400, |e| cross_section_or_zero(e) * e * (-e / t).exp())
+            + integrate(400.0, CROSS_SECTION_ENERGY_MAX_KEV, 2000, |e| cross_section_or_zero(e) * e * (-e / t).exp());
+        println!("left out above the fit at {t} keV: {:e} of the rate", tail / whole);
+        assert!(tail / whole < 2.0e-5 && tail / whole > 1.6e-5, "{}", tail / whole);
+        let t = 1500.0;
+        let tail = integrate(CROSS_SECTION_ENERGY_MAX_KEV, 60_000.0, 2000, |e| top * CROSS_SECTION_ENERGY_MAX_KEV / e * e * (-e / t).exp());
+        let whole = integrate(0.0, 400.0, 400, |e| cross_section_or_zero(e) * e * (-e / t).exp())
+            + integrate(400.0, CROSS_SECTION_ENERGY_MAX_KEV, 2000, |e| cross_section_or_zero(e) * e * (-e / t).exp());
+        assert!(tail / whole > 3.0e-4 && tail / whole < 4.5e-4, "{}", tail / whole);
     }
 
     #[test]

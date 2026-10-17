@@ -159,7 +159,8 @@ fn a_repeat_is_still_held_to_the_stored_rows_value_for_value() {
         std::fs::write(&head_path, with_receipt(&document)).unwrap();
     };
 
-    // A decimal copy changed beside its untouched hex: no seal covers it, and the check by seal holds.
+    // A decimal copy changed beside its untouched hex: no seal covers it, and
+    // since 0.11.0 the check by seal names it as a text the engine did not write.
     let row: Value = serde_json::from_str(rows.trim_end()).unwrap();
     let decimal = row["final_state"]["temperature_k"].to_string();
     let changed = rows.replacen(&format!("\"temperature_k\":{decimal}"), "\"temperature_k\":123.5", 1);
@@ -167,7 +168,7 @@ fn a_repeat_is_still_held_to_the_stored_rows_value_for_value() {
     rewrite(&changed);
     let seal = serde_json::from_str::<Value>(&first).unwrap()["head"]["dataset_seal"].clone();
     let (_, error, check) = door.tool(KEY, "verify_dataset", &json!({ "dataset_seal": seal }));
-    assert!(!error && check.contains("\"holds\":true"), "{check}");
+    assert!(!error && check.contains("\"holds\":false,\"values_hold\":false,\"cause\":\"answer_text\"") && check.contains("rows[0].final_state.temperature_k"), "{check}");
     // The repeat is not answered from it, as typed, respelled, or reversed.
     refused(&door, &request);
     refused(&door, &respelled(&request));

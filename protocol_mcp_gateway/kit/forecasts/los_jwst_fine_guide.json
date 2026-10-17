@@ -1,0 +1,32 @@
+{
+ "model": "los_jwst_fine_guide",
+ "verdict": "met",
+ "protocol": {
+  "path": "evidence/research/pointing_jwst_fine_guidance/validation_protocol.md",
+  "sha256": "d51fdf1176f4653bb202d3fa7b3e1210ea7cf447a3e0b421ed443800f9c9c011",
+  "committed": {
+   "crate": "protocol_mcp_gateway",
+   "commit": "cbd4022515b79cfa7a9b7441d3fcea6df2212928",
+   "utc": "2026-10-09T22:51:41Z",
+   "how": "The diff of 'Serve the los_jwst_fine_guide card ...' adds the pass line 'Fixed before any held-back file was downloaded (pre-registration SHA-256 9e160724...54c8f5)' with the result 'not yet compared with the held-back visits'. 9e160724 is not this file's hash: it is the SHA-256 of the sorted JSON of the eight file hashes in analysis/prereg.json, one of which is this file's; it recomputes from the disk today.",
+   "manifest": {
+    "path": "evidence/research/pointing_jwst_fine_guidance/analysis/prereg.json",
+    "list": "sha256",
+    "fingerprint": "prereg_sha256"
+   }
+  }
+ },
+ "held_back": [
+  {
+   "path": "evidence/research/pointing_jwst_fine_guidance/raw/held_back_manifest.csv",
+   "sha256": "2b4abedd4adbef78ab37a40f10fd15d29ffa88281691b6ac1670149156048ae9"
+  }
+ ],
+ "scored": {
+  "utc": "2026-10-09T22:56:10Z",
+  "evidence": "Birth time of the first held-back file, evidence/research/pointing_jwst_fine_guidance/raw/held_back/jw01163052001_gs-fg_2022122153954_cal_centroid_packet.csv.gz (15:56:10 PDT): the held-back files were downloaded then; the first answer of the held-back run through the engine was written at 22:58:10Z."
+ },
+ "forecast_first": "held",
+ "registered_by": "backfill from the record, 2026-10-15",
+ "notes": "Committed 4 min 29 s before the first held-back file was downloaded. The commit carries a composite hash, not the file's: analysis/prereg.json (a35f160b..., written_utc 2026-10-09T22:27:14Z) lists eight files with their SHA-256 (this protocol, common.py, score.py, model.py, card_emulation.py, out/card_constants.json, split_decided_before_looking.txt, raw/fitted_manifest.csv), and the composite is the SHA-256 of that list; all eight match the disk now and the composite recomputes (pass_marks_anchor_2026-10-11/MISMATCHES.md says the same). A reader holding only validation_protocol.md cannot check the commit without prereg.json. The held-back manifest lists each held-back file with its SHA-256 (born 22:58:08Z, after the download). Amendment 1 (analysis/amendment_1.json, e0e4b86f..., 2026-10-10T01:46:43Z) was written after the held-back files were scored and says it is not a pre-registration; it first appears in the result commit b3b1bbba. Rescorings: runs_integrated, runs_v060, analysis/out/11_enforced/; second party evidence/verification/second_party/V-35/. Commit times are the committer's clock. Public mark (composite hash): GitHub-signed commit 29a6c70b484e886de993afcc628fb4dfdb89f08e at 2026-10-13T17:54:33Z."
+}

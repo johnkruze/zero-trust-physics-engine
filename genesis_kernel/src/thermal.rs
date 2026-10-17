@@ -52,6 +52,7 @@ extern crate core;
 use core::prelude::v1::*;
 
 use crate::frame::LastStateFrame64;
+use crate::normal::normal_or_zero;
 
 /// 6061 plate length.
 pub const PLATE_LENGTH_M: f64 = 0.25;
@@ -315,8 +316,25 @@ impl ThermalNodeState {
 /// Advance one exact RC step and write the frame.
 ///
 /// A rejected step leaves `state` and `frame` as they were.
+///
+/// A value of the landed state below the normal range is written as zero
+/// with its sign ([`crate::normal`]).
 #[must_use]
 pub fn step(
+    node: &ThermalNode,
+    state: &mut ThermalNodeState,
+    frame: &mut LastStateFrame64,
+    load: ThermalLoad,
+    dt_s: f64,
+) -> Result<(), StepReject> {
+    step_as_computed(node, state, frame, load, dt_s)?;
+    normal_or_zero_state(state);
+    Ok(())
+}
+
+/// The step as its equations compute it, before a value of the landed
+/// state below the normal range is written as zero.
+fn step_as_computed(
     node: &ThermalNode,
     state: &mut ThermalNodeState,
     frame: &mut LastStateFrame64,
@@ -329,6 +347,24 @@ pub fn step(
         None => return Err(StepReject::NonFiniteState),
     };
     commit(node, state, frame, load, dt_s, advanced)
+}
+
+/// Each value of a landed state below the normal range written as zero
+/// with its sign ([`crate::normal`]): the state carried to the next step
+/// and published holds no subnormal number.
+fn normal_or_zero_state(state: &mut ThermalNodeState) {
+    state.t_s = normal_or_zero(state.t_s);
+    state.temperature_k = normal_or_zero(state.temperature_k);
+    state.heat_power_w = normal_or_zero(state.heat_power_w);
+    state.ambient_k = normal_or_zero(state.ambient_k);
+    state.internal_energy_j = normal_or_zero(state.internal_energy_j);
+    state.energy_anchor_j = normal_or_zero(state.energy_anchor_j);
+    state.boundary_work_j = normal_or_zero(state.boundary_work_j);
+    state.energy_defect_j = normal_or_zero(state.energy_defect_j);
+    state.residual_conservation_error = normal_or_zero(state.residual_conservation_error);
+    state.heat_to_ambient_w = normal_or_zero(state.heat_to_ambient_w);
+    state.ceiling_margin_k = normal_or_zero(state.ceiling_margin_k);
+    state.entropy_production_w_per_k = normal_or_zero(state.entropy_production_w_per_k);
 }
 
 fn on_card(temperature_k: f64) -> bool {

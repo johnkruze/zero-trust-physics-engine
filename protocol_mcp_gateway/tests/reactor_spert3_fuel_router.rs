@@ -16,6 +16,8 @@
 //! fitted constants change. The loads are the ends and the middle of each
 //! band's published span, not the reactivity of any test of the report.
 
+mod answer_text;
+
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::time::Duration;
@@ -58,7 +60,9 @@ async fn post_text(base: &str, path: &str, body: &str) -> (u16, String) {
         {
             Ok(response) => {
                 let status = response.status().as_u16();
-                return (status, response.text().await.unwrap());
+                let text = response.text().await.unwrap();
+                answer_text::remember(&text);
+                return (status, text);
             }
             Err(error) => {
                 last_error = Some(error);
@@ -70,7 +74,7 @@ async fn post_text(base: &str, path: &str, body: &str) -> (u16, String) {
 }
 
 async fn post(base: &str, path: &str, body: &Value) -> (u16, String) {
-    post_text(base, path, &serde_json::to_string(body).unwrap()).await
+    post_text(base, path, &answer_text::as_sent(body)).await
 }
 
 fn sha256_hex(bytes: &[u8]) -> String {
@@ -267,7 +271,7 @@ fn state_numbers(state: &ReactorState) -> Vec<(&'static str, f64)> {
         peak_energy_mws,
         peak_time_s,
         burst_reactivity_dollar: _,
-        burst_coolant_flow_m_per_s: _,
+        coolant_flow_held_m_per_s: _,
         past_first_maximum: _,
         prompt_supercritical: _,
         rod_moving: _,
@@ -618,7 +622,7 @@ async fn a_run_in_segments_under_one_load_is_the_run_alone_and_a_changed_tape_br
     assert_state_is(&tape["final_state"], &direct.state, "two segments");
     // The state holds the load of the burst, and it is the request's.
     assert_eq!(direct.state.burst_reactivity_dollar.to_bits(), case.reactivity.to_bits());
-    assert_eq!(direct.state.burst_coolant_flow_m_per_s.to_bits(), case.flow.to_bits());
+    assert_eq!(direct.state.coolant_flow_held_m_per_s.to_bits(), case.flow.to_bits());
     assert_eq!(
         tape["inputs"]["segments"][1]["load"]["reactivity_inserted_dollar"].as_f64().unwrap().to_bits(),
         direct.state.burst_reactivity_dollar.to_bits()
@@ -653,9 +657,10 @@ async fn a_run_in_segments_under_one_load_is_the_run_alone_and_a_changed_tape_br
 /// Two requests the door once answered, one with a completed, sealed run
 /// whose inserted reactivity jumped by 0.1 dollar in one step and one with a
 /// sealed first maximum of 0.049 MW: each is refused by name before its
-/// first step, and nothing of it is sealed.
+/// first step, and nothing of it is sealed. A flow changed in a later segment
+/// is answered, each step at its own flow.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn a_load_changed_in_a_later_segment_refuses_the_whole_run_by_name_with_no_proof() {
+async fn a_reactivity_changed_in_a_later_segment_refuses_the_whole_run_by_name_and_a_changed_flow_is_answered() {
     let base = spawn_app().await;
     let reactor = reactor();
     let inlet_k: f64 = 294.26111111111106;
@@ -716,14 +721,35 @@ async fn a_load_changed_in_a_later_segment_refuses_the_whole_run_by_name_with_no
     let with_flow = |flow: f64| json!({ "reactivity_inserted_dollar": 1.1, "coolant_flow_m_per_s": flow });
     let flow_changed = run(hot, json!([{ "steps": 400, "load": with_flow(fast) }, { "steps": 46000, "load": with_flow(slow) }]));
     let (status, text) = post(&base, "/run_trajectory", &flow_changed).await;
-    assert_eq!(status, 422, "{text}");
-    assert_eq!(
-        text,
-        format!(
-            "Physical Failure: 'coolant_flow_m_per_s' {slow} m/s is not the {fast} m/s of the first segment: a run of the reactor_spert3_fuel card is one burst with one flow rate, and no tested burst changed its flow (FlowChangedDuringBurst). That state is not sealed."
-        )
-    );
-    nothing_sealed(&text);
+    assert_eq!(status, 200, "{text}");
+    let tape: Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(tape["outcome"], "ended", "{text}");
+    assert_eq!(tape["reject"], "PastFirstMaximum");
+    // The kernel loop that changes its flow at the same step.
+    let mut state = ReactorState::try_start(&reactor, hot).unwrap();
+    let mut frame = blank_frame([0; 16]);
+    let mut landed = 0_u64;
+    let mut worst = 0.0_f64;
+    let end = loop {
+        let flow = if landed < 400 { fast } else { slow };
+        match reactor_spert3_fuel::step(&reactor, &mut state, &mut frame, ReactorLoad { reactivity_inserted_dollar: 1.1, coolant_flow_m_per_s: flow }, dt_s) {
+            Ok(()) => {
+                landed += 1;
+                worst = worst.max(state.residual_conservation_error);
+            }
+            Err(reject) => break reject,
+        }
+    };
+    assert_eq!(end, StepReject::PastFirstMaximum);
+    assert_eq!(tape["steps_landed"], landed);
+    assert_state_is(&tape["final_state"], &state, "a flow changed");
+    assert!(worst < reactor.residual_conservation_limit, "{worst:e}");
+    // And in the cold band, tested with no flow: a flow from the 400th step on.
+    let cold_flow = run(inlet_k, json!([{ "steps": 400, "load": cold(1.1) }, { "steps": 46000, "load": with_flow(5.0) }]));
+    let (status, text) = post(&base, "/run_trajectory", &cold_flow).await;
+    assert_eq!(status, 200, "{text}");
+    let tape: Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(tape["reject"], "PastFirstMaximum", "{text}");
     // A dataset row that changes its load is not admitted: the same sentence, no run seal.
     let plan = json!({
         "domain": "energy",
@@ -826,19 +852,14 @@ fn over_the_span_of_each_band_every_run_at_the_ceiling_ends_by_name_and_the_ledg
                 let direct = direct_loop(case, ceiling(), 1_000_000, |_| false);
                 let reject = direct.reject.unwrap_or_else(|| panic!("{case:?} never ended"));
                 assert!(
-                    matches!(
-                        reject,
-                        StepReject::PastFirstMaximum
-                            | StepReject::TimeBeyondCard
-                            | StepReject::EnergyBeyondCard
-                            | StepReject::PowerBeyondCard
-                    ),
+                    matches!(reject, StepReject::PastFirstMaximum),
                     "{case:?}: {reject:?} after {} steps",
                     direct.landed
                 );
-                assert!(direct.state.t_s <= reactor.time_max_s);
-                assert!(direct.state.energy_mws <= reactor.energy_max_mws);
-                assert!(direct.state.peak_power_mw <= reactor.power_max_mw);
+                // Inside the compared spans: under 20 s, 30 MW s and 1000 MW.
+                assert!(direct.state.t_s <= 20.0);
+                assert!(direct.state.energy_mws <= 30.0);
+                assert!(direct.state.peak_power_mw <= 1000.0);
                 assert!(direct.largest_residual <= reactor.residual_conservation_limit);
                 worst_steps = worst_steps.max(direct.landed);
                 worst_residual = worst_residual.max(direct.largest_residual);
@@ -923,35 +944,23 @@ async fn on_every_route(base: &str, case: Case, expected: Option<&str>, axis: &s
 async fn each_end_of_each_band_lands_at_the_last_number_inside_and_is_refused_by_name_at_the_next_outside() {
     let base = spawn_app().await;
     let reactor = reactor();
-    // The description publishes the widest of the three bands for each field.
+    // The description publishes the widest of the three bands for the inlet, and the
+    // physical limits for the load: a reactivity above zero and a flow of zero or more.
     let (_, described) = post(&base, "/describe_card", &json!({"domain": "energy", "card": CARD})).await;
     let described: Value = serde_json::from_str(&described).unwrap();
     let least = |values: [f64; 3]| values.into_iter().fold(f64::INFINITY, f64::min);
     let most = |values: [f64; 3]| values.into_iter().fold(f64::NEG_INFINITY, f64::max);
-    for (list, index, name, unit, minimum, maximum) in [
-        ("phase_fields", 0, "inlet_temperature_k", "K", least(reactor.band_inlet_min_k), most(reactor.band_inlet_max_k)),
-        (
-            "load_fields",
-            0,
-            "reactivity_inserted_dollar",
-            "dollar",
-            least(reactor.band_reactivity_min_dollar),
-            most(reactor.band_reactivity_max_dollar),
-        ),
-        (
-            "load_fields",
-            1,
-            "coolant_flow_m_per_s",
-            "m/s",
-            least(reactor.band_flow_min_m_per_s),
-            most(reactor.band_flow_max_m_per_s),
-        ),
-    ] {
-        let field = &described[list][index];
+    let field = &described["phase_fields"][0];
+    assert_eq!(field["name"], "inlet_temperature_k");
+    assert_eq!(field["minimum"].as_f64().unwrap().to_bits(), least(reactor.band_inlet_min_k).to_bits());
+    assert_eq!(field["maximum"].as_f64().unwrap().to_bits(), most(reactor.band_inlet_max_k).to_bits());
+    for (index, name, unit, exclusive) in [(0, "reactivity_inserted_dollar", "dollar", true), (1, "coolant_flow_m_per_s", "m/s", false)] {
+        let field = &described["load_fields"][index];
         assert_eq!(field["name"], name);
         assert_eq!(field["unit"], unit);
-        assert_eq!(field["minimum"].as_f64().unwrap().to_bits(), minimum.to_bits(), "{name}");
-        assert_eq!(field["maximum"].as_f64().unwrap().to_bits(), maximum.to_bits(), "{name}");
+        assert_eq!(field["minimum"].as_f64().unwrap().to_bits(), 0.0_f64.to_bits(), "{name}");
+        assert_eq!(field["minimum_exclusive"], exclusive, "{name}");
+        assert!(field["maximum"].is_null(), "{name}");
     }
     assert_eq!(described["phase_fields"].as_array().unwrap().len(), 1);
     assert_eq!(described["load_fields"].as_array().unwrap().len(), 2);
@@ -980,14 +989,21 @@ async fn each_end_of_each_band_lands_at_the_last_number_inside_and_is_refused_by
         for reactivity in [rho_min, rho_max] {
             on_every_route(&base, Case { reactivity, ..middle }, None, "").await;
         }
-        for reactivity in [below(rho_min), above(rho_max)] {
-            on_every_route(&base, Case { reactivity, ..middle }, Some("ReactivityOutsideCard"), "reactivity_inserted_dollar").await;
+        // The old walls of the band's reactivity and flow, and past them: answered.
+        for reactivity in [below(rho_min), above(rho_max), 0.5, 1.3] {
+            on_every_route(&base, Case { reactivity, ..middle }, None, "").await;
         }
-        for flow in [v_min, v_max] {
+        for reactivity in [0.0, -1.0] {
+            on_every_route(&base, Case { reactivity, ..middle }, Some("ReactivityNotPositive"), "reactivity_inserted_dollar").await;
+        }
+        for flow in [v_min, v_max, over_flow, 0.0, 30.0] {
             on_every_route(&base, Case { flow, ..middle }, None, "").await;
         }
-        for flow in [under_flow, over_flow] {
-            on_every_route(&base, Case { flow, ..middle }, Some("FlowOutsideCard"), "coolant_flow_m_per_s").await;
+        if v_min > 0.0 {
+            on_every_route(&base, Case { flow: under_flow, ..middle }, None, "").await;
+        }
+        for flow in [-1.0e-30, -1.0] {
+            on_every_route(&base, Case { flow, ..middle }, Some("NegativeFlow"), "coolant_flow_m_per_s").await;
         }
     }
 
@@ -1017,32 +1033,22 @@ async fn each_end_of_each_band_lands_at_the_last_number_inside_and_is_refused_by
         on_every_route(&base, Case { inlet_k, ..case_in(0, 0.5, 0.5) }, Some("InletTemperatureOutsideCard"), "inlet_temperature_k").await;
     }
 
-    // A load of one band is refused in another, by the name of the field.
+    // A load of one band is answered in another.
     let cold = case_in(0, 0.5, 0.5);
     let hot = case_in(2, 0.5, 0.5);
-    on_every_route(&base, Case { flow: hot.flow, ..cold }, Some("FlowOutsideCard"), "coolant_flow_m_per_s").await;
-    on_every_route(&base, Case { flow: cold.flow, ..hot }, Some("FlowOutsideCard"), "coolant_flow_m_per_s").await;
-    // The sentence names the band and its own span, from the card's numbers.
-    let (_, text) = post(&base, "/verify_physics", &step_body(Case { flow: hot.flow, ..cold }, ceiling())).await;
-    assert_eq!(
-        text,
-        format!(
-            "Physical Failure: 'coolant_flow_m_per_s' {} m/s is outside [{}, {}] m/s, the span tested in the 56 to 92 degF band of the {CARD} card (FlowOutsideCard). That state is not sealed.",
-            hot.flow, reactor.band_flow_min_m_per_s[0], reactor.band_flow_max_m_per_s[0]
-        )
-    );
-    // A reactivity inside the widest published span and outside its own band's.
+    on_every_route(&base, Case { flow: hot.flow, ..cold }, None, "").await;
+    on_every_route(&base, Case { flow: cold.flow, ..hot }, None, "").await;
     let widest_max = most(reactor.band_reactivity_max_dollar);
     let narrow = (0..3).find(|&band| reactor.band_reactivity_max_dollar[band] < widest_max).expect("the spans differ");
-    on_every_route(
-        &base,
-        Case { reactivity: widest_max, ..case_in(narrow, 0.5, 0.5) },
-        Some("ReactivityOutsideCard"),
-        "reactivity_inserted_dollar",
-    )
-    .await;
+    on_every_route(&base, Case { reactivity: widest_max, ..case_in(narrow, 0.5, 0.5) }, None, "").await;
+    // The sentence of a flow below zero names the field, the value and the limit.
+    let (_, text) = post(&base, "/verify_physics", &step_body(Case { flow: -1.0, ..cold }, ceiling())).await;
+    assert_eq!(
+        text,
+        format!("Physical Failure: 'coolant_flow_m_per_s' -1 m/s is below 0 m/s, the inclusive minimum of the {CARD} card (NegativeFlow). That state is not sealed.")
+    );
 
-    // A grid axis that carries a value outside the published bounds is refused as a whole.
+    // A grid axis that carries a value outside the published bounds is refused row by row.
     let (grid_status, grid_text) = post(
         &base,
         "/run_dataset",
@@ -1051,7 +1057,7 @@ async fn each_end_of_each_band_lands_at_the_last_number_inside_and_is_refused_by
             "plan": { "kind": "grid",
                 "base": { "initial": { "inlet_temperature_k": cold.inlet_k }, "dt_s": ceiling(),
                           "segments": [{ "steps": 5, "load": { "coolant_flow_m_per_s": cold.flow } }], "record_every": 1 },
-                "axes": [{ "path": "segments[0].load.reactivity_inserted_dollar", "values": [above(widest_max)] }] },
+                "axes": [{ "path": "segments[0].load.reactivity_inserted_dollar", "values": [-1.0] }] },
             "store": "none", "return": "inline", "answer": "full"
         }),
     )
@@ -1089,7 +1095,7 @@ async fn each_end_of_each_band_lands_at_the_last_number_inside_and_is_refused_by
         step["parameters"].as_object_mut().unwrap().remove(missing);
         let (status, text) = post(&base, "/verify_physics", &step).await;
         assert_eq!(status, 422, "{missing}: {text}");
-        assert!(text.contains(&format!("Missing required parameter: '{missing}'")), "{text}");
+        assert!(text.contains(&format!("Missing required parameter: '{missing}' (InputMissing).")), "{text}");
     }
     let mut run = run_body(cold, ceiling(), 5, 1);
     run["segments"][0]["load"].as_object_mut().unwrap().remove("coolant_flow_m_per_s");
@@ -1103,26 +1109,26 @@ async fn each_end_of_each_band_lands_at_the_last_number_inside_and_is_refused_by
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn each_hot_band_answers_only_the_flows_tested_in_it_and_each_tested_edge_lands_by_either_conversion() {
+async fn each_band_answers_any_flow_and_each_tested_edge_lands_by_either_conversion() {
     let base = spawn_app().await;
     let reactor = reactor();
     let feet = |per_second: f64| per_second * 0.3048;
-    // IDO-17281 Table V: 2.4, 14, 19 and 22 ft/s at 260 degF; 4.8, 14 and 24 ft/s at 500 degF.
+    // IDO-17281 Table V: 2.4, 14, 19 and 22 ft/s at 251 to 259 degF; 4.8, 14 and 24 ft/s at 498 to
+    // 501 degF.
     assert_eq!(reactor.band_flow_min_m_per_s, [0.0, 0.73152, 1.46304]);
     assert_eq!(reactor.band_flow_max_m_per_s, [0.0, feet(22.0), feet(24.0)]);
     let warm = case_in(1, 0.5, 0.5);
     let hot = case_in(2, 0.5, 0.5);
-    // 24 ft/s at 260 degF and 2.4 ft/s at 500 degF were answered and sealed
-    // by 0.6.0; no test was run at either.
-    for (case, words) in [
-        (Case { flow: feet(24.0), ..warm }, "251 to 259 degF"),
-        (Case { flow: feet(2.4), ..hot }, "498 to 501 degF"),
-        (Case { flow: 0.73152, ..hot }, "498 to 501 degF"),
-        (Case { flow: 7.3152, ..warm }, "251 to 259 degF"),
+    // 24 ft/s at 251 to 259 degF and 2.4 ft/s at 498 to 501 degF were answered by 0.6.0 and
+    // refused from 0.7.0 to 0.10.1 as FlowOutsideCard; no test was run at either. Answered.
+    for case in [
+        Case { flow: feet(24.0), ..warm },
+        Case { flow: feet(2.4), ..hot },
+        Case { flow: 0.73152, ..hot },
+        Case { flow: 7.3152, ..warm },
+        Case { flow: 50.0, ..hot },
     ] {
-        on_every_route(&base, case, Some("FlowOutsideCard"), "coolant_flow_m_per_s").await;
-        let (_, text) = post(&base, "/verify_physics", &step_body(case, ceiling())).await;
-        assert!(text.contains(&format!("the span tested in the {words} band")), "{text}");
+        on_every_route(&base, case, None, "").await;
     }
     // Every tested flow of each hot band lands, as a decimal in m/s and converted from ft/s.
     for (case, flows) in [(warm, vec![2.4, 14.0, 19.0, 22.0]), (hot, vec![4.8, 14.0, 24.0])] {
@@ -1149,10 +1155,16 @@ async fn each_hot_band_answers_only_the_flows_tested_in_it_and_each_tested_edge_
     assert_eq!(reactor.band_inlet_max_k[2], 533.7055555555556);
     // The description says what each band was tested at.
     let (_, described) = post(&base, "/describe_card", &json!({"domain": "energy", "card": CARD})).await;
+    // Re-pinned for 0.10.1: the bands are named by their spans. The middle band ends at 259 degF, and 260 degF
+    // itself, the report's round name for the series, is above it and is refused.
     assert!(
-        described.contains("the 260 degF band at 2.4 to 22 ft/s and the 500 degF band at 4.8 to 24 ft/s"),
+        described.contains("The cold band was tested with no flow, 251 to 259 degF at 2.4 to 22 ft/s and 498 to 501 degF at 4.8 to 24 ft/s; the flow enters only through the sweep of the water temperature."),
         "{described}"
     );
+    for gone in ["260 degF band", "the 500 degF band", "at 260 degF and", "FlowOutsideCard", "ReactivityOutsideCard", "FlowChangedDuringBurst", "TimeBeyondCard", "EnergyBeyondCard", "PowerBeyondCard"] {
+        assert!(!described.contains(gone), "still said: {gone}");
+    }
+    assert!(reactor.band_of(kelvin(260.0)).is_none());
     assert!(!described.contains("2.4 to 24 ft/s"), "{described}");
 }
 
@@ -1174,7 +1186,7 @@ async fn a_card_constant_sent_as_a_field_is_refused() {
         "water_prompt_heating_fraction",
         "group_fraction",
         "group_decay_per_s",
-        "time_max_s",
+        "growth_phase_step",
         "residual_conservation_limit",
         // The state the card builds for itself is not the caller's either.
         "fuel_temperature_rise_k",
@@ -1431,7 +1443,7 @@ impl Hosted {
     }
 
     async fn tool(&self, key: &str, tool: &str, arguments: &Value) -> String {
-        let body = json!({"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":tool,"arguments":arguments}});
+        let body = answer_text::tool_call(7, tool, arguments);
         let response = reqwest::Client::new()
             .post(format!("{}/mcp", self.base))
             .header("Content-Type", "application/json")
@@ -1449,7 +1461,9 @@ impl Hosted {
 
 fn result_text(answer: &str) -> String {
     let value: Value = serde_json::from_str(answer).unwrap();
-    value["result"]["content"][0]["text"].as_str().unwrap_or_else(|| panic!("no text in {answer}")).to_string()
+    let text = value["result"]["content"][0]["text"].as_str().unwrap_or_else(|| panic!("no text in {answer}")).to_string();
+    answer_text::remember(&text);
+    text
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -1461,7 +1475,7 @@ async fn the_three_connections_give_the_same_bytes_and_the_hosted_door_hides_the
     let cards = listed["cards"].as_array().unwrap();
     // Thirty cards, this one the twentieth, in the energy domain, with
     // the first card of the reactor still served beside it.
-    assert_eq!(cards.len(), 31);
+    assert_eq!(cards.len(), 37);
     assert_eq!(cards[19]["domain"], "energy");
     assert_eq!(cards[19]["card"], CARD);
     assert!(cards.iter().any(|card| card["domain"] == "energy" && card["card"] == "reactor_spert3"));
@@ -1477,7 +1491,7 @@ async fn the_three_connections_give_the_same_bytes_and_the_hosted_door_hides_the
     let pair = json!({"domain": "energy", "card": CARD});
     let described = result_text(&stdio.raw(&json!({"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"describe_card","arguments":pair}}).to_string()).await);
     let description: Value = serde_json::from_str(&described).unwrap();
-    let step = description["example_verify_step"].clone();
+    let step = description["example_compute_step"].clone();
     let run = description["example_run_trajectory"].clone();
 
     // The HTTP routes give the bytes of the tools.
@@ -1485,7 +1499,7 @@ async fn the_three_connections_give_the_same_bytes_and_the_hosted_door_hides_the
     assert_eq!(status, 200);
     assert_eq!(on_http, described);
     for (tool, path, arguments) in [("verify_step", "/verify_physics", &step), ("run_trajectory", "/run_trajectory", &run)] {
-        let on_stdio = result_text(&stdio.raw(&json!({"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":tool,"arguments":arguments}}).to_string()).await);
+        let on_stdio = result_text(&stdio.raw(&answer_text::tool_call(7, tool, arguments).to_string()).await);
         let (status, on_http) = post(&base, path, arguments).await;
         assert_eq!(status, 200, "{on_http}");
         assert_eq!(on_http, on_stdio, "{tool}");
@@ -1506,7 +1520,7 @@ async fn the_three_connections_give_the_same_bytes_and_the_hosted_door_hides_the
     assert_eq!(tape["steps_landed"], direct.landed);
     assert_state_is(&tape["final_state"], &direct.state, "the worked run");
     // The tape checks on the tool as on the route.
-    let on_stdio = result_text(&stdio.raw(&json!({"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"verify_tape","arguments":tape}}).to_string()).await);
+    let on_stdio = result_text(&stdio.raw(&answer_text::tool_call(7, "verify_tape", &tape).to_string()).await);
     let (status, on_http) = post(&base, "/verify_tape", &tape).await;
     assert_eq!(status, 200);
     assert_eq!(on_http, on_stdio);
@@ -1523,11 +1537,11 @@ async fn the_three_connections_give_the_same_bytes_and_the_hosted_door_hides_the
         };
         assert_eq!(result_text(&hosted.tool(key, "describe_card", &pair).await), expected);
         for (tool, arguments) in [("verify_step", &step), ("run_trajectory", &run), ("verify_tape", &tape)] {
-            let on_stdio = stdio.raw(&json!({"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":tool,"arguments":arguments}}).to_string()).await;
+            let on_stdio = stdio.raw(&answer_text::tool_call(7, tool, arguments).to_string()).await;
             assert_eq!(hosted.tool(key, tool, arguments).await, on_stdio, "{tool}");
         }
     }
-    // A run that changes its load in a later segment is refused in the same
+    // A run that changes its reactivity in a later segment is refused in the same
     // words on the route, on the tool and on the hosted door, with no proof.
     let mut changed = run.clone();
     changed["segments"] = json!([
@@ -1546,19 +1560,22 @@ async fn the_three_connections_give_the_same_bytes_and_the_hosted_door_hides_the
     for key in [KEY_ALL, KEY_FUEL] {
         assert_eq!(hosted.tool(key, "run_trajectory", &changed).await, on_stdio);
     }
-    // The description names the two refusals and says a run carries one load.
+    // The description names the refusal and says a run carries one reactivity and each
+    // segment its own flow.
     let rule = description.to_string();
     for words in [
-        "A run is one burst, with one reactivity and one flow rate: every segment carries the load of the first",
+        "A run is one burst, with one reactivity: every segment carries the reactivity of the first",
+        "Each segment may carry its own coolant flow rate.",
         "ReactivityChangedDuringBurst",
-        "FlowChangedDuringBurst",
         "NegativeState",
         "InconsistentState",
+        "DtAboveStateCeiling",
     ] {
         assert!(rule.contains(words), "{words}");
     }
-    assert!(!rule.contains("a later segment may change"));
-    assert_eq!(description["rejects"].as_array().unwrap().len(), 17);
+    assert!(!rule.contains("FlowChangedDuringBurst"));
+    // After the kernel's 15 names the list holds the gateway's own three for this card, DtBelowFloor and DtAboveCeiling and ContinuationNotOnCard.
+    assert_eq!(description["rejects"].as_array().unwrap().len(), 18);
     let seen = result_text(&hosted.tool(KEY_FUEL, "list_cards", &json!({})).await);
     let seen: Value = serde_json::from_str(&seen).unwrap();
     assert_eq!(seen["cards"].as_array().unwrap().len(), 1);
@@ -1566,8 +1583,8 @@ async fn the_three_connections_give_the_same_bytes_and_the_hosted_door_hides_the
     // The key of this card does not open the first card of the reactor, and
     // the key of the first card does not open this one.
     let first = json!({"domain": "energy", "card": "reactor_spert3"});
-    assert_eq!(result_text(&hosted.tool(KEY_FUEL, "describe_card", &first).await), "Card not recognized");
-    assert_eq!(result_text(&hosted.tool(KEY_FIRST, "describe_card", &pair).await), "Card not recognized");
+    assert_eq!(result_text(&hosted.tool(KEY_FUEL, "describe_card", &first).await), "Card not recognized (UnknownCard).");
+    assert_eq!(result_text(&hosted.tool(KEY_FIRST, "describe_card", &pair).await), "Card not recognized (UnknownCard).");
     let seen = result_text(&hosted.tool(KEY_FIRST, "list_cards", &json!({})).await);
     let seen: Value = serde_json::from_str(&seen).unwrap();
     assert_eq!(seen["cards"].as_array().unwrap().len(), 1);
@@ -1608,7 +1625,7 @@ async fn the_three_connections_give_the_same_bytes_and_the_hosted_door_hides_the
     let on_fake = hosted.tool(KEY_THERMAL, "validate_series", &validation_fake).await;
     assert_eq!(on_hidden, on_fake);
     session.push(on_hidden);
-    assert_eq!(result_text(&hosted.tool(KEY_THERMAL, "describe_card", &pair).await), "Card not recognized");
+    assert_eq!(result_text(&hosted.tool(KEY_THERMAL, "describe_card", &pair).await), "Card not recognized (UnknownCard).");
 
     // Nothing the thermal key was sent names the reactor or its fields.
     let text = session.join("\n").to_lowercase();

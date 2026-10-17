@@ -2,21 +2,23 @@
 //! the local connection.
 //!
 //! A step and a run of a push and a pull end on the compiled kernel's state to
-//! the bit. A run that would land above the pressure ceiling, and a run whose
-//! heat passes its share of the work, are refused part way and keep their
-//! proof up to the last step that landed. Each refusal a request can reach is
-//! named and carries no proof: a mass that is neither measured charge, a
-//! pressure, a gas or wall temperature or a piston speed outside its range, a
-//! pressure inside 37 to 86 bar that the charge given was never measured at,
-//! a sum of work or heat carried into a start below zero or already over its
-//! share, a step with more than 1 mm of
+//! the bit. A run past the compared 86 bar goes on, flagged; a run that would
+//! land above the vessel's rated 330 bar, and a run whose heat passes its
+//! share of the work, are refused part way and keep their proof up to the
+//! last step that landed. Each refusal a request can reach is named and
+//! carries no proof: a mass of zero or less, a pressure above the rating or
+//! below the precharge, a gas at or below nitrogen's critical temperature, a
+//! wall at or below absolute zero, a sum of work or heat carried into a
+//! start below zero or already over its share, a step with more than 1 mm of
 //! piston travel, a step outside the card's floor and ceiling, a missing
 //! input, a key the card does not have, and a wall temperature given to a
-//! segment. The exact ends of each range land. No frame carries a flag.
+//! segment. The edges of the compared range land with no flag.
 //! `validate_series` compares the gas pressure. The local and the web
 //! connection return the same bytes.
 //!
 //! No measurement of the accumulator is read here.
+
+mod answer_text;
 
 use std::process::Stdio;
 use std::time::Duration;
@@ -48,10 +50,12 @@ async fn post(base: &str, path: &str, body: &Value) -> (u16, String) {
     let url = format!("{base}{path}");
     let mut last_error = None;
     for _ in 0..20 {
-        match client.post(&url).json(body).send().await {
+        match client.post(&url).header(reqwest::header::CONTENT_TYPE, "application/json").body(answer_text::as_sent(body)).send().await {
             Ok(response) => {
                 let status = response.status().as_u16();
-                return (status, response.text().await.unwrap());
+                let text = response.text().await.unwrap();
+                answer_text::remember(&text);
+                return (status, text);
             }
             Err(error) => {
                 last_error = Some(error);
@@ -168,7 +172,7 @@ async fn a_step_of_the_accumulator_is_the_compiled_step_to_the_bit() {
     assert!(pressure > 6.003e6 && pressure < 6.004e6, "{pressure}");
     assert!(answer["sha256_seal"].as_str().is_some_and(|seal| seal.len() == 64));
     assert!(answer["receipt_sha256"].as_str().is_some_and(|seal| seal.len() == 64));
-    assert_eq!(answer["engine_version"], "genesis_kernel_v0.9.0");
+    assert_eq!(answer["engine_version"], "genesis_kernel_v0.12.0");
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -206,20 +210,35 @@ async fn a_push_and_a_pull_end_on_the_kernel_state_and_a_run_past_the_ceiling_ke
         assert_eq!(flags, 0);
     }
 
-    // From 85.5 bar a steady push passes 86 bar: the run is refused there and
-    // keeps its proof up to the last step that landed.
+    // From 85.5 bar a steady push passes 86 bar, the compared: the run goes
+    // on, each frame past it flagged, and its tape holds.
     let high = start(CHARGE_40, 8.55e6, ROOM_K, ROOM_K);
     let push = json!([{ "steps": 200, "load": { "piston_speed_m_s": 0.1 } }]);
     let (status, text) = post(&base, "/run_trajectory", &run_body(&high, 0.001, push)).await;
     assert_eq!(status, 200, "{text}");
     let tape: Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(tape["outcome"], "completed", "{text}");
+    assert!(tape["final_state"]["gas_pressure_pa"].as_f64().unwrap() > 8.6e6);
+    let last = tape["frames"].as_array().unwrap().last().unwrap();
+    let bytes = hex::decode(last["frame_hex"].as_str().unwrap()).unwrap();
+    assert_eq!(u64::from_le_bytes(bytes[40..48].try_into().unwrap()), accumulator_sbo450::FLAG_OUTSIDE_COMPARED_RUNS);
+    let (status, report) = post(&base, "/verify_tape", &tape).await;
+    assert_eq!(status, 200, "{report}");
+    assert_eq!(serde_json::from_str::<Value>(&report).unwrap()["holds"], true, "{report}");
+    // From 325 bar a push passes the vessel's rated 330 bar: the run is
+    // refused there and keeps its proof up to the last step that landed.
+    let rated = start(CHARGE_40, 3.25e7, ROOM_K, ROOM_K);
+    let push = json!([{ "steps": 200, "load": { "piston_speed_m_s": 0.1 } }]);
+    let (status, text) = post(&base, "/run_trajectory", &run_body(&rated, 0.001, push)).await;
+    assert_eq!(status, 200, "{text}");
+    let tape: Value = serde_json::from_str(&text).unwrap();
     assert_eq!(tape["outcome"], "refused");
-    assert_eq!(tape["reject"], format!("{:?}", StepReject::PressureOutsideCard));
+    assert_eq!(tape["reject"], format!("{:?}", StepReject::PressureAboveRated));
     let landed = tape["steps_landed"].as_u64().unwrap();
     assert!(landed > 0 && landed < 200, "{landed}");
-    assert!(tape["reject_detail"].as_str().unwrap().contains("PressureOutsideCard"));
+    assert!(tape["reject_detail"].as_str().unwrap().contains("PressureAboveRated"));
     assert!(tape["run_seal"].as_str().is_some_and(|seal| seal.len() == 64));
-    assert!(tape["final_state"]["gas_pressure_pa"].as_f64().unwrap() <= 8.6e6);
+    assert!(tape["final_state"]["gas_pressure_pa"].as_f64().unwrap() <= 3.3e7);
     let (status, report) = post(&base, "/verify_tape", &tape).await;
     assert_eq!(status, 200, "{report}");
     assert_eq!(serde_json::from_str::<Value>(&report).unwrap()["holds"], true, "{report}");
@@ -315,52 +334,48 @@ async fn each_limit_a_request_can_reach_is_named_and_carries_no_proof() {
     };
     let floor = card().floor_dt_s().unwrap();
     let ceiling = card().gate_dt_s().unwrap();
+    // Through engine 0.9.0 each of these was a refusal at an edge of the
+    // compared range; now each is answered, with the flag.
+    for body in [
+        step_body(&with("gas_mass_kg", 0.013638), 0.01, 0.01),
+        step_body(&with("gas_mass_kg", 0.027496), 0.01, 0.01),
+        step_body(&with("gas_mass_kg", 0.02), 0.01, 0.01),
+        step_body(&with("gas_mass_kg", 0.02688), 0.01, 0.01),
+        step_body(&with("gas_pressure_pa", 8.601e6), 0.01, 0.01),
+        step_body(&with("gas_pressure_pa", 1.2e7), 0.01, 0.01),
+        step_body(&with("gas_pressure_pa", 4.5e6), 0.01, 0.01),
+        step_body(&with("gas_temperature_k", 283.15), 0.0, 0.01),
+        step_body(&with("gas_temperature_k", 303.15), 0.0, 0.01),
+        step_body(&with("wall_temperature_k", 288.15), 0.0, 0.01),
+        step_body(&with("wall_temperature_k", 298.15), 0.0, 0.01),
+        step_body(&good, 0.8, 1.0e-4),
+        step_body(&good, -0.75, 1.0e-4),
+        step_body(&start(CHARGE_20, 8.0e6, ROOM_K, ROOM_K), 0.01, 0.01),
+    ] {
+        let (status, text) = post(&base, "/verify_physics", &body).await;
+        assert_eq!(status, 200, "{body}: {text}");
+        let answer: Value = serde_json::from_str(&text).unwrap();
+        let bytes = hex::decode(answer["frame_hex"].as_str().unwrap_or_default()).unwrap_or_default();
+        if bytes.len() == 64 {
+            assert_eq!(u64::from_le_bytes(bytes[40..48].try_into().unwrap()), accumulator_sbo450::FLAG_OUTSIDE_COMPARED_RUNS, "{body}");
+        }
+    }
     let cases: Vec<(Value, &str)> = vec![
-        (step_body(&with("gas_mass_kg", 0.013638), 0.01, 0.01), "GasMassOutsideCard"),
-        (step_body(&with("gas_mass_kg", 0.027496), 0.01, 0.01), "GasMassOutsideCard"),
-        // Inside the published minimum and maximum: between the two charges, and just off each band.
-        (step_body(&with("gas_mass_kg", 0.02), 0.01, 0.01), "GasMassOutsideCard"),
-        (step_body(&with("gas_mass_kg", 0.013668), 0.01, 0.01), "GasMassOutsideCard"),
-        (step_body(&with("gas_mass_kg", 0.027439), 0.01, 0.01), "GasMassOutsideCard"),
-        // The charges of the card as it was scored.
-        (step_body(&with("gas_mass_kg", 0.02688), 0.01, 0.01), "GasMassOutsideCard"),
-        (step_body(&with("gas_mass_kg", 0.01336), 0.01, 0.01), "GasMassOutsideCard"),
-        (step_body(&with("gas_pressure_pa", 3.69e6), 0.01, 0.01), "PressureOutsideCard"),
-        (step_body(&with("gas_pressure_pa", 8.601e6), 0.01, 0.01), "PressureOutsideCard"),
-        (step_body(&with("gas_pressure_pa", 1.2e7), 0.01, 0.01), "PressureOutsideCard"),
-        (step_body(&with("gas_temperature_k", 285.89), 0.01, 0.01), "GasTemperatureOutsideCard"),
-        (step_body(&with("gas_temperature_k", 301.81), 0.01, 0.01), "GasTemperatureOutsideCard"),
-        (step_body(&with("wall_temperature_k", 293.39), 0.01, 0.01), "WallTemperatureOutsideCard"),
-        (step_body(&with("wall_temperature_k", 293.71), 0.01, 0.01), "WallTemperatureOutsideCard"),
-        (step_body(&good, 0.71, 1.0e-4), "PistonSpeedOutsideCard"),
-        (step_body(&good, -0.71, 1.0e-4), "PistonSpeedOutsideCard"),
-        // Answered by engine 0.6.0 and never compared: the old ends of the gas and wall temperatures and of the speed.
-        (step_body(&with("gas_temperature_k", 283.15), 0.0, 0.01), "GasTemperatureOutsideCard"),
-        (step_body(&with("gas_temperature_k", 303.15), 0.0, 0.01), "GasTemperatureOutsideCard"),
-        (step_body(&with("wall_temperature_k", 288.15), 0.0, 0.01), "WallTemperatureOutsideCard"),
-        (step_body(&with("wall_temperature_k", 293.15), 0.0, 0.01), "WallTemperatureOutsideCard"),
-        (step_body(&with("wall_temperature_k", 298.15), 0.0, 0.01), "WallTemperatureOutsideCard"),
-        (step_body(&good, 0.8, 1.0e-4), "PistonSpeedOutsideCard"),
-        (step_body(&good, -0.75, 1.0e-4), "PistonSpeedOutsideCard"),
-        // A start under the gas temperature ceiling whose first step lands above it.
-        (step_body(&with("gas_temperature_k", 301.7), 0.7, 0.00125), "GasTemperatureOutsideCard"),
-        // Inside every published minimum and maximum: a pressure the charge given was never measured at.
-        (step_body(&with("gas_pressure_pa", 3.9e6), 0.01, 0.01), "PressureOutsideChargeBands"),
-        (step_body(&with("gas_pressure_pa", 4.5e6), 0.01, 0.01), "PressureOutsideChargeBands"),
-        (step_body(&with("gas_pressure_pa", 7.0e6), 0.01, 0.01), "PressureOutsideChargeBands"),
-        (step_body(&start(CHARGE_20, 8.0e6, ROOM_K, ROOM_K), 0.01, 0.01), "PressureOutsideChargeBands"),
-        (step_body(&start(CHARGE_20, 5.0e6, ROOM_K, ROOM_K), 0.01, 0.01), "PressureOutsideChargeBands"),
-        (step_body(&start(CHARGE_20, 8.6e6, ROOM_K, ROOM_K), 0.0, 0.01), "PressureOutsideChargeBands"),
-        // A start under the top of a band whose first step lands above it.
-        (step_body(&with("gas_pressure_pa", 6.399e6), 0.7, 0.00125), "PressureOutsideChargeBands"),
+        (step_body(&with("gas_mass_kg", 0.0), 0.01, 0.01), "GasMassNotPositive"),
+        (step_body(&with("gas_mass_kg", -0.01), 0.01, 0.01), "GasMassNotPositive"),
+        (step_body(&with("gas_pressure_pa", 3.4e7), 0.01, 0.01), "PressureAboveRated"),
+        (step_body(&with("gas_pressure_pa", 0.0), 0.01, 0.01), "OilSideEmpty"),
+        (step_body(&with("gas_pressure_pa", 3.69e6), 0.01, 0.01), "OilSideEmpty"),
+        (step_body(&with("gas_temperature_k", 126.0), 0.01, 0.01), "GasBelowCriticalTemperature"),
+        (step_body(&with("wall_temperature_k", 0.0), 0.01, 0.01), "WallTemperatureNotPositive"),
         // The sums carried into a start.
         (step_body(&with("work_moved_j", -1.0), 0.01, 0.01), "NegativeMovedSum"),
         (step_body(&with("heat_moved_j", -1.0), 0.01, 0.01), "NegativeMovedSum"),
         (step_body(&with("heat_moved_j", 6.6), 0.01, 0.01), "HeatShareAboveCard"),
         // Inside the speed range and the clock: more than 1 mm in the step.
         (step_body(&good, 0.5, 0.0021), "PistonTravelAboveStep"),
-        // A start under the ceiling whose first step lands above it.
-        (step_body(&with("gas_pressure_pa", 8.599e6), 0.7, 0.00125), "PressureOutsideCard"),
+        // A start under the rated pressure whose first step lands above it.
+        (step_body(&with("gas_pressure_pa", 3.2999e7), 0.7, 0.00125), "PressureAboveRated"),
         (step_body(&good, 0.0, ceiling * 1.01), "dt_s"),
         (step_body(&good, 0.0, floor / 2.0), "dt_s"),
         (step_body(&good, 0.0, 0.0), "dt_s"),
@@ -423,14 +438,14 @@ async fn each_limit_a_request_can_reach_is_named_and_carries_no_proof() {
         assert_eq!(status, 422, "{key}: {text}");
         assert!(text.contains(key) && !text.contains("sha256_seal"), "{key}: {text}");
     }
-    // A speed off the card in a later segment refuses the whole run before its first step.
+    // A speed past the compared in a later segment is stepped, within the millimetre a step.
     let segments = json!([
         { "steps": 1, "load": { "piston_speed_m_s": 0.01 } },
         { "steps": 1, "load": { "piston_speed_m_s": 0.9 } }
     ]);
     let (status, text) = post(&base, "/run_trajectory", &run_body(&good, 1.0e-4, segments)).await;
-    assert_eq!(status, 422, "{text}");
-    assert!(text.contains("PistonSpeedOutsideCard") && !text.contains("run_seal"), "{text}");
+    assert_eq!(status, 200, "{text}");
+    assert!(text.contains("run_seal"), "{text}");
     // The wall temperature is part of the start: a segment that names it is refused by name.
     let segments = json!([
         { "steps": 1, "load": { "piston_speed_m_s": 0.01 } },
@@ -473,16 +488,14 @@ async fn a_run_resting_exactly_on_a_limit_lands_every_step() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn the_heat_share_travels_with_a_carried_on_run_and_a_single_step() {
     let base = spawn_app().await;
-    // This request has its wall at 293.15 K, a wall never compared; at the compared wall 50 bar is still refused.
-    let audit = start(CHARGE_20, 5.0e6, 293.15, 293.15);
+    // A wall at 293.15 K and 50 bar on the 20 bar charge were never compared:
+    // each run is answered, with the flag, and sealed.
     let push = json!([{ "steps": 30, "load": { "piston_speed_m_s": 0.0005 } }]);
-    let (status, text) = post(&base, "/run_trajectory", &run_body(&audit, 0.35, push.clone())).await;
-    assert_eq!(status, 422, "{text}");
-    assert!(text.contains("WallTemperatureOutsideCard") && !text.contains("run_seal"), "{text}");
-    let audit = start(CHARGE_20, 5.0e6, 293.5, 293.5);
-    let (status, text) = post(&base, "/run_trajectory", &run_body(&audit, 0.35, push.clone())).await;
-    assert_eq!(status, 422, "{text}");
-    assert!(text.contains("PressureOutsideChargeBands") && !text.contains("run_seal"), "{text}");
+    for audit in [start(CHARGE_20, 5.0e6, 293.15, 293.15), start(CHARGE_20, 5.0e6, 293.5, 293.5)] {
+        let (status, text) = post(&base, "/run_trajectory", &run_body(&audit, 0.35, push.clone())).await;
+        assert_eq!(status, 200, "{text}");
+        assert!(text.contains("run_seal"), "{text}");
+    }
 
     let initial = start(CHARGE_20, 6.0e6, 293.5, 293.5);
     let (status, text) = post(&base, "/run_trajectory", &run_body(&initial, 0.35, push)).await;
@@ -616,7 +629,7 @@ impl Local {
     }
 
     async fn tool(&mut self, name: &str, arguments: &Value) -> (String, bool) {
-        let line = json!({"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":name,"arguments":arguments}});
+        let line = answer_text::tool_call(7, name, arguments);
         let answer: Value = serde_json::from_str(&self.raw(&line.to_string()).await).unwrap();
         (
             answer["result"]["content"][0]["text"].as_str().unwrap().to_string(),
@@ -633,7 +646,7 @@ async fn the_local_connection_lists_the_accumulator_and_gives_the_bytes_of_the_w
     assert!(!error);
     let listed: Value = serde_json::from_str(&listed).unwrap();
     let cards = listed["cards"].as_array().unwrap();
-    assert_eq!(cards.len(), 31);
+    assert_eq!(cards.len(), 37);
     let entry = cards
         .iter()
         .find(|card| card["card"] == "accumulator_sbo450")
@@ -662,7 +675,7 @@ async fn the_local_connection_lists_the_accumulator_and_gives_the_bytes_of_the_w
         "an offset of -0.202 kN",
         "a vessel of 0.58879 l",
         "a step lands only if H is at most 0.065 of the larger of M and 100 J",
-        "no charge between the two was measured",
+        "the record at 109 to 132 bar, 40 bar precharge and 120 bar load, was compared by the card as scored and missed",
         "Fitted to each record alone the lag is 1.47 to 1.53 ms in all seven",
         "test nothing: every baseline meets them",
         "extrapolation in pressure and in charge",
@@ -693,7 +706,7 @@ async fn the_local_connection_lists_the_accumulator_and_gives_the_bytes_of_the_w
         "it is no evidence for the card's exchange of heat",
         "a3d268ca094ba37d1edc91eb3e46d9748deb365d48b9295453e1fa45a8235428",
         "That is the registered result and it stands",
-        "evidence/checks/second_party/V-39/",
+        "evidence/verification/second_party/V-39/",
         "It is not a new test and no line above is changed by it",
         "None of these is a line met",
         "59 are no longer answered",
@@ -706,17 +719,20 @@ async fn the_local_connection_lists_the_accumulator_and_gives_the_bytes_of_the_w
     for words in [
         "a second scoring confirmed it",
         "which is not a new test",
-        "a precharge of 20 bar at gas pressures of 37 to 43 or 55 to 67 bar, or of 40 bar at 57 to 64 or 75 to 86 bar, the bands in which each charge was measured, a wall at 293.4 to 293.7 K, gas at 285.9 to 301.8 K and a piston at most 0.7 m/s, as in the measured runs, and heat at most 0.065 of the work over the whole motion",
+        "a precharge of 20 bar at 37 to 43 or 55 to 67 bar, or of 40 bar at 57 to 64 or 75 to 86 bar, a wall at 293.4 to 293.7 K, gas at 285.9 to 301.8 K and a piston at most 0.7 m/s",
+        "At 109 to 132 bar it missed, 2.72 percent median against 2.0",
+        "up to the vessel's rated 330 bar",
         "0.01 to 20 Hz",
         AFTER_THE_FACT_LINE,
     ] {
         assert!(line.contains(words), "{words}: {line}");
     }
     assert!(description["advisory"].as_array().is_none_or(Vec::is_empty), "{}", description["advisory"]);
-    assert_eq!(description["rejects"].as_array().map(Vec::len), Some(16), "{}", description["rejects"]);
+    // After the kernel's 14 names the list holds the gateway's own three for this card, DtBelowFloor and DtAboveCeiling and ContinuationWithoutUpstream.
+    assert_eq!(description["rejects"].as_array().map(Vec::len), Some(17), "{}", description["rejects"]);
 
     // The worked examples of the description run as written, the same bytes on both.
-    let step = description["example_verify_step"].clone();
+    let step = description["example_compute_step"].clone();
     let (over_local, error) = local.tool("verify_step", &step).await;
     assert!(!error, "{over_local}");
     let (status, over_web) = post(&web, "/verify_physics", &step).await;
@@ -734,12 +750,12 @@ async fn the_local_connection_lists_the_accumulator_and_gives_the_bytes_of_the_w
 
     // A refusal is the same sentence on both, marked as an error on the local connection.
     let mut off = step.clone();
-    off["parameters"]["piston_speed_m_s"] = json!(0.9);
+    off["parameters"]["gas_temperature_k"] = json!(100.0);
     let (over_local, error) = local.tool("verify_step", &off).await;
     assert!(error);
     let (status, over_web) = post(&web, "/verify_physics", &off).await;
     assert_eq!(status, 422);
-    assert!(over_local.contains("PistonSpeedOutsideCard") && over_web.contains("PistonSpeedOutsideCard"));
+    assert!(over_local.contains("GasBelowCriticalTemperature") && over_web.contains("GasBelowCriticalTemperature"));
 }
 
 /// The standing in the one line of `list_cards`.
@@ -749,4 +765,4 @@ const RESULT_STARTS: &str = "Compared with the 285 held-back runs on 2026-10-09,
 /// What the result says of the run after the fact.
 const AFTER_THE_FACT: &str = "of the 285 formerly held-back runs it answers 196 and refuses 89, the 57 runs at 40 / 120 bar as PressureOutsideCard before the first step and the 32 runs at 0.1 Hz and under of the other four records as HeatShareAboveCard";
 /// What the one line of `list_cards` says of it.
-const AFTER_THE_FACT_LINE: &str = "Run after the fact it answers 196 of those 285 runs and refuses 89; on the 196 the swing of gas pressure per piston travel is within 0.49 percent in the median, 1.37 in the worst record and 4.05 at most.";
+const AFTER_THE_FACT_LINE: &str = "on the 196 runs in the range in which it held";

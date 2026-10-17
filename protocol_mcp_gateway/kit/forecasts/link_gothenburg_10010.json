@@ -1,0 +1,21 @@
+{
+ "model": "link_gothenburg_10010",
+ "verdict": "met",
+ "protocol": {
+  "path": "evidence/research/link_openmrg_gothenburg/analysis/prereg.json",
+  "sha256": "f60bfcc70553f95fef5d35963b6550120de3c67e712c057e40c5d37c51784625",
+  "committed": {
+   "crate": "protocol_mcp_gateway",
+   "commit": "52712f32f5db41ce5163d46e296fef1a9cb9372e",
+   "utc": "2026-10-09T21:52:29Z",
+   "how": "The diff of 'Serve the link_gothenburg_10010 card ... that says the card has not yet been compared with the held-back month' adds the pass line 'Fixed before any reading of August was opened (pre-registration SHA-256 f60bfcc7...784625)'; its child 6dc30501c37a9f33a50c12fe89589b3698e581c1, same second, adds a test holding the hash and is the gateway commit the held-back binary was built from."
+  }
+ },
+ "scored": {
+  "utc": "2026-10-09T21:53:03Z",
+  "evidence": "Birth time of evidence/research/link_openmrg_gothenburg/data_held_back/ (14:53:03 PDT), which card/HELD_BACK_RUN_DECLARATION.txt (written 21:52:49Z) says did not yet exist; the held-back run's output card/held_back_output.txt was born at 21:53:11Z and its first saved request at 21:53:46Z."
+ },
+ "forecast_first": "held",
+ "registered_by": "backfill from the record, 2026-10-15",
+ "notes": "Committed 34 s before the held-back month was extracted; prereg.json on disk still has the committed hash, and the declaration's hash of validation_protocol.md (bb94c2eb...) matches the file on disk. The declaration names the engine as built from gateway 6dc30501 and kernel 46b2f1b9 (branch link), whose description said 'not yet compared with the held-back month'. Outside Git: analysis/prereg_sha256.txt at 2026-10-09T21:07:33Z ('no reading stamped 2015-08-01T00:00:00Z or later had been opened'). The held-back month was inside raw/OpenMRG.zip on disk from 20:53:20Z; the seal is procedural, not physical. The integrity checks were added after the protocol and cannot change a score. Rescorings: card/held_back_runs_integrated (22:21Z), held_back_runs_v060 (2026-10-10T03:45Z); second party evidence/verification/second_party/V-28/. Commit times are the committer's clock. Public mark: GitHub-signed commit c40821ecf604364a597fc0f3469e3f7e68653038 at 2026-10-13T17:56:11Z."
+}

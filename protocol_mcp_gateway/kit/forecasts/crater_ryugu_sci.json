@@ -1,0 +1,31 @@
+{
+ "model": "crater_ryugu_sci",
+ "verdict": "missed",
+ "protocol": {
+  "path": "evidence/research/crater_ryugu_sci/validation_protocol.md",
+  "sha256": "ee2793f1ce97b42ed07210121d4fb7cc2f3599db1db1a46a9530efd3cb9da9b3",
+  "committed": {
+   "crate": "protocol_mcp_gateway",
+   "commit": "61c956515f94841eaf485da0688f438a13c3d06a",
+   "utc": "2026-10-09T21:49:54Z",
+   "how": "The diff adds the card's pass line 'Fixed before any centrifuge crater was fitted or predicted and before the report of the Ryugu crater was opened (protocol SHA-256 ee2793f1...f3bf3b04)'."
+  }
+ },
+ "held_back": [
+  {
+   "path": "evidence/research/crater_ryugu_sci/raw/held_back/Arakawa_Science2020_en_JAXA_summary.pdf",
+   "sha256": "68e2303aa6040c7ce787395f70e9b08f9c45bed3c026e71b8f3d216194941629"
+  },
+  {
+   "path": "evidence/research/crater_ryugu_sci/raw/held_back/Arakawa_Science2020_en_JAXA_summary_pdftotext.txt",
+   "sha256": "066c885bab2568e8e2c7c6ee5fafe2a0edc385c3f05ef0003c26b6a367568499"
+  }
+ ],
+ "scored": {
+  "utc": "2026-10-09T21:05:36Z",
+  "evidence": "Birth time of evidence/research/crater_ryugu_sci/analysis/out/03_laboratory_held_back.json (14:05:36 PDT), the four held-back centrifuge craters scored against the law fitted on the nine opened shots, 31 s after the protocol's hash was recorded (analysis/prereg_hash.txt, 21:05:05Z)."
+ },
+ "forecast_first": "not held",
+ "registered_by": "backfill from the record, 2026-10-15",
+ "notes": "The first crate commit carrying the hash is 44 min after the laboratory scoring and after the Ryugu report was read: the held-back report's PDF was fetched at 21:07:13Z and its text layer written at 21:07:16Z (file birth times; raw/SOURCES.md, which gives the hashes above, says 'opened after the protocol's hash'). The Ryugu comparison through the engine was written at 21:51:41Z (analysis/out/06_score_output.txt), 1 min 47 s after the commit, but its measured value had been on disk since 21:07Z. Outside Git: analysis/prereg_hash.txt, recorded 2026-10-09T21:05:05Z, gives validation_protocol.md (unchanged on disk) and analysis/prereg.json (158c92b0...). The centrifuge craters were transcribed with all of Schmidt's Table 1 before the hash, and Schmidt's published line through them was known, as the served result says. Rescorings: 06_engine_run_integrated (22:21Z), 06_engine_run_v060 (2026-10-10T03:45Z); second party evidence/verification/second_party/V-30/. Public mark: GitHub-signed commit 24093df6076fce2152ac0fcfb139bb0544c9ae30 at 2026-10-13T17:54:29Z."
+}

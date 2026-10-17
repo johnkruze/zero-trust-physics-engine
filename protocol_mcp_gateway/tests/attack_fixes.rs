@@ -219,16 +219,8 @@ async fn a_value_outside_a_published_bound_is_422_before_a_permit_on_every_card_
             if exempt {
                 continue;
             }
-            // The cell_2170_m80 card takes a start up to 2^-49 Ah past an end
-            // of its tables, the rounding allowance of a start, as its bound
-            // says. The value put outside is the next number past that.
-            let value = match (name, field.as_str(), side) {
-                ("cell_2170_m80", "charge_removed_ah", "minimum") => next_smaller(value - 2.0_f64.powi(-49)),
-                ("cell_2170_m80", "charge_removed_ah", "maximum") => next_larger(value + 2.0_f64.powi(-49)),
-                _ => value,
-            };
             // The step.
-            let mut example = card["example_verify_step"].clone();
+            let mut example = card["example_compute_step"].clone();
             example["parameters"][field.as_str()] = json!(value);
             let (status, text) = post(&base, "/verify_physics", &example).await;
             assert_eq!(status, 422, "{name} {field} {side} step: {text}");
@@ -259,20 +251,30 @@ async fn a_value_outside_a_published_bound_is_422_before_a_permit_on_every_card_
 #[tokio::test]
 async fn a_state_that_leaves_the_card_during_a_run_is_still_a_sealed_refusal() {
     let base = spawn_app().await;
-    // The titanium load that is inside the published span, held long enough to reach yield.
     let card = describe(&base, "energy", "generator_mmrtg_f1").await;
     let mut run = card["example_run_trajectory"].clone();
-    // The last day of the card is a legal start; the step from it leaves the card.
+    // The last day of the record is not the end of the generator: the step
+    // from it lands, sealed.
     run["initial"]["mission_time_s"] = json!(353_116_800.0);
     run["segments"] = json!([{ "steps": 1, "load": {} }]);
     run["dt_s"] = json!(86_400.0);
     let (status, text) = post(&base, "/run_trajectory", &run).await;
     assert_eq!(status, 200, "{text}");
     let body: Value = serde_json::from_str(&text).unwrap();
-    // The mission's last day is the end the card declares: the run is sealed as ended there.
-    assert_eq!(body["outcome"], "ended", "{body}");
-    assert_eq!(body["reject"], "MissionTimeOutsideCard", "{body}");
-    assert!(body["reject_detail"].as_str().unwrap().contains("mission day 4,087"), "{body}");
+    assert_eq!(body["outcome"], "completed", "{body}");
+    assert!(body["run_seal"].is_string());
+    // A state that leaves the card during a run is a sealed refusal: a cell
+    // held at 2.9 A runs down to its 2.5 V cutoff.
+    let cell = describe(&base, "energy", "cell_18650pf").await;
+    let mut run = cell["example_run_trajectory"].clone();
+    run["segments"] = json!([{ "steps": 2_000, "load": { "current_a": 2.9 } }]);
+    run["dt_s"] = json!(10.0);
+    run["record_every"] = json!(2_000);
+    let (status, text) = post(&base, "/run_trajectory", &run).await;
+    assert_eq!(status, 200, "{text}");
+    let body: Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(body["outcome"], "refused", "{body}");
+    assert_eq!(body["reject"], "UndervoltageCutoff", "{body}");
     assert!(body["run_seal"].is_string());
 }
 
@@ -298,7 +300,7 @@ async fn refusals_name_the_field_the_value_and_the_limit() {
         &step("thermal", "energy", json!({ "heat_power_w": 1.0, "ambient_k": 293.15, "dt_s": 0.1 })),
     )
     .await;
-    assert_eq!(text, "Missing required parameter: 'temperature_k'");
+    assert_eq!(text, "Missing required parameter: 'temperature_k' (InputMissing).");
     // An unknown key is called unknown, whatever its name or value.
     for key in ["attempt", "mass_flow", "temp_extra"] {
         let (status, text) = post(&base, "/verify_physics", &thermal(json!({ key: -1.0 }), json!(293.15))).await;
@@ -315,7 +317,7 @@ async fn refusals_name_the_field_the_value_and_the_limit() {
     assert_eq!(status, 422);
     assert_eq!(text, "Physical Violation: 'domain' must be a string; this request has a list.");
     let (_, text) = post(&base, "/verify_physics", &json!({"card":"thermal","parameters":{}})).await;
-    assert_eq!(text, "Missing required parameter: 'domain'");
+    assert_eq!(text, "Missing required parameter: 'domain' (InputMissing).");
     // A step at the smallest normal number is a short sentence with the limit in it.
     let (status, text) = post(
         &base,
@@ -328,7 +330,8 @@ async fn refusals_name_the_field_the_value_and_the_limit() {
     assert!(text.contains("2.2250738585072014e-308") && text.contains("step floor of the thermal card"), "{text}");
     // A solver number that is negative is outside the range, not "not an integer".
     let (_, text) = post(&base, "/solve", &json!({"solver":"atom_dft","parameters":{"atomic_number":-1}})).await;
-    assert!(text.contains("atomic number -1 is outside 1..="), "{text}");
+    // Re-pinned for 0.10.1: an atomic number outside the range carries the name AtomicNumberOutOfRange, and the entry writes the range in words.
+    assert!(text.contains("atomic number -1 is outside 1 to 18 (AtomicNumberOutOfRange)."), "{text}");
     // A grid start below the floor names the floor, not "phase is not valid".
     let (_, text) = post(
         &base,

@@ -6,6 +6,7 @@
 //! list_solvers. Every connection gives the same bytes, and nothing is stored.
 
 mod hosted_support;
+use hosted_support::answer_text;
 
 use std::io::{BufRead, BufReader};
 use std::path::Path;
@@ -67,11 +68,14 @@ async fn post(base: &str, tool: &str, body: &Value) -> (u16, String) {
     let response = reqwest::Client::new()
         .post(format!("{base}/{tool}"))
         .header(reqwest::header::CONTENT_TYPE, "application/json")
-        .body(body.to_string())
+        .body(answer_text::as_sent(body))
         .send()
         .await
         .unwrap();
-    (response.status().as_u16(), response.text().await.unwrap())
+    let status = response.status().as_u16();
+    let text = response.text().await.unwrap();
+    answer_text::remember(&text);
+    (status, text)
 }
 
 fn parsed(text: &str) -> Value {
@@ -277,7 +281,7 @@ fn a_declared_end_is_ended_and_every_other_refusal_names_its_steps() {
     let (_, insight) = stdio.tool("describe_card", &json!({ "domain": "aerospace", "card": "capsule_insight" }));
     let insight = parsed(&insight);
     assert_eq!(insight["declared_ends"].as_array().unwrap().len(), 1);
-    assert_eq!(insight["declared_ends"][0]["reject"], "PastComparedFlight");
+    assert_eq!(insight["declared_ends"][0]["reject"], "PastFlightDeployment");
 
     // The plate past its ceiling is refused, and the sentence names the steps.
     let (_, hot) = stdio.tool("run_trajectory", &hot_plate());
@@ -376,9 +380,13 @@ fn a_solution_claimed_for_another_engine_version_does_not_hold() {
     let mut stdio = Stdio2::start(None);
     let (_, text) = stdio.tool("solve", &json!({ "solver": "atom_dft", "parameters": { "atomic_number": 2 } }));
     let mut body = parsed(&text);
-    body.as_object_mut().unwrap().remove("receipt_sha256");
     let (_, report) = stdio.tool("verify_solution", &body);
     assert_eq!(parsed(&report)["holds"], json!(true), "{report}");
+    // Since 0.11.0 the long form compares the whole answer: one sent without
+    // its receipt is named there.
+    body.as_object_mut().unwrap().remove("receipt_sha256");
+    let (_, report) = stdio.tool("verify_solution", &body);
+    assert_eq!((parsed(&report)["cause"].clone(), parsed(&report)["differs_at"].clone()), (json!("answer_text"), json!("receipt_sha256")), "{report}");
     body["engine_version"] = json!("genesis_solvers_v0.4.0");
     let (_, report) = stdio.tool("verify_solution", &body);
     assert_eq!(parsed(&report)["holds"], json!(false), "{report}");
@@ -419,12 +427,12 @@ fn genesis_seal_reads_a_comparison_of_solves() {
 }
 
 /// The most characters the declaration of every tool comes to, compact.
-const TOOL_LIST_CHARS: usize = 42_599;
+const TOOL_LIST_CHARS: usize = 63_761;
 
 #[test]
 fn the_tool_list_declares_the_pair_and_the_solver_once_and_lists_no_catalogue() {
     let tools = protocol_mcp_gateway::mcp_server::tools_in(&protocol_mcp_gateway::view::View::full());
-    assert_eq!(tools.len(), 16);
+    assert_eq!(tools.len(), 18);
     let text = serde_json::to_string(&tools).unwrap();
     // 0.6.0 sent 42,886 characters (json.dumps), 12,474 of them the catalogue repeated.
     // Chained proofs declare from on run_trajectory and verify_step and the
@@ -447,10 +455,100 @@ fn the_tool_list_declares_the_pair_and_the_solver_once_and_lists_no_catalogue() 
     // the thirteen, 42,548 for all sixteen.
     // 0.10.0 says in cite that the service and the paper come first and the
     // people whose measurements the model stands on after them, with no
-    // licence among what each gives: TOOL_LIST_CHARS for all sixteen.
+    // licence among what each gives: 42,599 for all sixteen.
+    // 0.10.1 holds every description to 2,000 characters, the length a client
+    // shows: the descriptions fall from 21,517 characters to 15,149, and what
+    // they no longer hold is said at the inputs it is about, so the input
+    // schemas grow from 19,798 to 28,501 (the worked plans, how a plan is
+    // written and an answer counted, how a run comes back in full); each tool
+    // gains a title, and no description names a route of the web connection:
+    // 39,840 for the thirteen and 44,965 for all sixteen. The input schemas
+    // then stop naming a route of the web connection (verify_step, solve) and
+    // say "stored as files" where they said "the gateway stored" (run_dataset,
+    // verify_dataset): 39,721 for the thirteen, 44,846 for all sixteen. The
+    // three parts of 0.10.1 together then say, in run_trajectory's inputs, what a
+    // refusal sentence with no name in round brackets is; in verify_dataset,
+    // that row and fault name the first row changed, swapped, dropped or
+    // repeated and a decimal that differs from its hex; and in find_model, that
+    // a model is set aside when the description names another thing of its
+    // kind: 40,050 for the thirteen, 45,312 for all sixteen. The next
+    // version serves compute_step, and verify_step beside it for one version
+    // as its earlier name with the same input schema; says at the inputs of
+    // the step and the solve the names of an input left out (InputMissing)
+    // and of one given with a choice it does not go with
+    // (InputNotWithChoice); words the verifying tools without "check"; and
+    // names the fifth word of against_measurement, "held to a reference
+    // calculation", in list_cards, list_solvers and find_model; and, since
+    // the door's fixes of 0.11.0, says that the long form of each verifying
+    // tool writes the answer again and compares it, and names UnknownCard and
+    // UnknownSolver: 47,814 for all seventeen. A signed load (wave 3) then
+    // declares signed at a segment, at a measurement of validate_series and
+    // at a lone solver's parameters, says once at run_trajectory's segments
+    // what it holds and how it is verified and what load_source says, says
+    // at a solve's parameters that they may be signed, and adds a sentence
+    // to run_trajectory and to verify_tape; engine 0.12.0 adds design_run,
+    // inverse design, served before verify_step: 56,187 for all eighteen.
+    // 0.12.0's fix pass says that every long form computes the request its
+    // answer carries again and compares the whole answer byte for byte, and
+    // names AnswerCarriesNoRequest: 57,766 for all eighteen. Each long form's
+    // answer then says values_hold beside holds, in the three descriptions
+    // and schemas: 59,530 for all eighteen, reproduced in Python from the
+    // stdio door's tools/list as compact JSON. validate_series then declares
+    // commitment, a salted SHA-256 of the measurements opened before
+    // computing, at its input and in a sentence of its description: 61,345
+    // for all eighteen. run_trajectory's examples of a declared end then
+    // name ends the engine declares (a crater that stops growing, a runaway
+    // once every reactant is consumed): 61,364 for all eighteen, reproduced
+    // the same way. list_cards, list_solvers and find_model then name the
+    // sixth word of against_measurement, "calibrated to the record", and say
+    // what it means: 62,163 for all eighteen, reproduced the same way.
+    // verify_receipt then says a response's engine_version is said beside
+    // matches, with whether it is this engine's: 62,265 for all eighteen,
+    // reproduced the same way. list_cards, list_solvers and find_model then
+    // say what met, met in part and missed say, against the pass marks a
+    // record states, the record saying whether the comparison was blind, and
+    // what calibrated to the record is (0.13.1): 62,922 for all eighteen,
+    // reproduced the same way. The upstream request in from is said to go
+    // without its readout (run_trajectory's and compute_step's from, and
+    // verify_tape), and run_dataset's schema says the 40000 characters of an
+    // inline answer limit its rows first (the words of 0.14.0):
+    // 63,291 for all eighteen, reproduced the same way
+    // (evidence/verification/words_014_2026-10-16/pins_words_014.txt).
+    // find_flip says its counted FLIP_MAX_SECONDS in its description and its
+    // request's schema, and run_dataset's schema says about 140 summary rows
+    // of a grid on one axis and fewer of a list (0.14.0 rc2, items 1 and 7):
+    // 63,721 (rc2_014/measure_rc2/pins_item11.txt); and find_flip's request
+    // schema says a search makes at least three solves (item 1, continued):
+    // TOOL_LIST_CHARS for all eighteen, reproduced the same way
+    // (rc2_014/measure_rc2/pins_item01b.txt).
     assert!(text.len() <= TOOL_LIST_CHARS, "{} characters", text.len());
     let earlier: Vec<_> = tools.iter().take(13).collect();
-    assert_eq!(serde_json::to_string(&earlier).unwrap().len(), 37_762, "the thirteen earlier tools as declared since 0.9.3");
+    // 40,050 as declared since 0.10.1; 40,433 once compute_step and the
+    // verifying tools are worded without "check", the step and the solve
+    // say InputMissing and InputNotWithChoice at their inputs, and the
+    // fifth word of against_measurement is named; 41,038 once the long form
+    // of each verifying tool says it writes the answer again and compares it,
+    // and the step and the solve name UnknownCard and UnknownSolver; 41,059
+    // once each link of a chain is held as the long form holds one answer;
+    // 45,913 once run_trajectory declares and describes signed and
+    // load_source, a lone solver's parameters declare signed, solve's
+    // parameters say they may be signed, and verify_tape names load_signature;
+    // 47,477 once the long form of each verifying tool computes the answer's
+    // request again and compares it byte for byte, and verify_tape's schema
+    // names AnswerCarriesNoRequest; 49,241 once each long form's answer says
+    // values_hold beside holds, in the three descriptions and schemas; 51,056
+    // once validate_series declares and describes commitment; 51,075 once
+    // run_trajectory's examples of a declared end name ends the engine
+    // declares; 51,613 once list_cards and list_solvers name the sixth word
+    // of against_measurement, "calibrated to the record", and say what it
+    // means; 51,715 once verify_receipt says it names a response's
+    // engine_version beside matches; 52,169 once list_cards and list_solvers
+    // say what the three words and the sixth say (0.13.1); 52,538 once the
+    // upstream request in from goes without its readout and an inline answer's
+    // 40000 characters are said to limit its rows (the words of 0.14.0);
+    // 52,614 once run_dataset's schema says those rows of a grid on one axis
+    // and of a list (0.14.0 rc2, item 7).
+    assert_eq!(serde_json::to_string(&earlier).unwrap().len(), 52_614, "the thirteen earlier tools as declared in the next version");
     for name in ["ti64_lattice", "reactor_triga_jsi", "tokamak_dt_beam_target", "culture_trichoderma_ambr250"] {
         assert!(!text.contains(name), "the tool list names {name}");
     }

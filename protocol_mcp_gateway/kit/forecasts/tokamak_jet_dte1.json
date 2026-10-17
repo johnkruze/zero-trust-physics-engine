@@ -1,0 +1,21 @@
+{
+ "model": "tokamak_jet_dte1",
+ "verdict": "missed",
+ "protocol": {
+  "path": "evidence/research/tokamak_jet_dte1/analysis/prereg.json",
+  "sha256": "7badf2b1267219d0e4da2edaad7d50097f9f98ceee1e0ab5fb9f8fd391ba94bb",
+  "committed": {
+   "crate": "protocol_mcp_gateway",
+   "commit": "6e7fa3dd23340a6466332b0c6a84d7c090839b9e",
+   "utc": "2026-10-09T20:53:07Z",
+   "how": "The diff of 'Serve the tokamak_jet_dte1 card in the energy domain ...' adds the pass line 'Fixed before the card was run on either held-back pulse (pre-registration SHA-256 7badf2b1...ba94bb)' with the result 'not yet compared with the held-back pulses'; author and committer time are the same."
+  }
+ },
+ "scored": {
+  "utc": "2026-10-09T20:53:07Z",
+  "evidence": "Birth time of evidence/research/tokamak_jet_dte1/analysis/out/07_held_back_run.log and of the folder runs/ (13:53:07 PDT), the card run on the two held-back pulses; the measured series and the validate_* scorings in runs/ were written at 20:53:08Z and analysis/out/08_score.json at 20:53:28Z."
+ },
+ "forecast_first": "not shown",
+ "registered_by": "backfill from the record, 2026-10-15",
+ "notes": "The commit and the start of the held-back run carry the same second, 20:53:07Z, so the record cannot show that the commit came first; the scoring files are one second and 21 s later. prereg.json on disk still has the committed hash. Outside Git: prereg_hash.txt and analysis/prereg_hash.txt, recorded 2026-10-09T20:29:35Z, give prereg.json and four code and constants files. prereg.json says every file, held-back pulses included, was downloaded and read for its format before the split; for pulse 42976 a 28-sample table of the measured quantities was printed and a confinement multiplier estimated by hand, and for both held-back pulses one summary line of peak values was printed. The seal is a rule of the scripts. A kernel commit, b02bfcd24375dfb22060ed95576176d5658d076f (20:54:45Z), carries the prefix 7badf2b1. Rescorings: runs_v040, runs_v060, evidence/verification/tokamak_jet_dte1_scoring/; fresh eyes: evidence/verification/fresh_eyes_0.6.0/tokamak_jet_dte1/. Commit times are the committer's clock. Public mark: GitHub-signed commit 5045103be7c73e2d34539e39438e91c5706f6019 at 2026-10-13T17:55:24Z."
+}

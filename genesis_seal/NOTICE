@@ -9,3 +9,19 @@ please cite the paper:
   Kruze, J., with Super Intelligence (2026). Zero-Trust Physics: a verifier
   for the physical answers of Super Intelligence (version 1.0). Protocol
   Company. Zenodo. https://doi.org/10.5281/zenodo.23305697
+
+The numbers of other people this crate holds are in one file,
+vectors/ed25519.txt, which only a test reads:
+
+- RFC 8032, "Edwards-Curve Digital Signature Algorithm (EdDSA)", S. Josefsson
+  and I. Liusvaara, January 2017, section 7.1: the five Ed25519 test vectors
+  (secret key, public key, message, signature). Copyright (c) 2017 IETF Trust
+  and the persons identified as the document authors.
+- The twelve cases of "Taming the many EdDSAs", K. Chalkias, F. Garillot and
+  V. Nikolaenko (2020), from https://github.com/novifinancial/ed25519-speccheck,
+  cases.json (key, message and signature of each case). Licensed under the
+  Apache License, Version 2.0.
+
+To verify an Ed25519 signature the crate depends on ed25519-dalek and
+curve25519-dalek (BSD-3-Clause, the dalek-cryptography authors); their code
+is not in this source.

@@ -1,0 +1,21 @@
+{
+ "model": "solar_system",
+ "verdict": "met in part",
+ "protocol": {
+  "path": "evidence/research/ephemeris_solar_system/validation_protocol.md",
+  "sha256": "2d79e65df9fb8ad036444896e776e98d18cb98fc7b582f861747f27d79fd9679",
+  "committed": {
+   "crate": "protocol_mcp_gateway",
+   "commit": "505cb616fcfbea5a9de571844e04ccac5b0368a8",
+   "utc": "2026-10-09T22:04:38Z",
+   "how": "The diff of 'Serve the solar_system card in the aerospace domain ...' adds the pass line 'Fixed before any held-back measurement was read (protocol SHA-256 2d79e65d...fd9679)' with the result 'not yet compared with the held-back measurements'; f3dfd1ec1548e3984f687db1298783f849ae56ab, same second, adds a test holding the hash."
+  }
+ },
+ "scored": {
+  "utc": "2026-10-09T22:07:07Z",
+  "evidence": "Birth time of evidence/research/ephemeris_solar_system/analysis/out/engine_run/receipts.jsonl.gz (15:07:07 PDT), the engine run that was scored; the scoring against the held-back measurements, out/05_score_as_first_run.log, whose first line checks the protocol's hash, followed (05_score.log born 22:09:12Z)."
+ },
+ "forecast_first": "held",
+ "registered_by": "backfill from the record, 2026-10-15",
+ "notes": "Committed 2 min 29 s before the scored engine run; validation_protocol.md on disk still has the committed hash. Outside Git: analysis/prereg_hash.txt, written 2026-10-09T21:10:16Z, gives validation_protocol.md and analysis/prereg.json (1968b767..., unchanged on disk). The scoring scripts were frozen at 21:48:12Z (out/scoring_scripts_frozen_sha256.txt). The held-back files (raw/jpl_obs_sealed/ and the references fetched at scoring) were on disk or fetched under a procedural seal; the forecast on the opened MGS ranges ran at 21:07:57Z, before the hash. Amendment 1 (analysis/prereg_amendment_1.json, 02c4d598..., 22:11:41Z) was written after the scoring had been read, says it is post hoc and changes no verdict; it is in no commit. Commit times are the committer's clock. Second party: evidence/verification/second_party/V-31/. Public mark: GitHub-signed commit b2f502d6824192c6a47d99c21520509107ade20f at 2026-10-13T17:54:40Z."
+}

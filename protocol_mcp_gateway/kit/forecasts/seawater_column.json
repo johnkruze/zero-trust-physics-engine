@@ -1,0 +1,16 @@
+{
+ "model": "seawater_column",
+ "verdict": "met",
+ "protocol": {
+  "path": "evidence/research/marine_knorr145_indian_ocean/analysis/prereg.json",
+  "sha256": "be5f2fa440850337b4b2b639062e4d3767863b32a14a1977d29ced17bee7c817",
+  "committed": null
+ },
+ "scored": {
+  "utc": "2026-10-09T21:43:16Z",
+  "evidence": "Birth time of evidence/research/marine_knorr145_indian_ocean/analysis/out/09_sealed.log (14:43:16 PDT), the held-back run on the ten held-back legs; analysis/prereg_amendment_1_hash.txt records amendment 1 at 21:43:16Z, the same second, 'before any held-back leg was opened'."
+ },
+ "forecast_first": "not shown",
+ "registered_by": "backfill from the record, 2026-10-15",
+ "notes": "No commit in any crate carries be5f2fa4 (prereg.json), c44d4c2c (prereg_amendment_1.json) or 2ab78e38 (validation_protocol.md). Not a committed fingerprint, but dated in Git before the scoring: protocol_mcp_gateway commit 24cee8b45de936c851e67bc4ee402fd46c8f8fdf (2026-10-09T21:41:52Z, 84 s before the held-back run) adds the pass line's text, 'Fixed on 2026-10-09 before any number of a held-back leg was read ... the median within 10 m, and at least 0.80 of the stations within 20 m', with no hash and the record that the held-back legs are not yet scored. Outside Git: analysis/prereg_hash.txt at 2026-10-09T21:07:16Z, before any number of a held-back leg was read. Amendment 1 (loader rules for the held-back files, not the marks) was recorded in the same second as the first file of the held-back run, so the record cannot show it came first. Rescorings: 09_sealed_integrated(_after_defects, _final), 09_sealed_v060; second party evidence/verification/second_party/V-29/. Posted to the public pass-marks repository with this SHA-256 in GitHub-signed commit 9799fbf874a1ce07388369892cdebc50d304752f at 2026-10-13T17:56:04Z, after the scoring."
+}

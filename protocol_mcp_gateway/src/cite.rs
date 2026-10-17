@@ -86,7 +86,7 @@ pub fn model_keys() -> Vec<&'static str> {
 
 pub fn description() -> String {
     format!(
-        "How to cite a card or a solver: the service itself first (Zero-Trust Physics, its maker and its address) and the paper ({PAPER_DOI_URL}), then the people whose measurements the model stands on (authors, title, year, address, and what each asks of those who use its data), each as text and BibTeX. Send domain and card, or solver; with neither, the answer is how to cite the service itself: its name, who made it, its address and the paper. Same bytes as POST /cite."
+        "Gives how to cite a card or a solver: the service itself first (Zero-Trust Physics, its maker and its address) and the paper ({PAPER_DOI_URL}), then the people whose measurements the model stands on (authors, title, year, address, and what each asks of those who use its data), each as text and BibTeX. With domain and card, or solver, the answer is for that model; with neither, it is how to cite the service itself: its name, who made it, its address and the paper."
     )
 }
 
@@ -95,7 +95,7 @@ pub fn schema_in(view: &View) -> Map<String, Value> {
     match json!({
         "type": "object",
         "properties": {
-            "domain": { "type": "string", "description": "With card: a card, by the name find_model or list_cards gives. When find_model has given it, no list need be read." },
+            "domain": { "type": "string", "description": "With card: a card, by the name find_model or list_cards gives; the two give the same names." },
             "card": { "type": "string" },
             "solver": { "type": "string", "description": "In place of domain and card: a solver, by the name find_model or list_solvers gives." }
         },
@@ -152,12 +152,12 @@ pub fn cite_in(view: &View, request: &Value) -> Result<Value, DoorError> {
         (Some(domain), Some(card), None) => {
             let spec = view
                 .find(domain, card)
-                .ok_or_else(|| DoorError::NotFound("Card not recognized".to_string()))?;
+                .ok_or_else(|| DoorError::NotFound(crate::CARD_NOT_RECOGNIZED.to_string()))?;
             (format!("{}/{}", spec.domain, spec.card), json!({ "domain": spec.domain, "card": spec.card }))
         }
         (None, None, Some(solver)) => {
             if !view.sees_solver(solver) || !crate::solvers::is_known(solver) {
-                return Err(DoorError::NotFound("Solver not recognized".to_string()));
+                return Err(DoorError::NotFound(crate::SOLVER_NOT_RECOGNIZED.to_string()));
             }
             (solver.to_string(), json!({ "solver": solver }))
         }
@@ -178,8 +178,8 @@ pub fn cite_in(view: &View, request: &Value) -> Result<Value, DoorError> {
             answer.insert("about".to_string(), json!(ABOUT_THE_SERVICE));
             return Ok(Value::Object(answer));
         }
-        (Some(_), None, None) => return Err(violation("Missing required parameter: 'card'")),
-        (None, Some(_), None) => return Err(violation("Missing required parameter: 'domain'")),
+        (Some(_), None, None) => return Err(violation("Missing required parameter: 'card' (InputMissing).")),
+        (None, Some(_), None) => return Err(violation("Missing required parameter: 'domain' (InputMissing).")),
         _ => {
             return Err(violation(
                 "Physical Violation: send domain and card for a card, or solver for a solver, not both.",
@@ -331,6 +331,44 @@ mod tests {
         for solver in crate::solvers::ALL.iter().filter(|solver| solver.name != crate::solver_probe::STAND_IN.name) {
             let answer = cite_in(&view, &json!({ "solver": solver.name })).unwrap();
             opens(&answer, solver.name);
+        }
+    }
+
+    /// stress_plate_hole_s235's own record says its comparison is not blind
+    /// in the held-back ring (the solver's validation data, and
+    /// stress_plate_s235/validation_protocol.md, "What was seen before this
+    /// protocol was fixed"): its entry says so, and its companion's names it
+    /// as the scored original, never as compared blind.
+    #[test]
+    fn the_stress_plate_entries_say_what_its_record_says_of_the_ring() {
+        let view = View::full();
+        let original = cite_in(&view, &json!({ "solver": "stress_plate_hole_s235" })).unwrap();
+        let companion = cite_in(&view, &json!({ "solver": "stress_plate_hole_s235_elastic" })).unwrap();
+        let said = original["how_used"].as_str().unwrap();
+        assert!(said.contains("The comparison is not blind in that ring"), "{said}");
+        let said = companion["how_used"].as_str().unwrap();
+        assert!(said.contains("stress_plate_hole_s235, the scored original, compared before this companion was built and not blind in that ring by its own record"), "{said}");
+        assert!(!CITATIONS.contains("stress_plate_hole_s235, compared blind"));
+    }
+
+    /// Three entries said what their records contradict and the served
+    /// validations have mended since 0.13.1 (AUDIT.md of 2026-10-16, defects
+    /// 4, 7 and 10): cantilever_eth's next 12 s were not kept unread, their
+    /// coarse envelope having been printed; reactor_triga_jsi's held-back
+    /// records were fetched, after the scoring; ln2_line_dlr_fttf's marks were
+    /// committed to the engine's own record, not posted.
+    #[test]
+    fn the_entries_say_what_the_mended_validations_say() {
+        let view = View::full();
+        let how = |request: Value| cite_in(&view, &request).unwrap()["how_used"].as_str().unwrap().to_string();
+        let cantilever = how(json!({ "domain": "signal", "card": "cantilever_eth" }));
+        assert!(cantilever.contains("their coarse envelope on Laser_1 had been printed by mistake on 2026-10-06"), "{cantilever}");
+        let triga = how(json!({ "domain": "energy", "card": "reactor_triga_jsi" }));
+        assert!(triga.contains("15 of those records were fetched on 2026-10-11, after the scoring"), "{triga}");
+        let line = how(json!({ "solver": "ln2_line_dlr_fttf" }));
+        assert!(line.contains("in the engine's own record and not in the public pass-marks repository"), "{line}");
+        for words in ["kept unread until the card was compared", "whose records were never fetched", "marks posted before they were opened"] {
+            assert!(!CITATIONS.contains(words), "{words}");
         }
     }
 }

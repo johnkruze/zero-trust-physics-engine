@@ -60,6 +60,7 @@ extern crate core;
 use core::prelude::v1::*;
 
 use crate::frame::LastStateFrame64;
+use crate::normal::normal_or_zero;
 
 /// Annealed copper resistivity at 20 °C, IACS.
 pub const COPPER_RESISTIVITY_OHM_M: f64 = 1.724e-8;
@@ -434,8 +435,25 @@ impl GridNodeState {
 /// [`StepReject::VoltageOutsideCard`] refuse a trial current or voltage past
 /// the card's bounds. A rejected step leaves `state` and `frame` as they were.
 /// Creation of energy is [`StepReject::SpontaneousGeneration`].
+///
+/// A value of the landed state below the normal range is written as zero
+/// with its sign ([`crate::normal`]).
 #[must_use]
 pub fn step(
+    node: &GridNode,
+    state: &mut GridNodeState,
+    frame: &mut LastStateFrame64,
+    load: GridLoad,
+    dt_s: f64,
+) -> Result<(), StepReject> {
+    step_as_computed(node, state, frame, load, dt_s)?;
+    normal_or_zero_state(state);
+    Ok(())
+}
+
+/// The step as its equations compute it, before a value of the landed
+/// state below the normal range is written as zero.
+fn step_as_computed(
     node: &GridNode,
     state: &mut GridNodeState,
     frame: &mut LastStateFrame64,
@@ -448,6 +466,31 @@ pub fn step(
         None => return Err(StepReject::NonFiniteState),
     };
     commit(node, state, frame, load, dt_s, predicted)
+}
+
+/// Each value of a landed state below the normal range written as zero
+/// with its sign ([`crate::normal`]): the state carried to the next step
+/// and published holds no subnormal number.
+fn normal_or_zero_state(state: &mut GridNodeState) {
+    state.t_s = normal_or_zero(state.t_s);
+    state.current_a = normal_or_zero(state.current_a);
+    state.voltage_v = normal_or_zero(state.voltage_v);
+    state.temperature_k = normal_or_zero(state.temperature_k);
+    state.upstream_voltage_v = normal_or_zero(state.upstream_voltage_v);
+    state.load_current_a = normal_or_zero(state.load_current_a);
+    state.ambient_k = normal_or_zero(state.ambient_k);
+    state.resistance_ohm = normal_or_zero(state.resistance_ohm);
+    state.joule_power_w = normal_or_zero(state.joule_power_w);
+    state.electrical_energy_j = normal_or_zero(state.electrical_energy_j);
+    state.thermal_energy_j = normal_or_zero(state.thermal_energy_j);
+    state.internal_energy_j = normal_or_zero(state.internal_energy_j);
+    state.energy_anchor_j = normal_or_zero(state.energy_anchor_j);
+    state.boundary_work_j = normal_or_zero(state.boundary_work_j);
+    state.energy_defect_j = normal_or_zero(state.energy_defect_j);
+    state.residual_conservation_error = normal_or_zero(state.residual_conservation_error);
+    state.voltage_spike_v = normal_or_zero(state.voltage_spike_v);
+    state.melt_margin_k = normal_or_zero(state.melt_margin_k);
+    state.entropy_production_w_per_k = normal_or_zero(state.entropy_production_w_per_k);
 }
 
 fn validate(

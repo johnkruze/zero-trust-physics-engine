@@ -9,13 +9,21 @@
 //! that measurement, and no excerpt of its limits), kept apart so that a model that failed its pass marks
 //! is not read as a model that does not fit. When nothing fits the answer is
 //! complete in itself: every card and solver was compared, here are the
-//! nearest by words and why they are not it, and here is how to ask for a
-//! model. The same description always gives the same answer.
+//! nearest by words and why they are not it, and where requests for a model
+//! go, said as what is so and not as an instruction. The same description
+//! always gives the same answer.
 //!
 //! How a description is read: its words are taken in their common forms, so
 //! that forms of one word are one word; a term is found where its words stand
 //! together; and each word of the description counts once for a model, at
 //! the weight of the heaviest term found on it.
+//!
+//! A description that names another real thing of a model's kind (helium for
+//! the argon gas, the Phoenix lander for the InSight capsule, an LG cell for
+//! the Panasonic and Tesla cells) is of that other thing: the model is not a
+//! match for it, whatever words the two share, and is named as near with the
+//! name that set it aside. A description that names the model's own thing as
+//! well is of the model's thing.
 
 use serde_json::{Map, Value, json};
 
@@ -43,7 +51,7 @@ const STRONG: u32 = 3;
 const PLAIN: u32 = 2;
 const WEAK: u32 = 1;
 
-/// Whether a model met the marks fixed before it was compared.
+/// How a model did against the pass marks its record states.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Marks {
     Met,
@@ -53,6 +61,12 @@ pub enum Marks {
     NotCompared,
     /// Compared with a reference calculation, not a measurement.
     Reference,
+    /// Compared with the record of a real object after its structure or
+    /// constants were chosen with that record open: calibration, not a blind
+    /// test. Served beside the scored original (its row of
+    /// `CALIBRATIONS`), never in its place: `generator_mmrtg_seebeck`, beside
+    /// `generator_mmrtg_f1`.
+    Calibrated,
 }
 
 impl Marks {
@@ -64,14 +78,20 @@ impl Marks {
             Marks::Met => "met",
             Marks::Missed => "missed",
             Marks::InPart => "met in part",
-            Marks::NotCompared | Marks::Reference => "not held to a measurement",
+            Marks::NotCompared => "not held to a measurement",
+            Marks::Reference => "held to a reference calculation",
+            Marks::Calibrated => CALIBRATED,
         }
     }
 }
 
+/// The sixth word: a model whose structure or constants were chosen with the
+/// record it is compared with open.
+pub(crate) const CALIBRATED: &str = "calibrated to the record";
+
 /// What `against_measurement` holds, said in the description of each tool
 /// that returns it.
-pub(crate) const AGAINST_MEASUREMENT_SAYS: &str = "against_measurement is how the model did against its own measurements, in one of four words, \"met\", \"missed\", \"met in part\" or \"not held to a measurement\": it is accuracy and not fit, and a model that missed is still the served model of its thing.";
+pub(crate) const AGAINST_MEASUREMENT_SAYS: &str = "against_measurement says in one of six words how the model stands against measurement. \"met\", \"met in part\" and \"missed\" say how it did against the pass marks its record states, and its validation record, in describe_card or describe_solver, says whether that comparison was blind and, where it was not, what was seen and when. \"calibrated to the record\" is a companion whose structure or constants were chosen with the record of a scored original open, so its comparison is not a blind test; the original is served beside it under its own word. \"held to a reference calculation\" is compared with a published calculation, and \"not held to a measurement\" is the company's own specimen. It is accuracy and not fit, and a model that missed is still the served model of its thing.";
 
 pub struct Entry {
     /// `domain/card` for a card, the solver's name for a solver.
@@ -85,189 +105,436 @@ pub struct Entry {
     pub plain: &'static [&'static str],
     /// Terms shared with many things.
     pub weak: &'static [&'static str],
+    /// Names of other real things of this model's kind: another gas, another
+    /// planet's probe, another maker's cell. A description that names one is
+    /// of that thing, so the model is not a match for it, whatever words the
+    /// two share; it is named as near, with the name that set it aside. The
+    /// list holds names of specific other things and no common noun that a
+    /// description of the model's own thing uses in passing: what the thing
+    /// is made of, what it is found in, what it is set against (air for
+    /// argon, a lake for the sea, dry asphalt for ice, a molecule for an atom).
+    pub other: &'static [&'static str],
+    /// The names of this model's own thing. A description that holds one is
+    /// of this thing, though it names another beside it ("argon, compared
+    /// with air"). A name of its own that stands inside another thing's name
+    /// does not count: "LAGEOS-2" is not LAGEOS-1, and "liquid argon" is not
+    /// the gas.
+    pub own: &'static [&'static str],
 }
 
-const NOT_COMPARED: &str = "a generic specimen, not a named real object";
+/// What the index says of a card that is one of the company's own specimens.
+const OWN_SPECIMEN: &str = "the company's own specimen";
+
+/// What the verdict phrase of one of the company's own specimens says after
+/// its name: what its numbers are.
+const OWN_SPECIMEN_ACCOUNT: &str = "its constants are the company's, stated in its description";
 
 /// The index: one entry for each served card and solver, in the engine's order.
 pub const INDEX: &[Entry] = &[
-    Entry { key: "materials/ti64_lattice", marks: Marks::NotCompared, marks_words: NOT_COMPARED,
+    Entry { key: "materials/ti64_lattice", marks: Marks::NotCompared, marks_words: OWN_SPECIMEN,
         strong: &["ti-6al-4v", "ti64", "titanium", "lattice"],
         plain: &["column", "strut", "printed metal", "additive", "elastic", "torque", "alloy"],
-        weak: &["force", "temperature", "metal", "structure", "load"] },
-    Entry { key: "energy/grid_node", marks: Marks::NotCompared, marks_words: NOT_COMPARED,
+        weak: &["force", "temperature", "metal", "structure", "load"],
+        other: &[],
+        own: &[] },
+    Entry { key: "energy/grid_node", marks: Marks::NotCompared, marks_words: OWN_SPECIMEN,
         strong: &["fuse", "fuse link", "copper link"],
         plain: &["overcurrent", "busbar", "conductor heating", "surge", "wire heating", "copper"],
-        weak: &["current", "voltage", "electrical", "melt"] },
-    Entry { key: "energy/swing", marks: Marks::NotCompared, marks_words: NOT_COMPARED,
+        weak: &["current", "voltage", "electrical", "melt"],
+        other: &[],
+        own: &[] },
+    Entry { key: "energy/swing", marks: Marks::NotCompared, marks_words: OWN_SPECIMEN,
         strong: &["synchronous machine", "swing equation", "rotor angle", "synchronous generator"],
         plain: &["60 hz", "generator", "turbine", "pole slip", "mechanical power", "rotor", "synchronism"],
-        weak: &["grid", "frequency", "machine", "power"] },
-    Entry { key: "energy/battery_sag", marks: Marks::NotCompared, marks_words: NOT_COMPARED,
+        weak: &["grid", "frequency", "machine", "power"],
+        other: &[],
+        own: &[] },
+    Entry { key: "energy/battery_sag", marks: Marks::NotCompared, marks_words: OWN_SPECIMEN,
         strong: &["battery pack", "12s", "pack", "voltage sag", "undervoltage"],
         plain: &["battery", "lithium", "lithium-ion", "li-ion", "cutoff", "drone battery", "discharge", "sag"],
-        weak: &["current", "voltage", "cell", "amps", "load", "drain"] },
+        weak: &["current", "voltage", "cell", "amps", "load", "drain"],
+        other: &["lg", "samsung", "sony", "murata", "molicel", "a123", "catl", "byd", "panasonic", "tesla", "lead acid", "nimh", "nickel metal", "alkaline"],
+        own: &[] },
     Entry { key: "energy/cell_18650pf", marks: Marks::Met, marks_words: "met its marks on all eleven discharges",
         strong: &["18650", "ncr18650pf", "panasonic"],
         plain: &["lithium", "lithium-ion", "li-ion", "cell", "battery", "discharge", "1c", "capacity"],
-        weak: &["voltage", "current", "cylindrical", "drain"] },
-    Entry { key: "energy/thermal", marks: Marks::NotCompared, marks_words: NOT_COMPARED,
+        weak: &["voltage", "current", "cylindrical", "drain"],
+        other: &["lg", "samsung", "sony", "murata", "molicel", "a123", "catl", "byd", "tesla", "2170", "21700", "4680", "26650", "pouch", "prismatic", "lead acid", "nimh", "nickel metal", "alkaline", "lifepo4", "lfp"],
+        own: &["ncr18650pf", "panasonic"] },
+    Entry { key: "energy/thermal", marks: Marks::NotCompared, marks_words: OWN_SPECIMEN,
         strong: &["cold plate", "heater", "avionics"],
-        plain: &["heat sink", "thermal mass", "cooling", "warming", "bath", "heat"],
-        weak: &["temperature", "power", "ambient", "electronics", "thermal"] },
-    Entry { key: "signal/resonance", marks: Marks::NotCompared, marks_words: NOT_COMPARED,
+        plain: &["heat sink", "thermal mass", "cooling", "warming", "bath", "heat", "flight computer"],
+        weak: &["temperature", "power", "ambient", "electronics", "thermal", "plate", "coolant"],
+        other: &[],
+        own: &[] },
+    Entry { key: "signal/resonance", marks: Marks::NotCompared, marks_words: OWN_SPECIMEN,
         strong: &["oscillator", "vibration mount", "spring mount", "mass on a spring", "isolator"],
         plain: &["spring", "resonance", "10 hz", "shaking", "vibration", "mount", "damper", "damped"],
-        weak: &["acceleration", "displacement", "mass", "stroke"] },
-    Entry { key: "signal/tesseract", marks: Marks::NotCompared, marks_words: NOT_COMPARED,
+        weak: &["acceleration", "displacement", "mass", "stroke"],
+        other: &[],
+        own: &[] },
+    Entry { key: "signal/tesseract", marks: Marks::NotCompared, marks_words: OWN_SPECIMEN,
         strong: &["duffing", "gyroscope", "mems", "drive mode", "resonator"],
-        plain: &["nonlinear oscillator", "rate sensor", "gyro", "sensed velocity", "hardening spring"],
-        weak: &["acceleration", "vibration", "sensor", "amplitude"] },
-    Entry { key: "materials/hydraulic_fluid", marks: Marks::NotCompared, marks_words: NOT_COMPARED,
+        plain: &["nonlinear oscillator", "rate sensor", "gyro", "sensed velocity", "hardening spring", "coriolis", "proof mass", "vibratory", "turn rate", "angular rate"],
+        weak: &["acceleration", "vibration", "sensor", "amplitude"],
+        other: &[],
+        own: &[] },
+    Entry { key: "materials/hydraulic_fluid", marks: Marks::NotCompared, marks_words: OWN_SPECIMEN,
         strong: &["hydraulic", "mineral oil", "oil column", "hydraulic line"],
         plain: &["actuator", "compressible fluid", "bulk modulus", "commanded flow", "oil"],
-        weak: &["pressure", "flow", "fluid", "column", "pipe"] },
-    Entry { key: "materials/cable_stretch", marks: Marks::NotCompared, marks_words: NOT_COMPARED,
+        weak: &["pressure", "flow", "fluid", "column", "pipe"],
+        other: &[],
+        own: &[] },
+    Entry { key: "materials/cable_stretch", marks: Marks::NotCompared, marks_words: OWN_SPECIMEN,
         strong: &["dyneema", "tendon", "cable", "rope"],
         plain: &["stretch", "tension", "elongation", "winch", "line under load", "cord", "tether"],
-        weak: &["force", "strain", "pull", "robot"] },
+        weak: &["force", "strain", "pull", "robot"],
+        other: &[],
+        own: &[] },
     Entry { key: "energy/generator_mmrtg_f1", marks: Marks::Missed, marks_words: "met its root mean square line (about 0.94 W against 1.154 W) and missed its final-year line (about 1.16 W high) on the held-back days 2,809 to 4,087, which it serves",
         strong: &["mmrtg", "rtg", "radioisotope", "curiosity", "plutonium", "thermoelectric generator"],
         plain: &["rover", "mars rover", "thermoelectric", "nuclear battery", "decay", "generator output", "mission day", "sol", "mars science laboratory"],
-        weak: &["generator", "power", "mars", "electrical output", "years"] },
-    Entry { key: "aerospace/capsule_stardust", marks: Marks::Met, marks_words: "met all three pass lines",
+        weak: &["generator", "power", "mars", "electrical output", "years"],
+        other: &["voyager", "cassini", "perseverance", "new horizons", "galileo", "ulysses", "viking", "pioneer 10", "pioneer 11", "apollo", "dragonfly"],
+        own: &["curiosity"] },
+    Entry { key: "aerospace/capsule_stardust", marks: Marks::Met, marks_words: "met all three pass lines; the comparison was not blind, as its validation says",
         strong: &["stardust", "sample return", "reentry", "entry capsule", "atmospheric entry"],
-        plain: &["capsule", "atmosphere", "entry", "falling", "drogue", "parachute", "hypersonic", "deceleration", "heat shield", "returning from space", "meteor", "comet"],
-        weak: &["earth", "mach", "altitude", "space", "g load", "descent"] },
+        plain: &["capsule", "atmosphere", "entry", "falling", "drogue", "parachute", "hypersonic", "deceleration", "heat shield", "returning from space", "meteor", "comet", "utah", "wild 2"],
+        weak: &["earth", "mach", "altitude", "space", "g load", "descent"],
+        other: &["apollo", "soyuz", "orion", "dragon", "shuttle", "genesis", "hayabusa", "osiris", "galileo", "huygens", "shenzhou", "starliner", "vostok", "phoenix", "perseverance", "viking", "pathfinder", "schiaparelli", "mars", "venus", "titan", "jupiter", "saturn", "moon", "lunar", "hayabusa2"],
+        own: &["stardust"] },
     Entry { key: "aerospace/satellite_lageos1", marks: Marks::Met, marks_words: "met every pass line on 42 runs",
         strong: &["lageos", "satellite", "laser ranging"],
         plain: &["orbit", "spacecraft", "earth orbit", "gravity field", "orbital", "trajectory", "free flight", "ephemeris", "revolution"],
-        weak: &["earth", "space", "sun", "moon", "tide", "position"] },
-    Entry { key: "energy/reactor_spert3", marks: Marks::Missed, marks_words: "met five of eight pass lines",
+        weak: &["earth", "space", "sun", "moon", "tide", "position"],
+        other: &["iss", "space station", "gps", "glonass", "galileo", "starlink", "hubble", "geostationary", "sputnik", "landsat"],
+        own: &["lageos"] },
+    Entry { key: "energy/reactor_spert3", marks: Marks::Missed, marks_words: "met five of eight pass lines; the comparison was not blind, as its validation says",
         strong: &["spert", "reactivity", "power excursion", "prompt critical"],
-        plain: &["reactor", "burst", "transient", "fission", "e-core", "kinetics", "power pulse", "criticality"],
-        weak: &["nuclear", "power", "peak", "core", "step", "cold"] },
+        plain: &["reactor", "burst", "transient", "fission", "e-core", "kinetics", "power pulse", "criticality", "step in reactivity"],
+        weak: &["nuclear", "power", "peak", "core", "step", "cold"],
+        other: &["spert i", "spert ii", "spert iv", "spert 1", "spert 2", "spert 4", "borax", "kewb", "godiva", "nsrr", "cabri", "chernobyl", "rbmk", "fukushima", "three mile island", "candu", "triga", "c-core", "sl-1", "ebr"],
+        own: &["spert"] },
     Entry { key: "energy/cell_2170_m80", marks: Marks::Missed, marks_words: "only 27 of the 60 held-back runs met their marks",
         strong: &["2170", "tesla", "model 3", "m80"],
         plain: &["lithium", "lithium-ion", "li-ion", "cell", "battery", "discharge", "case temperature", "drive cycle"],
-        weak: &["voltage", "current", "temperature", "electric car", "ev", "drain", "cold"] },
-    Entry { key: "signal/cantilever_eth", marks: Marks::Missed, marks_words: "met three of four pass lines",
+        weak: &["voltage", "current", "temperature", "electric car", "ev", "drain", "cold"],
+        other: &["m448", "m1000", "lg", "samsung", "sony", "murata", "molicel", "a123", "catl", "byd", "18650", "ncr18650pf", "4680", "26650", "pouch", "prismatic", "lead acid", "nimh", "nickel metal", "alkaline", "lifepo4", "lfp"],
+        own: &["m80"] },
+    Entry { key: "signal/cantilever_eth", marks: Marks::Missed, marks_words: "met three of four pass lines; the comparison was not blind, as its validation says",
         strong: &["cantilever", "ring down", "ringdown", "ringing"],
-        plain: &["beam", "strip", "aluminium", "aluminum", "bending mode", "damping", "vibrating", "clamped", "deflection", "free vibration", "eth", "flick", "pluck", "ruler", "tuning fork"],
-        weak: &["vibration", "amplitude", "decay", "air", "oscillation"] },
+        plain: &["beam", "strip", "aluminium", "aluminum", "bending mode", "damping", "vibrating", "clamped", "deflection", "free vibration", "eth", "flick", "pluck", "ruler", "tuning fork", "zurich", "zürich"],
+        weak: &["vibration", "amplitude", "decay", "air", "oscillation"],
+        other: &[],
+        own: &[] },
     Entry { key: "energy/cell_2170_model3", marks: Marks::InPart, marks_words: "met all five conditions on one new cell and missed three of five on the other",
-        strong: &["2170", "tesla", "model 3"],
+        strong: &["2170", "tesla", "model 3", "m448", "m1000"],
         plain: &["lithium", "lithium-ion", "li-ion", "cell", "battery", "discharge", "case temperature", "drive cycle", "cold", "hysteresis", "freezing"],
-        weak: &["voltage", "current", "temperature", "electric car", "ev", "winter", "drain"] },
+        weak: &["voltage", "current", "temperature", "electric car", "ev", "winter", "drain"],
+        other: &["lg", "samsung", "sony", "murata", "molicel", "a123", "catl", "byd", "18650", "ncr18650pf", "4680", "26650", "pouch", "prismatic", "lead acid", "nimh", "nickel metal", "alkaline", "lifepo4", "lfp"],
+        own: &["tesla", "model 3", "m448", "m1000", "m80"] },
     Entry { key: "materials/creep_cmsx6", marks: Marks::Met, marks_words: "the comparison passed on the six held-back tests",
         strong: &["creep", "cmsx-6", "cmsx6", "superalloy", "single crystal"],
         plain: &["nickel alloy", "turbine blade", "980", "high temperature", "tension", "rupture", "nickel"],
-        weak: &["alloy", "strain", "hours", "load", "metal", "stress"] },
-    Entry { key: "aerospace/capsule_insight", marks: Marks::InPart, marks_words: "met every pass line with the lift measured on the opened rows, and none of the first four with no lift",
+        weak: &["alloy", "strain", "hours", "load", "metal", "stress"],
+        other: &["cmsx-4", "cmsx4", "cmsx-10", "cmsx-2", "inconel", "rene", "nimonic", "waspaloy", "hastelloy", "haynes", "steel", "copper", "solder", "concrete", "polymer", "plastic", "glacier"],
+        own: &["cmsx-6", "cmsx6"] },
+    Entry { key: "aerospace/capsule_insight", marks: Marks::InPart, marks_words: "met every pass line with the lift measured on the opened rows, and none of the first four with no lift; the comparison was not blind, as its validation says",
         strong: &["insight", "mars entry", "entry capsule", "atmospheric entry", "mars lander"],
         plain: &["capsule", "atmosphere", "entry", "falling", "parachute", "hypersonic", "deceleration", "mars", "lander", "aeroshell", "landing", "meteor"],
-        weak: &["mach", "altitude", "space", "g load", "descent"] },
-    Entry { key: "energy/reactor_spert3_fuel", marks: Marks::Missed, marks_words: "met 18 of 24 pass lines across the three groups",
+        weak: &["mach", "altitude", "space", "g load", "descent"],
+        other: &["phoenix", "perseverance", "viking", "pathfinder", "schiaparelli", "beagle", "exomars", "tianwen", "zhurong", "msl", "mars science laboratory", "mars 2020", "curiosity rover", "apollo", "soyuz", "orion", "dragon", "shuttle", "genesis", "hayabusa", "osiris", "galileo", "huygens", "shenzhou", "starliner", "vostok", "stardust", "venus", "titan", "jupiter", "saturn", "moon", "lunar", "hayabusa2"],
+        own: &["insight"] },
+    Entry { key: "energy/reactor_spert3_fuel", marks: Marks::Missed, marks_words: "met 18 of 24 pass lines across the three groups; the comparison was not blind, as its validation says",
         strong: &["spert", "reactivity", "fuel temperature", "power excursion"],
-        plain: &["reactor", "burst", "transient", "fission", "e-core", "inlet temperature", "coolant flow", "doppler", "power pulse"],
-        weak: &["nuclear", "power", "peak", "core", "fuel", "hot"] },
-    Entry { key: "aerospace/crater_ryugu_sci", marks: Marks::Missed, marks_words: "missed its pass line on Ryugu and met both laboratory lines",
+        plain: &["reactor", "burst", "transient", "fission", "e-core", "inlet temperature", "coolant flow", "doppler", "power pulse", "transient rod", "ramp"],
+        weak: &["nuclear", "power", "peak", "core", "fuel", "hot", "coolant", "flow", "inlet"],
+        other: &["spert i", "spert ii", "spert iv", "spert 1", "spert 2", "spert 4", "borax", "kewb", "godiva", "nsrr", "cabri", "chernobyl", "rbmk", "fukushima", "three mile island", "candu", "triga", "c-core", "sl-1", "ebr"],
+        own: &["spert"] },
+    Entry { key: "aerospace/crater_ryugu_sci", marks: Marks::Missed, marks_words: "missed its pass line on Ryugu and met both laboratory lines; the comparison was not blind, as its validation says",
         strong: &["crater", "ryugu", "hayabusa2", "hayabusa", "impactor", "asteroid"],
         plain: &["impact", "regolith", "ejecta", "projectile", "excavation", "microgravity"],
-        weak: &["radius", "sand", "copper", "hit", "surface"] },
+        weak: &["radius", "sand", "copper", "hit", "surface"],
+        other: &["dimorphos", "didymos", "dart", "deep impact", "tempel", "bennu", "itokawa", "eros", "vesta", "ceres", "meteor crater", "barringer", "arizona", "chicxulub", "moon", "lunar", "mars"],
+        own: &["ryugu", "hayabusa2"] },
+    Entry { key: "energy/generator_mmrtg_seebeck", marks: Marks::Calibrated, marks_words: "within 0.00319 of 115.4 W by root mean square on days 0 to 4,087, the days its constants were fitted on; its blind forecast of the days after 4,087 is registered and waits for the record's next release",
+        strong: &["mmrtg", "rtg", "radioisotope", "curiosity", "plutonium", "thermoelectric generator", "seebeck", "matched load"],
+        plain: &["rover", "mars rover", "thermoelectric", "nuclear battery", "decay", "generator output", "mission day", "sol", "mars science laboratory", "thermocouple", "temperature drop", "calibrated"],
+        weak: &["generator", "power", "mars", "electrical output", "years"],
+        other: &["voyager", "cassini", "perseverance", "new horizons", "galileo", "ulysses", "viking", "pioneer 10", "pioneer 11", "apollo", "dragonfly"],
+        own: &["curiosity"] },
+    Entry { key: "aerospace/momentum_jwst_dihedral", marks: Marks::Missed, marks_words: "met four of five marks on the month of 15 July to 14 August 2023, forecast first, and missed the daily change of the momentum vector, 18 of 28 days against a line of 80 percent; on the next month, scored blind, three of five",
+        strong: &["angular momentum", "reaction wheel", "momentum unload", "solar radiation pressure", "sunshield", "momentum management"],
+        plain: &["dihedral", "attitude", "quaternion", "torque", "solar pressure", "roll", "boresight", "wheel desaturation", "desaturation", "momentum dump", "jwst", "james webb", "webb", "l2", "lagrange point"],
+        weak: &["spacecraft", "observatory", "satellite", "sunlight", "wheel", "momentum", "space telescope", "slope"],
+        other: &["kepler", "k2", "hubble", "tess", "iss", "control moment gyro", "magnetorquer", "cubesat"],
+        own: &["sunshield", "reaction wheel"] },
+    Entry { key: "aerospace/momentum_jwst_srp", marks: Marks::Missed, marks_words: "met four of five marks on the held-back month, 15 June to 14 July 2023, and missed the daily change of the momentum vector, 14 of 28 days against a line of 80 percent; scored blind on the two months after it, it met two of five and then three of five, 9 of 15 marks in its three blind months",
+        strong: &["angular momentum", "reaction wheel", "momentum unload", "solar radiation pressure", "sunshield", "momentum management"],
+        plain: &["attitude", "quaternion", "torque", "solar pressure", "wheel desaturation", "desaturation", "momentum dump", "jwst", "james webb", "webb", "l2", "lagrange point"],
+        weak: &["spacecraft", "observatory", "satellite", "sunlight", "wheel", "momentum", "space telescope"],
+        other: &["kepler", "k2", "hubble", "tess", "iss", "control moment gyro", "magnetorquer", "cubesat"],
+        own: &["sunshield", "reaction wheel"] },
     Entry { key: "signal/link_gothenburg_10010", marks: Marks::Met, marks_words: "met all three pass lines",
         strong: &["microwave link", "rain attenuation", "rain fade", "openmrg", "gothenburg"],
         plain: &["rain", "32 ghz", "path loss", "radio link", "backhaul", "wet antenna", "attenuation", "millimetre wave", "microwave", "rainfall", "downpour"],
-        weak: &["link", "signal", "weather", "antenna", "db", "storm"] },
-    Entry { key: "energy/grid_gb", marks: Marks::Met, marks_words: "met all seven pass lines on the 12 held-back trips",
+        weak: &["link", "signal", "weather", "antenna", "db", "storm"],
+        other: &["satellite", "wifi", "wi-fi", "fibre", "fiber", "optical", "laser", "lidar"],
+        own: &["gothenburg", "openmrg"] },
+    Entry { key: "energy/grid_gb", marks: Marks::Met, marks_words: "met all seven pass lines on the 12 held-back trips; the comparison was not blind, as its validation says",
         strong: &["grid frequency", "power grid", "interconnector", "great britain", "transmission system", "national grid", "mains frequency", "system frequency"],
         plain: &["grid", "frequency", "50 hz", "inertia", "trip", "loss of infeed", "blackout", "losing a link", "electricity system", "outage", "generation loss", "frequency drop", "mains", "power cable", "undersea cable", "subsea cable", "infeed", "import", "nadir", "power station", "power cut"],
-        weak: &["power", "loss", "demand", "link", "britain", "british", "uk", "england", "scotland", "wales", "france", "electricity", "mw", "fail", "sudden", "suddenly"] },
-    Entry { key: "aerospace/solar_system", marks: Marks::InPart, marks_words: "two files met their lines, two missed and two comparisons were not made",
-        strong: &["solar system", "planet", "n-body", "ephemeris"],
-        plain: &["sun", "mercury", "venus", "jupiter", "saturn", "moon", "planetary", "gravitation", "barycentre", "mars orbit", "perihelion"],
-        weak: &["earth", "orbit", "space", "gravity", "years", "mars"] },
+        weak: &["power", "loss", "demand", "link", "britain", "british", "uk", "england", "scotland", "wales", "france", "electricity", "mw", "fail", "sudden", "suddenly"],
+        other: &["texas", "ercot", "california", "caiso", "pjm", "australia", "australian", "japan", "india", "china", "new zealand", "eastern interconnection", "western interconnection", "america", "american", "60 hz", "japanese", "indian", "chinese"],
+        own: &["great britain", "britain", "british", "national grid", "gb"] },
+    Entry { key: "aerospace/solar_system", marks: Marks::InPart, marks_words: "two files met their lines, two missed and two comparisons were not made; the comparison was not blind, as its validation says",
+        strong: &["solar system", "planet", "n-body", "ephemeris", "earth to mars", "mars from the earth"],
+        plain: &["sun", "mercury", "venus", "jupiter", "saturn", "moon", "planetary", "gravitation", "barycentre", "mars orbit", "perihelion", "uranus", "neptune"],
+        weak: &["earth", "orbit", "space", "gravity", "years", "mars"],
+        other: &["pluto", "exoplanet", "galaxy", "trappist", "proxima", "alpha centauri", "halley"],
+        own: &[] },
     Entry { key: "materials/tire_eve_r19_ice", marks: Marks::Met, marks_words: "met all five pass lines",
         strong: &["tyre", "tire", "ice", "traction"],
         plain: &["slip", "friction", "wheel", "icy road", "all-season", "grip", "braking", "skid", "winter road"],
-        weak: &["car", "road", "rolling", "load", "pressure", "cold"] },
+        weak: &["car", "road", "rolling", "load", "pressure", "cold"],
+        other: &["formula 1", "f1", "racing", "slick", "truck", "lorry", "aircraft", "bicycle", "motorcycle", "tractor"],
+        own: &[] },
     Entry { key: "aerospace/los_jwst_fine_guide", marks: Marks::Met, marks_words: "met all five marks on both axes",
         strong: &["jwst", "james webb", "webb", "fine guidance", "pointing"],
         plain: &["line of sight", "telescope", "jitter", "guide star", "kalman", "space telescope", "centroid", "pointing stability"],
-        weak: &["sensor", "space", "star", "tracking", "filter"] },
-    Entry { key: "energy/tokamak_jet_dte1", marks: Marks::Missed, marks_words: "met three of four marks on the primary pulse",
+        weak: &["sensor", "space", "star", "tracking", "filter"],
+        other: &["hubble", "hst", "spitzer", "kepler", "chandra", "euclid", "gaia", "herschel", "tess", "keck", "vlt", "subaru", "backyard", "amateur", "binoculars"],
+        own: &["jwst", "james webb", "webb"] },
+    Entry { key: "energy/tokamak_jet_dte1", marks: Marks::Missed, marks_words: "met three of four marks on the primary pulse; the comparison was not blind, as its validation says",
         strong: &["tokamak", "jet", "joint european torus", "deuterium-tritium", "h-mode", "plasma", "fusion"],
-        plain: &["deuterium", "tritium", "confinement", "stored energy", "fusion power", "neutral beam", "dte1", "elmy", "culham", "d-t"],
-        weak: &["energy", "pulse", "heating", "reactor", "magnetic"] },
+        plain: &["deuterium", "tritium", "confinement", "stored energy", "fusion power", "neutral beam", "dte1", "elmy", "culham", "d-t", "thermal energy", "plasma current", "toroidal field", "heating power"],
+        weak: &["energy", "pulse", "heating", "reactor", "magnetic"],
+        other: &["diii-d", "iter", "asdex", "kstar", "jt-60", "alcator", "c-mod", "nstx", "mast", "tore supra", "sparc", "tftr", "stellarator", "lhd", "w7-x", "wendelstein", "nif", "national ignition facility", "laser", "inertial", "z-pinch", "z machine", "boron", "p-b11", "pb11", "aneutronic", "arc jet", "jet engine", "jet stream", "jet fuel", "jet aircraft", "water jet"],
+        own: &["jet", "joint european torus", "dte1"] },
     Entry { key: "materials/fingerpad_p02_glass", marks: Marks::Missed, marks_words: "met three of twelve pass lines",
         strong: &["finger", "fingertip", "finger pad", "fingerpad", "skin"],
         plain: &["glass", "twist", "touch", "slip torque", "friction", "touchscreen", "grip", "pressed"],
-        weak: &["slip", "torque", "human", "contact", "hand"] },
+        weak: &["slip", "torque", "human", "contact", "hand"],
+        other: &[],
+        own: &[] },
     Entry { key: "energy/accumulator_sbo450", marks: Marks::Missed, marks_words: "met two of six pass lines",
         strong: &["accumulator", "hydac", "nitrogen charge", "diaphragm accumulator", "gas spring"],
         plain: &["hydraulic accumulator", "nitrogen", "piston", "gas pressure", "precharge", "compressed gas", "bladder", "diaphragm", "darmstadt"],
-        weak: &["pressure", "oil", "gas", "hydraulic", "stiffness", "compression"] },
-    Entry { key: "energy/reactor_triga_jsi", marks: Marks::Missed, marks_words: "met two of six pass lines on the held-back rows",
+        weak: &["pressure", "oil", "gas", "hydraulic", "stiffness", "compression"],
+        other: &[],
+        own: &[] },
+    Entry { key: "energy/reactor_triga_jsi", marks: Marks::Missed, marks_words: "met two of six pass lines on the held-back rows; the comparison was not blind, as its validation says",
         strong: &["triga", "pulse mode", "reactivity", "research reactor"],
         plain: &["reactor", "pulse", "fission", "scram", "transient rod", "ljubljana", "fuel temperature", "power pulse"],
-        weak: &["nuclear", "power", "peak", "core", "fuel", "rod"] },
-    Entry { key: "energy/reactor_spert3_ccore", marks: Marks::Missed, marks_words: "missed all three pass lines",
+        weak: &["nuclear", "power", "peak", "core", "fuel", "rod"],
+        other: &["spert", "borax", "kewb", "godiva", "nsrr", "cabri", "chernobyl", "rbmk", "fukushima", "three mile island", "candu", "acrr", "mainz", "vienna", "oregon", "pavia", "sl-1", "ebr"],
+        own: &["ljubljana", "jsi", "jozef stefan", "jožef stefan"] },
+    Entry { key: "energy/reactor_spert3_ccore", marks: Marks::Missed, marks_words: "missed all three pass lines; the comparison was not blind, as its validation says",
         strong: &["spert", "c-core", "reactivity", "plate fuel"],
         plain: &["reactor", "transient", "fission", "plate temperature", "stainless", "step transient", "power excursion", "highly enriched"],
-        weak: &["nuclear", "power", "peak", "core", "plate", "pressure"] },
+        weak: &["nuclear", "power", "peak", "core", "plate", "pressure"],
+        other: &["spert i", "spert ii", "spert iv", "spert 1", "spert 2", "spert 4", "borax", "kewb", "godiva", "nsrr", "cabri", "chernobyl", "rbmk", "fukushima", "three mile island", "candu", "triga", "e-core", "sl-1", "ebr"],
+        own: &["spert"] },
+    Entry { key: "energy/runaway_18650_lco", marks: Marks::Missed, marks_words: "met 8 of 23 pass lines; it self-heats and runs away early",
+        strong: &["thermal runaway", "runaway", "licoo2", "lithium cobalt oxide", "oven test", "accelerating rate calorimetry", "accelerating rate calorimeter", "self-heating", "hatchard"],
+        plain: &["18650", "oven", "abuse", "calorimeter", "calorimetry", "exothermic", "decomposition", "sei", "electrolyte", "cathode", "anode", "venting", "fire", "heat-wait-seek", "lco"],
+        weak: &["cell", "battery", "lithium", "lithium-ion", "li-ion", "heat", "temperature", "safety", "heater"],
+        other: &["ncr18650pf", "panasonic", "2170", "21700", "4680", "26650", "pouch", "prismatic", "lifepo4", "lfp", "nca", "nmc", "lmo", "sodium-ion", "lead acid", "nimh"],
+        own: &["licoo2", "lco", "lithium cobalt oxide", "hatchard"] },
+    Entry { key: "materials/grasp_lift_glass_4tu", marks: Marks::Missed, marks_words: "met one of four pass lines",
+        strong: &["grasp", "two-finger grip", "precision grip", "pinch grip", "lifted object", "grip force", "pick up", "pick and place"],
+        plain: &["lift", "grip", "slippage", "dexterity", "dexterous", "held object", "incipient slip", "gross slip", "stick ratio"],
+        weak: &["slip", "object", "friction", "hand", "robot", "finger", "glass", "pad", "weight", "hold"],
+        other: &[],
+        own: &[] },
+    Entry { key: "energy/tokamak_vde_mast", marks: Marks::InPart, marks_words: "met one of three pass lines on shot 15045; the comparison was not blind, as its validation says",
+        strong: &["vertical displacement event", "vertical displacement", "vde", "vertical instability", "vertical stability", "mast", "mega amp spherical tokamak"],
+        plain: &["tokamak", "spherical tokamak", "plasma", "vertical position", "growth rate", "eddy current", "passive structure", "vacuum vessel", "elongation", "elongated", "decay index", "stability margin", "vertical control", "radial field coil", "halo current", "disruption", "culham"],
+        weak: &["magnetic", "fusion", "coil", "position", "control", "wall"],
+        other: &["jet", "joint european torus", "diii-d", "iter", "asdex", "kstar", "jt-60", "alcator", "c-mod", "nstx", "tcv", "sparc", "tftr", "mast-u", "mast upgrade", "stellarator", "lhd", "w7-x", "wendelstein", "nif", "national ignition facility"],
+        own: &["mast", "mega amp spherical tokamak", "15045"] },
     Entry { key: "atom_dft", marks: Marks::Reference, marks_words: "reproduces the NIST local-density tables within 1e-5 hartree; not the measured energy of the atom",
         strong: &["atom", "dft", "density functional", "electronic structure", "ground state"],
         plain: &["hydrogen", "helium", "neon", "argon atom", "orbital", "eigenvalue", "lda", "electron", "quantum", "total energy", "atomic number", "carbon", "oxygen"],
-        weak: &["energy", "element", "chemistry", "nucleus"] },
-    Entry { key: "ablator_slab", marks: Marks::Missed, marks_words: "its wear line passed and its hottest-face-temperature line missed on the average",
+        weak: &["energy", "element", "chemistry", "nucleus"],
+        other: &["protein", "potassium", "calcium", "titanium", "iron", "nickel", "copper", "zinc", "silver", "gold", "krypton", "xenon", "uranium", "plutonium"],
+        own: &[] },
+    Entry { key: "ablator_slab", marks: Marks::Missed, marks_words: "its wear line passed and its hottest-face-temperature line missed on the average; the comparison was not blind, as its validation says",
         strong: &["heat shield", "ablator", "ablation", "pica", "tacot", "charring"],
         plain: &["arc jet", "thermal protection", "recession", "pyrolysis", "entry heating", "slab", "heat flux", "ablative", "phenolic", "resin"],
-        weak: &["heating", "temperature", "wear", "stardust", "material", "reentry"] },
+        weak: &["heating", "temperature", "wear", "stardust", "material", "reentry"],
+        other: &["galileo", "jupiter", "apollo", "avcoat", "shuttle", "orion", "dragon", "pica-x", "sla-561", "huygens", "titan", "venus", "msl", "mars science laboratory", "hayabusa", "genesis", "hayabusa2"],
+        own: &["pica", "tacot"] },
     Entry { key: "journal_bearing_sheffield", marks: Marks::Met, marks_words: "met all three pass lines on the sixteen held-back runs",
         strong: &["journal bearing", "bearing", "oil film", "sommerfeld"],
         plain: &["lubrication", "eccentricity", "shaft", "hydrodynamic", "film thickness", "sheffield", "journal", "lubricated", "plain bearing", "oil-lubricated"],
-        weak: &["oil", "load", "speed", "rpm", "friction", "rotating"] },
+        weak: &["oil", "load", "speed", "rpm", "friction", "rotating"],
+        other: &["ball bearing", "roller bearing", "needle bearing", "air bearing", "magnetic bearing", "foil bearing", "thrust bearing", "tilting pad"],
+        own: &["sheffield"] },
     Entry { key: "propeller_apc_10x7e", marks: Marks::Missed, marks_words: "missed both pass lines",
         strong: &["propeller", "apc", "blade element", "prop"],
         plain: &["thrust", "shaft power", "drone", "rotor", "rev/min", "airspeed", "uav", "quadcopter", "multirotor"],
-        weak: &["rpm", "air", "blade", "motor", "aircraft", "power"] },
+        weak: &["rpm", "air", "blade", "motor", "aircraft", "power"],
+        other: &["ship", "marine", "boat", "submarine", "hull", "knots", "bronze", "outboard", "helicopter", "wind turbine", "turboprop"],
+        own: &["apc"] },
     Entry { key: "modulus_bam_s355", marks: Marks::Missed, marks_words: "missed one pass line (P1) and met every other",
         strong: &["young's modulus", "youngs modulus", "shear modulus", "s355", "structural steel", "elastic modulus"],
         plain: &["steel", "bar", "resonant frequency", "impulse excitation", "ringing bar", "stiffness", "bam", "modulus", "poisson"],
-        weak: &["frequency", "metal", "elastic", "sheet", "rings"] },
+        weak: &["frequency", "metal", "elastic", "sheet", "rings"],
+        other: &["inconel", "nickel", "aluminium", "aluminum", "titanium", "copper", "brass", "bronze", "tungsten", "magnesium", "glass", "ceramic", "concrete", "wood", "timber", "polymer", "plastic", "rubber", "stainless", "cast iron", "s235", "s275", "s460"],
+        own: &["s355", "bam"] },
     Entry { key: "seawater_column", marks: Marks::Met, marks_words: "met all three pass lines",
         strong: &["seawater", "ocean", "sound speed", "ctd", "teos-10", "sea"],
         plain: &["salinity", "depth", "density", "water column", "cast", "underwater", "sonar", "echo sounder", "oceanography", "speed of sound in water"],
-        weak: &["water", "pressure", "temperature", "marine", "sound"] },
-    Entry { key: "argon_pair_gas", marks: Marks::Met, marks_words: "met all five pass lines",
+        weak: &["water", "pressure", "temperature", "marine", "sound"],
+        other: &["freshwater", "fresh water", "tap water", "distilled", "dead sea"],
+        own: &[] },
+    Entry { key: "argon_pair_gas", marks: Marks::Met, marks_words: "met all five pass lines; the comparison was not blind, as its validation says",
         strong: &["argon", "lennard-jones", "virial", "pair potential", "noble gas"],
         plain: &["speed of sound", "viscosity", "gas", "dilute gas", "second virial", "thermal conductivity", "low density"],
-        weak: &["pressure", "temperature", "sound", "kinetic theory"] },
-    Entry { key: "fusion_pb11_lhd", marks: Marks::Missed, marks_words: "missed three of four pass lines",
+        weak: &["pressure", "temperature", "sound", "kinetic theory"],
+        other: &["helium", "neon", "krypton", "xenon", "radon", "nitrogen", "oxygen", "hydrogen", "methane", "carbon dioxide", "co2", "steam", "water vapour", "water vapor", "ammonia", "liquid argon", "sulfur hexafluoride", "sf6", "propane", "butane", "chlorine", "fluorine", "ozone", "natural gas", "refrigerant"],
+        own: &["argon"] },
+    Entry { key: "fusion_pb11_lhd", marks: Marks::InPart, marks_words: "met one of four pass lines against the measured alpha count rates of Ogawa et al. (2024) and the published calculation of Ogawa et al. (2022)",
         strong: &["proton-boron", "p-b11", "pb11", "boron", "lhd", "large helical device", "aneutronic"],
         plain: &["fusion", "neutral beam", "alpha", "hydrogen beam", "stellarator", "helical", "plasma"],
-        weak: &["beam", "reaction rate", "energy", "kev"] },
-    Entry { key: "fusion_pb11_thermal", marks: Marks::Missed, marks_words: "missed one of eight gated pass lines; compared with published calculations",
+        weak: &["beam", "reaction rate", "energy", "kev"],
+        other: &["tokamak", "jet", "tftr", "deuterium", "tritium", "diii-d", "iter", "asdex", "kstar", "jt-60", "alcator", "c-mod", "nstx", "mast", "tore supra", "sparc", "w7-x", "wendelstein", "nif", "national ignition facility", "laser", "inertial", "z-pinch", "z machine"],
+        own: &["lhd", "large helical device"] },
+    Entry { key: "fusion_pb11_thermal", marks: Marks::Reference, marks_words: "the published calculations of Ochs et al. (2022) and the research's own model, seven of its eight gated pass lines met; the electron temperature at 300 keV 159.33 keV against a published 163.0",
         strong: &["proton-boron", "p-b11", "pb11", "boron", "aneutronic", "bremsstrahlung"],
-        plain: &["fusion", "thermal plasma", "energy balance", "ignition", "synchrotron", "plasma", "electron temperature"],
-        weak: &["reaction rate", "energy", "kev", "radiation"] },
+        plain: &["fusion", "thermal plasma", "energy balance", "ignition", "synchrotron", "plasma", "electron temperature", "ion temperature", "fusion power"],
+        weak: &["reaction rate", "energy", "kev", "radiation"],
+        other: &["tokamak", "jet", "tftr", "deuterium", "tritium", "diii-d", "iter", "asdex", "kstar", "jt-60", "alcator", "c-mod", "nstx", "mast", "tore supra", "sparc", "w7-x", "wendelstein", "nif", "national ignition facility", "laser", "inertial", "z-pinch", "z machine"],
+        own: &[] },
     Entry { key: "step_flow_armaly", marks: Marks::Met, marks_words: "met all three pass lines on the held-back profiles",
         strong: &["backward-facing step", "step flow", "reattachment", "recirculation", "armaly"],
         plain: &["laminar", "separation", "channel flow", "separated flow", "duct", "navier-stokes", "cfd", "expansion"],
-        weak: &["air", "flow", "reynolds", "velocity", "channel"] },
+        weak: &["air", "flow", "reynolds", "velocity", "channel"],
+        other: &["forward-facing step", "cavity", "cylinder", "airfoil", "aerofoil"],
+        own: &["armaly"] },
     Entry { key: "culture_trichoderma_ambr250", marks: Marks::Missed, marks_words: "missed three of six pass lines",
         strong: &["fed-batch", "trichoderma", "fermentation", "bioreactor", "culture", "mucic acid"],
         plain: &["fungus", "galacturonate", "biomass", "ambr", "bioprocess", "fermenter", "microbial", "feed", "broth", "cell culture"],
-        weak: &["growth", "acid", "sugar", "vessel", "ph", "biology"] },
-    Entry { key: "tokamak_dt_beam_target", marks: Marks::Missed, marks_words: "missed one of four marks",
+        weak: &["growth", "acid", "sugar", "vessel", "ph", "biology"],
+        other: &["aspergillus", "penicillium", "yeast", "saccharomyces", "pichia", "coli", "escherichia", "bacillus", "streptomyces", "corynebacterium", "cho", "mammalian", "hybridoma", "citric acid", "penicillin", "ethanol", "insulin", "antibody"],
+        own: &["trichoderma", "ambr250", "ambr", "yeast extract"] },
+    Entry { key: "tokamak_dt_beam_target", marks: Marks::Reference, marks_words: "TRANSP's fusion power, calculated from the measured profiles, on 34 held-back TFTR slices, three of its four marks met, the median 1.022",
         strong: &["tokamak", "deuterium-tritium", "fusion rate", "beam-target", "tftr", "jet", "joint european torus", "fusion"],
-        plain: &["deuterium", "tritium", "neutron rate", "neutron", "neutral beam", "plasma", "fusion power", "d-t", "dt", "time slice", "culham", "princeton"],
-        weak: &["beam", "reaction rate", "profile", "energy", "pulse"] },
+        plain: &["deuterium", "tritium", "neutron rate", "neutron", "neutral beam", "plasma", "fusion power", "d-t", "dt", "time slice", "culham", "princeton", "shell", "electron temperature", "ion temperature", "electron density", "steady state"],
+        weak: &["beam", "reaction rate", "profile", "energy", "pulse"],
+        other: &["diii-d", "iter", "asdex", "kstar", "jt-60", "alcator", "c-mod", "nstx", "mast", "tore supra", "sparc", "stellarator", "lhd", "w7-x", "wendelstein", "nif", "national ignition facility", "laser", "inertial", "z-pinch", "z machine", "boron", "p-b11", "pb11", "aneutronic", "arc jet", "jet engine", "jet stream", "jet fuel", "jet aircraft", "water jet"],
+        own: &["jet", "tftr", "joint european torus"] },
     Entry { key: "pipe_flow_superpipe", marks: Marks::Missed, marks_words: "missed one of three pass lines (centreline, on one profile)",
         strong: &["pipe flow", "superpipe", "friction factor", "turbulent pipe", "pipe"],
         plain: &["turbulent", "turbulence", "smooth wall", "pressure drop", "velocity profile", "moody", "darcy", "duct", "mixing length", "princeton"],
-        weak: &["air", "flow", "reynolds", "velocity", "wall", "tube"] },
+        weak: &["air", "flow", "reynolds", "velocity", "wall", "tube"],
+        other: &["blood", "artery", "pipeline", "sewer"],
+        own: &["superpipe"] },
+    Entry { key: "culture_trichoderma_atp", marks: Marks::Missed, marks_words: "missed three of six pass lines on the four held-back cultures at pH 3.5 and 3.0",
+        strong: &["fed-batch", "trichoderma", "fermentation", "bioreactor", "culture", "mucic acid"],
+        plain: &["fungus", "galacturonate", "biomass", "ambr", "bioprocess", "fermenter", "microbial", "feed", "broth", "cell culture", "ph"],
+        weak: &["growth", "acid", "sugar", "vessel", "biology", "energy"],
+        other: &["aspergillus", "penicillium", "yeast", "saccharomyces", "pichia", "coli", "escherichia", "bacillus", "streptomyces", "corynebacterium", "cho", "mammalian", "hybridoma", "citric acid", "penicillin", "ethanol", "insulin", "antibody"],
+        own: &["trichoderma", "ambr250", "ambr", "yeast extract"] },
+    Entry { key: "junction_nist_b7_s2", marks: Marks::Missed, marks_words: "missed one of three pass lines (voltage, 11.84 percent against 5)",
+        strong: &["josephson junction", "josephson", "superconducting junction", "tunnel junction", "shapiro step", "nb/a-si/nb", "sis junction"],
+        plain: &["superconductor", "superconducting", "niobium", "amorphous silicon", "critical current", "current-voltage", "i-v curve", "iv curve", "hysteresis", "flux quantum", "microwave drive", "rcsj", "plasma frequency", "gap voltage", "nist"],
+        weak: &["junction", "voltage", "current", "microwave", "barrier", "cryogenic", "phase"],
+        other: &["transmon", "al/alox/al", "cd3as2", "nbn", "mgb2", "ybco", "yba2cu3o7"],
+        own: &["nist", "d220831b", "nb/a-si/nb", "niobium"] },
+    Entry { key: "water_hammer_oil_line", marks: Marks::NotCompared, marks_words: OWN_SPECIMEN,
+        strong: &["water hammer", "fluid hammer", "hydraulic hammer", "joukowsky", "pressure surge", "hydraulic shock"],
+        plain: &["valve closure", "valve closes", "column separation", "cavitation", "entrained air", "aerated oil", "wave speed", "hydraulic line", "steel line", "oil line", "pressure spike", "surge", "transient"],
+        weak: &["hydraulic", "pressure", "valve", "oil", "pipe", "line", "tube", "flow"],
+        other: &[],
+        own: &[] },
+    Entry { key: "orifice_air_chamber", marks: Marks::NotCompared, marks_words: OWN_SPECIMEN,
+        strong: &["iso 6358", "sonic conductance", "choked flow", "pneumatic valve", "orifice"],
+        plain: &["critical pressure ratio", "air chamber", "pneumatic cylinder", "compressed air", "charging", "venting", "solenoid valve", "pneumatic", "chamber"],
+        weak: &["air", "valve", "pressure", "tank", "flow", "gas", "fill"],
+        other: &[],
+        own: &[] },
+    Entry { key: "pneumatic_hose_resonance", marks: Marks::NotCompared, marks_words: OWN_SPECIMEN,
+        strong: &["pneumatic line", "pneumatic hose", "pneumatic tube", "line resonance", "transmission line"],
+        plain: &["resonance", "hose", "tubing", "frequency response", "acoustic", "pneumatic", "dead volume", "damping ratio", "natural frequency"],
+        weak: &["air", "tube", "frequency", "pressure", "line", "volume"],
+        other: &[],
+        own: &[] },
+    Entry { key: "blast_wave_tnt_air", marks: Marks::Missed, marks_words: "missed all three lines on the propane/oxygen charges compared; the comparison was not blind, as its validation says",
+        strong: &["blast wave", "blast overpressure", "overpressure", "explosion", "explosive", "tnt", "friedlander", "kingery-bulmash", "airblast", "air blast"],
+        plain: &["shock wave", "charge", "detonation", "blast", "impulse", "stand-off", "standoff", "safe distance", "scaled distance", "hopkinson", "sachs", "sedov", "point blast", "surface burst", "free air", "c-4", "pe4", "semtex", "propane"],
+        weak: &["pressure", "shock", "wave", "ground", "air"],
+        other: &["nuclear", "underwater", "buried", "landmine", "dust explosion", "vapour cloud", "vapor cloud", "sonic boom", "volcano", "meteor", "tunnel"],
+        own: &["tnt"] },
+    Entry { key: "stress_plate_hole_s235", marks: Marks::Missed, marks_words: "missed one of three pass lines (the strain near the hole, by 0.6 points) and met the other two; the comparison was not blind, as its validation says",
+        strong: &["plate with a hole", "hole in a plate", "hole in a steel plate", "steel plate with a hole", "open hole", "stress concentration", "notched plate", "perforated plate", "kirsch", "s235"],
+        plain: &["stress field", "stress tensor", "displacement field", "digital image correlation", "dic", "von mises", "yield", "yielded zone", "plastic zone", "plasticity", "plane stress", "tensile bar", "tensile specimen", "notch", "finite element", "fem", "net section"],
+        weak: &["steel", "stress", "strain", "tension", "hole", "plate", "elastic", "sheet", "bar"],
+        other: &["s355", "s275", "s460", "aluminium", "aluminum", "titanium", "inconel", "composite", "cfrp", "carbon fibre", "carbon fiber", "concrete"],
+        own: &["s235", "clausthal"] },
+    Entry { key: "stress_plate_hole_s235_elastic", marks: Marks::Calibrated, marks_words: "after the fact, on stress_plate_hole_s235's three pass lines at 106.26 MPa, met all three, the strain near the hole within 1.4 percent where stress_plate_hole_s235 missed by 0.6 points",
+        strong: &["plate with a hole", "hole in a plate", "hole in a steel plate", "steel plate with a hole", "open hole", "stress concentration", "notched plate", "perforated plate", "kirsch", "s235", "linear elastic", "elastic field"],
+        plain: &["stress field", "stress tensor", "displacement field", "digital image correlation", "dic", "plane stress", "hooke", "tensile bar", "tensile specimen", "notch", "finite element", "fem", "net section"],
+        weak: &["steel", "stress", "strain", "tension", "hole", "plate", "elastic", "sheet", "bar"],
+        other: &["s355", "s275", "s460", "aluminium", "aluminum", "titanium", "inconel", "composite", "cfrp", "carbon fibre", "carbon fiber", "concrete"],
+        own: &["s235", "clausthal"] },
+    Entry { key: "icf_hotspot_burn", marks: Marks::Missed, marks_words: "met no shot and three marks of twenty-four on seven published NIF shots; the comparison was not blind, as its validation says",
+        strong: &["inertial confinement", "inertial fusion", "icf", "nif", "national ignition facility", "hot spot", "hotspot", "laser fusion", "ignition"],
+        plain: &["fusion", "deuterium-tritium", "d-t", "dt", "alpha heating", "burn", "yield", "lawson", "burn-up", "stagnation", "implosion", "capsule", "hohlraum", "laser", "inertial", "livermore", "target gain"],
+        weak: &["plasma", "energy", "kev", "neutron", "reaction rate"],
+        other: &["tokamak", "jet", "tftr", "diii-d", "iter", "asdex", "kstar", "jt-60", "stellarator", "lhd", "w7-x", "wendelstein", "sparc", "boron", "p-b11", "pb11", "aneutronic", "z-pinch", "z machine", "magnetized liner", "maglif", "jet engine", "jet stream", "car ignition", "ignition coil", "spark plug"],
+        own: &["nif", "national ignition facility"] },
+    Entry { key: "ln2_line_dlr_fttf", marks: LN2_LINE_MARKS, marks_words: LN2_LINE_MARKS_WORDS,
+        strong: &["liquid nitrogen", "cryogenic", "ln2", "rocket feed line", "feed line", "lampoldshausen", "fluid transient test facility"],
+        plain: &["fluid hammer", "pressure surge", "cavitation", "column separation", "valve closure", "cryogenic line", "rocket engine", "propellant line", "joukowsky", "surge"],
+        weak: &["nitrogen", "pipe", "line", "valve", "pressure", "tube", "transient"],
+        other: &[],
+        own: &["fttf", "dlr"] },
+    Entry { key: "plasma_sheath_ram_c2", marks: Marks::Missed, marks_words: "missed one of two pass lines (within a factor of 2 on one of three reflectometer onsets, against two: met at 70 km, 3.3 and 2.9 times at 77.7 and 80 km); the comparison was not blind, as its validation says",
+        strong: &["plasma sheath", "radio blackout", "communications blackout", "blackout", "black out", "ram c-ii", "ram c", "reentry plasma", "plasma frequency"],
+        plain: &["reentry", "hypersonic", "shock layer", "electron density", "ionization", "ionisation", "reflectometer", "glide vehicle", "hgv", "s-band", "x-band", "c-band", "gps", "telemetry", "stagnation point", "blunt cone", "sphere-cone", "dunn", "kang", "langley"],
+        weak: &["plasma", "shock", "electron", "radio", "signal", "air", "nose", "cone", "atmosphere", "altitude", "velocity"],
+        other: &["tokamak", "fusion", "laser", "inertial", "magnetic", "lightning", "arc jet", "plasma torch", "ionosphere", "mars", "venus", "titan"],
+        own: &["ram c-ii", "ram c"] },
 ];
+
+/// A model calibrated to the record: the scored original it stands beside,
+/// and what of the record was seen before its structure or
+/// constants were chosen. Each row is its registration's `calibration`
+/// (`kit/forecasts/<model>.json`, written by `kit/forecast.py calibrate`),
+/// word for word; `describe_card` and `describe_solver` give both where they
+/// give the model's word and its record.
+pub(crate) struct Calibration {
+    /// The model's name as it is served: a card's name, or a solver's.
+    pub model: &'static str,
+    /// The scored original it stands beside.
+    pub companion_to: &'static str,
+    /// One sentence: what of the record was seen before the structure or
+    /// constants were chosen.
+    pub not_blind: &'static str,
+}
+
+/// One row for each model with a calibration.
+pub(crate) const CALIBRATIONS: &[Calibration] = &[
+    Calibration { model: "generator_mmrtg_seebeck", companion_to: "generator_mmrtg_f1", not_blind: "Every published day of the record, mission days 0 to 4,087, was open: days 0 to 2,060 had fitted generator_mmrtg_f1, days 2,061 to 2,808 had chosen its structure, and days 2,809 to 4,087, held back from it, had been compared with it once on 2026-10-06, where it missed its final-365 line by 0.000094 of 115.4 W and this structure, with constants fixed on days 0 to 2,060, gave after the fact a root mean square error of 0.00507 and a final-365 mean of +0.00468, before it was preferred and its constants fitted on all of days 0 to 4,087." },
+    Calibration { model: "stress_plate_hole_s235_elastic", companion_to: "stress_plate_hole_s235", not_blind: "Every number of stress_plate_hole_s235's scored comparison was read before this structure, the same field with the steel not yielding, was chosen: its held-back ring, and the three lines that field had been reported to meet there, not gated, beside the miss of the field yielding at 235 MPa." },
+    // a model calibrated to the record: Calibration { model, companion_to, not_blind },
+];
+
+/// The calibration of a model, by its served name; None for a model that has none.
+pub(crate) fn calibration_of(model: &str) -> Option<&'static Calibration> {
+    CALIBRATIONS.iter().find(|row| row.model == model)
+}
+
+/// The served name of an index entry: the card's name, or the solver's.
+fn served_name(entry: &Entry) -> &'static str {
+    entry.key.rsplit('/').next().unwrap_or(entry.key)
+}
+
+/// How `ln2_line_dlr_fttf` did on its six held-back tests.
+const LN2_LINE_MARKS: Marks = Marks::Missed;
+const LN2_LINE_MARKS_WORDS: &str = "missed seven of eleven marks on the six held-back tests and met four: the first rise at S2, the front's speed from S1 to S2, the second surge's time and the steady pressure drop";
 
 /// Words that say nothing of the thing. "model" is not one: it is a word of
 /// a served thing's name, the Tesla Model 3.
@@ -280,7 +547,7 @@ const STOP: &[&str] = &[
 
 pub fn description() -> String {
     format!(
-        "Find the served model for a real thing described in plain words, such as \"a lithium cell discharging in the cold\". Returns the best few cards and solvers, each with fit first (the words that matched, and model_of, the one real thing it is a model of) and then accuracy (compared_with, the data it was fitted to and the data held back and compared, and accuracy_against_measurement: whether it passed the pass marks fixed before it was compared); a model's range and stops are in describe_card or describe_solver. against_measurement gives that verdict in one of four words, \"met\", \"missed\", \"met in part\" or \"not held to a measurement\", the word list_cards and list_solvers give on every row: it is accuracy and not fit. The two are separate: a model that failed its pass marks is still the served model of its thing. The names it gives (domain and card, or solver) are the names describe_card, describe_solver, cite and every other tool take, so no list need be read after it. When nothing served fits it says so, having compared every card and solver, names the nearest by words and why they are not it, or says that there is no near one, and says who to write to for a model. Matched against a fixed list of terms with no model call: the same words give the same answer. Same bytes as POST /find_model."
+        "Finds the served model for a real thing described in plain words, such as \"a lithium cell discharging in the cold\". It returns the best few cards and solvers, each with fit first (the words that matched, and model_of, the one real thing it is a model of) and then accuracy (compared_with, the data it was fitted to and the data held back and compared, and accuracy_against_measurement: how it did against the pass marks its record states); a model's range and stops are in describe_card or describe_solver. against_measurement gives that verdict in one of six words, the word list_cards and list_solvers give on every row: \"met\", \"met in part\" and \"missed\" say how the model did against the pass marks its record states, and its validation record says whether that comparison was blind and, where it was not, what was seen and when; \"calibrated to the record\" is a companion whose structure or constants were chosen with the record of a scored original open, so its comparison is not a blind test, and the original is served beside it under its own word; \"held to a reference calculation\" is compared with a published calculation, and \"not held to a measurement\" is the company's own specimen. It is accuracy and not fit. The two are separate: a model that failed its pass marks is still the served model of its thing. The names it gives (domain and card, or solver) are the names list_cards and list_solvers give and the names describe_card, describe_solver, cite and every other tool take. When nothing served fits it says so, having compared every card and solver, names the nearest by words and why they are not it, or says that there is no near one, and says where requests for a model go. A model is set aside when the description names another thing of its kind (another gas, another maker's cell, another planet's probe). It is matched against a fixed list of terms with no model call: the same words give the same answer."
     )
 }
 
@@ -409,6 +676,40 @@ struct Scored {
     plain: usize,
     /// Whether every telling word of the description is held by a term.
     whole: bool,
+    /// The other real thing of the model's kind the description names, when
+    /// it names one.
+    another: Option<&'static str>,
+}
+
+/// Every place in the description where the term's words stand together.
+fn places(described: &[String], term: &[String]) -> Vec<usize> {
+    if term.is_empty() || described.len() < term.len() {
+        return Vec::new();
+    }
+    described.windows(term.len()).enumerate().filter(|(_, window)| *window == term).map(|(at, _)| at).collect()
+}
+
+/// The first of a model's other things that a description names, unless the
+/// description names the model's own thing too. Both are read in all the
+/// description's words, the stop words with them, so that "SPERT I" is its
+/// own name and not "SPERT" beside a word that says nothing; and a name of
+/// the model's own counts only where it stands outside another thing's name.
+fn names_another(entry: &'static Entry, all: &[String]) -> Option<&'static str> {
+    let mut another = None;
+    let mut spans: Vec<(usize, usize)> = Vec::new();
+    for term in entry.other {
+        let term_words = words(term);
+        for at in places(all, &term_words) {
+            spans.push((at, at + term_words.len()));
+            another.get_or_insert(*term);
+        }
+    }
+    let another = another?;
+    let own_thing_named = entry.own.iter().any(|term| {
+        let term_words = words(term);
+        places(all, &term_words).into_iter().any(|at| !spans.iter().any(|(from, to)| *from <= at && at + term_words.len() <= *to))
+    });
+    if own_thing_named { None } else { Some(another) }
 }
 
 /// A model's score for a description. Each term is found once, at its first
@@ -416,8 +717,9 @@ struct Scored {
 /// weight of the heaviest term found on it: "deuterium-tritium" does not
 /// count again as "deuterium" and as "tritium", and two forms of one word
 /// do not count as two words. A term counts as matched when it holds at
-/// least one word no heavier or earlier term holds.
-fn score(entry: &'static Entry, described: &[String]) -> Scored {
+/// least one word no heavier or earlier term holds. `all` is every word of
+/// the description, the stop words with them.
+fn score(entry: &'static Entry, described: &[String], all: &[String]) -> Scored {
     // for each word of the description: the weight it counts at, and the term that holds it
     let mut held: Vec<(u32, usize)> = vec![(0, usize::MAX); described.len()];
     let mut found: Vec<(&'static str, u32)> = Vec::new();
@@ -444,6 +746,7 @@ fn score(entry: &'static Entry, described: &[String]) -> Scored {
         strong: counted.iter().any(|(_, weight)| *weight == STRONG),
         plain: counted.iter().filter(|(_, weight)| *weight == PLAIN).count(),
         whole: !held.is_empty() && held.iter().all(|slot| slot.0 > 0),
+        another: names_another(entry, all),
     }
 }
 
@@ -452,11 +755,21 @@ fn score(entry: &'static Entry, described: &[String]) -> Scored {
 /// passed, and one clause from its own record.
 fn accuracy(entry: &Entry) -> String {
     match entry.marks {
-        Marks::Met => format!("passed the pass marks fixed before the comparison: {}", entry.marks_words),
-        Marks::Missed => format!("failed the pass marks fixed before the comparison: {}", entry.marks_words),
-        Marks::InPart => format!("passed in part the pass marks fixed before the comparison: {}", entry.marks_words),
-        Marks::NotCompared => format!("not compared with any measurement: {}", entry.marks_words),
-        Marks::Reference => format!("not compared with any measurement: {}", entry.marks_words),
+        Marks::Met => format!("passed the pass marks its record states: {}", entry.marks_words),
+        Marks::Missed => format!("failed the pass marks its record states: {}", entry.marks_words),
+        Marks::InPart => format!("passed in part the pass marks its record states: {}", entry.marks_words),
+        Marks::NotCompared => format!("{}: {OWN_SPECIMEN_ACCOUNT}", entry.marks_words),
+        Marks::Reference => format!("held to a reference calculation, not compared with a measurement: {}", entry.marks_words),
+        Marks::Calibrated => {
+            let beside = match calibration_of(served_name(entry)) {
+                Some(row) => format!("{}, the scored original, is served beside it", row.companion_to),
+                None => "the scored original is served beside it".to_string(),
+            };
+            format!(
+                "calibrated to the record, not a blind test: its structure or constants were chosen with the record of a scored original open, and {beside} under its own word: {}",
+                entry.marks_words
+            )
+        }
     }
 }
 
@@ -529,10 +842,12 @@ fn record(view: &View, entry: &Entry, matched: &[&str]) -> Option<Map<String, Va
     let data_text = text(validation.get("data"));
     let data_text = data_text.split(" Record: evidence/").next().unwrap_or("").to_string();
     let compared_with = match entry.marks {
-        Marks::NotCompared => "No measurement: a generic specimen, not a named real object.".to_string(),
+        Marks::NotCompared => {
+            "The company's own specimen: its constants are the company's, stated in its description.".to_string()
+        }
         Marks::Reference => {
             let reference = reference.unwrap_or(Value::Null);
-            format!("No measurement; a reference calculation: {}.", text(reference.get("name")).trim_end_matches('.'))
+            format!("A reference calculation: {}.", text(reference.get("name")).trim_end_matches('.'))
         }
         // The record's whole account of its data: what the model was fitted
         // to and, further on, what was held back and compared. Its opening
@@ -557,8 +872,19 @@ fn served(cards: usize, solvers: usize) -> String {
 fn about(cards: usize, solvers: usize) -> String {
     let served = served(cards, solvers);
     format!(
-        "Fit and accuracy are separate. Fit: each match is a match on words, and model_of is the one real thing the model is of. For a thing described by its kind (a cell discharging, a capsule entering an atmosphere), a match is the served model of that kind of thing, and fits. For one particular other object (a named cell, a dataset of your own), a model of a different object of the same kind is not a model of it, and nothing served fits. Accuracy: accuracy_against_measurement is how the model did against its own measurements, and a model that failed its pass marks is still the served model of its thing, served with the failure stated. compared_with is the record's whole account of its data: what the model was fitted to and what was held back and compared with it. describe_card or describe_solver, by the names given here, has the pass marks, the result, the range and every stop by name, and cite, by the same names, the people whose data it stands on. Everything this connection serves ({served}) was compared with the description; when nothing served fits, a model can be asked for: write to {} at {} and name an open dataset of the thing.",
+        "Fit and accuracy are separate. Fit: each match is a match on words, and model_of is the one real thing the model is of. For a thing described by its kind (a cell discharging, a capsule entering an atmosphere), a match is the served model of that kind of thing, and fits. For one particular other object (a named cell, a dataset of your own), a model of a different object of the same kind is not a model of it, and nothing served fits. Accuracy: accuracy_against_measurement is how the model did against the pass marks its record states, and a model that failed its pass marks is still the served model of its thing, served with the failure stated. compared_with is the record's whole account of its data: what the model was fitted to and what was held back and compared with it. describe_card or describe_solver, by the names given here, has the pass marks, the result, whether the comparison was blind and, where it was not, what was seen and when, the range and every stop by name, and cite, by the same names, the people whose data it stands on. Everything this connection serves ({served}) was compared with the description; when nothing served fits, requests for a model go to {} at {}, each naming an open dataset of the thing.",
         crate::identity::MAKER,
+        crate::identity::EMAIL
+    )
+}
+
+/// Where a request for a model of a thing not served goes, and what such a
+/// request holds, said as what is so.
+fn where_requests_go() -> String {
+    format!(
+        "Requests for a model of a thing not served go to {} of {} at {}. A model is made from open measurements of one real thing, so a request names an open dataset of it (the real thing, where the dataset is, its licence, the quantity measured and who measured it, each as the dataset's own page states it and none from memory) or, with no dataset in hand, says what the thing is and what has been measured of it.",
+        crate::identity::MAKER,
+        crate::identity::COMPANY,
         crate::identity::EMAIL
     )
 }
@@ -567,13 +893,28 @@ fn about(cards: usize, solvers: usize) -> String {
 fn none_fits(cards: usize, solvers: usize) -> String {
     let served = served(cards, solvers);
     format!(
-        "Nothing served fits this description. It was compared with everything this connection serves ({served}), so reading list_cards or list_solvers will not find one: each served model is of one named real thing, not of a class of things. {}",
-        crate::identity::how_to_ask_for_a_model()
+        "Nothing served fits this description. It was compared with everything this connection serves ({served}), and no served model fits it; list_cards and list_solvers name everything served. Each served model is of one named real thing, not of a class of things. {}",
+        where_requests_go()
     )
 }
 
 const NO_NEAREST: &str = "No served model shares a word that names the thing described, so there is no near model to name; a word of a wide subject (steel, temperature, load) is shared with too many things to count.";
 const NEAREST_ABOUT: &str = "The served models that share the most words with the description, named so that the lists need not be read. None of them matched: each is a model of the thing in its model_of, not of the thing described.";
+
+/// Words of a description that speak of where a reading came from: a signed,
+/// a spoofed or a tampered sensor.
+const SIGNED_WORDS: &[&str] = &[
+    "signed", "signature", "spoofed", "spoofing", "spoof", "tampered", "tampering", "attested", "attestation", "authenticated", "forged",
+];
+
+/// What an answer says when its description speaks of a signed, spoofed or
+/// tampered reading: beside the models that take that load, where a
+/// signature goes and what it shows.
+pub(crate) const SIGNED_LOADS_SAYS: &str = "A reading an instrument measured can be sent signed: a segment's load, a run's initial, a solve's parameters and a measurement of validate_series may each carry signed, the instrument's Ed25519 signature over the reading, which is verified before computing, and every run answer's load_source names the key that signed each load or says the load is the caller's number. A signature shows who stated a reading, not that it is true: a spoofed input is found by running the model on the signed input and comparing it, in validate_series, with a second output another key signed.";
+
+fn speaks_of_signed(all: &[String]) -> bool {
+    SIGNED_WORDS.iter().any(|word| words(word).iter().all(|form| all.contains(form)))
+}
 
 pub fn find_in(view: &View, request: &Value) -> Result<Value, DoorError> {
     let violation = |text: String| DoorError::Unprocessable(text);
@@ -588,7 +929,7 @@ pub fn find_in(view: &View, request: &Value) -> Result<Value, DoorError> {
         }
     }
     let described = match object.get("description") {
-        None => return Err(violation("Missing required parameter: 'description'".into())),
+        None => return Err(violation("Missing required parameter: 'description' (InputMissing).".into())),
         Some(Value::String(text)) => text,
         Some(_) => return Err(violation("Physical Violation: 'description' must be a string.".into())),
     };
@@ -610,10 +951,15 @@ pub fn find_in(view: &View, request: &Value) -> Result<Value, DoorError> {
         },
     };
     let read = telling_words(described);
+    let all = words(described);
+    // A model whose description names another thing of its kind is not a
+    // match, however many words the two share.
     let fits = |scored: &Scored| {
-        scored.score >= LEAST_SCORE && (scored.strong || scored.plain >= 2 && (scored.score > LEAST_SCORE || scored.whole))
+        scored.another.is_none()
+            && scored.score >= LEAST_SCORE
+            && (scored.strong || scored.plain >= 2 && (scored.score > LEAST_SCORE || scored.whole))
     };
-    let mut scored: Vec<Scored> = INDEX.iter().map(|entry| score(entry, &read)).collect();
+    let mut scored: Vec<Scored> = INDEX.iter().map(|entry| score(entry, &read, &all)).collect();
     // The best first; equal scores keep the engine's order.
     scored.sort_by(|a, b| b.score.cmp(&a.score));
     let mut matches = Vec::new();
@@ -648,7 +994,12 @@ pub fn find_in(view: &View, request: &Value) -> Result<Value, DoorError> {
                 continue;
             };
             let terms: Vec<String> = found.matched.iter().map(|term| format!("\"{term}\"")).collect();
-            row.insert("not_a_match".to_string(), json!(format!("shares only {} with the description", terms.join(", "))));
+            let shares = format!("shares only {} with the description", terms.join(", "));
+            let why = match found.another {
+                Some(another) => format!("{shares}, which names \"{another}\": another thing than the one this is a model of"),
+                None => shares,
+            };
+            row.insert("not_a_match".to_string(), json!(why));
             nearest.push(Value::Object(row));
         }
         let nearest_about = if nearest.is_empty() { NO_NEAREST } else { NEAREST_ABOUT };
@@ -658,12 +1009,58 @@ pub fn find_in(view: &View, request: &Value) -> Result<Value, DoorError> {
         answer.insert("matches".to_string(), Value::Array(matches));
         answer.insert("about".to_string(), json!(about(cards, solvers)));
     }
+    if speaks_of_signed(&all) {
+        answer.insert("signed_loads".to_string(), json!(SIGNED_LOADS_SAYS));
+    }
     Ok(Value::Object(answer))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The eighteen compared models whose comparison is not blind by their
+    /// own record (evidence/verification/served_words_2026-10-16/AUDIT.md,
+    /// classes S and C): each keeps its word, its validation record says in
+    /// plain words that the comparison is not blind, and its phrase in
+    /// find_model and the short form says so too.
+    const NOT_BLIND: [&str; 18] = [
+        "aerospace/capsule_stardust", "aerospace/solar_system", "energy/reactor_spert3_fuel", "energy/reactor_triga_jsi",
+        "argon_pair_gas", "energy/grid_gb", "aerospace/capsule_insight", "energy/tokamak_vde_mast", "signal/cantilever_eth",
+        "energy/reactor_spert3", "energy/reactor_spert3_ccore", "energy/tokamak_jet_dte1", "aerospace/crater_ryugu_sci",
+        "ablator_slab", "blast_wave_tnt_air", "stress_plate_hole_s235", "icf_hotspot_burn", "plasma_sheath_ram_c2",
+    ];
+
+    #[test]
+    fn every_comparison_that_is_not_blind_says_so_in_its_record_and_its_phrase() {
+        let view = View::full();
+        for key in NOT_BLIND {
+            let entry = INDEX.iter().find(|entry| entry.key == key).unwrap_or_else(|| panic!("{key} is not served"));
+            assert!(matches!(entry.marks, Marks::Met | Marks::Missed | Marks::InPart), "{key} keeps its word");
+            assert!(accuracy(entry).ends_with("; the comparison was not blind, as its validation says"), "{key}: {}", accuracy(entry));
+            let described = match key.split_once('/') {
+                Some((domain, card)) => crate::descriptor::describe_value_in(&view, domain, card),
+                None => crate::solvers::describe_value(key),
+            }
+            .unwrap_or_else(|| panic!("{key} is described"));
+            let validation = described["validation"].to_string();
+            assert!(validation.contains("The comparison is not blind"), "{key}: {validation}");
+        }
+        // No other model's phrase says it.
+        for entry in INDEX.iter().filter(|entry| !NOT_BLIND.contains(&entry.key)) {
+            assert!(!accuracy(entry).contains("not blind, as its validation says"), "{}", entry.key);
+        }
+    }
+
+    #[test]
+    fn a_description_of_a_signed_or_spoofed_sensor_finds_the_cards_and_says_where_a_signature_goes() {
+        let answer = find_in(&View::full(), &json!({ "description": "a battery pack whose current sensor may be spoofed, with signed readings", "limit": 5 })).unwrap();
+        assert_eq!(answer["signed_loads"], SIGNED_LOADS_SAYS);
+        let found: Vec<&str> = answer["matches"].as_array().unwrap().iter().filter_map(|row| row["card"].as_str()).collect();
+        assert!(found.contains(&"battery_sag"), "{answer}");
+        let plain = find_in(&View::full(), &json!({ "description": "a 12S battery pack sagging under load until cutoff" })).unwrap();
+        assert!(plain.get("signed_loads").is_none());
+    }
 
     fn keys(description: &str) -> Vec<String> {
         let answer = find_in(&View::full(), &json!({ "description": description, "limit": 5 })).unwrap();
@@ -702,8 +1099,27 @@ mod tests {
             };
             let result = result.as_str().unwrap_or("");
             match entry.marks {
-                Marks::NotCompared => assert_eq!(result, "not compared with a measurement", "{}", entry.key),
-                Marks::Reference => assert_eq!(result, "", "{}", entry.key),
+                // Every model held to no outside measurement is one of the
+                // company's own specimens, and its record says so.
+                // A card's record states the outside recomputation of its
+                // runs; a solver's claims none, which no such solver has.
+                Marks::NotCompared => {
+                    assert_eq!(entry.marks_words, OWN_SPECIMEN, "{}", entry.key);
+                    let own = if entry.key.contains('/') { crate::descriptor::OWN_SPECIMEN_RESULT } else { crate::descriptor::OWN_SPECIMEN_SOLVER_RESULT };
+                    assert_eq!(result, own, "{}", entry.key);
+                    if !entry.key.contains('/') {
+                        let whole = crate::solvers::describe_whole(entry.key).unwrap().to_string();
+                        assert!(!whole.contains("recomputation"), "{}: an own-specimen solver claims a recomputation", entry.key);
+                    }
+                }
+                // A model held to a reference calculation: atom_dft has no
+                // record of a comparison, and a fusion solver's record states
+                // its comparison with the published calculation it was held to.
+                Marks::Reference => assert!(
+                    result.is_empty() || result.contains("TRANSP") || result.contains("calculation"),
+                    "{}: {result}",
+                    entry.key
+                ),
                 Marks::Met => {
                     assert!(!result.contains("comparison failed") && !result.contains("did not pass") && !result.is_empty(), "{}: {result}", entry.key)
                 }
@@ -713,6 +1129,14 @@ mod tests {
                     entry.key
                 ),
                 Marks::InPart => assert!(result.contains("met") && (result.contains("missed") || result.contains("not met") || result.contains("none of")), "{}", entry.key),
+                // A model calibrated to the record says so in the first
+                // sentence of its result, that it is not a blind test, and
+                // names the model it stands beside.
+                Marks::Calibrated => {
+                    let first = result.split(". ").next().unwrap_or("").to_lowercase();
+                    let companion = calibration_of(served_name(entry)).map(|row| row.companion_to).unwrap_or("its companion");
+                    assert!(first.contains(CALIBRATED) && first.contains("not a blind test") && first.contains(companion), "{}: {result}", entry.key);
+                }
             }
             assert!(record(&view, entry, &[]).is_some(), "{}", entry.key);
         }
@@ -722,7 +1146,7 @@ mod tests {
         assert_eq!(generator.marks, Marks::Missed);
         assert_eq!(
             accuracy(generator),
-            "failed the pass marks fixed before the comparison: met its root mean square line (about 0.94 W against 1.154 W) and missed its final-year line (about 1.16 W high) on the held-back days 2,809 to 4,087, which it serves"
+            "failed the pass marks its record states: met its root mean square line (about 0.94 W against 1.154 W) and missed its final-year line (about 1.16 W high) on the held-back days 2,809 to 4,087, which it serves"
         );
         let record = crate::descriptor::describe_value_in(&view, "energy", "generator_mmrtg_f1").unwrap()["validation"].clone();
         let result = record["result"].as_str().unwrap();
@@ -742,16 +1166,192 @@ mod tests {
             let mut seen: Vec<(Vec<String>, &str)> = Vec::new();
             for term in entry.strong.iter().chain(entry.plain).chain(entry.weak) {
                 let read = telling_words(term);
-                if read.is_empty() || !score(entry, &read).matched.contains(term) {
+                if read.is_empty() || !score(entry, &read, &read).matched.contains(term) {
                     faults.push(format!("{}: \"{term}\" is not found in its own words", entry.key));
                 }
                 if let Some((_, other)) = seen.iter().find(|(words, _)| *words == read) {
                     faults.push(format!("{}: \"{term}\" and \"{other}\" are one word", entry.key));
                 }
+                // A model's own term does not name another thing of its kind.
+                if let Some(another) = names_another(entry, &words(term)) {
+                    faults.push(format!("{}: its own term \"{term}\" names \"{another}\", which it lists as another thing", entry.key));
+                }
                 seen.push((read, term));
+            }
+            let mut others: Vec<Vec<String>> = Vec::new();
+            for other in entry.other {
+                let read = words(other);
+                if read.is_empty() || others.contains(&read) {
+                    faults.push(format!("{}: \"{other}\" is empty or listed twice among its other things", entry.key));
+                }
+                others.push(read);
+            }
+            // A name of its own is not also a name of another thing.
+            for own in entry.own {
+                let read = words(own);
+                if read.is_empty() || others.contains(&read) {
+                    faults.push(format!("{}: its own name \"{own}\" is empty or is listed as another thing", entry.key));
+                }
             }
         }
         assert!(faults.is_empty(), "{}", faults.join("\n"));
+    }
+
+    /// The models found for a description, and for an answer with no match
+    /// the models named as near with what each is said to share.
+    fn near(description: &str) -> Vec<(String, String)> {
+        let answer = find_in(&View::full(), &json!({ "description": description, "limit": 5 })).unwrap();
+        assert_eq!(answer["count"], 0, "{description}: {}", answer["matches"]);
+        answer["nearest_by_words"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|row| {
+                let name = row.get("solver").or(row.get("card")).and_then(Value::as_str).unwrap().to_string();
+                (name, row["not_a_match"].as_str().unwrap().to_string())
+            })
+            .collect()
+    }
+
+    /// Yeast extract is part of the culture's own medium, and its description
+    /// says so: a description that names it beside the culture is of the
+    /// culture. A yeast culture is still another thing of its kind.
+    #[test]
+    fn yeast_extract_in_the_medium_does_not_set_the_culture_aside() {
+        assert_eq!(
+            first_of("A filamentous fungus fed-batch culture on glucose and yeast extract").as_deref(),
+            Some("culture_trichoderma_ambr250")
+        );
+        assert_eq!(first_of("A filamentous fungus fed-batch culture on glucose").as_deref(), Some("culture_trichoderma_ambr250"));
+        let nearest = near("a fed-batch culture of yeast on glucose");
+        let row = nearest.iter().find(|(name, _)| name == "culture_trichoderma_ambr250").expect("named as near");
+        assert!(row.1.ends_with(", which names \"yeast\": another thing than the one this is a model of"), "{}", row.1);
+    }
+
+    /// A description that names another real thing of a model's kind (another
+    /// gas, another planet's probe, another maker's cell) is of that thing:
+    /// nothing is matched, and the model is named as near with the name that
+    /// set it aside. Each of these matched its model on the shared words
+    /// before the models listed the other things of their kind.
+    #[test]
+    fn a_description_that_names_another_thing_of_a_models_kind_matches_nothing() {
+        let table: &[(&str, &str, &str)] = &[
+            ("the speed of sound in helium gas", "argon_pair_gas", "helium"),
+            ("the capsule of the Phoenix lander entering the atmosphere of Mars", "capsule_insight", "phoenix"),
+            ("an LG M50 lithium-ion cell discharging at 5 amps", "cell_18650pf", "lg"),
+            ("pointing jitter of the Hubble Space Telescope on its guide star", "los_jwst_fine_guide", "hubble"),
+            ("the crater the DART spacecraft made on the asteroid Dimorphos", "crater_ryugu_sci", "dimorphos"),
+            ("the frequency of the Texas power grid after it loses a power station", "grid_gb", "texas"),
+            ("a Formula 1 tyre slipping on dry asphalt", "tire_eve_r19_ice", "formula 1"),
+            ("the SPERT I reactor after a step in reactivity", "reactor_spert3", "spert i"),
+            ("a deuterium plasma in the DIII-D tokamak under neutral beam heating", "tokamak_jet_dte1", "diii-d"),
+            ("Young's modulus of an Inconel bar from its resonant frequencies", "modulus_bam_s355", "inconel"),
+            ("a fed-batch culture of the fungus Aspergillus niger", "culture_trichoderma_ambr250", "aspergillus"),
+            ("the heat shield of the Galileo probe charring as it enters Jupiter", "ablator_slab", "galileo"),
+            ("thrust and shaft power of a container ship's propeller", "propeller_apc_10x7e", "ship"),
+            ("the electrical output of the radioisotope generator on Voyager 1", "generator_mmrtg_f1", "voyager"),
+            ("a satellite of the GPS constellation in orbit around the Earth", "satellite_lageos1", "gps"),
+            ("creep of a stainless steel tube at high temperature", "creep_cmsx6", "steel"),
+            ("the ground state energy of a gold atom", "atom_dft", "gold"),
+        ];
+        for (description, model, another) in table {
+            let nearest = near(description);
+            let row = nearest.iter().find(|(name, _)| name == model).unwrap_or_else(|| panic!("{description}: {nearest:?}"));
+            assert!(row.1.starts_with("shares only \""), "{description}: {}", row.1);
+            assert!(
+                row.1.ends_with(&format!(", which names \"{another}\": another thing than the one this is a model of")),
+                "{description}: {}",
+                row.1
+            );
+        }
+        // The name is read whole: "SPERT III" is not "SPERT I", and a cell of
+        // the dataset the card holds is not another maker's cell.
+        assert_eq!(first_of("the SPERT III E-core reactor, cold, after a step in reactivity").as_deref(), Some("energy/reactor_spert3"));
+        assert_eq!(first_of("the SPERT III reactor with its C-core after a step in reactivity").as_deref(), Some("energy/reactor_spert3_ccore"));
+        // Another maker's cell, or another cathode, is not this LiCoO2 cell.
+        assert_ne!(first_of("thermal runaway of a Panasonic NCR18650PF cell").as_deref(), Some("energy/runaway_18650_lco"));
+        assert_ne!(first_of("thermal runaway of an NMC 18650 cell").as_deref(), Some("energy/runaway_18650_lco"));
+        // The things themselves, and their kinds, are found as before.
+        for (description, first) in [
+            ("the speed of sound in argon gas", "argon_pair_gas"),
+            ("the speed of sound in a gas", "argon_pair_gas"),
+            ("the capsule of the InSight lander entering the atmosphere of Mars", "aerospace/capsule_insight"),
+            ("a capsule entering the atmosphere of Mars", "aerospace/capsule_insight"),
+            ("pointing jitter of the Webb telescope on its guide star", "aerospace/los_jwst_fine_guide"),
+            ("the crater an impactor makes on an asteroid", "aerospace/crater_ryugu_sci"),
+            ("a tyre slipping on ice", "materials/tire_eve_r19_ice"),
+            ("an 18650 lithium-ion cell going into thermal runaway in an oven", "energy/runaway_18650_lco"),
+            ("thermal runaway of a LiCoO2 18650 cell in an accelerating rate calorimeter", "energy/runaway_18650_lco"),
+            ("when does a fully charged 18650 battery catch fire in a hot oven", "energy/runaway_18650_lco"),
+            ("a deuterium-tritium plasma in the JET tokamak under neutral beam heating", "energy/tokamak_jet_dte1"),
+            ("the neutron rate of a TFTR deuterium-tritium pulse from its profiles", "tokamak_dt_beam_target"),
+        ] {
+            assert_eq!(first_of(description).as_deref(), Some(first), "{description}: {:?}", keys(description));
+        }
+        // A probe of another planet is not the capsule that came back to the Earth.
+        assert_eq!(keys("a capsule entering the atmosphere of Mars"), ["aerospace/capsule_insight"]);
+        // A description that names the model's own thing is of that thing,
+        // though it names another beside it.
+        for (description, first) in [
+            ("the viscosity of argon gas, compared with air", "argon_pair_gas"),
+            ("pointing jitter of the Webb telescope, set against Hubble's", "aerospace/los_jwst_fine_guide"),
+            ("the capsule of the InSight lander, built on the Phoenix design, entering the atmosphere of Mars", "aerospace/capsule_insight"),
+            ("the SPERT III E-core reactor after a step in reactivity, as SPERT I was tested before it", "energy/reactor_spert3"),
+            ("the electrical output of the radioisotope generator on the Curiosity rover, the kind Voyager carried before it", "energy/generator_mmrtg_f1"),
+        ] {
+            assert_eq!(first_of(description).as_deref(), Some(first), "{description}: {:?}", keys(description));
+        }
+        // A name of its own inside another thing's name is that other thing's:
+        // the arc jet of a heat-shield test is not the JET tokamak.
+        let found = keys("the heat shield of a capsule charring in an arc jet");
+        assert!(found[0] == "ablator_slab" && !found.iter().any(|name| name.contains("tokamak")), "{found:?}");
+        // LAGEOS-2 is the satellite card's own: it was compared on both orbits.
+        for description in ["the orbit of the satellite LAGEOS-2 around the Earth", "orbit of the LAGEOS-2 satellite", "LAGEOS II laser ranging"] {
+            assert_eq!(first_of(description).as_deref(), Some("aerospace/satellite_lageos1"), "{description}: {:?}", keys(description));
+        }
+        for (description, model, another) in [
+            ("the speed of sound in liquid argon", "argon_pair_gas", "liquid argon"),
+            ("a PICA-X heat shield charring in an arc jet", "ablator_slab", "pica-x"),
+        ] {
+            let nearest = near(description);
+            let row = nearest.iter().find(|(name, _)| name == model).unwrap_or_else(|| panic!("{description}: {nearest:?}"));
+            assert!(row.1.contains(&format!("which names \"{another}\"")), "{description}: {}", row.1);
+        }
+    }
+
+    /// A model's own published quantities and inputs, and the names of the
+    /// real things it takes, put it first: the distance the Solar System card
+    /// publishes, the cells each Tesla card holds, the inputs that part the
+    /// two cards of one reactor core and the two models of one tokamak.
+    #[test]
+    fn a_models_own_quantities_and_the_names_of_its_things_put_it_first() {
+        // The card publishes earth_to_mars_m and earth_mars_distance_m. Neither sentence found it before.
+        assert_eq!(keys("How far is Mars from the Earth one day after 1 January 1999?"), ["aerospace/solar_system"]);
+        assert_eq!(first_of("the distance from the Earth to Mars over ten years").as_deref(), Some("aerospace/solar_system"));
+        // Cell m448-N is held by the physical card alone; cell m80 by both, and the card of cell m80 alone comes first for it.
+        assert_eq!(keys("cell m448-N of the Tesla Model 3 2170 lithium-ion cell dataset, discharged at a constant 4.5 amps"), ["energy/cell_2170_model3"]);
+        assert_eq!(keys("cell m1000 of the Tesla Model 3 2170 lithium-ion cell dataset at 0 degrees Celsius"), ["energy/cell_2170_model3"]);
+        assert_eq!(
+            keys("cell m80 of the Tesla Model 3 2170 lithium-ion cell dataset, discharged at a constant 1.5 amps")[..2],
+            ["energy/cell_2170_m80", "energy/cell_2170_model3"]
+        );
+        // The E-core's two cards: one takes a cold step, the other an inlet temperature, a coolant flow and a rod that ramps.
+        assert_eq!(first_of("the SPERT III E-core reactor is cold when a step in reactivity is put in all at once").as_deref(), Some("energy/reactor_spert3"));
+        assert_eq!(
+            first_of("the SPERT III E-core reactor in a burst with hot coolant flowing through the core as its transient rod ramps in reactivity").as_deref(),
+            Some("energy/reactor_spert3_fuel")
+        );
+        // One tokamak, two models: the solver takes the plasma in shells, the card its energies under the heating power.
+        assert_eq!(
+            first_of("nested shells of a deuterium-tritium plasma in the JET tokamak in steady state: electron temperatures, ion temperatures and electron densities").as_deref(),
+            Some("tokamak_dt_beam_target")
+        );
+        assert_eq!(
+            first_of("the thermal energy of a deuterium-tritium plasma in the JET tokamak under 20 MW of heating power at a plasma current of 3.8 MA").as_deref(),
+            Some("energy/tokamak_jet_dte1")
+        );
+        // The thermal proton-boron solver takes the ion temperature and publishes the fusion power.
+        assert_eq!(first_of("fusion power of a hot hydrogen-boron plasma against its radiation losses at an ion temperature of 300 keV").as_deref(), Some("fusion_pb11_thermal"));
     }
 
     #[test]
@@ -778,16 +1378,28 @@ mod tests {
             ("a 12S battery pack sagging under load until cutoff", "energy/battery_sag", &[]),
             ("an aluminium cantilever ringing down in air", "signal/cantilever_eth", &[]),
             ("a fingertip twisting on glass until it slips", "materials/fingerpad_p02_glass", &[]),
+            ("the least grip force that lifts an object without slip in a two-finger grip", "materials/grasp_lift_glass_4tu", &[]),
+            ("a robot hand picking up a glass object between two fingers", "materials/grasp_lift_glass_4tu", &[]),
             ("oil film in a journal bearing", "journal_bearing_sheffield", &[]),
             ("Young's modulus of a steel bar from the frequency it rings at", "modulus_bam_s355", &[]),
             ("proton-boron fusion under a neutral beam", "fusion_pb11_lhd", &["fusion_pb11_thermal"]),
             ("deuterium-tritium fusion rate in a tokamak", "tokamak_dt_beam_target", &["energy/tokamak_jet_dte1"]),
+            ("the yield of an inertial confinement fusion hot spot at the National Ignition Facility", "icf_hotspot_burn", &[]),
             ("laminar air flow over a backward-facing step", "step_flow_armaly", &[]),
             ("viscosity of argon gas", "argon_pair_gas", &[]),
             ("the planets of the Solar System over twenty years", "aerospace/solar_system", &[]),
             ("a nitrogen-charged hydraulic accumulator", "energy/accumulator_sbo450", &[]),
             ("a Dyneema tendon stretching under force", "materials/cable_stretch", &[]),
             ("a copper fuse link under overcurrent", "energy/grid_node", &[]),
+            ("water hammer when a valve closes fast on a hydraulic line", "water_hammer_oil_line", &[]),
+            ("choked flow through a pneumatic valve filling a chamber", "orifice_air_chamber", &[]),
+            ("the resonance of a pneumatic hose feeding a volume", "pneumatic_hose_resonance", &[]),
+            ("the stress around a hole in a steel plate pulled in tension", "stress_plate_hole_s235", &[]),
+            ("stress concentration at a notch in a structural steel bar", "stress_plate_hole_s235", &[]),
+            ("digital image correlation of an S235 specimen with a hole", "stress_plate_hole_s235", &["stress_plate_hole_s235_elastic"]),
+            ("the linear elastic stress field around a hole in a steel plate", "stress_plate_hole_s235_elastic", &["stress_plate_hole_s235"]),
+            ("the elastic field of an S235 plate with a hole", "stress_plate_hole_s235_elastic", &["stress_plate_hole_s235"]),
+            ("fluid hammer in a liquid nitrogen rocket feed line when a fast valve closes", "ln2_line_dlr_fttf", &[]),
         ];
         for (description, first, among) in table {
             let found = keys(description);
@@ -822,6 +1434,26 @@ mod tests {
 
     fn first_of(description: &str) -> Option<String> {
         keys(description).into_iter().next()
+    }
+
+    /// A description of a served thing that mentions another thing in
+    /// passing, without the model's own name, still finds its model: what
+    /// the thing is made of, what it is found in, what it is set against.
+    #[test]
+    fn a_served_thing_described_with_another_mentioned_in_passing_keeps_its_model() {
+        let table: &[(&str, &str)] = &[
+            ("What is the zero-density viscosity of the noble gas that makes up about one percent of air, at 400 K?", "argon_pair_gas"),
+            ("Creep extension of a single-crystal nickel superalloy with aluminium and titanium in it, held under load at 980 degrees Celsius.", "materials/creep_cmsx6"),
+            ("Ground-state energy of a single isolated neon atom, not a molecule or a crystal.", "atom_dft"),
+            ("Sound speed profile down a deep ocean cast, as opposed to a lake.", "seawater_column"),
+            ("Grip of an all-season SUV tyre on an ice track, well below what it has on dry asphalt.", "materials/tire_eve_r19_ice"),
+            ("Friction factor of turbulent air in the Princeton Superpipe, whose wall is smooth rather than rough.", "pipe_flow_superpipe"),
+            ("Rain fade on a short microwave backhaul link between two dish antennas in Gothenburg.", "signal/link_gothenburg_10010"),
+            ("How wide did the artificial crater get that Hayabusa2's copper impactor blasted into a near-Earth asteroid?", "aerospace/crater_ryugu_sci"),
+        ];
+        for (description, model) in table {
+            assert_eq!(first_of(description).as_deref(), Some(*model), "{description}");
+        }
     }
 
     /// Sentences in a user's own words, and the model each finds first.
@@ -887,7 +1519,8 @@ mod tests {
     }
 
     /// An answer with no match is complete in itself: it says every card and
-    /// solver was compared, that the lists will not find one, and how to ask;
+    /// solver was compared, that no served model fits, that the lists name
+    /// everything served, and how to ask;
     /// and it names the nearest by words as not matches.
     #[test]
     fn an_answer_with_no_match_is_complete_in_itself() {
@@ -898,9 +1531,19 @@ mod tests {
         assert_eq!(answer["searched"], json!({ "cards": cards, "solvers": solvers }));
         assert!(said.starts_with("Nothing served fits this description."), "{said}");
         assert!(said.contains(&format!("everything this connection serves ({cards} cards and {solvers} solvers)")), "{said}");
-        assert!(said.contains("reading list_cards or list_solvers will not find one"), "{said}");
-        for field in ["write to John Kruze of Protocol Company at kruze@zerotrustphysics.com", "an open dataset", "its licence", "the quantity measured", "who measured it", "none from memory"] {
+        assert!(said.contains("), and no served model fits it; list_cards and list_solvers name everything served."), "{said}");
+        // Until 0.12.0 it ended "so reading list_cards or list_solvers will not
+        // find one", which a reader could take as the lists being incomplete.
+        assert!(!said.contains("will not find"), "{said}");
+        // Where a request for a model goes is said as what is so, with the
+        // address, and not as an instruction to the reader: until this was
+        // reworded the sentence began "To ask for a model of this thing,
+        // write to John Kruze of Protocol Company at ...".
+        for field in ["Requests for a model of a thing not served go to John Kruze of Protocol Company at kruze@zerotrustphysics.com.", "an open dataset", "its licence", "the quantity measured", "who measured it", "none from memory"] {
             assert!(said.contains(field), "{field}: {said}");
+        }
+        for instruction in ["write to", "To ask", "name an open dataset", "say what"] {
+            assert!(!said.contains(instruction), "{instruction}: {said}");
         }
         // One word of a subject is not worth naming: the bridge shares "steel"
         // with the steel bar and "beam" with the strip, and neither is named.
@@ -936,10 +1579,12 @@ mod tests {
             assert!(row.values().all(|value| value.is_string()), "{}: no true, false or null to misread", entry.key);
             let verdict = row["accuracy_against_measurement"].as_str().unwrap();
             let opening = match entry.marks {
-                Marks::Met => "passed the pass marks fixed before the comparison: ",
-                Marks::Missed => "failed the pass marks fixed before the comparison: ",
-                Marks::InPart => "passed in part the pass marks fixed before the comparison: ",
-                Marks::NotCompared | Marks::Reference => "not compared with any measurement: ",
+                Marks::Met => "passed the pass marks its record states: ",
+                Marks::Missed => "failed the pass marks its record states: ",
+                Marks::InPart => "passed in part the pass marks its record states: ",
+                Marks::NotCompared => "the company's own specimen: ",
+                Marks::Reference => "held to a reference calculation, not compared with a measurement: ",
+                Marks::Calibrated => "calibrated to the record, not a blind test: ",
             };
             assert!(verdict.starts_with(opening), "{}: {verdict}", entry.key);
             // the clause after it begins with what the model did, not with a count
@@ -961,11 +1606,12 @@ mod tests {
         let row = &answer["matches"][0];
         assert_eq!(row["card"], "cantilever_eth");
         assert_eq!(row["fit"], "matches your description on the words \"ringing\", \"strip\", \"aluminium\", \"clamped\", \"flick\"");
-        assert_eq!(row["accuracy_against_measurement"], "failed the pass marks fixed before the comparison: met three of four pass lines");
+        assert_eq!(row["accuracy_against_measurement"], "failed the pass marks its record states: met three of four pass lines; the comparison was not blind, as its validation says");
         // what it was compared with is the data, not the specimen again
         assert!(row["compared_with"].as_str().unwrap().contains("recordings of the strip ringing down"), "{row}");
         let about = answer["about"].as_str().unwrap();
         assert!(about.starts_with("Fit and accuracy are separate.") && about.contains("is still the served model of its thing") && about.contains("kruze@zerotrustphysics.com") && !about.contains("request_model"), "{about}");
+        assert!(about.ends_with("when nothing served fits, requests for a model go to John Kruze at kruze@zerotrustphysics.com, each naming an open dataset of the thing.") && !about.contains("write to"), "{about}");
         // A thing described by its kind is fitted by the served model of that
         // kind; only a particular other object is not. The sentence says a
         // match fits, so that it is not read as none fits.
@@ -989,7 +1635,9 @@ mod tests {
                 Marks::Met => "met",
                 Marks::Missed => "missed",
                 Marks::InPart => "met in part",
-                Marks::NotCompared | Marks::Reference => "not held to a measurement",
+                Marks::NotCompared => "not held to a measurement",
+                Marks::Reference => "held to a reference calculation",
+                Marks::Calibrated => "calibrated to the record",
             };
             assert_eq!(entry.marks.against_measurement(), word, "{}", entry.key);
             *counted.entry(word).or_insert(0) += 1;
@@ -1000,7 +1648,7 @@ mod tests {
             assert_eq!(row.unwrap_or_else(|| panic!("{} is on no list", entry.key))["against_measurement"], word, "{}: its list row", entry.key);
             assert_eq!(record(&view, entry, &[]).unwrap()["against_measurement"], word, "{}: its match", entry.key);
         }
-        assert_eq!(counted.into_iter().collect::<Vec<_>>(), [("met", 12), ("met in part", 3), ("missed", 19), ("not held to a measurement", 10)]);
+        assert_eq!(counted.into_iter().collect::<Vec<_>>(), [("calibrated to the record", 2), ("held to a reference calculation", 3), ("met", 12), ("met in part", 5), ("missed", 27), ("not held to a measurement", 12)]);
         // No row of either list is without the word, but the solver compiled for tests only.
         assert_eq!(cards["cards"].as_array().unwrap().len(), INDEX.iter().filter(|entry| entry.key.contains('/')).count());
         for row in cards["cards"].as_array().unwrap() {
@@ -1021,7 +1669,46 @@ mod tests {
         // Each of the three tools says what the key is: accuracy, not fit.
         for said in [description().as_str(), AGAINST_MEASUREMENT_SAYS] {
             assert!(said.contains("against_measurement") && said.contains("\"met in part\"") && said.contains("accuracy and not fit"), "{said}");
+            assert!(said.contains("one of six words") && said.contains("\"calibrated to the record\"") && said.contains("not a blind test") && said.contains("the original is served beside it under its own word"), "{said}");
+            // The three words say how a model did against the pass marks its
+            // record states; the record says whether the comparison was blind.
+            // Nothing says the three words name blind tests.
+            assert!(said.contains("say how") && said.contains("the pass marks its record states") && said.contains("says whether that comparison was blind"), "{said}");
+            assert!(!said.contains("compared blind") && !said.contains("fixed before"), "{said}");
         }
+    }
+
+    /// A model calibrated to the record has its row of CALIBRATIONS, and the
+    /// row is its registration's calibration word for word: the companion it
+    /// names is a served model other than itself, whose own record is
+    /// scored. Its phrase says what the word means and names the companion.
+    #[test]
+    fn every_model_calibrated_to_the_record_has_its_row_and_its_registration() {
+        let served: Vec<&str> = INDEX.iter().map(served_name).collect();
+        for entry in INDEX.iter().filter(|entry| entry.marks == Marks::Calibrated) {
+            assert!(calibration_of(served_name(entry)).is_some(), "{}: no row of CALIBRATIONS", entry.key);
+        }
+        let forecasts = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("kit/forecasts");
+        let record_of = |model: &str| -> Value {
+            let text = std::fs::read_to_string(forecasts.join(format!("{model}.json"))).unwrap_or_else(|_| panic!("{model}: no kit/forecasts/{model}.json"));
+            serde_json::from_str(&text).unwrap_or_else(|_| panic!("{model}: its registration is not JSON"))
+        };
+        for row in CALIBRATIONS {
+            assert_eq!(CALIBRATIONS.iter().filter(|other| other.model == row.model).count(), 1, "{}: two rows", row.model);
+            assert!(served.contains(&row.model), "{}: not served", row.model);
+            assert!(row.companion_to != row.model && served.contains(&row.companion_to), "{}: its companion {} is not a served model beside it", row.model, row.companion_to);
+            let calibration = record_of(row.model)["calibration"].clone();
+            assert_eq!(calibration["companion_to"], row.companion_to, "{}: the row's companion is not its registration's", row.model);
+            assert_eq!(calibration["not_blind"], row.not_blind, "{}: the row's not_blind is not its registration's", row.model);
+            assert!(record_of(row.companion_to)["scored"]["utc"].is_string(), "{}: its companion's record is not scored", row.model);
+        }
+        // The phrase, on an entry of the sixth word.
+        let entry = Entry { key: "energy/a_model", marks: Marks::Calibrated, marks_words: "within 1 percent after the fact", strong: &[], plain: &[], weak: &[], other: &[], own: &[] };
+        assert_eq!(
+            accuracy(&entry),
+            "calibrated to the record, not a blind test: its structure or constants were chosen with the record of a scored original open, and the scored original is served beside it under its own word: within 1 percent after the fact"
+        );
+        assert_eq!(verdict(&entry).0, CALIBRATED);
     }
 
     /// The kinds the answer itself gives as examples of a description that
@@ -1074,12 +1761,13 @@ mod tests {
     #[test]
     fn a_word_counts_once_for_a_model() {
         let entry = |key: &str| INDEX.iter().find(|entry| entry.key == key).unwrap();
-        let solver = score(entry("tokamak_dt_beam_target"), &telling_words("deuterium-tritium"));
+        let scored = |key: &str, text: &str| score(entry(key), &telling_words(text), &words(text));
+        let solver = scored("tokamak_dt_beam_target", "deuterium-tritium");
         assert_eq!((solver.score, solver.matched.as_slice()), (2 * STRONG, &["deuterium-tritium"][..]));
-        let grid = score(entry("energy/grid_gb"), &telling_words("grid frequency"));
+        let grid = scored("energy/grid_gb", "grid frequency");
         assert_eq!((grid.score, grid.matched.as_slice()), (2 * STRONG, &["grid frequency"][..]));
         // A phrase and a heavier word inside it: the word at its weight, the rest of the phrase at the phrase's.
-        let jet = score(entry("energy/tokamak_jet_dte1"), &telling_words("fusion power"));
+        let jet = scored("energy/tokamak_jet_dte1", "fusion power");
         assert_eq!((jet.score, jet.matched.as_slice(), jet.strong, jet.plain), (STRONG + PLAIN, &["fusion", "fusion power"][..], true, 1));
     }
 
@@ -1132,6 +1820,10 @@ mod tests {
             ("where the air flow reattaches behind a step in a channel", "step_flow_armaly"),
             ("plain bearings with an oil film under load", "journal_bearing_sheffield"),
             ("a tyre slipping and skidding on an icy road", "materials/tire_eve_r19_ice"),
+            ("a liquid-cooled plate under a flight computer: how warm does it get at 150 watts", "energy/thermal"),
+            ("a vibratory rate sensor: a proof mass driven on its spring, with the Coriolis force of a turn rate", "signal/tesseract"),
+            ("the comet sample probe that came down in Utah under its parachute", "aerospace/capsule_stardust"),
+            ("the aluminium strip of the Zürich laboratory left vibrating until it dies away", "signal/cantilever_eth"),
         ];
         for (description, first) in table {
             assert_eq!(first_of(description).as_deref(), Some(*first), "{description}: {:?}", keys(description));
