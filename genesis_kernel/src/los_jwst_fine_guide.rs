@@ -29,15 +29,17 @@
 //!   image.
 //! - The lock point is not in the file. The caller supplies it. The record's
 //!   protocol takes the median of the run's good centroids.
-//! - The limits are the fitted set's: count rates from 22,900 to 2,820,000
-//!   counts per second (it held 22,910 to 2,813,637), a step of one sensor
-//!   frame.
-//! - The lock point and the run of frames with no measurement are held to
-//!   what the comparison answered, on the fitted files and the held-back
-//!   files together: a lock point from -61.1512947 to 60.4564934 arcsec on x
-//!   and from -64.2767 to 50.1812668 arcsec on y, and at most 10 frames in a
-//!   row with no measurement. Past either the card refuses by name; see
-//!   "Where the card refuses" below.
+//! - The noise law was fitted on count rates from 22,910 to 2,813,637
+//!   counts per second, and every held-back file lay inside them (their
+//!   medians 62,000 to 816,000). The card takes any count rate above zero:
+//!   outside 22,900 to 2,820,000 a frame carries
+//!   [`FLAG_COUNT_RATE_BEYOND_COMPARED`], and the noise law is carried on
+//!   past where it was fitted. The step is one sensor frame.
+//! - The lock point is held to the sensor's field, 70 arcsec from its centre
+//!   on either axis; the comparison answered lock points from -61.1512947 to
+//!   60.4564934 arcsec on x and from -64.2767 to 50.1812668 arcsec on y, and
+//!   at most 10 frames in a row with no measurement. Past those the card
+//!   computes; see "The lock point and gaps" below.
 //! - Compared on 2026-10-09 with the 134 files of the 24 visits of May and
 //!   June 2022, which no fit saw, by a rule fixed beforehand: all five marks
 //!   were met on both axes. On their 795,021 quiet frames, one frame ahead,
@@ -46,8 +48,9 @@
 //!   stated variance was 1.004 and 0.986. Inside disturbances it was worse
 //!   than taking the last centroid, 2.03 mas against 1.00 on x and 1.57
 //!   against 0.78 on y. `RESULT.md` of the research record. The card as it
-//!   was then answered those frames with a flag. It now refuses them, by the
-//!   rule under "Where the card refuses" below.
+//!   was then answered those frames with a flag; engines 0.7 to 0.9 refused
+//!   them; it answers them again, with the flags and the measured shortfall
+//!   under "Where the card was measured worse" below.
 //!
 //! The model. Each axis of the offset from the lock point is the sum of three
 //! parts, and the sensor adds noise:
@@ -118,19 +121,23 @@
 //! and the model has no part for; the roll about the line of sight; the
 //! reason for any motion. It describes quiet fine guide.
 //!
-//! Where the card refuses. When a mechanism moves or the pointing is
-//! disturbed the offset jumps by many mas and rings down; the filter's gain
-//! is set for quiet and follows such a ring-down slowly, so its prediction is
-//! then worse than the last centroid and its stated variance too small, by 12
-//! to 17 times on the held-back files. Three refusals keep the card out of
-//! those frames (`analysis/amendment_1.json` of the research record, written
-//! after the held-back files were scored; the three numbers in it are the
-//! protocol's own and none was fitted to a held-back file):
+//! Where the card was measured worse. When a mechanism moves or the
+//! pointing is disturbed the offset jumps by many mas and rings down; the
+//! filter's gain is set for quiet and follows such a ring-down slowly, so its
+//! prediction is then worse than the last centroid and its stated variance
+//! too small, by 12 to 17 times on the held-back files. Inside disturbances
+//! its error one frame ahead was 2.03 mas against 1.00 for the last centroid
+//! on x, and 1.57 against 0.78 on y. Over all 973,388 measured held-back
+//! frames, quiet and disturbed together, it was 1.35 on x and 1.26 on y of the
+//! last centroid's error, with a squared error over the stated variance of
+//! 3.9 and 3.0. The card answers those frames and says so with three flags
+//! (`analysis/amendment_1.json` of the research record holds the three
+//! numbers, the protocol's own; none was fitted to a held-back file):
 //!
-//! - [`StepReject::PointingDisturbance`]: a measured centroid more than
-//!   [`QUIET_OFFSET_MAS`], 5 mas, from the lock point on either axis. It is
-//!   the protocol's event sample.
-//! - [`StepReject::InnovationBeyondFourSigma`]: a measured centroid more than
+//! - [`FLAG_POINTING_DISTURBED`]: a measured centroid more than
+//!   [`QUIET_OFFSET_MAS`], 5 mas, from the lock point on either axis, the
+//!   protocol's event sample.
+//! - [`FLAG_BEYOND_FOUR_SIGMA`]: a measured centroid more than
 //!   [`INNOVATION_LIMIT_SIGMA`], four, stated standard deviations from where
 //!   it was expected, on either axis. On the fitted files of April 2022, in
 //!   the 30 s after such a centroid the x axis misses four of the protocol's
@@ -141,70 +148,57 @@
 //!   as a right variance gives on the fitted files, and 21 times on the
 //!   held-back ones. It also comes by chance: with the stated variance right,
 //!   once in about 7,900 measured frames, 8.4 minutes.
-//! - [`StepReject::RecoveryNotElapsed`]: the run starts less than
-//!   [`RECOVERY_S`], 30 s, after the last such centroid. It is the protocol's
-//!   30 s after an event sample.
+//! - [`FLAG_RECOVERING`]: the frame ends less than [`RECOVERY_S`], 30 s, after
+//!   the last centroid that carried either flag, the protocol's 30 s after an
+//!   event sample. The state keeps that time, `since_disturbance_s`, from the
+//!   caller's `quiet_before_start_s` at the start of the run; the card cannot
+//!   see a centroid that came before its run and cannot check that number.
 //!
-//! A refused step leaves the state and the frame as they were, so a run ends
-//! at its last quiet frame. The card cannot see a centroid that came before
-//! its run. The caller states `quiet_before_start_s`, the time from the last
-//! centroid refused by the first two rules, or known to be more than 5 mas
-//! from the lock point, to the first frame of the run, and the card holds
-//! that number to 30 s. It cannot check it: a caller who states a time that
-//! is not so gets answers the comparison does not cover. A caller resumes
-//! after a refusal with a new run whose first frame is at least 30 s after
-//! the refused centroid, 469 frames, and after any later centroid more than
-//! 5 mas from the lock point; the new run knows nothing of the old one and
-//! starts with each covariance at its unmeasured value.
+//! Until engine 0.9 each of the three was a refusal (`PointingDisturbance`,
+//! `InnovationBeyondFourSigma`, `RecoveryNotElapsed`) and a run ended at its
+//! last quiet frame. The filter's equations and its ledger hold in those
+//! frames; what fails there is the model's assumption of a quiet, stationary
+//! sum of three processes, and the measured shortfall above is what that
+//! costs. A `quiet_before_start_s` below zero is malformed and is
+//! [`StepReject::QuietBeforeStartBelowZero`]. The comparison of a time with
+//! 30 s carries [`RECOVERY_ALLOWANCE_S`], 2^-36 s, for a time worked out as
+//! the difference of two times of the table.
 //!
-//! The caller may compute that time as the difference of two times of the
-//! table. A difference of two times under 2^17 s, 36 hours, each the 64-bit
-//! number nearest its decimal, is within 2^-36 s of the exact difference, so
-//! the comparison with 30 s carries [`RECOVERY_ALLOWANCE_S`], 2^-36 s:
-//! 1030.1 − 1000.1, which is 1.1e-13 s under 30 in 64-bit arithmetic, is
-//! taken, and a time more than the allowance under 30 s is refused.
+//! The lock point and gaps:
 //!
-//! Two limits hold the card to what was compared, and neither is a
-//! disturbance:
-//!
-//! - [`StepReject::LockOutsideCard`]: a lock point outside the span of the
-//!   lock points the comparison answered, [`LOCK_X_MIN_ARCSEC`] to
+//! - [`StepReject::LockOutsideSensorField`]: a lock point more than
+//!   [`LOCK_FIELD_HALF_WIDTH_ARCSEC`], 70 arcsec, from the centre of the
+//!   sensor's ideal frame on either axis. Each guider's field is 2.3 by 2.3
+//!   arcmin, 69 arcsec either side of its centre; no star can be held beyond
+//!   it. The lock points of the files compared span [`LOCK_X_MIN_ARCSEC`] to
 //!   [`LOCK_X_MAX_ARCSEC`] on x and [`LOCK_Y_MIN_ARCSEC`] to
-//!   [`LOCK_Y_MAX_ARCSEC`] on y. They are the medians of the good centroids
-//!   of the files with an answered frame, by the record's protocol: x from
-//!   held-back file jw01163060001_gs-fg_2022149134548 to fitted file
-//!   jw01163028001_gs-fg_2022104125709, y from fitted file
-//!   jw01163026001_gs-fg_2022102173705 to held-back file
-//!   jw01163052001_gs-fg_2022122160545. The held-back files alone span x
-//!   -61.1512947 to 49.05617 and y -62.0922546 to 50.1812668. The sensor's
-//!   field reaches about 70 arcsec from its centre; no lock point beyond the
-//!   span was compared. The arithmetic only takes the lock point away from
-//!   the centroid, so the limit is what was compared, not a change in the
-//!   model.
-//! - [`StepReject::MeasurementGapOutsideCard`]: a frame with no measurement
-//!   that would make more than [`MEASUREMENT_GAP_MAX_FRAMES`], 10, such
-//!   frames in a row. With no measurement the filter predicts and its stated
-//!   variance grows; the longest run of such frames that a run of the
-//!   comparison crossed was 2 frames on the held-back files and 10 on the
-//!   fitted files, and the tables hold longer gaps only where the comparison
-//!   refused or did not run. The state counts the frames with no measurement
-//!   in a row, and a measured frame sets the count to zero. A run starts
-//!   with the count at zero, as it starts with nothing known, so a new run
-//!   carries nothing over and there is nothing to restart. The refusal ends
-//!   the run at the frame before; a caller goes on with a new run at the next
-//!   measured frame, with `quiet_before_start_s` the time since the last
-//!   disturbance, which a gap does not reset.
+//!   [`LOCK_Y_MAX_ARCSEC`] on y, fitted and held-back files together, the
+//!   held-back files alone x -61.1512947 to 49.05617 and y -62.0922546 to
+//!   50.1812668; on the held-back files all five marks were met on both axes.
+//!   The arithmetic only takes the lock point away from the centroid.
+//! - A frame with no measurement is predicted, and its stated variance grows
+//!   toward its unmeasured value, 1.52574 mas² over both axes, for any number
+//!   of such frames in a row. The longest run of them a compared run crossed
+//!   was [`MEASUREMENT_GAP_MAX_FRAMES`], 10, on the fitted files, and 2 on the
+//!   held-back files. The state counts them, `unmeasured_in_row`; until
+//!   engine 0.9 an eleventh was refused as `MeasurementGapOutsideCard`.
 //!
 //! The run has no limit in time of its own.
 //!
 //! The power. The noise needs `(counts / 1e6)^(−r_power)`. The crate carries
 //! its own exponential and natural logarithm and no power function, so it is
-//! `exp(−r_power · log(counts / 1e6))`. Over the card's count rates the
+//! `exp(−r_power · log(counts / 1e6))`. Over the fitted count rates the
 //! argument of the exponential is within ±5, and the result is within a few
-//! units in the last place of the correctly rounded value.
+//! units in the last place of the correctly rounded value; farther out the
+//! error grows with the size of the argument. The law has no value at a count
+//! rate of zero, and under about 7e-237 counts per second the y axis's
+//! variance passes the largest 64-bit number: such a frame is
+//! [`StepReject::CountRateNotPositive`]. As the count rate grows the variance
+//! falls toward zero, and the filter's update holds there, its predicted
+//! variance being above zero after every drive.
 //!
-//! [`FLAG_NO_MEASUREMENT`] is the one flag: the table had no good centroid
-//! for the frame. It marks no failure of the model.
+//! [`FLAG_NO_MEASUREMENT`]: the table had no good centroid for the frame. It
+//! marks no failure of the model.
 //!
 //! [`LosJwstFineGuide::gate_dt_s`] and [`LosJwstFineGuide::floor_dt_s`] are
 //! 0.0645 s and 0.0635 s: one sensor frame, 0.064 s, within half a
@@ -225,6 +219,7 @@ extern crate core;
 use core::prelude::v1::*;
 
 use crate::frame::LastStateFrame64;
+use crate::normal::{normal_or_zero, normal_or_zero_each};
 
 /// The nine fitted constants of one axis.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -276,39 +271,46 @@ pub const Y_AXIS: AxisConstants = AxisConstants {
 /// The count rate at which the noise variance is `noise_reference_mas2`,
 /// instrument counts per second.
 pub const COUNTS_REFERENCE_PER_S: f64 = 1.0e6;
-/// Smallest count rate the card accepts. The fitted set's smallest was 22,910.
+/// The fitted set's smallest count rate, 22,910, rounded down. Below it a
+/// measured frame carries [`FLAG_COUNT_RATE_BEYOND_COMPARED`]. Not a limit.
 pub const COUNTS_MIN_PER_S: f64 = 22_900.0;
-/// Largest count rate the card accepts. The fitted set's largest was 2,813,637.
+/// The fitted set's largest count rate, 2,813,637, rounded up. Above it a
+/// measured frame carries [`FLAG_COUNT_RATE_BEYOND_COMPARED`]. Not a limit.
 pub const COUNTS_MAX_PER_S: f64 = 2_820_000.0;
 /// Largest offset of a centroid from the lock point the card accepts, mas.
 /// The sensor's fine-guide box is 8 by 8 pixels of about 69 mas; the largest
 /// offset in the fitted set was 191 mas.
 pub const OFFSET_MAX_MAS: f64 = 250.0;
-/// Smallest lock point on x the card accepts, arcsec: the smallest median
-/// lock point of the files the comparison answered, held-back file
-/// jw01163060001_gs-fg_2022149134548.
+/// Largest lock point the card accepts on either axis, in size, arcsec: the
+/// Fine Guidance Sensor's field is 2.3 by 2.3 arcmin, 69 arcsec either side
+/// of its centre, rounded outward. The card served this bound up to engine
+/// 0.6.0.
+pub const LOCK_FIELD_HALF_WIDTH_ARCSEC: f64 = 70.0;
+/// Smallest lock point on x of the files the comparison answered, arcsec:
+/// held-back file jw01163060001_gs-fg_2022149134548. Not a limit.
 pub const LOCK_X_MIN_ARCSEC: f64 = -61.1512947;
-/// Largest lock point on x the card accepts, arcsec: fitted file
-/// jw01163028001_gs-fg_2022104125709.
+/// Largest lock point on x compared, arcsec: fitted file
+/// jw01163028001_gs-fg_2022104125709. Not a limit.
 pub const LOCK_X_MAX_ARCSEC: f64 = 60.4564934;
-/// Smallest lock point on y the card accepts, arcsec: fitted file
-/// jw01163026001_gs-fg_2022102173705.
+/// Smallest lock point on y compared, arcsec: fitted file
+/// jw01163026001_gs-fg_2022102173705. Not a limit.
 pub const LOCK_Y_MIN_ARCSEC: f64 = -64.2767;
-/// Largest lock point on y the card accepts, arcsec: held-back file
-/// jw01163052001_gs-fg_2022122160545.
+/// Largest lock point on y compared, arcsec: held-back file
+/// jw01163052001_gs-fg_2022122160545. Not a limit.
 pub const LOCK_Y_MAX_ARCSEC: f64 = 50.1812668;
-/// Most frames with no measurement in a row the card accepts: the longest
-/// such run a run of the comparison crossed, 10 frames on fitted file
-/// jw01163051001_gs-fg_2022120171011 (2 on the held-back files).
+/// The longest run of frames with no measurement a compared run crossed, 10
+/// frames on fitted file jw01163051001_gs-fg_2022120171011 (2 on the
+/// held-back files). Not a limit.
 pub const MEASUREMENT_GAP_MAX_FRAMES: f64 = 10.0;
 /// A measured centroid further than this from the lock point on either axis
-/// is refused, mas: the event sample of the protocol.
+/// carries [`FLAG_POINTING_DISTURBED`], mas: the event sample of the protocol.
 pub const QUIET_OFFSET_MAS: f64 = 5.0;
 /// A measured centroid further than this many stated standard deviations
-/// from where it was expected, on either axis, is refused.
+/// from where it was expected, on either axis, carries
+/// [`FLAG_BEYOND_FOUR_SIGMA`].
 pub const INNOVATION_LIMIT_SIGMA: f64 = 4.0;
-/// A run starts no earlier than this after the last refused centroid, s:
-/// the 30 s after an event sample of the protocol.
+/// A frame that ends less than this after the last flagged centroid carries
+/// [`FLAG_RECOVERING`], s: the 30 s after an event sample of the protocol.
 pub const RECOVERY_S: f64 = 30.0;
 /// How far under [`RECOVERY_S`] the stated time may read, s: 2^-36, the most
 /// a difference of two times under 2^17 s, each read from a decimal, can
@@ -327,8 +329,30 @@ pub const MAS_PER_ARCSEC: f64 = 1000.0;
 
 /// The frame has no measurement: it was predicted and not updated.
 pub const FLAG_NO_MEASUREMENT: u64 = 1 << 0;
-// Bits 1 and 2 were the two advisory flags of the card as first served. A
-// frame that would have carried either is now refused, and no frame sets them.
+/// The measured centroid is more than 5 mas from the lock point on either
+/// axis: the pointing is disturbed, and there the card was measured worse
+/// than the last centroid, 2.03 against 1.00 mas on x and 1.57 against 0.78
+/// on y, with its stated variance 12 to 17 times too small.
+pub const FLAG_POINTING_DISTURBED: u64 = 1 << 1;
+/// The measured centroid is more than four stated standard deviations from
+/// where it was expected on either axis. With the stated variance right this
+/// comes once in about 7,900 measured frames; on the held-back files it came
+/// 21 times as often on x, and in the 30 s after it the x axis missed three
+/// of the protocol's five marks.
+pub const FLAG_BEYOND_FOUR_SIGMA: u64 = 1 << 2;
+/// The frame ends less than 30 s after the last centroid that carried
+/// [`FLAG_POINTING_DISTURBED`] or [`FLAG_BEYOND_FOUR_SIGMA`], as the state
+/// counts it from the caller's `quiet_before_start_s`: the protocol's 30 s
+/// after an event, where the filter is still following the ring-down.
+pub const FLAG_RECOVERING: u64 = 1 << 3;
+/// The guide star's count rate on this measured frame is below 22,900 or
+/// above 2,820,000 counts per second, outside the count rates the noise law
+/// was fitted on, inside which every held-back file lay: the same filter,
+/// with the noise law carried on past them. On the held-back guide stars the
+/// y axis's noise exponent came out 1.045 against the card's 1.273, a
+/// difference that grows with the distance from 1,000,000 counts per second.
+/// The frame carries it; the state holds no boolean of its own for it.
+pub const FLAG_COUNT_RATE_BEYOND_COMPARED: u64 = 1 << 4;
 
 /// Why a step did not advance the filter or the frame.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -341,26 +365,20 @@ pub enum StepReject {
     NonPositiveDt,
     /// A recorded constant is not this observatory's.
     InvalidObservatory,
-    /// The lock point is outside the span the comparison covered: from -61.1512947 to 60.4564934 arcsec on x, from -64.2767 to 50.1812668 arcsec on y.
-    LockOutsideCard,
-    /// The run starts less than 30 s after the last centroid the caller states was refused or more than 5 mas from the lock point.
-    RecoveryNotElapsed,
+    /// The lock point is more than 70 arcsec from the centre of the sensor's ideal frame on either axis: the guider's field is 2.3 by 2.3 arcmin, and no star can be held beyond it.
+    LockOutsideSensorField,
+    /// The stated time since the last disturbed centroid before the run is below zero.
+    QuietBeforeStartBelowZero,
     /// A variance in the incoming state, or the variance stated for a centroid, was zero or negative.
     InvalidCovariance,
     /// `measured` was neither 0 nor 1.
     MeasuredNotZeroOrOne,
-    /// A frame with no measurement carried a centroid or a count rate that was not zero.
+    /// A frame whose `measured` is 0 carried a centroid or a count rate that was not zero: such a frame is predicted and not updated, it has no centroid, and a number there would be one the filter does not take.
     UnmeasuredFrameCarriesNumbers,
-    /// The frame has no measurement and would make more than 10 frames in a row with none, the longest run of them the comparison crossed.
-    MeasurementGapOutsideCard,
-    /// The guide star's count rate is below 22,900 or above 2,820,000 counts per second, the range the constants were fitted on.
-    CountRateOutsideCard,
+    /// The guide star's count rate on a frame with a centroid is zero or below, or so near zero, under about 7e-237 counts per second, that the noise variance of the centroid, a power of one over the count rate, passes the largest 64-bit number: the noise law has no value at zero, and a centroid with no light holds no position.
+    CountRateNotPositive,
     /// The centroid is more than 250 mas from the lock point on either axis.
     OffsetOutsideCard,
-    /// A measured centroid is more than 5 mas from the lock point on either axis: the pointing is disturbed, and there the card is worse than the last centroid.
-    PointingDisturbance,
-    /// A measured centroid is more than four stated standard deviations from where it was expected, on either axis.
-    InnovationBeyondFourSigma,
     /// The trial step left more variance than the fading, the drive and the measurement account for.
     SpontaneousGeneration,
     /// The trial step left less variance than the fading, the drive and the measurement account for: the filter would claim knowledge it was not given.
@@ -397,16 +415,8 @@ pub struct LosJwstFineGuide {
     pub counts_max_per_s: f64,
     /// Recorded copy of [`OFFSET_MAX_MAS`].
     pub offset_max_mas: f64,
-    /// Recorded copy of [`LOCK_X_MIN_ARCSEC`].
-    pub lock_x_min_arcsec: f64,
-    /// Recorded copy of [`LOCK_X_MAX_ARCSEC`].
-    pub lock_x_max_arcsec: f64,
-    /// Recorded copy of [`LOCK_Y_MIN_ARCSEC`].
-    pub lock_y_min_arcsec: f64,
-    /// Recorded copy of [`LOCK_Y_MAX_ARCSEC`].
-    pub lock_y_max_arcsec: f64,
-    /// Recorded copy of [`MEASUREMENT_GAP_MAX_FRAMES`].
-    pub measurement_gap_max_frames: f64,
+    /// Recorded copy of [`LOCK_FIELD_HALF_WIDTH_ARCSEC`].
+    pub lock_field_half_width_arcsec: f64,
     /// Recorded copy of [`QUIET_OFFSET_MAS`].
     pub quiet_offset_mas: f64,
     /// Recorded copy of [`INNOVATION_LIMIT_SIGMA`].
@@ -480,11 +490,7 @@ impl LosJwstFineGuide {
             counts_min_per_s: COUNTS_MIN_PER_S,
             counts_max_per_s: COUNTS_MAX_PER_S,
             offset_max_mas: OFFSET_MAX_MAS,
-            lock_x_min_arcsec: LOCK_X_MIN_ARCSEC,
-            lock_x_max_arcsec: LOCK_X_MAX_ARCSEC,
-            lock_y_min_arcsec: LOCK_Y_MIN_ARCSEC,
-            lock_y_max_arcsec: LOCK_Y_MAX_ARCSEC,
-            measurement_gap_max_frames: MEASUREMENT_GAP_MAX_FRAMES,
+            lock_field_half_width_arcsec: LOCK_FIELD_HALF_WIDTH_ARCSEC,
             quiet_offset_mas: QUIET_OFFSET_MAS,
             innovation_limit_sigma: INNOVATION_LIMIT_SIGMA,
             recovery_s: RECOVERY_S,
@@ -510,11 +516,7 @@ impl LosJwstFineGuide {
             && self.counts_min_per_s.to_bits() == COUNTS_MIN_PER_S.to_bits()
             && self.counts_max_per_s.to_bits() == COUNTS_MAX_PER_S.to_bits()
             && self.offset_max_mas.to_bits() == OFFSET_MAX_MAS.to_bits()
-            && self.lock_x_min_arcsec.to_bits() == LOCK_X_MIN_ARCSEC.to_bits()
-            && self.lock_x_max_arcsec.to_bits() == LOCK_X_MAX_ARCSEC.to_bits()
-            && self.lock_y_min_arcsec.to_bits() == LOCK_Y_MIN_ARCSEC.to_bits()
-            && self.lock_y_max_arcsec.to_bits() == LOCK_Y_MAX_ARCSEC.to_bits()
-            && self.measurement_gap_max_frames.to_bits() == MEASUREMENT_GAP_MAX_FRAMES.to_bits()
+            && self.lock_field_half_width_arcsec.to_bits() == LOCK_FIELD_HALF_WIDTH_ARCSEC.to_bits()
             && self.quiet_offset_mas.to_bits() == QUIET_OFFSET_MAS.to_bits()
             && self.innovation_limit_sigma.to_bits() == INNOVATION_LIMIT_SIGMA.to_bits()
             && self.recovery_s.to_bits() == RECOVERY_S.to_bits()
@@ -532,9 +534,7 @@ impl LosJwstFineGuide {
             && self.recovery_s > 0.0
             && self.recovery_allowance_s > 0.0
             && self.recovery_allowance_s < self.recovery_s
-            && self.lock_x_max_arcsec > self.lock_x_min_arcsec
-            && self.lock_y_max_arcsec > self.lock_y_min_arcsec
-            && self.measurement_gap_max_frames >= 0.0
+            && self.lock_field_half_width_arcsec > 0.0
             && self.floor_dt_s > 0.0
             && self.gate_dt_s > self.floor_dt_s
             && self.residual_conservation_limit > 0.0
@@ -549,11 +549,31 @@ impl LosJwstFineGuide {
         self.x.unmeasured_variance_mas2() + self.y.unmeasured_variance_mas2()
     }
 
-    /// Whether a run may start `quiet_before_start_s` after the last refused
-    /// centroid: at least [`RECOVERY_S`] less [`RECOVERY_ALLOWANCE_S`].
+    /// Whether `since_disturbance_s` after the last flagged centroid is at
+    /// least [`RECOVERY_S`] less [`RECOVERY_ALLOWANCE_S`]: past the protocol's
+    /// 30 s after an event.
     #[must_use]
-    pub fn recovery_has_elapsed(&self, quiet_before_start_s: f64) -> bool {
-        quiet_before_start_s >= self.recovery_s - self.recovery_allowance_s
+    pub fn recovery_has_elapsed(&self, since_disturbance_s: f64) -> bool {
+        since_disturbance_s >= self.recovery_s - self.recovery_allowance_s
+    }
+
+    /// Whether a centroid at this count rate has a noise variance on both
+    /// axes: the count rate is above zero and the variance of each axis,
+    /// `r_ref · (counts / 1e6)^(−r_power)`, is a finite 64-bit number. Under
+    /// about 7e-237 counts per second the y axis's passes the largest one.
+    #[must_use]
+    pub fn count_rate_has_noise(&self, counts_per_s: f64) -> bool {
+        counts_per_s > 0.0
+            && self.x.noise_variance_mas2(counts_per_s).is_finite()
+            && self.y.noise_variance_mas2(counts_per_s).is_finite()
+    }
+
+    /// Whether a count rate lies outside the count rates the noise law was
+    /// fitted on, 22,900 to 2,820,000 counts per second: see
+    /// [`FLAG_COUNT_RATE_BEYOND_COMPARED`].
+    #[must_use]
+    pub fn count_rate_beyond_compared(&self, counts_per_s: f64) -> bool {
+        !(counts_per_s >= self.counts_min_per_s && counts_per_s <= self.counts_max_per_s)
     }
 
     /// Largest step the card stands behind: [`GATE_DT_S`]. Not applied by [`step`].
@@ -643,10 +663,14 @@ pub struct LosState {
     pub lock_x_arcsec: f64,
     /// The lock point on y, arcsec in the sensor's ideal frame. The caller's.
     pub lock_y_arcsec: f64,
-    /// Time from the last centroid refused as a disturbance, or known to be
+    /// Time from the last disturbed centroid before the run, or known to be
     /// more than 5 mas from the lock point, to the first frame of the run, s.
     /// The caller's statement; the card cannot check it.
     pub quiet_before_start_s: f64,
+    /// Time from the last centroid that carried [`FLAG_POINTING_DISTURBED`] or
+    /// [`FLAG_BEYOND_FOUR_SIGMA`] to the end of this frame, s; at the start,
+    /// `quiet_before_start_s`.
+    pub since_disturbance_s: f64,
     /// The x axis.
     pub x: AxisState,
     /// The y axis.
@@ -694,15 +718,20 @@ pub struct LosState {
     pub unmeasured_in_row: f64,
     /// The frame had no measurement.
     pub no_measurement: bool,
+    /// The frame's centroid was more than 5 mas from the lock point.
+    pub pointing_disturbed: bool,
+    /// The frame's centroid was more than four stated standard deviations from where it was expected.
+    pub beyond_four_sigma: bool,
+    /// The frame ended less than 30 s after the last flagged centroid.
+    pub recovering: bool,
 }
 
 impl LosState {
     /// Start at this lock point, time 0, with nothing known: every part at
     /// zero, each covariance at its unmeasured value and no frame with no
     /// measurement counted. `None` for a lock point that is not finite or
-    /// outside [`LOCK_X_MIN_ARCSEC`] to [`LOCK_X_MAX_ARCSEC`] on x or
-    /// [`LOCK_Y_MIN_ARCSEC`] to [`LOCK_Y_MAX_ARCSEC`] on y, and for a `quiet_before_start_s` that is not
-    /// finite or under [`RECOVERY_S`] by more than [`RECOVERY_ALLOWANCE_S`].
+    /// more than [`LOCK_FIELD_HALF_WIDTH_ARCSEC`] from the centre on either
+    /// axis, and for a `quiet_before_start_s` that is not finite or below zero.
     #[must_use]
     pub fn try_lock(
         card: &LosJwstFineGuide,
@@ -720,7 +749,7 @@ impl LosState {
         if !lock_is_inside(card, lock_x_arcsec, lock_y_arcsec) {
             return None;
         }
-        if !card.recovery_has_elapsed(quiet_before_start_s) {
+        if !(quiet_before_start_s >= 0.0) {
             return None;
         }
         let x = AxisState::unmeasured(&card.x);
@@ -730,6 +759,7 @@ impl LosState {
             lock_x_arcsec,
             lock_y_arcsec,
             quiet_before_start_s,
+            since_disturbance_s: quiet_before_start_s,
             x,
             y,
             predicted_x_mas: 0.0,
@@ -753,15 +783,16 @@ impl LosState {
             residual_conservation_error: 0.0,
             unmeasured_in_row: 0.0,
             no_measurement: false,
+            pointing_disturbed: false,
+            beyond_four_sigma: false,
+            recovering: !card.recovery_has_elapsed(quiet_before_start_s),
         })
     }
 }
 
 fn lock_is_inside(card: &LosJwstFineGuide, lock_x_arcsec: f64, lock_y_arcsec: f64) -> bool {
-    lock_x_arcsec >= card.lock_x_min_arcsec
-        && lock_x_arcsec <= card.lock_x_max_arcsec
-        && lock_y_arcsec >= card.lock_y_min_arcsec
-        && lock_y_arcsec <= card.lock_y_max_arcsec
+    let half = card.lock_field_half_width_arcsec;
+    lock_x_arcsec >= -half && lock_x_arcsec <= half && lock_y_arcsec >= -half && lock_y_arcsec <= half
 }
 
 fn trace(p: &[f64; 10]) -> f64 {
@@ -942,6 +973,9 @@ fn advance_axis(
 /// Advance one frame and write the frame.
 ///
 /// A rejected step leaves `state` and `frame` as they were.
+///
+/// A value of the landed state below the normal range is written as zero
+/// with its sign ([`crate::normal`]).
 #[must_use]
 pub fn step(
     card: &LosJwstFineGuide,
@@ -950,7 +984,64 @@ pub fn step(
     load: LosLoad,
     dt_s: f64,
 ) -> Result<(), StepReject> {
+    step_as_computed(card, state, frame, load, dt_s)?;
+    normal_or_zero_state(state);
+    Ok(())
+}
+
+/// The step as its equations compute it, before a value of the landed
+/// state below the normal range is written as zero.
+fn step_as_computed(
+    card: &LosJwstFineGuide,
+    state: &mut LosState,
+    frame: &mut LastStateFrame64,
+    load: LosLoad,
+    dt_s: f64,
+) -> Result<(), StepReject> {
     step_by(card, state, frame, load, dt_s, OWN_METHOD, 0.0)
+}
+
+/// Each value of a landed state below the normal range written as zero
+/// with its sign ([`crate::normal`]): the state carried to the next step
+/// and published holds no subnormal number.
+fn normal_or_zero_state(state: &mut LosState) {
+    state.t_s = normal_or_zero(state.t_s);
+    state.lock_x_arcsec = normal_or_zero(state.lock_x_arcsec);
+    state.lock_y_arcsec = normal_or_zero(state.lock_y_arcsec);
+    state.quiet_before_start_s = normal_or_zero(state.quiet_before_start_s);
+    state.since_disturbance_s = normal_or_zero(state.since_disturbance_s);
+    normal_or_zero_axis_state(&mut state.x);
+    normal_or_zero_axis_state(&mut state.y);
+    state.predicted_x_mas = normal_or_zero(state.predicted_x_mas);
+    state.predicted_y_mas = normal_or_zero(state.predicted_y_mas);
+    state.innovation_x_mas = normal_or_zero(state.innovation_x_mas);
+    state.innovation_y_mas = normal_or_zero(state.innovation_y_mas);
+    state.innovation_variance_x_mas2 = normal_or_zero(state.innovation_variance_x_mas2);
+    state.innovation_variance_y_mas2 = normal_or_zero(state.innovation_variance_y_mas2);
+    state.estimate_x_mas = normal_or_zero(state.estimate_x_mas);
+    state.estimate_y_mas = normal_or_zero(state.estimate_y_mas);
+    state.estimate_variance_x_mas2 = normal_or_zero(state.estimate_variance_x_mas2);
+    state.estimate_variance_y_mas2 = normal_or_zero(state.estimate_variance_y_mas2);
+    state.nis = normal_or_zero(state.nis);
+    state.measured_frames = normal_or_zero(state.measured_frames);
+    state.nis_sum_x = normal_or_zero(state.nis_sum_x);
+    state.nis_sum_y = normal_or_zero(state.nis_sum_y);
+    state.variance_x_mas2 = normal_or_zero(state.variance_x_mas2);
+    state.variance_y_mas2 = normal_or_zero(state.variance_y_mas2);
+    state.variance_defect_x_mas2 = normal_or_zero(state.variance_defect_x_mas2);
+    state.variance_defect_y_mas2 = normal_or_zero(state.variance_defect_y_mas2);
+    state.residual_conservation_error = normal_or_zero(state.residual_conservation_error);
+    state.unmeasured_in_row = normal_or_zero(state.unmeasured_in_row);
+}
+
+/// Each value of `values` below the normal range written as zero with its
+/// sign ([`crate::normal`]).
+fn normal_or_zero_axis_state(values: &mut AxisState) {
+    values.slow_mas = normal_or_zero(values.slow_mas);
+    values.fast_mas = normal_or_zero(values.fast_mas);
+    values.mode_cos_mas = normal_or_zero(values.mode_cos_mas);
+    values.mode_sin_mas = normal_or_zero(values.mode_sin_mas);
+    normal_or_zero_each(&mut values.cov_mas2);
 }
 
 /// The step with a chosen method and a number added to the x defect. The
@@ -979,7 +1070,9 @@ fn step_by(
         Some(Err(())) => return Err(StepReject::InvalidCovariance),
         None => return Err(StepReject::NonFiniteState),
     };
-    commit(card, state, frame, dt_s, measurement, x, y, defect_bias_mas2)
+    let count_rate_beyond_compared =
+        measurement.is_some() && card.count_rate_beyond_compared(load.counts_per_s);
+    commit(card, state, frame, dt_s, measurement, count_rate_beyond_compared, x, y, defect_bias_mas2)
 }
 
 /// The checks before a step. Gives the offset of the centroid from the lock
@@ -1008,10 +1101,10 @@ fn validate(
         return Err(StepReject::InvalidObservatory);
     }
     if !lock_is_inside(card, state.lock_x_arcsec, state.lock_y_arcsec) {
-        return Err(StepReject::LockOutsideCard);
+        return Err(StepReject::LockOutsideSensorField);
     }
-    if !card.recovery_has_elapsed(state.quiet_before_start_s) {
-        return Err(StepReject::RecoveryNotElapsed);
+    if !(state.quiet_before_start_s >= 0.0 && state.since_disturbance_s >= 0.0) {
+        return Err(StepReject::QuietBeforeStartBelowZero);
     }
     if !(state.x.variances_positive() && state.y.variances_positive()) {
         return Err(StepReject::InvalidCovariance);
@@ -1021,24 +1114,18 @@ fn validate(
         {
             return Err(StepReject::UnmeasuredFrameCarriesNumbers);
         }
-        if !(state.unmeasured_in_row + 1.0 <= card.measurement_gap_max_frames) {
-            return Err(StepReject::MeasurementGapOutsideCard);
-        }
         return Ok(None);
     }
     if load.measured != 1.0 {
         return Err(StepReject::MeasuredNotZeroOrOne);
     }
-    if !(load.counts_per_s >= card.counts_min_per_s && load.counts_per_s <= card.counts_max_per_s) {
-        return Err(StepReject::CountRateOutsideCard);
+    if !card.count_rate_has_noise(load.counts_per_s) {
+        return Err(StepReject::CountRateNotPositive);
     }
     let offset_x_mas = (load.centroid_x_arcsec - state.lock_x_arcsec) * MAS_PER_ARCSEC;
     let offset_y_mas = (load.centroid_y_arcsec - state.lock_y_arcsec) * MAS_PER_ARCSEC;
     if !(offset_x_mas.abs() <= card.offset_max_mas && offset_y_mas.abs() <= card.offset_max_mas) {
         return Err(StepReject::OffsetOutsideCard);
-    }
-    if offset_x_mas.abs() > card.quiet_offset_mas || offset_y_mas.abs() > card.quiet_offset_mas {
-        return Err(StepReject::PointingDisturbance);
     }
     Ok(Some((offset_x_mas, offset_y_mas)))
 }
@@ -1050,6 +1137,7 @@ fn commit(
     frame: &mut LastStateFrame64,
     dt_s: f64,
     measurement: Option<(f64, f64)>,
+    count_rate_beyond_compared: bool,
     x: AxisStep,
     y: AxisStep,
     defect_bias_mas2: f64,
@@ -1086,6 +1174,11 @@ fn commit(
         0.0
     };
     let mut innovation_beyond_limit = false;
+    let mut disturbed = false;
+    if let Some((offset_x_mas, offset_y_mas)) = measurement {
+        disturbed = offset_x_mas.abs() > card.quiet_offset_mas
+            || offset_y_mas.abs() > card.quiet_offset_mas;
+    }
     if measurement.is_some() {
         state.measured_frames += 1.0;
         state.nis_sum_x += x.nis;
@@ -1112,13 +1205,21 @@ fn commit(
         *state = saved;
         return Err(StepReject::InvalidCovariance);
     }
-    // After the ledger: a step is named for its centroid only when its
-    // arithmetic is the filter's.
-    if innovation_beyond_limit {
+    // The conditions of the frame, reported after the ledger closed.
+    state.pointing_disturbed = disturbed;
+    state.beyond_four_sigma = innovation_beyond_limit;
+    state.since_disturbance_s = if disturbed || innovation_beyond_limit {
+        0.0
+    } else {
+        saved.since_disturbance_s + dt_s
+    };
+    state.recovering =
+        !(disturbed || innovation_beyond_limit) && !card.recovery_has_elapsed(state.since_disturbance_s);
+    if !state.since_disturbance_s.is_finite() {
         *state = saved;
-        return Err(StepReject::InnovationBeyondFourSigma);
+        return Err(StepReject::NonFiniteState);
     }
-    publish(state, frame);
+    publish(state, frame, count_rate_beyond_compared);
     Ok(())
 }
 
@@ -1135,7 +1236,7 @@ fn defect_is_positive(defect_x_mas2: f64, defect_y_mas2: f64) -> bool {
     }
 }
 
-fn publish(state: &LosState, frame: &mut LastStateFrame64) {
+fn publish(state: &LosState, frame: &mut LastStateFrame64, count_rate_beyond_compared: bool) {
     frame.t = state.t_s;
     frame.pos[0] = state.predicted_x_mas as f32;
     frame.pos[1] = state.predicted_y_mas as f32;
@@ -1149,6 +1250,18 @@ fn publish(state: &LosState, frame: &mut LastStateFrame64) {
     if state.no_measurement {
         flags |= FLAG_NO_MEASUREMENT;
     }
+    if state.pointing_disturbed {
+        flags |= FLAG_POINTING_DISTURBED;
+    }
+    if state.beyond_four_sigma {
+        flags |= FLAG_BEYOND_FOUR_SIGMA;
+    }
+    if state.recovering {
+        flags |= FLAG_RECOVERING;
+    }
+    if count_rate_beyond_compared {
+        flags |= FLAG_COUNT_RATE_BEYOND_COMPARED;
+    }
     frame.flags = flags;
 }
 
@@ -1157,6 +1270,7 @@ fn state_is_finite(state: &LosState) -> bool {
         && state.lock_x_arcsec.is_finite()
         && state.lock_y_arcsec.is_finite()
         && state.quiet_before_start_s.is_finite()
+        && state.since_disturbance_s.is_finite()
         && state.x.is_finite()
         && state.y.is_finite()
         && state.predicted_x_mas.is_finite()
@@ -1190,12 +1304,14 @@ mod tests {
     use core::prelude::v1::*;
     use std::assert;
     use std::assert_eq;
+    use std::assert_ne;
     use std::println;
     use std::vec::Vec;
 
     use super::{
         AxisConstants, COUNTS_MAX_PER_S, COUNTS_MIN_PER_S, COUNTS_REFERENCE_PER_S,
-        FLAG_NO_MEASUREMENT, FLOOR_DT_S, FRAME_S, GATE_DT_S, INNOVATION_LIMIT_SIGMA,
+        FLAG_BEYOND_FOUR_SIGMA, FLAG_COUNT_RATE_BEYOND_COMPARED, FLAG_NO_MEASUREMENT, FLAG_POINTING_DISTURBED, FLAG_RECOVERING,
+        FLOOR_DT_S, FRAME_S, GATE_DT_S, INNOVATION_LIMIT_SIGMA, LOCK_FIELD_HALF_WIDTH_ARCSEC,
         LOCK_X_MAX_ARCSEC, LOCK_X_MIN_ARCSEC, LOCK_Y_MAX_ARCSEC, LOCK_Y_MIN_ARCSEC, LosJwstFineGuide,
         LosLoad, LosState, MEASUREMENT_GAP_MAX_FRAMES, Method, OFFSET_MAX_MAS, OWN_METHOD,
         QUIET_OFFSET_MAS, RECOVERY_ALLOWANCE_S, RECOVERY_S, RESIDUAL_CONSERVATION_LIMIT,
@@ -1431,16 +1547,10 @@ mod tests {
         let mut moved = card;
         moved.recovery_allowance_s = 1.0;
         refused(&moved, &state, load, FRAME_S, StepReject::InvalidObservatory);
-        // Nor is one whose lock span or longest gap is moved.
+        // Nor is one whose sensor field is moved.
         let mut moved = card;
-        moved.lock_x_max_arcsec = 70.0;
+        moved.lock_field_half_width_arcsec = 80.0;
         refused(&moved, &state, load, FRAME_S, StepReject::InvalidObservatory);
-        let mut moved = card;
-        moved.lock_y_min_arcsec = -70.0;
-        refused(&moved, &state, load, FRAME_S, StepReject::InvalidObservatory);
-        let mut moved = card;
-        moved.measurement_gap_max_frames = 460.0;
-        refused(&moved, &state, NO_MEASUREMENT, FRAME_S, StepReject::InvalidObservatory);
     }
 
     #[test]
@@ -1542,6 +1652,86 @@ mod tests {
             assert_eq!(frame.to_bytes(), before);
         }
         result.map(|()| trial)
+    }
+
+    /// Past the old wall at 22,900 and 2,820,000 counts per second the card
+    /// answers: a measured frame at any count rate above zero lands with
+    /// [`FLAG_COUNT_RATE_BEYOND_COMPARED`], and the ledger closes there frame
+    /// after frame. The boundary of the noise law is found where the y axis's
+    /// variance passes the largest 64-bit number, and a wrong gain is named
+    /// at every count rate.
+    #[test]
+    fn past_the_fitted_count_rates_the_frame_lands_flagged_and_the_ledger_closes() {
+        let (card, settled, _) = after_frames(100);
+        // Each count rate, 1,100 frames on from the settled filter: the reference
+        // file's centroids, at the chosen count rate.
+        for counts_per_s in [1.0e-200, 1.0e-6, 1.0, 100.0, 22_899.999, 2_820_000.5, 1.0e8, 1.0e12, 1.0e300, f64::MAX] {
+            let mut state = settled;
+            let mut frame = blank_frame();
+            let mut largest = 0.0_f64;
+            let mut index = 100;
+            while index < 1_200 {
+                let mut load = load_of(FRAMES[index]);
+                if load.measured == 1.0 {
+                    load.counts_per_s = counts_per_s;
+                }
+                step(&card, &mut state, &mut frame, load, FRAME_S)
+                    .unwrap_or_else(|reject| ::core::panic!("{counts_per_s}: frame {index}: {reject:?}"));
+                if load.measured == 1.0 {
+                    assert_ne!(frame.flags & FLAG_COUNT_RATE_BEYOND_COMPARED, 0, "{counts_per_s}: frame {index}");
+                } else {
+                    assert_eq!(frame.flags & FLAG_COUNT_RATE_BEYOND_COMPARED, 0, "{counts_per_s}: frame {index}");
+                }
+                if state.residual_conservation_error > largest {
+                    largest = state.residual_conservation_error;
+                }
+                index += 1;
+            }
+            assert!(largest <= RESIDUAL_CONSERVATION_LIMIT, "{counts_per_s}: {largest}");
+            // At the faint end the centroid is all but ignored; at the bright end
+            // the estimate follows the centroid.
+            let load = load_of(FRAMES[1_200]);
+            assert_eq!(load.measured, 1.0);
+            let load = LosLoad { counts_per_s, ..load };
+            for gain_scale in [1.05, 0.95] {
+                let method = Method { gain_scale, ..OWN_METHOD };
+                if counts_per_s >= 1.0 {
+                    assert_eq!(
+                        step_method(&card, &state, load, method),
+                        Err(StepReject::SpontaneousGeneration),
+                        "{counts_per_s}: gain x {gain_scale}"
+                    );
+                }
+            }
+            let short = Method { gain_scale: 1.05, short_form: true, ..OWN_METHOD };
+            if counts_per_s >= 1.0 {
+                assert_eq!(step_method(&card, &state, load, short), Err(StepReject::FirstLawBreach), "{counts_per_s}");
+            }
+        }
+        // The edge of the noise law: the last count rate at which the y axis's
+        // variance is a finite number lands, the next one down is refused.
+        // Bisection on the bits of positive numbers, which are in the order of the numbers.
+        let (mut low, mut high) = (1.0e-300_f64.to_bits(), 1.0e-200_f64.to_bits());
+        assert!(!card.y.noise_variance_mas2(f64::from_bits(low)).is_finite());
+        assert!(card.y.noise_variance_mas2(f64::from_bits(high)).is_finite());
+        while high - low > 1 {
+            let middle = low + (high - low) / 2;
+            if card.y.noise_variance_mas2(f64::from_bits(middle)).is_finite() {
+                high = middle;
+            } else {
+                low = middle;
+            }
+        }
+        let finite = f64::from_bits(high);
+        assert!(finite > 1.0e-237 && finite < 1.0e-236, "{finite:e}");
+        assert!(card.x.noise_variance_mas2(finite).is_finite());
+        let below = f64::from_bits(finite.to_bits() - 1);
+        let good = load_of(FRAMES[100]);
+        refused(&card, &settled, LosLoad { counts_per_s: below, ..good }, FRAME_S, StepReject::CountRateNotPositive);
+        let mut trial = settled;
+        let mut frame = blank_frame();
+        step(&card, &mut trial, &mut frame, LosLoad { counts_per_s: finite, ..good }, FRAME_S).unwrap();
+        assert_ne!(frame.flags & FLAG_COUNT_RATE_BEYOND_COMPARED, 0);
     }
 
     #[test]
@@ -1661,24 +1851,14 @@ mod tests {
         refused(&card, &state, good, 0.0, StepReject::NonPositiveDt);
         refused(&card, &state, good, -FRAME_S, StepReject::NonPositiveDt);
 
-        for (x, y) in [
-            (f64::from_bits(LOCK_X_MAX_ARCSEC.to_bits() + 1), 0.0),
-            (f64::from_bits(LOCK_X_MIN_ARCSEC.to_bits() + 1), 0.0),
-            (0.0, f64::from_bits(LOCK_Y_MAX_ARCSEC.to_bits() + 1)),
-            (0.0, f64::from_bits(LOCK_Y_MIN_ARCSEC.to_bits() + 1)),
-            (70.0, 70.0),
-            (0.0, -71.0),
-        ] {
+        let past = f64::from_bits(LOCK_FIELD_HALF_WIDTH_ARCSEC.to_bits() + 1);
+        for (x, y) in [(past, 0.0), (-past, 0.0), (0.0, past), (0.0, -71.0), (100.0, 100.0)] {
             let mut moved = state;
             moved.lock_x_arcsec = x;
             moved.lock_y_arcsec = y;
-            refused(&card, &moved, good, FRAME_S, StepReject::LockOutsideCard);
-            refused(&card, &moved, NO_MEASUREMENT, FRAME_S, StepReject::LockOutsideCard);
+            refused(&card, &moved, good, FRAME_S, StepReject::LockOutsideSensorField);
+            refused(&card, &moved, NO_MEASUREMENT, FRAME_S, StepReject::LockOutsideSensorField);
         }
-
-        let mut gap = state;
-        gap.unmeasured_in_row = MEASUREMENT_GAP_MAX_FRAMES;
-        refused(&card, &gap, NO_MEASUREMENT, FRAME_S, StepReject::MeasurementGapOutsideCard);
 
         for entry in [0, 4, 7, 9] {
             let mut broken = state;
@@ -1710,15 +1890,18 @@ mod tests {
             StepReject::UnmeasuredFrameCarriesNumbers,
         );
 
-        for counts_per_s in [22_899.999, 0.0, -5.0e5, 2_820_000.5, 1.0e9] {
+        // No light, or so little that the noise law passes the largest 64-bit number.
+        for counts_per_s in [0.0, -0.0, -5.0e5, -1.0e-300, 5.0e-324, 1.0e-300, 1.0e-240, 7.0e-237] {
             let load = LosLoad { counts_per_s, ..good };
-            refused(&card, &state, load, FRAME_S, StepReject::CountRateOutsideCard);
+            refused(&card, &state, load, FRAME_S, StepReject::CountRateNotPositive);
         }
+        // Inside the fitted count rates, both ends included, the frame carries no flag of its own.
         for counts_per_s in [COUNTS_MIN_PER_S, COUNTS_MAX_PER_S] {
             let mut trial = state;
             let mut frame = blank_frame();
             let load = LosLoad { counts_per_s, ..good };
             assert!(step(&card, &mut trial, &mut frame, load, FRAME_S).is_ok());
+            assert_eq!(frame.flags & FLAG_COUNT_RATE_BEYOND_COMPARED, 0);
         }
 
         // The offset limit, from a lock point at the centre so that the numbers are exact.
@@ -1733,32 +1916,50 @@ mod tests {
         refused(&card, &centre, at(0.0, -0.2501), FRAME_S, StepReject::OffsetOutsideCard);
         refused(&card, &centre, at(-3.0, 0.1), FRAME_S, StepReject::OffsetOutsideCard);
         // 250 mas exactly is on the card and is a disturbance; so is everything
-        // from just over 5 mas, on either axis.
-        refused(&card, &centre, at(0.25, -0.25), FRAME_S, StepReject::PointingDisturbance);
-        refused(&card, &centre, at(0.005_001, 0.0), FRAME_S, StepReject::PointingDisturbance);
-        refused(&card, &centre, at(0.0, -0.005_001), FRAME_S, StepReject::PointingDisturbance);
-        refused(&card, &centre, at(-0.02, 0.03), FRAME_S, StepReject::PointingDisturbance);
+        // from just over 5 mas, on either axis. Each lands with its flag and
+        // the ledger closed.
+        for load in [at(0.25, -0.25), at(0.005_001, 0.0), at(0.0, -0.005_001), at(-0.02, 0.03)] {
+            let mut trial = centre;
+            let mut frame = blank_frame();
+            step(&card, &mut trial, &mut frame, load, FRAME_S).unwrap();
+            assert!(frame.flags & FLAG_POINTING_DISTURBED != 0);
+            assert!(trial.residual_conservation_error <= RESIDUAL_CONSERVATION_LIMIT);
+            assert_eq!(trial.since_disturbance_s, 0.0);
+        }
 
-        // A start the caller states is too soon after a disturbance.
+        // A start the caller states is soon after a disturbance: it lands and
+        // its frames say they are recovering. Below zero is refused by name.
         let mut soon = state;
-        soon.quiet_before_start_s = 29.9;
-        refused(&card, &soon, good, FRAME_S, StepReject::RecoveryNotElapsed);
-        soon.quiet_before_start_s = 0.0;
-        refused(&card, &soon, good, FRAME_S, StepReject::RecoveryNotElapsed);
+        for quiet in [29.9, 0.0] {
+            soon.quiet_before_start_s = quiet;
+            soon.since_disturbance_s = quiet;
+            let mut trial = soon;
+            let mut frame = blank_frame();
+            step(&card, &mut trial, &mut frame, good, FRAME_S).unwrap();
+            assert!(frame.flags & FLAG_RECOVERING != 0, "{quiet}");
+        }
         soon.quiet_before_start_s = -30.0;
-        refused(&card, &soon, NO_MEASUREMENT, FRAME_S, StepReject::RecoveryNotElapsed);
+        soon.since_disturbance_s = -30.0;
+        refused(&card, &soon, NO_MEASUREMENT, FRAME_S, StepReject::QuietBeforeStartBelowZero);
         soon.quiet_before_start_s = f64::NAN;
         refused(&card, &soon, good, FRAME_S, StepReject::NonFiniteState);
 
-        // A centroid more than four stated standard deviations from where it was expected.
-        let jump = frame_at(&state, state.estimate_x_mas + 3.0, state.estimate_y_mas);
-        refused(&card, &state, jump, FRAME_S, StepReject::InnovationBeyondFourSigma);
-        let jump = frame_at(&state, state.estimate_x_mas, state.estimate_y_mas - 3.0);
-        refused(&card, &state, jump, FRAME_S, StepReject::InnovationBeyondFourSigma);
+        // A centroid more than four stated standard deviations from where it
+        // was expected lands with its flag.
+        for jump in [
+            frame_at(&state, state.estimate_x_mas + 3.0, state.estimate_y_mas),
+            frame_at(&state, state.estimate_x_mas, state.estimate_y_mas - 3.0),
+        ] {
+            let mut trial = state;
+            let mut frame = blank_frame();
+            step(&card, &mut trial, &mut frame, jump, FRAME_S).unwrap();
+            assert!(frame.flags & FLAG_BEYOND_FOUR_SIGMA != 0);
+            assert_eq!(frame.flags & FLAG_RECOVERING, 0);
+        }
     }
 
     #[test]
-    fn a_lock_point_outside_the_compared_span_is_not_a_start() {
+    fn a_lock_point_past_the_compared_span_is_a_start_and_past_the_sensor_field_is_not() {
         let card = LosJwstFineGuide::observatory();
         // The four corners of the compared span are starts, and a step from each lands.
         for (x, y) in [
@@ -1772,15 +1973,31 @@ mod tests {
             let load = frame_at(&start, 0.3, -0.2);
             step(&card, &mut start, &mut frame, load, FRAME_S).unwrap();
         }
-        // The next 64-bit number outside each end is not, nor the sensor's corners.
+        // Where the card stood at the compared span, the next 64-bit number
+        // outside each end and the sensor's corners are starts, and a hundred
+        // frames from each land with the ledger closed.
         let out = |v: f64| f64::from_bits(v.to_bits() + 1);
-        assert!(LosState::try_lock(&card, out(LOCK_X_MAX_ARCSEC), 0.0, RECOVERY_S).is_none());
-        assert!(LosState::try_lock(&card, out(LOCK_X_MIN_ARCSEC), 0.0, RECOVERY_S).is_none());
-        assert!(LosState::try_lock(&card, 0.0, out(LOCK_Y_MAX_ARCSEC), RECOVERY_S).is_none());
-        assert!(LosState::try_lock(&card, 0.0, out(LOCK_Y_MIN_ARCSEC), RECOVERY_S).is_none());
-        assert!(LosState::try_lock(&card, 70.0, 70.0, RECOVERY_S).is_none());
-        assert!(LosState::try_lock(&card, 70.0, -70.0, RECOVERY_S).is_none());
+        for (x, y) in [
+            (out(LOCK_X_MAX_ARCSEC), 0.0),
+            (out(LOCK_X_MIN_ARCSEC), 0.0),
+            (0.0, out(LOCK_Y_MAX_ARCSEC)),
+            (0.0, out(LOCK_Y_MIN_ARCSEC)),
+            (70.0, 70.0),
+            (70.0, -70.0),
+            (-70.0, -70.0),
+        ] {
+            let mut start = LosState::try_lock(&card, x, y, RECOVERY_S).unwrap();
+            let mut frame = blank_frame();
+            for _ in 0..100 {
+                let load = frame_at(&start, start.predicted_x_mas + 0.3, start.predicted_y_mas - 0.2);
+                step(&card, &mut start, &mut frame, load, FRAME_S).unwrap();
+                assert!(start.residual_conservation_error <= RESIDUAL_CONSERVATION_LIMIT);
+            }
+        }
+        // Past the sensor's field, no start.
         assert!(LosState::try_lock(&card, 0.0, -70.000_001, RECOVERY_S).is_none());
+        assert!(LosState::try_lock(&card, 70.000_001, 0.0, RECOVERY_S).is_none());
+        assert!(LosState::try_lock(&card, 120.0, 0.0, RECOVERY_S).is_none());
         assert!(LosState::try_lock(&card, f64::NAN, 0.0, RECOVERY_S).is_none());
         assert!(LosState::try_lock(&card, 0.0, f64::INFINITY, RECOVERY_S).is_none());
         let mut moved = card;
@@ -1868,7 +2085,7 @@ mod tests {
     }
 
     #[test]
-    fn a_start_is_held_to_thirty_seconds_after_the_last_disturbance_the_caller_states() {
+    fn a_start_soon_after_the_last_disturbance_the_caller_states_is_flagged_recovering() {
         let card = LosJwstFineGuide::observatory();
         // 30 s exactly, 469 frames of 0.064 s, and any longer time: a start.
         for quiet in [30.0, 469.0 * 0.064, 30.016, 60.0, 3600.0, 1.0e9] {
@@ -1879,8 +2096,16 @@ mod tests {
             assert!(step(&card, &mut trial, &mut frame, NO_MEASUREMENT, FRAME_S).is_ok());
             assert_eq!(trial.quiet_before_start_s.to_bits(), f64::to_bits(quiet));
         }
-        // 468 frames are 29.952 s: no start. Nor zero, nor a time that is not finite.
-        for quiet in [468.0 * 0.064, 29.9, 29.999_999, 1.0, 0.0, -30.0, f64::NAN, f64::INFINITY] {
+        // 468 frames are 29.952 s, and zero: a start whose first frames are
+        // recovering. Below zero, or not finite: no start.
+        for quiet in [468.0 * 0.064, 29.9, 29.999_999, 1.0, 0.0] {
+            let start = LosState::try_lock(&card, 0.0, 0.0, quiet).unwrap();
+            let mut trial = start;
+            let mut frame = blank_frame();
+            step(&card, &mut trial, &mut frame, NO_MEASUREMENT, FRAME_S).unwrap();
+            assert_eq!(frame.flags & FLAG_RECOVERING != 0, quiet + FRAME_S < 30.0, "{quiet}");
+        }
+        for quiet in [-30.0, -1.0e-300, f64::NAN, f64::INFINITY] {
             assert!(LosState::try_lock(&card, 0.0, 0.0, quiet).is_none(), "{quiet}");
         }
         // Thirty seconds as the difference of two times of a table, each across a
@@ -1911,21 +2136,23 @@ mod tests {
             assert!(LosState::try_lock(&card, 0.0, 0.0, quiet).is_some(), "{quiet}");
         }
         assert!(under >= 3, "{under} of the twelve read under 30 s");
-        // The allowance itself is taken; the allowance and a little more is refused by name.
+        // The allowance itself is past the 30 s; the allowance and a little
+        // more is still recovering.
         let at_the_allowance = RECOVERY_S - RECOVERY_ALLOWANCE_S;
-        assert!(LosState::try_lock(&card, 0.0, 0.0, at_the_allowance).is_some());
+        assert!(card.recovery_has_elapsed(at_the_allowance));
+        assert!(!LosState::try_lock(&card, 0.0, 0.0, at_the_allowance).unwrap().recovering);
         let beyond = RECOVERY_S - 1.5 * RECOVERY_ALLOWANCE_S;
-        assert!(LosState::try_lock(&card, 0.0, 0.0, beyond).is_none());
-        let mut state = LosState::try_lock(&card, 0.0, 0.0, RECOVERY_S).unwrap();
-        state.quiet_before_start_s = beyond;
-        refused(&card, &state, NO_MEASUREMENT, FRAME_S, StepReject::RecoveryNotElapsed);
-        state.quiet_before_start_s = at_the_allowance;
-        let mut frame = blank_frame();
-        assert!(step(&card, &mut state, &mut frame, NO_MEASUREMENT, FRAME_S).is_ok());
+        assert!(!card.recovery_has_elapsed(beyond));
+        assert!(LosState::try_lock(&card, 0.0, 0.0, beyond).unwrap().recovering);
     }
 
+    /// Where engines 0.7 to 0.9 ended a run at its last quiet frame, the card
+    /// answers a disturbance: the frame lands with its flag and the ledger
+    /// closed, the clock since the disturbance starts again, and the frames of
+    /// the next 30 s carry FLAG_RECOVERING. The reference run goes on through
+    /// its first frame beyond four sigma and its first above 5 mas.
     #[test]
-    fn a_disturbance_ends_the_run_at_its_last_quiet_frame_and_no_flag_but_one_is_set() {
+    fn a_disturbance_is_answered_with_its_flags_and_the_ledger_closed() {
         let (card, state, _) = after_frames(100);
 
         // A centroid where it is expected sets nothing.
@@ -1951,109 +2178,99 @@ mod tests {
             step(&card, &mut trial, &mut frame, at(x, y), FRAME_S).unwrap();
             assert_eq!(frame.flags, 0);
         }
-        // On y a filter that knows nothing states 0.63 mas squared less the noise of a
-        // bright star, so 5 mas there is beyond four standard deviations.
-        refused(&card, &centre, LosLoad { counts_per_s: 2.0e6, ..at(0.0, 0.005) }, FRAME_S, StepReject::InnovationBeyondFourSigma);
         let over = f64::from_bits(0.005_f64.to_bits() + 1);
         assert!(over * 1000.0 > QUIET_OFFSET_MAS);
         for (x, y) in [(over, 0.0), (-over, 0.0), (0.0, over), (0.0, -over), (0.005_001, 0.0)] {
-            refused(&card, &centre, at(x, y), FRAME_S, StepReject::PointingDisturbance);
+            let mut trial = centre;
+            step(&card, &mut trial, &mut frame, at(x, y), FRAME_S).unwrap();
+            assert!(frame.flags & FLAG_POINTING_DISTURBED != 0, "{x} {y}");
+            assert!(trial.pointing_disturbed);
         }
 
-        // A settled filter and a centroid 3 mas from where it is expected: more than four
-        // standard deviations, under 5 mas from the lock point. Refused, and nothing moved.
-        let jump = frame_at(&state, state.estimate_x_mas + 3.0, state.estimate_y_mas);
-        assert!((state.estimate_x_mas + 3.0).abs() < QUIET_OFFSET_MAS);
-        refused(&card, &state, jump, FRAME_S, StepReject::InnovationBeyondFourSigma);
-        // Just inside four standard deviations lands; just outside does not. The
-        // stated variance of the next frame does not depend on its centroid.
+        // Just inside four standard deviations lands with no flag; just
+        // outside lands with FLAG_BEYOND_FOUR_SIGMA. The stated variance of the
+        // next frame does not depend on its centroid.
         let mut probe = state;
         step(&card, &mut probe, &mut frame, here, FRAME_S).unwrap();
         let sigma = probe.innovation_variance_x_mas2.sqrt();
         let inside = frame_at(&state, probe.predicted_x_mas + 3.999 * sigma, probe.predicted_y_mas);
         let mut trial = state;
         step(&card, &mut trial, &mut frame, inside, FRAME_S).unwrap();
-        assert!(trial.innovation_x_mas * trial.innovation_x_mas < 16.0 * trial.innovation_variance_x_mas2);
-        assert!(trial.estimate_x_mas > state.estimate_x_mas);
+        assert_eq!(frame.flags, 0);
         let outside = frame_at(&state, probe.predicted_x_mas + 4.001 * sigma, probe.predicted_y_mas);
-        refused(&card, &state, outside, FRAME_S, StepReject::InnovationBeyondFourSigma);
+        let mut trial = state;
+        step(&card, &mut trial, &mut frame, outside, FRAME_S).unwrap();
+        assert_eq!(frame.flags, FLAG_BEYOND_FOUR_SIGMA);
+        // The 30 s after it: 468 frames of 0.064 s are recovering, the 469th not.
+        let mut count = 0;
+        loop {
+            let load = frame_at(&trial, trial.predicted_x_mas, trial.predicted_y_mas);
+            step(&card, &mut trial, &mut frame, load, FRAME_S).unwrap();
+            count += 1;
+            if frame.flags & FLAG_RECOVERING == 0 {
+                break;
+            }
+            assert!(count < 1000);
+        }
+        assert_eq!(count, 469);
 
-        // The reference run: every frame before the first refused one lands with no
-        // flag set, the table having a good centroid for each; the refused frame
-        // leaves the state and the frame of the last landed step as they were.
+        // The reference run: the frames where 0.10 ended it land with their
+        // flags, and the ledger closes on every frame.
         let (card, mut run) = reference_start();
         let mut frame = blank_frame();
-        for row in FRAMES.iter().take(FIRST_REFUSED_FRAME) {
+        for (index, row) in FRAMES.iter().enumerate().take(FIRST_FRAME_ABOVE_5_MAS + 1) {
             step(&card, &mut run, &mut frame, load_of(*row), FRAME_S).unwrap();
-            assert_eq!(frame.flags & !FLAG_NO_MEASUREMENT, 0);
-            assert_eq!(frame.flags & FLAG_NO_MEASUREMENT != 0, run.no_measurement);
+            assert!(run.residual_conservation_error <= RESIDUAL_CONSERVATION_LIMIT);
+            if index < FIRST_REFUSED_FRAME {
+                assert_eq!(frame.flags & !FLAG_NO_MEASUREMENT, 0);
+            }
+            if index == FIRST_REFUSED_FRAME {
+                assert!(frame.flags & FLAG_BEYOND_FOUR_SIGMA != 0);
+            }
+            if index > FIRST_REFUSED_FRAME && index < FIRST_FRAME_ABOVE_5_MAS && !run.beyond_four_sigma {
+                assert!(frame.flags & FLAG_RECOVERING != 0, "{index}");
+            }
         }
-        let last_landed = run;
-        let last_frame = frame.to_bytes();
-        assert_eq!(
-            step(&card, &mut run, &mut frame, load_of(FRAMES[FIRST_REFUSED_FRAME]), FRAME_S),
-            Err(StepReject::InnovationBeyondFourSigma)
-        );
-        assert_eq!(state_bits(&run), state_bits(&last_landed));
-        assert_eq!(frame.to_bytes(), last_frame);
+        assert!(frame.flags & FLAG_POINTING_DISTURBED != 0);
         proof_intact(&frame);
-        assert_eq!(run.measured_frames, FIRST_REFUSED_FRAME as f64);
-        // 38 frames later the star is more than 5 mas from the lock point: from
-        // the same state that frame is refused as a disturbance.
-        assert!(FIRST_FRAME_ABOVE_5_MAS > FIRST_REFUSED_FRAME);
-        assert_eq!(
-            step(&card, &mut run, &mut frame, load_of(FRAMES[FIRST_FRAME_ABOVE_5_MAS]), FRAME_S),
-            Err(StepReject::PointingDisturbance)
-        );
-        assert_eq!(state_bits(&run), state_bits(&last_landed));
-        assert_eq!(frame.to_bytes(), last_frame);
-        // A frame with no measurement is no centroid and no disturbance: it lands.
+        // A frame with no measurement is no centroid and no disturbance.
         step(&card, &mut run, &mut frame, NO_MEASUREMENT, FRAME_S).unwrap();
-        assert_eq!(frame.flags, FLAG_NO_MEASUREMENT);
-        // A new run knows nothing of the old one.
-        let (_, fresh) = reference_start();
-        assert_eq!(fresh.measured_frames, 0.0);
-        assert_eq!(fresh.estimate_x_mas, 0.0);
+        assert_eq!(frame.flags, FLAG_NO_MEASUREMENT | FLAG_RECOVERING);
     }
 
+    /// Where the card stood at ten frames in a row with no measurement, any
+    /// run of them is predicted: the stated variance grows toward its
+    /// unmeasured value and no further, the ledger closes on every frame, and
+    /// a measured frame afterwards sets the count to zero.
     #[test]
-    fn a_run_takes_ten_frames_in_a_row_with_no_measurement_and_refuses_the_eleventh() {
+    fn a_run_of_any_number_of_frames_with_no_measurement_is_predicted() {
         let (card, settled, _) = after_frames(100);
         for start in [settled, LosState::try_lock(&card, 0.0, 0.0, RECOVERY_S).unwrap()] {
             let mut state = start;
             let mut frame = blank_frame();
-            for count in 1..=10 {
+            let mut last = state.variance_x_mas2 + state.variance_y_mas2;
+            for count in 1..=2000 {
                 step(&card, &mut state, &mut frame, NO_MEASUREMENT, FRAME_S).unwrap();
                 assert_eq!(state.unmeasured_in_row, f64::from(count));
                 assert_eq!(frame.flags, FLAG_NO_MEASUREMENT);
+                assert!(state.residual_conservation_error <= RESIDUAL_CONSERVATION_LIMIT);
+                let total = state.variance_x_mas2 + state.variance_y_mas2;
+                assert!(total <= card.ledger_scale_mas2() * (1.0 + 1.0e-12), "{count}");
+                assert!(total >= last * (1.0 - 1.0e-12), "{count}");
+                last = total;
             }
-            // The eleventh is refused by name, and the state and the frame stay at the tenth.
-            refused(&card, &state, NO_MEASUREMENT, FRAME_S, StepReject::MeasurementGapOutsideCard);
-            let mut trial = state;
-            let before = frame.to_bytes();
-            assert_eq!(
-                step(&card, &mut trial, &mut frame, NO_MEASUREMENT, FRAME_S),
-                Err(StepReject::MeasurementGapOutsideCard)
-            );
-            assert_eq!(frame.to_bytes(), before);
-            proof_intact(&frame);
-            // A measured frame after the ten lands and sets the count to zero; ten more
-            // frames with none land again.
+            assert!(last > 0.95 * card.ledger_scale_mas2(), "{last}");
             let here = frame_at(&state, state.predicted_x_mas, state.predicted_y_mas);
             step(&card, &mut state, &mut frame, here, FRAME_S).unwrap();
             assert_eq!(state.unmeasured_in_row, 0.0);
             assert!(!state.no_measurement);
-            for _ in 0..10 {
-                step(&card, &mut state, &mut frame, NO_MEASUREMENT, FRAME_S).unwrap();
-            }
-            assert_eq!(state.unmeasured_in_row, 10.0);
-            refused(&card, &state, NO_MEASUREMENT, FRAME_S, StepReject::MeasurementGapOutsideCard);
         }
         // A count that is not finite is a state the card did not write.
         let mut broken = settled;
         broken.unmeasured_in_row = f64::NAN;
         refused(&card, &broken, NO_MEASUREMENT, FRAME_S, StepReject::NonFiniteState);
-        // The reference run, a fitted file's first frames, has no gap longer than the card takes.
+        // The reference run, a fitted file's first frames, has no gap longer
+        // than the comparison crossed.
         let (card, mut run) = reference_start();
         let mut frame = blank_frame();
         let mut longest = 0.0_f64;
@@ -2099,9 +2316,9 @@ mod tests {
         proof_intact(&frame);
         // A refused step does not touch it either.
         let (card, state, mut frame) = after_frames(3);
-        let bad = LosLoad { counts_per_s: 1.0, ..load_of(FRAMES[0]) };
+        let bad = LosLoad { counts_per_s: 0.0, ..load_of(FRAMES[0]) };
         let mut trial = state;
-        assert_eq!(step(&card, &mut trial, &mut frame, bad, FRAME_S), Err(StepReject::CountRateOutsideCard));
+        assert_eq!(step(&card, &mut trial, &mut frame, bad, FRAME_S), Err(StepReject::CountRateNotPositive));
         proof_intact(&frame);
     }
 

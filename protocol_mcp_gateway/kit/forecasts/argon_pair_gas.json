@@ -1,0 +1,16 @@
+{
+ "model": "argon_pair_gas",
+ "verdict": "met",
+ "protocol": {
+  "path": "evidence/research/molecular_argon/analysis/prereg.json",
+  "sha256": "3e99842a7abc1c82c39f75e7e962ef901e0f6914d84d2f8644e567e2ae4ce004",
+  "committed": null
+ },
+ "scored": {
+  "utc": "2026-10-09T22:02:57Z",
+  "evidence": "Birth time of evidence/research/molecular_argon/analysis/out/03_sealed_run.log and out/03_sealed/ (15:02:57 PDT), the one sealed run on the held-back speeds of sound and the viscosities; the scoring script was frozen at 22:02:52Z (analysis/03_engine_comparison_frozen_sha256.txt, 'before the sealed run')."
+ },
+ "forecast_first": "not shown",
+ "registered_by": "backfill from the record, 2026-10-15",
+ "notes": "No commit in any crate carries 3e99842a (prereg.json) or ae53d715 (validation_protocol.md); the 64-hex 90dfab95... in the served record is the scoring binary's hash, not the protocol's. Not a committed fingerprint, but dated in Git before the scoring: protocol_mcp_gateway commit e512c21190e783c708de8bc64e20032e5c4e205f (2026-10-09T22:01:53Z, 64 s before the sealed run, and the gateway commit the scoring binary was built from) adds the pass line's full text with no hash and the result 'Not yet compared with the held-back measurements'. Outside Git: analysis/prereg_hash.txt at 2026-10-09T21:08:31Z, 'before any model was run on any measured value'. The served pass line says rows of both data sets were seen before the split, and that the viscosity lines were drawn knowing that textbook constants give about 2 percent. Rescorings: 03_sealed_integrated, 03_sealed_v060; second party evidence/verification/second_party/V-34/. Posted to the public pass-marks repository with this SHA-256 in GitHub-signed commit 37695c287760ecceacd8e942b39e438737d746e2 at 2026-10-13T17:54:43Z, after the scoring."
+}

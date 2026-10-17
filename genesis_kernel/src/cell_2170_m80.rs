@@ -20,19 +20,49 @@
 //! resistances and the time constant are read from all six blocks at the
 //! measured case temperature. The tables are in `cell_2170_m80_tables.rs`.
 //!
-//! The range is the range compared with measurement, in the 60 held-back
-//! tests of the cell's protocol. The -10 and -20 degC blocks met no mark in
-//! their 20 tests and are refused as [`StepReject::BlockShownWrong`]; their
-//! tables still serve the reading of the resistances at a case temperature
-//! below that of the 0 degC block. Each served block takes the case
-//! temperatures at which its own tests were run, [`BLOCK_CASE_MIN_C`] to
-//! [`BLOCK_CASE_MAX_C`], and refuses others as
-//! [`StepReject::CaseTemperatureOutsideBlock`]. The card's current is held to
-//! the largest of those tests, [`CURRENT_DISCHARGE_MAX_A`] discharging and
-//! [`CURRENT_CHARGE_MAX_A`] charging, and each served block's current to the
-//! largest of its own tests, [`BLOCK_CURRENT_DISCHARGE_MAX_A`] and
-//! [`BLOCK_CURRENT_CHARGE_MAX_A`]; other currents are refused as
-//! [`StepReject::CurrentOutsideBlock`].
+//! In the 25, 10, 0, -10 and -20 degC blocks the capacity is the charge of a
+//! capacity test that began after a top-up, 33, 22, 48, 52 and 39 mAh above the
+//! laboratory's full (0.73, 0.52, 1.11, 1.23 and 0.92 percent of the block's
+//! capacity); in the 40 degC block that test began at full. In those five
+//! blocks `charge_level` is therefore not the state of charge counted from the
+//! laboratory's full: it is 1 at full and reads up to that share high toward
+//! empty. The tables were fitted with these capacities, and the comparison is
+//! of the card as fitted.
+//!
+//! The comparison. The card was compared with measurement in the 60
+//! held-back tests of the cell's protocol (12 held discharges, 48 drive
+//! cycles), on 2026-10-08, and failed: 27 of 60 met their marks. C/3 met at
+//! 40, 25, 10 and 0 degC (5.0, 6.4, 15.0 and 29.2 mV rms against 42); 1C
+//! missed at every temperature (48.2, 44.1, 51.2 and 88.2 mV from 40 to 0
+//! degC); drive cycles from 0 to 40 degC passed 23 of 32. The -10 and -20
+//! degC blocks met no mark in their 20 tests: at -10 degC, C/3 55.6 mV rms
+//! and +0.68 % capacity, 1C 134.2 mV and +6.92 %, no drive cycle; at -20
+//! degC, C/3 139.2 mV and +7.09 %, 1C 207.8 mV and +15.85 %, no drive cycle,
+//! reading far too high from the first seconds, four cycles stopping on the
+//! first charging pulse at 4.242 V. Voltage errors in those two blocks ran
+//! 55.6 to 425 mV. Through engine 0.9.0 those blocks were refused, and each
+//! block was held to the case temperatures and currents of its own tests;
+//! all six blocks are now served, and a step in either cold block lands
+//! with [`FLAG_BLOCK_MET_NO_MARK`], a step outside its block's compared case
+//! temperatures, [`BLOCK_CASE_MIN_C`] to [`BLOCK_CASE_MAX_C`], or currents,
+//! [`BLOCK_CURRENT_DISCHARGE_MAX_A`] and [`BLOCK_CURRENT_CHARGE_MAX_A`], with
+//! [`FLAG_OUTSIDE_COMPARED_TESTS`].
+//!
+//! Where the tables end, the card stops. A case temperature beyond the
+//! coldest or the warmest block's own tests, [`CASE_TEMPERATURE_MIN_C`] to
+//! [`CASE_TEMPERATURE_MAX_C`], is [`StepReject::CaseTemperatureOutsideCard`]:
+//! past them every resistance and the time constant would hold the end
+//! block's value, and the card has no temperature law of its own. A current
+//! larger than 13.5 A either way, the top of the pulse test and the end of
+//! the ten-second table's current axis, is [`StepReject::CurrentOutsideCard`]:
+//! past it the table would hold its end value. A charging current above
+//! 2.25 A is read on the discharge side of the tables, which were fitted on
+//! pulses to 13.5 A discharging and 2.25 A charging.
+//!
+//! The same cell type is served as a physical model with memory,
+//! `cell_2170_model3`. On the same discharge, cell m80 in its 10 degC block
+//! from the recharge at 1.5 A for 600 s with the case at 12 degC, this card
+//! gives 3.934 V and that one 3.917 V: 17.4 mV apart.
 //!
 //! The ends of the tables and rounding. The charge removed is a running sum
 //! in 64-bit arithmetic, and each addition rounds by at most half a spacing
@@ -105,6 +135,7 @@ extern crate core;
 use core::prelude::v1::*;
 
 use crate::frame::LastStateFrame64;
+use crate::normal::normal_or_zero;
 use crate::math::{exp, exp_m1, log};
 
 ::core::include!("cell_2170_m80_tables.rs");
@@ -113,20 +144,24 @@ use crate::math::{exp, exp_m1, log};
 pub const LOWER_VOLTAGE_LIMIT_V: f64 = 2.8;
 /// The laboratory's charging limit of 4.2 V plus 0.042 V.
 pub const UPPER_VOLTAGE_LIMIT_V: f64 = 4.242;
-/// The coldest case temperature in a compared test of a served block: 0.808 degC, in the 0 degC block.
-pub const CASE_TEMPERATURE_MIN_C: f64 = 0.808;
-/// The warmest case temperature in a compared test of a served block: 45.535 degC, in the 40 degC block.
+/// The coldest case temperature in a compared test of any block: -21.898 degC, in the -20 degC block. Past it the tables would hold the coldest block's values.
+pub const CASE_TEMPERATURE_MIN_C: f64 = -21.898;
+/// The warmest case temperature in a compared test of any block: 45.535 degC, in the 40 degC block. Past it the tables would hold the warmest block's values.
 pub const CASE_TEMPERATURE_MAX_C: f64 = 45.535;
 /// The coldest case temperature in the compared tests of each block, in degC, rounded down to the millikelvin.
 pub const BLOCK_CASE_MIN_C: [f64; BLOCK_COUNT] = [39.063, 24.267, 10.201, 0.808, -11.995, -21.898];
 /// The warmest case temperature in the compared tests of each block, in degC, rounded up to the millikelvin.
 pub const BLOCK_CASE_MAX_C: [f64; BLOCK_COUNT] = [45.535, 30.993, 21.464, 16.259, 8.389, 2.885];
-/// The blocks the comparison showed wrong: no test of the -10 and -20 degC blocks met its marks.
-pub const BLOCK_SHOWN_WRONG: [bool; BLOCK_COUNT] = [false, false, false, false, true, true];
+/// The blocks in which no compared test met its marks: the -10 and -20 degC blocks.
+pub const BLOCK_MET_NO_MARK: [bool; BLOCK_COUNT] = [false, false, false, false, true, true];
+/// The largest discharging current the card takes: 13.5 A, the top of the pulse test and the end of the ten-second table's current axis. The largest in a compared test was 11.374274 A.
+pub const CURRENT_DISCHARGE_MAX_A: f64 = 13.5;
+/// The largest charging current the card takes: 13.5 A, read on the discharge side of the tables above 2.25 A. The largest in a compared test was 9.73669 A.
+pub const CURRENT_CHARGE_MAX_A: f64 = 13.5;
 /// The largest discharging current in a compared test: 11.374274 A, in a drive cycle of the 0 degC block, rounded up to the milliampere.
-pub const CURRENT_DISCHARGE_MAX_A: f64 = 11.375;
+pub const CURRENT_COMPARED_DISCHARGE_MAX_A: f64 = 11.375;
 /// The largest charging current in a compared test: 9.73669 A, in a drive cycle of the 40 degC block, rounded up to the milliampere.
-pub const CURRENT_CHARGE_MAX_A: f64 = 9.737;
+pub const CURRENT_COMPARED_CHARGE_MAX_A: f64 = 9.737;
 /// The largest discharging current in the compared tests of each block, in A, rounded up to the milliampere.
 pub const BLOCK_CURRENT_DISCHARGE_MAX_A: [f64; BLOCK_COUNT] = [9.809, 9.23, 10.079, 11.375, 10.467, 10.761];
 /// The largest charging current in the compared tests of each block, in A, rounded up to the milliampere.
@@ -147,6 +182,11 @@ pub const STEP_S: f64 = 1.0;
 pub const SECONDS_PER_HOUR: f64 = 3_600.0;
 /// `|E - E_anchor + W_once + W_branch - W_elec| / BLOCK_ENERGY_J` must stay at or under this.
 pub const RESIDUAL_CONSERVATION_LIMIT: f64 = 1.0e-6;
+
+/// The step is in the -10 or the -20 degC block, where no compared test met its marks. The step still lands.
+pub const FLAG_BLOCK_MET_NO_MARK: u64 = 1 << 0;
+/// The step's case temperature or current lies outside those of its block's own compared tests. The step still lands.
+pub const FLAG_OUTSIDE_COMPARED_TESTS: u64 = 1 << 1;
 
 const fn energy_at_rest_points() -> [f64; REST_TOTAL] {
     let mut energy = [0.0; REST_TOTAL];
@@ -198,16 +238,10 @@ pub enum StepReject {
     StepNotOneSecond,
     /// The block of the state is not one of the six chamber settings.
     BlockNotRecognized,
-    /// The block of the state is the -10 or the -20 degC block, which the comparison with measurement showed wrong.
-    BlockShownWrong,
-    /// Case temperature is below 0.808 degC or above 45.535 degC.
+    /// Case temperature is below -21.898 degC or above 45.535 degC, beyond the coldest and the warmest block's own tests, where the tables would hold their end values.
     CaseTemperatureOutsideCard,
-    /// Case temperature is outside the band at which the block of the state was compared with measurement.
-    CaseTemperatureOutsideBlock,
-    /// The current is above 9.737 A charging or above 11.375 A discharging.
+    /// The current is above 13.5 A charging or discharging, the end of the ten-second table's current axis.
     CurrentOutsideCard,
-    /// The current is outside the currents at which the block of the state was compared with measurement.
-    CurrentOutsideBlock,
     /// Charge removed, incoming or landing, is outside the tables of the block by more than the rounding allowance.
     ChargeOutsideTables,
     /// Landing terminal voltage is below 2.8 V.
@@ -254,7 +288,7 @@ pub struct Cell2170M80 {
     pub case_temperature_max_c: f64,
     pub block_case_min_c: [f64; BLOCK_COUNT],
     pub block_case_max_c: [f64; BLOCK_COUNT],
-    pub block_shown_wrong: [bool; BLOCK_COUNT],
+    pub block_met_no_mark: [bool; BLOCK_COUNT],
     pub current_discharge_max_a: f64,
     pub current_charge_max_a: f64,
     pub block_current_discharge_max_a: [f64; BLOCK_COUNT],
@@ -297,7 +331,7 @@ impl Cell2170M80 {
             case_temperature_max_c: CASE_TEMPERATURE_MAX_C,
             block_case_min_c: BLOCK_CASE_MIN_C,
             block_case_max_c: BLOCK_CASE_MAX_C,
-            block_shown_wrong: BLOCK_SHOWN_WRONG,
+            block_met_no_mark: BLOCK_MET_NO_MARK,
             current_discharge_max_a: CURRENT_DISCHARGE_MAX_A,
             current_charge_max_a: CURRENT_CHARGE_MAX_A,
             block_current_discharge_max_a: BLOCK_CURRENT_DISCHARGE_MAX_A,
@@ -333,7 +367,7 @@ impl Cell2170M80 {
             || !same_bits(&self.block_case_max_c, &BLOCK_CASE_MAX_C)
             || !same_bits(&self.block_current_discharge_max_a, &BLOCK_CURRENT_DISCHARGE_MAX_A)
             || !same_bits(&self.block_current_charge_max_a, &BLOCK_CURRENT_CHARGE_MAX_A)
-            || self.block_shown_wrong != BLOCK_SHOWN_WRONG
+            || self.block_met_no_mark != BLOCK_MET_NO_MARK
         {
             return false;
         }
@@ -409,12 +443,29 @@ impl Cell2170M80 {
         None
     }
 
-    /// Which block a chamber setting names and the card serves: `None` when
-    /// it names none, or names a block the comparison showed wrong.
+    /// Which block a chamber setting names and the card serves: every one
+    /// of the six. `None` when it names none.
     #[must_use]
     pub fn served_block_of(&self, block_chamber_c: f64) -> Option<usize> {
-        let block = self.block_of(block_chamber_c)?;
-        if self.block_shown_wrong[block] { None } else { Some(block) }
+        self.block_of(block_chamber_c)
+    }
+
+    /// The flags of a step in `block` under `load`: whether the block met no
+    /// mark, and whether the load lies outside the block's compared tests.
+    #[must_use]
+    pub fn compared_flags(&self, block: usize, load: CellLoad) -> u64 {
+        let mut flags = 0;
+        if self.block_met_no_mark[block] {
+            flags |= FLAG_BLOCK_MET_NO_MARK;
+        }
+        if load.case_temperature_c < self.block_case_min_c[block]
+            || load.case_temperature_c > self.block_case_max_c[block]
+            || load.current_a > self.block_current_charge_max_a[block]
+            || load.current_a < -self.block_current_discharge_max_a[block]
+        {
+            flags |= FLAG_OUTSIDE_COMPARED_TESTS;
+        }
+        flags
     }
 
     /// How far past an end of the block's tables the running sum of the
@@ -570,8 +621,25 @@ impl CellState {
 /// Advance one second and write the frame.
 ///
 /// A rejected step leaves `state` and `frame` as they were.
+///
+/// A value of the landed state below the normal range is written as zero
+/// with its sign ([`crate::normal`]).
 #[must_use]
 pub fn step(
+    cell: &Cell2170M80,
+    state: &mut CellState,
+    frame: &mut LastStateFrame64,
+    load: CellLoad,
+    dt_s: f64,
+) -> Result<(), StepReject> {
+    step_as_computed(cell, state, frame, load, dt_s)?;
+    normal_or_zero_state(state);
+    Ok(())
+}
+
+/// The step as its equations compute it, before a value of the landed
+/// state below the normal range is written as zero.
+fn step_as_computed(
     cell: &Cell2170M80,
     state: &mut CellState,
     frame: &mut LastStateFrame64,
@@ -584,6 +652,33 @@ pub fn step(
         Err(reject) => return Err(reject),
     };
     commit(cell, state, frame, load, dt_s, trial)
+}
+
+/// Each value of a landed state below the normal range written as zero
+/// with its sign ([`crate::normal`]): the state carried to the next step
+/// and published holds no subnormal number.
+fn normal_or_zero_state(state: &mut CellState) {
+    state.t_s = normal_or_zero(state.t_s);
+    state.block_chamber_c = normal_or_zero(state.block_chamber_c);
+    state.charge_removed_ah = normal_or_zero(state.charge_removed_ah);
+    state.charge_level = normal_or_zero(state.charge_level);
+    state.current_a = normal_or_zero(state.current_a);
+    state.case_temperature_c = normal_or_zero(state.case_temperature_c);
+    state.terminal_v = normal_or_zero(state.terminal_v);
+    state.open_circuit_v = normal_or_zero(state.open_circuit_v);
+    state.branch_v = normal_or_zero(state.branch_v);
+    state.resistance_at_once_ohm = normal_or_zero(state.resistance_at_once_ohm);
+    state.resistance_branch_ohm = normal_or_zero(state.resistance_branch_ohm);
+    state.time_constant_s = normal_or_zero(state.time_constant_s);
+    state.chemical_energy_j = normal_or_zero(state.chemical_energy_j);
+    state.energy_anchor_j = normal_or_zero(state.energy_anchor_j);
+    state.electrical_work_j = normal_or_zero(state.electrical_work_j);
+    state.heat_at_once_j = normal_or_zero(state.heat_at_once_j);
+    state.branch_energy_j = normal_or_zero(state.branch_energy_j);
+    state.energy_defect_j = normal_or_zero(state.energy_defect_j);
+    state.residual_conservation_error = normal_or_zero(state.residual_conservation_error);
+    state.lower_limit_margin_v = normal_or_zero(state.lower_limit_margin_v);
+    state.upper_limit_margin_v = normal_or_zero(state.upper_limit_margin_v);
 }
 
 /// Every input and the incoming state, before any table is read.
@@ -612,27 +707,14 @@ fn validate(
         Some(block) => block,
         None => return Err(StepReject::BlockNotRecognized),
     };
-    if cell.block_shown_wrong[block] {
-        return Err(StepReject::BlockShownWrong);
-    }
     if load.case_temperature_c < cell.case_temperature_min_c
         || load.case_temperature_c > cell.case_temperature_max_c
     {
         return Err(StepReject::CaseTemperatureOutsideCard);
     }
-    if load.case_temperature_c < cell.block_case_min_c[block]
-        || load.case_temperature_c > cell.block_case_max_c[block]
-    {
-        return Err(StepReject::CaseTemperatureOutsideBlock);
-    }
     if load.current_a > cell.current_charge_max_a || load.current_a < -cell.current_discharge_max_a
     {
         return Err(StepReject::CurrentOutsideCard);
-    }
-    if load.current_a > cell.block_current_charge_max_a[block]
-        || load.current_a < -cell.block_current_discharge_max_a[block]
-    {
-        return Err(StepReject::CurrentOutsideBlock);
     }
     let allowance_ah = cell.charge_end_allowance_ah(state.t_s);
     if !(state.charge_removed_ah >= cell.charge_top_ah[block] - allowance_ah
@@ -801,11 +883,11 @@ fn commit(
         return Err(StepReject::NonFiniteState);
     }
     *state = landed;
-    publish(state, frame);
+    publish(state, frame, cell.compared_flags(block, load));
     Ok(())
 }
 
-fn publish(state: &CellState, frame: &mut LastStateFrame64) {
+fn publish(state: &CellState, frame: &mut LastStateFrame64, flags: u64) {
     frame.t = state.t_s;
     frame.pos[0] = state.terminal_v as f32;
     frame.pos[1] = state.charge_removed_ah as f32;
@@ -815,7 +897,7 @@ fn publish(state: &CellState, frame: &mut LastStateFrame64) {
     frame.vel[2] = state.case_temperature_c as f32;
     frame.force_torque = state.lower_limit_margin_v as f32;
     frame.residual = state.residual_conservation_error as f32;
-    frame.flags = 0;
+    frame.flags = flags;
 }
 
 /// A place on a table: the point at or before it, and the share of the way
@@ -1209,9 +1291,11 @@ mod tests {
     use super::{
         AT_ONCE_FLOOR_SHARE, BLOCK_CASE_MAX_C, BLOCK_CASE_MIN_C, BLOCK_CHAMBER_C, BLOCK_COUNT,
         BLOCK_CURRENT_CHARGE_MAX_A, BLOCK_CURRENT_DISCHARGE_MAX_A,
-        BLOCK_ENERGY_J, BLOCK_SHOWN_WRONG, CAPACITY_AH, CASE_TEMPERATURE_MAX_C,
+        BLOCK_ENERGY_J, BLOCK_MET_NO_MARK, CAPACITY_AH, CASE_TEMPERATURE_MAX_C,
+        FLAG_BLOCK_MET_NO_MARK, FLAG_OUTSIDE_COMPARED_TESTS,
         CASE_TEMPERATURE_MIN_C, CHARGE_DEEP_AH, CHARGE_END_ALLOWANCE_EXTRA_STEPS,
         CHARGE_END_ALLOWANCE_PER_STEP_AH, CHARGE_TOP_AH, CURRENT_CHARGE_MAX_A,
+        CURRENT_COMPARED_CHARGE_MAX_A, CURRENT_COMPARED_DISCHARGE_MAX_A,
         CURRENT_DISCHARGE_MAX_A, CURRENT_SIZE_A, CURRENT_SIZES, Cell2170M80, CellLoad, CellState,
         ENERGY_AT_REST_POINT_J, FIRST_SECOND_OHM, FITTED_NUMBERS, HELD_CASE_C, HELD_CHARGE_LEVEL,
         HELD_OHM, HELD_POINTS, HOLD_CURRENT_A, LEVEL_CHARGE_LEVEL, LEVEL_POINTS,
@@ -1547,11 +1631,11 @@ mod tests {
             |c| c.pulse_case_c[2][4] += 1.0,
             |c| c.time_constant_s[4] = 60.0,
             |c| c.lower_voltage_limit_v = 2.5,
-            |c| c.current_discharge_max_a = 13.5,
-            |c| c.current_charge_max_a = 13.5,
+            |c| c.current_discharge_max_a = 11.375,
+            |c| c.current_charge_max_a = 9.737,
             |c| c.block_case_min_c[0] = -25.0,
             |c| c.block_case_max_c[3] = 50.0,
-            |c| c.block_shown_wrong[5] = false,
+            |c| c.block_met_no_mark[5] = false,
             |c| c.block_current_discharge_max_a[0] = 11.375,
             |c| c.block_current_charge_max_a[3] = 9.737,
             |c| c.charge_end_allowance_per_step_ah *= 2.0,
@@ -1592,30 +1676,31 @@ mod tests {
         assert_eq!(STEP_S.to_bits(), 1.0_f64.to_bits());
         assert_eq!(LOWER_VOLTAGE_LIMIT_V.to_bits(), 2.8_f64.to_bits());
         assert_eq!(UPPER_VOLTAGE_LIMIT_V.to_bits(), 4.242_f64.to_bits());
-        assert_eq!(CASE_TEMPERATURE_MIN_C.to_bits(), 0.808_f64.to_bits());
+        assert_eq!(CASE_TEMPERATURE_MIN_C.to_bits(), (-21.898_f64).to_bits());
+        assert_eq!(CASE_TEMPERATURE_MIN_C.to_bits(), BLOCK_CASE_MIN_C[5].to_bits());
         assert_eq!(CASE_TEMPERATURE_MAX_C.to_bits(), 45.535_f64.to_bits());
-        assert_eq!(CURRENT_DISCHARGE_MAX_A.to_bits(), 11.375_f64.to_bits());
-        assert_eq!(CURRENT_CHARGE_MAX_A.to_bits(), 9.737_f64.to_bits());
+        assert_eq!(CURRENT_DISCHARGE_MAX_A.to_bits(), 13.5_f64.to_bits());
+        assert_eq!(CURRENT_CHARGE_MAX_A.to_bits(), 13.5_f64.to_bits());
+        assert_eq!(CURRENT_DISCHARGE_MAX_A.to_bits(), CURRENT_SIZE_A[CURRENT_SIZES - 1].to_bits());
         assert_eq!(CHARGE_END_ALLOWANCE_PER_STEP_AH.to_bits(), (1.0_f64 / 1_125_899_906_842_624.0).to_bits());
         assert_eq!(CHARGE_END_ALLOWANCE_EXTRA_STEPS.to_bits(), 2.0_f64.to_bits());
-        assert_eq!(BLOCK_SHOWN_WRONG, [false, false, false, false, true, true]);
-        // The bounds of the card are the widest of the served blocks' bands,
+        assert_eq!(BLOCK_MET_NO_MARK, [false, false, false, false, true, true]);
+        // The bounds of the card are the widest of all six blocks' bands,
         // and each block's band lies around its own chamber setting.
         let mut coldest = f64::INFINITY;
         let mut warmest = f64::NEG_INFINITY;
         for block in 0..BLOCK_COUNT {
             assert!(BLOCK_CASE_MIN_C[block] < BLOCK_CASE_MAX_C[block]);
             assert!(BLOCK_CASE_MIN_C[block] < BLOCK_CHAMBER_C[block] + 1.0);
-            if !BLOCK_SHOWN_WRONG[block] {
-                coldest = coldest.min(BLOCK_CASE_MIN_C[block]);
-                warmest = warmest.max(BLOCK_CASE_MAX_C[block]);
-            }
+            coldest = coldest.min(BLOCK_CASE_MIN_C[block]);
+            warmest = warmest.max(BLOCK_CASE_MAX_C[block]);
         }
         assert_eq!(coldest.to_bits(), CASE_TEMPERATURE_MIN_C.to_bits());
         assert_eq!(warmest.to_bits(), CASE_TEMPERATURE_MAX_C.to_bits());
         // Each block's currents are the largest of its own compared tests
         // (envelope.json of the 0.7.0 fix), rounded outward to the
-        // milliampere; the card's are the largest of the served blocks'.
+        // milliampere; the largest compared are the largest of the served
+        // blocks' through engine 0.9.0, and the card's are the pulse test's top.
         assert_eq!(BLOCK_CURRENT_DISCHARGE_MAX_A, [9.809, 9.23, 10.079, 11.375, 10.467, 10.761]);
         assert_eq!(BLOCK_CURRENT_CHARGE_MAX_A, [9.737, 9.484, 8.776, 8.304, 8.006, 7.638]);
         let compared_discharge = [9.808720862587762, 9.22979039039039, 10.078014999999999, 11.374274, 10.466104000000001, 10.760983999999999];
@@ -1627,13 +1712,13 @@ mod tests {
             assert!(BLOCK_CURRENT_DISCHARGE_MAX_A[block] - compared_discharge[block] < 0.001);
             assert!(BLOCK_CURRENT_CHARGE_MAX_A[block] >= compared_charge[block]);
             assert!(BLOCK_CURRENT_CHARGE_MAX_A[block] - compared_charge[block] < 0.001);
-            if !BLOCK_SHOWN_WRONG[block] {
+            if !BLOCK_MET_NO_MARK[block] {
                 most_discharge = most_discharge.max(BLOCK_CURRENT_DISCHARGE_MAX_A[block]);
                 most_charge = most_charge.max(BLOCK_CURRENT_CHARGE_MAX_A[block]);
             }
         }
-        assert_eq!(most_discharge.to_bits(), CURRENT_DISCHARGE_MAX_A.to_bits());
-        assert_eq!(most_charge.to_bits(), CURRENT_CHARGE_MAX_A.to_bits());
+        assert_eq!(most_discharge.to_bits(), CURRENT_COMPARED_DISCHARGE_MAX_A.to_bits());
+        assert_eq!(most_charge.to_bits(), CURRENT_COMPARED_CHARGE_MAX_A.to_bits());
         assert_eq!(HOLD_CURRENT_A.to_bits(), 1.35_f64.to_bits());
         assert_eq!(PULSE_CURRENT_A.to_bits(), 2.25_f64.to_bits());
         assert_eq!(AT_ONCE_FLOOR_SHARE.to_bits(), 0.2_f64.to_bits());
@@ -1777,15 +1862,6 @@ mod tests {
             let chamber = BLOCK_CHAMBER_C[block];
             let top = CHARGE_TOP_AH[block];
             let deep = CHARGE_DEEP_AH[block];
-            if BLOCK_SHOWN_WRONG[block] {
-                // A block the comparison showed wrong builds no state anywhere on its tables.
-                assert_eq!(cell.block_of(chamber), Some(block));
-                assert_eq!(cell.served_block_of(chamber), None);
-                for at in [top, 0.0, 1.0, deep] {
-                    assert!(CellState::try_start(&cell, chamber, at).is_none(), "{chamber} {at}");
-                }
-                continue;
-            }
             assert_eq!(cell.served_block_of(chamber), Some(block));
             // The two ends of the tables are legal starts; the next number beyond each is not.
             let at_top = CellState::try_start(&cell, chamber, top).unwrap();
@@ -1876,32 +1952,23 @@ mod tests {
         refuse(load(-1.0, 60.0), 1.0, StepReject::CaseTemperatureOutsideCard);
         refuse(load(-1.0, -273.15), 1.0, StepReject::CaseTemperatureOutsideCard);
         refuse(load(-1.0, -25.0), 1.0, StepReject::CaseTemperatureOutsideCard);
-        // Inside the card's bounds but outside the band of the 40 degC block.
-        refuse(load(-1.0, next_down(BLOCK_CASE_MIN_C[0])), 1.0, StepReject::CaseTemperatureOutsideBlock);
-        refuse(load(-1.0, 25.0), 1.0, StepReject::CaseTemperatureOutsideBlock);
-        refuse(load(-1.0, CASE_TEMPERATURE_MIN_C), 1.0, StepReject::CaseTemperatureOutsideBlock);
-        // The current: the next number beyond the compared current, either way.
+        // The current: the next number beyond 13.5 A, either way.
         refuse(load(next_up(CURRENT_CHARGE_MAX_A), 40.0), 1.0, StepReject::CurrentOutsideCard);
         refuse(load(next_down(-CURRENT_DISCHARGE_MAX_A), 40.0), 1.0, StepReject::CurrentOutsideCard);
-        refuse(load(13.5, 40.0), 1.0, StepReject::CurrentOutsideCard);
-        refuse(load(-13.5, 40.0), 1.0, StepReject::CurrentOutsideCard);
-        refuse(load(10.0, 40.0), 1.0, StepReject::CurrentOutsideCard);
         refuse(load(-100.0, 40.0), 1.0, StepReject::CurrentOutsideCard);
         // An input outside the card is named before a fault of the step it comes with.
         refuse(load(f64::NAN, 60.0), 0.5, StepReject::NonFiniteInput);
         refuse(load(-100.0, 60.0), 1.0, StepReject::CaseTemperatureOutsideCard);
-        refuse(load(-100.0, 25.0), 1.0, StepReject::CaseTemperatureOutsideBlock);
-        // Inside the card's currents but outside those of the 40 degC block.
-        refuse(load(next_down(-BLOCK_CURRENT_DISCHARGE_MAX_A[0]), 40.0), 1.0, StepReject::CurrentOutsideBlock);
-        refuse(load(-CURRENT_DISCHARGE_MAX_A, 40.0), 1.0, StepReject::CurrentOutsideBlock);
-        refuse(load(-10.0, 40.0), 1.0, StepReject::CurrentOutsideBlock);
+        refuse(load(-100.0, 25.0), 1.0, StepReject::CurrentOutsideCard);
 
         // The limits themselves are on the card: each lands, and the state
         // records the value sent, not a neighbour of it.
         for (with, label) in [
             (load(-1.0, BLOCK_CASE_MIN_C[0]), "coldest of the block"),
             (load(-1.0, CASE_TEMPERATURE_MAX_C), "warmest"),
+            (load(-1.0, CASE_TEMPERATURE_MIN_C), "coldest of the card"),
             (load(-BLOCK_CURRENT_DISCHARGE_MAX_A[0], 40.0), "largest discharge of the block"),
+            (load(-CURRENT_DISCHARGE_MAX_A, 40.0), "largest discharge of the card"),
         ] {
             let mut on_limit = CellState::try_start(&cell, 40.0, 1.0).unwrap();
             let mut fresh = blank_frame();
@@ -1922,135 +1989,142 @@ mod tests {
         assert!(charging.charge_removed_ah < 2.0);
     }
 
+    /// Every block takes every case temperature of the card: inside its own
+    /// compared band a step lands with no flag of the tests, and outside it,
+    /// at each other block's chamber setting and at the card's two ends, it
+    /// lands with FLAG_OUTSIDE_COMPARED_TESTS; the ledger closes on each.
     #[test]
-    fn each_served_block_takes_the_case_temperatures_of_its_own_tests() {
+    fn each_block_takes_every_case_temperature_of_the_card_flagged_outside_its_tests() {
         let cell = Cell2170M80::cell();
+        let mut flagged = 0;
         for block in 0..BLOCK_COUNT {
-            if BLOCK_SHOWN_WRONG[block] {
-                continue;
-            }
             let chamber = BLOCK_CHAMBER_C[block];
             let low = BLOCK_CASE_MIN_C[block];
             let high = BLOCK_CASE_MAX_C[block];
+            let no_mark = if BLOCK_MET_NO_MARK[block] { FLAG_BLOCK_MET_NO_MARK } else { 0 };
             for case_c in [low, high, 0.5 * (low + high)] {
                 let mut state = CellState::try_start(&cell, chamber, 1.0).unwrap();
                 let mut frame = blank_frame();
                 step(&cell, &mut state, &mut frame, load(-1.0, case_c), 1.0)
                     .unwrap_or_else(|reject| panic!("{chamber} at {case_c}: {reject:?}"));
                 assert_eq!(state.case_temperature_c.to_bits(), case_c.to_bits());
+                assert_eq!(frame.flags, no_mark);
             }
-            for (case_c, past_card) in [
-                (next_down(low), next_down(low) < CASE_TEMPERATURE_MIN_C),
-                (next_up(high), next_up(high) > CASE_TEMPERATURE_MAX_C),
-            ] {
-                let mut state = CellState::try_start(&cell, chamber, 1.0).unwrap();
-                let saved = state_bits(&state);
-                let mut frame = blank_frame();
-                let held = frame.to_bytes();
-                let expect = if past_card {
-                    StepReject::CaseTemperatureOutsideCard
-                } else {
-                    StepReject::CaseTemperatureOutsideBlock
-                };
-                assert_eq!(step(&cell, &mut state, &mut frame, load(-1.0, case_c), 1.0), Err(expect), "{chamber} at {case_c}");
-                assert_eq!(state_bits(&state), saved);
-                assert_eq!(frame.to_bytes(), held);
-                proof_intact(&frame);
-            }
-            // Every other served block's chamber setting that lies outside
-            // this band is refused on this block.
+            let mut outside = std::vec::Vec::new();
             for other in 0..BLOCK_COUNT {
-                let case_c = BLOCK_CHAMBER_C[other];
-                if BLOCK_SHOWN_WRONG[other] || (case_c >= low && case_c <= high) {
+                outside.push(BLOCK_CHAMBER_C[other]);
+            }
+            outside.push(CASE_TEMPERATURE_MIN_C);
+            outside.push(CASE_TEMPERATURE_MAX_C);
+            outside.push(next_down(low));
+            outside.push(next_up(high));
+            for case_c in outside {
+                if case_c >= low && case_c <= high || case_c < CASE_TEMPERATURE_MIN_C || case_c > CASE_TEMPERATURE_MAX_C {
                     continue;
                 }
                 let mut state = CellState::try_start(&cell, chamber, 1.0).unwrap();
                 let mut frame = blank_frame();
-                let got = step(&cell, &mut state, &mut frame, load(-1.0, case_c), 1.0);
-                assert!(
-                    got == Err(StepReject::CaseTemperatureOutsideBlock)
-                        || got == Err(StepReject::CaseTemperatureOutsideCard),
-                    "{chamber} at {case_c}: {got:?}"
-                );
+                for _ in 0..60 {
+                    step(&cell, &mut state, &mut frame, load(-1.0, case_c), 1.0)
+                        .unwrap_or_else(|reject| panic!("{chamber} at {case_c}: {reject:?}"));
+                    assert_eq!(frame.flags, no_mark | FLAG_OUTSIDE_COMPARED_TESTS);
+                    assert!(state.residual_conservation_error <= RESIDUAL_CONSERVATION_LIMIT);
+                }
+                flagged += 1;
             }
         }
+        assert!(flagged > 30, "{flagged}");
     }
 
+    /// Every block takes currents to 13.5 A either way: its own largest
+    /// compared currents land with no flag of the tests, the next number
+    /// beyond each and the card's 13.5 A land with the flag, the ledger
+    /// closing, and a step past 13.5 A is refused by name.
     #[test]
-    fn each_served_block_takes_the_currents_of_its_own_tests() {
+    fn each_block_takes_currents_to_the_end_of_the_tables_flagged_outside_its_tests() {
         let cell = Cell2170M80::cell();
-        let mut refused_inside_card = 0;
         for block in 0..BLOCK_COUNT {
-            if BLOCK_SHOWN_WRONG[block] {
-                continue;
-            }
             let chamber = BLOCK_CHAMBER_C[block];
             let case_c = 0.5 * (BLOCK_CASE_MIN_C[block] + BLOCK_CASE_MAX_C[block]);
             let discharge = BLOCK_CURRENT_DISCHARGE_MAX_A[block];
             let charge = BLOCK_CURRENT_CHARGE_MAX_A[block];
-            // The block's own largest currents land, away from the ends of its tables.
+            let no_mark = if BLOCK_MET_NO_MARK[block] { FLAG_BLOCK_MET_NO_MARK } else { 0 };
             for current_a in [-discharge, charge, 0.0] {
                 let mut state = CellState::try_start(&cell, chamber, 2.0).unwrap();
                 let mut frame = blank_frame();
                 step(&cell, &mut state, &mut frame, load(current_a, case_c), 1.0)
                     .unwrap_or_else(|reject| panic!("{chamber} at {current_a} A: {reject:?}"));
                 assert_eq!(state.current_a.to_bits(), current_a.to_bits());
+                assert_eq!(frame.flags, no_mark);
             }
-            // The next number beyond each is refused, by the block's name
-            // inside the card's currents and by the card's beyond them.
-            for current_a in [next_down(-discharge), next_up(charge)] {
+            for current_a in [next_down(-discharge), next_up(charge), -CURRENT_DISCHARGE_MAX_A, CURRENT_CHARGE_MAX_A] {
+                let mut state = CellState::try_start(&cell, chamber, 2.0).unwrap();
+                let mut frame = blank_frame();
+                match step(&cell, &mut state, &mut frame, load(current_a, case_c), 1.0) {
+                    Ok(()) => {
+                        assert_eq!(frame.flags, no_mark | FLAG_OUTSIDE_COMPARED_TESTS, "{chamber} at {current_a} A");
+                        assert!(state.residual_conservation_error <= RESIDUAL_CONSERVATION_LIMIT);
+                    }
+                    // a large charge in the coldest blocks can cross 4.242 V at once
+                    Err(reject) => assert_eq!(reject, StepReject::UpperVoltageLimit, "{chamber} at {current_a} A"),
+                }
+            }
+            for current_a in [next_down(-CURRENT_DISCHARGE_MAX_A), next_up(CURRENT_CHARGE_MAX_A)] {
                 let mut state = CellState::try_start(&cell, chamber, 2.0).unwrap();
                 let saved = state_bits(&state);
                 let mut frame = blank_frame();
                 let held = frame.to_bytes();
-                let expect = if current_a > CURRENT_CHARGE_MAX_A || current_a < -CURRENT_DISCHARGE_MAX_A {
-                    StepReject::CurrentOutsideCard
-                } else {
-                    refused_inside_card += 1;
-                    StepReject::CurrentOutsideBlock
-                };
-                assert_eq!(step(&cell, &mut state, &mut frame, load(current_a, case_c), 1.0), Err(expect), "{chamber} at {current_a} A");
+                assert_eq!(step(&cell, &mut state, &mut frame, load(current_a, case_c), 1.0), Err(StepReject::CurrentOutsideCard));
                 assert_eq!(state_bits(&state), saved);
                 assert_eq!(frame.to_bytes(), held);
                 proof_intact(&frame);
             }
         }
-        // Six of the eight edges lie inside the card's currents.
-        assert_eq!(refused_inside_card, 6);
-        // The 0 degC block was compared only to 8.304 A charging, and the 40
-        // degC block only to 9.809 A discharging.
-        let mut cold = CellState::try_start(&cell, 0.0, 2.0).unwrap();
-        let mut frame = blank_frame();
-        assert_eq!(step(&cell, &mut cold, &mut frame, load(9.0, 5.0), 1.0), Err(StepReject::CurrentOutsideBlock));
-        let mut warm = CellState::try_start(&cell, 40.0, 2.0).unwrap();
-        assert_eq!(step(&cell, &mut warm, &mut frame, load(-11.0, 42.0), 1.0), Err(StepReject::CurrentOutsideBlock));
     }
 
+    /// The -10 and -20 degC blocks, refused through engine 0.9.0, are served
+    /// with the flag that no compared test met its marks. A C/3 and a 1C
+    /// discharge from the recharge in each, at the block's own case
+    /// temperature, land every step with the ledger closing, and stop by name
+    /// at 2.8 V or at the deepest point of the block's table.
     #[test]
-    fn the_blocks_shown_wrong_are_refused_by_name() {
+    fn the_blocks_that_met_no_mark_are_served_with_the_flag() {
         let cell = Cell2170M80::cell();
-        let good = CellState::try_start(&cell, 0.0, 1.0).unwrap();
+        assert_eq!(BLOCK_CHAMBER_C[4], -10.0);
+        assert_eq!(BLOCK_CHAMBER_C[5], -20.0);
         for block in 0..BLOCK_COUNT {
-            if !BLOCK_SHOWN_WRONG[block] {
+            if !BLOCK_MET_NO_MARK[block] {
                 continue;
             }
             let chamber = BLOCK_CHAMBER_C[block];
-            assert!(CellState::try_start(&cell, chamber, 1.0).is_none());
-            // A state carried into the block is refused before any input is read.
-            let mut state = good;
-            state.block_chamber_c = chamber;
-            let saved = state_bits(&state);
-            let mut frame = blank_frame();
-            let held = frame.to_bytes();
-            for with in [load(-1.0, chamber), load(-1.0, 5.0), load(-100.0, -25.0)] {
-                assert_eq!(step(&cell, &mut state, &mut frame, with, 1.0), Err(StepReject::BlockShownWrong));
-                assert_eq!(state_bits(&state), saved);
-                assert_eq!(frame.to_bytes(), held);
-                proof_intact(&frame);
+            let case_c = 0.5 * (BLOCK_CASE_MIN_C[block] + BLOCK_CASE_MAX_C[block]);
+            for current_a in [-1.5, -4.5] {
+                let mut state = CellState::try_start(&cell, chamber, 0.0).unwrap();
+                let mut frame = blank_frame();
+                let mut landed = 0u32;
+                let mut worst = 0.0_f64;
+                let reject = loop {
+                    let before = state_bits(&state);
+                    match step(&cell, &mut state, &mut frame, load(current_a, case_c), 1.0) {
+                        Ok(()) => {
+                            landed += 1;
+                            assert_eq!(frame.flags & FLAG_BLOCK_MET_NO_MARK, FLAG_BLOCK_MET_NO_MARK);
+                            worst = worst.max(state.residual_conservation_error);
+                        }
+                        Err(reject) => {
+                            assert_eq!(state_bits(&state), before);
+                            break reject;
+                        }
+                    }
+                };
+                assert!(landed > 100, "{chamber} {current_a} {landed}");
+                assert!(worst <= RESIDUAL_CONSERVATION_LIMIT, "{worst:e}");
+                assert!(
+                    reject == StepReject::LowerVoltageLimit || reject == StepReject::ChargeOutsideTables,
+                    "{chamber} {current_a} {reject:?}"
+                );
             }
         }
-        assert_eq!(BLOCK_CHAMBER_C[4], -10.0);
-        assert_eq!(BLOCK_CHAMBER_C[5], -20.0);
     }
 
     /// A start, in units of 1e-14 Ah, written as a decimal and read the way a
@@ -2066,7 +2140,7 @@ mod tests {
         let mut ran = 0;
         let mut whole = 0;
         for block in 0..BLOCK_COUNT {
-            if BLOCK_SHOWN_WRONG[block] {
+            if BLOCK_MET_NO_MARK[block] {
                 continue;
             }
             let chamber = BLOCK_CHAMBER_C[block];
@@ -2207,10 +2281,8 @@ mod tests {
         let good = CellState::try_start(&cell, 10.0, 2.0).unwrap();
         let mut frame = blank_frame();
         let held = frame.to_bytes();
-        let cases: [(fn(&mut CellState), StepReject); 8] = [
+        let cases: [(fn(&mut CellState), StepReject); 6] = [
             (|s| s.block_chamber_c = 15.0, StepReject::BlockNotRecognized),
-            (|s| s.block_chamber_c = -10.0, StepReject::BlockShownWrong),
-            (|s| s.block_chamber_c = -20.0, StepReject::BlockShownWrong),
             (|s| s.block_chamber_c = 10.000000000000002, StepReject::BlockNotRecognized),
             (|s| s.charge_removed_ah = 4.3, StepReject::ChargeOutsideTables),
             (|s| s.charge_removed_ah = -0.03, StepReject::ChargeOutsideTables),
@@ -2243,27 +2315,17 @@ mod tests {
                 for case_c in [-25.0, -19.0, -16.4, -12.0, -5.0, 0.9, 1.7, 6.0, 11.5, 14.0, 18.0, 25.1, 28.0, 33.0, 40.2, 44.0, 50.0] {
                     for current_a in [-13.5, -6.0, -2.25, -1.35, -0.3, 0.0, 0.7, 2.25, 5.0] {
                         let landing_ah = start_ah - current_a / SECONDS_PER_HOUR;
-                        let off_card = if BLOCK_SHOWN_WRONG[block] {
-                            Some(StepReject::BlockShownWrong)
-                        } else if case_c < CASE_TEMPERATURE_MIN_C || case_c > CASE_TEMPERATURE_MAX_C {
+                        let off_card = if case_c < CASE_TEMPERATURE_MIN_C || case_c > CASE_TEMPERATURE_MAX_C {
                             Some(StepReject::CaseTemperatureOutsideCard)
-                        } else if case_c < BLOCK_CASE_MIN_C[block] || case_c > BLOCK_CASE_MAX_C[block] {
-                            Some(StepReject::CaseTemperatureOutsideBlock)
                         } else if current_a > CURRENT_CHARGE_MAX_A || current_a < -CURRENT_DISCHARGE_MAX_A {
                             Some(StepReject::CurrentOutsideCard)
-                        } else if current_a > BLOCK_CURRENT_CHARGE_MAX_A[block]
-                            || current_a < -BLOCK_CURRENT_DISCHARGE_MAX_A[block]
-                        {
-                            Some(StepReject::CurrentOutsideBlock)
                         } else {
                             None
                         };
                         if let Some(expect) = off_card {
                             // Off the card the step is refused by name. The
-                            // tables are still read the plain way there: the
-                            // cold blocks serve the reading at a case
-                            // temperature below the 0 degC block's own.
-                            if !BLOCK_SHOWN_WRONG[block] {
+                                // tables are still read the plain way there.
+                            {
                                 let mut state = CellState::try_start(&cell, BLOCK_CHAMBER_C[block], start_ah).unwrap();
                                 let saved = state_bits(&state);
                                 let mut frame = blank_frame();
@@ -2355,8 +2417,8 @@ mod tests {
             }
             pairs_used[block] = true;
         }
-        assert!(checked > 600, "only {checked} steps were compared");
-        assert!(read_off_card > 4_000, "only {read_off_card} readings off the card were compared");
+        assert!(checked > 4_000, "only {checked} steps were compared");
+        assert!(read_off_card > 900, "only {read_off_card} readings off the card were compared");
         assert!(pairs_used.iter().all(|used| *used));
     }
 
@@ -2568,7 +2630,7 @@ mod tests {
     fn a_changing_current_with_rests_keeps_the_ledger_on_every_block() {
         let cell = Cell2170M80::cell();
         for block in 0..BLOCK_COUNT {
-            if BLOCK_SHOWN_WRONG[block] {
+            if BLOCK_MET_NO_MARK[block] {
                 continue;
             }
             let chamber = BLOCK_CHAMBER_C[block];

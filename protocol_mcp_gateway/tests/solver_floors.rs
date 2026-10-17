@@ -103,12 +103,12 @@ fn a_boron_density_under_one_nucleus_is_refused_at_once_and_zero_the_floor_and_t
     // Zero, the floor itself and the worked example are answered, each with
     // the solver's own bits and a proof that holds by request.
     let parameter = |name: &str| example["parameters"][name].as_f64().unwrap();
-    assert_eq!(parameter("boron_density_per_m3"), 8.6706e16);
-    for boron in [0.0, floor, 8.6706e16] {
+    assert_eq!(parameter("boron_density_per_m3"), 1.4298e17);
+    for boron in [0.0, floor, 1.4298e17] {
         let request = with(json!(boron));
         let body = answered(&mut local, &request);
         assert_eq!(body["outcome"], "converged", "{boron}");
-        assert_eq!(body["engine_version"], "genesis_solvers_v0.8.0");
+        assert_eq!(body["engine_version"], "genesis_solvers_v0.12.0");
         let direct = lhd::solve(&LhdQuestion {
             beam_energy_kev: parameter("beam_energy_kev"),
             beam_power_w: parameter("beam_power_w"),
@@ -125,6 +125,7 @@ fn a_boron_density_under_one_nucleus_is_refused_at_once_and_zero_the_floor_and_t
             ("peak_alpha_emissivity_per_m3_s", direct.peak_alpha_emissivity_per_m3_s),
             ("peak_emissivity_radius", direct.peak_emissivity_radius),
             ("slowing_time_s", direct.slowing_time_s),
+            ("fast_proton_fraction_max", direct.fast_proton_fraction_max),
             ("energy_fraction_to_electrons", direct.energy_fraction_to_electrons),
             ("energy_fraction_to_ions", direct.energy_fraction_to_ions),
         ] {
@@ -150,12 +151,12 @@ fn a_boron_density_under_one_nucleus_is_refused_at_once_and_zero_the_floor_and_t
         "`boron_density_per_m3` is not zero and is below `BORON_DENSITY_ONE_NUCLEUS_PER_M3`, the peak density at which the plasma holds one boron nucleus: less than one nucleus is no boron, and zero is answered."
     );
     let names: Vec<&str> = described["refusals"].as_array().unwrap().iter().map(|refusal| refusal["name"].as_str().unwrap()).collect();
-    assert_eq!(names.len(), 12);
-    assert_eq!(&names[4..7], ["BoronDensityOutOfRange", "BoronBelowOneNucleus", "BoronShareOutOfRange"]);
+    assert_eq!(names.len(), 13);
+    assert_eq!(&names[4..7], ["BoronDensityOutOfRange", "BoronBelowOneNucleus", "BoronChargeExceedsElectrons"]);
     let boron = input(&described, "boron_density_per_m3");
-    assert_eq!((boron["minimum"].as_f64(), boron["maximum"].as_f64()), (Some(0.0), Some(lhd::BORON_DENSITY_MAX_PER_M3)));
+    assert_eq!((boron["minimum"].as_f64(), boron["maximum"].as_f64()), (Some(0.0), Some(lhd::ELECTRON_DENSITY_MAX_PER_M3)));
     let bound = boron["bound"].as_str().unwrap();
-    assert!(bound.contains("Under a negative-ion beam, zero, or from 0.04973892441153873 m^-3 to the largest compared with measurement"), "{bound}");
+    assert!(bound.contains("zero, or from 0.04973892441153873 m^-3 to what quasi-neutrality allows"), "{bound}");
     assert!(bound.contains("A density that is not zero and is below it is refused as BoronBelowOneNucleus"), "{bound}");
 }
 
@@ -206,7 +207,7 @@ fn a_history_row_under_a_millisecond_after_the_one_before_is_refused_at_once_and
     let apart = slab_request(json!([0.0, 1.0, 1.001, 2.0]));
     let body = answered(&mut local, &apart);
     assert_eq!(body["outcome"], "converged", "{body}");
-    assert_eq!(body["engine_version"], "genesis_solvers_v0.8.0");
+    assert_eq!(body["engine_version"], "genesis_solvers_v0.12.0");
     assert!(body["iterations"].as_u64().unwrap() > 0);
     assert_eq!(body["result"]["time_steps"].as_f64(), body["iterations"].as_f64());
     let (error, text) = local.tool("verify_solution", &json!({ "request": apart, "solution_seal": body["solution_seal"] }));
@@ -218,7 +219,7 @@ fn a_history_row_under_a_millisecond_after_the_one_before_is_refused_at_once_and
     let short = described(&mut local, "ablator_slab");
     assert_eq!(
         short["more"]["refusals"],
-        "The 41 named refusals with the solver's sentence for each: 28 a request itself shows (422, no proof) and 13 met while computing (200, outcome `refused`, no result)."
+        "The 34 named refusals with the solver's sentence for each: 23 a request itself shows (422, no proof) and 11 met while computing (200, outcome `refused`, no result)."
     );
     let part = |door: &mut Stdio2, part: &str| -> Value {
         let (error, text) = door.tool("describe_solver", &json!({ "solver": "ablator_slab", "part": part }));
@@ -231,15 +232,16 @@ fn a_history_row_under_a_millisecond_after_the_one_before_is_refused_at_once_and
     assert_eq!(listed["reported_as"], "422, no seal");
     assert_eq!(
         listed["meaning"],
-        "A row of the heating history is less than `HISTORY_ROW_SPAN_MIN_S` after the row before it. A row at the same time as the one before it, or earlier, is `HistoryTimesOutOfOrder`."
+        "A row of the heating history is less than 0.001 s after the row before it. A row at the same time as the one before it, or earlier, is `HistoryTimesOutOfOrder`."
     );
     assert_eq!(locked["locked"]["constants_named_in_refusals"]["HISTORY_ROW_SPAN_MIN_S"], 0.001);
     let names: Vec<&str> = described["refusals"].as_array().unwrap().iter().map(|refusal| refusal["name"].as_str().unwrap()).collect();
-    assert_eq!(names.len(), 41);
+    // After the solver's 34 names the list holds the two the entry names itself, UnknownFace and UnknownStreamGas.
+    assert_eq!(names.len(), 36);
     assert_eq!(&names[14..17], ["HistoryTimesOutOfOrder", "HistoryDurationOutOfRange", "HistoryRowsTooClose"]);
     let bound = input(&short, "history_time_s")["bound"].as_str().unwrap();
     assert!(
-        bound.ends_with("Time of each row: zero first, each 0.001 s or more after the one before, or it is refused as HistoryRowsTooClose (rows written 1 and 1.001 s are taken), the last from 1 to 600 s."),
+        bound.ends_with("Time of each row: zero first, each 0.001 s or more after the one before, or it is refused as HistoryRowsTooClose (rows written 1 and 1.001 s are taken), the last from 1 s to an hour, a size cap on the request."),
         "{bound}"
     );
 }

@@ -28,6 +28,17 @@ pub const ALL: &[&Solver] = &[
     &crate::solver_culture_trichoderma_ambr250::CULTURE_TRICHODERMA_AMBR250,
     &crate::solver_tokamak_dt_beam_target::TOKAMAK_DT_BEAM_TARGET,
     &crate::solver_pipe_flow_superpipe::PIPE_FLOW_SUPERPIPE,
+    &crate::solver_culture_trichoderma_atp::CULTURE_TRICHODERMA_ATP,
+    &crate::solver_junction_nist_b7_s2::JUNCTION_NIST_B7_S2,
+    &crate::solver_water_hammer_oil_line::WATER_HAMMER_OIL_LINE,
+    &crate::solver_orifice_air_chamber::ORIFICE_AIR_CHAMBER,
+    &crate::solver_pneumatic_hose_resonance::PNEUMATIC_HOSE_RESONANCE,
+    &crate::solver_blast_wave_tnt_air::BLAST_WAVE_TNT_AIR,
+    &crate::solver_stress_plate_hole_s235::STRESS_PLATE_HOLE_S235,
+    &crate::solver_stress_plate_hole_s235_elastic::STRESS_PLATE_HOLE_S235_ELASTIC,
+    &crate::solver_icf_hotspot_burn::ICF_HOTSPOT_BURN,
+    &crate::solver_ln2_line_dlr_fttf::LN2_LINE_DLR_FTTF,
+    &crate::solver_plasma_sheath_ram_c2::PLASMA_SHEATH_RAM_C2,
     #[cfg(test)]
     &crate::solver_probe::STAND_IN,
 ];
@@ -42,8 +53,9 @@ pub struct Solver {
     /// One sentence, for the list and the description.
     pub summary: &'static str,
     /// Every key `parameters` takes, in the order they are described. A key
-    /// outside this list is refused by name, and so is a listed key that is
-    /// missing.
+    /// outside this list is refused in a sentence that names the key, and so
+    /// is a listed key that is missing. Neither sentence carries a refusal
+    /// name: a name is for a value outside what the solver takes.
     pub inputs: &'static [Input],
     /// The sentence that follows "is not an input of this solver.": what the
     /// solver keeps to itself.
@@ -61,6 +73,11 @@ pub struct Solver {
     pub answer: &'static str,
     /// Every refusal the solver names.
     pub refusals: &'static [Refusal],
+    /// The refusals this entry names itself, for a value of an input that
+    /// never reaches the solver: a word that is not one of an input's own, a
+    /// series longer than the solver takes. Each is answered at the door,
+    /// with no seal, and the description lists them after the solver's.
+    pub door_refusals: &'static [Refusal],
     /// The parts of the description that are written by hand for this solver.
     pub sections: fn() -> Sections,
     /// The validation record of a solver that is compared with measurements
@@ -112,15 +129,17 @@ pub struct Part {
 pub struct Input {
     pub name: &'static str,
     pub kind: Kind,
-    /// The refusal a value outside the bound takes. It is written at the end
-    /// of the sentence the caller reads. `None` when the sentence carries no
-    /// refusal name.
+    /// The refusal a value outside the bound takes: one of the solver's own,
+    /// or one of `door_refusals`. It is written in round brackets at the end
+    /// of the sentence. `None` for a flag alone, which has no value outside
+    /// what the solver takes.
     pub refusal: Option<&'static str>,
     /// One sentence about the bound, for the description.
     pub bound: &'static str,
     /// `Some((switch, word))` when this key is an input only for one choice
     /// of a `Word` input listed before it: it is required when `switch` holds
-    /// `word`, and refused by name when `switch` holds anything else. The
+    /// `word`, and refused, in a sentence that names the key and carries no
+    /// refusal name, when `switch` holds anything else. The
     /// switch may itself go with a choice of an earlier word; when the
     /// request does not take the switch, it does not take this key either.
     /// `None` for a key every request gives.
@@ -156,6 +175,15 @@ pub enum Kind {
         maximum: f64,
         unit: &'static str,
     },
+    /// One number from `minimum` to `maximum`, an end exclusive where its
+    /// flag says so: that end itself is refused.
+    NumberWithin {
+        minimum: f64,
+        minimum_exclusive: bool,
+        maximum: f64,
+        maximum_exclusive: bool,
+        unit: &'static str,
+    },
     /// One of the listed strings.
     Word { allowed: &'static [&'static str] },
     /// `true` or `false`.
@@ -167,6 +195,20 @@ pub enum Kind {
         most: usize,
         minimum: f64,
         maximum: f64,
+        unit: &'static str,
+    },
+    /// An array of at least `fewest` and at most `most` numbers, each inside
+    /// the range, either end of which may be exclusive: an exclusive end is
+    /// itself refused. `describe_solver` writes `minimum_exclusive: true` or
+    /// `maximum_exclusive: true` beside the end, and the input schema
+    /// `exclusiveMinimum` or `exclusiveMaximum`.
+    NumbersWithin {
+        fewest: usize,
+        most: usize,
+        minimum: f64,
+        minimum_exclusive: bool,
+        maximum: f64,
+        maximum_exclusive: bool,
         unit: &'static str,
     },
 }
@@ -217,7 +259,7 @@ pub struct Refusal {
 pub struct Sections {
     /// The constants the caller cannot set.
     pub locked: Value,
-    /// Each invariant: its rule, its tolerance, when it is checked, and the
+    /// Each invariant: its rule, its tolerance, when it is compared, and the
     /// refusal that names a break.
     pub invariants: Value,
     /// When the solver accepts its own result.
@@ -356,7 +398,7 @@ pub struct Refused {
 
 impl Output {
     /// For a family, the text before its placeholder and the text after it.
-    fn family_ends(&self) -> Option<(&'static str, &'static str)> {
+    pub(crate) fn family_ends(&self) -> Option<(&'static str, &'static str)> {
         if self.each.is_empty() {
             return None;
         }
@@ -408,6 +450,11 @@ impl Solver {
     pub fn refusal(&self, name: &str) -> Option<&'static Refusal> {
         self.refusals.iter().find(|refusal| refusal.name == name)
     }
+
+    /// Every refusal the description lists: the solver's, then the entry's own.
+    pub fn listed_refusals(&self) -> impl Iterator<Item = &'static Refusal> {
+        self.refusals.iter().chain(self.door_refusals)
+    }
 }
 
 pub fn engine_version() -> String {
@@ -444,13 +491,33 @@ pub fn list_value_in(view: &View) -> Value {
     json!({ "count": listed.len(), "solvers": listed })
 }
 
-/// A range as a refusal and a description write it.
+/// A range as a refusal writes it, in words: `250 to 681.96 K`. A number
+/// with no unit, or the unit `1` of a pure number, is written bare.
 pub fn range_words(minimum: f64, maximum: f64, unit: &str) -> String {
-    if unit.is_empty() {
-        format!("{minimum}..={maximum}")
+    if unit.is_empty() || unit == "1" {
+        format!("{minimum} to {maximum}")
     } else {
-        format!("{minimum}..={maximum} {unit}")
+        format!("{minimum} to {maximum} {unit}")
     }
+}
+
+/// A range with either end exclusive, as a refusal writes it, in words:
+/// `above 0 and below 50289.2338551663 Hz`; with both ends inclusive, as
+/// [`range_words`] writes it.
+pub fn range_within_words(minimum: f64, minimum_exclusive: bool, maximum: f64, maximum_exclusive: bool, unit: &str) -> String {
+    if !minimum_exclusive && !maximum_exclusive {
+        return range_words(minimum, maximum, unit);
+    }
+    let low = if minimum_exclusive { format!("above {minimum}") } else { format!("at least {minimum}") };
+    let high = if maximum_exclusive { format!("below {maximum}") } else { format!("at most {maximum}") };
+    if unit.is_empty() || unit == "1" { format!("{low} and {high}") } else { format!("{low} and {high} {unit}") }
+}
+
+/// Whether a number lies inside a range whose ends may be exclusive.
+pub fn within(number: f64, minimum: f64, minimum_exclusive: bool, maximum: f64, maximum_exclusive: bool) -> bool {
+    let above = if minimum_exclusive { number > minimum } else { number >= minimum };
+    let below = if maximum_exclusive { number < maximum } else { number <= maximum };
+    above && below
 }
 
 /// One input, as `describe_solver` shows it.
@@ -486,6 +553,24 @@ pub(crate) fn input_row(input: &Input) -> Value {
             row.insert("maximum".to_string(), json!(maximum));
             row.insert("unit".to_string(), json!(unit));
         }
+        Kind::NumberWithin {
+            minimum,
+            minimum_exclusive,
+            maximum,
+            maximum_exclusive,
+            unit,
+        } => {
+            row.insert("type".to_string(), json!("number"));
+            row.insert("minimum".to_string(), json!(minimum));
+            if *minimum_exclusive {
+                row.insert("minimum_exclusive".to_string(), json!(true));
+            }
+            row.insert("maximum".to_string(), json!(maximum));
+            if *maximum_exclusive {
+                row.insert("maximum_exclusive".to_string(), json!(true));
+            }
+            row.insert("unit".to_string(), json!(unit));
+        }
         Kind::Word { allowed } => {
             row.insert("type".to_string(), json!("string"));
             row.insert("allowed".to_string(), json!(allowed));
@@ -507,6 +592,30 @@ pub(crate) fn input_row(input: &Input) -> Value {
             row.insert("most".to_string(), json!(most));
             row.insert("minimum".to_string(), json!(minimum));
             row.insert("maximum".to_string(), json!(maximum));
+            row.insert("unit".to_string(), json!(unit));
+        }
+        Kind::NumbersWithin {
+            fewest,
+            most,
+            minimum,
+            minimum_exclusive,
+            maximum,
+            maximum_exclusive,
+            unit,
+        } => {
+            row.insert("type".to_string(), json!("array of numbers"));
+            if *fewest > 0 {
+                row.insert("fewest".to_string(), json!(fewest));
+            }
+            row.insert("most".to_string(), json!(most));
+            row.insert("minimum".to_string(), json!(minimum));
+            if *minimum_exclusive {
+                row.insert("minimum_exclusive".to_string(), json!(true));
+            }
+            row.insert("maximum".to_string(), json!(maximum));
+            if *maximum_exclusive {
+                row.insert("maximum_exclusive".to_string(), json!(true));
+            }
             row.insert("unit".to_string(), json!(unit));
         }
     }
@@ -633,6 +742,7 @@ pub fn describe_whole(name: &str) -> Option<Value> {
         for (part, text) in crate::descriptor::VALIDATION_PARTS.iter().zip(validation()) {
             record.insert((*part).to_string(), Value::String(text));
         }
+        crate::descriptor::calibration_into(&mut record, solver.name);
         described.insert("validation".to_string(), Value::Object(record));
     }
     described.insert(
@@ -655,9 +765,12 @@ pub fn describe_whole(name: &str) -> Option<Value> {
     );
     described.insert("invariants".to_string(), sections.invariants);
     described.insert("convergence".to_string(), sections.convergence);
+    // The open connection's count of this solver in a plan of solves: the
+    // tool descriptions state the rule once and point here.
+    described.insert("open_connection".to_string(), json!(crate::open_plan::said_of_solver(solver.name)));
     described.insert(
         "refusals".to_string(),
-        json!(solver.refusals.iter().map(|refusal| json!({
+        json!(solver.listed_refusals().map(|refusal| json!({
             "name": refusal.name,
             "meaning": refusal.meaning,
             "reported_as": if refusal.sealed { SEALED_REFUSAL } else { AT_THE_DOOR },
@@ -671,7 +784,22 @@ pub fn describe_whole(name: &str) -> Option<Value> {
             json!({ "solver": solver.name, "parameters": (further.parameters)() }),
         );
     }
+    if let Some(refused) = example_refused(solver.name) {
+        described.insert(EXAMPLE_REFUSED.to_string(), refused);
+    }
     Some(Value::Object(described))
+}
+
+/// The key of a worked request a solver turns away by name before computing,
+/// as a card's description keys its own.
+pub(crate) const EXAMPLE_REFUSED: &str = crate::descriptor::EXAMPLE_REFUSED;
+
+/// A worked request a solver turns away by name before computing, with the
+/// one sentence it is answered with: an error, not a result, and nothing
+/// sealed. The hot spot's is NIF's N221204 as the registered comparison made
+/// it into a question.
+pub(crate) fn example_refused(solver: &str) -> Option<Value> {
+    (solver == "icf_hotspot_burn").then(crate::solver_icf_hotspot_burn::example_refused)
 }
 
 /// What the full form of a solver's description has that the short form leaves out.
@@ -707,6 +835,7 @@ pub fn describe_short(name: &str) -> Option<Value> {
         short.insert("against_measurement".to_string(), json!(word));
         short.insert("accuracy_against_measurement".to_string(), json!(phrase));
     }
+    crate::descriptor::calibration_into(&mut short, name);
     short.insert("inputs".to_string(), Value::Array(inputs));
     short.insert(
         "returns".to_string(),
@@ -715,6 +844,11 @@ pub fn describe_short(name: &str) -> Option<Value> {
     short.insert("refusals".to_string(), names(&whole["refusals"]));
     short.insert("examples".to_string(), json!(example_names(solver)));
     short.insert("example_solve".to_string(), whole["example_solve"].clone());
+    // A worked refusal, where the solver gives one, as a card's short form
+    // gives its own: the request, and the one sentence it is answered with.
+    if let Some(refused) = whole.get(EXAMPLE_REFUSED) {
+        short.insert(EXAMPLE_REFUSED.to_string(), refused.clone());
+    }
     short.insert(
         "full_form".to_string(),
         json!(format!(
@@ -736,19 +870,19 @@ pub fn describe_request_in(view: &View, request: &Value) -> Result<Value, DoorEr
     let solver = match object.get("solver") {
         None => {
             return Err(DoorError::Unprocessable(
-                "Missing required parameter: 'solver'".to_string(),
+                "Missing required parameter: 'solver' (InputMissing).".to_string(),
             ));
         }
         Some(Value::String(solver)) => Some(solver.as_str())
             .filter(|solver| view.sees_solver(solver) && is_known(solver))
-            .ok_or_else(|| DoorError::NotFound("Solver not recognized".to_string()))?,
+            .ok_or_else(|| DoorError::NotFound(crate::SOLVER_NOT_RECOGNIZED.to_string()))?,
         Some(_) => {
             return Err(DoorError::Unprocessable(
                 "Physical Violation: 'solver' must be a string.".to_string(),
             ));
         }
     };
-    let not_found = || DoorError::NotFound("Solver not recognized".to_string());
+    let not_found = || DoorError::NotFound(crate::SOLVER_NOT_RECOGNIZED.to_string());
     // The short form is of the whole description; a part is asked for alone.
     if crate::descriptor::form_of(object)? == crate::descriptor::Form::Short {
         if object.contains_key("part") {
@@ -860,6 +994,18 @@ fn input_schema(input: &Input) -> Value {
         Kind::NumberAbove { above, maximum, .. } => {
             json!({ "type": "number", "exclusiveMinimum": above, "maximum": maximum })
         }
+        Kind::NumberWithin {
+            minimum,
+            minimum_exclusive,
+            maximum,
+            maximum_exclusive,
+            ..
+        } => {
+            let mut schema = json!({ "type": "number" });
+            schema[if *minimum_exclusive { "exclusiveMinimum" } else { "minimum" }] = json!(minimum);
+            schema[if *maximum_exclusive { "exclusiveMaximum" } else { "maximum" }] = json!(maximum);
+            schema
+        }
         Kind::Word { allowed } => json!({ "type": "string", "enum": allowed }),
         Kind::Flag => json!({ "type": "boolean" }),
         Kind::Numbers {
@@ -873,6 +1019,25 @@ fn input_schema(input: &Input) -> Value {
                 "type": "array",
                 "items": { "type": "number", "minimum": minimum, "maximum": maximum },
             });
+            if *fewest > 0 {
+                schema["minItems"] = json!(fewest);
+            }
+            schema["maxItems"] = json!(most);
+            schema
+        }
+        Kind::NumbersWithin {
+            fewest,
+            most,
+            minimum,
+            minimum_exclusive,
+            maximum,
+            maximum_exclusive,
+            ..
+        } => {
+            let mut items = json!({ "type": "number" });
+            items[if *minimum_exclusive { "exclusiveMinimum" } else { "minimum" }] = json!(minimum);
+            items[if *maximum_exclusive { "exclusiveMaximum" } else { "maximum" }] = json!(maximum);
+            let mut schema = json!({ "type": "array", "items": items });
             if *fewest > 0 {
                 schema["minItems"] = json!(fewest);
             }
@@ -949,7 +1114,7 @@ pub(crate) fn parameters_schema(solver: &Solver) -> Value {
     });
     if !choices.is_empty() {
         schema["description"] = json!(format!(
-            "Every key in the required list, and {}. A key that goes with the other choice is refused by name.",
+            "Every key in the required list, and {}. A key that goes with the other choice is refused in a sentence that names the key, as InputNotWithChoice.",
             choice_words(&choices)
         ));
     }
@@ -963,7 +1128,7 @@ fn parameters_of_many() -> Value {
     json!({
         "type": "object",
         "description": format!(
-            "The inputs of the solver named in 'solver', each a number, a whole number, a word, a flag or an array as describe_solver gives it, and no other key. {}",
+            "The inputs of the solver named in 'solver', each a number, a whole number, a word, a flag or an array as describe_solver gives it, and no other key but signed. {}",
             SOLVER_NUMBER_RULE
         ),
     })
@@ -972,7 +1137,12 @@ fn parameters_of_many() -> Value {
 fn request_schema(view: &View) -> Value {
     let seen = view.solvers();
     let parameters = match seen.as_slice() {
-        [one] => parameters_schema(one),
+        [one] => {
+            // An instrument's signature over the other inputs may stand beside them.
+            let mut parameters = parameters_schema(one);
+            parameters["properties"][crate::signed_load::SIGNED] = crate::signed_load::schema();
+            parameters
+        }
         _ => parameters_of_many(),
     };
     json!({
@@ -994,7 +1164,7 @@ pub fn solve_schema_in(view: &View) -> Map<String, Value> {
     let mut schema = object_map(request_schema(view));
     schema.insert(
         "description".to_string(),
-        Value::String("One sealed solution. The same request as POST /solve.".to_string()),
+        Value::String("One sealed solution.".to_string()),
     );
     schema
 }
@@ -1010,7 +1180,7 @@ pub fn solution_schema_in(_view: &View) -> Map<String, Value> {
             },
             "inputs": {
                 "type": "object",
-                "description": "The inputs of the solve answer, sent back as returned: the request that was solved. It is hashed, not solved."
+                "description": "The inputs of the solve answer, sent back as returned: the request that was solved. It is hashed, and solved again under a physics permit and the limits of solve."
             },
             "engine_version": { "type": "string" },
             "outcome": { "type": "string" },
@@ -1035,7 +1205,7 @@ pub fn solution_schema_in(_view: &View) -> Map<String, Value> {
             "solution_seal": { "type": "string", "pattern": "^[0-9a-f]{64}$", "description": "The solution_seal of the solve answer: with request, or as part of the whole answer." }
         },
         "additionalProperties": true,
-        "description": "Either request and solution_seal alone, the short form: the request is solved again and its seal compared with solution_seal. Or the whole solve answer sent back, without request: inputs, engine_version, outcome, iterations, reject, result, invariants, field_sha256, seal_parts and solution_seal are then all required, the solution seal is recomputed and the part that fails is named, with no physics run."
+        "description": "Either request and solution_seal alone, the short form: the request is solved again and its seal compared with solution_seal. Or the whole solve answer sent back as it came, without request, the long form: inputs, engine_version, outcome, iterations, reject, result, invariants, field_sha256, seal_parts and solution_seal are then all required. The solution seal is recomputed from its exact hex values and the part that fails is named; then its request is solved again under a physics permit and the limits of solve, and the engine's whole answer to it compared with the answer sent, value by value and then byte for byte, the receipt included, so an answer that holds is every byte the engine's. A seal has no key: an answer whose values were rewritten with its seal parts, seal and receipt worked out again holds every seal, and only the solve shows it is not the engine's (cause solution_seal). The long form's answer carries holds, true when the answer sent is every byte the engine's, and values_hold beside it, true when every value of it is the engine's answer to its request computed again, whatever its spelling: each number by its 64-bit value, strings, flags and null exactly, keys and their order, the receipt string among them. A copy whose numbers a client wrote again in its own spelling (0.0001 for 1.0e-4, 12 for 12.0) has holds false and values_hold true, and differs_at names the first place its text differs."
     }))
 }
 
@@ -1084,6 +1254,7 @@ mod tests {
                         minimum, maximum, ..
                     } => assert!(minimum <= maximum, "{name} {field}"),
                     Kind::NumberAbove { above, maximum, .. } => assert!(above < maximum, "{name} {field}"),
+                    Kind::NumberWithin { minimum, maximum, .. } => assert!(minimum < maximum, "{name} {field}"),
                     Kind::Word { allowed } => {
                         assert!(!allowed.is_empty(), "{name} {field}");
                         assert!(allowed.iter().all(|word| !word.is_empty()), "{name} {field}");
@@ -1102,6 +1273,19 @@ mod tests {
                         assert!(*most > 0, "{name} {field}");
                         assert!(fewest <= most, "{name} {field}");
                         assert!(minimum <= maximum, "{name} {field}");
+                    }
+                    Kind::NumbersWithin {
+                        fewest,
+                        most,
+                        minimum,
+                        minimum_exclusive,
+                        maximum,
+                        maximum_exclusive,
+                        ..
+                    } => {
+                        assert!(*most > 0, "{name} {field}");
+                        assert!(fewest <= most, "{name} {field}");
+                        assert!(if *minimum_exclusive || *maximum_exclusive { minimum < maximum } else { minimum <= maximum }, "{name} {field}");
                     }
                 }
                 // A key that goes with one choice names a switch listed
@@ -1129,24 +1313,36 @@ mod tests {
                 // Only a number or an array of numbers has bounds to ask.
                 if input.asked_by_check {
                     assert!(
-                        matches!(input.kind, Kind::Number { .. } | Kind::NumberAbove { .. } | Kind::Numbers { .. }),
+                        matches!(input.kind, Kind::Number { .. } | Kind::NumberAbove { .. } | Kind::NumberWithin { .. } | Kind::Numbers { .. } | Kind::NumbersWithin { .. }),
                         "{name} {field}"
                     );
                 }
-                // A bound's refusal is one the solver names, and the request
-                // shows it, so it is answered with no seal.
+                // A bound's refusal is one the description lists, the
+                // solver's or the entry's own, and the request shows it, so
+                // it is answered with no seal.
                 if let Some(refusal) = input.refusal {
                     let listed = solver
-                        .refusal(refusal)
+                        .listed_refusals()
+                        .find(|listed| listed.name == refusal)
                         .unwrap_or_else(|| panic!("{name} {field}: {refusal} is not a refusal"));
                     assert!(!listed.sealed, "{name} {field}: {refusal}");
+                }
+                // Every input whose value can lie outside what the solver
+                // takes has a name for it: a flag alone has no such value.
+                if !matches!(input.kind, Kind::Flag) {
+                    assert!(input.refusal.is_some(), "{name} {field}: a value outside it would be refused with no name");
                 }
             }
 
             let mut refusals = BTreeSet::new();
-            for refusal in solver.refusals {
+            for refusal in solver.listed_refusals() {
                 assert!(refusals.insert(refusal.name), "{name} {}", refusal.name);
                 assert!(refusal.meaning.ends_with('.'), "{name} {}", refusal.name);
+            }
+            // What the entry names itself never reaches the solver, so it is
+            // never sealed.
+            for refusal in solver.door_refusals {
+                assert!(!refusal.sealed, "{name} {}", refusal.name);
             }
 
             for section in ["result", "invariants"] {
@@ -1271,6 +1467,17 @@ mod tests {
                             outside.push(json!(above));
                             outside.push(json!(maximum.next_up()));
                         }
+                        // An exclusive end is itself refused.
+                        Kind::NumberWithin {
+                            minimum,
+                            minimum_exclusive,
+                            maximum,
+                            maximum_exclusive,
+                            ..
+                        } => {
+                            outside.push(json!(if *minimum_exclusive { *minimum } else { minimum.next_down() }));
+                            outside.push(json!(if *maximum_exclusive { *maximum } else { maximum.next_up() }));
+                        }
                         Kind::Numbers {
                             most,
                             minimum,
@@ -1287,6 +1494,27 @@ mod tests {
                                 outside.push(Value::Array(high));
                             }
                             outside.push(json!(vec![*minimum; most + 1]));
+                        }
+                        // An exclusive end is itself refused.
+                        Kind::NumbersWithin {
+                            most,
+                            minimum,
+                            minimum_exclusive,
+                            maximum,
+                            maximum_exclusive,
+                            ..
+                        } => {
+                            let items = given.as_array().expect("an array");
+                            if let Some(last) = items.len().checked_sub(1) {
+                                let mut low = items.clone();
+                                low[last] = json!(if *minimum_exclusive { *minimum } else { minimum.next_down() });
+                                outside.push(Value::Array(low));
+                                let mut high = items.clone();
+                                high[last] = json!(if *maximum_exclusive { *maximum } else { maximum.next_up() });
+                                outside.push(Value::Array(high));
+                            }
+                            let inside = if *minimum_exclusive { minimum.next_up() } else { *minimum };
+                            outside.push(json!(vec![inside; most + 1]));
                         }
                         _ => unreachable!("only a number or an array of numbers"),
                     }

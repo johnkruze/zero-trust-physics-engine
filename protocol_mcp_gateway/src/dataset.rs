@@ -18,8 +18,8 @@ use std::sync::{Arc, Condvar, Mutex};
 
 use genesis_seal::card::{Bounds, CardFields};
 use genesis_seal::dataset::{
-    Assembled, DatasetRefusal, DatasetWriter, PreparedRow, RowResult, assemble, check_dataset, check_dataset_stream,
-    prepare_row,
+    Assembled, Counts, DatasetRefusal, DatasetReport, DatasetWriter, Head, PreparedRow, RowResult, assemble,
+    check_dataset, check_dataset_stream, dataset_seal, prepare_row,
 };
 use genesis_seal::plan::{DatasetRequest, Limits, PlanRefusal, Return, Store};
 use genesis_seal::rows::Row;
@@ -48,27 +48,26 @@ const LIMITS: Limits = Limits {
 };
 
 const NO_FILE_DIRECTORY: &str =
-    "the gateway was started without a directory for dataset files.";
+    "this connection was started without a directory for dataset files.";
 
 /// How a dataset that came back in the answer is checked. A check by seal
 /// reads a dataset the gateway stored in files; one returned inline was not
 /// stored, and the caller holds its three parts.
-pub(crate) const CHECK_BY_PARTS: &str = "A dataset returned in the answer (return \"inline\") is not stored: check it by sending its run_dataset request as 'request' with its 'dataset_seal', which runs the plan again, or by sending back the head, rows and frames_hex of its full answer (answer \"full\").";
+pub(crate) const VERIFY_BY_PARTS: &str = "A dataset returned in the answer (return \"inline\") is not stored: verify it by sending its run_dataset request as 'request' with its 'dataset_seal', which runs the plan again, or by sending back the head, rows and frames_hex of its full answer (answer \"full\").";
 
 /// A check by seal on a gateway that stores nothing.
-fn no_directory_for_a_check() -> String {
-    format!("{NO_FILE_DIRECTORY} {CHECK_BY_PARTS}")
+fn no_directory_to_verify() -> String {
+    format!("{NO_FILE_DIRECTORY} {VERIFY_BY_PARTS}")
 }
 
 /// A check by seal for a seal no stored folder carries.
 fn not_stored() -> String {
-    format!("no dataset is stored under that seal. {CHECK_BY_PARTS}")
+    format!("no dataset is stored under that seal. {VERIFY_BY_PARTS}")
 }
 
 /// What a caller is told when every seal holds and the rows are not, byte for
 /// byte, the rows the head names. One sentence: what each of the two means,
 /// and which to report.
-pub(crate) const HOLDS_AND_ROWS_DIFFER: &str = "holds is true because every seal was rebuilt from the exact values of the rows as they were sent, so no sealed value, plan, count or seal was altered, while rows_file does not match because the text of the rows sent is not byte for byte the text the engine wrote (a decimal copy, a refusal sentence, the order of keys or the spelling of a number differs), which no seal covers; report that the dataset holds, and say that the copy checked was not byte-identical.";
 
 const BUSY: &str = "Too many concurrent physics tasks.";
 
@@ -132,6 +131,10 @@ pub(crate) const BASE_REPLACED: &str = "base_replaced";
 /// 3-vector the base sets whole is replaced only when the paths set all three
 /// of its components.
 pub(crate) fn normalize(request: Value) -> Result<Normalized, DoorError> {
+    // An axis or a draw that would set a value of a signed reading of the
+    // base is refused before the base is read: the value run would not be
+    // the value signed.
+    crate::signed_load::refuse_replaced_in_plan(&request)?;
     let Value::Object(mut object) = request else {
         return Ok(Normalized { request, form: Form::Summary, form_given: false, replaced: Vec::new() });
     };
@@ -305,7 +308,7 @@ pub(crate) fn too_large_inline(counted: u64, form: Form, stores_frames: bool) ->
             text.push_str(" store \"none\" returns no frames;");
         }
     }
-    text.push_str(" send fewer runs; or return \"file\", which stores the rows and answers with the head, and check it with verify_dataset by its dataset_seal. Nothing was run.");
+    text.push_str(" send fewer runs; or, on a connection that stores datasets as files, return \"file\", which stores the rows and answers with the head, and verify_dataset verifies it by its dataset_seal. Nothing was run.");
     text
 }
 
@@ -391,7 +394,7 @@ pub(crate) fn inline_answer_chars(request: &DatasetRequest, form: Form) -> u64 {
 }
 
 /// What a summary answer says of itself.
-pub(crate) const SUMMARY_ABOUT: &str = "One summary row per run: for a grid or a sample the values the row sets, then its outcome, steps landed, refusal name and run seal, and with \"answer\": \"states\" its final state in decimals. The head and the dataset_seal are those of the full rows. Send the request again with \"answer\": \"states\" for each final state, or \"full\" for every row whole; check the seal with verify_dataset given this request and the dataset_seal; or replay one row's request through run_trajectory, with a readout, to read its quantities.";
+pub(crate) const SUMMARY_ABOUT: &str = "One summary row per run: for a grid or a sample the values the row sets, then its outcome, steps landed, refusal name and run seal, and with \"answer\": \"states\" its final state in decimals. The head and the dataset_seal are those of the full rows. Send the request again with \"answer\": \"states\" for each final state, or \"full\" for every row whole; verify the seal with verify_dataset given this request and the dataset_seal; or replay one row's request through run_trajectory, with a readout, to read its quantities.";
 
 /// The name of a refusal in round brackets at the end of a door's sentence,
 /// as an unadmitted row carries it; `None` when the sentence gives none.
@@ -474,10 +477,10 @@ fn admit(
 ) -> Result<(DatasetRequest, Option<Arc<PathBuf>>), DoorError> {
     let request = DatasetRequest::from_value(request).map_err(plan_fault)?;
     if state.view().find(request.domain(), request.card()).is_none() {
-        return Err(DoorError::NotFound("Card not recognized".to_string()));
+        return Err(DoorError::NotFound(crate::CARD_NOT_RECOGNIZED.to_string()));
     }
     let description = descriptor::describe_value_in(state.view(), request.domain(), request.card())
-        .ok_or_else(|| DoorError::NotFound("Card not recognized".to_string()))?;
+        .ok_or_else(|| DoorError::NotFound(crate::CARD_NOT_RECOGNIZED.to_string()))?;
     let fields = CardFields::from_description(&description).map_err(|refusal| {
         DoorError::Internal(format!(
             "Physical Violation: the card's description was not read. {refusal}"
@@ -524,11 +527,12 @@ fn take_workers(state: &AppState, request: &DatasetRequest) -> Result<Vec<Pair>,
 /// The dataset seal a plan computes to, worked out again: the plan held to
 /// the card and the limits as `run_dataset` holds it, under the same permits,
 /// its rows run in plan order and sealed as they arrive. Nothing is written
-/// and nothing stored is read.
-async fn recompute_seal(state: &AppState, request: Value) -> Result<String, DoorError> {
+/// and nothing stored is read. Beside it, when it is not the seal `given`,
+/// what the seal says of the engine version (`run_plan_version_words`).
+async fn recompute_seal(state: &AppState, request: Value, given: &str) -> Result<(String, Option<String>), DoorError> {
     let normalized = normalize(request)?;
     if normalized.is_solves() {
-        return crate::solve_plan::recompute_seal(state, normalized).await;
+        return crate::solve_plan::recompute_seal(state, normalized, given).await;
     }
     let (request, _) = admit(state, normalized.request, false)?;
     let workers = take_workers(state, &request)?;
@@ -545,7 +549,7 @@ async fn recompute_seal(state: &AppState, request: Value) -> Result<String, Door
                 run_ordered(&state, &request, worker_count, |row| writer.push_prepared(row).map_err(not_sealed))?;
                 writer.finish().map_err(not_sealed)
             })
-            .map(|written| written.head.dataset_seal);
+            .map(|written| written.head);
         #[cfg(test)]
         if !state.permit_hold.is_zero() {
             std::thread::sleep(state.permit_hold);
@@ -553,12 +557,34 @@ async fn recompute_seal(state: &AppState, request: Value) -> Result<String, Door
         drop(workers);
         result
     });
-    task.await.unwrap_or_else(|_| {
+    let head = task.await.unwrap_or_else(|_| {
         Err(DoorError::Internal(
             "Physical Violation: the dataset job stopped before it finished. Nothing was written."
                 .to_string(),
         ))
-    })
+    })?;
+    let words = (head.dataset_seal != given).then(|| run_plan_version_words(&head, given));
+    Ok((head.dataset_seal, words))
+}
+
+/// What a check by request of a plan of runs says when the seal given is not
+/// the one computed: the dataset seal covers `engine_version` through its
+/// counts, and, when the seal given is this plan's under another version's
+/// name, that version beside this engine's (the red team of 0.13.0, D4).
+fn run_plan_version_words(head: &Head, given: &str) -> String {
+    let ours = &head.counts.engine_version;
+    let theirs = crate::verify_by_request::other_versions("genesis_kernel", ours).into_iter().find(|name| {
+        let counts = Counts { engine_version: name.clone(), ..head.counts.clone() };
+        dataset_seal(&head.plan_sha256, &head.merkle_root, &counts) == given
+    });
+    match theirs {
+        Some(theirs) => format!(
+            "The dataset_seal covers engine_version through its counts: the seal given is this plan's dataset seal with engine_version {theirs}, another engine version's, and this engine writes {ours}, so it does not hold here."
+        ),
+        None => format!(
+            "The dataset_seal covers engine_version through its counts, {ours} on this engine: the seal of a dataset another engine version made does not hold here."
+        ),
+    }
 }
 
 /// A frame sink that keeps nothing: a check by request needs the seal, which
@@ -588,7 +614,12 @@ impl std::io::Seek for Discard {
 }
 
 /// What a check by request of a dataset compared, said in its answer.
-pub(crate) const DATASET_BY_REQUEST_CHECKED: &str = "The plan was run again, row by row, and the dataset_seal given was compared with the seal of that run; holds is that comparison. The seal covers the plan's values, every row's run seal and the counts, so a plan sent with a number spelled another way (310 and 310.0) has the same seal. No copy of the rows or the head was read and nothing was stored: the decimal copies in a copy of the rows and the head's receipt were not checked.";
+pub(crate) const DATASET_BY_REQUEST_COMPARED: &str = "The plan was run again, row by row, and the dataset_seal given was compared with the seal of that run; holds is that comparison. The seal covers the plan's values, every row's run seal and the counts, so a plan sent with a number spelled another way (310 and 310.0) has the same seal. No copy of the rows or the head was read and nothing was stored: the decimal copies in a copy of the rows and the head's receipt were not compared.";
+
+/// The same of a plan of solves, whose rows carry solution seals: until
+/// 0.14.0 rc2 it was answered with the words of a plan of runs, "every row's
+/// run seal" (the red team of rc1, RT3 W6).
+pub(crate) const DATASET_OF_SOLVES_BY_REQUEST_COMPARED: &str = "The plan was solved again, row by row, and the dataset_seal given was compared with the seal of that plan; holds is that comparison. The seal covers the plan's values, every row's solution seal and the counts, so a plan sent with a number spelled another way (310 and 310.0) has the same seal. No copy of the rows or the head was read and nothing was stored: the decimal copies in a copy of the rows and the head's receipt were not compared.";
 
 pub(crate) type Pair = (OwnedSemaphorePermit, crate::PhysicsPermit);
 
@@ -635,7 +666,20 @@ fn run_inline(request: &DatasetRequest, form: Form, replaced: &[String]) -> Resu
     for index in 0..planned {
         results.push(run_row(request, index)?);
     }
-    let mut assembled = assemble(request, crate::ENGINE_VERSION, &results).map_err(|refusal| {
+    answer_of_results(request, form, replaced, &results)
+}
+
+/// The rows of a plan run one after another in plan order, for a test that
+/// writes a dataset again from them as anyone can, by the published rules.
+#[cfg(test)]
+pub(crate) fn results_of(request: &DatasetRequest) -> Vec<RowResult> {
+    (0..request.totals().rows).map(|index| run_row(request, index).unwrap_or_else(|error| panic!("{}", error.message()))).collect()
+}
+
+/// The answer of a plan whose rows are `results`, sealed and written as
+/// `run_dataset` writes it.
+pub(crate) fn answer_of_results(request: &DatasetRequest, form: Form, replaced: &[String], results: &[RowResult]) -> Result<String, DoorError> {
+    let mut assembled = assemble(request, crate::ENGINE_VERSION, results).map_err(|refusal| {
         DoorError::Internal(format!(
             "Physical Violation: the rows were not sealed. {refusal}"
         ))
@@ -1189,15 +1233,17 @@ fn confirm_stored_folder(
 /// limits of `run_dataset`; or the three parts a `run_dataset` answer
 /// carries, or the seal of a dataset the gateway stored, which take no
 /// physics permit and run no physics.
-pub(crate) async fn check(state: &AppState, body: &Value) -> Result<String, DoorError> {
+pub(crate) async fn verify(state: &AppState, body: &Value, text: Option<&str>) -> Result<String, DoorError> {
     let object = body.as_object().ok_or_else(|| {
         DoorError::Unprocessable("Physical Violation: the request must be a JSON object.".into())
     })?;
     if let Some((request, given)) =
-        crate::check_by_request::read(object, "dataset_seal", "'dataset_seal' alone, or 'head', 'rows' and 'frames_hex',")?
+        crate::verify_by_request::read(object, "dataset_seal", "'dataset_seal' alone, or 'head', 'rows' and 'frames_hex',")?
     {
-        let recomputed = recompute_seal(state, request.clone()).await?;
-        return crate::check_by_request::answer("dataset_seal", "run_dataset", given, &recomputed, None, DATASET_BY_REQUEST_CHECKED, crate::check_by_request::DATASET_TEXT_NOT_COMPARED);
+        let of_solves = request.get("solver").is_some();
+        let (recomputed, version) = recompute_seal(state, request.clone(), given).await?;
+        let compared = if of_solves { DATASET_OF_SOLVES_BY_REQUEST_COMPARED } else { DATASET_BY_REQUEST_COMPARED };
+        return crate::verify_by_request::answer("dataset_seal", "run_dataset", given, &recomputed, None, compared, crate::verify_by_request::DATASET_TEXT_NOT_COMPARED, version);
     }
     if object.contains_key("dataset_seal") {
         if object.len() != 1 {
@@ -1209,7 +1255,7 @@ pub(crate) async fn check(state: &AppState, body: &Value) -> Result<String, Door
         let directory = state
             .dataset_dir
             .clone()
-            .ok_or_else(|| DoorError::Unprocessable(no_directory_for_a_check()))?;
+            .ok_or_else(|| DoorError::Unprocessable(no_directory_to_verify()))?;
         let seal = match object.get("dataset_seal") {
             Some(Value::String(text))
                 if text.len() == 64
@@ -1219,25 +1265,245 @@ pub(crate) async fn check(state: &AppState, body: &Value) -> Result<String, Door
             }
             _ => return Err(wrong("dataset_seal", "64 lowercase hex digits")),
         };
-        let one_at_a_time = Arc::clone(&state.stored_checks)
+        let one_at_a_time = Arc::clone(&state.stored_verifications)
             .try_acquire_owned()
             .map_err(|_| DoorError::TooMany(BUSY.to_string()))?;
-        return tokio::task::spawn_blocking(move || {
-            let _one_at_a_time = one_at_a_time;
-            check_stored(&directory, &seal)
-        })
+        let folder = Arc::clone(&directory);
+        let named = seal.clone();
+        let sealed = tokio::task::spawn_blocking(move || verify_stored(&folder, &named))
             .await
             .unwrap_or_else(|_| {
                 Err(DoorError::Internal(
-                    "Physical Violation: the check stopped before it finished.".to_string(),
+                    "Physical Violation: the verification stopped before it finished.".to_string(),
                 ))
-            });
+            })?;
+        // Every seal holds: the stored head's plan is run again, into a folder
+        // of its own, and the stored files are held to its files byte for byte.
+        let answer = rerun_stored(state, directory, seal, sealed).await;
+        drop(one_at_a_time);
+        return answer;
     }
-    check_parts(object)
+    verify_parts(state, body, text).await
+}
+
+/// A stored dataset whose seals hold, held to the dataset the engine makes
+/// for its head's plan: the plan is run again under `run_dataset`'s permits
+/// and limits, into a folder of its own that is removed after, and the stored
+/// head, rows and frames are compared with that run's byte for byte. The
+/// answer of the seals stands when a seal does not hold.
+async fn rerun_stored(state: &AppState, directory: Arc<PathBuf>, seal: String, sealed: String) -> Result<String, DoorError> {
+    let mut answer: Value = serde_json::from_str(&sealed)
+        .map_err(|error| DoorError::Internal(format!("Physical Violation: the verification could not be read again. {error}")))?;
+    if answer["holds"] != Value::Bool(true) {
+        return Ok(sealed);
+    }
+    let stored = directory.join(&seal);
+    let head = std::fs::read(stored.join(HEAD_FILE)).map_err(|error| not_written(&error))?;
+    let head_value: Value = serde_json::from_slice(&head)
+        .map_err(|error| DoorError::Internal(format!("Physical Violation: the stored head could not be read again. {error}")))?;
+    let normalized = normalize(head_value["request"].clone())?;
+    let (differs, values_hold) = match admit(state, normalized.request, true) {
+        Err(DoorError::Unprocessable(sentence) | DoorError::NotFound(sentence)) => (Some((
+            None,
+            crate::rebuild::Difference::new(
+                "head.request",
+                format!("The engine runs no dataset for this plan: it turns it away before running. {sentence}"),
+            ),
+        )), false),
+        Err(other) => return Err(other),
+        Ok((request, _)) => {
+            let workers = take_workers(state, &request)?;
+            let state = state.clone();
+            tokio::task::spawn_blocking(move || {
+                let worker_count = workers.len();
+                let found = rerun_and_compare(&state, &request, &directory, &stored, worker_count);
+                drop(workers);
+                found
+            })
+            .await
+            .unwrap_or_else(|_| {
+                Err(DoorError::Internal(
+                    "Physical Violation: the dataset job stopped before it finished. Nothing was written.".to_string(),
+                ))
+            })?
+        }
+    };
+    answer["values_hold"] = Value::Bool(values_hold);
+    if let Some((row, difference)) = differs {
+        answer["holds"] = Value::Bool(false);
+        answer["cause"] = Value::String(crate::rebuild::CAUSE_ANSWER_TEXT.to_string());
+        answer["row"] = row.map(Value::from).unwrap_or(Value::Null);
+        answer["merkle_root"] = Value::Null;
+        answer["dataset_seal"] = Value::Null;
+        answer["differs_at"] = Value::String(difference.at);
+        answer["difference"] = Value::String(difference.says);
+    }
+    encoded(&answer)
+}
+
+/// The first byte where two files differ, or where one ends before the
+/// other: `None` when they are the same bytes.
+fn first_byte_apart(stored: &Path, engine: &Path) -> std::io::Result<Option<u64>> {
+    use std::io::Read;
+    let open = |path: &Path| -> std::io::Result<Option<std::io::BufReader<std::fs::File>>> {
+        match std::fs::File::open(path) {
+            Ok(file) => Ok(Some(std::io::BufReader::with_capacity(1 << 20, file))),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+            Err(error) => Err(error),
+        }
+    };
+    let (mut left, mut right) = match (open(stored)?, open(engine)?) {
+        (None, None) => return Ok(None),
+        (Some(_), None) | (None, Some(_)) => return Ok(Some(0)),
+        (Some(left), Some(right)) => (left, right),
+    };
+    let mut at = 0_u64;
+    let (mut a, mut b) = (vec![0_u8; 1 << 16], vec![0_u8; 1 << 16]);
+    loop {
+        let read_a = left.read(&mut a)?;
+        let mut read_b = 0;
+        while read_b < read_a {
+            let more = right.read(&mut b[read_b..read_a])?;
+            if more == 0 {
+                break;
+            }
+            read_b += more;
+        }
+        if read_a == 0 {
+            return Ok((right.read(&mut b[..1])? > 0).then_some(at));
+        }
+        if let Some(place) = a[..read_b].iter().zip(&b[..read_b]).position(|(x, y)| x != y) {
+            return Ok(Some(at + place as u64));
+        }
+        if read_b < read_a {
+            return Ok(Some(at + read_b as u64));
+        }
+        at += read_a as u64;
+    }
+}
+
+/// The count of line breaks in a file before a byte: the row a byte of a
+/// rows file belongs to.
+fn row_of_byte(path: &Path, byte: u64) -> Option<u64> {
+    use std::io::Read;
+    let file = std::fs::File::open(path).ok()?;
+    let mut reader = std::io::BufReader::new(file).take(byte);
+    let mut block = vec![0_u8; 1 << 16];
+    let mut rows = 0_u64;
+    loop {
+        let read = reader.read(&mut block).ok()?;
+        if read == 0 {
+            return Some(rows);
+        }
+        rows += block[..read].iter().filter(|byte| **byte == b'\n').count() as u64;
+    }
+}
+
+/// Run a stored dataset's plan again into a folder of its own in the same
+/// directory, compare the stored folder's files with it byte for byte, and
+/// remove it: the first file and place that differ, with the row of a rows
+/// file, or `None` when the stored dataset is, every byte, the engine's.
+fn rerun_and_compare(
+    state: &AppState,
+    request: &DatasetRequest,
+    directory: &Path,
+    stored: &Path,
+    workers: usize,
+) -> Result<(Option<(Option<u64>, crate::rebuild::Difference)>, bool), DoorError> {
+    use crate::rebuild::Difference;
+    let folder = JobFolder::create(directory)?;
+    let rows_out = private_file(&folder.path.join(ROWS_FILE), false)
+        .map(|file| std::io::BufWriter::with_capacity(1 << 20, file))
+        .map_err(|error| not_written(&error))?;
+    let frames_out = match request.store() {
+        Store::Frames => Some(private_file(&folder.path.join(FRAMES_FILE), true).map_err(|error| not_written(&error))?),
+        Store::None => None,
+    };
+    let mut writer = DatasetWriter::new(request, crate::ENGINE_VERSION, rows_out, frames_out).map_err(not_sealed)?;
+    run_ordered(state, request, workers, |row| writer.push_prepared(row).map_err(not_sealed))?;
+    let written = writer.finish().map_err(not_sealed)?;
+    let head_text = written.head.wire();
+    drop(written.rows);
+    drop(written.frames);
+    let apart = |file: &str| first_byte_apart(&stored.join(file), &folder.path.join(file)).map_err(|error| not_written(&error));
+    let rows_apart = apart(ROWS_FILE)?;
+    let frames_apart = apart(FRAMES_FILE)?;
+    let stored_head = std::fs::read(stored.join(HEAD_FILE)).map_err(|error| not_written(&error))?;
+    let head_sent: Value = serde_json::from_slice(&stored_head).unwrap_or(Value::Null);
+    let head_compared = crate::rebuild::compare_under("head", &head_text, &head_sent, &String::from_utf8_lossy(&stored_head))?;
+    // Every value holds when each stored row is the engine's row value for
+    // value, the frames are its bytes, and the head is its head value for
+    // value, whatever the spelling of a number.
+    let values_hold = (rows_apart.is_none() || rows_values_hold(&stored.join(ROWS_FILE), &folder.path.join(ROWS_FILE)))
+        && frames_apart.is_none()
+        && head_compared.values_hold;
+    if let Some(byte) = rows_apart {
+        let row = row_of_byte(&stored.join(ROWS_FILE), byte);
+        let at = row.map_or_else(|| "rows".to_string(), |row| format!("rows[{row}]"));
+        // The row is named at its first field that differs, when both files
+        // hold it as a line of JSON.
+        let line_of = |path: &Path| -> Option<String> {
+            use std::io::BufRead;
+            let file = std::fs::File::open(path).ok()?;
+            std::io::BufReader::new(file).lines().nth(row? as usize)?.ok()
+        };
+        let named = match (line_of(&stored.join(ROWS_FILE)), line_of(&folder.path.join(ROWS_FILE))) {
+            (Some(theirs), Some(ours)) => serde_json::from_str::<Value>(&theirs)
+                .ok()
+                .and_then(|sent| crate::rebuild::compare_under(&at, &ours, &sent, &theirs).ok().and_then(|found| found.difference)),
+            _ => None,
+        };
+        let difference = named.unwrap_or_else(|| Difference::new(
+            at.clone(),
+            format!("The stored {ROWS_FILE} is not the rows file the engine writes for this plan, run again: it first differs at byte {byte}, in {at}. Its seals hold, so it is consistent with itself, and it is not the engine's text."),
+        ));
+        return Ok((Some((row, difference)), values_hold));
+    }
+    if let Some(byte) = frames_apart {
+        return Ok((Some((None, Difference::new(
+            "frames",
+            format!("The stored {FRAMES_FILE} is not the frame file the engine writes for this plan, run again: it first differs at byte {byte}."),
+        ))), values_hold));
+    }
+    if stored_head != head_text.as_bytes() {
+        let says = head_compared
+            .difference
+            .unwrap_or_else(|| Difference::new("head", "The stored head is not the head the engine writes for this plan, run again."));
+        return Ok((Some((None, says)), values_hold));
+    }
+    Ok((None, values_hold))
+}
+
+/// Whether every line of a stored rows file is the engine's row value for
+/// value, in the engine's key order, whatever the spelling of a number.
+fn rows_values_hold(stored: &Path, engine: &Path) -> bool {
+    use std::io::BufRead;
+    let (Ok(theirs), Ok(ours)) = (std::fs::File::open(stored), std::fs::File::open(engine)) else {
+        return false;
+    };
+    let mut theirs = std::io::BufReader::with_capacity(1 << 20, theirs).lines();
+    let mut ours = std::io::BufReader::with_capacity(1 << 20, ours).lines();
+    loop {
+        match (theirs.next(), ours.next()) {
+            (None, None) => return true,
+            (Some(Ok(theirs)), Some(Ok(ours))) => {
+                if theirs == ours {
+                    continue;
+                }
+                let (Ok(theirs), Ok(ours)) = (genesis_seal::json_text::read(theirs.as_bytes()), serde_json::from_str::<Value>(&ours)) else {
+                    return false;
+                };
+                if crate::rebuild::first_difference(&ours, &theirs).is_some() {
+                    return false;
+                }
+            }
+            _ => return false,
+        }
+    }
 }
 
 /// Check the folder the gateway stored under `seal`.
-pub(crate) fn check_stored(directory: &Path, seal: &str) -> Result<String, DoorError> {
+pub(crate) fn verify_stored(directory: &Path, seal: &str) -> Result<String, DoorError> {
     use genesis_seal::stored_file::{open_regular, require_plain_folder};
     let folder = directory.join(seal);
     // The folder and its three files must be what they say: a folder, and
@@ -1284,7 +1550,7 @@ pub(crate) fn check_stored(directory: &Path, seal: &str) -> Result<String, DoorE
         Err(_) => {
             let refused = check_dataset_stream(&head, &[], None::<std::io::Empty>)
                 .map_err(|refusal| DoorError::Unprocessable(refusal.to_string()))?;
-            return check_answer(&refused.report);
+            return answer_of_report(&refused.report, &head, &[], None, false);
         }
     };
     let counts = &stored.counts;
@@ -1317,13 +1583,21 @@ pub(crate) fn check_stored(directory: &Path, seal: &str) -> Result<String, DoorE
     };
     let checked = check_dataset_stream(&head, &rows, frames)
         .map_err(|refusal| DoorError::Unprocessable(refusal.to_string()))?;
-    check_answer(&checked.report)
+    answer_of_report(&checked.report, &head, &rows, None, false)
 }
 
 /// The keys of a dataset check by parts. All three are required together.
 pub(crate) const PARTS_KEYS: &[&str] = &["head", "rows", "frames_hex"];
 
-fn check_parts(object: &Map<String, Value>) -> Result<String, DoorError> {
+/// The long form of a dataset: the head, rows and frames of a full answer.
+/// The rows, the root and the seal are recomputed with no physics; when every
+/// seal holds, the head's plan is run again under `run_dataset`'s permits and
+/// limits, and the engine's full answer to it is compared with the answer
+/// sent, value by value and byte for byte.
+async fn verify_parts(state: &AppState, body: &Value, text: Option<&str>) -> Result<String, DoorError> {
+    let object = body.as_object().ok_or_else(|| {
+        DoorError::Unprocessable("Physical Violation: the request must be a JSON object.".into())
+    })?;
     for key in object.keys() {
         if !PARTS_KEYS.contains(&key.as_str()) {
             return Err(DoorError::Unprocessable(format!(
@@ -1336,7 +1610,7 @@ fn check_parts(object: &Map<String, Value>) -> Result<String, DoorError> {
         return Err(wrong("head", "a JSON object"));
     }
     if head["request"].get("solver").is_some() {
-        return Err(DoorError::Unprocessable(crate::solve_plan::CHECK_SOLVES_BY_REQUEST.to_string()));
+        return Err(DoorError::Unprocessable(crate::solve_plan::VERIFY_SOLVES_BY_REQUEST.to_string()));
     }
     let rows = required(object, "rows")?
         .as_array()
@@ -1358,29 +1632,155 @@ fn check_parts(object: &Map<String, Value>) -> Result<String, DoorError> {
         rows_bytes.extend_from_slice(encoded(row)?.as_bytes());
         rows_bytes.push(b'\n');
     }
-    report(&head_bytes, &rows_bytes, frames.as_deref())
+    let checked = check_dataset(&head_bytes, &rows_bytes, frames.as_deref())
+        .map_err(|refusal| DoorError::Unprocessable(refusal.to_string()))?;
+    if !checked.holds || another_version_of(&head_bytes, &checked).is_some() {
+        return answer_of_report(&checked, &head_bytes, &rows_bytes, None, false);
+    }
+    // Every seal holds, and a seal has no key: the plan is run again and the
+    // engine's full answer to it compared with the answer sent.
+    let request = head["request"].clone();
+    let (differs, values_hold) = match rerun_full(state, request).await {
+        Ok(engine_text) => {
+            // The rows are compared first, so the first row that is not the
+            // engine's is named before the head that seals it.
+            let engine: Value = serde_json::from_str(&engine_text).map_err(|error| {
+                DoorError::Internal(format!("Physical Violation: the engine's answer could not be read again. {error}"))
+            })?;
+            let in_rows = crate::rebuild::first_difference_under("rows", &engine["rows"], &body["rows"]);
+            let sent_text = crate::rebuild::sent_text(body, text);
+            let found = match in_rows {
+                Some(difference) => crate::rebuild::Compared { difference: Some(difference), values_hold: false },
+                None => crate::rebuild::compare(&engine_text, body, &sent_text)?,
+            };
+            (found.difference.map(|difference| (row_of_path(&difference.at), difference)), found.values_hold)
+        }
+        Err(DoorError::Unprocessable(sentence) | DoorError::NotFound(sentence)) => (Some((
+            None,
+            crate::rebuild::Difference::new(
+                "head.request",
+                format!("The engine runs no dataset for this plan: it turns it away before running. {sentence}"),
+            ),
+        )), false),
+        Err(other) => return Err(other),
+    };
+    answer_of_report(&checked, &head_bytes, &rows_bytes, differs, values_hold)
 }
 
+/// The row a path of a dataset's answer names: `rows[3].final_state` is row 3.
+fn row_of_path(path: &str) -> Option<u64> {
+    let rest = path.strip_prefix("rows[")?;
+    rest[..rest.find(']')?].parse().ok()
+}
+
+/// The full answer `run_dataset` gives a plan, run again under its permits
+/// and limits: the head, every row whole and the frames, as JSON text.
+/// Nothing is stored, whatever the plan's return mode.
+async fn rerun_full(state: &AppState, request: Value) -> Result<String, DoorError> {
+    let normalized = normalize(request)?;
+    if normalized.is_solves() {
+        return Err(DoorError::Unprocessable(crate::solve_plan::VERIFY_SOLVES_BY_REQUEST.to_string()));
+    }
+    let (request, _) = admit(state, normalized.request, false)?;
+    let workers = take_workers(state, &request)?;
+    #[cfg(test)]
+    let hold = state.permit_hold;
+    let replaced = normalized.replaced;
+    let task = tokio::task::spawn_blocking(move || {
+        let result = run_inline(&request, Form::Full, &replaced);
+        #[cfg(test)]
+        if !hold.is_zero() {
+            std::thread::sleep(hold);
+        }
+        drop(workers);
+        result
+    });
+    task.await.unwrap_or_else(|_| {
+        Err(DoorError::Internal(
+            "Physical Violation: the dataset job stopped before it finished. Nothing was written."
+                .to_string(),
+        ))
+    })
+}
+
+#[cfg(test)]
 pub(crate) fn report(head: &[u8], rows: &[u8], frames: Option<&[u8]>) -> Result<String, DoorError> {
     let report = check_dataset(head, rows, frames)
         .map_err(|refusal| DoorError::Unprocessable(refusal.to_string()))?;
-    check_answer(&report)
+    answer_of_report(&report, head, rows, None, false)
 }
 
-fn check_answer(report: &genesis_seal::dataset::DatasetReport) -> Result<String, DoorError> {
+/// A dataset of another engine version, named: its head's `engine_version`
+/// when it is not this engine's, and what that means, with what the seals
+/// recomputed by this engine's rules say.
+fn another_version_of(head: &[u8], report: &DatasetReport) -> Option<crate::rebuild::Difference> {
+    let head: Value = serde_json::from_slice(head).ok()?;
+    let version = head.get("engine_version")?.as_str()?;
+    if version == crate::ENGINE_VERSION {
+        return None;
+    }
+    let seals = match (report.holds, report.cause) {
+        (true, _) => "hold".to_string(),
+        (false, Some(cause)) => format!("do not hold, at {}", cause.as_str()),
+        (false, None) => "do not hold".to_string(),
+    };
+    Some(crate::rebuild::Difference::new(
+        "head.engine_version",
+        format!(
+            "The dataset names engine_version {version}, and this engine is {}. An engine writes only its own datasets, so the text of a dataset of {version} is not compared here and holds is false. Its seals, recomputed by this engine's rules, {seals}; from genesis_kernel_v0.10.0 a row's leaf also seals its reject_detail, and a dataset of an earlier version is verified by that version's rules, which the programs that confirm a proof with no engine choose by the version.",
+            crate::ENGINE_VERSION
+        ),
+    ))
+}
+
+/// The answer of a dataset's verification: its seals' report, another engine
+/// version named first, and `differs`, the first place where a dataset whose
+/// seals hold is not the engine's dataset for its plan run again, with its
+/// row.
+fn answer_of_report(
+    report: &DatasetReport,
+    head: &[u8],
+    rows: &[u8],
+    differs: Option<(Option<u64>, crate::rebuild::Difference)>,
+    values_hold: bool,
+) -> Result<String, DoorError> {
+    // A dataset of another engine version is named first: the leaf rule
+    // moved in genesis_kernel_v0.10.0, so its seals may not hold here.
+    let another = another_version_of(head, report);
+    let differs = if report.holds && another.is_none() { differs } else { None };
+    let holds = report.holds && another.is_none() && differs.is_none();
     // The root and the seal rebuilt from the rows are returned only when the
     // check holds: a rebuilt seal beside a seal that does not hold would be a
     // seal to write into the head and send back, and it shows only that the
     // rows are consistent with themselves.
-    let (merkle_root, dataset_seal) = if report.holds {
+    let (merkle_root, dataset_seal) = if holds {
         (report.merkle_root.clone(), report.dataset_seal.clone())
     } else {
         (None, None)
     };
+    // What was done to the rows, in plain words, as genesis_seal
+    // verify-dataset says it, when a seal does not hold.
+    let fault = match (&another, report.holds) {
+        (None, false) => genesis_seal::fault::fault_of(head, rows, report, MAX_DATASET_ROWS),
+        _ => None,
+    };
+    // The row of the first break, as the seal crate names it; where it names
+    // none (rows dropped or repeated), the first row the fault shows at; for
+    // a text that differs, its row.
+    let row = report
+        .row
+        .or(fault.as_ref().and_then(|fault| fault.row))
+        .or(differs.as_ref().and_then(|(row, _)| *row));
+    let cause = match (&another, &differs) {
+        (Some(_), _) => Some(crate::rebuild::CAUSE_ENGINE_VERSION),
+        (None, Some(_)) => Some(crate::rebuild::CAUSE_ANSWER_TEXT),
+        (None, None) => report.cause.map(|cause| cause.as_str()),
+    };
     let mut answer = json!({
-        "holds": report.holds,
-        "cause": report.cause.map(|cause| cause.as_str()),
-        "row": report.row,
+        "holds": holds,
+        "values_hold": report.holds && another.is_none() && values_hold,
+        "cause": cause,
+        "row": row,
         "broken_link": report.broken_link,
         "chains": report.chains.as_str(),
         "merkle_root": merkle_root,
@@ -1389,12 +1789,16 @@ fn check_answer(report: &genesis_seal::dataset::DatasetReport) -> Result<String,
         "rows_file": report.rows_file.as_str(),
         "frames_file": report.frames_file.as_str(),
     });
-    // The one pair of answers a caller could not read: every seal holds, and
-    // the rows are not the bytes the head names. The answer then says what
-    // each means and which to report. In every other case the answer is the
-    // ten keys above and no more.
-    if report.holds && report.rows_file.as_str() == "does not match the hash in the head" {
-        answer["what_to_report"] = Value::String(HOLDS_AND_ROWS_DIFFER.to_string());
+    // A dataset that holds has the eleven keys above and no more. `fault` is
+    // added when a seal does not hold; `differs_at` and `difference` when the
+    // seals hold and the text is not the engine's, or the dataset names
+    // another engine version.
+    if let Some(fault) = fault {
+        answer["fault"] = Value::String(fault.says);
+    }
+    if let Some(difference) = another.or(differs.map(|(_, difference)| difference)) {
+        answer["differs_at"] = Value::String(difference.at);
+        answer["difference"] = Value::String(difference.says);
     }
     encoded(&answer)
 }
@@ -1402,7 +1806,7 @@ fn check_answer(report: &genesis_seal::dataset::DatasetReport) -> Result<String,
 fn required<'a>(object: &'a Map<String, Value>, key: &str) -> Result<&'a Value, DoorError> {
     object
         .get(key)
-        .ok_or_else(|| DoorError::Unprocessable(format!("Missing required parameter: '{key}'")))
+        .ok_or_else(|| DoorError::Unprocessable(format!("Missing required parameter: '{key}' (InputMissing).")))
 }
 
 fn wrong(field: &str, expected: &str) -> DoorError {
@@ -1552,13 +1956,21 @@ pub fn worked_plans_in(view: &View) -> Option<[(&'static str, Value); 3]> {
 /// 3,240.
 pub(crate) const REST_OF_AN_ANSWER_CHARS: usize = 8_000;
 
-/// What the `run_dataset` tool says of itself to a caller of this view: what
-/// a plan is, how a path is written, one worked plan of each kind, the two
-/// forms of an answer and how large each is, what a row can be, and the plan
-/// of solves.
-pub fn run_description_in(view: &View) -> String {
+/// What the `run_dataset` tool says of itself on every connection: what it
+/// does, what a plan is, the forms of an answer, what a row can be and what
+/// the seal shows. How a plan is written, how an answer is counted and the
+/// plan of solves are said at the inputs they are about ([`plan_says_in`],
+/// [`answer_says`], [`solves_say_in`]), which the tool list places there.
+pub fn run_description() -> String {
+    "Runs a declared plan of runs on one card, or of solves of one solver, and seals the rows under one root. A plan is a list of runs, a grid over a base run, or a seeded sample over a base run; a run is a run_trajectory request without domain and card. A plan of solves names solver in place of domain and card and is a list or a grid of solve requests. The answer is small by default: the head, which holds the request, the counts and the dataset_seal, and one summary row per run; answer \"states\" adds each final state in decimals and \"full\" gives every row whole, under the same dataset_seal. A row is completed, ended, refused or unadmitted: an ended or a refused row is a run sealed up to its last landed step, and an unadmitted row is a request turned away before computing, with no seal. The seal shows the dataset was not altered after it was sealed. It does not show the engine made it: a row's request sent to run_trajectory gives the run seal to compare. The input schema says how each input is written, with a worked plan of each kind.".to_string()
+}
+
+/// What the `plan` input of `run_dataset` says to an agent of this view: how
+/// a path is written, what a varied value replaces, what cannot vary, which
+/// rows a bound stops, and one worked plan of each kind.
+pub(crate) fn plan_says_in(view: &View) -> String {
     let mut text = String::from(
-        "Run a declared plan of runs on one card, or of solves of one solver, and seal the rows under one root. Same bytes as POST /run_dataset. The seal shows the dataset was not altered after it was sealed. It does not show the engine made it: send a row's request to run_trajectory and compare run seals. A plan is a list of runs, a grid over a base run, or a seeded sample over a base run; a run is a run_trajectory request without domain and card. A path names one number: initial.<field>, dt_s, or segments[0].load.<field>, with the segment's number in square brackets and [0], [1] or [2] after a 3-vector field for one of its components. steps and record_every are not paths and cannot vary: every row of a grid or a sample takes them from the base run. A value an axis or a draw sets replaces the base's value of that field, and the answer's base_replaced names each field replaced; a 3-vector the base sets whole is replaced only when the paths set all three of its components. Two paths may not set one number.",
+        "A path names one number: initial.<field>, dt_s, or segments[0].load.<field>, with the segment's number in square brackets and [0], [1] or [2] after a 3-vector field for one of its components. steps and record_every are not paths and cannot vary: every row of a grid or a sample takes them from the base run. A value an axis or a draw sets replaces the base's value of that field, and the answer's base_replaced names each field replaced; a 3-vector the base sets whole is replaced only when the paths set all three of its components. Two paths may not set one number. Each row of a grid is held to the card's bounds alone, as each run of a list is: a value outside a bound makes that row unadmitted and the other rows run. A sample's interval or choice outside a bound refuses the plan.",
     );
     if let Some(plans) = worked_plans_in(view) {
         text.push_str(" One worked plan of each kind, each a whole request:");
@@ -1567,13 +1979,26 @@ pub fn run_description_in(view: &View) -> String {
         }
         text.push('.');
     }
-    text.push_str(&format!(
-        " The answer is small by default: the head, which holds the request, the counts and the dataset_seal, and one summary row per run with row, set (the values a grid's or a sample's row sets), outcome, steps_landed, reject and run_seal. With \"answer\": \"states\" each summary row also holds final_state in decimals; with \"answer\": \"full\" the answer is the head, every row whole and frames_hex. The head and the dataset_seal are the same in all three forms, and answer is not part of the sealed request. To read quantities of one row, send its request to run_trajectory with a readout. An inline answer is counted from the plan before anything runs, and one above {MAX_INLINE_ANSWER_CHARS} characters is refused with what to change: a summary row counts {SUMMARY_ROW_FIXED_CHARS} characters and the values it sets; with states, each number of the final state adds its name and 28 characters (84 for a 3-vector, 9 for a flag); a whole row counts its own request and {FULL_ROW_FIXED_CHARS} characters, and for each number twice its name and 60 characters (150 for a 3-vector, 9 for a flag); store \"frames\" adds 128 characters for each recorded state to a full answer; the head repeats the request. return \"file\" stores the rows and answers with the head and the names of the files, whatever the plan's size and whatever answer says; verify_dataset checks it by its dataset_seal. A row is completed, ended, refused or unadmitted. An ended row is a run that stopped at an end its card declares: it has a run seal, the end's reject name in reject and the sentence naming the end in reject_detail. A refused row is a run the card refused part way: it has a run seal, the refusal's name in reject and its sentence in reject_detail. An unadmitted row is a request the door turned away before computing: it has no run seal, and its sentence, with the refusal's name in round brackets when the sentence gives one, is its reject_detail; its summary row gives that name in reject. Each row of a grid is held to the card's bounds alone, as each run of a list is: a value outside a bound makes that row unadmitted and the other rows run. A sample's interval or choice outside a bound refuses the plan. What a sentence that begins \"Physical Failure\" or \"Physical Violation\" means is in the description of run_trajectory."
-    ));
-    text.push_str(&format!(
-        " A plan of solves names solver in place of domain and card, takes no store and no return, and is answered inline: a list, {{\"kind\":\"list\",\"solves\":[{{\"parameters\":{{...}}}}]}}, or a grid, {{\"kind\":\"grid\",\"base\":{{\"parameters\":{{...}}}},\"axes\":[{{\"path\":\"parameters.<input>\",\"values\":[...]}}]}}, of at most {} solves. Each row is a solve request, solved as solve solves it and carrying the solution_seal solve gives it; a request the door or the solver turns away without a seal is an unadmitted row. The rows are sealed under one dataset_seal by the rules of a plan of runs, with solution_seal in the leaf in the place of run_seal, and completed in the counts counts the solves that converged. A summary row has row, set, outcome, reject, solution_seal and every single number of the result in decimals; answer \"full\" gives every solution whole, and is refused when it comes to more than {MAX_INLINE_ANSWER_CHARS} characters. verify_dataset checks a plan of solves by its request and dataset_seal, and validate_series compares one number of its results with measurements.",
+    text
+}
+
+/// What the `answer` input of `run_dataset` says after its three forms: what
+/// a summary row holds, what each kind of row carries, and how an inline
+/// answer is counted before anything runs.
+pub(crate) fn answer_says() -> String {
+    format!(
+        "The head and the dataset_seal are the same in all three forms. A summary row holds row, set (the values a grid's or a sample's row sets), outcome, steps_landed, reject and run_seal; the quantities of one row are read by sending its request to run_trajectory with a readout. An ended row is a run that stopped at an end its card declares: it has a run seal, the end's reject name in reject and the sentence naming the end in reject_detail. A refused row is a run the card refused part way: it has a run seal, the refusal's name in reject and its sentence in reject_detail. An unadmitted row is a request turned away before computing: it has no run seal, and its sentence, with the refusal's name in round brackets when the sentence gives one, is its reject_detail; its summary row gives that name in reject. What a sentence that begins \"Physical Failure\" or \"Physical Violation\" means is in the description of run_trajectory. An inline answer is counted from the plan before anything runs, and one above {MAX_INLINE_ANSWER_CHARS} characters is refused with what to change: a summary row counts {SUMMARY_ROW_FIXED_CHARS} characters and the values it sets; with states, each number of the final state adds its name and 28 characters (84 for a 3-vector, 9 for a flag); a whole row counts its own request and {FULL_ROW_FIXED_CHARS} characters, and for each number twice its name and 60 characters (150 for a 3-vector, 9 for a flag); store \"frames\" adds 128 characters for each recorded state to a full answer; the head repeats the request."
+    )
+}
+
+/// What the `solver` input of `run_dataset` says to an agent of this view: how
+/// a plan of solves is written, how its rows are sealed, what a summary row
+/// holds, which tools read it, and one worked plan.
+pub(crate) fn solves_say_in(view: &View) -> String {
+    let mut text = format!(
+        "A plan of solves is answered inline: a list, {{\"kind\":\"list\",\"solves\":[{{\"parameters\":{{...}}}}]}}, or a grid, {{\"kind\":\"grid\",\"base\":{{\"parameters\":{{...}}}},\"axes\":[{{\"path\":\"parameters.<input>\",\"values\":[...]}}]}}, of at most {} solves. Each row is a solve request, solved as solve solves it and carrying the solution_seal solve gives it; a request turned away without a seal, by the rules of a request or by the solver, is an unadmitted row. The rows are sealed under one dataset_seal by the rules of a plan of runs, with solution_seal in the leaf in the place of run_seal, and completed in the counts counts the solves that converged. A summary row has row, set, outcome, reject, solution_seal and every single number of the result in decimals; answer \"full\" gives every solution whole, and is refused when it comes to more than {MAX_INLINE_ANSWER_CHARS} characters. verify_dataset verifies a plan of solves by its request and dataset_seal, and validate_series compares one number of its results with measurements.",
         crate::solve_plan::MAX_SOLVES
-    ));
+    );
     if let Some(plan) = crate::solve_plan::worked_plan_in(view) {
         text.push_str(&format!(" Worked plan of solves: {plan}."));
     }
@@ -1676,7 +2101,7 @@ pub fn run_schema() -> Map<String, Value> {
         "required": ["plan"],
         "additionalProperties": false,
         "description": format!(
-            "A plan of runs on one card (domain, card, plan, store and return, all required) or of solves of one solver (solver and plan). Rows <= {MAX_DATASET_ROWS}, steps in total <= {MAX_DATASET_STEPS}, stored frames <= {MAX_DATASET_FRAMES}; inline: rows <= {MAX_INLINE_ROWS}, frames <= {MAX_INLINE_FRAMES}, an answer counted from the plan <= {MAX_INLINE_ANSWER_CHARS} characters; solves <= {}. With return \"file\" the answer is the head and the names of the files the gateway stored, and the gateway must have been started with a directory for them.",
+            "A plan of runs on one card (domain, card, plan, store and return, all required) or of solves of one solver (solver and plan). Rows <= {MAX_DATASET_ROWS}, steps in total <= {MAX_DATASET_STEPS}, stored frames <= {MAX_DATASET_FRAMES}; inline: an answer counted from the plan <= {MAX_INLINE_ANSWER_CHARS} characters, which a plan reaches first, a grid on one axis at about 140 summary rows and a list sooner, its head repeating each run's request (a plan of more than {MAX_INLINE_ROWS} rows is refused before it is counted, as too large to return inline), and frames <= {MAX_INLINE_FRAMES}; solves <= {}. With return \"file\" the answer is the head and the names of the files stored, on a connection started with a directory for them.",
             crate::solve_plan::MAX_SOLVES
         ),
     }))
@@ -1697,11 +2122,11 @@ pub fn verify_schema() -> Map<String, Value> {
             "dataset_seal": {
                 "type": "string",
                 "pattern": "^[0-9a-f]{64}$",
-                "description": "With request: the dataset_seal of the run_dataset answer, compared with the seal the plan runs to. Alone: the seal of a dataset the gateway stored in files (return \"file\"); the gateway reads its own folder of that name. A dataset returned in the answer is not stored: send it with its request, or send its head, rows and frames_hex."
+                "description": "With request: the dataset_seal of the run_dataset answer, compared with the seal the plan runs to. Alone: the seal of a dataset stored as files (return \"file\"), read from the connection's own folder of that name. A dataset returned in the answer is not stored: it is verified with its request, or by its head, rows and frames_hex."
             }
         },
         "additionalProperties": false,
-        "description": "Send one of three forms. request and dataset_seal, the short form: the plan is run again and its seal compared. The three parts a run_dataset answer carries (head, rows and frames_hex, all three required together): the rows, the root and the seal are recomputed with no physics run. dataset_seal alone: the stored dataset of that seal is checked with no physics run."
+        "description": "One of three forms. request and dataset_seal, the short form: the plan is run again and its seal compared. The three parts a full run_dataset answer carries (head, rows and frames_hex, all three required together, as they came), the long form: the rows, the root and the seal are recomputed from their exact values, then the head's plan is run again under the permits and the limits of run_dataset and the engine's full answer to it compared with the parts sent, value by value and then byte for byte, so a dataset that holds is every byte the engine's. dataset_seal alone: the stored dataset of that seal, its seals recomputed from its files and its plan run again into a folder of its own, the stored files compared with that run's byte for byte. The long form's answer carries holds, true when the answer sent is every byte the engine's, and values_hold beside it, true when every value of it is the engine's answer to its request computed again, whatever its spelling: each number by its 64-bit value, strings, flags and null exactly, keys and their order, the receipt string among them. A copy whose numbers a client wrote again in its own spelling (0.0001 for 1.0e-4, 12 for 12.0) has holds false and values_hold true, and differs_at names the first place its text differs."
     }))
 }
 
@@ -1736,7 +2161,22 @@ mod answer_bounds {
                         card.card,
                         text.len()
                     );
-                    heads.push(serde_json::from_str::<Value>(&text).unwrap()["head"].clone());
+                    let body = serde_json::from_str::<Value>(&text).unwrap();
+                    // The full rows, checked as they were made, hold with no
+                    // row named: on every card each decimal of a final state
+                    // is the value of the hex beside it.
+                    if form == Form::Full {
+                        let state = crate::new_gateway_state();
+                        let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+                        let checked = runtime
+                            .block_on(verify(&state, &body, Some(&text)))
+                            .unwrap_or_else(|e| panic!("{} {kind}: {}", card.card, e.message()));
+                        let checked: Value = serde_json::from_str(&checked).unwrap();
+                        assert_eq!(checked["holds"], true, "{} {kind}: {checked}", card.card);
+                        assert_eq!(checked["row"], Value::Null, "{} {kind}: {checked}", card.card);
+                        assert!(checked.get("fault").is_none() && checked.get("what_to_report").is_none(), "{} {kind}: {checked}", card.card);
+                    }
+                    heads.push(body["head"].clone());
                 }
                 assert_eq!(heads[0], heads[1], "{} {kind}", card.card);
                 assert_eq!(heads[0], heads[2], "{} {kind}", card.card);
@@ -1767,5 +2207,53 @@ mod answer_bounds {
         assert!(normalize(json!({ "answer": "rows" })).is_err());
         assert_eq!(name_in_brackets("Physical Violation: x is outside (ReactivityOutsideCard)."), Some("ReactivityOutsideCard".to_string()));
         assert_eq!(name_in_brackets("Physical Violation: x (a note) y."), None);
+    }
+
+    /// Rows whose numbers were written again after one was taken out carry
+    /// no number that tells where they came from: each is looked for among
+    /// the rows of the plan nearest its place, and no further than the search
+    /// reaches.
+    #[test]
+    fn a_row_out_of_its_place_is_looked_for_nearest_first_and_only_as_far_as_the_search_reaches() {
+        let run = |power: f64| {
+            json!({ "initial": { "temperature_k": 293.15 }, "dt_s": 1.0, "record_every": 1,
+                    "segments": [{ "steps": 2, "load": { "heat_power_w": power, "ambient_k": 293.15 } }] })
+        };
+        let plan = json!({ "domain": "energy", "card": "thermal", "store": "none", "return": "inline",
+                           "plan": { "kind": "list", "runs": (0..8).map(|n| run(f64::from(n))).collect::<Vec<_>>() } });
+        let request = DatasetRequest::from_value(plan).unwrap_or_else(|e| panic!("{e}"));
+        let body: Value = serde_json::from_str(&run_inline(&request, Form::Full, &[]).unwrap_or_else(|e| panic!("{}", e.message()))).unwrap();
+        let renumbered = |mut rows: Vec<Value>| -> Vec<String> {
+            for (place, row) in rows.iter_mut().enumerate() {
+                row["row"] = json!(place);
+                row["leaf"]["row"] = json!(place);
+            }
+            rows.iter().map(|row| serde_json::to_string(row).unwrap()).collect()
+        };
+        let made = body["rows"].as_array().unwrap().clone();
+        let read = |lines: &[String], search_most: u64| -> (Option<u64>, Option<u64>, String) {
+            let plan = DatasetRequest::from_value(body["head"]["request"].clone()).unwrap_or_else(|e| panic!("{e}"));
+            let lines: Vec<&[u8]> = lines.iter().map(String::as_bytes).collect();
+            match genesis_seal::fault::first_out_of_place(plan, &lines, search_most) {
+                Some((place, row, says)) => (Some(place), row, says),
+                None => (None, None, String::new()),
+            }
+        };
+        // Row 2 taken out: the row in its place is found one row on.
+        let mut dropped = made.clone();
+        dropped.remove(2);
+        let dropped = renumbered(dropped);
+        assert_eq!(
+            read(&dropped, 8),
+            (Some(2), Some(3), "A row was dropped: row 2 is the first row missing, and the row in its place is row 3. Rows read: 7; rows in the plan: 8.".to_string())
+        );
+        // Row 7 written in the place of row 0: found when the search reaches seven rows on, and said only to be changed when it does not.
+        let mut moved = made.clone();
+        moved[0] = made[7].clone();
+        let moved = renumbered(moved);
+        assert_eq!(read(&moved, 64).1, Some(7));
+        assert_eq!(read(&moved, 2), (Some(0), None, "A row was changed: the request of row 0 is not the request the plan gives it.".to_string()));
+        // The search writes out no more rows of the plan than it is given, whatever the plan's size.
+        assert_eq!(genesis_seal::fault::search_most(4 << 20, MAX_DATASET_ROWS), 2);
     }
 }

@@ -27,15 +27,15 @@ pub const STEP_FLOW_ARMALY: Solver = Solver {
     inputs: &[
         Input {
             name: "reynolds_number",
-            kind: Kind::Number {
-                minimum: step::REYNOLDS_MIN,
+            kind: Kind::NumberAbove {
+                above: step::REYNOLDS_ABOVE,
                 maximum: step::REYNOLDS_MAX,
                 unit: "1",
             },
             refusal: Some("ReynoldsOutOfRange"),
-            bound: "Mean inlet speed times twice the inlet height (10.4 mm) over the kinematic viscosity. The definition is the paper's own (page 478): V two-thirds of the measured maximum inlet velocity, D twice the inlet height. The two ends are the two conditions with open measured profiles, 100 and 389; no profile between them was compared. Above about 400 the measured flow is three-dimensional and no two-dimensional calculation follows it. At 389 the rig is already leaving two-dimensionality: the paper reports small deviations from two-dimensionality between 7 and 12 step heights there, and the reattachment length it measured, about 8.6 step heights, is 6 to 7 percent longer than this solver's. Solver and measured reattachment agree within 1 percent only near Reynolds number 300.",
+            bound: "Mean inlet speed times twice the inlet height (10.4 mm) over the kinematic viscosity. The definition is the paper's own (page 478): V two-thirds of the measured maximum inlet velocity, D twice the inlet height. Any Reynolds number above 0 up to 400 is answered; 0 or less, where the viscosity would be infinite or negative, is refused as ReynoldsNotPositive, and above 400 as ReynoldsOutOfRange: the paper, page 482, finds the flow over this step two-dimensional below 400 (its Figure 8 at 397) and three-dimensional from 400 to 6600, and the solver's equations are those of steady two-dimensional flow. The two conditions with open measured profiles are 100 and 389; no profile between them was compared, and nothing below 100 was compared (reattachment 5.8 percent low against Armaly's plot at 97). Below 100 the same equations are settled down to creeping flow, and from 389 to 400 they are settled and nothing was compared; until this version the top was 389. At 389 the rig is already leaving two-dimensionality: the paper reports small deviations from two-dimensionality between 7 and 12 step heights there, and the reattachment length it measured, about 8.6 step heights, is 6 to 7 percent longer than this solver's. Solver and measured reattachment agree within 1 percent only near Reynolds number 300.",
             only_when: None,
-            asked_by_check: false,
+            asked_by_check: true,
         },
         Input {
             name: "station_x_over_s",
@@ -45,7 +45,7 @@ pub const STEP_FLOW_ARMALY: Solver = Solver {
                 unit: "step heights",
             },
             refusal: Some("StationOutOfRange"),
-            bound: "Where the velocity profile is returned: distance downstream of the step over the step height (4.9 mm). Measured profiles were compared at Reynolds number 100 at stations from 0 to 7.76 (Figure 3 of NASA Technical Memorandum 106248) and from 12.04 to 30.31 (Armaly's Figure 15, first-hand, compared on 2026-10-10 at 30 for the circles at 30.31), and at Reynolds number 389 at stations from 0 to 13.57. Out to 30 is served at Reynolds number 100 only. Above 100 a station past 13.57 is refused by name (StationNotCompared): no measured profile past it was compared there. No measured profile at any station was compared at a Reynolds number strictly between 100 and 389.",
+            bound: "Where the velocity profile is returned: distance downstream of the step over the step height (4.9 mm). Measured profiles were compared at Reynolds number 100 at stations from 0 to 7.76 (Figure 3 of NASA Technical Memorandum 106248) and from 12.04 to 30.31 (Armaly's Figure 15, first-hand, compared on 2026-10-10 at 30 for the circles at 30.31), and at Reynolds number 389 at stations from 0 to 13.57. Out to 30, where the grid ends, is answered at every Reynolds number; above 100 no measured profile past 13.57 was compared, and through engine 0.8.0 such a station was refused there by name. No measured profile at any station was compared at a Reynolds number strictly between 100 and 389, or below 100.",
             only_when: None,
             asked_by_check: false,
         },
@@ -67,6 +67,7 @@ pub const STEP_FLOW_ARMALY: Solver = Solver {
     field: field_words,
     answer: "a settled flow",
     refusals: REFUSALS,
+    door_refusals: &[],
     sections,
     validation: Some(validation),
     example,
@@ -76,26 +77,25 @@ pub const STEP_FLOW_ARMALY: Solver = Solver {
     solve,
 };
 
-const SUMMARY: &str = "Steady laminar air flow over the backward-facing step of the rig of Armaly and others (1983; step 4.9 mm, channel 5.2 mm opening to 10.1 mm), two-dimensional Navier-Stokes with nothing fitted: reattachment length and the velocity profile at one station, Reynolds number 100 to 389; compared with measured velocity profiles at 100 and at 389 only, second-hand and digitised, all three lines met at 389 and confirmed by a second scoring, and at 100 also first-hand from Armaly's Figure 15 out to 30.31 step heights; stations out to 30 step heights at 100, out to 13.57 above 100; the reattachment length at 100 is 14 percent below the sentence of NASA Technical Memorandum 106248 that quotes the measurement, a miss of that sentence, and 6 percent below Armaly's own plot as read first-hand afterwards, inside the mark; at 389 it is 6 to 7 percent below that plot.";
+const SUMMARY: &str = "Steady laminar air flow over the backward-facing step of the rig of Armaly and others (1983; step 4.9 mm, channel 5.2 mm opening to 10.1 mm), two-dimensional Navier-Stokes with nothing fitted: reattachment length and the velocity profile at one station, Reynolds number above 0 to 400, where the flow over this step turns three-dimensional, stations out to 30 step heights; compared with measured velocity profiles at 100 and at 389 only, second-hand and digitised, all three lines met at 389 and confirmed by a second scoring, and at 100 also first-hand from Armaly's Figure 15 out to 30.31 step heights, above 100 to 13.57 step heights, and below 100 not at all; the reattachment length at 100 is 14 percent below the sentence of NASA Technical Memorandum 106248 that quotes the measurement, a miss of that sentence, and 6 percent below Armaly's own plot as read first-hand afterwards, inside the mark; at 389 it is 6 to 7 percent below that plot.";
 
 /// Each `StepReject` variant with the sentence from its doc comment. The
-/// request itself shows a Reynolds number or a station outside the range, or a
-/// station past the last one compared at its Reynolds number, so those three
-/// are not sealed.
+/// request itself shows a Reynolds number or a station outside the range, so
+/// those three are not sealed.
 const REFUSALS: &[Refusal] = &[
     Refusal {
+        name: "ReynoldsNotPositive",
+        meaning: "`reynolds_number` is not above `REYNOLDS_ABOVE`: the viscosity `2 h / Re` is infinite or negative.",
+        sealed: false,
+    },
+    Refusal {
         name: "ReynoldsOutOfRange",
-        meaning: "`reynolds_number` is outside `REYNOLDS_MIN`..=`REYNOLDS_MAX`.",
+        meaning: "`reynolds_number` is above `REYNOLDS_MAX`: above 400 the flow over this step is three-dimensional (Armaly et al. 1983, page 482: two-dimensional below 400, three-dimensional from 400 to 6600), and the solver's equations are those of steady two-dimensional flow.",
         sealed: false,
     },
     Refusal {
         name: "StationOutOfRange",
-        meaning: "`station_x_over_s` is outside `STATION_MIN_X_OVER_S`..=`STATION_MAX_X_OVER_S`.",
-        sealed: false,
-    },
-    Refusal {
-        name: "StationNotCompared",
-        meaning: "`station_x_over_s` is above `STATION_MAX_ABOVE_REYNOLDS_MIN_X_OVER_S` at a Reynolds number above `REYNOLDS_MIN`, where no measured profile was compared.",
+        meaning: "`station_x_over_s` is outside `STATION_MIN_X_OVER_S` to `STATION_MAX_X_OVER_S`, where the grid ends.",
         sealed: false,
     },
     Refusal {
@@ -110,7 +110,7 @@ const REFUSALS: &[Refusal] = &[
     },
     Refusal {
         name: "ImbalanceGrew",
-        meaning: "The largest imbalance rose above `IMBALANCE_CAP`.",
+        meaning: "The largest imbalance rose above `IMBALANCE_CAP` in the viscous scale.",
         sealed: true,
     },
     Refusal {
@@ -133,9 +133,9 @@ const REFUSALS: &[Refusal] = &[
 /// The `StepReject` variant name, without its fields.
 pub fn reject_name(reject: &StepReject) -> &'static str {
     match reject {
+        StepReject::ReynoldsNotPositive { .. } => "ReynoldsNotPositive",
         StepReject::ReynoldsOutOfRange { .. } => "ReynoldsOutOfRange",
         StepReject::StationOutOfRange { .. } => "StationOutOfRange",
-        StepReject::StationNotCompared { .. } => "StationNotCompared",
         StepReject::NonFiniteValue => "NonFiniteValue",
         StepReject::SingularSystem => "SingularSystem",
         StepReject::ImbalanceGrew { .. } => "ImbalanceGrew",
@@ -172,11 +172,11 @@ fn sections() -> Sections {
         invariants: json!([
             {
                 "name": "largest_imbalance",
-                "rule": "At every node the vorticity carried by the flow is the vorticity spread by viscosity, which is the momentum balance with the pressure taken out, and the vorticity is that of the stream function. The largest imbalance of either over every node. It says the equations were solved, for any viscosity; it does not say they describe the air. Mass is conserved by the stream function's construction and is not checked.",
+                "rule": "At every node the vorticity carried by the flow is the vorticity spread by viscosity, which is the momentum balance with the pressure taken out, and the vorticity is that of the stream function. The largest imbalance of either over every node. It says the equations were solved, for any viscosity; it does not say they describe the air. Mass is conserved by the stream function's construction and is not tested.",
                 "tolerance": step::IMBALANCE_TOLERANCE,
                 "cap": step::IMBALANCE_CAP,
                 "unit": "solver units",
-                "checked": "every Newton iteration",
+                "compared": "every Newton iteration",
                 "refusal": "NonFiniteValue, ImbalanceGrew or NotSettled",
             },
             {
@@ -184,16 +184,16 @@ fn sections() -> Sections {
                 "rule": "One grid column before the outlet the speed is the developed parabola of the whole channel: the outlet is far enough downstream.",
                 "tolerance": step::OUTLET_TOLERANCE,
                 "unit": "largest inlet speed",
-                "checked": "at acceptance",
+                "compared": "at acceptance",
                 "refusal": "OutletNotDeveloped",
             },
         ]),
         convergence: json!({
             "imbalance_tolerance": step::IMBALANCE_TOLERANCE,
             "max_newton_iterations": step::MAX_NEWTON_ITERATIONS,
-            "rule": "Newton's method on the whole field, each iteration one direct banded solve with row exchanges. The flow is first settled at each rung of the ladder below the asked Reynolds number, to the rung tolerance, then at the asked one to the imbalance tolerance. A result is returned only when the largest imbalance is within it, the outlet is developed, and the floor shows one reattachment with at most a corner eddy before it.",
+            "rule": "Newton's method on the whole field, each iteration one direct banded solve with row exchanges. The flow is first settled at each rung of the ladder below the asked Reynolds number, to the rung tolerance, then at the asked one to the imbalance tolerance. Below Reynolds number 100 the viscous term, and with it the imbalance of any field, grows as 1/Re, so the tolerance and the cap are multiplied by 100/Re there; from 100 up they are as stated. Far below, near Reynolds number 1e-12, the rounding of the viscous term outgrows the flow and the solver stops by name (FlowPatternNotRecognised, ImbalanceGrew or NonFiniteValue); at 1e-6 the reattachment is 0.3507 step heights, the corner eddy of creeping flow. A result is returned only when the largest imbalance is within it, the outlet is developed, and the floor shows one reattachment with at most a corner eddy before it.",
             "refusal": "NotSettled, ImbalanceGrew, SingularSystem, OutletNotDeveloped or FlowPatternNotRecognised",
-            "run_time": "The heaviest question, Reynolds number 389, takes 2.7 s on one core of an Apple M4 Pro, and about 82 MB for the banded matrix. Every question in range is at most that work: three rungs and the asked Reynolds number.",
+            "run_time": "The heaviest question, Reynolds number 400, takes 2.2 s on one core of an Apple M4 Pro (2.0 s at 389 in the same measurement, 2026-10-14), and about 82 MB for the banded matrix. Every question in range is at most that work: three rungs and the asked Reynolds number.",
         }),
         reference: json!({
             "name": step::REFERENCE_NAME,
@@ -211,12 +211,12 @@ fn validation() -> [String; 5] {
     let object = "The air channel of Armaly, Durst, Pereira and Schönung (J. Fluid Mech. 127 (1983) 473): an inlet channel 5.2 mm high opens over a backward-facing step 4.9 mm high into a channel 10.1 mm high, expansion ratio 1.94, with developed laminar flow at the step and laser-Doppler measurements in the centre plane. The solver settles the steady two-dimensional incompressible flow in that geometry. Nothing is fitted.".to_string();
     let data = "The paper is B. F. Armaly, F. Durst, J. C. F. Pereira and B. Schönung, Experimental and theoretical investigation of backward-facing step flow, Journal of Fluid Mechanics 127, 473-496 (1983), doi 10.1017/S0022112083002839. It had not been read when the comparison was made, and was read at the second scoring. Its page 478 gives the Reynolds number as this solver takes it: \"Re = VD/ν, where V is two-thirds of the measured maximum inlet velocity\", with \"D = 2h\". The measurements compared are the ones replotted and quoted in NASA Technical Memorandum 106248 (Steinthorsson, Liou, Povinelli and Arnone, 1993, NTRS 19930021958, public use permitted): circles of u/Umax against y/H at stations x/S in its Figure 3 (Reynolds number 100) and Figure 4 (389), and one sentence giving the measured reattachment at approximately 3.3 step heights for 100 and approximately 8 for 389. The circles were digitised from a 300 dots-per-inch one-bit scan by a program: second-hand and digitised, two steps from the instrument. At the station on the step, where the flow is the inlet parabola, the circles as read differ from the parabola by 0.041 of the largest inlet speed root mean square; the builder called that the reading floor, and the second scoring took it apart: reading contributes about 0.005, and the data's own floor is about 0.03, from the scatter of the circles about a smooth curve and from a volume flux that is not conserved from station to station (0.90 to 1.12 of the exact flux at Reynolds number 389). The frozen digitiser read 174 circles downstream of the step in Figure 4; a careful reading has about 187, and of the 174, 7 are false and 20 were missed. Opened: Figure 3 and both reattachment lengths. Held back: Figure 4, the whole condition at Reynolds number 389. Added on 2026-10-10, first-hand and opened: Armaly's own Figure 15 (page 491 of the paper), circles of the speed in cm/s against the height in mm at Reynolds number 100, read by a program from the 300 dots-per-inch one-bit scan of the paper; 80 circles at the stations 12.04, 16.33, 20.92 and 30.31 step heights. Each speed is taken over the largest inlet speed of the parabola fitted to the 19 circles on the step, 21.19 cm/s; over the largest of those circles, 21.28 cm/s, every verdict is the same. Its station 44.90 is past the grid and was not scored.".to_string();
     let pass_line = "Fixed on 2026-10-09 before any circle of Figure 4 was read as a number (protocol SHA-256 dd3abc9bbc833852f0a53c3201994edaf23a2bd45edccf3ae3016136c3afce1a). On every circle of Figure 4 at a station downstream of the step: root mean square difference of u/Umax at most 0.05; at no single station more than 0.08; and at most half that of this solver run at Reynolds number 100 on the same circles. Baselines scored beside it: the developed parabola, the solver at Reynolds number 100, and the solver at 259.33, the other reading of the memorandum's Reynolds number. The two reattachment lengths are not held back: both the quoted values and the solver's were known before a mark was drawn, at 10 percent of the quoted value.".to_string();
-    let limits = "The held-back profiles are the same rig and instrument at a Reynolds number 3.9 times the opened one, the top of the served range. No measured velocity profile between 100 and 389 was compared, and the solver serves that whole span; the reattachment length was compared there only after the fact, with Armaly's Figure 14 at 149 and 298. Velocity profiles were compared at stations from 0 to 7.76 and from 12.04 to 30.31 step heights at Reynolds number 100, and from 0 to 13.57 at 389. A station out to 30 is served at 100 only; above 100 a station past 13.57 is refused by name. Between 7.76 and 12.04 at 100 no circle lies, a gap narrower than the 9.39 step heights between the compared stations 20.92 and 30.31. The flow is taken as two-dimensional and steady: above a Reynolds number of about 400 the measured flow is three-dimensional, and the solver refuses there. At 389 itself the rig is leaving two-dimensionality (the paper: small deviations from two-dimensionality between 7 and 12 step heights) and the measured reattachment is 6 to 7 percent longer than the solver's; the two agree within 1 percent only near Reynolds number 300. The three lines are met for any Reynolds number from about 350 to 445, a reattachment length from 7.5 to 8.8 step heights: they reject the other reading of the Reynolds number and the Reynolds-100 flow, and cannot tell a reattachment at 8.07 from one at 8.6. The side walls of the rig, the compressibility of air and any unsteadiness are left out. The largest_imbalance check closes for any viscosity: it shows the equations were solved, not that they are the right equations. The grid error of the reattachment length is 1.3 to 1.5 percent at Reynolds number 100 and under 0.6 percent from 200 up. A proof shows that an answer was not changed, not that the model matches the air.".to_string();
+    let limits = "The held-back profiles are the same rig and instrument at a Reynolds number 3.9 times the opened one, the top of the compared range. No measured velocity profile between 100 and 389 was compared, and the solver serves that whole span; the reattachment length was compared there only after the fact, with Armaly's Figure 14 at 149 and 298. Velocity profiles were compared at stations from 0 to 7.76 and from 12.04 to 30.31 step heights at Reynolds number 100, and from 0 to 13.57 at 389. A station out to 30 is answered at every Reynolds number; above 100 past 13.57 it was not compared. Below 100 the flow is answered down to creeping flow and nothing was compared. Between 7.76 and 12.04 at 100 no circle lies, a gap narrower than the 9.39 step heights between the compared stations 20.92 and 30.31. The flow is taken as two-dimensional and steady: above a Reynolds number of 400 the flow over this step is three-dimensional (the paper, page 482), and the solver refuses there; from 389 to 400 it answers and nothing was compared. At 389 itself the rig is leaving two-dimensionality (the paper: small deviations from two-dimensionality between 7 and 12 step heights) and the measured reattachment is 6 to 7 percent longer than the solver's; the two agree within 1 percent only near Reynolds number 300. The three lines are met for any Reynolds number from about 350 to 445, a reattachment length from 7.5 to 8.8 step heights: they reject the other reading of the Reynolds number and the Reynolds-100 flow, and cannot tell a reattachment at 8.07 from one at 8.6. The side walls of the rig, the compressibility of air and any unsteadiness are left out. The largest_imbalance balance closes for any viscosity: it shows the equations were solved, not that they are the right equations. The grid error of the reattachment length is 1.3 to 1.5 percent at Reynolds number 100 and under 0.6 percent from 200 up. A proof shows that an answer was not changed, not that the model matches the air.".to_string();
     [object, data, pass_line, RESULT.to_string(), limits]
 }
 
 /// The outcome of the comparison with the held-back measurements.
-const RESULT: &str = "Compared once, on 2026-10-09, through the gateway, with the build of the commit that first served this solver (mcp_stdio SHA-256 042bb92d94119f5d684998d7d7ff9b88134188dda06baa6e2aea8be7884bd616). All three lines were met on the held-back profiles at Reynolds number 389, 174 circles at nine stations from 2.55 to 13.57 step heights: root mean square difference 0.0437 of the largest inlet speed against a line of 0.05; worst station 0.052 against 0.08; 0.24 of the Reynolds-100 solver's 0.181 against a line of 0.5. The margin on the first line is small. Reading the circles contributes about 0.005 and the data's own floor is about 0.03, so the solver's 0.043 is above the floor, with systematic station means of +0.037 at 3.57 step heights, -0.043 at 6.12 and -0.031 at 7.76. No baseline met a line: the developed parabola 0.206, the solver at Reynolds number 100 0.181, the solver at 259.33 (the other reading of the memorandum's Reynolds number) 0.088. The digitiser, frozen beforehand, found 186 circles in Figure 4; by eye it misses some that the memorandum's line crosses and places a few on the frame. Opened, not blind: at Reynolds number 100 the profiles differ by 0.035 over 161 circles (the developed parabola 0.063), and the reattachment length is 2.83 step heights against a quoted approximately 3.3, 14 percent low and outside the 10 percent mark, a miss; at 389 it is 8.07 against approximately 8, inside the mark, where Armaly's own plot has about 8.6, so that the solver is 6 to 7 percent low there, and where the memorandum's own calculation gives 8.7, the other reading of the Reynolds number 5.96 and a length proportional to Reynolds number 12.8. Outside recomputation: the same difference equations carried to 50 digits give the engine's reattachment length within 1.4e-8 step heights at Reynolds number 389, where the engine accepts the field at an imbalance of 2.7e-10, and within 3e-13 at 100 and 259.33; the profiles agree within 2e-9. The heaviest answer took 2.5 s. Second scoring, 2026-10-09 (evidence/checks/second_party/V-38, same machine): the same three verdicts on the scorer's own digitisation of 187 circles, 0.0430, 0.0514 and 0.238, and an independent solver within 1.3 percent of this one in reattachment length. Added by the second scorer after the fact and not blind, Armaly's own Figure 14 as read from the scan (about 0.05 in length and 3 in Reynolds number): 3.01 step heights at Reynolds number 97, 4.00 at 149, 6.60 at 298 and 8.60 at 387; this solver is 5.8 percent low, 3.2 percent low, 0.4 percent high and 6.5 percent low, all inside the 10 percent mark. The miss at Reynolds number 100 is therefore a miss of the memorandum's sentence, whose 3.3 is what a calculation without an inlet channel gives, and not of the measurement as plotted. The far stations at Reynolds number 100, 2026-10-10 (evidence/research/fluid_armaly_backward_step/fix_0.7.0), opened and not blind, the third line taken against the solver at Reynolds number 389, the other end of the range: the 0.6.0 build (mcp_stdio SHA-256 af1a5767, the served one) on 80 circles of Armaly's Figure 15 at 12.04, 16.33, 20.92 and 30.31 step heights met all three lines: root mean square difference 0.019 against 0.05, worst station 0.023 (at 20.92) against 0.08, and 0.43 of the Reynolds-389 flow's 0.044 against 0.5. The flow there is the developed parabola, and the parabola itself is 0.019 from the circles and the solver at 259.33 is 0.023, so the comparison shows the solver relaxes to the developed flow, and no more. On the same reading the solver is 0.019 from the 19 circles on the step and 0.029 from 149 circles at the stations 2.55 to 7.76, where the memorandum's replot gave 0.035. The circles at 30.31 were scored against the profile at 30, which differs from the one at 20.92 by less than 1e-6.";
+const RESULT: &str = "Compared once, on 2026-10-09, through the gateway, with the build of the commit that first served this solver (mcp_stdio SHA-256 042bb92d94119f5d684998d7d7ff9b88134188dda06baa6e2aea8be7884bd616). All three lines were met on the held-back profiles at Reynolds number 389, 174 circles at nine stations from 2.55 to 13.57 step heights: root mean square difference 0.0437 of the largest inlet speed against a line of 0.05; worst station 0.052 against 0.08; 0.24 of the Reynolds-100 solver's 0.181 against a line of 0.5. The margin on the first line is small. Reading the circles contributes about 0.005 and the data's own floor is about 0.03, so the solver's 0.043 is above the floor, with systematic station means of +0.037 at 3.57 step heights, -0.043 at 6.12 and -0.031 at 7.76. No baseline met a line: the developed parabola 0.206, the solver at Reynolds number 100 0.181, the solver at 259.33 (the other reading of the memorandum's Reynolds number) 0.088. The digitiser, frozen beforehand, found 186 circles in Figure 4; by eye it misses some that the memorandum's line crosses and places a few on the frame. Opened, not blind: at Reynolds number 100 the profiles differ by 0.035 over 161 circles (the developed parabola 0.063), and the reattachment length is 2.83 step heights against a quoted approximately 3.3, 14 percent low and outside the 10 percent mark, a miss; at 389 it is 8.07 against approximately 8, inside the mark, where Armaly's own plot has about 8.6, so that the solver is 6 to 7 percent low there, and where the memorandum's own calculation gives 8.7, the other reading of the Reynolds number 5.96 and a length proportional to Reynolds number 12.8. Outside recomputation: the same difference equations carried to 50 digits give the engine's reattachment length within 1.4e-8 step heights at Reynolds number 389, where the engine accepts the field at an imbalance of 2.7e-10, and within 3e-13 at 100 and 259.33; the profiles agree within 2e-9. The heaviest answer took 2.5 s. Second scoring, 2026-10-09 (evidence/verification/second_party/V-38, same machine): the same three verdicts on the scorer's own digitisation of 187 circles, 0.0430, 0.0514 and 0.238, and an independent solver within 1.3 percent of this one in reattachment length. Added by the second scorer after the fact and not blind, Armaly's own Figure 14 as read from the scan (about 0.05 in length and 3 in Reynolds number): 3.01 step heights at Reynolds number 97, 4.00 at 149, 6.60 at 298 and 8.60 at 387; this solver is 5.8 percent low, 3.2 percent low, 0.4 percent high and 6.5 percent low, all inside the 10 percent mark. The miss at Reynolds number 100 is therefore a miss of the memorandum's sentence, whose 3.3 is what a calculation without an inlet channel gives, and not of the measurement as plotted. The far stations at Reynolds number 100, 2026-10-10 (evidence/research/fluid_armaly_backward_step/fix_0.7.0), opened and not blind, the third line taken against the solver at Reynolds number 389, the other end of the range: the 0.6.0 build (mcp_stdio SHA-256 af1a5767, the served one) on 80 circles of Armaly's Figure 15 at 12.04, 16.33, 20.92 and 30.31 step heights met all three lines: root mean square difference 0.019 against 0.05, worst station 0.023 (at 20.92) against 0.08, and 0.43 of the Reynolds-389 flow's 0.044 against 0.5. The flow there is the developed parabola, and the parabola itself is 0.019 from the circles and the solver at 259.33 is 0.023, so the comparison shows the solver relaxes to the developed flow, and no more. On the same reading the solver is 0.019 from the 19 circles on the step and 0.029 from 149 circles at the stations 2.55 to 7.76, where the memorandum's replot gave 0.035. The circles at 30.31 were scored against the profile at 30, which differs from the one at 20.92 by less than 1e-6.";
 
 fn example() -> Value {
     json!({ "reynolds_number": 100.0, "station_x_over_s": 3.06 })
@@ -230,10 +230,9 @@ fn question(given: &Given) -> Result<StepQuestion, String> {
     })
 }
 
-/// The limit that spans the two fields, asked of the solver's own check
-/// before a physics permit is taken: above Reynolds number 100 a station past
-/// the last one compared is refused. The sentence is the solver's, with its
-/// name for the refusal.
+/// The Reynolds number's two limits, asked of the solver's own check before
+/// a physics permit is taken, so each end is refused by its own name. The
+/// sentence is the solver's, with its name for the refusal.
 fn check(given: &Given) -> Result<(), String> {
     step::admit(&question(given)?)
         .map_err(|reject| format!("Physical Violation: {reject} ({}).", reject_name(&reject)))
@@ -346,7 +345,7 @@ mod tests {
         for refusal in refusals {
             let at_the_door = refusal["name"] == "ReynoldsOutOfRange"
                 || refusal["name"] == "StationOutOfRange"
-                || refusal["name"] == "StationNotCompared";
+                || refusal["name"] == "ReynoldsNotPositive";
             let reported = if at_the_door { "422, no seal" } else { "200, outcome refused, sealed" };
             assert_eq!(refusal["reported_as"], reported, "{}", refusal["name"]);
         }
@@ -369,7 +368,7 @@ mod tests {
     #[test]
     fn the_summary_carries_the_standing() {
         assert!(STEP_FLOW_ARMALY.summary.contains("nothing fitted"));
-        assert!(STEP_FLOW_ARMALY.summary.contains("100 to 389"));
+        assert!(STEP_FLOW_ARMALY.summary.contains("above 0 to 400"));
         assert!(STEP_FLOW_ARMALY.summary.contains("second-hand and digitised"));
         assert!(STEP_FLOW_ARMALY.summary.contains("14 percent below the sentence of NASA Technical Memorandum 106248 that quotes the measurement, a miss of that sentence"));
         assert!(STEP_FLOW_ARMALY.summary.contains("6 percent below Armaly's own plot as read first-hand afterwards"));

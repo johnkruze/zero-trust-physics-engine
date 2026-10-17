@@ -30,6 +30,8 @@ pub enum Refusal {
     NamesNoCard,
     /// A state field is not a hex value, is not a JSON boolean, and has no `_hex` sibling.
     NotSealed(String),
+    /// The commitment of a comparison is not of the commitment's form.
+    Commitment(crate::commitment::CommitmentFault),
 }
 
 impl fmt::Display for Refusal {
@@ -61,6 +63,7 @@ impl fmt::Display for Refusal {
                 out,
                 "Physical Violation: '{name}' is not a JSON boolean and has no '_hex' sibling."
             ),
+            Refusal::Commitment(fault) => fault.fmt(out),
         }
     }
 }

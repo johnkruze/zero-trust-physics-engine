@@ -1,25 +1,30 @@
 //! The EVE 235/55 R19 tyre-on-ice card on the web and the local connection.
 //!
 //! A step and four holds of one slip each, chained by restarts, end on the
-//! compiled kernel's state to the bit. A run that would hold its slip beyond
-//! 21 s, change its slip, or roll beyond the track is refused part way and
-//! keeps its proof up to the last step that landed. A restart from a returned
-//! distance lands where small steps land. Each refusal a request can reach is
-//! named and carries no proof: a load, a pressure, a slip, a speed, a start
-//! or a time held outside its range, a slip inside the band around zero, a
-//! step outside the card's floor and ceiling, a missing input, a key the card
-//! does not have. The flag above the fitted loads is set and the run still
-//! verifies. `validate_series` compares the longitudinal force. The local and
+//! compiled kernel's state to the bit. A run that holds its slip beyond 21 s
+//! or rolls beyond the rig's track lands, its frames past the compared hold
+//! flagged; a run that changes its slip is refused part way and keeps its
+//! proof up to the last step that landed. A restart from a returned distance
+//! lands where small steps land. Each refusal a request can reach is named
+//! and carries no proof: no contact, a flat tyre, a slip or a speed outside
+//! its range, a distance below zero, a start held under 5 s, a time held the
+//! step cannot move, a slip inside the band around zero, a step outside the
+//! card's floor and ceiling, a missing input, a key the card does not have.
+//! The flags above the fitted loads and beyond the compared range are set
+//! and the run still verifies. `validate_series` compares the longitudinal force. The local and
 //! the web connection return the same bytes.
 //!
 //! No measurement of the tyre is read here.
+
+mod answer_text;
 
 use std::process::Stdio;
 use std::time::Duration;
 
 use genesis_kernel::frame::LastStateFrame64;
 use genesis_kernel::tire_eve_r19_ice::{
-    self, FLAG_LOAD_ABOVE_FITTED, SLIP_SETTLE_S, StepReject, TireEveR19Ice, TireLoad, TireState,
+    self, FLAG_BEYOND_COMPARED, FLAG_LOAD_ABOVE_FITTED, FLAG_SLIP_SETTLING, SLIP_SETTLE_S, StepReject, TireEveR19Ice,
+    TireLoad, TireState,
 };
 use protocol_mcp_gateway::app;
 use reqwest::Client;
@@ -43,10 +48,12 @@ async fn post(base: &str, path: &str, body: &Value) -> (u16, String) {
     let url = format!("{base}{path}");
     let mut last_error = None;
     for _ in 0..20 {
-        match client.post(&url).json(body).send().await {
+        match client.post(&url).header(reqwest::header::CONTENT_TYPE, "application/json").body(answer_text::as_sent(body)).send().await {
             Ok(response) => {
                 let status = response.status().as_u16();
-                return (status, response.text().await.unwrap());
+                let text = response.text().await.unwrap();
+                answer_text::remember(&text);
+                return (status, text);
             }
             Err(error) => {
                 last_error = Some(error);
@@ -161,7 +168,7 @@ async fn a_step_of_the_tyre_is_the_compiled_step_to_the_bit() {
     assert!((force - 1_113.26).abs() < 0.01, "{force}");
     assert!(answer["sha256_seal"].as_str().is_some_and(|seal| seal.len() == 64));
     assert!(answer["receipt_sha256"].as_str().is_some_and(|seal| seal.len() == 64));
-    assert_eq!(answer["engine_version"], "genesis_kernel_v0.9.0");
+    assert_eq!(answer["engine_version"], "genesis_kernel_v0.12.0");
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -208,18 +215,15 @@ async fn four_holds_chained_by_restarts_end_on_the_kernel_state_and_each_limit_e
         assert_eq!(distance_m.to_bits(), state.distance_m.to_bits());
     }
 
-    // Five steps of 4 s from 5 s would hold the slip to 25 s. The fifth is
-    // refused and the run keeps its proof up to the fourth.
+    // Every run here is sealed and its tape holds; a refusal is refused, and
+    // no outcome is ended: the card declares no end.
     let refused_at = |segments: Value, dt_s: f64, start_m: f64| {
         let base = base.clone();
         async move {
             let (status, text) = post(&base, "/run_trajectory", &run_body(start_m, dt_s, segments)).await;
             assert_eq!(status, 200, "{text}");
             let tape: Value = serde_json::from_str(&text).unwrap();
-            // The end of the track is the end the card declares: a run is
-            // ended there; every other limit refuses.
-            let ended = tape["reject"] == "TravelBeyondTrack";
-            assert_eq!(tape["outcome"], if ended { "ended" } else { "refused" }, "{text}");
+            assert_ne!(tape["outcome"], "ended", "{text}");
             assert!(tape["run_seal"].as_str().is_some_and(|seal| seal.len() == 64));
             let (status, report) = post(&base, "/verify_tape", &tape).await;
             assert_eq!(status, 200, "{report}");
@@ -227,22 +231,81 @@ async fn four_holds_chained_by_restarts_end_on_the_kernel_state_and_each_limit_e
             tape
         }
     };
+    // Five steps of 4 s from 5 s hold the slip to 25 s. Through engine 0.9 the
+    // fifth was refused as HoldBeyondMeasured; it lands, and its frame alone
+    // carries FLAG_BEYOND_COMPARED, the hold past the 21 s compared.
     let five = json!([{ "steps": 5, "load": load(5_000.0, 250_000.0, 0.10, 0.06) }]);
     let tape = refused_at(five, 4.0, 0.0).await;
-    assert_eq!(tape["reject"], format!("{:?}", StepReject::HoldBeyondMeasured));
-    assert_eq!(tape["steps_landed"], 4);
-    assert!(tape["reject_detail"].as_str().unwrap().contains("HoldBeyondMeasured"));
-    assert_eq!(tape["final_state"]["load_above_fitted"], false);
+    assert_eq!(tape["outcome"], "completed", "{tape}");
+    assert_eq!(tape["steps_landed"], 5);
+    assert_eq!(tape["final_state"]["slip_held_s"], 25.0);
+    assert_eq!(tape["final_state"]["beyond_compared"], true);
+    let flags: Vec<u64> = tape["frames"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|recorded| {
+            let bytes = hex::decode(recorded["frame_hex"].as_str().unwrap()).unwrap();
+            u64::from_le_bytes(bytes[40..48].try_into().unwrap())
+        })
+        .collect();
+    assert_eq!(flags.last(), Some(&FLAG_BEYOND_COMPARED));
+    assert!(flags[..flags.len() - 1].iter().all(|flags| *flags == 0), "{flags:?}");
 
     // A change of slip in a later segment starts the hold again at zero: the
-    // first step of the new slip is refused.
+    // first two steps of the new slip, which start at 0 s and 4 s held, land
+    // with FLAG_SLIP_SETTLING, the steady force of the new slip; through
+    // engine 0.11 the first was refused as SlipNotSettled. The third, from
+    // 8 s held, carries no flag.
     let changed = json!([
         { "steps": 2, "load": load(5_000.0, 250_000.0, 0.10, 0.06) },
-        { "steps": 2, "load": load(5_000.0, 250_000.0, 0.12, 0.06) }
+        { "steps": 3, "load": load(5_000.0, 250_000.0, 0.12, 0.06) }
     ]);
     let tape = refused_at(changed, 4.0, 0.0).await;
-    assert_eq!(tape["reject"], format!("{:?}", StepReject::SlipNotSettled));
-    assert_eq!(tape["steps_landed"], 2);
+    assert_eq!(tape["outcome"], "completed", "{tape}");
+    assert_eq!(tape["steps_landed"], 5);
+    assert_eq!(tape["final_state"]["slip_held_s"], 12.0);
+    let flags: Vec<u64> = tape["frames"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|recorded| {
+            let bytes = hex::decode(recorded["frame_hex"].as_str().unwrap()).unwrap();
+            u64::from_le_bytes(bytes[40..48].try_into().unwrap())
+        })
+        .collect();
+    assert_eq!(flags, [0, 0, FLAG_SLIP_SETTLING, FLAG_SLIP_SETTLING, 0]);
+    let card = tire();
+    assert_eq!(
+        tape["final_state"]["longitudinal_force_n"].as_f64().unwrap().to_bits(),
+        card.longitudinal_force_n(5_000.0, 0.12).to_bits()
+    );
+    // A run from the instant its slip is set, 0 s held, lands every step
+    // through its first 5 s, flagged, and its ledger closes: bit for bit the
+    // kernel's loop.
+    let from_zero = json!([{ "steps": 40, "load": load(6_500.0, 250_000.0, -0.07, 0.06) }]);
+    let (status, text) = post(&base, "/run_trajectory", &run_held(0.0, 0.0, 0.25, from_zero)).await;
+    assert_eq!(status, 200, "{text}");
+    let tape: Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(tape["outcome"], "completed", "{text}");
+    let mut state = tire_eve_r19_ice::TireState::try_start(&card, 0.0, 0.0).unwrap();
+    let mut frame = blank_frame();
+    let held = tire_eve_r19_ice::TireLoad {
+        normal_load_n: 6_500.0,
+        inflation_pressure_pa: 250_000.0,
+        slip_ratio: -0.07,
+        carriage_speed_m_s: 0.06,
+    };
+    for (index, recorded) in tape["frames"].as_array().unwrap().iter().enumerate() {
+        let before = state.slip_held_s;
+        tire_eve_r19_ice::step(&card, &mut state, &mut frame, held, 0.25).unwrap();
+        let bytes = hex::decode(recorded["frame_hex"].as_str().unwrap()).unwrap();
+        let flags = u64::from_le_bytes(bytes[40..48].try_into().unwrap());
+        assert_eq!(flags & FLAG_SLIP_SETTLING != 0, before < SLIP_SETTLE_S, "frame {index}");
+        assert_eq!(flags, frame.flags, "frame {index}");
+    }
+    assert_eq!(tape["final_state"]["slip_held_s"], 10.0);
+    assert!(tape["max_residual_conservation_error"].as_f64().unwrap() < 1.0e-13);
 
     // A change of load at the same slip keeps the hold.
     let same_slip = json!([
@@ -255,13 +318,23 @@ async fn four_holds_chained_by_restarts_end_on_the_kernel_state_and_each_limit_e
     assert_eq!(tape["outcome"], "completed", "{text}");
     assert_eq!(tape["final_state"]["slip_held_s"], 21.0);
 
-    // A hold that would roll past 6 m is ended there, at the end of the track
-    // the card declares.
+    // A hold that rolls past 6 m, the end of the rig's track: through engine
+    // 0.9 it ended there, after two steps. The end of the track is not an
+    // end of the tyre, and the run completes, the same force at every step.
     let past = json!([{ "steps": 4, "load": load(5_000.0, 250_000.0, 0.10, 0.06) }]);
     let tape = refused_at(past, 4.0, 5.5).await;
-    assert_eq!(tape["outcome"], "ended");
-    assert_eq!(tape["reject"], format!("{:?}", StepReject::TravelBeyondTrack));
-    assert_eq!(tape["steps_landed"], 2);
+    assert_eq!(tape["outcome"], "completed", "{tape}");
+    assert_eq!(tape["steps_landed"], 4);
+    let mut state = tire_eve_r19_ice::TireState::try_start(&tire(), 5.5, 5.0).unwrap();
+    let mut frame = blank_frame();
+    for _ in 0..4 {
+        tire_eve_r19_ice::step(&tire(), &mut state, &mut frame, kernel_load(&load(5_000.0, 250_000.0, 0.10, 0.06)), 4.0).unwrap();
+    }
+    assert_state_is(&tape["final_state"], &state, "a hold past the end of the track");
+    assert!(state.distance_m > 6.0);
+    let declared = &tape["declared_ends"];
+    assert!(declared.is_null() || declared.as_array().is_some_and(|ends| ends.is_empty()), "{declared}");
+    let _ = StepReject::DistanceBelowZero;
 }
 
 /// On 0.6.0 a distance returned by small steps, handed back as a new start,
@@ -297,11 +370,12 @@ async fn a_restart_from_a_returned_distance_lands_where_small_steps_land() {
     assert_eq!(many["outcome"], "completed", "{text}");
     assert_eq!(many["final_state"]["distance_m"], 6.000000000000961);
     assert_eq!(one["state"]["longitudinal_force_n"], many["final_state"]["longitudinal_force_n"]);
-    // a step that truly ends beyond 6 m is still refused by name
+    // A step that ends beyond 6 m lands too: through engine 0.9 it was
+    // refused as TravelBeyondTrack.
     let (status, text) =
         post(&base, "/verify_physics", &step_body(distance_m + 1.0e-9, &held, 16.0)).await;
-    assert_eq!(status, 422, "{text}");
-    assert!(text.contains("TravelBeyondTrack") && !text.contains("sha256_seal"), "{text}");
+    assert_eq!(status, 200, "{text}");
+    assert!(text.contains("sha256_seal"), "{text}");
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -315,10 +389,10 @@ async fn each_limit_a_request_can_reach_is_named_and_carries_no_proof() {
     };
     let floor = tire().floor_dt_s().unwrap();
     let cases: Vec<(Value, &str)> = vec![
-        (step_body(0.0, &with("normal_load_n", 3_499.0), 1.0), "NormalLoadOutsideCard"),
-        (step_body(0.0, &with("normal_load_n", 6_501.0), 1.0), "NormalLoadOutsideCard"),
-        (step_body(0.0, &with("inflation_pressure_pa", 149_000.0), 1.0), "InflationPressureOutsideCard"),
-        (step_body(0.0, &with("inflation_pressure_pa", 351_000.0), 1.0), "InflationPressureOutsideCard"),
+        (step_body(0.0, &with("normal_load_n", 0.0), 1.0), "NoContact"),
+        (step_body(0.0, &with("normal_load_n", -5_000.0), 1.0), "NoContact"),
+        (step_body(0.0, &with("inflation_pressure_pa", 0.0), 1.0), "TyreFlat"),
+        (step_body(0.0, &with("inflation_pressure_pa", -10_000.0), 1.0), "TyreFlat"),
         (step_body(0.0, &with("slip_ratio", 0.21), 1.0), "SlipOutsideCard"),
         (step_body(0.0, &with("slip_ratio", -0.21), 1.0), "SlipOutsideCard"),
         // Inside the published minimum and maximum, and inside the band the constants do not cover.
@@ -327,19 +401,13 @@ async fn each_limit_a_request_can_reach_is_named_and_carries_no_proof() {
         (step_body(0.0, &with("slip_ratio", 0.0), 1.0), "SlipOutsideCard"),
         (step_body(0.0, &with("carriage_speed_m_s", 0.04), 1.0), "CarriageSpeedOutsideCard"),
         (step_body(0.0, &with("carriage_speed_m_s", 13.9), 1.0), "CarriageSpeedOutsideCard"),
-        (step_body(-0.1, &good, 1.0), "TravelBeyondTrack"),
-        (step_body(6.1, &good, 1.0), "TravelBeyondTrack"),
-        // A start on the track whose first step ends beyond it.
-        (step_body(5.5, &good, 16.0), "TravelBeyondTrack"),
-        // A slip held less than 5 s, or more than 21 s, at the start.
-        (step_held(0.0, 0.0, &good, 1.0), "SlipNotSettled"),
-        (step_held(0.0, 4.999, &good, 1.0), "SlipNotSettled"),
-        (step_held(0.0, 21.001, &good, 1.0), "HoldBeyondMeasured"),
-        // A start inside the hold whose first step ends beyond 21 s.
-        (step_held(0.0, 20.0, &good, 1.5), "HoldBeyondMeasured"),
-        (step_held(0.0, 21.0, &good, 1.0), "HoldBeyondMeasured"),
-        (step_body(0.0, &good, 16.5), "dt_s"),
-        (step_body(0.0, &good, 21.0), "dt_s"),
+        (step_body(-0.1, &good, 1.0), "DistanceBelowZero"),
+        // A time held below zero.
+        (step_held(0.0, -0.001, &good, 1.0), "SlipHeldBelowZero"),
+        (step_held(0.0, -5.0, &good, 1.0), "SlipHeldBelowZero"),
+        // A time held the step cannot move.
+        (step_held(0.0, 1.152_921_504_606_847e18, &good, 1.0), "StepTooSmallToResolve"),
+        (step_body(0.0, &good, 4_194_305.0), "dt_s"),
         (step_body(0.0, &good, floor / 2.0), "dt_s"),
         (step_body(0.0, &good, 0.0), "dt_s"),
     ];
@@ -349,20 +417,34 @@ async fn each_limit_a_request_can_reach_is_named_and_carries_no_proof() {
         assert!(text.contains(name), "{name}: {text}");
         assert!(!text.contains("sha256_seal"), "{name}: {text}");
     }
-    // The ends of each range land.
-    for body in [
-        step_body(0.0, &with("normal_load_n", 3_500.0), 1.0),
-        step_body(0.0, &with("normal_load_n", 6_500.0), 1.0),
-        step_body(0.0, &with("slip_ratio", 0.05), 1.0),
-        step_body(0.0, &with("slip_ratio", -0.20), 1.0),
-        step_body(0.0, &with("carriage_speed_m_s", 0.07), 1.0),
-        step_body(6.0 - 0.06 * 16.0 - 1.0e-9, &good, 16.0),
-        step_body(0.0, &good, floor),
-        step_held(0.0, 20.0, &good, 1.0),
-        step_held(0.0, 21.0 - floor, &good, floor),
+    // The ends of each range land, and what lay past the compared range
+    // through engine 0.9 lands now, flagged.
+    for (body, beyond) in [
+        (step_body(0.0, &with("normal_load_n", 3_500.0), 1.0), false),
+        (step_body(0.0, &with("normal_load_n", 6_500.0), 1.0), false),
+        (step_body(0.0, &with("normal_load_n", 3_499.0), 1.0), true),
+        (step_body(0.0, &with("normal_load_n", 6_501.0), 1.0), true),
+        (step_body(0.0, &with("normal_load_n", 1.0), 1.0), true),
+        (step_body(0.0, &with("normal_load_n", 1.0e6), 1.0), true),
+        (step_body(0.0, &with("inflation_pressure_pa", 149_000.0), 1.0), true),
+        (step_body(0.0, &with("inflation_pressure_pa", 351_000.0), 1.0), true),
+        (step_body(0.0, &with("slip_ratio", 0.05), 1.0), false),
+        (step_body(0.0, &with("slip_ratio", -0.20), 1.0), false),
+        (step_body(0.0, &with("carriage_speed_m_s", 0.07), 1.0), false),
+        (step_body(6.1, &good, 1.0), false),
+        (step_body(5.5, &good, 16.0), false),
+        (step_body(0.0, &good, floor), false),
+        (step_body(0.0, &good, 16.5), true),
+        (step_body(0.0, &good, 4_194_304.0), true),
+        (step_held(0.0, 20.0, &good, 1.0), false),
+        (step_held(0.0, 20.0, &good, 1.5), true),
+        (step_held(0.0, 21.001, &good, 1.0), true),
+        (step_held(0.0, 21.0 - floor, &good, floor), false),
     ] {
         let (status, text) = post(&base, "/verify_physics", &body).await;
         assert_eq!(status, 200, "{body}: {text}");
+        let answer: Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(answer["state"]["beyond_compared"], beyond, "{body}: {text}");
     }
     // A missing input, a constant of the card and an unknown key are refused.
     let mut missing = step_body(0.0, &good, 1.0);
@@ -456,7 +538,7 @@ impl Local {
     }
 
     async fn tool(&mut self, name: &str, arguments: &Value) -> (String, bool) {
-        let line = json!({"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":name,"arguments":arguments}});
+        let line = answer_text::tool_call(7, name, arguments);
         let answer: Value = serde_json::from_str(&self.raw(&line.to_string()).await).unwrap();
         (
             answer["result"]["content"][0]["text"].as_str().unwrap().to_string(),
@@ -498,11 +580,11 @@ async fn the_local_connection_lists_the_tyre_and_gives_the_bytes_of_the_web_conn
         "One held-back run, number 153, is a faulty record: it rolled for about 90 s like the others, and its channels are on other scales",
         "vertical force reads 1,849 N at a nominal 3,500 N",
         "wheel angle spans 0 to 11.75 where every other file spans 0 to 360",
-        "without it the three errors are 0.031, 0.034 and 0.029, and those are the figures that describe the tyre",
+        "without it, computed after the scoring and no part of the registered result, the three errors are 0.031, 0.034 and 0.029",
         "The card read high on all six conditions at 6.5 kN, by 0.023 on average",
         "SHA-256 7a2f3cc8e75aadbbdaf4f74289803ddf1149dbe882d94cadc96f668061b943c7) was overwritten by a later build",
         "which returned all 108 saved answers byte for byte. Since engine 0.7.0 a request states slip_held_s, so those saved requests are refused as they were sent.",
-        "evidence/checks/second_party/V-33/",
+        "evidence/verification/second_party/V-33/",
     ] {
         assert!(result.contains(words), "{words}: {result}");
     }
@@ -519,20 +601,21 @@ async fn the_local_connection_lists_the_tyre_and_gives_the_bytes_of_the_web_conn
         "worth 0.002 to 0.003 of the 0.03 error",
         "about -62 N with a standard deviation of 49 N, is not subtracted from the measured forces",
         "it can catch a corrupted step, and it cannot catch a wrong constant, a wrong exponent or a wrong ice",
-        "A run whose end in decimal is exactly the track's 6 m lands every step",
-        "1,000 steps of 0.1 s at 0.06 m/s, rolled as runs of 16 s each started from the distance the last returned, land 1,000 and read 6.000000000000005 m",
+        "compared at 6.5 kN with a root-mean-square error of 0.029 against a line of 0.045",
+        "Through engine 0.9 the card refused a load outside 3.5 to 6.5 kN",
         "with the change placed where the wheel speed steps, every one-second window from 5 s to 20 s after a change met all five lines, and every one before 5 s failed one",
         "Engine 0.7.0 changed every answer of this card",
         "It was scored twice, the second time by a second scorer, on one machine",
     ] {
         assert!(limits.contains(words), "{words}: {limits}");
     }
-    assert_eq!(description["rejects"].as_array().map(Vec::len), Some(13), "{}", description["rejects"]);
+    // Re-pinned for 0.10.1: after the kernel's 13 names the list holds the gateway's own two, DtBelowFloor and DtAboveCeiling.
+    assert_eq!(description["rejects"].as_array().map(Vec::len), Some(15), "{}", description["rejects"]);
     // The constant comparator is named for what it is.
     assert!(result.contains("geometric mean with no slip term (least squares on the logarithm) gave 0.036"), "{result}");
 
     // The worked examples of the description run as written, the same bytes on both.
-    let step = description["example_verify_step"].clone();
+    let step = description["example_compute_step"].clone();
     let (over_local, error) = local.tool("verify_step", &step).await;
     assert!(!error, "{over_local}");
     let (status, over_web) = post(&web, "/verify_physics", &step).await;

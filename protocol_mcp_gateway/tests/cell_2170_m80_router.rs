@@ -7,9 +7,9 @@
 //! whose current changes and reverses, with rests and a drifting case
 //! temperature, is the kernel loop's too. Every published bound is refused by
 //! name at the last representable number on each side, and nothing is pulled
-//! back to a bound. A case temperature outside the band of the run's block,
-//! and the -10 and -20 degC blocks that the comparison showed wrong, are
-//! refused by name. A run that ends exactly on either end of the tables lands
+//! back to a bound. A case temperature or a current outside the tests of the
+//! run's block, and the -10 and -20 degC blocks that met no mark, are
+//! answered with their flags. A run that ends exactly on either end of the tables lands
 //! its last step. A missing input, a card constant sent as a field, a step
 //! that is not one second and a chamber setting that names no block are
 //! refused. A dataset's rows carry the run seals of the runs alone, and
@@ -18,6 +18,8 @@
 //!
 //! No measurement of the cell is read here. The currents and temperatures are
 //! round numbers chosen for the test.
+
+mod answer_text;
 
 use std::process::Stdio;
 use std::time::Duration;
@@ -58,7 +60,9 @@ async fn post_text(base: &str, path: &str, body: &str) -> (u16, String) {
         {
             Ok(response) => {
                 let status = response.status().as_u16();
-                return (status, response.text().await.unwrap());
+                let text = response.text().await.unwrap();
+                answer_text::remember(&text);
+                return (status, text);
             }
             Err(error) => {
                 last_error = Some(error);
@@ -70,7 +74,7 @@ async fn post_text(base: &str, path: &str, body: &str) -> (u16, String) {
 }
 
 async fn post(base: &str, path: &str, body: &Value) -> (u16, String) {
-    post_text(base, path, &serde_json::to_string(body).unwrap()).await
+    post_text(base, path, &answer_text::as_sent(body)).await
 }
 
 fn sha256_hex(bytes: &[u8]) -> String {
@@ -483,7 +487,7 @@ async fn each_bound_lands_at_the_last_number_inside_and_is_refused_by_name_at_th
     let described: Value = serde_json::from_str(&described).unwrap();
     // The description publishes the kernel's numbers for all four inputs.
     let bound = |list: &str, index: usize, key: &str| described[list][index][key].as_f64().unwrap();
-    assert_eq!(bound("phase_fields", 0, "minimum"), 0.0);
+    assert_eq!(bound("phase_fields", 0, "minimum"), -20.0);
     assert_eq!(bound("phase_fields", 0, "maximum"), 40.0);
     assert_eq!(bound("phase_fields", 1, "minimum").to_bits(), cell_2170_m80::CHARGE_TOP_AH[0].to_bits());
     assert_eq!(bound("phase_fields", 1, "maximum").to_bits(), cell_2170_m80::CHARGE_DEEP_AH[0].to_bits());
@@ -491,18 +495,19 @@ async fn each_bound_lands_at_the_last_number_inside_and_is_refused_by_name_at_th
     assert_eq!(bound("load_fields", 0, "maximum"), cell_2170_m80::CURRENT_CHARGE_MAX_A);
     assert_eq!(bound("load_fields", 1, "minimum"), cell_2170_m80::CASE_TEMPERATURE_MIN_C);
     assert_eq!(bound("load_fields", 1, "maximum"), cell_2170_m80::CASE_TEMPERATURE_MAX_C);
-    // The description names each served block's band of case temperatures.
+    // The description names each block's band of compared case temperatures.
     let case_words = described["load_fields"][1]["bound"].as_str().unwrap();
     for words in [
         "40 degC block: [39.063, 45.535] degC",
         "25 degC block: [24.267, 30.993] degC",
         "10 degC block: [10.201, 21.464] degC",
         "0 degC block: [0.808, 16.259] degC",
-        "CaseTemperatureOutsideBlock",
+        "-10 degC block: [-11.995, 8.389] degC",
+        "-20 degC block: [-21.898, 2.885] degC",
+        "FLAG_OUTSIDE_COMPARED_TESTS",
     ] {
         assert!(case_words.contains(words), "{words}: {case_words}");
     }
-    assert!(!case_words.contains("-10 degC block"), "{case_words}");
 
     let top = cell_2170_m80::CHARGE_TOP_AH;
     let deep = cell_2170_m80::CHARGE_DEEP_AH;
@@ -512,91 +517,66 @@ async fn each_bound_lands_at_the_last_number_inside_and_is_refused_by_name_at_th
     assert_eq!(allowance.to_bits(), (2.0 * cell_2170_m80::CHARGE_END_ALLOWANCE_PER_STEP_AH).to_bits());
     // (block, charge, current, case temperature, the refusal named, or none)
     let cases: Vec<(f64, f64, f64, f64, Option<&str>)> = vec![
-        // The case temperature: the bounds of the card.
-        (0.0, 1.0, -1.0, 0.808, None),
-        (0.0, 1.0, -1.0, below(0.808), Some("CaseTemperatureOutsideCard")),
+        // The case temperature: the bounds of the card, where its tables end.
+        (-20.0, 1.0, -1.0, -21.898, None),
+        (-20.0, 1.0, -1.0, below(-21.898), Some("CaseTemperatureOutsideCard")),
         (40.0, 1.0, -1.0, 45.535, None),
         (40.0, 1.0, -1.0, above(45.535), Some("CaseTemperatureOutsideCard")),
         (40.0, 1.0, -1.0, -25.0, Some("CaseTemperatureOutsideCard")),
         (0.0, 1.0, -1.0, 50.0, Some("CaseTemperatureOutsideCard")),
-        // The band of the block: the 25 degC block at each end of its own band.
-        (25.0, 1.0, -1.0, low[1], None),
-        (25.0, 1.0, -1.0, below(low[1]), Some("CaseTemperatureOutsideBlock")),
-        (25.0, 1.0, -1.0, high[1], None),
-        (25.0, 1.0, -1.0, above(high[1]), Some("CaseTemperatureOutsideBlock")),
-        // A block far from the case temperature: the 40 degC block on a cold
-        // case and the 0 degC block on a warm one.
-        (40.0, 1.0, -4.5, 0.808, Some("CaseTemperatureOutsideBlock")),
-        (40.0, 1.0, -4.5, 25.0, Some("CaseTemperatureOutsideBlock")),
-        (0.0, 1.0, -4.5, 45.535, Some("CaseTemperatureOutsideBlock")),
-        // The current, both ways: the largest compared, and the next number past each.
+        // Outside the band of the block: answered, flagged.
+        (25.0, 1.0, -1.0, below(low[1]), None),
+        (25.0, 1.0, -1.0, above(high[1]), None),
+        (40.0, 1.0, -4.5, 0.808, None),
+        (0.0, 1.0, -4.5, 45.535, None),
+        // The current, both ways: to the end of the tables, and the next number past it.
         (0.0, 2.0, -11.375, 10.0, None),
-        (0.0, 2.0, below(-11.375), 10.0, Some("CurrentOutsideCard")),
-        (40.0, 2.0, 9.737, 40.0, None),
-        (40.0, 2.0, above(9.737), 40.0, Some("CurrentOutsideCard")),
-        (40.0, 2.0, -13.5, 40.0, Some("CurrentOutsideCard")),
-        (40.0, 2.0, 13.5, 40.0, Some("CurrentOutsideCard")),
-        // The currents of the block: the 40 degC block was compared only to
-        // 9.809 A discharging, and the 0 degC block only to 8.304 A charging.
-        (40.0, 2.0, -9.809, 40.0, None),
-        (40.0, 2.0, below(-9.809), 40.0, Some("CurrentOutsideBlock")),
-        (40.0, 2.0, -11.375, 40.0, Some("CurrentOutsideBlock")),
-        (0.0, 3.0, 8.304, 10.0, None),
-        (0.0, 3.0, above(8.304), 10.0, Some("CurrentOutsideBlock")),
-        (0.0, 3.0, 9.737, 10.0, Some("CurrentOutsideBlock")),
-        // The block: the two outermost served settings, and one number beyond each.
+        (0.0, 2.0, below(-11.375), 10.0, None),
+        (40.0, 2.0, -13.5, 40.0, None),
+        (40.0, 2.0, below(-13.5), 40.0, Some("CurrentOutsideCard")),
+        (40.0, 2.0, 13.5, 40.0, None),
+        (40.0, 2.0, above(13.5), 40.0, Some("CurrentOutsideCard")),
+        (0.0, 3.0, 9.737, 10.0, None),
+        // The block: the two outermost settings, and one number beyond each.
         (40.0, 1.0, -1.0, 40.0, None),
         (above(40.0), 1.0, -1.0, 40.0, Some("BlockNotRecognized")),
-        (0.0, 1.0, -1.0, 5.0, None),
-        (-1.0e-3, 1.0, -1.0, 5.0, Some("BlockNotRecognized")),
-        // The two blocks the comparison showed wrong, and numbers beside them.
-        (-10.0, 1.0, -1.0, -8.0, Some("BlockShownWrong")),
-        (-20.0, 1.0, -1.0, -18.0, Some("BlockShownWrong")),
-        (-10.0, 1.0, -1.0, 5.0, Some("BlockShownWrong")),
+        (-20.0, 1.0, -1.0, -18.0, None),
         (below(-20.0), 1.0, -1.0, 5.0, Some("BlockNotRecognized")),
+        // The two blocks that met no mark, served.
+        (-10.0, 1.0, -1.0, -8.0, None),
+        (-10.0, 1.0, -1.0, 5.0, None),
         (above(-20.0), 1.0, -1.0, 5.0, Some("BlockNotRecognized")),
         // A setting between two blocks names no block and is not rounded to one.
         (15.0, 1.0, -1.0, 15.0, Some("BlockNotRecognized")),
         (below(25.0), 1.0, -1.0, 25.0, Some("BlockNotRecognized")),
         (above(25.0), 1.0, -1.0, 25.0, Some("BlockNotRecognized")),
-        // The charge removed: the widest range the card publishes, and past
-        // each end the rounding allowance of a start, 2^-49 Ah.
+        // The charge removed: the widest range the card publishes, both ends
+        // taken, and the next 64-bit number past each end refused by name,
+        // as is a start within the rounding allowance of a running sum: no
+        // start is read at an end point it is not at.
         (40.0, top[0], 0.0, 40.0, None),
-        (40.0, top[0] - allowance, 0.0, 40.0, None),
-        (40.0, below(top[0] - allowance), 0.0, 40.0, Some("ChargeOutsideTables")),
+        (40.0, below(top[0]), 0.0, 40.0, Some("ChargeOutsideTables")),
+        (40.0, top[0] - allowance, 0.0, 40.0, Some("ChargeOutsideTables")),
         (40.0, top[0] - 1.0e-9, 0.0, 40.0, Some("ChargeOutsideTables")),
         (40.0, deep[0], 0.0, 40.0, None),
-        (40.0, deep[0] + allowance, 0.0, 40.0, None),
-        (40.0, above(deep[0] + allowance), 0.0, 40.0, Some("ChargeOutsideTables")),
+        (40.0, above(deep[0]), 0.0, 40.0, Some("ChargeOutsideTables")),
+        (40.0, deep[0] + allowance, 0.0, 40.0, Some("ChargeOutsideTables")),
         (40.0, deep[0] + 1.0e-9, 0.0, 40.0, Some("ChargeOutsideTables")),
     ];
     // Each block's own range: its deepest charge is a legal start, the next
     // number beyond it is not, though it is inside the widest range.
     let mut own: Vec<(f64, f64, f64, f64, Option<&str>)> = Vec::new();
     for block in 0..cell_2170_m80::BLOCK_COUNT {
-        if cell_2170_m80::BLOCK_SHOWN_WRONG[block] {
-            continue;
-        }
         let chamber = cell_2170_m80::BLOCK_CHAMBER_C[block];
         let case_c = 0.5 * (low[block] + high[block]);
         own.push((chamber, deep[block], 0.0, case_c, None));
-        own.push((chamber, deep[block] + allowance, 0.0, case_c, None));
-        own.push((chamber, above(deep[block] + allowance), 0.0, case_c, Some("ChargeOutsideTables")));
+        own.push((chamber, above(deep[block]), 0.0, case_c, Some("ChargeOutsideTables")));
+        own.push((chamber, deep[block] + allowance, 0.0, case_c, Some("ChargeOutsideTables")));
         own.push((chamber, top[block], 0.0, case_c, None));
-        // Its own currents: the next number past each largest compared one is
-        // refused by the block, or by the card where the two are the same.
+        // Its own currents and the next number past each: answered, flagged.
         let discharge = cell_2170_m80::BLOCK_CURRENT_DISCHARGE_MAX_A[block];
-        let charge = cell_2170_m80::BLOCK_CURRENT_CHARGE_MAX_A[block];
-        let past = |current_a: f64| {
-            if current_a > cell_2170_m80::CURRENT_CHARGE_MAX_A || current_a < -cell_2170_m80::CURRENT_DISCHARGE_MAX_A {
-                "CurrentOutsideCard"
-            } else {
-                "CurrentOutsideBlock"
-            }
-        };
         own.push((chamber, 2.5, -discharge, case_c, None));
-        own.push((chamber, 2.5, below(-discharge), case_c, Some(past(below(-discharge)))));
-        own.push((chamber, 2.5, above(charge), case_c, Some(past(above(charge)))));
+        own.push((chamber, 2.5, below(-discharge), case_c, None));
     }
     for (block_c, charge_ah, current_a, case_c, refusal) in cases.into_iter().chain(own) {
         let label = format!("block {block_c} charge {charge_ah} current {current_a} case {case_c}");
@@ -649,12 +629,10 @@ async fn each_bound_lands_at_the_last_number_inside_and_is_refused_by_name_at_th
     // A value outside its range in a later segment refuses the whole run
     // before its first step.
     for (current_a, case_c, name) in [
-        (above(9.737), 25.0, "CurrentOutsideCard"),
-        (below(-11.375), 25.0, "CurrentOutsideCard"),
+        (above(13.5), 25.0, "CurrentOutsideCard"),
+        (below(-13.5), 25.0, "CurrentOutsideCard"),
         (-1.0, above(45.535), "CaseTemperatureOutsideCard"),
-        (-1.0, above(high[1]), "CaseTemperatureOutsideBlock"),
-        (-9.5, 25.0, "CurrentOutsideBlock"),
-        (9.6, 25.0, "CurrentOutsideBlock"),
+        (-1.0, below(-21.898), "CaseTemperatureOutsideCard"),
     ] {
         let run = run_body(25.0, 1.0, &[(5, -1.0, 25.0), (5, 0.0, 25.0), (5, current_a, case_c)], 1);
         let (status, text) = post(&base, "/run_trajectory", &run).await;
@@ -715,20 +693,30 @@ async fn a_run_that_ends_exactly_on_either_end_of_the_tables_lands_its_last_step
         assert_eq!(longer["outcome"], "refused");
         assert_eq!(longer["reject"], "ChargeOutsideTables");
         assert_eq!(longer["steps_landed"], more);
-        // A new run starts from the charge this run returned, a spacing or
-        // two past the end, and is read at the end point.
+        // The charge this run returned is a spacing or two past the end. No
+        // start is read at an end point it is not at, so a new run from that
+        // charge is refused by name, as a step from it is; a new run starts
+        // from the end itself.
         let returned = published(&tape["final_state"], "charge_removed_ah");
         let back = if charge_ah < 0.0 { -1.2 } else { 0.9 };
-        let again = run_body(25.0, returned, &[(2, back, 25.0)], 1);
+        let on_tables = returned >= cell_2170_m80::CHARGE_TOP_AH[1] && returned <= cell_2170_m80::CHARGE_DEEP_AH[1];
+        let (status, text) = post(&base, "/run_trajectory", &run_body(25.0, returned, &[(2, back, 25.0)], 1)).await;
+        let (step_status, step_text) = post(&base, "/verify_physics", &step_body(25.0, returned, back, 25.0, 1.0)).await;
+        if on_tables {
+            assert_eq!((status, step_status), (200, 200), "{returned}: {text} {step_text}");
+        } else {
+            assert_eq!((status, step_status), (422, 422), "{returned}: {text} {step_text}");
+            assert!(text.contains("(ChargeOutsideTables)") && !text.contains("run_seal"), "{text}");
+            assert!(step_text.contains("(ChargeOutsideTables)") && !step_text.contains("sha256_seal"), "{step_text}");
+        }
+        let again = run_body(25.0, end_ah, &[(2, back, 25.0)], 1);
         let (status, text) = post(&base, "/run_trajectory", &again).await;
-        assert_eq!(status, 200, "{returned}: {text}");
+        assert_eq!(status, 200, "{end_ah}: {text}");
         let again: Value = serde_json::from_str(&text).unwrap();
         assert_eq!(again["outcome"], "completed", "{text}");
-        let (state, _, reject, _) = direct_loop(25.0, returned, &[(2, back, 25.0)]);
+        let (state, _, reject, _) = direct_loop(25.0, end_ah, &[(2, back, 25.0)]);
         assert_eq!(reject, None);
-        assert_state_is(&again["final_state"], &state, "restart from the returned charge");
-        let (status, text) = post(&base, "/verify_physics", &step_body(25.0, returned, back, 25.0, 1.0)).await;
-        assert_eq!(status, 200, "{returned}: {text}");
+        assert_state_is(&again["final_state"], &state, "a new run from the end of the tables");
     }
     // The deep-end run returns a charge past the end of the tables.
     let (status, answer) = post(&base, "/run_trajectory", &run_body(25.0, 4.4605, &[(4, -0.9, 25.0)], 1)).await;
@@ -736,11 +724,13 @@ async fn a_run_that_ends_exactly_on_either_end_of_the_tables_lands_its_last_step
     let tape: Value = serde_json::from_str(&answer).unwrap();
     assert!(published(&tape["final_state"], "charge_removed_ah") > cell_2170_m80::CHARGE_DEEP_AH[1]);
     // The same deep-end run at a case temperature of 40 degC in the 25 degC
-    // block is outside the band of that block's own tests.
+    // block is outside the band of that block's own tests: answered, flagged.
     let (status, text) = post(&base, "/run_trajectory", &run_body(25.0, 4.4605, &[(4, -0.9, 40.0)], 1)).await;
-    assert_eq!(status, 422, "{text}");
-    assert!(names(&text, "CaseTemperatureOutsideBlock"), "{text}");
-    assert!(text.contains("[24.267, 30.993] degC"), "{text}");
+    assert_eq!(status, 200, "{text}");
+    let tape: Value = serde_json::from_str(&text).unwrap();
+    let last = tape["frames"].as_array().unwrap().last().unwrap()["frame_hex"].as_str().unwrap().to_string();
+    let bytes = hex::decode(last).unwrap();
+    assert_eq!(u64::from_le_bytes(bytes[40..48].try_into().unwrap()), cell_2170_m80::FLAG_OUTSIDE_COMPARED_TESTS);
     // The description says how the ends are read, and keeps no known defect.
     let (_, described) =
         post(&base, "/describe_card", &json!({"domain": "energy", "card": "cell_2170_m80"})).await;
@@ -761,19 +751,19 @@ async fn a_missing_input_a_non_number_and_a_card_constant_are_refused_and_nothin
         step["parameters"].as_object_mut().unwrap().remove(key);
         let (status, text) = post(&base, "/verify_physics", &step).await;
         assert_eq!(status, 422, "{key}: {text}");
-        assert_eq!(text, format!("Missing required parameter: '{key}'"));
+        assert_eq!(text, format!("Missing required parameter: '{key}' (InputMissing)."));
     }
     // A run with a load that lacks the case temperature, or a start that lacks the block.
     let mut run = run_body(25.0, 1.0, &[(3, -1.0, 25.0), (3, 0.0, 25.0)], 1);
     run["segments"][1]["load"].as_object_mut().unwrap().remove("case_temperature_c");
     let (status, text) = post(&base, "/run_trajectory", &run).await;
     assert_eq!(status, 422, "{text}");
-    assert!(text.contains("Missing required parameter: 'case_temperature_c'"), "{text}");
+    assert!(text.contains("Missing required parameter: 'case_temperature_c' (InputMissing)."), "{text}");
     let mut run = run_body(25.0, 1.0, &[(3, -1.0, 25.0)], 1);
     run["initial"].as_object_mut().unwrap().remove("block_chamber_c");
     let (status, text) = post(&base, "/run_trajectory", &run).await;
     assert_eq!(status, 422, "{text}");
-    assert!(text.contains("Missing required parameter: 'block_chamber_c'"), "{text}");
+    assert!(text.contains("Missing required parameter: 'block_chamber_c' (InputMissing)."), "{text}");
 
     // A value that is not a number, and a number that is not finite.
     for (key, raw) in [
@@ -864,7 +854,7 @@ async fn a_negative_kelvin_is_refused_on_every_card_and_a_negative_celsius_is_he
     let base = spawn_app().await;
     let list: Value = Client::new().get(format!("{base}/cards")).send().await.unwrap().json().await.unwrap();
     let cards = list["cards"].as_array().unwrap();
-    assert_eq!(cards.len(), 31);
+    assert_eq!(cards.len(), 37);
 
     let mut ends_in_c: Vec<(String, String)> = Vec::new();
     let mut in_celsius: Vec<(String, String)> = Vec::new();
@@ -874,7 +864,7 @@ async fn a_negative_kelvin_is_refused_on_every_card_and_a_negative_celsius_is_he
         let (status, text) = post(&base, "/describe_card", &json!({ "domain": domain, "card": card })).await;
         assert_eq!(status, 200, "{text}");
         let described: Value = serde_json::from_str(&text).unwrap();
-        let step = &described["example_verify_step"];
+        let step = &described["example_compute_step"];
         let mut run = described["example_run_trajectory"].clone();
         let segment = run["segments"][0].clone();
         run["segments"] = json!([segment.clone(), segment]);
@@ -901,14 +891,21 @@ async fn a_negative_kelvin_is_refused_on_every_card_and_a_negative_celsius_is_he
                 in_kelvin.push((card.to_string(), name.to_string()));
                 // The door's sign rule reads the key's name; a kelvin field it
                 // does not name is held by the card's published minimum.
+                // Re-pinned for 0.10.1: the sign rule's sentence carries the
+                // card's own name for a value of that field below what it
+                // takes, one of the names the card's description lists.
                 let by_sign_rule = format!(
-                    "Physical Violation: Temperature '{name}' cannot be below absolute zero (negative Kelvin)."
+                    "Physical Violation: Temperature '{name}' cannot be below absolute zero, a negative number of kelvin ("
                 );
+                let listed: Vec<&str> =
+                    described["rejects"].as_array().unwrap().iter().map(|reject| reject["name"].as_str().unwrap()).collect();
                 let by_minimum = format!("Physical Failure: '{name}' ");
                 for value in [-1.0e-3, -1.0, -293.15] {
                     let refused = |text: &str| {
                         if lower.contains("temp") {
-                            text == by_sign_rule
+                            text.strip_prefix(by_sign_rule.as_str())
+                                .and_then(|rest| rest.strip_suffix(")."))
+                                .is_some_and(|reject| listed.contains(&reject))
                         } else {
                             text.starts_with(&by_minimum)
                                 && text.contains(" K is below ")
@@ -994,44 +991,51 @@ async fn a_negative_kelvin_is_refused_on_every_card_and_a_negative_celsius_is_he
             pair("accumulator_sbo450", "wall_temperature_k"),
             pair("reactor_triga_jsi", "start_temperature_k"),
             pair("reactor_spert3_ccore", "initial_temperature_k"),
+            pair("runaway_18650_lco", "temperature_k"),
+            pair("runaway_18650_lco", "oven_temperature_k"),
         ]
     );
 
-    // The case temperature below zero is below the coldest case temperature
-    // compared, and is refused by the card's own name, -300 degC as well, in
-    // a step and in the first and a later segment of a run.
-    for case_c in [-1.0e-3, -7.5, -20.0, -25.0, -273.15, -300.0] {
+    // A case temperature below the coldest of any block's tests is refused by
+    // the card's own name, -300 degC as well, in a step and in the first and
+    // a later segment of a run; one inside it is answered.
+    for case_c in [-22.0, -25.0, -273.15, -300.0] {
         let (status, text) = post(&base, "/verify_physics", &step_body(0.0, 1.0, -1.0, case_c, 1.0)).await;
         assert_eq!(status, 422, "{case_c}: {text}");
         assert!(names(&text, "CaseTemperatureOutsideCard"), "{case_c}: {text}");
-        assert!(text.contains("'case_temperature_c'") && text.contains("is below 0.808 degC"), "{case_c}: {text}");
+        assert!(text.contains("'case_temperature_c'") && text.contains("is below -21.898 degC"), "{case_c}: {text}");
         for segments in [[(3, -1.0, case_c), (3, -1.0, 5.0)], [(3, -1.0, 5.0), (3, -1.0, case_c)]] {
             let (status, text) = post(&base, "/run_trajectory", &run_body(0.0, 1.0, &segments, 1)).await;
             assert_eq!(status, 422, "{case_c}: {text}");
             assert!(names(&text, "CaseTemperatureOutsideCard"), "{case_c}: {text}");
         }
     }
+    for case_c in [-1.0e-3, -7.5, -20.0] {
+        let (status, text) = post(&base, "/verify_physics", &step_body(0.0, 1.0, -1.0, case_c, 1.0)).await;
+        assert_eq!(status, 200, "{case_c}: {text}");
+    }
 
-    // The chamber setting below zero: the two cold blocks are refused as shown
-    // wrong, with no proof, and a negative setting that names no block is
-    // refused as not a block.
+    // The chamber setting below zero: the two cold blocks are served, and a
+    // negative setting that names no block is refused as not a block.
     for block_c in [-10.0, -20.0] {
         for case_c in [block_c + 2.0, 5.0] {
             let (status, text) = post(&base, "/verify_physics", &step_body(block_c, 1.0, -1.0, case_c, 1.0)).await;
-            assert_eq!(status, 422, "{block_c}: {text}");
-            assert!(names(&text, "BlockShownWrong"), "{block_c}: {text}");
-            assert!(text.contains("'block_chamber_c'") && text.contains("showed wrong"), "{block_c}: {text}");
+            assert_eq!(status, 200, "{block_c}: {text}");
             let (status, text) = post(&base, "/run_trajectory", &run_body(block_c, 1.0, &[(3, -1.0, case_c)], 1)).await;
-            assert_eq!(status, 422, "{block_c}: {text}");
-            assert!(names(&text, "BlockShownWrong"), "{block_c}: {text}");
+            assert_eq!(status, 200, "{block_c}: {text}");
         }
     }
-    for block_c in [below(-20.0), -30.0, -273.15, -15.0, -1.0e-3] {
+    for block_c in [-15.0, -1.0e-3] {
+        let (status, text) = post(&base, "/verify_physics", &step_body(block_c, 1.0, -1.0, 5.0, 1.0)).await;
+        assert_eq!(status, 422, "{block_c}: {text}");
+        assert!(names(&text, "BlockNotRecognized"), "{block_c}: {text}");
+    }
+    for block_c in [below(-20.0), -30.0, -273.15] {
         let (status, text) = post(&base, "/verify_physics", &step_body(block_c, 1.0, -1.0, 5.0, 1.0)).await;
         assert_eq!(status, 422, "{block_c}: {text}");
         assert!(names(&text, "BlockNotRecognized"), "{block_c}: {text}");
         assert!(
-            text.contains("'block_chamber_c'") && text.contains("is below 0 degC, the inclusive minimum of the cell_2170_m80 card"),
+            text.contains("'block_chamber_c'") && text.contains("is below -20 degC, the inclusive minimum of the cell_2170_m80 card"),
             "{block_c}: {text}"
         );
         let (status, text) = post(&base, "/run_trajectory", &run_body(block_c, 1.0, &[(3, -1.0, 5.0)], 1)).await;
@@ -1257,7 +1261,7 @@ impl StdioDoor {
 
     /// The text of a tool's result, and whether the door marked it an error.
     async fn tool(&mut self, name: &str, arguments: &Value) -> (String, bool) {
-        let line = json!({"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":name,"arguments":arguments}});
+        let line = answer_text::tool_call(7, name, arguments);
         let answer: Value = serde_json::from_str(&self.raw(&line.to_string()).await).unwrap();
         let text = answer["result"]["content"][0]["text"]
             .as_str()
@@ -1276,13 +1280,14 @@ async fn the_agent_door_lists_the_cell_and_gives_the_bytes_of_the_routes_for_the
     assert!(!error);
     let listed: Value = serde_json::from_str(&listed).unwrap();
     let cards = listed["cards"].as_array().unwrap();
-    assert_eq!(cards.len(), 31);
+    assert_eq!(cards.len(), 37);
     let entry = cards.iter().find(|card| card["card"] == "cell_2170_m80").expect("the cell is listed");
     assert_eq!(entry["domain"], "energy");
-    assert_eq!(
-        entry["specimen"],
-        "One Tesla Model 3 2170 lithium-ion cell, cell m80 alone, from 0 to 40 degC, under a terminal current and a measured case temperature."
+    assert!(
+        entry["specimen"].as_str().unwrap().starts_with("One Tesla Model 3 2170 lithium-ion cell, cell m80 alone, in six blocks of tests from -20 to 40 degC"),
+        "{}", entry["specimen"]
     );
+    assert!(entry["specimen"].as_str().unwrap().contains("17.4 mV"));
 
     let pair = json!({"domain": "energy", "card": "cell_2170_m80"});
     let (described, error) = door.tool("describe_card", &pair).await;
@@ -1294,7 +1299,8 @@ async fn the_agent_door_lists_the_cell_and_gives_the_bytes_of_the_routes_for_the
     assert!(description["validation"]["result"].as_str().unwrap().starts_with(
         "Compared with the 60 held-back tests on 2026-10-08, and by the rule fixed beforehand the comparison failed: 27 of 60 runs met their marks"
     ));
-    assert_eq!(description["rejects"].as_array().unwrap().len(), 16);
+    // After the kernel's 13 names the list holds ContinuationNotOnCard; a step other than 1 s is the kernel's own StepNotOneSecond, so the two step names are not listed.
+    assert_eq!(description["rejects"].as_array().unwrap().len(), 14);
     for reject in description["rejects"].as_array().unwrap() {
         assert!(reject["meaning"].as_str().is_some_and(|meaning| !meaning.is_empty()), "{reject}");
     }

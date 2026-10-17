@@ -1,11 +1,10 @@
 //! Power balance of a uniform thermal proton-boron-11 plasma.
 //!
-//! No such plasma has been made. This solver is not of a measured object: it
-//! is the steady energy balance of protons, boron-11, alpha ash and electrons
+//! The steady energy balance of protons, boron-11, alpha ash and electrons
 //! at one point, as Putvinski, Ryutov and Yushmanov (Nucl. Fusion 59 (2019)
 //! 076018) and Ochs, Kolmes, Mlodik, Rubin and Fisch (Phys. Rev. E 106 (2022)
-//! 055215) set it up, and it is checked against their published numbers and
-//! against nothing else. Those numbers are calculations.
+//! 055215) set it up, compared with their published numbers, which are
+//! calculations: of eight gated lines, seven were met.
 //!
 //! The caller gives the ion temperature, the electron density, the fuel mix,
 //! the ash, the magnetic field, the minor radius, the wall reflectivity and
@@ -13,14 +12,27 @@
 //! temperature at which the electrons' energy balances, and returns every
 //! term of the balance, or a named limit.
 //!
-//! The declared range is the envelope of the inputs of the comparison with
-//! the published calculations, each input on its own: the 29 converged runs
-//! of `evidence/research/fusion_pb11/solver/runs_v060`. Outside it the
-//! solver refuses by name. Those runs spanned ion temperatures of 200 to
-//! 450 keV, electron densities of 1.52e20 and 1.6e20 per cubic metre, 13
-//! and 15 % boron, no ash, applied fields of 6.661 to 20 T, a minor radius
-//! of 2 m, wall reflectivities of 0.95 and 1, and a confinement time of
-//! 100 s.
+//! The declared range is where the balance's own forms hold, each end with
+//! its physical reason at its constant: ion temperature 1 to 1000 keV (from
+//! the 1 keV floor the electrons are sought from, to the top of the
+//! reactivity, `pb11_reaction`), electron density 1e18 to 1e22 per
+//! cubic metre, boron 0.01 to 0.9 of the fuel ions, ash 0 to 1 per fuel ion,
+//! an applied field above zero to 1e6 T, minor radius 0.1 to 10 m, wall
+//! reflectivity 0 to 1, any confinement time above zero. Inside it the
+//! solver stops by name where the physics does: the field cannot hold the
+//! plasma (`PressureExceedsField`), the electrons do not balance below
+//! [`ELECTRON_TEMPERATURE_MAX_KEV`] (`ElectronTemperatureOutOfRange`), or the
+//! plasma is not opaque enough for Trubnikov's synchrotron formula
+//! (`SynchrotronAboveUnabsorbedEmission`).
+//!
+//! The comparison with the published calculations is the 29 converged runs
+//! of `evidence/research/fusion_pb11/solver/runs_v060`: ion temperatures of
+//! 200 to 450 keV, electron densities of 1.52e20 and 1.6e20 per cubic metre,
+//! 13 and 15 % boron, no ash, applied fields of 6.661 to 20 T, a minor
+//! radius of 2 m, wall reflectivities of 0.95 and 1, and a confinement time
+//! of 100 s. From engine 0.7.0 to this version the solver refused every
+//! question outside that envelope; the 0.6.0 range, and the audit's runs at
+//! 10 keV and at the far corner, answered with every ledger closed.
 //!
 //! The electron balance need not fall with temperature: where the field
 //! holds the plasma near its limit, the field inside, and with it the
@@ -58,13 +70,21 @@
 //! the settled temperature and returned beside it, outside the balance: the
 //! two differ by about 2 %, which is as large as the whole ignition margin.
 //! Synchrotron: Trubnikov's formula in the form of Cai et al. (2022),
-//! equation 30. Exchange: Spitzer's rate with the Formulary's Coulomb
+//! equation 30. It is the loss of a plasma opaque to its own low harmonics:
+//! the unabsorbed emission of the electrons times a transparency factor
+//! `60 t^1.5 √((1 − R_w)/p_a)`, `p_a = a ω_pe² / (c ω_ce)`. Where that factor
+//! passes one the formula gives more than the electrons emit at all, which no
+//! plasma can lose, and the solver stops by name: the loss is held at every
+//! trial temperature under the unabsorbed emission
+//! `e⁴ B_in² n_e T_e (1 + T_e/146 keV) / (3π ε0 m_e³ c³)` (Xie 2024, book
+//! equation 3.25, after Dolan). Exchange: Spitzer's rate with the Formulary's Coulomb
 //! logarithm and the relativistic factor of Putvinski (2019), equation 10.
 //! The research record is
 //! `evidence/research/fusion_pb11/power_balance/FINDINGS.md`.
 //!
 //! What must hold. Charge: `n_e − n_p − 5 n_B − 2 n_α = 0`. Energy, at every
-//! trial temperature: the two alpha shares add to one. Energy, at
+//! trial temperature: the two alpha shares add to one, and the synchrotron
+//! loss is at most the unabsorbed emission. Energy, at
 //! acceptance: the electron balance closes, and the sum of the two balances
 //! equals `P_aux + P_fus − P_brem − P_sync − W_i/τ_E`, which holds only if
 //! the exchange and the alpha shares are each worked out once and used in
@@ -83,6 +103,8 @@
 //! belongs to a device (density limits, the beta a configuration can hold,
 //! the field a magnet can make).
 
+use genesis_kernel::math;
+use crate::normal::NormalOrZero;
 use std::f64::consts::PI;
 use std::fmt;
 
@@ -92,34 +114,75 @@ use crate::pb11_reaction::{
     Species, VACUUM_PERMEABILITY_H_PER_M, VACUUM_PERMITTIVITY_F_PER_M,
 };
 
-/// Ion temperature compared, keV: the scan of 200 to 450 keV in steps of 10
-/// (pass lines B2 and B3), inside the declared reactivity.
-pub const ION_TEMPERATURE_MIN_KEV: f64 = 200.0;
-pub const ION_TEMPERATURE_MAX_KEV: f64 = 450.0;
-/// Electron density compared, per cubic metre: 1e20 fuel ions at 13 %
-/// boron (B1, B4) to the 1.6e20 of the 15 % runs and B8.
-pub const ELECTRON_DENSITY_MIN_PER_M3: f64 = 1.52e20;
-pub const ELECTRON_DENSITY_MAX_PER_M3: f64 = 1.6e20;
-/// Boron share of the fuel ions, `n_B / (n_p + n_B)`, compared: 13 and 15 %.
-pub const BORON_FRACTION_MIN: f64 = 0.13;
-pub const BORON_FRACTION_MAX: f64 = 0.15;
-/// Thermal alpha ash per fuel ion compared: none.
-pub const ASH_FRACTION_MAX: f64 = 0.0;
-/// Magnetic field applied from outside compared, tesla: the field that
-/// leaves 5 T inside the plasma of B8 with the kinetic factor off, to the
-/// 20 T of every run with no synchrotron loss.
-pub const MAGNETIC_FIELD_MIN_T: f64 = 6.661098700751347;
-pub const MAGNETIC_FIELD_MAX_T: f64 = 20.0;
-/// Minor radius of the plasma compared, metres: 2 m in every run.
-pub const MINOR_RADIUS_MIN_M: f64 = 2.0;
-pub const MINOR_RADIUS_MAX_M: f64 = 2.0;
-/// Wall reflectivity compared: 0.95 in B8, 1 in every other run.
-pub const WALL_REFLECTIVITY_MIN: f64 = 0.95;
+/// Ion temperature, keV. Low end: [`ELECTRON_TEMPERATURE_MIN_KEV`], the
+/// floor of the bremsstrahlung fit; the electrons are sought from it up to
+/// the ions' temperature, so below it no electron temperature can be sought,
+/// and at it the search is empty and stops by name
+/// (`ElectronTemperatureOutOfRange`). The reactivity holds from
+/// [`reaction::REACTIVITY_TEMPERATURE_MIN_KEV`], the same 1 keV. High end:
+/// [`reaction::REACTIVITY_TEMPERATURE_MAX_KEV`], where the part of the rate
+/// above 9.76 MeV, the top of the cross-section fit, at which the integral
+/// stops, is 1.7e-5 of it. Below about 3 keV the energies that carry the
+/// rate fall under 22 keV, the lowest energy at which the cross-section was
+/// measured, and the rate rests on the fit's S-factor near zero energy.
+/// Compared with published calculations from 200 to 450 keV. The low end was
+/// 10 keV until this version.
+pub const ION_TEMPERATURE_MIN_KEV: f64 = ELECTRON_TEMPERATURE_MIN_KEV;
+pub const ION_TEMPERATURE_MAX_KEV: f64 = reaction::REACTIVITY_TEMPERATURE_MAX_KEV;
+/// Electron density, per cubic metre. Low end: the balance is the steady
+/// state the alphas reach as they slow on the electrons, and that takes a
+/// time that grows as one over the density, about 1700 s at 1e18 per cubic
+/// metre with electrons at 150 keV; below it, longer than half an hour.
+/// High end: at 1e22 the pressure of ions at 300 keV needs an applied field
+/// of about 37 T, and denser plasmas begin to reabsorb their own
+/// bremsstrahlung, which the balance takes as escaping (it is optically
+/// thin). Compared at 1.52e20 and 1.6e20.
+pub const ELECTRON_DENSITY_MIN_PER_M3: f64 = 1.0e18;
+pub const ELECTRON_DENSITY_MAX_PER_M3: f64 = 1.0e22;
+/// Boron share of the fuel ions, `n_B / (n_p + n_B)`. Any share strictly
+/// between 0 and 1 is a plasma of both fuels; at either end there is one
+/// fuel, no reaction, and the ignition margin is 0/0. The range runs from 99
+/// protons to each boron nucleus to nine boron nuclei to each proton, and
+/// boron's charge, 5, is inside the charges the published bremsstrahlung
+/// fits are stated for. Compared at 13 and 15 %.
+pub const BORON_FRACTION_MIN: f64 = 0.01;
+pub const BORON_FRACTION_MAX: f64 = 0.9;
+/// Thermal alpha ash per fuel ion, at most one: as many alphas as fuel ions.
+/// No equation fails with ash, which dilutes the fuel through quasi-neutrality
+/// and enters the effective charge, the exchange and the alpha drag; past one
+/// the plasma is mostly ash. Below zero is no density. No comparison run had
+/// ash.
+pub const ASH_FRACTION_MAX: f64 = 1.0;
+/// Magnetic field applied from outside, tesla: above zero, to 1e6 T. The low
+/// end is the pressure balance's, held by name (`PressureExceedsField`).
+/// High end: the electron's cyclotron quantum, ħω_ce = 1.158e-4 eV per
+/// tesla, is 0.116 keV at 1e6 T, a tenth of the 1 keV floor of the electron
+/// temperature; above it the electrons' motion across the field is quantised
+/// on the scale of their own energy, and classical synchrotron emission, on
+/// which Trubnikov's formula rests, does not hold. Where a field makes the
+/// plasma too thin for that formula the solver stops by name
+/// (`SynchrotronAboveUnabsorbedEmission`). What field a magnet can make is a
+/// property of a device. Compared from 6.661 to 20 T.
+pub const MAGNETIC_FIELD_MIN_T: f64 = 0.0;
+pub const MAGNETIC_FIELD_MAX_T: f64 = 1.0e6;
+/// Minor radius of the plasma, metres: 0.1 m, a laboratory plasma, to 10 m,
+/// larger than any reactor design. The radius enters only Trubnikov's
+/// synchrotron loss, as one over its root, and that formula's own condition,
+/// an opaque plasma, is held by name. Compared at 2 m.
+pub const MINOR_RADIUS_MIN_M: f64 = 0.1;
+pub const MINOR_RADIUS_MAX_M: f64 = 10.0;
+/// Wall reflectivity, 0 to 1: the share of the synchrotron radiation sent
+/// back cannot be below none or above all, and `√(1 − R_w)` is not real
+/// above 1. Compared at 0.95 and 1.
+pub const WALL_REFLECTIVITY_MIN: f64 = 0.0;
 pub const WALL_REFLECTIVITY_MAX: f64 = 1.0;
-/// Energy confinement time of the ions compared, seconds: 100 s in every
-/// run. It enters only the auxiliary power, which no pass line compares.
-pub const CONFINEMENT_TIME_MIN_S: f64 = 100.0;
-pub const CONFINEMENT_TIME_MAX_S: f64 = 100.0;
+/// Energy confinement time of the ions, seconds: any time above zero. It
+/// enters only the auxiliary power, `W_i/τ_E`, which is infinite at zero.
+/// The top, 1e300 s, is a capacity and no physics: a stated number past every
+/// time a plasma could be held, so the input has a top a request can be told.
+/// Compared at 100 s, where no pass line compares the auxiliary power.
+pub const CONFINEMENT_TIME_MIN_S: f64 = 0.0;
+pub const CONFINEMENT_TIME_MAX_S: f64 = 1.0e300;
 /// The electron temperature is sought from here up, keV: the floor of the bremsstrahlung fit.
 pub const ELECTRON_TEMPERATURE_MIN_KEV: f64 = 1.0;
 /// The bremsstrahlung, exchange and synchrotron forms hold below the electron rest energy; the search stops here, keV.
@@ -129,6 +192,10 @@ pub const ELECTRON_GRID_STEP_KEV: f64 = 0.25;
 
 /// Coefficient of Trubnikov's synchrotron formula, MW/m³ (Cai et al. 2022, equation 30).
 pub const SYNCHROTRON_COEFF_MW_PER_M3: f64 = 4.14e-7;
+/// The electron temperature of the first relativistic term of the unabsorbed
+/// synchrotron emission, `1 + 3.5 t = 1 + T_e / 146 keV` (Xie 2024, book
+/// equation 3.25).
+pub const UNABSORBED_EMISSION_RELATIVISTIC_KEV: f64 = 146.0;
 /// The kinetic factor at zero temperature and the temperature at which it reaches one, keV (Ochs et al. 2022, Appendix B).
 pub const KINETIC_FACTOR_AT_ZERO: f64 = 1.16;
 pub const KINETIC_FACTOR_ENDS_KEV: f64 = 700.0;
@@ -184,21 +251,21 @@ pub struct ThermalQuestion {
 /// Why no balance was returned.
 #[derive(Clone, Debug, PartialEq)]
 pub enum ThermalReject {
-    /// `ion_temperature_kev` is outside [`ION_TEMPERATURE_MIN_KEV`]..=[`ION_TEMPERATURE_MAX_KEV`], the ion temperatures compared with published calculations.
+    /// `ion_temperature_kev` is outside 1 to 1000 keV: below 1 keV, the floor of the bremsstrahlung fit from which the electrons are sought up to the ions' temperature, no electron temperature can be sought; above 1000 keV the part of the rate carried above 9.76 MeV, where the cross-section fit ends and the reactivity integral stops, grows past 1.7e-5 of it.
     IonTemperatureOutOfRange { ion_temperature_kev: f64 },
-    /// `electron_density_per_m3` is outside [`ELECTRON_DENSITY_MIN_PER_M3`]..=[`ELECTRON_DENSITY_MAX_PER_M3`], the electron densities compared with published calculations.
+    /// `electron_density_per_m3` is outside 1e18 to 1e22 per cubic metre: below it the alphas take longer than half an hour to slow and reach the steady balance, above it the plasma begins to reabsorb its bremsstrahlung.
     ElectronDensityOutOfRange { electron_density_per_m3: f64 },
-    /// `boron_fraction` is outside [`BORON_FRACTION_MIN`]..=[`BORON_FRACTION_MAX`], the boron fractions compared with published calculations.
+    /// `boron_fraction` is outside 0.01 to 0.9 of the fuel ions: at 0 or 1 there is one fuel and no reaction.
     BoronFractionOutOfRange { boron_fraction: f64 },
-    /// `ash_fraction` is below zero or above [`ASH_FRACTION_MAX`]: no plasma with ash was compared with published calculations.
+    /// `ash_fraction` is below zero, which is no density, or above one alpha per fuel ion.
     AshFractionOutOfRange { ash_fraction: f64 },
-    /// `magnetic_field_t` is outside [`MAGNETIC_FIELD_MIN_T`]..=[`MAGNETIC_FIELD_MAX_T`], the applied fields compared with published calculations.
+    /// `magnetic_field_t` is not above zero, where nothing holds the plasma, or is above 1e6 T, where the electron's cyclotron quantum reaches a tenth of the 1 keV floor of the electron temperature and classical synchrotron emission no longer holds.
     MagneticFieldOutOfRange { magnetic_field_t: f64 },
-    /// `minor_radius_m` is outside [`MINOR_RADIUS_MIN_M`]..=[`MINOR_RADIUS_MAX_M`], the one minor radius compared with published calculations.
+    /// `minor_radius_m` is outside 0.1 to 10 m, a laboratory plasma to one larger than any reactor design.
     MinorRadiusOutOfRange { minor_radius_m: f64 },
-    /// `wall_reflectivity` is outside [`WALL_REFLECTIVITY_MIN`]..=[`WALL_REFLECTIVITY_MAX`], the wall reflectivities compared with published calculations.
+    /// `wall_reflectivity` is outside 0 to 1: a wall cannot send back less than none or more than all of the radiation.
     WallReflectivityOutOfRange { wall_reflectivity: f64 },
-    /// `energy_confinement_time_s` is outside [`CONFINEMENT_TIME_MIN_S`]..=[`CONFINEMENT_TIME_MAX_S`], the one confinement time compared with published calculations.
+    /// `energy_confinement_time_s` is not above zero, where the power that holds the ions is infinite, or is above the 1e300 s capacity of the input.
     ConfinementTimeOutOfRange { energy_confinement_time_s: f64 },
     /// An intermediate value was NaN or infinite, or an input was when the solver is called directly: through the gateway no input can be, since a number that is not finite is not JSON.
     NonFiniteValue,
@@ -208,6 +275,8 @@ pub enum ThermalReject {
     PressureExceedsField { pressure_pa: f64 },
     /// The electron energy balance, sampled every [`ELECTRON_GRID_STEP_KEV`], does not turn from heating to loss between [`ELECTRON_TEMPERATURE_MIN_KEV`] and the lower of the ion temperature and [`ELECTRON_TEMPERATURE_MAX_KEV`], the range of the radiation and exchange forms.
     ElectronTemperatureOutOfRange { at_or_below_floor: bool },
+    /// At a trial electron temperature Trubnikov's synchrotron loss is above the unabsorbed emission of the electrons: the plasma is too thin or the field too strong for the formula of an opaque plasma, which then gives more than the electrons emit at all.
+    SynchrotronAboveUnabsorbedEmission { electron_temperature_kev: f64, ratio: f64 },
     /// At a trial temperature the shares of the alpha energy to ions and to electrons left [`ALPHA_SHARE_TOLERANCE`] of one, or a share was not positive.
     AlphaSharesBroken { residual: f64 },
     /// The iteration cap was reached with the electron temperature still open.
@@ -221,33 +290,33 @@ impl fmt::Display for ThermalReject {
         match self {
             Self::IonTemperatureOutOfRange { ion_temperature_kev } => write!(
                 f,
-                "ion temperature {ion_temperature_kev} keV is outside {ION_TEMPERATURE_MIN_KEV}..={ION_TEMPERATURE_MAX_KEV}, the ion temperatures compared with published calculations"
+                "ion temperature {ion_temperature_kev} keV is outside {ION_TEMPERATURE_MIN_KEV} to {ION_TEMPERATURE_MAX_KEV} keV: below {ION_TEMPERATURE_MIN_KEV} keV, the floor of the bremsstrahlung fit the electrons are sought from, no electron temperature can be sought, and above {ION_TEMPERATURE_MAX_KEV} keV the part of the rate above 9.76 MeV, where the cross-section fit ends and the reactivity integral stops, grows past 1.7e-5 of it"
             ),
             Self::ElectronDensityOutOfRange { electron_density_per_m3 } => write!(
                 f,
-                "electron density {electron_density_per_m3} m^-3 is outside {ELECTRON_DENSITY_MIN_PER_M3}..={ELECTRON_DENSITY_MAX_PER_M3}, the electron densities compared with published calculations"
+                "electron density {electron_density_per_m3} m^-3 is outside 1e18 to 1e22 m^-3: below it the alphas take longer than half an hour to slow and reach the steady balance, above it the plasma begins to reabsorb its bremsstrahlung"
             ),
             Self::BoronFractionOutOfRange { boron_fraction } => write!(
                 f,
-                "boron fraction {boron_fraction} is outside {BORON_FRACTION_MIN}..={BORON_FRACTION_MAX}, the boron fractions compared with published calculations"
+                "boron fraction {boron_fraction} is outside {BORON_FRACTION_MIN} to {BORON_FRACTION_MAX} of the fuel ions: at 0 or 1 there is one fuel and no reaction"
             ),
             Self::AshFractionOutOfRange { ash_fraction } => {
-                write!(f, "ash fraction {ash_fraction} is outside 0..={ASH_FRACTION_MAX}: no plasma with ash was compared with published calculations")
+                write!(f, "ash fraction {ash_fraction} is below 0, which is no density, or above {ASH_FRACTION_MAX} alpha per fuel ion")
             }
             Self::MagneticFieldOutOfRange { magnetic_field_t } => write!(
                 f,
-                "magnetic field {magnetic_field_t} T is outside {MAGNETIC_FIELD_MIN_T}..={MAGNETIC_FIELD_MAX_T}, the applied fields compared with published calculations"
+                "magnetic field {magnetic_field_t} T is not above 0 T, where nothing holds the plasma, or is above {MAGNETIC_FIELD_MAX_T} T, where the electron's cyclotron quantum reaches a tenth of the 1 keV floor and classical synchrotron emission no longer holds"
             ),
             Self::MinorRadiusOutOfRange { minor_radius_m } => write!(
                 f,
-                "minor radius {minor_radius_m} m is outside {MINOR_RADIUS_MIN_M}..={MINOR_RADIUS_MAX_M}, the one minor radius compared with published calculations"
+                "minor radius {minor_radius_m} m is outside {MINOR_RADIUS_MIN_M} to {MINOR_RADIUS_MAX_M} m, a laboratory plasma to one larger than any reactor design"
             ),
             Self::WallReflectivityOutOfRange { wall_reflectivity } => {
-                write!(f, "wall reflectivity {wall_reflectivity} is outside {WALL_REFLECTIVITY_MIN}..={WALL_REFLECTIVITY_MAX}, the wall reflectivities compared with published calculations")
+                write!(f, "wall reflectivity {wall_reflectivity} is outside {WALL_REFLECTIVITY_MIN} to {WALL_REFLECTIVITY_MAX}: a wall cannot send back less than none or more than all")
             }
             Self::ConfinementTimeOutOfRange { energy_confinement_time_s } => write!(
                 f,
-                "energy confinement time {energy_confinement_time_s} s is outside {CONFINEMENT_TIME_MIN_S}..={CONFINEMENT_TIME_MAX_S}, the one confinement time compared with published calculations"
+                "energy confinement time {energy_confinement_time_s} s is not above 0 s, where the power that holds the ions is infinite, or is above {CONFINEMENT_TIME_MAX_S:e} s, the capacity of the input"
             ),
             Self::NonFiniteValue => write!(f, "an input or an intermediate value was not finite"),
             Self::ChargeNotNeutral { residual } => {
@@ -264,6 +333,10 @@ impl fmt::Display for ThermalReject {
                     write!(f, "the electrons do not balance below the ion temperature or {ELECTRON_TEMPERATURE_MAX_KEV} keV")
                 }
             }
+            Self::SynchrotronAboveUnabsorbedEmission { electron_temperature_kev, ratio } => write!(
+                f,
+                "at an electron temperature of {electron_temperature_kev} keV Trubnikov's synchrotron loss is {ratio} times the unabsorbed emission of the electrons: the plasma is not opaque enough for the formula"
+            ),
             Self::AlphaSharesBroken { residual } => {
                 write!(f, "the alpha energy shares missed one by {residual}")
             }
@@ -315,7 +388,7 @@ pub struct ThermalBalance {
     pub effective_charge: f64,
     /// Electron balance over the electron heating.
     pub electron_energy_residual: f64,
-    /// Total balance less the electron balance, over the fusion power.
+    /// Total balance less the electron balance, over the largest term of the balance.
     pub total_energy_residual: f64,
     /// `(n_e − n_p − 5 n_B − 2 n_α) / n_e`.
     pub charge_residual: f64,
@@ -365,7 +438,7 @@ pub fn bremsstrahlung_coefficient_w_m3() -> f64 {
 pub fn bremsstrahlung_svensson_w_per_m3(electron_density_per_m3: f64, effective_charge: f64, electron_temperature_kev: f64) -> f64 {
     let t = electron_temperature_kev / ELECTRON_REST_KEV;
     bremsstrahlung_coefficient_w_m3() * electron_density_per_m3 * electron_density_per_m3 * t.sqrt()
-        * (effective_charge * (1.0 + 1.78 * t.powf(1.34)) + 2.12 * t * (1.0 + 1.1 * t + t * t - 1.25 * t.powf(2.5)))
+        * (effective_charge * (1.0 + 1.78 * math::powf(t, 1.34)) + 2.12 * t * (1.0 + 1.1 * t + t * t - 1.25 * math::powf(t, 2.5)))
 }
 
 /// Bremsstrahlung of Xie (2024, arXiv:2404.11540, equations 63, A.1 and A.2), W/m³: stated for `t ≤ 2`, within 2 % for charge up to 5.
@@ -375,12 +448,12 @@ pub fn bremsstrahlung_xie_w_per_m3(electron_density_per_m3: f64, ions: &[Species
     let mut ion_part = 0.0;
     for ion in ions {
         let z2 = ion.charge * ion.charge;
-        let non_relativistic = C[0] * (1.0 - (-(C[1] * z2 / t).powf(C[3])).exp())
-            - (C[0] + C[5]) * (-(t / (C[2] * z2)).powf(C[4])).exp();
+        let non_relativistic = C[0] * (1.0 - math::exp(-math::powf(C[1] * z2 / t, C[3])))
+            - (C[0] + C[5]) * math::exp(-math::powf(t / (C[2] * z2), C[4]));
         let gaunt = 1.0 + non_relativistic + t * (0.50 + t * (2.9 + t * (-2.6 + t * (1.12 - 0.19 * t))));
         ion_part += z2 * ion.density_per_m3 * gaunt;
     }
-    let onset = 0.5 * ((0.602 * (t.log10() + 5.06)).tanh() + 1.0);
+    let onset = 0.5 * (math::tanh(0.602 * (math::log10(t) + 5.06)) + 1.0);
     let electron_part = onset * (3.0 / 2.0_f64.sqrt()) * t
         * (1.0 + t * (0.757 + t * (1.81 + t * (-3.355 + t * (1.96 - 0.388 * t)))));
     bremsstrahlung_coefficient_w_m3() * electron_density_per_m3 * electron_density_per_m3 * t.sqrt()
@@ -403,13 +476,30 @@ pub fn synchrotron_w_per_m3(
         / minor_radius_m.sqrt()
 }
 
+/// The coefficient of the unabsorbed synchrotron emission,
+/// `e⁴ / (3π ε0 m_e³ c³)` times the joules in a keV: W/m³ per T² per m⁻³ per
+/// keV, 6.2116e-17.
+pub fn unabsorbed_emission_coefficient() -> f64 {
+    let e2 = ELEMENTARY_CHARGE_C * ELEMENTARY_CHARGE_C;
+    let c = reaction::SPEED_OF_LIGHT_M_PER_S;
+    e2 * e2 * JOULE_PER_KEV
+        / (3.0 * PI * VACUUM_PERMITTIVITY_F_PER_M * ELECTRON_MASS_KG * ELECTRON_MASS_KG * ELECTRON_MASS_KG * c * c * c)
+}
+
+/// The synchrotron emission of the electrons with none of it absorbed, W/m³:
+/// what an optically thin plasma radiates, and the most any plasma can.
+pub fn unabsorbed_synchrotron_w_per_m3(electron_density_per_m3: f64, electron_temperature_kev: f64, internal_field_t: f64) -> f64 {
+    unabsorbed_emission_coefficient() * internal_field_t * internal_field_t * electron_density_per_m3 * electron_temperature_kev
+        * (1.0 + electron_temperature_kev / UNABSORBED_EMISSION_RELATIVISTIC_KEV)
+}
+
 /// The factor on the Maxwellian reactivity that stands in for the kinetic proton tail.
 pub fn kinetic_factor(ion_temperature_kev: f64) -> f64 {
     let factor = KINETIC_FACTOR_AT_ZERO - (KINETIC_FACTOR_AT_ZERO - 1.0) * ion_temperature_kev / KINETIC_FACTOR_ENDS_KEV;
     if factor > 1.0 { factor } else { 1.0 }
 }
 
-/// The named limits a question itself shows: the eight ranges, each the envelope compared with published calculations.
+/// The named limits a question itself shows: the eight ranges, each end with its physical reason at its constant.
 pub fn admit(question: &ThermalQuestion) -> Result<(), ThermalReject> {
     let q = *question;
     for value in [
@@ -438,7 +528,7 @@ pub fn admit(question: &ThermalQuestion) -> Result<(), ThermalReject> {
     if !(0.0..=ASH_FRACTION_MAX).contains(&q.ash_fraction) {
         return Err(ThermalReject::AshFractionOutOfRange { ash_fraction: q.ash_fraction });
     }
-    if !(MAGNETIC_FIELD_MIN_T..=MAGNETIC_FIELD_MAX_T).contains(&q.magnetic_field_t) {
+    if !(q.magnetic_field_t > MAGNETIC_FIELD_MIN_T && q.magnetic_field_t <= MAGNETIC_FIELD_MAX_T) {
         return Err(ThermalReject::MagneticFieldOutOfRange { magnetic_field_t: q.magnetic_field_t });
     }
     if !(MINOR_RADIUS_MIN_M..=MINOR_RADIUS_MAX_M).contains(&q.minor_radius_m) {
@@ -447,7 +537,7 @@ pub fn admit(question: &ThermalQuestion) -> Result<(), ThermalReject> {
     if !(WALL_REFLECTIVITY_MIN..=WALL_REFLECTIVITY_MAX).contains(&q.wall_reflectivity) {
         return Err(ThermalReject::WallReflectivityOutOfRange { wall_reflectivity: q.wall_reflectivity });
     }
-    if !(CONFINEMENT_TIME_MIN_S..=CONFINEMENT_TIME_MAX_S).contains(&q.energy_confinement_time_s) {
+    if !(q.energy_confinement_time_s > CONFINEMENT_TIME_MIN_S && q.energy_confinement_time_s <= CONFINEMENT_TIME_MAX_S) {
         return Err(ThermalReject::ConfinementTimeOutOfRange { energy_confinement_time_s: q.energy_confinement_time_s });
     }
     Ok(())
@@ -600,6 +690,15 @@ impl Plasma {
                 return Err(ThermalReject::NonFiniteValue);
             }
         }
+        // Trubnikov's loss is that of an opaque plasma: it may not be more
+        // than the electrons emit with nothing absorbed.
+        if terms.synchrotron > 0.0 {
+            let unabsorbed = unabsorbed_synchrotron_w_per_m3(q.electron_density_per_m3, electron_temperature_kev, internal_field_t);
+            let ratio = terms.synchrotron / unabsorbed;
+            if !(ratio <= 1.0) {
+                return Err(ThermalReject::SynchrotronAboveUnabsorbedEmission { electron_temperature_kev, ratio });
+            }
+        }
         Ok(terms)
     }
 
@@ -628,7 +727,15 @@ impl Plasma {
         let electron_heating = alpha_to_electrons + terms.exchange;
         let electron_residual = self.electron_balance(terms) / electron_heating;
         let total = auxiliary + fusion - terms.bremsstrahlung - terms.synchrotron - conduction;
-        let total_residual = (total - self.electron_balance(terms)) / fusion;
+        // The total is a sum of terms that cancel: where the ions are held
+        // for a short time the conduction and the auxiliary power are many
+        // times the fusion power and cancel to it, so the residual is taken
+        // over the largest term of the sum, the scale of its rounding.
+        let mut scale: f64 = 0.0;
+        for term in [fusion, alpha_to_ions, alpha_to_electrons, returned, terms.exchange, terms.bremsstrahlung, terms.synchrotron, conduction, auxiliary] {
+            scale = scale.max(term.abs());
+        }
+        let total_residual = (total - self.electron_balance(terms)) / scale;
         for value in [electron_residual, total_residual, auxiliary, fusion] {
             if !value.is_finite() {
                 return Err(ThermalReject::NonFiniteValue);
@@ -680,8 +787,41 @@ impl Plasma {
 }
 
 /// The energy balance of a uniform thermal proton-boron-11 plasma.
+///
+/// Each value of the answer below the normal range is written as zero
+/// with its sign ([`crate::normal`]).
 pub fn solve(question: &ThermalQuestion) -> Result<ThermalBalance, ThermalReject> {
+    crate::normal::held(solve_as_computed(question))
+}
+
+/// The answer as the equations compute it, before a value below the
+/// normal range is written as zero.
+fn solve_as_computed(question: &ThermalQuestion) -> Result<ThermalBalance, ThermalReject> {
     solve_with(question, MAX_ITERATIONS, 1.0)
+}
+
+impl NormalOrZero for ThermalBalance {
+    fn normal_or_zero(&mut self) {
+        self.electron_temperature_kev.normal_or_zero();
+        self.reactivity_m3_per_s.normal_or_zero();
+        self.fusion_power_w_per_m3.normal_or_zero();
+        self.bremsstrahlung_power_w_per_m3.normal_or_zero();
+        self.bremsstrahlung_power_xie_w_per_m3.normal_or_zero();
+        self.synchrotron_power_w_per_m3.normal_or_zero();
+        self.ion_electron_power_w_per_m3.normal_or_zero();
+        self.alpha_energy_fraction_to_electrons.normal_or_zero();
+        self.auxiliary_power_w_per_m3.normal_or_zero();
+        self.ignition_margin.normal_or_zero();
+        self.ignition_loss_rate_per_s.normal_or_zero();
+        self.pressure_pa.normal_or_zero();
+        self.beta.normal_or_zero();
+        self.internal_field_t.normal_or_zero();
+        self.effective_charge.normal_or_zero();
+        self.electron_energy_residual.normal_or_zero();
+        self.total_energy_residual.normal_or_zero();
+        self.charge_residual.normal_or_zero();
+        self.balance_terms_w_per_m3.normal_or_zero();
+    }
 }
 
 fn solve_with(question: &ThermalQuestion, iteration_cap: u32, electron_share_scale: f64) -> Result<ThermalBalance, ThermalReject> {
@@ -868,25 +1008,18 @@ mod tests {
         }
     }
 
-    /// The balance outside the compared envelope, past `admit`: the search
-    /// itself, held where no published calculation reaches.
-    fn unadmitted(question: &ThermalQuestion) -> Result<ThermalBalance, ThermalReject> {
-        settle(question, MAX_ITERATIONS, 1.0)
-    }
-
     #[test]
     fn synchrotron_cools_the_electrons_and_the_wall_decides_how_much() {
         let mut question = ochs(300.0, 0.15);
         question.kinetic_enhancement = false;
         question.electron_density_per_m3 = 1.6e20;
-        question.magnetic_field_t = MAGNETIC_FIELD_MIN_T;
+        question.magnetic_field_t = 6.661098700751347;
         let none = solve(&question).expect("solves");
         assert_eq!(none.synchrotron_power_w_per_m3, 0.0);
         question.wall_reflectivity = 0.95;
         let some = solve(&question).expect("solves");
         question.wall_reflectivity = 0.0;
-        assert_eq!(solve(&question), Err(ThermalReject::WallReflectivityOutOfRange { wall_reflectivity: 0.0 }));
-        let bare = unadmitted(&question).expect("solves");
+        let bare = solve(&question).expect("a bare wall is answered");
         assert!(some.electron_temperature_kev < none.electron_temperature_kev);
         assert!(bare.electron_temperature_kev < some.electron_temperature_kev);
         // At 5 T inside, 2 m and 95 % reflection the synchrotron loss exceeds the fusion power.
@@ -894,12 +1027,11 @@ mod tests {
         assert!(some.synchrotron_power_w_per_m3 > some.fusion_power_w_per_m3);
         assert!(some.ignition_margin < 0.0 && some.ignition_loss_rate_per_s < 0.0);
         assert!(some.beta > 0.0 && some.beta < 1.0);
-        // Ash and the kinetic switch move the margin the way they must; ash was never compared and is refused.
+        // Ash and the kinetic switch move the margin the way they must; ash, never compared, is answered.
         let clean = solve(&ochs(300.0, 0.15)).expect("solves");
         let mut ashy = ochs(300.0, 0.15);
         ashy.ash_fraction = 0.02;
-        assert_eq!(solve(&ashy), Err(ThermalReject::AshFractionOutOfRange { ash_fraction: 0.02 }));
-        assert!(unadmitted(&ashy).expect("solves").ignition_margin < clean.ignition_margin);
+        assert!(solve(&ashy).expect("ash is answered").ignition_margin < clean.ignition_margin);
         let mut maxwellian = ochs(300.0, 0.15);
         maxwellian.kinetic_enhancement = false;
         let maxwellian = solve(&maxwellian).expect("solves");
@@ -909,13 +1041,14 @@ mod tests {
         assert_eq!(kinetic_factor(800.0), 1.0);
     }
 
-    /// The declared range is the envelope of the comparison with published
-    /// calculations. Each end is answered, the next number beyond it is
-    /// refused by name, and two requests 0.6.0 answered with a proof outside
-    /// every comparison are refused.
+    /// Each end of the declared range is answered or stopped by a physical
+    /// limit inside the solve, never at the door; the next number beyond it
+    /// is refused at the door by name. The corner of the range 0.6.0 declared
+    /// and a 10 keV plasma, both refused by name in 0.7.0 to this version,
+    /// are answered with their ledgers closed.
     #[test]
-    fn a_question_outside_the_ranges_is_named() {
-        let below = |value: f64| f64::from_bits(value.to_bits() - 1);
+    fn each_end_of_the_ranges_is_answered_and_the_next_number_is_named() {
+        let below = |value: f64| if value == 0.0 { -f64::MIN_POSITIVE } else { f64::from_bits(value.to_bits() - 1) };
         let above = |value: f64| f64::from_bits(value.to_bits() + 1);
         let good = ochs(300.0, 0.15);
         let with = |change: fn(&mut ThermalQuestion, f64), value: f64| {
@@ -923,27 +1056,52 @@ mod tests {
             change(&mut question, value);
             solve(&question)
         };
+        let inside_the_solve = |answer: Result<ThermalBalance, ThermalReject>| match answer {
+            Ok(balance) => balance.total_energy_residual.abs() <= ENERGY_TOLERANCE && balance.electron_energy_residual.abs() <= ENERGY_TOLERANCE,
+            Err(reject) => matches!(
+                reject,
+                ThermalReject::PressureExceedsField { .. }
+                    | ThermalReject::ElectronTemperatureOutOfRange { .. }
+                    | ThermalReject::SynchrotronAboveUnabsorbedEmission { .. }
+            ),
+        };
         type Change = fn(&mut ThermalQuestion, f64);
-        let ranges: [(Change, f64, f64, fn(f64) -> ThermalReject); 8] = [
+        let closed: [(Change, f64, f64, fn(f64) -> ThermalReject); 6] = [
             (|q, v| q.ion_temperature_kev = v, ION_TEMPERATURE_MIN_KEV, ION_TEMPERATURE_MAX_KEV, |v| ThermalReject::IonTemperatureOutOfRange { ion_temperature_kev: v }),
             (|q, v| q.electron_density_per_m3 = v, ELECTRON_DENSITY_MIN_PER_M3, ELECTRON_DENSITY_MAX_PER_M3, |v| ThermalReject::ElectronDensityOutOfRange { electron_density_per_m3: v }),
             (|q, v| q.boron_fraction = v, BORON_FRACTION_MIN, BORON_FRACTION_MAX, |v| ThermalReject::BoronFractionOutOfRange { boron_fraction: v }),
             (|q, v| q.ash_fraction = v, 0.0, ASH_FRACTION_MAX, |v| ThermalReject::AshFractionOutOfRange { ash_fraction: v }),
-            (|q, v| q.magnetic_field_t = v, MAGNETIC_FIELD_MIN_T, MAGNETIC_FIELD_MAX_T, |v| ThermalReject::MagneticFieldOutOfRange { magnetic_field_t: v }),
             (|q, v| q.minor_radius_m = v, MINOR_RADIUS_MIN_M, MINOR_RADIUS_MAX_M, |v| ThermalReject::MinorRadiusOutOfRange { minor_radius_m: v }),
             (|q, v| q.wall_reflectivity = v, WALL_REFLECTIVITY_MIN, WALL_REFLECTIVITY_MAX, |v| ThermalReject::WallReflectivityOutOfRange { wall_reflectivity: v }),
-            (|q, v| q.energy_confinement_time_s = v, CONFINEMENT_TIME_MIN_S, CONFINEMENT_TIME_MAX_S, |v| ThermalReject::ConfinementTimeOutOfRange { energy_confinement_time_s: v }),
         ];
-        for (change, low, high, reject) in ranges {
-            assert!(with(change, low).is_ok(), "{low}");
-            assert!(with(change, high).is_ok(), "{high}");
-            let under = if low == 0.0 { -f64::MIN_POSITIVE } else { below(low) };
-            assert_eq!(with(change, under), Err(reject(under)));
+        for (change, low, high, reject) in closed {
+            assert!(inside_the_solve(with(change, low)), "{low}");
+            assert!(inside_the_solve(with(change, high)), "{high}");
+            assert_eq!(with(change, below(low)), Err(reject(below(low))));
             assert_eq!(with(change, above(high)), Err(reject(above(high))));
         }
+        // The field and the confinement time: anything above zero, the field to 1e6 T.
+        let open: [(Change, f64, fn(f64) -> ThermalReject); 2] = [
+            (|q, v| q.magnetic_field_t = v, MAGNETIC_FIELD_MAX_T, |v| ThermalReject::MagneticFieldOutOfRange { magnetic_field_t: v }),
+            (|q, v| q.energy_confinement_time_s = v, CONFINEMENT_TIME_MAX_S, |v| ThermalReject::ConfinementTimeOutOfRange { energy_confinement_time_s: v }),
+        ];
+        for (change, top, reject) in open {
+            for value in [1.0e-3, 1.0e6, top] {
+                assert!(inside_the_solve(with(change, value)), "{value}");
+            }
+            for value in [0.0, -0.0, -1.0] {
+                assert_eq!(with(change, value), Err(reject(value)));
+            }
+        }
+        assert_eq!(with(|q, v| q.magnetic_field_t = v, above(MAGNETIC_FIELD_MAX_T)), Err(ThermalReject::MagneticFieldOutOfRange { magnetic_field_t: above(MAGNETIC_FIELD_MAX_T) }));
+        // The field nearest zero cannot hold the ions, by name; at the
+        // confinement time nearest zero the power that holds the ions is not
+        // a finite number.
+        assert!(matches!(with(|q, v| q.magnetic_field_t = v, f64::from_bits(1)), Err(ThermalReject::PressureExceedsField { .. })));
+        assert_eq!(with(|q, v| q.energy_confinement_time_s = v, f64::from_bits(1)), Err(ThermalReject::NonFiniteValue));
         assert_eq!(with(|q, v| q.ion_temperature_kev = v, f64::NAN), Err(ThermalReject::NonFiniteValue));
         assert_eq!(with(|q, v| q.magnetic_field_t = v, f64::INFINITY), Err(ThermalReject::NonFiniteValue));
-        // A corner of the range 0.6.0 declared and a 10 keV plasma, both answered with a proof then.
+        // A corner of the range 0.6.0 declared and a 10 keV plasma.
         let corner = ThermalQuestion {
             ion_temperature_kev: 300.0,
             electron_density_per_m3: 1.0e21,
@@ -955,11 +1113,12 @@ mod tests {
             energy_confinement_time_s: 1.0e5,
             kinetic_enhancement: true,
         };
-        assert_eq!(solve(&corner), Err(ThermalReject::ElectronDensityOutOfRange { electron_density_per_m3: 1.0e21 }));
-        assert_eq!(
-            solve(&ThermalQuestion { ion_temperature_kev: 10.0, ..good }),
-            Err(ThermalReject::IonTemperatureOutOfRange { ion_temperature_kev: 10.0 })
-        );
+        for question in [corner, ThermalQuestion { ion_temperature_kev: 10.0, ..good }] {
+            let balance = solve(&question).expect("answered");
+            assert!(balance.electron_energy_residual.abs() <= ENERGY_TOLERANCE);
+            assert!(balance.total_energy_residual.abs() <= ENERGY_TOLERANCE);
+            assert!(balance.electron_temperature_kev < question.ion_temperature_kev);
+        }
     }
 
     /// Every run of the comparison is inside the declared range, and the
@@ -995,16 +1154,16 @@ mod tests {
     }
 
     /// Pressure balance: 300 keV ions at 1.6e20 electrons per cubic metre
-    /// need 4.7 T at the least; 3 T and 4 T cannot hold the ions alone.
-    /// Both fields are below the compared ones and refused by name first.
+    /// need 4.7 T at the least; 3 T and 4 T cannot hold the ions alone, and
+    /// the solve says so by name (0.7.0 to this version refused both at the
+    /// door, below the compared fields).
     #[test]
     fn a_plasma_the_field_cannot_hold_is_named() {
         let mut question = ochs(300.0, 0.15);
         question.electron_density_per_m3 = 1.6e20;
         for field in [3.0, 4.0] {
             question.magnetic_field_t = field;
-            assert_eq!(solve(&question), Err(ThermalReject::MagneticFieldOutOfRange { magnetic_field_t: field }));
-            assert!(matches!(unadmitted(&question), Err(ThermalReject::PressureExceedsField { .. })));
+            assert!(matches!(solve(&question), Err(ThermalReject::PressureExceedsField { .. })));
         }
         question.magnetic_field_t = 20.0;
         assert!(solve(&question).is_ok());
@@ -1015,9 +1174,7 @@ mod tests {
     /// zero at the limit, so the synchrotron loss is too, and the balance
     /// there heats the electrons although it turns to loss near 105.6 keV
     /// below it. The balance turns from heating to loss, then back to
-    /// heating below the limit; the first turn is returned. The request is
-    /// outside the compared envelope and is refused there by name; the
-    /// search is held past `admit`.
+    /// heating below the limit; the first turn is returned.
     #[test]
     fn a_balance_below_the_field_limit_is_found_and_the_first_is_returned() {
         let question = |magnetic_field_t: f64| ThermalQuestion {
@@ -1031,8 +1188,7 @@ mod tests {
             energy_confinement_time_s: 100.0,
             kinetic_enhancement: false,
         };
-        assert_eq!(solve(&question(4.7)), Err(ThermalReject::MagneticFieldOutOfRange { magnetic_field_t: 4.7 }));
-        let held = unadmitted(&question(4.7)).expect("a balance the field holds");
+        let held = solve(&question(4.7)).expect("a balance the field holds");
         assert!((held.electron_temperature_kev - 105.613).abs() < 0.01, "{}", held.electron_temperature_kev);
         assert!((held.beta - 0.8549).abs() < 0.001, "{}", held.beta);
         assert!(held.internal_field_t > 1.7 && held.internal_field_t < 1.9);
@@ -1050,11 +1206,11 @@ mod tests {
         assert!(balance(ceiling) > 0.0);
         // One part in ten thousand of the field on either side gives nearly the same answer; at 4.7007 T the limit is reached by rounding and is not refused.
         for field in [4.7007, 4.701] {
-            let near = unadmitted(&question(field)).expect("settles");
+            let near = solve(&question(field)).expect("settles");
             assert!((near.electron_temperature_kev - held.electron_temperature_kev).abs() < 0.2, "{field}");
         }
         // The refusal stays where the balance heats at every point up to the limit, on the solver's grid and on one twenty-five times finer.
-        assert!(matches!(unadmitted(&question(4.6)), Err(ThermalReject::PressureExceedsField { .. })));
+        assert!(matches!(solve(&question(4.6)), Err(ThermalReject::PressureExceedsField { .. })));
         let plasma = Plasma::new(&question(4.6)).expect("built");
         let ceiling = plasma.pressure_ceiling_kev();
         let mut t = ELECTRON_TEMPERATURE_MIN_KEV;
@@ -1080,12 +1236,10 @@ mod tests {
         let expected = ion_energy / base.energy_confinement_time_s - surplus;
         assert!(((first.auxiliary_power_w_per_m3 - expected) / first.fusion_power_w_per_m3).abs() < 1.0e-12);
         assert!((1.0 / first.ignition_loss_rate_per_s - 532.3).abs() < 0.5);
-        // Other confinement times were never compared and are refused; past `admit` the zero falls where the note says.
-        let at_ion_time = ThermalQuestion { energy_confinement_time_s: ion_energy / surplus, ..base };
-        assert!(matches!(solve(&at_ion_time), Err(ThermalReject::ConfinementTimeOutOfRange { .. })));
-        let at_ion_time = unadmitted(&at_ion_time).expect("solves");
+        // Other confinement times, never compared, are answered: the zero falls where the note says.
+        let at_ion_time = solve(&ThermalQuestion { energy_confinement_time_s: ion_energy / surplus, ..base }).expect("solves");
         assert!((at_ion_time.auxiliary_power_w_per_m3 / first.fusion_power_w_per_m3).abs() < 1.0e-12, "{}", at_ion_time.auxiliary_power_w_per_m3);
-        let at_total_time = unadmitted(&ThermalQuestion { energy_confinement_time_s: 1.0 / first.ignition_loss_rate_per_s, ..base }).expect("solves");
+        let at_total_time = solve(&ThermalQuestion { energy_confinement_time_s: 1.0 / first.ignition_loss_rate_per_s, ..base }).expect("solves");
         assert!(at_total_time.auxiliary_power_w_per_m3 < 0.0);
     }
 
@@ -1129,21 +1283,21 @@ mod tests {
         assert!(matches!(plasma.accept(&lost, 0), Err(ThermalReject::EnergyBalanceBroken { .. })));
     }
 
-    /// Every corner of the declared range settles above the floor and below
-    /// the ion temperature, with both balances closed.
+    /// Every corner of the compared envelope settles above the floor and
+    /// below the ion temperature, with both balances closed.
     #[test]
-    fn the_corners_of_the_ranges_settle() {
+    fn the_corners_of_the_compared_envelope_settle() {
         for corner in 0..64_u32 {
             let pick = |bit: u32, low: f64, high: f64| if corner & (1 << bit) == 0 { low } else { high };
             let question = ThermalQuestion {
-                ion_temperature_kev: pick(0, ION_TEMPERATURE_MIN_KEV, ION_TEMPERATURE_MAX_KEV),
-                electron_density_per_m3: pick(1, ELECTRON_DENSITY_MIN_PER_M3, ELECTRON_DENSITY_MAX_PER_M3),
-                boron_fraction: pick(2, BORON_FRACTION_MIN, BORON_FRACTION_MAX),
+                ion_temperature_kev: pick(0, 200.0, 450.0),
+                electron_density_per_m3: pick(1, 1.52e20, 1.6e20),
+                boron_fraction: pick(2, 0.13, 0.15),
                 ash_fraction: 0.0,
-                magnetic_field_t: pick(3, MAGNETIC_FIELD_MIN_T, MAGNETIC_FIELD_MAX_T),
-                minor_radius_m: MINOR_RADIUS_MIN_M,
-                wall_reflectivity: pick(4, WALL_REFLECTIVITY_MIN, WALL_REFLECTIVITY_MAX),
-                energy_confinement_time_s: CONFINEMENT_TIME_MIN_S,
+                magnetic_field_t: pick(3, 6.661098700751347, 20.0),
+                minor_radius_m: 2.0,
+                wall_reflectivity: pick(4, 0.95, 1.0),
+                energy_confinement_time_s: 100.0,
                 kinetic_enhancement: corner & (1 << 5) != 0,
             };
             let balance = solve(&question).unwrap_or_else(|reject| panic!("{corner}: {reject}"));
@@ -1152,5 +1306,172 @@ mod tests {
             assert!(balance.electron_energy_residual.abs() <= ENERGY_TOLERANCE);
             assert!(balance.total_energy_residual.abs() <= ENERGY_TOLERANCE);
         }
+    }
+
+    /// Attack on the reopened range: at every corner of it, every input at
+    /// one end or the other (ion temperature 1 and 1000 keV, electron
+    /// density 1e18 and 1e22, boron 0.01 and 0.9, ash 0 and 1, applied field
+    /// 1 and 1000 T, radius 0.1 and 10 m, wall 0 and 1, confinement 1 ms and
+    /// 1e6 s, the kinetic factor off and on), the balance closes or a
+    /// physical limit stops it by name: never a broken ledger, a search that
+    /// did not settle, or a value that is not finite. When written: 160 of
+    /// the 512 corners answered, all at 1000 keV; at 1 keV, the electrons'
+    /// floor, the search for an electron temperature is empty and every
+    /// corner stops by name. With the low end at 10 keV, until this version,
+    /// 320 were answered, 160 of them at 10 keV. The same corners at 1.25 keV
+    /// are attacked in `ion_temperatures_down_to_the_electron_floor_settle`.
+    #[test]
+    fn every_corner_of_the_reopened_range_closes_or_stops_by_name() {
+        let mut answered = 0;
+        let mut worst: f64 = 0.0;
+        for corner in 0..512_u32 {
+            let pick = |bit: u32, low: f64, high: f64| if corner & (1 << bit) == 0 { low } else { high };
+            let question = ThermalQuestion {
+                ion_temperature_kev: pick(0, ION_TEMPERATURE_MIN_KEV, ION_TEMPERATURE_MAX_KEV),
+                electron_density_per_m3: pick(1, ELECTRON_DENSITY_MIN_PER_M3, ELECTRON_DENSITY_MAX_PER_M3),
+                boron_fraction: pick(2, BORON_FRACTION_MIN, BORON_FRACTION_MAX),
+                ash_fraction: pick(3, 0.0, ASH_FRACTION_MAX),
+                magnetic_field_t: pick(4, 1.0, 1000.0),
+                minor_radius_m: pick(5, MINOR_RADIUS_MIN_M, MINOR_RADIUS_MAX_M),
+                wall_reflectivity: pick(6, WALL_REFLECTIVITY_MIN, WALL_REFLECTIVITY_MAX),
+                energy_confinement_time_s: pick(7, 1.0e-3, 1.0e6),
+                kinetic_enhancement: corner & (1 << 8) != 0,
+            };
+            match solve(&question) {
+                Ok(balance) => {
+                    answered += 1;
+                    assert!(balance.electron_energy_residual.abs() <= ENERGY_TOLERANCE, "{corner}");
+                    assert!(balance.total_energy_residual.abs() <= ENERGY_TOLERANCE, "{corner}");
+                    assert!(balance.charge_residual.abs() <= CHARGE_TOLERANCE, "{corner}");
+                    worst = worst.max(balance.total_energy_residual.abs());
+                }
+                Err(ThermalReject::PressureExceedsField { .. } | ThermalReject::ElectronTemperatureOutOfRange { .. } | ThermalReject::SynchrotronAboveUnabsorbedEmission { .. }) => {}
+                Err(other) => panic!("{corner}: {question:?} {other:?}"),
+            }
+        }
+        println!("{answered} of 512 corners answered; worst total residual {worst:e}");
+        assert_eq!(answered, 160);
+    }
+
+    /// Above 500 keV, where 0.7.0 to this version refused, the balance at
+    /// Ochs et al.'s plasma settles at every 10 keV up to 1000 keV with both
+    /// ledgers closed, the electron temperature rising with the ion
+    /// temperature and staying below the 500 keV of the radiation forms.
+    #[test]
+    fn ion_temperatures_to_1000_kev_settle_with_both_ledgers_closed() {
+        let mut previous = 0.0;
+        for step in 1..=100 {
+            let ti = 10.0 * step as f64;
+            let balance = solve(&ochs(ti, 0.15)).unwrap_or_else(|reject| panic!("{ti}: {reject}"));
+            assert!(balance.electron_energy_residual.abs() <= ENERGY_TOLERANCE, "{ti}");
+            assert!(balance.total_energy_residual.abs() <= ENERGY_TOLERANCE, "{ti}");
+            assert!(balance.electron_temperature_kev > previous && balance.electron_temperature_kev < ti.min(ELECTRON_TEMPERATURE_MAX_KEV), "{ti}");
+            previous = balance.electron_temperature_kev;
+        }
+        assert!((previous - 293.97).abs() < 0.01, "{previous}");
+        assert_eq!(solve(&ochs(1000.000_000_000_1, 0.15)), Err(ThermalReject::IonTemperatureOutOfRange { ion_temperature_kev: 1000.000_000_000_1 }));
+    }
+
+    /// Below 10 keV, where engine 0.11.0 refused, down to the 1 keV floor
+    /// the electrons are sought from: Ochs et al.'s plasma settles at every
+    /// quarter keV from 1.25 to 10 keV with both ledgers closed and the
+    /// electrons just below the ions; at 1 keV the search is empty and stops
+    /// by name, and below it the door refuses. Every corner of the declared
+    /// range at 1.25 keV closes or stops by a physical limit by name.
+    #[test]
+    fn ion_temperatures_down_to_the_electron_floor_settle() {
+        let mut previous: f64 = 0.0;
+        for quarter in 5..=40 {
+            let ti = 0.25 * f64::from(quarter);
+            let balance = solve(&ochs(ti, 0.15)).unwrap_or_else(|reject| panic!("{ti}: {reject}"));
+            assert!(balance.electron_energy_residual.abs() <= ENERGY_TOLERANCE, "{ti}");
+            assert!(balance.total_energy_residual.abs() <= ENERGY_TOLERANCE, "{ti}");
+            assert!(balance.charge_residual.abs() <= CHARGE_TOLERANCE, "{ti}");
+            assert!(balance.electron_temperature_kev > previous.max(ELECTRON_TEMPERATURE_MIN_KEV) && balance.electron_temperature_kev < ti, "{ti}");
+            previous = balance.electron_temperature_kev;
+        }
+        assert!(matches!(solve(&ochs(ION_TEMPERATURE_MIN_KEV, 0.15)), Err(ThermalReject::ElectronTemperatureOutOfRange { .. })));
+        let below = f64::from_bits(ION_TEMPERATURE_MIN_KEV.to_bits() - 1);
+        assert_eq!(solve(&ochs(below, 0.15)), Err(ThermalReject::IonTemperatureOutOfRange { ion_temperature_kev: below }));
+        let mut answered = 0;
+        for corner in 0..256_u32 {
+            let pick = |bit: u32, low: f64, high: f64| if corner & (1 << bit) == 0 { low } else { high };
+            let question = ThermalQuestion {
+                ion_temperature_kev: 1.25,
+                electron_density_per_m3: pick(0, ELECTRON_DENSITY_MIN_PER_M3, ELECTRON_DENSITY_MAX_PER_M3),
+                boron_fraction: pick(1, BORON_FRACTION_MIN, BORON_FRACTION_MAX),
+                ash_fraction: pick(2, 0.0, ASH_FRACTION_MAX),
+                magnetic_field_t: pick(3, 1.0, 1000.0),
+                minor_radius_m: pick(4, MINOR_RADIUS_MIN_M, MINOR_RADIUS_MAX_M),
+                wall_reflectivity: pick(5, WALL_REFLECTIVITY_MIN, WALL_REFLECTIVITY_MAX),
+                energy_confinement_time_s: pick(6, 1.0e-3, 1.0e6),
+                kinetic_enhancement: corner & (1 << 7) != 0,
+            };
+            match solve(&question) {
+                Ok(balance) => {
+                    answered += 1;
+                    assert!(balance.electron_energy_residual.abs() <= ENERGY_TOLERANCE, "{corner}");
+                    assert!(balance.total_energy_residual.abs() <= ENERGY_TOLERANCE, "{corner}");
+                    assert!(balance.charge_residual.abs() <= CHARGE_TOLERANCE, "{corner}");
+                }
+                Err(ThermalReject::PressureExceedsField { .. } | ThermalReject::ElectronTemperatureOutOfRange { .. } | ThermalReject::SynchrotronAboveUnabsorbedEmission { .. }) => {}
+                Err(other) => panic!("{corner}: {question:?} {other:?}"),
+            }
+        }
+        println!("{answered} of 256 corners at 1.25 keV answered");
+        assert!(answered > 0);
+    }
+
+    /// The unabsorbed synchrotron emission has the published coefficient,
+    /// 6.2116e-17 W/m³ per T² per m⁻³ per keV, and Trubnikov's loss over it
+    /// is the transparency factor `60 t^1.5 √((1 − R_w)/p_a)`, with
+    /// `p_a = 6036 a n₂₀ / B` and the two relativistic brackets, within half a
+    /// percent: the two formulas this limit sets side by side are the ones
+    /// the research record re-derived.
+    #[test]
+    fn the_unabsorbed_emission_is_the_published_one_and_bounds_trubnikov() {
+        assert!((unabsorbed_emission_coefficient() / 6.2116e-17 - 1.0).abs() < 1.0e-4, "{}", unabsorbed_emission_coefficient());
+        for (n, te, b, a, rw) in [(1.6e20_f64, 113.0_f64, 5.0_f64, 2.0_f64, 0.95_f64), (1.0e18, 200.0, 1000.0, 0.1, 0.9), (1.0e22, 50.0, 40.0, 10.0, 0.0)] {
+            let t = te / ELECTRON_REST_KEV;
+            let opacity = 6036.0 * a * (n / 1.0e20) / b;
+            let factor = 60.0 * t.powf(1.5) * ((1.0 - rw) / opacity).sqrt() * (1.0 + 2.5 * te / 511.0) / (1.0 + te / UNABSORBED_EMISSION_RELATIVISTIC_KEV);
+            let ratio = synchrotron_w_per_m3(n, te, b, a, rw) / unabsorbed_synchrotron_w_per_m3(n, te, b);
+            assert!((ratio / factor - 1.0).abs() < 5.0e-3, "{n} {te}: {ratio} {factor}");
+        }
+    }
+
+    /// Attack: a plasma too thin for Trubnikov's formula. At 1e18 electrons
+    /// per cubic metre, 0.1 m, 1000 T and a wall that sends back 90 percent,
+    /// electrons at 200 keV would lose by the formula 50 times what they
+    /// emit at all; the trial temperature is stopped by name. Inside the
+    /// declared range the electrons' own balance holds every settled answer
+    /// met in the sweeps far inside the formula's domain (the largest ratio
+    /// met there was 0.16), so it is the trial temperatures this holds.
+    #[test]
+    fn synchrotron_above_what_the_electrons_emit_is_named() {
+        let question = ThermalQuestion {
+            ion_temperature_kev: 300.0,
+            electron_density_per_m3: 1.0e18,
+            boron_fraction: 0.15,
+            ash_fraction: 0.0,
+            magnetic_field_t: 1000.0,
+            minor_radius_m: 0.1,
+            wall_reflectivity: 0.9,
+            energy_confinement_time_s: 100.0,
+            kinetic_enhancement: false,
+        };
+        let plasma = Plasma::new(&question).expect("built");
+        match plasma.terms(200.0, 1.0) {
+            Err(ThermalReject::SynchrotronAboveUnabsorbedEmission { electron_temperature_kev, ratio }) => {
+                assert_eq!(electron_temperature_kev, 200.0);
+                assert!(ratio > 45.0 && ratio < 55.0, "{ratio}");
+            }
+            other => panic!("{:?}", other.map(|terms| terms.synchrotron)),
+        }
+        // The same plasma at 1 keV is inside the formula's domain.
+        assert!(plasma.terms(1.0, 1.0).is_ok());
+        // With no synchrotron loss there is nothing to hold.
+        let mirror = Plasma::new(&ThermalQuestion { wall_reflectivity: 1.0, ..question }).expect("built");
+        assert!(mirror.terms(200.0, 1.0).is_ok());
     }
 }

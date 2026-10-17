@@ -1,5 +1,11 @@
 [package]
 name = "genesis_solvers"
-version = "0.8.0"
+version = "0.12.0"
 edition = "2024"
 license = "Apache-2.0"
+
+# The kernel's canonical math (genesis_kernel::math): the solvers call no
+# method of the platform's math library. The company's own crate, with no
+# dependencies of its own.
+[dependencies]
+genesis_kernel = { path = "../genesis_kernel" }

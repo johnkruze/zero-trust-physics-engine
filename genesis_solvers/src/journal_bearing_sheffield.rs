@@ -10,13 +10,18 @@
 //! The caller gives the steady load and the shaft speed. The solver refines
 //! the film pressure over the whole bearing surface until it settles, and
 //! moves the shaft until the film carries the load. It returns the Sommerfeld
-//! number, the eccentricity ratio and the thinnest film, or a named limit.
+//! number, the eccentricity ratio, the attitude angle, the thinnest film, the
+//! peak film pressure and the settled pressure field, or a named limit.
 //!
-//! Only the thinnest film was compared with measurement, and the Sommerfeld
-//! number with the published table. The attitude angle and the film pressure
-//! were compared with neither, so the solver returns no attitude angle and no
-//! pressure. The settled pressure field is returned only so that its digest
-//! binds the answer.
+//! Only the thinnest film was compared with measurement, on fifty runs at 2 to
+//! 20 kN and 100 to 800 rpm, and the Sommerfeld number with the published
+//! table. The attitude angle and the film pressure come from the same settled
+//! field and were compared with neither. Any load and speed above zero is
+//! answered: the film depends on them only through the Sommerfeld number, and
+//! stops by name where the shaft would have to sit outside the eccentricity
+//! ratios searched or where the film is no longer laminar. Through engine
+//! 0.8.0 a load or speed outside the tested envelope was refused by name, and
+//! the attitude angle and the peak pressure were not returned.
 //!
 //! The film is thin, so the pressure `p(θ, z)` obeys the Reynolds equation for
 //! an oil of one viscosity between a rigid shaft and a rigid bush:
@@ -51,6 +56,8 @@
 //! pressure and along the film, roughness, misalignment, and any motion of the
 //! shaft centre.
 
+use genesis_kernel::math;
+use crate::normal::NormalOrZero;
 use std::fmt;
 
 const PI: f64 = std::f64::consts::PI;
@@ -66,11 +73,21 @@ pub const OIL_VISCOSITY_AT_65C_PA_S: f64 = 0.02722;
 /// Fitted. The film's viscosity is the viscosity at 65 °C times this.
 pub const FILM_VISCOSITY_MULTIPLIER: f64 = 0.8201;
 
-/// The tested envelope of the specimen.
+/// The tested envelope of the specimen: the loads and speeds of the fifty
+/// compared runs. Stated, not enforced.
 pub const LOAD_MIN_N: f64 = 2000.0;
 pub const LOAD_MAX_N: f64 = 20000.0;
 pub const SPEED_MIN_RPM: f64 = 100.0;
 pub const SPEED_MAX_RPM: f64 = 800.0;
+
+/// Density of the oil in the film Reynolds number, kg/m³: a mineral oil near
+/// 65 °C. The dataset gives none; it enters only the laminar limit.
+pub const OIL_DENSITY_KG_M3: f64 = 860.0;
+/// Taylor's number for a narrow gap with the inner cylinder turning: the film
+/// is laminar and free of Taylor vortices while `ρ ω R c / μ` is below this
+/// times `sqrt(R / c)`. At 800 rpm the film Reynolds number is about 8, and
+/// the limit is about 1450, near 143,000 rpm.
+pub const TAYLOR_CRITICAL_NUMBER: f64 = 41.2;
 
 /// The shaft position is searched between these eccentricity ratios.
 pub const ECCENTRICITY_RATIO_MIN: f64 = 0.05;
@@ -105,13 +122,15 @@ pub const REFERENCE_TOLERANCE: f64 = 0.015;
 /// Why a film was not returned.
 #[derive(Clone, Debug, PartialEq)]
 pub enum BearingReject {
-    /// `load_n` is outside [`LOAD_MIN_N`]..=[`LOAD_MAX_N`].
-    LoadOutOfRange { load_n: f64 },
-    /// `speed_rpm` is outside [`SPEED_MIN_RPM`]..=[`SPEED_MAX_RPM`].
-    SpeedOutOfRange { speed_rpm: f64 },
+    /// `load_n` is not above zero: a film carries no load of zero or less.
+    LoadNotPositive { load_n: f64 },
+    /// `speed_rpm` is not above zero: a shaft at rest makes no film.
+    SpeedNotPositive { speed_rpm: f64 },
+    /// The film Reynolds number is above [`TAYLOR_CRITICAL_NUMBER`] times the square root of the radius over the clearance: Taylor vortices form, and the film is not the laminar film of the Reynolds equation.
+    FilmNotLaminar { film_reynolds_number: f64 },
     /// An input or an intermediate value was NaN or infinite.
     NonFiniteValue,
-    /// The film carries the load only at an eccentricity ratio outside [`ECCENTRICITY_RATIO_MIN`]..=[`ECCENTRICITY_RATIO_MAX`].
+    /// The film carries the load only at an eccentricity ratio outside [`ECCENTRICITY_RATIO_MIN`] to [`ECCENTRICITY_RATIO_MAX`].
     EccentricityRatioOutOfRange { sommerfeld_number: f64 },
     /// The sweep cap was reached with the pressure still moving.
     FilmNotSettled { sweeps: u32 },
@@ -124,17 +143,21 @@ pub enum BearingReject {
 impl fmt::Display for BearingReject {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::LoadOutOfRange { load_n } => {
-                write!(f, "load {load_n} N is outside {LOAD_MIN_N}..={LOAD_MAX_N}")
+            Self::LoadNotPositive { load_n } => {
+                write!(f, "load {load_n} N is not above zero")
             }
-            Self::SpeedOutOfRange { speed_rpm } => write!(
+            Self::SpeedNotPositive { speed_rpm } => {
+                write!(f, "speed {speed_rpm} rpm is not above zero")
+            }
+            Self::FilmNotLaminar { film_reynolds_number } => write!(
                 f,
-                "speed {speed_rpm} rpm is outside {SPEED_MIN_RPM}..={SPEED_MAX_RPM}"
+                "the film Reynolds number {film_reynolds_number} is above {}, where Taylor vortices form: the film is not laminar",
+                laminar_limit()
             ),
             Self::NonFiniteValue => write!(f, "an input or a pressure was not finite"),
             Self::EccentricityRatioOutOfRange { sommerfeld_number } => write!(
                 f,
-                "Sommerfeld number {sommerfeld_number} is carried only at an eccentricity ratio outside {ECCENTRICITY_RATIO_MIN}..={ECCENTRICITY_RATIO_MAX}"
+                "Sommerfeld number {sommerfeld_number} is carried only at an eccentricity ratio outside {ECCENTRICITY_RATIO_MIN} to {ECCENTRICITY_RATIO_MAX}"
             ),
             Self::FilmNotSettled { sweeps } => {
                 write!(
@@ -163,8 +186,14 @@ pub struct BearingFilm {
     pub sommerfeld_number: f64,
     /// Shaft offset divided by the radial clearance.
     pub eccentricity_ratio: f64,
+    /// Angle from the load line to the line of centres, degrees, from the
+    /// film force of the settled field. Compared with no measurement.
+    pub attitude_angle_deg: f64,
     /// Thinnest film, `c (1 − ε)`, metres.
     pub minimum_film_thickness_m: f64,
+    /// Highest film pressure above ambient in the settled field, pascals.
+    /// Compared with no measurement.
+    pub peak_film_pressure_pa: f64,
     /// Largest flow imbalance of any cell, as a fraction of the peak pressure.
     pub flow_balance_residual: f64,
     /// Film force minus the load, newtons.
@@ -175,8 +204,8 @@ pub struct BearingFilm {
     pub sweeps: u32,
     /// Film pressure above ambient, pascals: [`CELLS_AROUND`] rows from the
     /// widest gap in the direction of rotation, each of [`CELLS_ALONG_HALF`]
-    /// samples from the middle of the bush toward one end. It binds the
-    /// answer by its digest; no pressure was compared with measurement.
+    /// samples from the middle of the bush toward one end. No pressure was
+    /// compared with measurement.
     pub film_pressure_pa: Vec<f64>,
 }
 
@@ -205,7 +234,7 @@ impl Film {
         let d_theta = 2.0 * PI / around as f64;
         let d_z = 1.0 / along as f64;
         let aspect = 1.0 / (length_over_diameter * length_over_diameter);
-        let gap = |theta: f64| 1.0 + eccentricity_ratio * theta.cos();
+        let gap = |theta: f64| 1.0 + eccentricity_ratio * math::cos(theta);
         let mut east = Vec::with_capacity(around);
         let mut axial = Vec::with_capacity(around);
         let mut wedge = Vec::with_capacity(around);
@@ -331,8 +360,8 @@ impl Film {
                 column += pressure[row * self.along + col];
             }
             let theta = row as f64 * d_theta;
-            along_centres += column * theta.cos();
-            across += column * theta.sin();
+            along_centres += column * math::cos(theta);
+            across += column * math::sin(theta);
         }
         (along_centres * d_theta * d_z, across * d_theta * d_z)
     }
@@ -341,6 +370,8 @@ impl Film {
 /// A film settled and checked at one eccentricity ratio.
 struct Settled {
     sommerfeld_number: f64,
+    attitude_angle_deg: f64,
+    peak: f64,
     flow_balance_residual: f64,
     sweeps: u32,
 }
@@ -367,8 +398,14 @@ fn accept(film: &Film, pressure: &[f64], sweeps: u32) -> Result<Settled, Bearing
     if !size.is_finite() || size <= 0.0 {
         return Err(BearingReject::NonFiniteValue);
     }
+    let mut peak: f64 = 0.0;
+    for sample in pressure {
+        peak = peak.max(*sample);
+    }
     Ok(Settled {
         sommerfeld_number: 1.0 / (PI * size),
+        attitude_angle_deg: math::atan2(across, -along_centres) * 180.0 / PI,
+        peak,
         flow_balance_residual: residual,
         sweeps,
     })
@@ -393,9 +430,63 @@ fn sommerfeld_at(
     settle_and_check(&film, &mut pressure, MAX_SWEEPS)
 }
 
+/// The film Reynolds number `ρ ω R c / μ` at a speed, with the film's viscosity.
+pub fn film_reynolds_number(speed_rpm: f64) -> f64 {
+    let viscosity_pa_s = OIL_VISCOSITY_AT_65C_PA_S * FILM_VISCOSITY_MULTIPLIER;
+    let omega = 2.0 * PI * speed_rpm / 60.0;
+    OIL_DENSITY_KG_M3 * omega * 0.5 * BEARING_DIAMETER_M * RADIAL_CLEARANCE_M / viscosity_pa_s
+}
+
+/// The film Reynolds number above which Taylor vortices form:
+/// [`TAYLOR_CRITICAL_NUMBER`] times `sqrt(R / c)`.
+pub fn laminar_limit() -> f64 {
+    TAYLOR_CRITICAL_NUMBER * (0.5 * BEARING_DIAMETER_M / RADIAL_CLEARANCE_M).sqrt()
+}
+
+/// The limits the question itself shows, in the order the solver asks them.
+/// No film is settled.
+pub fn admit(load_n: f64, speed_rpm: f64) -> Result<(), BearingReject> {
+    if !load_n.is_finite() || !speed_rpm.is_finite() {
+        return Err(BearingReject::NonFiniteValue);
+    }
+    if !(load_n > 0.0) {
+        return Err(BearingReject::LoadNotPositive { load_n });
+    }
+    if !(speed_rpm > 0.0) {
+        return Err(BearingReject::SpeedNotPositive { speed_rpm });
+    }
+    let film_reynolds_number = film_reynolds_number(speed_rpm);
+    if film_reynolds_number > laminar_limit() {
+        return Err(BearingReject::FilmNotLaminar { film_reynolds_number });
+    }
+    Ok(())
+}
+
 /// The film of the Sheffield bearing under `load_n` newtons at `speed_rpm`.
+///
+/// Each value of the answer below the normal range is written as zero
+/// with its sign ([`crate::normal`]).
 pub fn solve(load_n: f64, speed_rpm: f64) -> Result<BearingFilm, BearingReject> {
+    crate::normal::held(solve_as_computed(load_n, speed_rpm))
+}
+
+/// The answer as the equations compute it, before a value below the
+/// normal range is written as zero.
+fn solve_as_computed(load_n: f64, speed_rpm: f64) -> Result<BearingFilm, BearingReject> {
     solve_with(load_n, speed_rpm, MAX_SWEEPS, MAX_SHAFT_POSITIONS)
+}
+
+impl NormalOrZero for BearingFilm {
+    fn normal_or_zero(&mut self) {
+        self.sommerfeld_number.normal_or_zero();
+        self.eccentricity_ratio.normal_or_zero();
+        self.attitude_angle_deg.normal_or_zero();
+        self.minimum_film_thickness_m.normal_or_zero();
+        self.peak_film_pressure_pa.normal_or_zero();
+        self.flow_balance_residual.normal_or_zero();
+        self.load_residual_n.normal_or_zero();
+        self.film_pressure_pa.normal_or_zero();
+    }
 }
 
 fn solve_with(
@@ -404,15 +495,7 @@ fn solve_with(
     sweep_cap: u32,
     position_cap: u32,
 ) -> Result<BearingFilm, BearingReject> {
-    if !load_n.is_finite() || !speed_rpm.is_finite() {
-        return Err(BearingReject::NonFiniteValue);
-    }
-    if !(LOAD_MIN_N..=LOAD_MAX_N).contains(&load_n) {
-        return Err(BearingReject::LoadOutOfRange { load_n });
-    }
-    if !(SPEED_MIN_RPM..=SPEED_MAX_RPM).contains(&speed_rpm) {
-        return Err(BearingReject::SpeedOutOfRange { speed_rpm });
-    }
+    admit(load_n, speed_rpm)?;
     let radius_m = 0.5 * BEARING_DIAMETER_M;
     let radius_over_clearance = radius_m / RADIAL_CLEARANCE_M;
     let viscosity_pa_s = OIL_VISCOSITY_AT_65C_PA_S * FILM_VISCOSITY_MULTIPLIER;
@@ -426,7 +509,7 @@ fn solve_with(
         / load_n;
     let pressure_scale_pa =
         viscosity_pa_s * 2.0 * PI * turns_per_s * radius_over_clearance * radius_over_clearance;
-    let target = sommerfeld_number.ln();
+    let target = math::log(sommerfeld_number);
     let length_over_diameter = BEARING_LENGTH_M / BEARING_DIAMETER_M;
 
     let mut pressure = vec![0.0; CELLS_AROUND * CELLS_ALONG_HALF];
@@ -448,7 +531,7 @@ fn solve_with(
         let settled = settle_and_check(&film, pressure, sweep_cap)?;
         *sweeps += settled.sweeps;
         *shaft_positions += 1;
-        Ok((settled.sommerfeld_number.ln() - target, settled))
+        Ok((math::log(settled.sommerfeld_number) - target, settled))
     };
 
     let mut low = ECCENTRICITY_RATIO_MIN;
@@ -482,7 +565,9 @@ fn solve_with(
             return Ok(BearingFilm {
                 sommerfeld_number,
                 eccentricity_ratio,
+                attitude_angle_deg: settled.attitude_angle_deg,
                 minimum_film_thickness_m: RADIAL_CLEARANCE_M * (1.0 - eccentricity_ratio),
+                peak_film_pressure_pa: settled.peak * pressure_scale_pa,
                 flow_balance_residual: settled.flow_balance_residual,
                 load_residual_n: film_force_n - load_n,
                 shaft_positions,
@@ -614,6 +699,12 @@ mod tests {
         let peak = film.film_pressure_pa.iter().copied().fold(0.0, f64::max);
         assert!(peak > projected);
         assert!(peak < 10.0 * projected);
+        // The peak returned is the field's own, and the attitude angle is
+        // the direction of the film force read back from it.
+        assert_eq!(film.peak_film_pressure_pa, peak);
+        let attitude = across.atan2(-along_centres) * 180.0 / PI;
+        assert!((film.attitude_angle_deg - attitude).abs() < 1.0e-9, "{} {attitude}", film.attitude_angle_deg);
+        assert!(film.attitude_angle_deg > 0.0 && film.attitude_angle_deg < 90.0);
     }
 
     #[test]
@@ -637,38 +728,62 @@ mod tests {
         let fast = solve(16_000.0, 800.0).expect("solves");
         assert!(heavy.minimum_film_thickness_m < light.minimum_film_thickness_m);
         assert!(fast.minimum_film_thickness_m > heavy.minimum_film_thickness_m);
+        // A heavier load moves the shaft closer to the load line.
+        assert!(heavy.attitude_angle_deg < light.attitude_angle_deg);
+        assert!(heavy.peak_film_pressure_pa > light.peak_film_pressure_pa);
         // The film depends on speed over load only: 4 kN at 400 rpm is 8 kN at 800 rpm.
         let twin = solve(8_000.0, 800.0).expect("solves");
         assert!((twin.eccentricity_ratio - light.eccentricity_ratio).abs() < 1.0e-9);
     }
 
     #[test]
-    fn a_question_outside_the_tested_envelope_is_named() {
-        assert_eq!(
-            solve(1_999.0, 400.0),
-            Err(BearingReject::LoadOutOfRange { load_n: 1_999.0 })
-        );
-        assert_eq!(
-            solve(20_001.0, 400.0),
-            Err(BearingReject::LoadOutOfRange { load_n: 20_001.0 })
-        );
-        assert_eq!(
-            solve(10_000.0, 99.0),
-            Err(BearingReject::SpeedOutOfRange { speed_rpm: 99.0 })
-        );
-        assert_eq!(
-            solve(10_000.0, 801.0),
-            Err(BearingReject::SpeedOutOfRange { speed_rpm: 801.0 })
-        );
+    fn a_question_past_a_physical_limit_is_named() {
+        for load_n in [0.0, -0.0, -10_000.0] {
+            assert_eq!(solve(load_n, 400.0), Err(BearingReject::LoadNotPositive { load_n }));
+        }
+        for speed_rpm in [0.0, -400.0] {
+            assert_eq!(solve(10_000.0, speed_rpm), Err(BearingReject::SpeedNotPositive { speed_rpm }));
+        }
         assert_eq!(solve(f64::NAN, 400.0), Err(BearingReject::NonFiniteValue));
         assert_eq!(
             solve(10_000.0, f64::INFINITY),
             Err(BearingReject::NonFiniteValue)
         );
+        // The laminar limit: about 1450 in film Reynolds number, near
+        // 143,000 rpm; at 800 rpm the film Reynolds number is about 8.
+        assert!((film_reynolds_number(800.0) - 8.1).abs() < 0.1, "{}", film_reynolds_number(800.0));
+        assert!((laminar_limit() - 1453.4).abs() < 0.1, "{}", laminar_limit());
+        match solve(1.0e9, 150_000.0) {
+            Err(BearingReject::FilmNotLaminar { film_reynolds_number }) => assert!(film_reynolds_number > laminar_limit()),
+            other => panic!("{other:?}"),
+        }
+        assert_eq!(admit(1.0e9, 140_000.0), Ok(()));
         assert_eq!(
-            solve(-10_000.0, 400.0),
-            Err(BearingReject::LoadOutOfRange { load_n: -10_000.0 })
+            BearingReject::EccentricityRatioOutOfRange { sommerfeld_number: 5.0 }.to_string(),
+            "Sommerfeld number 5 is carried only at an eccentricity ratio outside 0.05 to 0.95"
         );
+    }
+
+    /// Past the tested envelope, where engine 0.8.0 refused by name: the same
+    /// film at the Sommerfeld number the load and speed give, every cell
+    /// balanced and the load carried, until the shaft would sit outside the
+    /// eccentricity ratios searched. A load and speed with the same ratio as
+    /// a tested run give the same film.
+    #[test]
+    fn past_the_tested_envelope_the_film_carries_the_load_to_the_eccentricity_limits() {
+        for (load_n, speed_rpm) in [(1_000.0, 400.0), (40_000.0, 800.0), (30_000.0, 200.0), (2_000.0, 1_600.0), (100.0, 100.0), (500_000.0, 100_000.0)] {
+            let film = solve(load_n, speed_rpm).unwrap_or_else(|reject| panic!("{load_n} {speed_rpm}: {reject}"));
+            assert!(film.flow_balance_residual <= FLOW_BALANCE_TOLERANCE);
+            assert!(film.load_residual_n.abs() <= LOAD_TOLERANCE * load_n * 1.01);
+            assert!(film.eccentricity_ratio > ECCENTRICITY_RATIO_MIN && film.eccentricity_ratio < ECCENTRICITY_RATIO_MAX);
+        }
+        let tested = solve(4_000.0, 400.0).expect("solves");
+        let past = solve(40_000.0, 4_000.0).expect("solves");
+        assert!((past.eccentricity_ratio - tested.eccentricity_ratio).abs() < 1.0e-9);
+        // Too heavy for the film: the shaft would touch; too light: it would
+        // sit at the centre, where the steady position loses its meaning.
+        assert!(matches!(solve(1.0e6, 100.0), Err(BearingReject::EccentricityRatioOutOfRange { .. })));
+        assert!(matches!(solve(10.0, 800.0), Err(BearingReject::EccentricityRatioOutOfRange { .. })));
     }
 
     #[test]

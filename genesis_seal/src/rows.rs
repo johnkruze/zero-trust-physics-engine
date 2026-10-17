@@ -21,7 +21,7 @@ use crate::run::{
     FRAME_LEN, TapeReport, check_tape, follow_frame, link_0, names_a_card, require_state_exact,
     string_or_null,
 };
-use crate::sealed_form::json_string;
+use crate::sealed_form::{digest_hex, json_string};
 
 const ROW_KEYS: &[&str] = &[
     "row",
@@ -84,15 +84,27 @@ impl fmt::Display for Outcome {
 }
 
 /// The leaf of a row: the compact JSON `row`, `request_sha256`, `outcome`,
-/// `run_seal`, in that order. `request_sha256` is the row's `link_0` as hex.
-/// `run_seal` is null for a row that was not admitted.
-pub fn leaf_text(row: u64, request_sha256: &str, outcome: &str, run_seal: Option<&str>) -> String {
+/// `run_seal`, `reject_detail_sha256`, in that order. `request_sha256` is the
+/// row's `link_0` as hex. `run_seal` is null for a row that was not admitted.
+/// `reject_detail_sha256` is the SHA-256 of the UTF-8 bytes of the row's
+/// `reject_detail`, or null when the row has none, so the sentence of a
+/// refusal, and for a row that was not admitted the only place its refusal's
+/// name is written, is sealed with the row.
+pub fn leaf_text(
+    row: u64,
+    request_sha256: &str,
+    outcome: &str,
+    run_seal: Option<&str>,
+    reject_detail: Option<&str>,
+) -> String {
+    let detail_sha256 = reject_detail.map(|sentence| digest_hex(sentence.as_bytes()));
     format!(
-        "{{\"row\":{},\"request_sha256\":{},\"outcome\":{},\"run_seal\":{}}}",
+        "{{\"row\":{},\"request_sha256\":{},\"outcome\":{},\"run_seal\":{},\"reject_detail_sha256\":{}}}",
         row,
         json_string(request_sha256),
         json_string(outcome),
         string_or_null(run_seal),
+        string_or_null(detail_sha256.as_deref()),
     )
 }
 
@@ -149,12 +161,19 @@ fn option_value(text: &Option<String>) -> Value {
     }
 }
 
-fn leaf_value(row: u64, request: &Value, outcome: Outcome, run_seal: Option<&str>) -> Value {
+fn leaf_value(
+    row: u64,
+    request: &Value,
+    outcome: Outcome,
+    run_seal: Option<&str>,
+    reject_detail: Option<&str>,
+) -> Value {
     let text = leaf_text(
         row,
         &hex::encode(link_0(request)),
         outcome.as_str(),
         run_seal,
+        reject_detail,
     );
     serde_json::from_str(&text).expect("a leaf is JSON")
 }
@@ -196,7 +215,8 @@ impl Row {
             frames.push(frame);
         }
         let run_seal = field("run_seal");
-        let leaf = leaf_value(row, &request, outcome, run_seal.as_deref());
+        let reject_detail = field("reject_detail");
+        let leaf = leaf_value(row, &request, outcome, run_seal.as_deref(), reject_detail.as_deref());
         Ok((
             Row {
                 row,
@@ -204,7 +224,7 @@ impl Row {
                 outcome,
                 steps_landed: object.get("steps_landed").and_then(Value::as_u64),
                 reject: field("reject"),
-                reject_detail: field("reject_detail"),
+                reject_detail,
                 final_state: object.get("final_state").and_then(Value::as_object).cloned(),
                 final_residual_conservation_error_hex: field("final_residual_conservation_error_hex"),
                 max_residual_conservation_error_hex: field("max_residual_conservation_error_hex"),
@@ -221,7 +241,7 @@ impl Row {
     /// The row of a request the door refused before computing. `sentence` is
     /// the door's answer.
     pub fn unadmitted(row: u64, request: Value, sentence: &str) -> Row {
-        let leaf = leaf_value(row, &request, Outcome::Unadmitted, None);
+        let leaf = leaf_value(row, &request, Outcome::Unadmitted, None, Some(sentence));
         Row {
             row,
             request,
@@ -438,15 +458,19 @@ mod tests {
     }
 
     #[test]
-    fn the_leaf_is_compact_json_with_four_keys_in_order() {
+    fn the_leaf_is_compact_json_with_five_keys_in_order() {
         assert_eq!(
-            leaf_text(7, "ab", "completed", Some("cd")),
-            r#"{"row":7,"request_sha256":"ab","outcome":"completed","run_seal":"cd"}"#
+            leaf_text(7, "ab", "completed", Some("cd"), None),
+            r#"{"row":7,"request_sha256":"ab","outcome":"completed","run_seal":"cd","reject_detail_sha256":null}"#
         );
+        // The SHA-256 of the three bytes "abc" (FIPS 180-2, appendix B.1).
         assert_eq!(
-            leaf_text(0, "ab", "unadmitted", None),
-            r#"{"row":0,"request_sha256":"ab","outcome":"unadmitted","run_seal":null}"#
+            leaf_text(0, "ab", "unadmitted", None, Some("abc")),
+            r#"{"row":0,"request_sha256":"ab","outcome":"unadmitted","run_seal":null,"reject_detail_sha256":"ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"}"#
         );
+        // Each sentence is its own leaf, and a sentence given is not the sentence absent.
+        assert_ne!(leaf_text(2, "ab", "refused", Some("cd"), Some("x")), leaf_text(2, "ab", "refused", Some("cd"), Some("y")));
+        assert_ne!(leaf_text(2, "ab", "refused", Some("cd"), Some("")), leaf_text(2, "ab", "refused", Some("cd"), None));
     }
 
     #[test]
@@ -456,8 +480,9 @@ mod tests {
         assert_eq!(
             line,
             format!(
-                r#"{{"row":3,"request":{{"card":"thermal","domain":"energy","dt_s":0.1}},"outcome":"unadmitted","steps_landed":null,"reject":null,"reject_detail":"Physical Violation: the load is above the limit.","final_state":null,"final_residual_conservation_error_hex":null,"max_residual_conservation_error_hex":null,"state_digest":null,"frames":0,"last_link":null,"run_seal":null,"leaf":{{"row":3,"request_sha256":"{}","outcome":"unadmitted","run_seal":null}}}}"#,
-                hex::encode(link_0(&request()))
+                r#"{{"row":3,"request":{{"card":"thermal","domain":"energy","dt_s":0.1}},"outcome":"unadmitted","steps_landed":null,"reject":null,"reject_detail":"Physical Violation: the load is above the limit.","final_state":null,"final_residual_conservation_error_hex":null,"max_residual_conservation_error_hex":null,"state_digest":null,"frames":0,"last_link":null,"run_seal":null,"leaf":{{"row":3,"request_sha256":"{}","outcome":"unadmitted","run_seal":null,"reject_detail_sha256":"{}"}}}}"#,
+                hex::encode(link_0(&request())),
+                digest_hex(b"Physical Violation: the load is above the limit.")
             )
         );
         assert_eq!(Row::read_line(line.as_bytes()).unwrap(), row);

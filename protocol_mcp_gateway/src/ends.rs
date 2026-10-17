@@ -1,6 +1,7 @@
 //! The ends a card declares: the place where the card's own description, or
 //! its kernel, says the physical event it models finishes (a first maximum
-//! of power, the flown drogue or parachute deployment, a mission's last day).
+//! of power, the flown drogue or parachute deployment, a crater that stops
+//! growing, a runaway once every reactant is consumed).
 //! A run that reaches one stops there with the outcome `ended`, the reject's
 //! name and a sentence that names the end. Every other refusal stays a refusal: a limit added because
 //! a region was never compared with measurement (a reject named for what was
@@ -19,7 +20,9 @@ enum Side {
     /// The reject has one side only.
     Always,
     /// The incoming value of this state field is above this level: the run
-    /// came from inside and passed the top.
+    /// came from inside and passed the top. No end of this version has two
+    /// sides; the test is kept for one that will.
+    #[allow(dead_code)]
     IncomingAbove(&'static str, f64),
 }
 
@@ -62,17 +65,10 @@ pub(crate) const ENDS: &[End] = &[
     },
     End {
         card: "capsule_insight",
-        reject: "PastComparedFlight",
-        end: "5700 m or Mach 1.46, the lowest state the compared run reached at the flown parachute deployment, 6164.6 m above the datum, where the card's entry ends",
-        // Below the floor only: the reject has one side.
+        reject: "PastFlightDeployment",
+        end: "the flown parachute deployment, the last row of the flight's record, altitude under 6164.62 m and speed through the air under 352.1169 m/s at once, where the card's entry ends; the step that first crosses both lands, and with the flight's lift that step is at 5793 m and Mach 1.470, the lowest state the compared run reached",
+        // The incoming state is past both conditions: the reject has one side.
         side: Side::Always,
-    },
-    End {
-        card: "generator_mmrtg_f1",
-        reject: "MissionTimeOutsideCard",
-        end: "mission day 4,087, the last day of the published record and the last the card covers",
-        // Halfway through the 4,087 days, in seconds.
-        side: Side::IncomingAbove("t_s", 2_043.5 * 86_400.0),
     },
     End {
         card: "crater_ryugu_sci",
@@ -81,17 +77,31 @@ pub(crate) const ENDS: &[End] = &[
         side: Side::Always,
     },
     End {
-        card: "grid_gb",
-        reject: "TimeBeyondCard",
-        end: "60 s after the start, the end of the 60 seconds after a trip that the card covers",
+        card: "runaway_18650_lco",
+        reject: "EveryReactantConsumed",
+        end: "every reactant consumed: the heat the lithium in the SEI and in the graphite, the unreacted cathode and the electrolyte still hold falling to 1e-6 of the cell's chemical heat or under, 0.0205 J, where the runaway has finished",
+        // Met only by a step from a cell that holds more than that heat: a
+        // spent start is stepped and meets no end, so the reject has one side.
         side: Side::Always,
     },
     End {
-        card: "tire_eve_r19_ice",
-        reject: "TravelBeyondTrack",
-        end: "6 m along the track, the length rolled in a run",
-        // Halfway along the 6 m.
-        side: Side::IncomingAbove("distance_m", 3.0),
+        card: "grasp_lift_glass_4tu",
+        reject: "ObjectSlippedOut",
+        end: "a pad sliding past the end of its face, 0.03 m from the grip, above the table, where the grip lets the object go",
+        side: Side::Always,
+    },
+    End {
+        card: "grasp_lift_glass_4tu",
+        reject: "ObjectLanded",
+        end: "the lifted object coming back down onto the table, set down or dropped, where its lift ends",
+        side: Side::Always,
+    },
+    End {
+        card: "tokamak_vde_mast",
+        reject: "PlasmaAtWall",
+        end: "EFIT's boundary, shifted with the plasma, reaching the limiter at +0.389 m or -0.391 m, where the vertical displacement event ends",
+        // A start at or past the wall is refused by its own name, StartOutsideVessel.
+        side: Side::Always,
     },
 ];
 

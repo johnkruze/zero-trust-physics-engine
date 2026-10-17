@@ -2,7 +2,7 @@
 //! with no key. Any caller that has the address is served every card and
 //! every solver the engine serves, and in place of the key the door holds
 //! limits of its own. Their values are the `OPEN_*` constants of
-//! `src/hosted.rs`; five of them can be changed when the door starts.
+//! `src/hosted.rs`; six of them can be changed when the door starts.
 //!
 //! **Order of a request.** The source address is found; its allowance of
 //! requests a minute is charged (`429` with `Retry-After`); the method, the
@@ -113,6 +113,7 @@ impl OpenRules {
             "--max-in-flight" => self.max_in_flight = count(10_000)? as usize,
             "--max-in-flight-per-address" => self.max_in_flight_per_address = count(10_000)? as usize,
             "--physics-permits" => self.physics_permits = count(32)? as usize,
+            "--permits-per-address" => self.permits_per_address = count(32)? as usize,
             "--request-seconds" => self.request = Duration::from_secs(count(3600)?),
             _ => return Err(format!("'{name}' is not an argument of this program.")),
         }
@@ -133,19 +134,27 @@ impl OpenRules {
                 self.physics_permits
             ));
         }
+        if self.permits_per_address > self.physics_permits {
+            return Err(format!(
+                "--permits-per-address is {}, more than the {} of --physics-permits. One address cannot hold more permits than the pool has.",
+                self.permits_per_address, self.physics_permits
+            ));
+        }
         Ok(())
     }
 
-    /// The limits in one paragraph, written from the values in force. It is
-    /// printed at start and sent to every client in the answer to
-    /// `initialize` and to `server/discover`.
+    /// Every limit in one paragraph, written from the values in force: what
+    /// the open door prints when it starts, for the one who runs it.
     pub fn statement(&self) -> String {
         format!(
-            "This is the open connection: no key is asked, and every card and every solver the engine serves is listed. It holds these limits, each before a physics permit is taken, and answers each by name. Requests: at most {rpm} a minute from one address, then HTTP 429 with Retry-After (requests-per-minute); at most {flight} in flight at once and {per} from one address, then HTTP 429 (max-in-flight, max-in-flight-per-address); a body of at most {body} bytes, then HTTP 413 (OPEN_MAX_BODY_BYTES). A run (run_trajectory, validate_series): at most {run_steps} steps and {run_frames} recorded states, the engine's own limits. A dataset (run_dataset): at most {rows} runs (OPEN_MAX_DATASET_ROWS), {steps} steps in total (OPEN_MAX_DATASET_STEPS) and {frames} recorded states, an answer counted from the plan at no more than {answer} bytes (OPEN_MAX_DATASET_ANSWER_BYTES), and returned inline only: return \"file\" and a check by dataset_seal alone are not served here; a plan of solves holds at most the engine's own limit of solves, and fewer of a slow solver (OPEN_PLAN_SECONDS, below). A check by request (verify_tape, verify_solution or verify_dataset given the request and its seal) computes the request again and holds the limits of the tool that computes it. The physics pool has {pool} permits and one address holds at most {share} at a time. A solve, a dataset job, a comparison of solves and a run of more than {light} steps (OPEN_LIGHT_RUN_STEPS), each also when a check by request computes it again, are long work, and long work together holds at most {long} of the {pool}, so long work never takes the permit a single step or a short run needs. A request that finds no permit, or long work that finds no place, is answered \"Too many concurrent physics tasks.\" and nothing waits: send it again. An answer is waited for {seconds} seconds (OPEN_REQUEST_SECONDS); after that the call is answered with an error and its result is not returned.{stopped}{plans}",
+            "This is the open connection: no key is asked, and every card and every solver the engine serves is listed. It holds these limits, each before a physics permit is taken, and answers each by name. Requests: at most {rpm} a minute from one address, then HTTP 429 with Retry-After (requests-per-minute); at most {flight} in flight at once and {per} from one address, then HTTP 429 (max-in-flight, max-in-flight-per-address); a body of at most {body} bytes, then HTTP 413 (OPEN_MAX_BODY_BYTES), and a call of a tool other than {wide} at most {narrow} bytes, then HTTP 413 as well (NARROW_LIMIT, as on every connection). A run (run_trajectory, validate_series): at most {run_steps} steps and {run_frames} recorded states, the engine's own limits. A dataset (run_dataset): at most {rows} runs (OPEN_MAX_DATASET_ROWS), {steps} steps in total (OPEN_MAX_DATASET_STEPS) and {frames} recorded states, an answer counted from the plan at no more than {answer} bytes (OPEN_MAX_DATASET_ANSWER_BYTES), and returned inline, where the answer counted from the plan is at most {inline} characters, as on every connection: a plan reaches that first, a grid on one axis at about 140 summary rows and a list sooner, its head repeating each run's request, so a plan of {rows} runs is refused by it; no dataset is stored; a plan of solves holds at most the engine's own limit of solves, and fewer of a slow solver (OPEN_PLAN_SECONDS, below). A verification (verify_tape, verify_solution or verify_dataset, given the request and its seal or the whole answer) computes the request again and holds the limits of the tool that computes it. The physics pool has {pool} permits and one address holds at most {share} at a time (permits-per-address). A solve, a dataset job, a comparison of solves and a run of more than {light} steps (OPEN_LIGHT_RUN_STEPS), each also when a verification computes it again, are long work, and long work together holds at most {long} of the {pool}, so long work never takes the permit a single step or a short run needs. A request that finds no permit, or long work that finds no place, is answered \"Too many concurrent physics tasks.\" and nothing waits: the same request sent later is answered once one is free. An answer is waited for {seconds} seconds (OPEN_REQUEST_SECONDS); after that the call is answered with an error and its result is not returned.{stopped}{plans}",
             rpm = self.requests_per_minute,
             flight = self.max_in_flight,
             per = self.max_in_flight_per_address,
             body = self.max_body_bytes,
+            wide = crate::guard::WIDE_TOOLS.join(", "),
+            narrow = crate::guard::NARROW_LIMIT,
+            inline = dataset::MAX_INLINE_ANSWER_CHARS,
             run_steps = trajectory::MAX_TRAJECTORY_STEPS,
             run_frames = trajectory::MAX_RECORDED_FRAMES,
             rows = self.max_dataset_rows,
@@ -157,75 +166,98 @@ impl OpenRules {
             light = self.light_run_steps,
             long = self.long_work_places(),
             seconds = self.request.as_secs(),
-            stopped = if self.worker.is_some() { " Long work is stopped at that time, and its permit and its place come back: a request that was stopped takes as long when sent again, so send a smaller one." } else { "" },
+            stopped = if self.worker.is_some() { " Long work is stopped at that time, and its permit and its place come back: a request that was stopped takes as long when sent again, and a smaller one ends in time." } else { "" },
             plans = crate::open_plan::statement(),
         )
     }
 
-    /// What the description of `run_dataset` says on the open door, after the
-    /// engine's own words.
-    fn dataset_words(&self) -> String {
+    /// The limits every call meets, in a few sentences, written from the
+    /// values in force: what `initialize` and `server/discover` carry in
+    /// `instructions` after the verifier's own words. The limits of one tool
+    /// are in that tool's description ([`OpenRules::says_of`]), so the whole
+    /// of the instructions stays inside what a client shows. Both limits on
+    /// a body are said: until 0.14.0 rc2 only the 4 MiB was, and a call of
+    /// any of the twelve tools outside `WIDE_TOOLS` is refused past
+    /// `NARROW_LIMIT`, 2 MiB (WORDS_014, proposal 1; the red team of rc1, RT3
+    /// W5). The room for it was made by saying the other limits in fewer
+    /// words, none of them left out: every 429 carries Retry-After, so it is
+    /// said once for the three.
+    pub fn said_at_opening(&self) -> String {
         format!(
-            " On this open connection a dataset is smaller than the engine's own limits allow: runs <= {} (OPEN_MAX_DATASET_ROWS), steps in total <= {} (OPEN_MAX_DATASET_STEPS), recorded states <= {}, an answer counted from the plan at no more than {} bytes (OPEN_MAX_DATASET_ANSWER_BYTES), and return \"inline\" only: no dataset is stored here, so return \"file\" is refused, and verify_dataset takes the request with its dataset_seal, or head, rows and frames_hex, not dataset_seal alone.",
-            self.max_dataset_rows,
-            self.max_dataset_steps,
-            dataset::MAX_INLINE_FRAMES,
-            self.max_dataset_answer_bytes
+            "This open connection asks no key, serves every model, stores nothing and names each limit. From one address at most {rpm} requests a minute and {per} in flight, {flight} in flight in all, then HTTP 429 with Retry-After; a body of at most {body} bytes to {wide} and {narrow} to any other tool, then HTTP 413. One address holds at most {share} of the {pool} physics permits: a call that finds none is answered \"Too many concurrent physics tasks.\" at once. An answer is waited for {seconds} seconds{stopped}.",
+            rpm = self.requests_per_minute,
+            flight = self.max_in_flight,
+            per = self.max_in_flight_per_address,
+            body = self.max_body_bytes,
+            wide = crate::guard::WIDE_TOOLS[..5].join(", ") + " or " + crate::guard::WIDE_TOOLS[5],
+            narrow = crate::guard::NARROW_LIMIT,
+            pool = self.physics_permits,
+            share = self.permits_per_address,
+            seconds = self.request.as_secs(),
+            stopped = if self.worker.is_some() { "; long work is stopped then and frees its permit and place" } else { "" },
         )
     }
 
-    /// What every tool that computes says on the open door.
-    fn busy_words(&self) -> String {
+    /// The open connection's limits on a dataset job, for the descriptions
+    /// of `run_dataset` and of `verify_dataset`, which runs the plan again.
+    fn dataset_words(&self) -> String {
         format!(
-            " On this open connection one address holds at most {} physics permit at a time, and a solve, a dataset job and a run of more than {} steps are long work, of which {} runs at a time: a call that finds no permit or no place is answered \"Too many concurrent physics tasks.\" and is sent again; nothing waits. An answer is waited for {} seconds.",
-            self.permits_per_address,
+            "a dataset is returned inline and holds at most {} runs (OPEN_MAX_DATASET_ROWS), {} steps in all (OPEN_MAX_DATASET_STEPS), {} frames and an answer counted from the plan at {} bytes (OPEN_MAX_DATASET_ANSWER_BYTES) and {} characters, up to about 140 summary rows; {}.",
+            self.max_dataset_rows,
+            self.max_dataset_steps,
+            dataset::MAX_INLINE_FRAMES,
+            self.max_dataset_answer_bytes,
+            dataset::MAX_INLINE_ANSWER_CHARS,
+            crate::open_plan::said_in_a_description()
+        )
+    }
+
+    /// What every tool that computes says on the open connection: how many
+    /// permits an address holds, what long work is, what a call that finds
+    /// no permit is answered, and how long an answer is waited for. It opens
+    /// a sentence of its own, or goes on after " On this open connection".
+    fn busy_words(&self, opens_a_sentence: bool) -> String {
+        format!(
+            "{} address holds at most {} at a time, and long work (a solve, a plan of runs or of solves, a run of more than {} steps, or a verification that computes one again) runs {} at a time. A call that finds no permit or no place is answered \"Too many concurrent physics tasks.\" and nothing waits: the same call sent later is answered once one is free. An answer is waited for {} seconds{}.",
+            if opens_a_sentence { "One" } else { "one" },
+            counted(self.permits_per_address, "physics permit"),
             self.light_run_steps,
             self.long_work_places(),
-            self.request.as_secs()
+            self.request.as_secs(),
+            if self.worker.is_some() { ", and long work is stopped there" } else { "" }
         )
+    }
+
+    /// What one tool's description says on the open connection, after the
+    /// engine's own words: this connection's limits for that tool, and what
+    /// a call that finds no permit is answered. It begins " On this open
+    /// connection". A tool that takes no permit says nothing more.
+    pub(crate) fn says_of(&self, tool: &str) -> String {
+        let own = match tool {
+            "run_dataset" | "verify_dataset" => format!("{} {}", self.dataset_words(), self.busy_words(true)),
+            "validate_series" => format!("{}. {}", crate::open_plan::said_in_a_description(), self.busy_words(true)),
+            "find_flip" => format!(
+                "a search is long work whenever it varies a solve or its runs may take more than {} steps together. {}",
+                self.light_run_steps,
+                self.busy_words(true)
+            ),
+            "design_run" => format!(
+                "a design is long work whenever its candidates may take more than {} steps together. {}",
+                self.light_run_steps,
+                self.busy_words(true)
+            ),
+            "compute_step" | "verify_step" | "run_trajectory" | "solve" | "verify_tape" | "verify_solution" => self.busy_words(false),
+            _ => return String::new(),
+        };
+        format!(" On this open connection {own}")
     }
 
     /// `initialize` and `server/discover` carry the limits in `instructions`.
     pub(crate) fn state_in_instructions(&self, info: &mut Value) {
         let Some(object) = info.as_object_mut() else { return };
         let before = object.get("instructions").and_then(Value::as_str).unwrap_or("").to_string();
-        let joined = if before.is_empty() { self.statement() } else { format!("{before} {}", self.statement()) };
+        let joined = if before.is_empty() { self.said_at_opening() } else { format!("{before} {}", self.said_at_opening()) };
         object.insert("instructions".to_string(), Value::String(joined));
-    }
-
-    /// `tools/list` on the open door: the engine's tools, with the open
-    /// door's limits after the description of each tool they bear on, and
-    /// with the hints a client reads to know that no tool here changes
-    /// anything outside its own answer. Nothing is stored on this door, so
-    /// every tool is read-only.
-    pub(crate) fn state_in_tools(&self, listed: &mut Value) {
-        let Some(tools) = listed.get_mut("tools").and_then(Value::as_array_mut) else { return };
-        for tool in tools {
-            let Some(object) = tool.as_object_mut() else { continue };
-            let name = object.get("name").and_then(Value::as_str).unwrap_or("").to_string();
-            let tail = match name.as_str() {
-                "run_dataset" | "verify_dataset" => format!("{}{}", self.dataset_words(), self.busy_words()),
-                "verify_step" | "run_trajectory" | "solve" | "validate_series" | "verify_tape" | "verify_solution" => {
-                    self.busy_words()
-                }
-                "find_flip" => " On this open connection a search is long work whenever it varies a solve or its runs may take more than OPEN_LIGHT_RUN_STEPS steps together.".to_string(),
-                _ => String::new(),
-            };
-            if !tail.is_empty() {
-                let before = object.get("description").and_then(Value::as_str).unwrap_or("").to_string();
-                object.insert("description".to_string(), Value::String(format!("{before}{tail}")));
-            }
-            object.insert(
-                "annotations".to_string(),
-                serde_json::json!({
-                    "title": title_of(&name),
-                    "readOnlyHint": true,
-                    "destructiveHint": false,
-                    "idempotentHint": true,
-                    "openWorldHint": false
-                }),
-            );
-        }
     }
 
     /// The sentence for a tool call the open door does not run, or nothing.
@@ -239,10 +271,16 @@ impl OpenRules {
             return Some(sentence);
         }
         // A check by request of a dataset runs the plan again, and is held to
-        // the limits a dataset job is held to.
-        let arguments = match (tool, arguments.get(crate::check_by_request::REQUEST)) {
-            ("run_dataset", _) => arguments,
-            ("verify_dataset", Some(Value::Object(request))) => request,
+        // the limits a dataset job is held to; so does its long form, which
+        // runs its head's plan again. The answer the long form runs again is
+        // the one it was sent, so it is not counted again.
+        let (arguments, counts_the_answer) = match (tool, arguments.get(crate::verify_by_request::REQUEST)) {
+            ("run_dataset", _) => (arguments, true),
+            ("verify_dataset", Some(Value::Object(request))) => (request, true),
+            ("verify_dataset", None) => match arguments.get("head").and_then(|head| head.get("request")) {
+                Some(Value::Object(request)) => (request, false),
+                _ => return None,
+            },
             _ => return None,
         };
         // A plan that cannot be read is refused by the engine in its own words.
@@ -266,6 +304,9 @@ impl OpenRules {
                 "Physical Violation: the dataset asks for {} steps in total, more than the {} one job may have on the open connection (OPEN_MAX_DATASET_STEPS). The engine's own limit is {}; this connection is open to anyone and runs smaller jobs.",
                 totals.steps, self.max_dataset_steps, dataset::MAX_DATASET_STEPS
             ));
+        }
+        if !counts_the_answer {
+            return None;
         }
         // The answer, counted from the plan: the head repeats the request,
         // each row carries its own request and OPEN_DATASET_ROW_BYTES more,
@@ -304,7 +345,7 @@ impl OpenRules {
         // A run's steps, and with `from` the steps of every upstream run the
         // engine computes again.
         let steps_of = |run: Option<&Value>| -> u64 { run.map(crate::chain::chained_steps).unwrap_or(0) };
-        let by_request = arguments.get(crate::check_by_request::REQUEST);
+        let by_request = arguments.get(crate::verify_by_request::REQUEST);
         match tool {
             "solve" | "run_dataset" => true,
             // A search of solves, and a search whose runs may take more steps
@@ -313,14 +354,23 @@ impl OpenRules {
                 arguments.get("request").is_some_and(|request| request.get("solver").is_some())
                     || crate::flip::steps_at_most(arguments) > self.light_run_steps
             }
+            // A design whose candidates may take more steps together than a short run may.
+            "design_run" => crate::design::steps_at_most(arguments) > self.light_run_steps,
             "run_trajectory" => steps_of(Some(&Value::Object(arguments.clone()))) > self.light_run_steps,
             // A step is one step; with `from` its upstream runs are computed again.
-            "verify_step" => steps_of(Some(&Value::Object(arguments.clone()))) > self.light_run_steps,
+            "compute_step" | "verify_step" => steps_of(Some(&Value::Object(arguments.clone()))) > self.light_run_steps,
             "validate_series" => arguments.contains_key("solves") || steps_of(arguments.get("run")) > self.light_run_steps,
             // A check by request computes its request again: a solve and a
-            // dataset job are long work, and a run by its steps.
-            "verify_solution" | "verify_dataset" => by_request.is_some(),
-            "verify_tape" => by_request.is_some() && steps_of(by_request) > self.light_run_steps,
+            // dataset job are long work, and a run by its steps. So does every
+            // long form, which computes the request its answer carries again:
+            // a solve, a dataset's plan, a run and a chain's links by their
+            // steps, a design by its candidates'.
+            "verify_dataset" => true,
+            "verify_solution" => by_request.is_some() || crate::solution::long_form_solves(arguments),
+            "verify_tape" => match by_request {
+                Some(_) => steps_of(by_request) > self.light_run_steps,
+                None => crate::trajectory::long_form_steps(arguments).is_some_and(|steps| steps > self.light_run_steps),
+            },
             _ => false,
         }
     }
@@ -346,14 +396,6 @@ impl OpenRules {
 
 fn counted(count: usize, what: &str) -> String {
     if count == 1 { format!("1 {what}") } else { format!("{count} {what}s") }
-}
-
-fn title_of(tool: &str) -> String {
-    let mut words = tool.replace('_', " ");
-    if let Some(first) = words.get_mut(0..1) {
-        first.make_ascii_uppercase();
-    }
-    words
 }
 
 /// The limits of a connection to the open door: the keyed door's, with less
@@ -544,7 +586,8 @@ pub(crate) fn router_over(state: AppState, rules: OpenRules, allowed_origins: Ve
         .with_state(door))
 }
 
-/// What the open door prints when it starts.
+/// What the open door prints when it starts: three lines, the address and
+/// that it is open, the limits in force, and where an address is read from.
 pub fn banner(bound: SocketAddr, rules: &OpenRules) -> String {
     let view = View::full();
     let address = match &rules.client_address_header {
@@ -573,7 +616,7 @@ pub(crate) async fn serve(port: u16, mut rules: OpenRules, allowed_origins: Vec<
         .await
         .map_err(|error| format!("it cannot listen on {address}: {error}."))?;
     let bound = listener.local_addr().map_err(|error| error.to_string())?;
-    println!("{}", banner(bound, &rules));
+    hosted::announce(&banner(bound, &rules));
     hosted::serve_listener(listener, app, OPEN_CONNECTION_LIMITS).await;
     Ok(())
 }
@@ -610,7 +653,7 @@ fn source_address(door: &OpenDoor, request: &Request<Body>) -> Result<IpAddr, Re
         Some(address) if one => Ok(address),
         _ => Err(hosted::plain(
             StatusCode::BAD_REQUEST,
-            &format!("Bad Request: the '{name}' header must hold one address, written by the front in front of this door (client-address-header)."),
+            &format!("Bad Request: the '{name}' header must hold one address, written by the front that serves this connection (client-address-header)."),
         )),
     }
 }
@@ -872,6 +915,37 @@ mod tests {
         assert!(body.contains("sha256_seal"), "{body}");
     }
 
+    /// An address given two permits at start computes two calls at once and
+    /// no more: its third is busy in the words of a full pool, and another
+    /// address still finds the permit that is left.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn an_address_given_two_permits_computes_two_at_once_and_no_more() {
+        let state = AppState::with_hold(3, Duration::from_millis(900));
+        let pool = Arc::clone(&state.physics_permits);
+        let mut two = OpenRules { physics_permits: 3, ..rules() };
+        two.read_flag("--permits-per-address", "2").unwrap();
+        assert_eq!((two.permits_per_address, two.check()), (2, Ok(())));
+        let url = serve_in_process(state, two).await;
+
+        let first = tokio::spawn({ let url = url.clone(); async move { post(&url, "10.0.0.1", run(293.15)).await } });
+        let second = tokio::spawn({ let url = url.clone(); async move { post(&url, "10.0.0.1", run(294.15)).await } });
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        assert_eq!(pool.available_permits(), 1, "two runs of one address hold two permits");
+        let (status, body) = post(&url, "10.0.0.1", step()).await;
+        assert_eq!(status, 200);
+        assert!(body.contains(BUSY) && body.contains("\"isError\":true"), "{body}");
+        assert_eq!(pool.available_permits(), 1, "a call past the share takes nothing from the pool");
+        let (_, body) = post(&url, "10.0.0.2", step()).await;
+        assert!(body.contains("sha256_seal"), "{body}");
+        for joined in [first.await.unwrap(), second.await.unwrap()] {
+            assert!(joined.1.contains("run_seal"), "{}", joined.1);
+        }
+        assert_eq!(pool.available_permits(), 3);
+        // More permits for an address than the pool has is refused at start, by name.
+        let over = OpenRules { physics_permits: 2, permits_per_address: 3, ..rules() };
+        assert_eq!(over.check(), Err("--permits-per-address is 3, more than the 2 of --physics-permits. One address cannot hold more permits than the pool has.".to_string()));
+    }
+
     /// The reason the pool has two permits on one core: a dataset job holds
     /// one, a second dataset job from anyone is busy because dataset jobs
     /// together hold half the pool, and a single step from another address
@@ -962,6 +1036,30 @@ mod tests {
         step["from"] = from(run(10_001));
         assert!(rules.is_long_work("verify_step", &object(step)));
         assert!(rules.is_long_work("verify_tape", &object(json!({"request": chained, "run_seal": "ab".repeat(32)}))));
+    }
+
+    /// Every long form computes the request its answer carries again, and is
+    /// counted as that computation is: a solve and a dataset's plan are long
+    /// work, a run by its steps, a chain's links by the steps each link
+    /// computes again with the links before it; a chained answer sent alone
+    /// is refused before any physics and is not.
+    #[test]
+    fn every_long_form_is_counted_as_the_computation_it_makes() {
+        let rules = rules();
+        let object = |value: Value| value.as_object().unwrap().clone();
+        let run = |steps: u64| json!({"domain":"energy","card":"thermal","initial":{"temperature_k":293.15},"dt_s":0.1,
+            "segments":[{"steps":steps,"load":{"heat_power_w":1.0,"ambient_k":293.15}}],"record_every":steps});
+        let answer = |steps: u64| json!({"inputs": run(steps), "outcome": "completed", "frames": [], "run_seal": "ab".repeat(32)});
+        assert!(rules.is_long_work("verify_solution", &object(json!({"inputs": {"solver": "atom_dft", "parameters": {"atomic_number": 1}}, "outcome": "converged"}))));
+        assert!(rules.is_long_work("verify_dataset", &object(json!({"head": {"request": {}}, "rows": [], "frames_hex": null}))));
+        assert!(!rules.is_long_work("verify_tape", &object(answer(10_000))));
+        assert!(rules.is_long_work("verify_tape", &object(answer(10_001))));
+        // Two links of 4,000 steps: the second computes the first again, 12,000 in all.
+        assert!(!rules.is_long_work("verify_tape", &object(json!({"links": [answer(4_000)]}))));
+        assert!(rules.is_long_work("verify_tape", &object(json!({"links": [answer(4_000), answer(4_000)]}))));
+        let mut chained = answer(20_000);
+        chained["chain"] = json!({"kind": "continuation"});
+        assert!(!rules.is_long_work("verify_tape", &object(chained)));
     }
 
     /// Requests that are running hold the door's places: with as many
@@ -1069,9 +1167,9 @@ mod tests {
         let mut to_file: Value = serde_json::from_str(&dataset(293.15)).unwrap();
         to_file["params"]["arguments"]["return"] = json!("file");
         let (_, body) = post(&url, "10.0.0.1", to_file.to_string()).await;
-        assert_eq!(refused(&body), "the gateway was started without a directory for dataset files.");
+        assert_eq!(refused(&body), "this connection was started without a directory for dataset files.");
         let (_, body) = post(&url, "10.0.0.1", call("verify_dataset", json!({"dataset_seal": "ab".repeat(32)}))).await;
-        assert!(refused(&body).starts_with("the gateway was started without a directory for dataset files."));
+        assert!(refused(&body).starts_with("this connection was started without a directory for dataset files."));
         assert_eq!(pool.available_permits(), 2);
     }
 

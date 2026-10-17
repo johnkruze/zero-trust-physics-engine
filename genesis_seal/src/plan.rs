@@ -21,7 +21,9 @@ use crate::sealed_form::{digest_hex, sealed_form};
 
 const REQUEST_KEYS: &[&str] = &["domain", "card", "plan", "store", "return"];
 const RUN_KEYS: &[&str] = &["initial", "dt_s", "segments", "record_every"];
-const SEGMENT_KEYS: &[&str] = &["steps", "load"];
+/// A segment's keys: its steps, its load, and an instrument's signature over
+/// the load (`crate::attest`), which a row carries as the plan states it.
+const SEGMENT_KEYS: &[&str] = &["steps", "load", crate::attest::SIGNED];
 
 /// Whether the frames of every row are kept.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -404,6 +406,15 @@ fn read_fields(
     for (name, value) in fields {
         if !is_plain_field_name(name) {
             return Err(PlanRefusal::UnknownKey(name.clone()));
+        }
+        // A start may carry an instrument's signature over the rest of it: an
+        // object, read and verified by the rule of a signed reading when the
+        // row's run is.
+        if key == "initial" && name == crate::attest::SIGNED {
+            if !value.is_object() {
+                return Err(wrong(&format!("{prefix}{name}"), "a JSON object"));
+            }
+            continue;
         }
         if !is_settable(value) {
             return Err(wrong(

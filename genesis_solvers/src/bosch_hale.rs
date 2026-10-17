@@ -43,6 +43,7 @@
 //! within 1.5 % (D-T), 1.7 % and 2.0 % (D-D) from 5 to 150 keV in the centre
 //! of mass, the energies a neutral beam reaches.
 
+use genesis_kernel::math;
 use std::f64::consts::PI;
 
 use crate::pb11_reaction::{ATOMIC_MASS_KG, SPEED_OF_LIGHT_M_PER_S, integrate};
@@ -159,7 +160,7 @@ pub fn cross_section_barn(reaction: Reaction, energy_kev: f64) -> Option<f64> {
         Reaction::DeuteriumDeuteriumNeutron => DD_NEUTRON.at(energy_kev),
         Reaction::DeuteriumDeuteriumProton => DD_PROTON.at(energy_kev),
     };
-    Some(s / (energy_kev * (reaction.gamow_constant() / energy_kev.sqrt()).exp()) * 1.0e-3)
+    Some(s / (energy_kev * math::exp(reaction.gamow_constant() / energy_kev.sqrt())) * 1.0e-3)
 }
 
 /// The cross-section inside an integral: zero where the fit is not defined.
@@ -179,8 +180,8 @@ pub fn reactivity_m3_per_s(reaction: Reaction, temperature_kev: f64) -> Option<f
     let c = reaction.reactivity_coefficients();
     let theta = t / (1.0 - t * (c[1] + t * (c[3] + t * c[5])) / (1.0 + t * (c[2] + t * (c[4] + t * c[6]))));
     let gamow = reaction.gamow_constant();
-    let xi = (gamow * gamow / (4.0 * theta)).cbrt();
-    Some(c[0] * theta * (xi / (reaction.reduced_mass_kev() * t * t * t)).sqrt() * (-3.0 * xi).exp() * 1.0e-6)
+    let xi = math::cbrt(gamow * gamow / (4.0 * theta));
+    Some(c[0] * theta * (xi / (reaction.reduced_mass_kev() * t * t * t)).sqrt() * math::exp(-3.0 * xi) * 1.0e-6)
 }
 
 /// The Maxwellian integral of the cross-section fit, m³/s:
@@ -190,7 +191,7 @@ pub fn reactivity_m3_per_s(reaction: Reaction, temperature_kev: f64) -> Option<f
 pub fn reactivity_integral_m3_per_s(reaction: Reaction, temperature_kev: f64) -> f64 {
     let t = temperature_kev;
     let top = (60.0 * t).max(30.0).min(reaction.cross_section_energy_max_kev());
-    let weight = |e: f64| cross_section_or_zero(reaction, e) * e * (-e / t).exp();
+    let weight = |e: f64| cross_section_or_zero(reaction, e) * e * math::exp(-e / t);
     let join = DT_JOIN_ENERGY_KEV.min(top);
     let panels = |low: f64, high: f64| (((high - low) / (0.05 * t)).ceil() as usize).max(1);
     let integral = integrate(CROSS_SECTION_ENERGY_MIN_KEV, join, panels(CROSS_SECTION_ENERGY_MIN_KEV, join), weight)

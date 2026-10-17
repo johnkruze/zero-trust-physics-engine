@@ -3,6 +3,8 @@
 //! side, a constant of the bearing sent as a field, the description, and
 //! `POST /verify_solution` against edits of a sealed film.
 
+mod answer_text;
+
 use std::time::Duration;
 
 use genesis_solvers::journal_bearing_sheffield as bearing;
@@ -25,7 +27,7 @@ async fn spawn_app() -> String {
 async fn post(base: &str, path: &str, body: &Value) -> (u16, String) {
     let client = Client::new();
     let url = format!("{base}{path}");
-    let text = serde_json::to_string(body).unwrap();
+    let text = answer_text::as_sent(body);
     let mut last_error = None;
     for _ in 0..20 {
         match client
@@ -37,7 +39,9 @@ async fn post(base: &str, path: &str, body: &Value) -> (u16, String) {
         {
             Ok(response) => {
                 let status = response.status().as_u16();
-                return (status, response.text().await.unwrap());
+                let text = response.text().await.unwrap();
+                answer_text::remember(&text);
+                return (status, text);
             }
             Err(error) => {
                 last_error = Some(error);
@@ -65,6 +69,11 @@ async fn assert_fails(base: &str, body: &Value, part: &str, label: &str) {
     let report = verdict(base, body).await;
     assert_eq!(report["holds"], false, "{label}");
     assert_eq!(report["cause"], part, "{label}");
+}
+
+fn flip_hex(hex: &str) -> String {
+    let bits = u64::from_str_radix(hex, 16).unwrap() ^ 1;
+    format!("{bits:016x}")
 }
 
 fn hex_of(value: f64) -> String {
@@ -103,7 +112,7 @@ async fn three_films_match_the_solver_bit_for_bit() {
         let direct = bearing::solve(load_n, speed_rpm).expect("the solver converges");
 
         assert_eq!(body["inputs"], request);
-        assert_eq!(body["engine_version"], "genesis_solvers_v0.8.0");
+        assert_eq!(body["engine_version"], "genesis_solvers_v0.12.0");
         assert_eq!(body["outcome"], "converged");
         assert!(body["reject"].is_null());
         assert!(body["reject_detail"].is_null());
@@ -113,10 +122,10 @@ async fn three_films_match_the_solver_bit_for_bit() {
         assert_number(result, "sommerfeld_number", direct.sommerfeld_number);
         assert_number(result, "eccentricity_ratio", direct.eccentricity_ratio);
         assert_number(result, "minimum_film_thickness_m", direct.minimum_film_thickness_m);
-        assert_eq!(result.as_object().unwrap().len(), 6, "a number and its hex for each");
-        // Compared with no measurement, so not returned.
-        assert!(result.get("attitude_angle_deg").is_none());
-        assert!(result.get("peak_film_pressure_pa").is_none());
+        // Compared with no measurement, and returned from the same settled field.
+        assert_number(result, "attitude_angle_deg", direct.attitude_angle_deg);
+        assert_number(result, "peak_film_pressure_pa", direct.peak_film_pressure_pa);
+        assert_eq!(result.as_object().unwrap().len(), 10, "a number and its hex for each");
 
         let invariants = &body["invariants"];
         assert_number(invariants, "flow_balance_residual", direct.flow_balance_residual);
@@ -138,7 +147,7 @@ async fn three_films_match_the_solver_bit_for_bit() {
 
         assert_eq!(body["solution_seal"].as_str().unwrap().len(), 64);
         assert_receipt(&text, &body);
-        assert_eq!(verdict(&base, &body).await, json!({ "holds": true, "cause": null, "checked": protocol_mcp_gateway::WHOLE_SOLUTION_CHECKED }));
+        assert_eq!(verdict(&base, &body).await, json!({ "holds": true, "values_hold": true, "cause": null, "compared": protocol_mcp_gateway::WHOLE_SOLUTION_COMPUTED }));
     }
 }
 
@@ -164,34 +173,48 @@ async fn a_number_written_three_ways_is_one_question() {
     assert_eq!(seals.len(), 1);
 }
 
+/// The limits the request shows are refused by name with no seal; past the
+/// tested envelope, where engine 0.8.0 refused, the film is answered and
+/// sealed, the load carried and every cell balanced, until the shaft would
+/// sit outside the eccentricity ratios searched, a sealed refusal.
 #[tokio::test]
 async fn the_bounds_hold_at_the_last_number_on_each_side() {
     let base = spawn_app().await;
-    let below = |value: f64| f64::from_bits(value.to_bits() - 1);
-    let above = |value: f64| f64::from_bits(value.to_bits() + 1);
-    for (load_n, speed_rpm, word) in [
-        (below(bearing::LOAD_MIN_N), 400.0, "'load_n'"),
-        (above(bearing::LOAD_MAX_N), 400.0, "'load_n'"),
-        (10000.0, below(bearing::SPEED_MIN_RPM), "'speed_rpm'"),
-        (10000.0, above(bearing::SPEED_MAX_RPM), "'speed_rpm'"),
-        (0.0, 400.0, "'load_n'"),
-        (-10000.0, 400.0, "'load_n'"),
-        (10000.0, -400.0, "'speed_rpm'"),
-        (1.0e300, 400.0, "'load_n'"),
+    for (load_n, speed_rpm, name) in [
+        (0.0, 400.0, "LoadNotPositive"),
+        (-10000.0, 400.0, "LoadNotPositive"),
+        (10000.0, -400.0, "SpeedNotPositive"),
+        (1.0e9, 150_000.0, "FilmNotLaminar"),
     ] {
         let (status, text) = post(&base, "/solve", &film(load_n, speed_rpm)).await;
         assert_eq!(status, 422, "{load_n} {speed_rpm}: {text}");
-        assert!(text.starts_with(&format!("Physical Violation: {word} ")), "{text}");
-        assert!(text.contains("is outside"), "{text}");
+        assert!(text.starts_with("Physical Violation: "), "{text}");
+        assert!(text.ends_with(&format!("({name}).")), "{text}");
         assert!(!text.contains("solution_seal"), "{text}");
+        assert!(!text.contains("..="), "{text}");
     }
-    // The four corners of the envelope are inside it.
+    let below = |value: f64| f64::from_bits(value.to_bits() - 1);
+    let above = |value: f64| f64::from_bits(value.to_bits() + 1);
     for (load_n, speed_rpm) in [
         (bearing::LOAD_MIN_N, bearing::SPEED_MIN_RPM),
         (bearing::LOAD_MAX_N, bearing::SPEED_MAX_RPM),
+        (below(bearing::LOAD_MIN_N), 400.0),
+        (above(bearing::LOAD_MAX_N), 400.0),
+        (10000.0, below(bearing::SPEED_MIN_RPM)),
+        (10000.0, above(bearing::SPEED_MAX_RPM)),
+        (40000.0, 800.0),
+        (2000.0, 1600.0),
+        (500_000.0, 100_000.0),
     ] {
         let (_, body) = solved(&base, &film(load_n, speed_rpm)).await;
-        assert_eq!(body["outcome"], "converged");
+        assert_eq!(body["outcome"], "converged", "{load_n} {speed_rpm}");
+        assert!(body["invariants"]["flow_balance_residual"].as_f64().unwrap() <= bearing::FLOW_BALANCE_TOLERANCE);
+        assert_eq!(verdict(&base, &body).await["holds"], true);
+    }
+    for (load_n, speed_rpm) in [(1.0e300, 400.0), (1.0, 800.0)] {
+        let (_, body) = solved(&base, &film(load_n, speed_rpm)).await;
+        assert_eq!(body["outcome"], "refused", "{load_n} {speed_rpm}");
+        assert_eq!(body["reject"], "EccentricityRatioOutOfRange");
     }
 }
 
@@ -203,10 +226,10 @@ async fn what_is_not_a_question_of_this_bearing_is_refused_before_the_solver() {
         (json!({ "solver": solver, "parameters": { "load_n": "10000", "speed_rpm": 400 } }), "'load_n' must be a number"),
         (json!({ "solver": solver, "parameters": { "load_n": 10000, "speed_rpm": null } }), "'speed_rpm' must be a number"),
         (json!({ "solver": solver, "parameters": { "load_n": [10000], "speed_rpm": 400 } }), "'load_n' must be a number"),
-        (json!({ "solver": solver, "parameters": { "load_n": 10000 } }), "Missing required parameter: 'speed_rpm'"),
-        (json!({ "solver": solver, "parameters": { "speed_rpm": 400 } }), "Missing required parameter: 'load_n'"),
-        (json!({ "solver": solver, "parameters": {} }), "Missing required parameter: 'load_n'"),
-        (json!({ "solver": solver }), "Missing required parameter: 'parameters' (or 'example', the name of a worked example describe_solver lists)"),
+        (json!({ "solver": solver, "parameters": { "load_n": 10000 } }), "Missing required parameter: 'speed_rpm' (InputMissing)."),
+        (json!({ "solver": solver, "parameters": { "speed_rpm": 400 } }), "Missing required parameter: 'load_n' (InputMissing)."),
+        (json!({ "solver": solver, "parameters": {} }), "Missing required parameter: 'load_n' (InputMissing)."),
+        (json!({ "solver": solver }), "Missing required parameter: 'parameters' (or 'example', the name of a worked example describe_solver lists) (InputMissing)."),
         // A constant of the bearing, of the oil or of the method sent as a field.
         (json!({ "solver": solver, "parameters": { "load_n": 10000, "speed_rpm": 400, "radial_clearance_m": 5.0e-5 } }), "'radial_clearance_m' is not an input of this solver"),
         (json!({ "solver": solver, "parameters": { "load_n": 10000, "speed_rpm": 400, "oil_viscosity_at_65c_pa_s": 0.03 } }), "'oil_viscosity_at_65c_pa_s' is not an input of this solver"),
@@ -235,7 +258,7 @@ async fn what_is_not_a_question_of_this_bearing_is_refused_before_the_solver() {
 
     let (status, text) = post(&base, "/solve", &json!({ "solver": "journal_bearing", "parameters": { "load_n": 10000, "speed_rpm": 400 } })).await;
     assert_eq!(status, 404, "{text}");
-    assert_eq!(text, "Solver not recognized");
+    assert_eq!(text, "Solver not recognized (UnknownSolver).");
 }
 
 #[tokio::test]
@@ -244,7 +267,7 @@ async fn the_bearing_is_listed_and_described_and_its_example_runs_unchanged() {
     let listed = reqwest::get(format!("{base}/solvers")).await.unwrap();
     let listed: Value = serde_json::from_str(&listed.text().await.unwrap()).unwrap();
     let solvers = listed["solvers"].as_array().expect("solvers");
-    assert_eq!(solvers.len(), 13);
+    assert_eq!(solvers.len(), 24);
     assert_eq!(solvers[2]["solver"], "journal_bearing_sheffield");
     assert!(solvers[2]["summary"].as_str().unwrap().ends_with('.'));
 
@@ -252,11 +275,12 @@ async fn the_bearing_is_listed_and_described_and_its_example_runs_unchanged() {
     assert_eq!(status, 200, "{text}");
     let described: Value = serde_json::from_str(&text).unwrap();
     assert_eq!(described["inputs"][0]["name"], "load_n");
-    assert_eq!(described["inputs"][0]["minimum"], 2000.0);
-    assert_eq!(described["inputs"][0]["maximum"], 20000.0);
+    assert_eq!(described["inputs"][0]["minimum"], 0.0);
+    assert_eq!(described["inputs"][0]["minimum_exclusive"], true);
+    assert!(described["inputs"][0]["bound"].as_str().unwrap().contains("2 to 20 kN"));
     assert_eq!(described["inputs"][1]["name"], "speed_rpm");
-    assert_eq!(described["inputs"][1]["minimum"], 100.0);
-    assert_eq!(described["inputs"][1]["maximum"], 800.0);
+    assert_eq!(described["inputs"][1]["minimum"], 0.0);
+    assert!(described["inputs"][1]["bound"].as_str().unwrap().contains("100 to 800 rpm"));
     assert_eq!(described["locked"]["bearing_diameter_m"], 0.112);
     assert_eq!(described["locked"]["bearing_length_m"], 0.05055);
     assert_eq!(described["locked"]["radial_clearance_m"], 45.0e-6);
@@ -278,21 +302,21 @@ async fn the_bearing_is_listed_and_described_and_its_example_runs_unchanged() {
     assert!(result.contains("on the thirty-four opened runs mean absolute 0.1293, worst absolute 0.4761, mean 0.1277, not met"), "{result}");
     assert!(result.contains("All three lines met on the sixteen held-back runs: mean absolute 0.0580, worst absolute 0.1563, mean 0.0199"), "{result}");
     assert!(result.contains("Not gated") && result.contains("0.9356"), "{result}");
-    // Only what was compared is returned, and the limits say what is not.
+    // What was compared and what was not is said, beside what is returned.
     let summary = solvers[2]["summary"].as_str().unwrap();
-    assert!(summary.contains("Sommerfeld number, eccentricity ratio and minimum film thickness"), "{summary}");
-    assert!(!summary.contains("attitude") && !summary.contains("pressure"), "{summary}");
+    assert!(summary.contains("Sommerfeld number, eccentricity ratio, attitude angle, minimum film thickness and peak film pressure"), "{summary}");
+    assert!(summary.contains("the attitude angle and the pressure were compared with nothing"), "{summary}");
     let limits = validation["limits"].as_str().unwrap();
-    assert!(limits.contains("The solver returns no attitude angle, no pressure"), "{limits}");
+    assert!(limits.contains("The solver returns the attitude angle and the peak film pressure from the same settled field"), "{limits}");
     let returned: Vec<&str> = described["returns"]["result"]
         .as_array()
         .expect("names")
         .iter()
         .map(|entry| entry["name"].as_str().unwrap())
         .collect();
-    assert_eq!(returned, ["sommerfeld_number", "eccentricity_ratio", "minimum_film_thickness_m"]);
+    assert_eq!(returned, ["sommerfeld_number", "eccentricity_ratio", "attitude_angle_deg", "minimum_film_thickness_m", "peak_film_pressure_pa"]);
     let refusals = described["refusals"].as_array().expect("refusals");
-    assert_eq!(refusals.len(), 7);
+    assert_eq!(refusals.len(), 8);
     for refusal in refusals {
         assert!(refusal["name"].is_string());
         assert!(refusal["meaning"].as_str().unwrap().ends_with('.'));
@@ -301,7 +325,7 @@ async fn the_bearing_is_listed_and_described_and_its_example_runs_unchanged() {
     let (_, body) = solved(&base, &described["example_solve"]).await;
     assert_eq!(body["outcome"], "converged");
     assert_eq!(body["inputs"], described["example_solve"]);
-    for (section, count) in [("result", 3), ("invariants", 2)] {
+    for (section, count) in [("result", 5), ("invariants", 2)] {
         let named = described["returns"][section].as_array().expect("names");
         assert_eq!(named.len(), count);
         for entry in named {
@@ -311,7 +335,7 @@ async fn the_bearing_is_listed_and_described_and_its_example_runs_unchanged() {
         }
         assert_eq!(body[section].as_object().unwrap().len(), 2 * count);
     }
-    assert_eq!(verdict(&base, &body).await, json!({ "holds": true, "cause": null, "checked": protocol_mcp_gateway::WHOLE_SOLUTION_CHECKED }));
+    assert_eq!(verdict(&base, &body).await, json!({ "holds": true, "values_hold": true, "cause": null, "compared": protocol_mcp_gateway::WHOLE_SOLUTION_COMPUTED }));
 
     // The atom is described as before, and a name between the two is neither.
     let (status, text) = post(&base, "/describe_solver", &json!({ "solver": "atom_dft" })).await;
@@ -332,10 +356,13 @@ async fn an_edited_film_is_named_by_its_part() {
     thicker["result"]["minimum_film_thickness_m_hex"] = json!(hex_of(2.0 * thin));
     assert_fails(&base, &thicker, "result", "a thicker film").await;
 
-    // The decimal alone is not in the seal; the hex is the value.
+    // The decimal alone is not in the seal; the hex is the value. Since
+    // 0.11.0 the long form writes the answer again from the hex and names
+    // the decimal that is not its value.
     let mut decimal = body.clone();
     decimal["result"]["minimum_film_thickness_m"] = json!(2.0 * thin);
-    assert_eq!(verdict(&base, &decimal).await["holds"], true);
+    let report = verdict(&base, &decimal).await;
+    assert_eq!((report["holds"].clone(), report["cause"].clone(), report["differs_at"].clone()), (json!(false), json!("answer_text"), json!("result.minimum_film_thickness_m")), "{report}");
 
     let mut balanced = body.clone();
     balanced["invariants"]["flow_balance_residual_hex"] = json!(hex_of(0.0));
@@ -365,13 +392,12 @@ async fn an_edited_film_is_named_by_its_part() {
     assert_eq!(status, 422, "{text}");
     assert!(text.contains("'result.total_energy_ha_hex' is not published by this solver"), "{text}");
 
-    // The angle and the peak pressure, compared with no measurement, are not published.
+    // The angle and the peak pressure are sealed with the film: an edit of
+    // either is named.
     for name in ["attitude_angle_deg_hex", "peak_film_pressure_pa_hex"] {
-        let mut added = body.clone();
-        added["result"][name] = json!(hex_of(1.0));
-        let (status, text) = post(&base, "/verify_solution", &added).await;
-        assert_eq!(status, 422, "{text}");
-        assert!(text.contains(&format!("'result.{name}' is not published by this solver")), "{text}");
+        let mut edited = body.clone();
+        edited["result"][name] = json!(flip_hex(body["result"][name].as_str().unwrap()));
+        assert_fails(&base, &edited, "result", name).await;
     }
 
     let mut relabelled = body.clone();

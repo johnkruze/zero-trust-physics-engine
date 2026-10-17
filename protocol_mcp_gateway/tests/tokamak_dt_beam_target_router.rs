@@ -3,6 +3,8 @@
 //! exact ends of the ranges, a sealed refusal, the description, and
 //! `POST /verify_solution` against edits of a sealed answer.
 
+mod answer_text;
+
 use std::time::Duration;
 
 use genesis_solvers::tokamak_dt_beam_target::{self as slice, SliceQuestion};
@@ -25,7 +27,7 @@ async fn spawn_app() -> String {
 async fn post(base: &str, path: &str, body: &Value) -> (u16, String) {
     let client = Client::new();
     let url = format!("{base}{path}");
-    let text = serde_json::to_string(body).unwrap();
+    let text = answer_text::as_sent(body);
     let mut last_error = None;
     for _ in 0..20 {
         match client
@@ -37,7 +39,9 @@ async fn post(base: &str, path: &str, body: &Value) -> (u16, String) {
         {
             Ok(response) => {
                 let status = response.status().as_u16();
-                return (status, response.text().await.unwrap());
+                let text = response.text().await.unwrap();
+                answer_text::remember(&text);
+                return (status, text);
             }
             Err(error) => {
                 last_error = Some(error);
@@ -148,7 +152,7 @@ async fn a_slice_matches_the_solver_bit_for_bit() {
     let direct = slice::solve(&question).expect("the solver settles");
 
     assert_eq!(body["inputs"], asked);
-    assert_eq!(body["engine_version"], "genesis_solvers_v0.8.0");
+    assert_eq!(body["engine_version"], "genesis_solvers_v0.12.0");
     assert_eq!(body["outcome"], "converged");
     assert!(body["reject"].is_null());
     assert_eq!(body["iterations"], direct.refinements);
@@ -165,6 +169,7 @@ async fn a_slice_matches_the_solver_bit_for_bit() {
     assert_number(result, "fast_ion_count", direct.fast_ion_count);
     assert_number(result, "fast_ion_energy_j", direct.fast_ion_energy_j);
     assert_number(result, "fast_ion_energy_time_s", direct.fast_ion_energy_time_s);
+    assert_number(result, "slowing_down_time_max_s", direct.slowing_down_time_max_s);
     assert_number(result, "beam_power_to_electrons_w", direct.beam_power_to_electrons_w);
     assert_number(result, "beam_power_to_ions_w", direct.beam_power_to_ions_w);
     assert_number(result, "beam_power_thermalised_w", direct.beam_power_thermalised_w);
@@ -173,7 +178,7 @@ async fn a_slice_matches_the_solver_bit_for_bit() {
     assert_number(result, "fast_ion_fraction_max", direct.fast_ion_fraction_max);
     assert_number(result, "charge_excess_max", direct.charge_excess_max);
     assert_number(result, "charge_excess_min", direct.charge_excess_min);
-    assert_eq!(result.as_object().unwrap().len(), 40, "a value and its hex for each");
+    assert_eq!(result.as_object().unwrap().len(), 42, "a value and its hex for each");
     let densities = result["dt_rate_density_per_m3_s_hex"].as_array().expect("one per shell");
     assert_eq!(densities.len(), 4);
     for (hex, value) in densities.iter().zip(&direct.dt_rate_density_per_m3_s) {
@@ -189,7 +194,7 @@ async fn a_slice_matches_the_solver_bit_for_bit() {
     assert_eq!(body["field_sha256"], field_hash(&direct.dt_rate_density_per_m3_s));
     assert_eq!(body["solution_seal"].as_str().unwrap().len(), 64);
     assert_receipt(&text, &body);
-    assert_eq!(verdict(&base, &body).await, json!({ "holds": true, "cause": null, "checked": protocol_mcp_gateway::WHOLE_SOLUTION_CHECKED }));
+    assert_eq!(verdict(&base, &body).await, json!({ "holds": true, "values_hold": true, "cause": null, "compared": protocol_mcp_gateway::WHOLE_SOLUTION_COMPUTED }));
 
     // The same question asked again gives the same bytes.
     let (again, _) = solved(&base, &asked).await;
@@ -199,20 +204,15 @@ async fn a_slice_matches_the_solver_bit_for_bit() {
 #[tokio::test]
 async fn what_the_request_itself_shows_is_refused_with_no_seal() {
     let base = spawn_app().await;
-    let cases: [(fn(&mut SliceQuestion), &str); 23] = [
-        (|q| q.ion_temperature_kev[3] = 0.22, "IonTemperatureOutOfRange"),
-        (|q| q.ion_temperature_kev[0] = 41.9, "IonTemperatureOutOfRange"),
-        (|q| q.electron_temperature_kev[0] = 13.2, "ElectronTemperatureOutOfRange"),
-        (|q| q.electron_temperature_kev[3] = 0.19, "ElectronTemperatureOutOfRange"),
-        // Each temperature inside its range, their ratio, 0.062, outside the span compared.
-        (|q| q.electron_temperature_kev[2] = 0.5, "TemperatureRatioOutOfRange"),
-        (|q| q.electron_density_per_m3[1] = 4.1e18, "ElectronDensityOutOfRange"),
-        (|q| q.electron_density_per_m3[1] = 1.22e20, "ElectronDensityOutOfRange"),
-        // A shell with no tritium, and one with no deuterium: fuel mixes never compared.
-        (|q| q.tritium_density_per_m3[2] = 0.0, "TritiumShareOutOfRange"),
-        (|q| q.deuterium_density_per_m3[3] = 0.0, "TritiumShareOutOfRange"),
-        (|q| q.beam_energy_kev[1] = 152.5, "BeamEnergyOutOfRange"),
-        (|q| q.beam_energy_kev[0] = 25.0, "BeamEnergyOutOfRange"),
+    let cases: [(fn(&mut SliceQuestion), &str); 20] = [
+        (|q| q.ion_temperature_kev[3] = 0.19, "IonTemperatureOutOfRange"),
+        (|q| q.ion_temperature_kev[0] = 100.5, "IonTemperatureOutOfRange"),
+        (|q| q.electron_temperature_kev[0] = 100.5, "ElectronTemperatureOutOfRange"),
+        (|q| q.electron_temperature_kev[3] = 0.04, "ElectronTemperatureOutOfRange"),
+        (|q| q.electron_density_per_m3[1] = 9.0e17, "ElectronDensityOutOfRange"),
+        (|q| q.electron_density_per_m3[1] = 1.1e21, "ElectronDensityOutOfRange"),
+        (|q| q.beam_energy_kev[1] = 1000.5, "BeamEnergyOutOfRange"),
+        (|q| q.beam_energy_kev[0] = 0.0, "BeamEnergyOutOfRange"),
         // The smallest volume above zero, once refused inside the solve as NonFiniteValue.
         (|q| q.shell_volume_m3[0] = 9.0e-7, "ShellVolumeOutOfRange"),
         // A subnormal is refused first by the number rule every request follows.
@@ -223,10 +223,10 @@ async fn what_the_request_itself_shows_is_refused_with_no_seal() {
         // 2.6 percent more thermal charge than electrons, with the allowance at 2.5.
         (|q| { q.deuterium_density_per_m3[1] = 0.526 * 4.47374e19; q.tritium_density_per_m3[1] = 0.5 * 4.47374e19; q.impurity_density_per_m3[1] = 0.0; }, "ThermalChargeExceedsElectrons"),
         (|q| q.time_since_beam_change_s = -0.001, "TimeSinceBeamChangeOutOfRange"),
-        (|q| q.time_since_beam_change_s = 100.5, "TimeSinceBeamChangeOutOfRange"),
         (|q| q.beam_power_w = vec![0.0; 4], "BeamPowerOutOfRange"),
-        (|q| q.impurity_charge = 7.0, "ImpurityChargeOutOfRange"),
+        (|q| q.impurity_charge = 10.0, "ImpurityChargeOutOfRange"),
         (|q| q.impurity_mass_u = 22.0, "ImpurityMassOutOfRange"),
+        (|q| q.impurity_mass_u = 5.0, "ImpurityMassBelowCharge"),
         (|q| { q.ion_temperature_kev.pop(); }, "ProfileLengthsDiffer"),
     ];
     for (change, name) in cases {
@@ -262,22 +262,21 @@ async fn what_the_request_itself_shows_is_refused_with_no_seal() {
 async fn the_exact_ends_of_the_ranges_are_answered() {
     let base = spawn_app().await;
     let mut question = four_shells();
-    question.shell_volume_m3 = vec![200.0, 1.0e-6, 10.0, 10.0];
-    question.electron_temperature_kev = vec![13.1, 0.199, 10.0, 0.73];
-    question.ion_temperature_kev = vec![41.8, 0.224, 5.0, 10.0];
-    question.electron_density_per_m3 = vec![1.21e20, 4.19e18, 5.0e19, 5.0e19];
+    question.shell_volume_m3 = vec![1.0e6, 1.0e-6, 10.0, 10.0];
+    question.electron_temperature_kev = vec![100.0, 0.05, 10.0, 0.73];
+    question.ion_temperature_kev = vec![100.0, 0.2, 5.0, 10.0];
+    question.electron_density_per_m3 = vec![1.0e21, 1.0e18, 5.0e19, 5.0e19];
     question.deuterium_density_per_m3 = question.electron_density_per_m3.iter().map(|n| 0.485 * n).collect();
     question.tritium_density_per_m3 = question.deuterium_density_per_m3.clone();
     question.impurity_density_per_m3 = vec![0.0; 4];
-    question.impurity_charge = 6.5;
-    question.impurity_mass_u = 10.0;
+    question.impurity_charge = 8.0;
+    question.impurity_mass_u = 20.0;
     question.beam_mass_number = vec![3.0, 2.0, 2.0];
-    question.beam_energy_kev = vec![152.0, 152.0, 26.0];
+    question.beam_energy_kev = vec![1000.0, 152.0, 26.0];
     question.beam_power_share = vec![0.6, 0.3, 0.1];
-    // The whole beam power is exactly the ceiling, none of it in the smallest shell, and the time exactly the end
-    // of its range.
+    // More beam power than either machine had, none of it in the smallest shell.
     question.beam_power_w = vec![4.4e7, 0.0, 9.0e5, 1.0e5];
-    question.time_since_beam_change_s = 100.0;
+    question.time_since_beam_change_s = 1.0e6;
     let (_, body) = solved(&base, &request(&question)).await;
     assert_eq!(body["outcome"], "converged", "{}", body["reject_detail"]);
     let direct = slice::solve(&question).expect("solves");
@@ -348,24 +347,23 @@ async fn the_charge_balance_with_the_fast_ions_is_a_sealed_refusal_both_ways() {
         assert!(body["result"].is_null());
         assert!(body["reject_detail"].as_str().unwrap().contains(allowance), "{body}");
         assert_receipt(&text, &body);
-        assert_eq!(verdict(&base, &body).await, json!({ "holds": true, "cause": null, "checked": protocol_mcp_gateway::WHOLE_SOLUTION_CHECKED }));
+        assert_eq!(verdict(&base, &body).await, json!({ "holds": true, "values_hold": true, "cause": null, "compared": protocol_mcp_gateway::WHOLE_SOLUTION_COMPUTED }));
         let mut promoted = body.clone();
         promoted["outcome"] = json!("converged");
         assert_fails(&base, &promoted, "outcome", "a refusal made an answer").await;
     }
 }
 
-/// The steady-state limit on the door: exactly five energy times after a
-/// beam change is answered with the bits of the settled slice, one 64-bit
-/// step sooner is a sealed refusal that carries both times.
+/// The steady-state limit on the door: exactly the longest slowing-down
+/// time after a beam change is answered with the bits of the settled slice,
+/// one 64-bit step sooner is a sealed refusal that carries both times.
 #[tokio::test]
 async fn a_slice_too_soon_after_a_beam_change_is_a_sealed_refusal() {
     let base = spawn_app().await;
     let (_, settled) = solved(&base, &request(&four_shells())).await;
     assert_eq!(settled["outcome"], "converged");
-    let energy_time = settled["result"]["fast_ion_energy_time_s"].as_f64().unwrap();
-    assert_eq!(settled["result"]["fast_ion_energy_time_s_hex"], hex_of(energy_time));
-    let end = slice::SETTLED_AFTER_ENERGY_TIMES * energy_time;
+    let end = settled["result"]["slowing_down_time_max_s"].as_f64().unwrap();
+    assert_eq!(settled["result"]["slowing_down_time_max_s_hex"], hex_of(end));
     assert!(end < 0.5503, "{end}");
 
     let mut question = four_shells();
@@ -383,10 +381,10 @@ async fn a_slice_too_soon_after_a_beam_change_is_a_sealed_refusal() {
     assert!(body["result"].is_null());
     assert!(body["field_sha256"].is_null());
     let detail = body["reject_detail"].as_str().expect("the sentence");
-    assert!(detail.contains(&format!("{energy_time}")), "{detail}");
-    assert!(detail.contains("SETTLED_AFTER_ENERGY_TIMES"), "{detail}");
+    assert!(detail.contains(&format!("{end}")), "{detail}");
+    assert!(detail.contains("as the request states"), "{detail}");
     assert_receipt(&text, &body);
-    assert_eq!(verdict(&base, &body).await, json!({ "holds": true, "cause": null, "checked": protocol_mcp_gateway::WHOLE_SOLUTION_CHECKED }));
+    assert_eq!(verdict(&base, &body).await, json!({ "holds": true, "values_hold": true, "cause": null, "compared": protocol_mcp_gateway::WHOLE_SOLUTION_COMPUTED }));
     let mut promoted = body.clone();
     promoted["outcome"] = json!("converged");
     assert_fails(&base, &promoted, "outcome", "a refusal made an answer").await;
@@ -432,7 +430,7 @@ async fn fast_ions_above_the_largest_share_compared_are_a_sealed_refusal() {
     assert!(body["result"].is_null());
     assert!(body["reject_detail"].as_str().unwrap().contains("FAST_ION_SHARE_MAX"), "{body}");
     assert_receipt(&text, &body);
-    assert_eq!(verdict(&base, &body).await, json!({ "holds": true, "cause": null, "checked": protocol_mcp_gateway::WHOLE_SOLUTION_CHECKED }));
+    assert_eq!(verdict(&base, &body).await, json!({ "holds": true, "values_hold": true, "cause": null, "compared": protocol_mcp_gateway::WHOLE_SOLUTION_COMPUTED }));
     let (_, body) = solved(&base, &request(&one_shell(0.436 / found))).await;
     assert_eq!(body["outcome"], "converged", "{}", body["reject_detail"]);
     let share = body["result"]["fast_ion_fraction_max"].as_f64().unwrap();
@@ -451,7 +449,7 @@ async fn beam_beam_reactions_beyond_their_bound_are_a_sealed_refusal() {
     assert!(body["result"].is_null());
     assert!(body["field_sha256"].is_null());
     assert_receipt(&text, &body);
-    assert_eq!(verdict(&base, &body).await, json!({ "holds": true, "cause": null, "checked": protocol_mcp_gateway::WHOLE_SOLUTION_CHECKED }));
+    assert_eq!(verdict(&base, &body).await, json!({ "holds": true, "values_hold": true, "cause": null, "compared": protocol_mcp_gateway::WHOLE_SOLUTION_COMPUTED }));
     let mut promoted = body.clone();
     promoted["outcome"] = json!("converged");
     assert_fails(&base, &promoted, "outcome", "a refusal made an answer").await;
@@ -463,25 +461,25 @@ async fn it_is_listed_and_described_and_its_example_runs_unchanged() {
     let listed = reqwest::get(format!("{base}/solvers")).await.unwrap();
     let listed: Value = serde_json::from_str(&listed.text().await.unwrap()).unwrap();
     let solvers = listed["solvers"].as_array().expect("solvers");
-    assert_eq!(solvers.len(), 13);
+    assert_eq!(solvers.len(), 24);
     assert_eq!(solvers[11]["solver"], "tokamak_dt_beam_target");
     let summary = solvers[11]["summary"].as_str().unwrap();
     assert!(summary.contains("No constant is fitted"), "{summary}");
-    assert!(summary.contains("nothing about the neutron counters"), "{summary}");
-    assert!(summary.contains("held-back comparison failed"), "{summary}");
+    assert!(summary.contains("Compared with TRANSP's fusion power"), "{summary}");
+    assert!(summary.contains("three of its four marks met"), "{summary}");
 
     let (status, text) = post(&base, "/describe_solver", &json!({ "solver": "tokamak_dt_beam_target" })).await;
     assert_eq!(status, 200, "{text}");
     let described: Value = serde_json::from_str(&text).unwrap();
     assert_eq!(described["inputs"].as_array().unwrap().len(), 14);
-    assert_eq!(described["refusals"].as_array().unwrap().len(), 29);
+    assert_eq!(described["refusals"].as_array().unwrap().len(), 28);
     assert_eq!(described["locked"]["quasi_neutrality_allowance"], json!(0.025));
     assert_eq!(described["locked"]["quasi_neutrality_fast_ion_allowance"], json!(0.12));
     assert_eq!(described["locked"]["quasi_neutrality_deficit_allowance"], json!(0.215));
-    assert_eq!(described["locked"]["tritium_share_range"], json!([0.00467, 0.998]));
-    assert_eq!(described["locked"]["temperature_ratio_range"], json!([0.073, 2.0]));
+    assert!(described["locked"].get("tritium_share_range").is_none());
+    assert!(described["locked"].get("temperature_ratio_range").is_none());
     assert_eq!(described["locked"]["fast_ion_share_max"], json!(0.439));
-    assert_eq!(described["locked"]["settled_after_energy_times"], json!(5.0));
+    assert_eq!(described["locked"]["beam_beam_speed_max_m_per_s"], json!(2.0e7));
     assert_eq!(described["locked"]["beam_change_fraction"], json!(0.2));
     assert_eq!(described["validation"].as_object().unwrap().len(), 5);
     assert!(described["validation"]["limits"].as_str().unwrap().starts_with("Fitted constants: None"));
@@ -489,7 +487,7 @@ async fn it_is_listed_and_described_and_its_example_runs_unchanged() {
     assert_eq!(described["example_solve"], request(&four_shells()));
     let (_, body) = solved(&base, &described["example_solve"]).await;
     assert_eq!(body["outcome"], "converged");
-    for (section, count) in [("result", 20), ("invariants", 3)] {
+    for (section, count) in [("result", 21), ("invariants", 3)] {
         let named = described["returns"][section].as_array().expect("names");
         assert_eq!(named.len(), count);
         for entry in named {

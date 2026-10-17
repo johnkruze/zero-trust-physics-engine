@@ -1,0 +1,31 @@
+{
+ "model": "reactor_spert3_fuel",
+ "verdict": "missed",
+ "protocol": {
+  "path": "evidence/research/reactor_spert3/analysis/v2/prereg_v2.json",
+  "sha256": "413ace16d5cc3d622c0ef44c0ea2b9526ac7526dfeee4b43ae601d6018e51db4",
+  "committed": {
+   "crate": "protocol_mcp_gateway",
+   "commit": "109531dbf2cc997bdba8a5133c8fe067aa8c35b0",
+   "utc": "2026-10-09T20:56:55Z",
+   "how": "The diff of 'Serve the reactor_spert3_fuel card ... the description with its validation record awaiting its result' adds the pass line naming validation_protocol_v2.md and 'SHA-256 of its machine-readable copy 413ace16...51db4', and a test holding that hash."
+  }
+ },
+ "held_back": [
+  {
+   "path": "evidence/research/reactor_spert3/transcription/table_III_cold_startup.csv",
+   "sha256": "067e646ea090e0b5ab072d540436ed0450a582ed9f19d628ed155cef20e64e9b"
+  },
+  {
+   "path": "evidence/research/reactor_spert3/transcription/table_V_hot_startup.csv",
+   "sha256": "214341b2b05d75d0f2f12dfffb7ac8230eac26242463383e6b1d25ef90f7b4b4"
+  }
+ ],
+ "scored": {
+  "utc": "2026-10-09T21:40:12Z",
+  "evidence": "evidence/research/reactor_spert3/runs_v2/HELD_BACK_OPENED.json, field opened_utc, written by the held-back engine run into runs_v2/held_back."
+ },
+ "forecast_first": "held",
+ "registered_by": "backfill from the record, 2026-10-15",
+ "notes": "Committed 43 min before the held-back run; prereg_v2.json on disk still has the committed hash, and the hash it holds of validation_protocol_v2.md (77a485d6...) matches the file on disk, as do the two table hashes above. The commit's author time is 2026-10-09T20:42:59Z, committer time 20:56:55Z. Outside Git: analysis/v2/prereg_v2_hash.txt, recorded 2026-10-09T20:26:44Z. Amendment 1 (analysis/v2/amendment_v2_1.md, 77b68d63..., recorded 20:57:11Z, 16 s after the commit and before the held-back run) is computational only and says no gate, split or model part changes; it is in no commit. A note after the held-back run and the second scoring (amendment_v2_1_note_which_fit.md, b5bde438..., 22:55:02Z) says the amendment's first point describes a fit the card does not use. The held-back groups are rows of tables that were transcribed in full before the protocol, so they were held back from fitting and scoring, not unseen. Later scorings: runs_v2/held_back_integrated (22:21Z), held_back_after_fixes (23:08Z), held_back_v060 (2026-10-10T03:45Z), and the second party in evidence/verification/second_party/V-25/. Commit times are the committer's clock. Also posted to the public pass-marks repository in GitHub-signed commit 6ca4f931c06301eac6d0e68a8a6f4d358b6affe5 at 2026-10-13T17:55:17Z."
+}

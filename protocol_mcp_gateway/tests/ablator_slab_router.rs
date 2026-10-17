@@ -5,6 +5,7 @@
 //! request is held to its sentence.
 
 mod hosted_support;
+use hosted_support::answer_text;
 
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::TcpStream;
@@ -138,7 +139,7 @@ impl Connections {
         };
         let hosted = Hosted::start(
             vec![
-                entry("all", KEY, json!(["atom_dft", "ablator_slab", "journal_bearing_sheffield", "propeller_apc_10x7e", "modulus_bam_s355", "seawater_column", "argon_pair_gas", "fusion_pb11_lhd", "fusion_pb11_thermal", "step_flow_armaly", "culture_trichoderma_ambr250", "tokamak_dt_beam_target", "pipe_flow_superpipe"])),
+                entry("all", KEY, json!(["atom_dft", "ablator_slab", "journal_bearing_sheffield", "propeller_apc_10x7e", "modulus_bam_s355", "seawater_column", "argon_pair_gas", "fusion_pb11_lhd", "fusion_pb11_thermal", "step_flow_armaly", "culture_trichoderma_ambr250", "tokamak_dt_beam_target", "pipe_flow_superpipe", "culture_trichoderma_atp", "junction_nist_b7_s2", "water_hammer_oil_line", "orifice_air_chamber", "pneumatic_hose_resonance", "blast_wave_tnt_air", "stress_plate_hole_s235", "stress_plate_hole_s235_elastic", "icf_hotspot_burn", "ln2_line_dlr_fttf", "plasma_sheath_ram_c2"])),
                 entry("atom", KEY_ATOM, json!(["atom_dft"])),
                 entry("slab", KEY_SLAB, json!(["ablator_slab"])),
             ],
@@ -176,6 +177,7 @@ impl Connections {
         assert_eq!(web, hosted, "web and hosted: {tool}");
         assert_eq!(local_error, status != 200, "{tool}: {web}");
         assert_eq!(hosted_error, status != 200, "{tool}: {web}");
+        answer_text::remember(&web);
         (status, web)
     }
 
@@ -189,24 +191,27 @@ impl Connections {
     fn solved_on_the_web(&self, request: &str) -> (String, Value) {
         let (status, text) = self.web("POST", "/solve", request);
         assert_eq!(status, 200, "{text}");
+        answer_text::remember(&text);
         let body = serde_json::from_str(&text).expect("a solution");
         (text, body)
     }
 
+    /// The long form of an answer sent as an agent sends it back: an answer
+    /// the engine gave, as it came.
     fn verdict(&mut self, body: &Value) -> Value {
-        let (status, text) = self.all("/verify_solution", "verify_solution", &body.to_string());
+        let (status, text) = self.all("/verify_solution", "verify_solution", &answer_text::as_sent(body));
         assert_eq!(status, 200, "{text}");
         serde_json::from_str(&text).expect("a report")
     }
 
     fn assert_holds(&mut self, body: &Value) {
-        assert_eq!(self.verdict(body), json!({ "holds": true, "cause": null, "checked": protocol_mcp_gateway::WHOLE_SOLUTION_CHECKED }));
+        assert_eq!(self.verdict(body), json!({ "holds": true, "values_hold": true, "cause": null, "compared": protocol_mcp_gateway::WHOLE_SOLUTION_COMPUTED }));
     }
 
     fn assert_fails(&mut self, body: &Value, part: &str, label: &str) {
         assert_eq!(
             self.verdict(body),
-            json!({ "holds": false, "cause": part, "checked": protocol_mcp_gateway::WHOLE_SOLUTION_CHECKED }),
+            json!({ "holds": false, "values_hold": false, "cause": part, "compared": protocol_mcp_gateway::WHOLE_SOLUTION_COMPARED }),
             "{label}"
         );
     }
@@ -348,12 +353,13 @@ fn assert_matches_the_solver(
     let s = &direct.summary;
     assert_eq!(body["iterations"], s.time_steps);
     let result = &body["result"];
-    let numbers: [(&str, f64); 29] = [
+    let numbers: [(&str, f64); 30] = [
         (
             "material_compared_with_measurement",
             yes_or_no(s.material_compared_with_measurement),
         ),
         ("duration_s", s.duration_s),
+        ("slab_worn_away", yes_or_no(s.worn_away)),
         ("wear_m", s.wear_m),
         ("peak_face_temperature_k", s.peak_face_temperature_k),
         ("peak_face_temperature_at_s", s.peak_face_temperature_at_s),
@@ -688,7 +694,7 @@ fn the_list_shows_thirteen_solvers_and_the_description_publishes_fields_bounds_r
     assert_eq!(status, 200, "{text}");
     let listed: Value = serde_json::from_str(&text).unwrap();
     let solvers = listed["solvers"].as_array().expect("solvers");
-    assert_eq!(solvers.len(), 13);
+    assert_eq!(solvers.len(), 24);
     assert_eq!(solvers[0]["solver"], "atom_dft");
     assert_eq!(solvers[1]["solver"], "ablator_slab");
     assert_eq!(solvers[3]["solver"], "propeller_apc_10x7e");
@@ -700,7 +706,7 @@ fn the_list_shows_thirteen_solvers_and_the_description_publishes_fields_bounds_r
     let described = connections.described();
     assert_eq!(described["solver"], "ablator_slab");
     assert_eq!(described["summary"], summary);
-    assert_eq!(described["engine_version"], "genesis_solvers_v0.8.0");
+    assert_eq!(described["engine_version"], "genesis_solvers_v0.12.0");
     let keys: Vec<&String> = described.as_object().unwrap().keys().collect();
     assert_eq!(
         keys,
@@ -711,6 +717,7 @@ fn the_list_shows_thirteen_solvers_and_the_description_publishes_fields_bounds_r
             "validation",
             "inputs",
             "number_rule",
+            "open_connection",
             "example_solve",
             "example_solve_arc_jet_test",
             "more",
@@ -723,9 +730,14 @@ fn the_list_shows_thirteen_solvers_and_the_description_publishes_fields_bounds_r
         r#"{"solver":"ablator_slab"}"#,
     );
     eprintln!("the description: {} characters, {} bytes", text.chars().count(), text.len());
-    // The envelopes stated since engine 0.7.0, and the gateway's number rule,
-    // the same for every solver, which adds about 470 characters.
-    assert!(text.chars().count() < 16_700, "{}", text.chars().count());
+    // The envelopes stated since engine 0.7.0, with the ranges the numerics
+    // were measured on and each input's compared range since the walls at
+    // their edges came down, and the gateway's number rule, the same for
+    // every solver, which adds about 470 characters; since 0.13.1 the record
+    // also says what was seen before the lines were fixed; since 0.14.0 rc2
+    // its open_connection says how many of its worked solve one inline answer
+    // holds (rc2 item 6).
+    assert!(text.chars().count() < 21_000, "{}", text.chars().count());
     // What it keeps for asking, each said in a sentence.
     let more = described["more"].as_object().expect("more");
     assert_eq!(
@@ -762,7 +774,7 @@ fn the_list_shows_thirteen_solvers_and_the_description_publishes_fields_bounds_r
         assert_eq!(
             text,
             format!(
-                "Physical Violation: 'part' must be one of \"validation\", \"inputs\", \"number_rule\", \"locked\", \"returns\", \"invariants\", \"convergence\", \"refusals\", \"reference\", \"example_solve\", \"example_solve_arc_jet_test\", \"example_solve_stardust_near_nose\"; this request has {wrong}."
+                "Physical Violation: 'part' must be one of \"validation\", \"inputs\", \"number_rule\", \"locked\", \"returns\", \"invariants\", \"convergence\", \"open_connection\", \"refusals\", \"reference\", \"example_solve\", \"example_solve_arc_jet_test\", \"example_solve_stardust_near_nose\"; this request has {wrong}."
             )
         );
     }
@@ -875,7 +887,7 @@ fn the_list_shows_thirteen_solvers_and_the_description_publishes_fields_bounds_r
         bounds("surroundings_temperature_k"),
         named(
             slab::SURROUNDINGS_TEMPERATURE_MIN_K,
-            slab::SURROUNDINGS_TEMPERATURE_MAX_K,
+            genesis_solvers::pica::TABLE_TOP_K,
             "SurroundingsTemperatureOutOfRange"
         )
     );
@@ -916,10 +928,12 @@ fn the_list_shows_thirteen_solvers_and_the_description_publishes_fields_bounds_r
         json!([slab::ARC_JET_PRESSURE_MIN_PA, slab::ARC_JET_PRESSURE_MAX_PA])
     );
 
-    // All 41 refusals by the solver's names, 28 that a request shows and
-    // 13 the solver names once it is computing.
+    // All 35 refusals by the solver's names, 23 that a request shows and
+    // 12 the solver names once it is computing. After the solver's 35 the
+    // list holds the two the entry names itself at the door, UnknownFace and
+    // UnknownStreamGas.
     let refusals = refusals.as_array().expect("refusals");
-    assert_eq!(refusals.len(), 41);
+    assert_eq!(refusals.len(), 36);
     let at_the_door = refusals
         .iter()
         .filter(|row| row["reported_as"] == "422, no seal")
@@ -928,21 +942,18 @@ fn the_list_shows_thirteen_solvers_and_the_description_publishes_fields_bounds_r
         .iter()
         .filter(|row| row["reported_as"] == "200, outcome refused, sealed")
         .count();
-    assert_eq!((at_the_door, sealed), (28, 13));
+    assert_eq!((at_the_door, sealed), (25, 11));
     for reject in [
         SlabReject::ThicknessOutOfRange { thickness_m: 1.0 },
         SlabReject::HistoryRowsOutOfRange { rows: 257 },
         SlabReject::HistoryRowsTooClose { row: 1, span_s: 1.0e-300 },
-        SlabReject::SlabWornAway { time_s: 1.0, recession_m: 0.009 },
         SlabReject::UnknownMaterial { name: String::new() },
-        SlabReject::StreamOxygenOutOfRange { oxygen_mass_fraction: 0.5 },
-        SlabReject::StreamArgonOutOfRange { argon_mass_fraction: 0.6 },
+        SlabReject::StreamOxygenNotAMassFraction { oxygen_mass_fraction: 1.5 },
+        SlabReject::StreamArgonNotAMassFraction { argon_mass_fraction: -0.6 },
+        SlabReject::StreamOxygenAndArgonAboveOne { oxygen_mass_fraction: 0.6, argon_mass_fraction: 0.5 },
         SlabReject::StreamNotAirForThisMaterial { stream_gas: StreamGas::air_with_argon(0.1) },
         SlabReject::SurfaceChemistryNotConverged { pressure_pa: 1.0, blowing: 0.0, temperature_k: 300.0 },
         SlabReject::FaceOutranItsCell { time_s: 1.0 },
-        SlabReject::HeldFaceNotCompared,
-        SlabReject::QuestionNotCompared { arc_jet: String::new(), stardust: String::new(), thermocouple_blocks: String::new() },
-        SlabReject::TemperatureAboveCompared { time_s: 1.0, depth_m: 0.0, temperature_k: 3500.0 },
         SlabReject::FlowEnthalpyBelowWall { row: 1, flow_enthalpy_j_per_kg: 0.0, wall_enthalpy_j_per_kg: 1.0, wall_temperature_k: 300.0 },
     ] {
         assert!(
@@ -954,25 +965,42 @@ fn the_list_shows_thirteen_solvers_and_the_description_publishes_fields_bounds_r
     assert_eq!(refusals[0]["name"], "ThicknessOutOfRange");
     assert_eq!(
         refusals[0]["meaning"],
-        "`thickness_m` is outside `THICKNESS_MIN_M`..=`THICKNESS_MAX_M`."
+        "`thickness_m` is outside 0.0002 to 1 m. Below 0.2 mm the grid holds no more than 8 cells; 1 m is a size cap on the request."
     );
     assert_eq!(refusals[16]["name"], "HistoryRowsTooClose");
     assert_eq!(refusals[32]["name"], "FaceOutranItsCell");
-    assert_eq!(refusals[40]["name"], "TemperatureAboveCompared");
+    assert_eq!(refusals[33]["name"], "FlowEnthalpyBelowWall");
+    // No meaning writes a range in program notation.
+    for row in refusals {
+        assert!(!row["meaning"].as_str().unwrap().contains("..="), "{}", row["name"]);
+    }
     let reported = |name: &str| {
         refusals.iter().find(|row| row["name"] == name).expect("listed")["reported_as"].clone()
     };
     assert_eq!(reported("StreamNotAirForThisMaterial"), "422, no seal");
     assert_eq!(reported("HistoryRowsTooClose"), "422, no seal");
     assert_eq!(reported("SurfaceChemistryNotConverged"), "200, outcome refused, sealed");
-    assert_eq!(reported("QuestionNotCompared"), "422, no seal");
-    assert_eq!(reported("TemperatureAboveCompared"), "200, outcome refused, sealed");
+    assert_eq!(reported("StreamOxygenAndArgonAboveOne"), "422, no seal");
+    for gone in [
+        "HeldFaceNotCompared",
+        "FaceNotWearingNotCompared",
+        "ThicknessNotCompared",
+        "StartTemperatureNotCompared",
+        "SurroundingsNotCompared",
+        "QuestionNotCompared",
+        "TemperatureAboveCompared",
+        "StreamOxygenOutOfRange",
+        "StreamArgonOutOfRange",
+    ] {
+        assert!(!refusals.iter().any(|row| row["name"] == gone), "{gone}");
+    }
     // The stream's gas: its two inputs, air to paste, what was compared
     // with measurement, and the rule for an arc-jet test.
     assert_eq!(
         input("stream_gas"),
+        // Re-pinned for 0.10.1: a gas that is not one of the two words is refused as UnknownStreamGas, and the row says so.
         &json!({
-            "name": "stream_gas", "type": "string", "allowed": ["air", "mixture"],
+            "name": "stream_gas", "type": "string", "allowed": ["air", "mixture"], "refusal": "UnknownStreamGas",
             "given_only_when": "'face' is \"gas_stream\"",
             "bound": "What the stream is made of: `air`, with no fraction given, or `mixture`, oxygen and argon by mass as given and the rest nitrogen. `TACOT 3.0` takes `air` alone."
         })
@@ -982,15 +1010,11 @@ fn the_list_shows_thirteen_solvers_and_the_description_publishes_fields_bounds_r
     }
     assert_eq!(
         bounds("stream_oxygen_mass_fraction"),
-        named(
-            slab::STREAM_OXYGEN_MASS_FRACTION_MIN,
-            slab::STREAM_OXYGEN_MASS_FRACTION_MAX,
-            "StreamOxygenOutOfRange"
-        )
+        named(0.0, 1.0, "StreamOxygenNotAMassFraction")
     );
     assert_eq!(
         bounds("stream_argon_mass_fraction"),
-        named(0.0, slab::STREAM_ARGON_MASS_FRACTION_MAX, "StreamArgonOutOfRange")
+        named(0.0, 1.0, "StreamArgonNotAMassFraction")
     );
     assert_eq!(locked["air"]["oxygen_mass_fraction"], slab::AIR_OXYGEN_MASS_FRACTION);
     assert_eq!(
@@ -1009,8 +1033,8 @@ fn the_list_shows_thirteen_solvers_and_the_description_publishes_fields_bounds_r
 
     // What comes back, and the record in five parts.
     let result = returns["result"].as_array().expect("result");
-    assert_eq!(result.len(), 29 + 15);
-    assert_eq!(result[2], json!({
+    assert_eq!(result.len(), 30 + 15);
+    assert_eq!(result[3], json!({
         "name": "wear_m", "unit": "m", "note": "How far the face wore inward. Zero for a held face."
     }));
     assert!(
@@ -1050,10 +1074,10 @@ fn the_list_shows_thirteen_solvers_and_the_description_publishes_fields_bounds_r
     let (hidden_error, hidden) =
         connections.hosted(KEY_ATOM, "describe_solver", r#"{"solver":"ablator_slab"}"#);
     assert!(hidden_error);
-    assert_eq!(hidden, "Solver not recognized");
+    assert_eq!(hidden, "Solver not recognized (UnknownSolver).");
     let (hidden_error, hidden) = connections.hosted(KEY_ATOM, "solve", &held_with(&[]));
     assert!(hidden_error);
-    assert_eq!(hidden, "Solver not recognized");
+    assert_eq!(hidden, "Solver not recognized (UnknownSolver).");
     let (error, listed) = connections.hosted(KEY_SLAB, "list_solvers", "{}");
     assert!(!error);
     let listed: Value = serde_json::from_str(&listed).unwrap();
@@ -1074,18 +1098,19 @@ fn the_schema_of_solve_declares_every_input_plainly() {
     let parameters = &schema["properties"]["parameters"];
     assert_eq!(parameters["type"], "object");
     assert_eq!(parameters["additionalProperties"], false);
-    assert_eq!(parameters["properties"].as_object().unwrap().len(), 21);
+    // Twenty-one inputs, and signed, an instrument's signature beside them.
+    assert_eq!(parameters["properties"].as_object().unwrap().len(), 22);
     assert_eq!(
         parameters["properties"]["stream_gas"],
         json!({ "type": "string", "enum": ["air", "mixture"] })
     );
     assert_eq!(
         parameters["properties"]["stream_oxygen_mass_fraction"],
-        json!({ "type": "number", "minimum": 0.05, "maximum": 0.4 })
+        json!({ "type": "number", "minimum": 0.0, "maximum": 1.0 })
     );
     assert_eq!(
         parameters["properties"]["stream_argon_mass_fraction"],
-        json!({ "type": "number", "minimum": 0.0, "maximum": 0.5 })
+        json!({ "type": "number", "minimum": 0.0, "maximum": 1.0 })
     );
     assert_eq!(
         parameters["required"],
@@ -1102,7 +1127,8 @@ fn the_schema_of_solve_declares_every_input_plainly() {
     );
     assert_eq!(
         parameters["description"],
-        "Every key in the required list, and when face is held_temperature also held_temperature_k, hold_duration_s, continue_after_s, and when face is gas_stream also stream_gas, history_time_s, history_pressure_pa, history_heat_transfer_coefficient_kg_per_m2_s, history_flow_enthalpy_j_per_kg, history_radiative_heating_w_per_m2, surroundings_temperature_k, face_wears, and when stream_gas is mixture also stream_oxygen_mass_fraction, stream_argon_mass_fraction. A key that goes with the other choice is refused by name."
+        // Such a key is refused in a sentence that names the key, as InputNotWithChoice, and the schema says so.
+        "Every key in the required list, and when face is held_temperature also held_temperature_k, hold_duration_s, continue_after_s, and when face is gas_stream also stream_gas, history_time_s, history_pressure_pa, history_heat_transfer_coefficient_kg_per_m2_s, history_flow_enthalpy_j_per_kg, history_radiative_heating_w_per_m2, surroundings_temperature_k, face_wears, and when stream_gas is mixture also stream_oxygen_mass_fraction, stream_argon_mass_fraction. A key that goes with the other choice is refused in a sentence that names the key, as InputNotWithChoice. A required input left out is refused as InputMissing, and an input given with a choice it does not go with as InputNotWithChoice, each in a sentence that names the input, and a solver the engine does not serve as UnknownSolver; nothing is filled in. parameters may also carry signed, an instrument's signature over the other parameters under the key \"parameters\", by the rule run_trajectory's input schema gives at segments; it is verified before solving, the solver takes the other parameters, and the answer then carries load_source, naming the key. A solve answer without load_source holds no signed parameter."
     );
     assert_eq!(
         parameters["properties"]["material"],
@@ -1123,7 +1149,7 @@ fn the_schema_of_solve_declares_every_input_plainly() {
     );
     assert_eq!(
         parameters["properties"]["thickness_m"],
-        json!({ "type": "number", "minimum": 0.01, "maximum": 0.1 })
+        json!({ "type": "number", "minimum": 0.0002, "maximum": 1.0 })
     );
     assert_eq!(
         parameters["properties"]["history_pressure_pa"],
@@ -1138,7 +1164,7 @@ fn the_schema_of_solve_declares_every_input_plainly() {
         parameters["properties"]["thermocouple_depths_m"],
         json!({
             "type": "array",
-            "items": { "type": "number", "minimum": 0.0, "maximum": 0.1 },
+            "items": { "type": "number", "minimum": 0.0, "maximum": 1.0 },
             "maxItems": 8
         })
     );
@@ -1184,9 +1210,19 @@ fn the_schema_of_solve_declares_every_input_plainly() {
     let atom_alone = View::limited([], ["atom_dft".to_string()]);
     let tools = tools_in(&atom_alone);
     let solve = tools.iter().find(|tool| tool.name == "solve").expect("solve");
+    // A signed load: an instrument's signature may stand beside the atom's
+    // one field, and the parameters say so. Without them it is the schema
+    // the atom had, byte for byte.
+    let mut declared = Value::Object(solve.input_schema.as_ref().clone());
+    let parameters = declared["properties"]["parameters"].as_object_mut().unwrap();
+    assert!(parameters["properties"].as_object_mut().unwrap().shift_remove("signed").is_some());
+    let said = parameters["description"].as_str().unwrap().to_string();
+    let (before, signed_words) = said.split_once(" parameters may also carry signed").expect("the signed words");
+    assert!(signed_words.ends_with("A solve answer without load_source holds no signed parameter."), "{said}");
+    parameters["description"] = json!(before);
     assert_eq!(
-        serde_json::to_string(&Value::Object(solve.input_schema.as_ref().clone())).unwrap(),
-        r#"{"type":"object","properties":{"solver":{"const":"atom_dft"},"parameters":{"type":"object","properties":{"atomic_number":{"type":"integer","minimum":1,"maximum":18}},"required":["atomic_number"],"additionalProperties":false},"example":{"type":"string","description":"In place of parameters: the name of one of the solver's worked examples as describe_solver keys it (example_solve, or a key that begins example_solve_). The request is filled with that example's parameters, and the filled request is the one solved, sealed and returned as inputs."}},"required":["solver"],"additionalProperties":false,"description":"One sealed solution. The same request as POST /solve."}"#
+        serde_json::to_string(&declared).unwrap(),
+        r#"{"type":"object","properties":{"solver":{"const":"atom_dft"},"parameters":{"type":"object","properties":{"atomic_number":{"type":"integer","minimum":1,"maximum":18}},"required":["atomic_number"],"additionalProperties":false,"description":"A required input left out is refused as InputMissing, and an input given with a choice it does not go with as InputNotWithChoice, each in a sentence that names the input, and a solver the engine does not serve as UnknownSolver; nothing is filled in."},"example":{"type":"string","description":"In place of parameters: the name of one of the solver's worked examples as describe_solver keys it (example_solve, or a key that begins example_solve_). The request is filled with that example's parameters, and the filled request is the one solved, sealed and returned as inputs."}},"required":["solver"],"additionalProperties":false,"description":"One sealed solution."}"#
     );
 }
 
@@ -1218,7 +1254,7 @@ fn workshop_test_case_1_lands_seals_and_is_the_same_bytes_on_three_connections_a
     let request = example.to_string();
     let (text, body) = connections.solved(&request);
     assert_eq!(body["inputs"], *example);
-    assert_eq!(body["engine_version"], "genesis_solvers_v0.8.0");
+    assert_eq!(body["engine_version"], "genesis_solvers_v0.12.0");
 
     let everything = Wanted {
         face_history: true,
@@ -1393,15 +1429,26 @@ fn a_development_arc_jet_test_in_its_own_gas_returns_the_recorded_wear_and_face_
         slab::stream_enthalpy_at_cold_wall_j_per_kg(&other).expect("in range")
     );
     assert_eq!(body["result"]["inside_arc_jet_comparison"], 1.0);
-    // A stream whose gas no test ran in, and that is not air, is refused
-    // at the door by name, with the reason for each envelope.
-    short["parameters"]["stream_oxygen_mass_fraction"] = json!(0.35);
-    short["parameters"]["stream_argon_mass_fraction"] = json!(0.0);
+    // A stream whose gas no test ran in is answered, sealed, in no
+    // envelope; so are pure nitrogen and oxygen with argon and no nitrogen.
+    for (oxygen, argon) in [(0.35, 0.0), (0.0, 0.0), (0.6, 0.4)] {
+        short["parameters"]["stream_oxygen_mass_fraction"] = json!(oxygen);
+        short["parameters"]["stream_argon_mass_fraction"] = json!(argon);
+        let (_, body) = connections.solved_on_the_web(&short.to_string());
+        assert_eq!(body["outcome"], "converged", "{oxygen} {argon}: {body}");
+        for flag in ["inside_arc_jet_comparison", "inside_stardust_comparison", "inside_thermocouple_block_comparison"] {
+            assert_eq!(body["result"][flag], 0.0, "{oxygen} {argon}: {flag}");
+        }
+        connections.assert_holds(&body);
+    }
+    // More than the whole stream is refused at the door by name.
+    short["parameters"]["stream_oxygen_mass_fraction"] = json!(0.7);
+    short["parameters"]["stream_argon_mass_fraction"] = json!(0.4);
     let (status, text) = connections.all("/solve", "solve", &short.to_string());
     assert_eq!(status, 422, "{text}");
     assert_eq!(
         text,
-        "Physical Violation: the question lies inside no envelope the PICA model was compared with measurement on: for the arc-jet tests, oxygen mass fraction 0.35 is outside 0.1..=0.3; for the Stardust flight, thickness 0.06 m is not the 0.0582 m compared; for the thermocouple blocks, thickness 0.06 m is outside 0.0224..=0.0325 m (QuestionNotCompared)."
+        "Physical Violation: the stream's oxygen mass fraction 0.7 and argon mass fraction 0.4 add to more than 1, the whole stream (StreamOxygenAndArgonAboveOne)."
     );
 }
 
@@ -1476,11 +1523,11 @@ fn the_stardust_example_lands_with_the_recorded_wear_and_holds_one_permit_while_
     assert_eq!(status, 200);
     // A request the slab's own limits refuse is refused while the run
     // computes: a limit the request shows is asked before a permit.
-    let (status, refused) = web(port, "POST", "/solve", &held_with(&[("thickness_m", "0.5")]), 60);
+    let (status, refused) = web(port, "POST", "/solve", &held_with(&[("thickness_m", "1.5")]), 60);
     assert_eq!(status, 422);
     assert_eq!(
         refused,
-        "Physical Violation: thickness 0.5 m is outside 0.01..=0.1 (ThicknessOutOfRange)."
+        "Physical Violation: thickness 1.5 m is outside 0.0002 to 1 m: below 0.0002 m the grid holds no more than 8 cells, and 1 m is a size cap on the request (ThicknessOutOfRange)."
     );
     // A second slab is turned away like any other physics request.
     let (status, second) = web(port, "POST", "/solve", &held_with(&[]), 60);
@@ -1550,7 +1597,7 @@ fn the_stardust_example_lands_with_the_recorded_wear_and_holds_one_permit_while_
     );
     // Summary only: 29 numbers and 6, no array, and the answer beyond the
     // echoed request is a few thousand characters.
-    assert_eq!(result.as_object().unwrap().len(), 2 * 29);
+    assert_eq!(result.as_object().unwrap().len(), 2 * 30);
     assert!(result.as_object().unwrap().values().all(|value| !value.is_array()));
     assert_eq!(invariants.as_object().unwrap().len(), 2 * 6);
     assert!(text.len() - request.len() < 6_500, "{}", text.len() - request.len());
@@ -1559,11 +1606,11 @@ fn the_stardust_example_lands_with_the_recorded_wear_and_holds_one_permit_while_
     assert_proof(&text, &body);
     let (status, verdict) = web(port, "POST", "/verify_solution", &text, 60);
     assert_eq!(status, 200);
-    assert_eq!(verdict, format!(r#"{{"holds":true,"cause":null,"checked":{}}}"#, serde_json::json!(protocol_mcp_gateway::WHOLE_SOLUTION_CHECKED)));
+    assert_eq!(verdict, format!(r#"{{"holds":true,"values_hold":true,"cause":null,"compared":{}}}"#, serde_json::json!(protocol_mcp_gateway::WHOLE_SOLUTION_COMPUTED)));
     let mut worn_less = body.clone();
     worn_less["result"]["wear_m_hex"] = json!(hex_of(0.0057));
     let (_, verdict) = web(port, "POST", "/verify_solution", &worn_less.to_string(), 60);
-    assert_eq!(verdict, format!(r#"{{"holds":false,"cause":"result","checked":{}}}"#, serde_json::json!(protocol_mcp_gateway::WHOLE_SOLUTION_CHECKED)));
+    assert_eq!(verdict, format!(r#"{{"holds":false,"values_hold":false,"cause":"result","compared":{}}}"#, serde_json::json!(protocol_mcp_gateway::WHOLE_SOLUTION_COMPARED)));
 }
 
 /// With two permits, a slab that is computing leaves the other free the
@@ -1808,12 +1855,12 @@ fn each_fault_of_a_request_is_named_and_carries_no_proof() {
     // the solver's own name. `SlabReject`'s sentence is the source of each.
     let shown: Vec<(String, SlabReject)> = vec![
         (
-            held_with(&[("thickness_m", "0.5")]),
-            SlabReject::ThicknessOutOfRange { thickness_m: 0.5 },
+            held_with(&[("thickness_m", "1.5")]),
+            SlabReject::ThicknessOutOfRange { thickness_m: 1.5 },
         ),
         (
-            held_with(&[("thickness_m", "0.009")]),
-            SlabReject::ThicknessOutOfRange { thickness_m: 0.009 },
+            held_with(&[("thickness_m", "0.00019")]),
+            SlabReject::ThicknessOutOfRange { thickness_m: 0.00019 },
         ),
         (
             stream_with(&[("start_temperature_k", "253")]),
@@ -1828,8 +1875,8 @@ fn each_fault_of_a_request_is_named_and_carries_no_proof() {
             SlabReject::HoldDurationOutOfRange { hold_duration_s: 0.5 },
         ),
         (
-            held_with(&[("continue_after_s", "300.5")]),
-            SlabReject::ContinueAfterOutOfRange { continue_after_s: 300.5 },
+            held_with(&[("continue_after_s", "3600.5")]),
+            SlabReject::ContinueAfterOutOfRange { continue_after_s: 3600.5 },
         ),
         (
             held_with(&[("continue_after_s", "-1")]),
@@ -1874,8 +1921,8 @@ fn each_fault_of_a_request_is_named_and_carries_no_proof() {
             SlabReject::HistoryTimesOutOfOrder { row: 2, time_s: 0.5 },
         ),
         (
-            stream_with(&[("history_time_s", "[0,0.5,600.5]")]),
-            SlabReject::HistoryDurationOutOfRange { duration_s: 600.5 },
+            stream_with(&[("history_time_s", "[0,0.5,3600.5]")]),
+            SlabReject::HistoryDurationOutOfRange { duration_s: 3600.5 },
         ),
         (
             stream_with(&[("history_time_s", "[0,0.5,0.75]")]),
@@ -1894,39 +1941,50 @@ fn each_fault_of_a_request_is_named_and_carries_no_proof() {
             },
         ),
         (
-            stream_with(&[("history_heat_transfer_coefficient_kg_per_m2_s", "[0,1.5,0.17]")]),
+            stream_with(&[("history_heat_transfer_coefficient_kg_per_m2_s", "[0,-1.5,0.17]")]),
             SlabReject::HeatTransferCoefficientOutOfRange {
                 row: 1,
-                heat_transfer_coefficient_kg_per_m2_s: 1.5,
+                heat_transfer_coefficient_kg_per_m2_s: -1.5,
             },
         ),
         (
-            stream_with(&[("history_flow_enthalpy_j_per_kg", "[2.5e7,2.5e7,1.5e8]")]),
-            SlabReject::FlowEnthalpyOutOfRange { row: 2, flow_enthalpy_j_per_kg: 1.5e8 },
+            stream_with(&[("history_flow_enthalpy_j_per_kg", "[2.5e7,2.5e7,-1.5e8]")]),
+            SlabReject::FlowEnthalpyOutOfRange { row: 2, flow_enthalpy_j_per_kg: -1.5e8 },
         ),
         (
             stream_with(&[("history_radiative_heating_w_per_m2", "[-1,0,0]")]),
             SlabReject::RadiativeHeatingOutOfRange { row: 0, radiative_heating_w_per_m2: -1.0 },
         ),
         (
-            stream_with(&[("surroundings_temperature_k", "401")]),
-            SlabReject::SurroundingsTemperatureOutOfRange { surroundings_temperature_k: 401.0 },
+            stream_with(&[("surroundings_temperature_k", "4000")]),
+            SlabReject::SurroundingsTemperatureOutOfRange { surroundings_temperature_k: 4000.0, highest_k: 3975.0 },
         ),
         (
-            mixture_with("0.04", "0", &[]),
-            SlabReject::StreamOxygenOutOfRange { oxygen_mass_fraction: 0.04 },
+            stream_with(&[("material", "\"TACOT 3.0\""), ("surroundings_temperature_k", "3400")]),
+            SlabReject::SurroundingsTemperatureOutOfRange {
+                surroundings_temperature_k: 3400.0,
+                highest_k: slab::SURROUNDINGS_TEMPERATURE_MAX_K,
+            },
         ),
         (
-            mixture_with("0.41", "0", &[]),
-            SlabReject::StreamOxygenOutOfRange { oxygen_mass_fraction: 0.41 },
+            mixture_with("-0.04", "0", &[]),
+            SlabReject::StreamOxygenNotAMassFraction { oxygen_mass_fraction: -0.04 },
         ),
         (
-            mixture_with("0.2", "0.6", &[]),
-            SlabReject::StreamArgonOutOfRange { argon_mass_fraction: 0.6 },
+            mixture_with("1.01", "0", &[]),
+            SlabReject::StreamOxygenNotAMassFraction { oxygen_mass_fraction: 1.01 },
+        ),
+        (
+            mixture_with("0.2", "1.6", &[]),
+            SlabReject::StreamArgonNotAMassFraction { argon_mass_fraction: 1.6 },
         ),
         (
             mixture_with("0.2", "-0.01", &[]),
-            SlabReject::StreamArgonOutOfRange { argon_mass_fraction: -0.01 },
+            SlabReject::StreamArgonNotAMassFraction { argon_mass_fraction: -0.01 },
+        ),
+        (
+            mixture_with("0.6", "0.41", &[]),
+            SlabReject::StreamOxygenAndArgonAboveOne { oxygen_mass_fraction: 0.6, argon_mass_fraction: 0.41 },
         ),
         // TACOT's table is for air alone, and a mixture that is nearly air
         // is not air.
@@ -1944,40 +2002,40 @@ fn each_fault_of_a_request_is_named_and_carries_no_proof() {
         ),
         // The stream's gas is asked before the heating history.
         (
-            mixture_with("0.5", "0", &[("history_time_s", "[0,4.0,0.5]")]),
-            SlabReject::StreamOxygenOutOfRange { oxygen_mass_fraction: 0.5 },
+            mixture_with("1.5", "0", &[("history_time_s", "[0,4.0,0.5]")]),
+            SlabReject::StreamOxygenNotAMassFraction { oxygen_mass_fraction: 1.5 },
         ),
         // Two limits at once are named for the one the solver asks first: a
         // row of the history before the surroundings, the thickness before
         // everything, an earlier row before a later one.
         (
             stream_with(&[
-                ("surroundings_temperature_k", "401"),
-                ("history_flow_enthalpy_j_per_kg", "[2.5e7,2.5e7,1.5e8]"),
+                ("surroundings_temperature_k", "4000"),
+                ("history_flow_enthalpy_j_per_kg", "[2.5e7,2.5e7,-1.5e8]"),
             ]),
-            SlabReject::FlowEnthalpyOutOfRange { row: 2, flow_enthalpy_j_per_kg: 1.5e8 },
+            SlabReject::FlowEnthalpyOutOfRange { row: 2, flow_enthalpy_j_per_kg: -1.5e8 },
         ),
         (
             stream_with(&[
-                ("thickness_m", "0.2"),
+                ("thickness_m", "1.2"),
                 ("history_time_s", "[0,4.0,0.5]"),
                 ("thermocouple_depths_m", nine_depths),
             ]),
-            SlabReject::ThicknessOutOfRange { thickness_m: 0.2 },
+            SlabReject::ThicknessOutOfRange { thickness_m: 1.2 },
         ),
         (
             stream_with(&[
                 ("history_pressure_pa", "[20000,20000,101326]"),
-                ("history_radiative_heating_w_per_m2", "[0,2e7,0]"),
+                ("history_radiative_heating_w_per_m2", "[0,-2e7,0]"),
             ]),
-            SlabReject::RadiativeHeatingOutOfRange { row: 1, radiative_heating_w_per_m2: 2.0e7 },
+            SlabReject::RadiativeHeatingOutOfRange { row: 1, radiative_heating_w_per_m2: -2.0e7 },
         ),
         (
             stream_with(&[
-                ("history_time_s", "[0,0.5,700]"),
+                ("history_time_s", "[0,0.5,3700]"),
                 ("thermocouple_depths_m", "[0.5]"),
             ]),
-            SlabReject::HistoryDurationOutOfRange { duration_s: 700.0 },
+            SlabReject::HistoryDurationOutOfRange { duration_s: 3700.0 },
         ),
     ];
     let mut names = std::collections::BTreeSet::new();
@@ -2001,9 +2059,10 @@ fn each_fault_of_a_request_is_named_and_carries_no_proof() {
             "HoldDurationOutOfRange",
             "RadiativeHeatingOutOfRange",
             "StartTemperatureOutOfRange",
-            "StreamArgonOutOfRange",
+            "StreamArgonNotAMassFraction",
             "StreamNotAirForThisMaterial",
-            "StreamOxygenOutOfRange",
+            "StreamOxygenAndArgonAboveOne",
+            "StreamOxygenNotAMassFraction",
             "StreamPressureOutOfRange",
             "SurroundingsTemperatureOutOfRange",
             "ThermocoupleOutsideSlab",
@@ -2019,7 +2078,7 @@ fn each_fault_of_a_request_is_named_and_carries_no_proof() {
     fault(
         stream_with(&rows_257),
         422,
-        "Physical Violation: the heating history has 257 rows; it may have 2..=256 (HistoryRowsOutOfRange).",
+        "Physical Violation: the heating history has 257 rows; it may have 2 to 256 (HistoryRowsOutOfRange).",
     );
     fault(
         stream_with(&[("history_time_s", "[0,4.0,0.5]")]),
@@ -2037,9 +2096,9 @@ fn each_fault_of_a_request_is_named_and_carries_no_proof() {
         "Physical Violation: the stream has oxygen mass fraction 0.2329 and argon mass fraction 0; this material's surface table is for air alone (0.23291751145757963 and 0) (StreamNotAirForThisMaterial).",
     );
     fault(
-        mixture_with("0.04", "0", &[]),
+        mixture_with("-0.04", "0", &[]),
         422,
-        "Physical Violation: the stream's oxygen mass fraction is 0.04, outside 0.05..=0.4 (StreamOxygenOutOfRange).",
+        "Physical Violation: the stream's oxygen mass fraction is -0.04; a mass fraction is 0 to 1 (StreamOxygenNotAMassFraction).",
     );
     fault(
         mixture_with("0.2", "\"none\"", &[]),
@@ -2057,24 +2116,25 @@ fn each_fault_of_a_request_is_named_and_carries_no_proof() {
             stream_with(&[(fraction, value)]),
             422,
             &format!(
-                "Physical Violation: '{fraction}' is an input only when 'stream_gas' is \"mixture\"; this request has 'stream_gas' \"air\"."
+                "Physical Violation: '{fraction}' is an input only when 'stream_gas' is \"mixture\"; this request has 'stream_gas' \"air\" (InputNotWithChoice)."
             ),
         );
     }
     fault(
         stream_with(&[("stream_gas", "\"mixture\""), ("stream_oxygen_mass_fraction", "0.2")]),
         422,
-        "Missing required parameter: 'stream_argon_mass_fraction'",
+        "Missing required parameter: 'stream_argon_mass_fraction' (InputMissing).",
     );
     fault(
         stream_with(&[("stream_gas", "\"mixture\""), ("stream_argon_mass_fraction", "0")]),
         422,
-        "Missing required parameter: 'stream_oxygen_mass_fraction'",
+        "Missing required parameter: 'stream_oxygen_mass_fraction' (InputMissing).",
     );
     fault(
         stream_with(&[("stream_gas", "\"argon\"")]),
         422,
-        "Physical Violation: 'stream_gas' must be one of \"air\", \"mixture\"; this request has \"argon\".",
+        // Re-pinned for 0.10.1: a gas that is not one of the two words carries the name UnknownStreamGas.
+        "Physical Violation: 'stream_gas' must be one of \"air\", \"mixture\"; this request has \"argon\" (UnknownStreamGas).",
     );
     fault(
         stream_with(&[("stream_gas", "0.2329")]),
@@ -2085,36 +2145,36 @@ fn each_fault_of_a_request_is_named_and_carries_no_proof() {
     fault(
         held_with(&[("stream_gas", "\"air\"")]),
         422,
-        "Physical Violation: 'stream_gas' is an input only when 'face' is \"gas_stream\"; this request has 'face' \"held_temperature\".",
+        "Physical Violation: 'stream_gas' is an input only when 'face' is \"gas_stream\"; this request has 'face' \"held_temperature\" (InputNotWithChoice).",
     );
     fault(
         held_with(&[("stream_oxygen_mass_fraction", "0.2")]),
         422,
-        "Physical Violation: 'stream_oxygen_mass_fraction' is an input only when 'stream_gas' is \"mixture\"; this request has no 'stream_gas'.",
+        "Physical Violation: 'stream_oxygen_mass_fraction' is an input only when 'stream_gas' is \"mixture\"; this request has no 'stream_gas' (InputNotWithChoice).",
     );
     // A wall pressure outside the table of the material asked for: the
     // solver's sentence states that material's own range.
     fault(
         stream_with(&[("history_pressure_pa", "[0.5,20000,20000]")]),
         422,
-        "Physical Violation: row 0 of the heating history has pressure 0.5 Pa, outside this material's surface table, 1.01325..=101325 Pa (StreamPressureOutOfRange).",
+        "Physical Violation: row 0 of the heating history has pressure 0.5 Pa, outside this material's surface table, 1.01325 to 101325 Pa (StreamPressureOutOfRange).",
     );
     fault(
         stream_with(&[("history_pressure_pa", "[20000,20000,101326]")]),
         422,
-        "Physical Violation: row 2 of the heating history has pressure 101326 Pa, outside this material's surface table, 1.01325..=101325 Pa (StreamPressureOutOfRange).",
+        "Physical Violation: row 2 of the heating history has pressure 101326 Pa, outside this material's surface table, 1.01325 to 101325 Pa (StreamPressureOutOfRange).",
     );
     fault(
         stream_with(&[("material", "\"TACOT 3.0\""), ("history_pressure_pa", "[50,20000,20000]")]),
         422,
-        "Physical Violation: row 0 of the heating history has pressure 50 Pa, outside this material's surface table, 101.325..=101325 Pa (StreamPressureOutOfRange).",
+        "Physical Violation: row 0 of the heating history has pressure 50 Pa, outside this material's surface table, 101.325 to 101325 Pa (StreamPressureOutOfRange).",
     );
     // Every older version of the PICA model is still taken by name.
     for older in ["PICA, open record, version 4", "PICA, open record, version 3", "PICA, open record"] {
         fault(
             stream_with(&[("material", &format!("\"{older}\"")), ("history_pressure_pa", "[1,20000,20000]")]),
             422,
-            "Physical Violation: row 0 of the heating history has pressure 1 Pa, outside this material's surface table, 1.01325..=101325 Pa (StreamPressureOutOfRange).",
+            "Physical Violation: row 0 of the heating history has pressure 1 Pa, outside this material's surface table, 1.01325 to 101325 Pa (StreamPressureOutOfRange).",
         );
     }
     // A material the solver does not hold, by the name the solver gives it.
@@ -2172,39 +2232,40 @@ fn each_fault_of_a_request_is_named_and_carries_no_proof() {
         fault(
             request_text(base, &[(key, None)]),
             422,
-            &format!("Missing required parameter: '{key}'"),
+            &format!("Missing required parameter: '{key}' (InputMissing)."),
         );
     }
     fault(
         r#"{"solver":"ablator_slab"}"#.to_string(),
         422,
-        "Missing required parameter: 'parameters' (or 'example', the name of a worked example describe_solver lists)",
+        "Missing required parameter: 'parameters' (or 'example', the name of a worked example describe_solver lists) (InputMissing).",
     );
     // A key that goes with the other kind of face.
     fault(
         held_with(&[("surroundings_temperature_k", "300")]),
         422,
-        "Physical Violation: 'surroundings_temperature_k' is an input only when 'face' is \"gas_stream\"; this request has 'face' \"held_temperature\".",
+        "Physical Violation: 'surroundings_temperature_k' is an input only when 'face' is \"gas_stream\"; this request has 'face' \"held_temperature\" (InputNotWithChoice).",
     );
     fault(
         held_with(&[("history_time_s", "[0,1]")]),
         422,
-        "Physical Violation: 'history_time_s' is an input only when 'face' is \"gas_stream\"; this request has 'face' \"held_temperature\".",
+        "Physical Violation: 'history_time_s' is an input only when 'face' is \"gas_stream\"; this request has 'face' \"held_temperature\" (InputNotWithChoice).",
     );
     fault(
         stream_with(&[("continue_after_s", "0")]),
         422,
-        "Physical Violation: 'continue_after_s' is an input only when 'face' is \"held_temperature\"; this request has 'face' \"gas_stream\".",
+        "Physical Violation: 'continue_after_s' is an input only when 'face' is \"held_temperature\"; this request has 'face' \"gas_stream\" (InputNotWithChoice).",
     );
     fault(
         stream_with(&[("held_temperature_k", "1644")]),
         422,
-        "Physical Violation: 'held_temperature_k' is an input only when 'face' is \"held_temperature\"; this request has 'face' \"gas_stream\".",
+        "Physical Violation: 'held_temperature_k' is an input only when 'face' is \"held_temperature\"; this request has 'face' \"gas_stream\" (InputNotWithChoice).",
     );
     fault(
         held_with(&[("face", "\"arc_jet\"")]),
         422,
-        "Physical Violation: 'face' must be one of \"held_temperature\", \"gas_stream\"; this request has \"arc_jet\".",
+        // Re-pinned for 0.10.1: a face that is not one of the two words carries the name UnknownFace.
+        "Physical Violation: 'face' must be one of \"held_temperature\", \"gas_stream\"; this request has \"arc_jet\" (UnknownFace).",
     );
     // A row with a number missing: the columns do not hold the same count.
     fault(
@@ -2285,7 +2346,7 @@ fn each_fault_of_a_request_is_named_and_carries_no_proof() {
     fault(
         r#"{"solver":"pica_arcjet_slab","parameters":{}}"#.to_string(),
         404,
-        "Solver not recognized",
+        "Solver not recognized (UnknownSolver).",
     );
 
     for (request, status, message) in &faults {
@@ -2297,13 +2358,13 @@ fn each_fault_of_a_request_is_named_and_carries_no_proof() {
             assert!(!text.contains(proof), "{shown}: {text}");
         }
     }
-    assert_eq!(faults.len(), 105);
+    assert_eq!(faults.len(), 107);
 
     // The edges of the declared range are inside it: on TACOT 3.0, the
     // lowest wall pressure of its table and a history of 256 rows are
     // answered, and so is a thermocouple at the back of the slab. On the
     // PICA model the lowest pressure of its table, 1.01325 Pa, is below
-    // anything compared with measurement and is refused by name.
+    // anything compared with measurement and is answered in no envelope.
     let rows_256 = long_history(256);
     let mut edge: Vec<(&str, &str)> =
         rows_256.iter().map(|(key, text)| (*key, text.as_str())).collect();
@@ -2321,9 +2382,11 @@ fn each_fault_of_a_request_is_named_and_carries_no_proof() {
     let edge_count = edge.len();
     edge[last] = ("history_pressure_pa", pica_lowest.as_str());
     edge[edge_count - 1] = ("material", "\"PICA, open record, version 5\"");
-    let (status, text) = connections.web("POST", "/solve", &stream_with(&edge));
-    assert_eq!(status, 422, "{text}");
-    assert!(text.ends_with("(QuestionNotCompared)."), "{text}");
+    let (_, body) = connections.solved_on_the_web(&stream_with(&edge));
+    assert_eq!(body["outcome"], "converged");
+    assert_eq!(body["result"]["inside_arc_jet_comparison"], 0.0);
+    assert_eq!(body["result"]["inside_stardust_comparison"], 0.0);
+    assert_eq!(body["result"]["inside_thermocouple_block_comparison"], 0.0);
 }
 
 /// What the solver itself says of a question it refuses while computing.
@@ -2400,8 +2463,6 @@ fn a_refusal_met_while_computing_is_named_and_carries_no_result() {
         ("TemperatureOutOfBounds", steady(0.05, 1.0, 1.0e8, 101_325.0, 0.0, 5.0, true)),
         // A face driven to where the table's carbon boils at 0.001 atm.
         ("FaceBeyondSurfaceTable", steady(0.05, 0.003, 1.0e4, 101.325, 6.0e6, 20.0, false)),
-        // A thin slab under the stream of workshop case 2.3 wears through.
-        ("SlabWornAway", steady(0.01, 0.3, 2.5e7, 101_325.0, 0.0, 60.0, true)),
     ];
     let mut seals = Vec::new();
     for (index, (name, (request, question))) in cases.iter().enumerate() {
@@ -2444,55 +2505,111 @@ fn a_refusal_met_while_computing_is_named_and_carries_no_result() {
     }
     seals.sort();
     seals.dedup();
-    assert_eq!(seals.len(), 3);
+    assert_eq!(seals.len(), 2);
 }
 
-/// A PICA request outside what was compared with measurement, and a stream
-/// colder than the wall on any material, are refused at the door by name,
-/// with no proof, on all three connections.
+/// A slab worn away is the end of the event, not a refusal: a thin slab
+/// under the stream of workshop case 2.3 wears through, and the run ends
+/// there, answered with its proof, `slab_worn_away` 1, its duration the
+/// moment it wore away and every account closed.
 #[test]
-fn a_request_outside_what_was_compared_is_refused_by_name_with_no_proof() {
+fn a_slab_worn_away_ends_its_run_and_is_answered() {
     let mut connections = Connections::open();
-    let cases = [
+    let (request, question) = steady(0.01, 0.3, 2.5e7, 101_325.0, 0.0, 60.0, true);
+    let direct = slab::answer(TACOT, &question, &Wanted::default()).expect("an end, answered");
+    assert!(direct.summary.worn_away);
+    let (_, body) = connections.solved(&request);
+    assert_eq!(body["outcome"], "converged", "{body}");
+    assert!(body["reject"].is_null());
+    let result = &body["result"];
+    assert_eq!(result["slab_worn_away"], 1.0);
+    let duration = result["duration_s"].as_f64().expect("duration");
+    assert!(duration > 0.0 && duration < 60.0, "{duration}");
+    assert_eq!(duration, direct.summary.duration_s);
+    assert!(result["wear_m"].as_f64().unwrap() > 0.008, "{result}");
+    connections.assert_holds(&body);
+}
+
+/// A PICA request outside what was compared with measurement is answered
+/// with a proof on all three connections and says it lies in no compared
+/// envelope; past the top of the PICA tables, 3975 K, a run is refused by
+/// name with a sealed refusal; a stream colder than the wall on any material
+/// is refused at the door by name, with no proof.
+#[test]
+fn a_request_outside_what_was_compared_is_answered_with_a_proof_and_says_so() {
+    let mut connections = Connections::open();
+    let answered = [
         // A held face on PICA.
-        (held_with(&[("material", "\"PICA, open record, version 5\"")]), "HeldFaceNotCompared"),
+        held_with(&[("material", "\"PICA, open record, version 5\"")]),
         // A thickness, start or surroundings no measured case had.
-        (stream_with(&[("thickness_m", "0.05")]), "ThicknessNotCompared"),
-        (stream_with(&[("start_temperature_k", "350")]), "StartTemperatureNotCompared"),
-        (stream_with(&[("surroundings_temperature_k", "350")]), "SurroundingsNotCompared"),
+        stream_with(&[("thickness_m", "0.05")]),
+        stream_with(&[("start_temperature_k", "350")]),
+        stream_with(&[("surroundings_temperature_k", "350")]),
         // Values each compared in some envelope but never together: the
         // arc-jet stream on a block's thickness, from the Stardust start, or
         // radiating to the Stardust surroundings.
-        (stream_with(&[("thickness_m", "0.03")]), "QuestionNotCompared"),
-        (stream_with(&[("start_temperature_k", "260")]), "QuestionNotCompared"),
-        (stream_with(&[("surroundings_temperature_k", "266.48")]), "QuestionNotCompared"),
-        (stream_with(&[("face_wears", "false")]), "FaceNotWearingNotCompared"),
+        stream_with(&[("thickness_m", "0.03")]),
+        stream_with(&[("start_temperature_k", "260")]),
+        stream_with(&[("surroundings_temperature_k", "266.48")]),
+        // A face kept from wearing.
+        stream_with(&[("face_wears", "false")]),
         // 10 W/cm² in the arc-jet gas: below the lowest arc-jet heating, and
         // not air.
-        (
-            mixture_with(
-                "0.1675336",
-                "0.276",
-                &[("history_heat_transfer_coefficient_kg_per_m2_s", "[0,0.0042,0.0042]")],
-            ),
-            "QuestionNotCompared",
+        mixture_with(
+            "0.1675336",
+            "0.276",
+            &[("history_heat_transfer_coefficient_kg_per_m2_s", "[0,0.0042,0.0042]")],
         ),
-        // 1,600 J/kg in air below air's 1,871 J/kg at a wall at 300 K, on
-        // TACOT as on PICA.
-        (
-            stream_with(&[
-                ("material", "\"TACOT 3.0\""),
-                ("history_flow_enthalpy_j_per_kg", "[1600,1600,1600]"),
-            ]),
-            "FlowEnthalpyBelowWall",
-        ),
-        (stream_with(&[("history_flow_enthalpy_j_per_kg", "[1600,1600,1600]")]), "FlowEnthalpyBelowWall"),
     ];
-    for (request, name) in cases {
+    for (index, request) in answered.iter().enumerate() {
+        let (_, body) = if index == 0 {
+            connections.solved(request)
+        } else {
+            connections.solved_on_the_web(request)
+        };
+        assert_eq!(body["outcome"], "converged", "{request}");
+        for flag in ["inside_arc_jet_comparison", "inside_stardust_comparison", "inside_thermocouple_block_comparison"] {
+            assert_eq!(body["result"][flag], 0.0, "{flag}: {request}");
+        }
+        connections.assert_holds(&body);
+    }
+    // Hotter than any compared run, 3412 K, and answered; past the top of
+    // the tables, 3975 K, refused by name, the refusal sealed.
+    let hot = stream_with(&[
+        ("history_pressure_pa", "[101325,101325,101325]"),
+        ("history_heat_transfer_coefficient_kg_per_m2_s", "[0,1,1]"),
+        ("history_flow_enthalpy_j_per_kg", "[1e8,1e8,1e8]"),
+        ("thermocouple_depths_m", "[]"),
+        ("thickness_m", "0.1"),
+    ]);
+    let (_, body) = connections.solved_on_the_web(&hot);
+    assert_eq!(body["outcome"], "converged");
+    let peak = body["result"]["peak_face_temperature_k"].as_f64().unwrap();
+    assert!(peak > slab::COMPARED_TEMPERATURE_MAX_K && peak < genesis_solvers::pica::TABLE_TOP_K, "{peak}");
+    let past = stream_with(&[
+        ("history_pressure_pa", "[101325,101325,101325]"),
+        ("history_heat_transfer_coefficient_kg_per_m2_s", "[0,0.2,0.2]"),
+        ("history_flow_enthalpy_j_per_kg", "[5e7,5e7,5e7]"),
+        ("history_radiative_heating_w_per_m2", "[0,2e8,2e8]"),
+        ("thermocouple_depths_m", "[]"),
+    ]);
+    let (_, body) = connections.solved_on_the_web(&past);
+    assert_eq!(body["outcome"], "refused");
+    assert_eq!(body["reject"], "TemperatureOutOfBounds");
+    connections.assert_holds(&body);
+    // 1,600 J/kg in air below air's 1,871 J/kg at a wall at 300 K, on
+    // TACOT as on PICA: refused at the door by name.
+    for request in [
+        stream_with(&[
+            ("material", "\"TACOT 3.0\""),
+            ("history_flow_enthalpy_j_per_kg", "[1600,1600,1600]"),
+        ]),
+        stream_with(&[("history_flow_enthalpy_j_per_kg", "[1600,1600,1600]")]),
+    ] {
         let (status, text) = connections.all("/solve", "solve", &request);
-        assert_eq!(status, 422, "{name}: {text}");
+        assert_eq!(status, 422, "{text}");
         assert!(text.starts_with("Physical Violation: "), "{text}");
-        assert!(text.ends_with(&format!("({name}).")), "{name}: {text}");
+        assert!(text.ends_with("(FlowEnthalpyBelowWall)."), "{text}");
     }
     // The short stream itself, in air at 20 kPa and 425 W/cm² for 4 s, lies
     // inside the arc-jet envelope and is answered; on the Stardust slab,

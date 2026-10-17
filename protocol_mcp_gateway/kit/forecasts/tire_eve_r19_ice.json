@@ -1,0 +1,21 @@
+{
+ "model": "tire_eve_r19_ice",
+ "verdict": "met",
+ "protocol": {
+  "path": "evidence/research/tire_eve_235_55r19_ice/analysis/prereg.json",
+  "sha256": "84a380a5c948cd741ac91845fbfeac7ed1b60ed3c6a01855bcb99c996e7782c1",
+  "committed": {
+   "crate": "protocol_mcp_gateway",
+   "commit": "59099ecf158440ca104f33e1c5ffc3b1c3d77b10",
+   "utc": "2026-10-09T22:28:49Z",
+   "how": "The diff of 'Serve the tire_eve_r19_ice card in the materials domain ...' adds the pass line 'Fixed before any held-back run was opened (pre-registration SHA-256 84a380a5...7782c1)' with the result 'not yet compared with the held-back runs'; author and committer time are the same."
+  }
+ },
+ "scored": {
+  "utc": "2026-10-09T22:29:53Z",
+  "evidence": "Birth time of the held-back engine run's files in evidence/research/tire_eve_235_55r19_ice/analysis/out/engine/ (15:29:53 PDT); out/held_back_stages.csv and out/score_engine.json born 22:29:54Z."
+ },
+ "forecast_first": "held",
+ "registered_by": "backfill from the record, 2026-10-15",
+ "notes": "Committed 64 s before the held-back run; prereg.json on disk still has the committed hash, and the hash it holds of validation_protocol.md (5f980cf8...) matches the file on disk. Outside Git: analysis/prereg_hash.txt (no time in it; file born 2026-10-09T22:12:27Z). The held-back runs were inside raw/Tyre_ice_tests_Part1-3.zip on disk from 22:04Z; the seal is procedural. The forecast and the fit on the opened runs (out/forecast.json 22:10:23Z, out/fit.json 22:11:35Z) predate the hash. validation_protocol_note_2026-10-10.md (4e1557f2...) was written after the scoring and says it does not change the protocol; the hold-window analysis in RESULTS.md (2026-10-11T05:16Z) also came after. Rescorings: out/engine_final_commit, engine_integrated, engine_integrated_after_defects(_final), engine_v060 (2026-10-09T22:35Z to 2026-10-10T03:44Z); second party evidence/verification/second_party/V-33/. Commit times are the committer's clock. Public mark: GitHub-signed commit 60cb2276bc7c969cc770a9197798f43a41b5e014 at 2026-10-13T17:55:50Z."
+}

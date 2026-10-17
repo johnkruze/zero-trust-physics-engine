@@ -17,9 +17,9 @@ use rmcp::transport::TokioChildProcess;
 use serde_json::{Map, Value, json};
 use tokio::net::TcpListener;
 
-const NO_DIRECTORY: &str = "the gateway was started without a directory for dataset files.";
-/// What a check by seal adds when the dataset is not stored.
-const CHECK_BY_PARTS: &str = "A dataset returned in the answer (return \"inline\") is not stored: check it by sending its run_dataset request as 'request' with its 'dataset_seal', which runs the plan again, or by sending back the head, rows and frames_hex of its full answer (answer \"full\").";
+const NO_DIRECTORY: &str = "this connection was started without a directory for dataset files.";
+/// What a verification by seal adds when the dataset is not stored.
+const VERIFY_BY_PARTS: &str = "A dataset returned in the answer (return \"inline\") is not stored: verify it by sending its run_dataset request as 'request' with its 'dataset_seal', which runs the plan again, or by sending back the head, rows and frames_hex of its full answer (answer \"full\").";
 
 /// A folder under the system's temporary folder, removed when the test ends.
 struct TempDir(PathBuf);
@@ -257,6 +257,28 @@ async fn a_stored_dataset_is_checked_by_its_seal_and_a_change_on_disk_is_named()
     assert_eq!(report["row"], 0);
     std::fs::write(stored.folder.join("rows.jsonl"), &rows).unwrap();
 
+    // The last row line taken out of the stored rows: the first row missing
+    // is named, with the kind of fault.
+    let text = String::from_utf8(rows.clone()).unwrap();
+    let lines: Vec<&str> = text.lines().collect();
+    assert_eq!(lines.len(), 3);
+    std::fs::write(stored.folder.join("rows.jsonl"), format!("{}\n", lines[..2].join("\n"))).unwrap();
+    let report = verify_seal(&base, &seal).await;
+    assert_eq!(report["holds"], false, "{report}");
+    assert_eq!(report["cause"], "plan");
+    assert_eq!(report["row"], 2, "{report}");
+    assert_eq!(
+        report["fault"],
+        "A row was dropped: every row read stands in its own place, and row 2 is the first row missing, after the last row read. Rows read: 2; rows in the plan: 3."
+    );
+    // The first row line written twice.
+    std::fs::write(stored.folder.join("rows.jsonl"), format!("{}\n{}\n", lines[0], lines.join("\n"))).unwrap();
+    let report = verify_seal(&base, &seal).await;
+    assert_eq!((report["holds"].clone(), report["cause"].clone(), report["row"].clone()), (json!(false), json!("plan"), json!(1)), "{report}");
+    assert_eq!(report["fault"], "A row is repeated: row 0 stands in its own place and again in place 1. Rows read: 4; rows in the plan: 3.");
+    std::fs::write(stored.folder.join("rows.jsonl"), &rows).unwrap();
+    assert_eq!(verify_seal(&base, &seal).await["holds"], true);
+
     // The head changed: the receipt no longer matches.
     let text = String::from_utf8(head.clone()).unwrap();
     assert!(text.contains("\"refused\":0"));
@@ -284,12 +306,12 @@ async fn without_a_directory_files_are_refused_and_with_one_a_bad_seal_is_refuse
     // returned in the answer is checked. In version 0.2.1 it gave the sentence
     // of the file job alone.
     let (status, text) = post(&base, "/verify_dataset", &json!({ "dataset_seal": "0".repeat(64) })).await;
-    assert_eq!((status, text), (422, format!("{NO_DIRECTORY} {CHECK_BY_PARTS}")));
+    assert_eq!((status, text), (422, format!("{NO_DIRECTORY} {VERIFY_BY_PARTS}")));
 
     let dir = TempDir::new("f4");
     let base = spawn(Some(&dir)).await;
     let (status, text) = post(&base, "/verify_dataset", &json!({ "dataset_seal": "ab".repeat(32) })).await;
-    assert_eq!((status, text), (404, format!("no dataset is stored under that seal. {CHECK_BY_PARTS}")));
+    assert_eq!((status, text), (404, format!("no dataset is stored under that seal. {VERIFY_BY_PARTS}")));
 
     let stored = run_to_file(&base, &dir, &with_return(list_request("frames"), "file")).await;
     let seal = stored.seal();

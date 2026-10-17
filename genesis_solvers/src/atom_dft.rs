@@ -18,6 +18,8 @@
 //! Hartree exchange:
 //! `ε_x = -(3/4) (3/π)^{1/3} n^{1/3} = -(3/2) (9/(32 π²))^{1/3} r_s^{-1}`.
 
+use genesis_kernel::math;
+use crate::normal::NormalOrZero;
 use std::fmt;
 
 const PI: f64 = std::f64::consts::PI;
@@ -80,7 +82,7 @@ const SUBSHELLS: [(u32, u32, f64); 5] = [
 /// Why a ground state was not returned.
 #[derive(Clone, Debug, PartialEq)]
 pub enum AtomReject {
-    /// `atomic_number` is outside [`ATOMIC_NUMBER_MIN`]..=[`ATOMIC_NUMBER_MAX`].
+    /// `atomic_number` is outside [`ATOMIC_NUMBER_MIN`] to [`ATOMIC_NUMBER_MAX`], the atoms whose ground configurations the solver holds.
     AtomicNumberOutOfRange { atomic_number: u32 },
     /// The fixed subshell list could not place every electron.
     ShellsDoNotHoldElectrons { atomic_number: u32, unplaced: f64 },
@@ -113,7 +115,7 @@ impl fmt::Display for AtomReject {
         match self {
             Self::AtomicNumberOutOfRange { atomic_number } => write!(
                 f,
-                "atomic number {atomic_number} is outside {ATOMIC_NUMBER_MIN}..={ATOMIC_NUMBER_MAX}"
+                "atomic number {atomic_number} is outside {ATOMIC_NUMBER_MIN} to {ATOMIC_NUMBER_MAX}"
             ),
             Self::ShellsDoNotHoldElectrons {
                 atomic_number,
@@ -186,8 +188,39 @@ pub struct AtomGroundState {
 
 /// Ground state of the neutral atom. The grid, the mix, and the iteration cap
 /// are the constants in this file.
+///
+/// Each value of the answer below the normal range is written as zero
+/// with its sign ([`crate::normal`]).
 pub fn solve(atomic_number: u32) -> Result<AtomGroundState, AtomReject> {
+    crate::normal::held(solve_as_computed(atomic_number))
+}
+
+/// The answer as the equations compute it, before a value below the
+/// normal range is written as zero.
+fn solve_as_computed(atomic_number: u32) -> Result<AtomGroundState, AtomReject> {
     run(atomic_number, MAX_SCF_ITERATIONS, 1.0)
+}
+
+impl NormalOrZero for AtomGroundState {
+    fn normal_or_zero(&mut self) {
+        self.total_energy_ha.normal_or_zero();
+        self.kinetic_energy_ha.normal_or_zero();
+        self.electron_nucleus_energy_ha.normal_or_zero();
+        self.hartree_energy_ha.normal_or_zero();
+        self.exchange_correlation_energy_ha.normal_or_zero();
+        self.electron_count.normal_or_zero();
+        self.virial_residual_ha.normal_or_zero();
+        self.orbitals.normal_or_zero();
+        self.radial_grid_bohr.normal_or_zero();
+        self.electron_density.normal_or_zero();
+    }
+}
+
+impl NormalOrZero for Orbital {
+    fn normal_or_zero(&mut self) {
+        self.occupation.normal_or_zero();
+        self.eigenvalue_ha.normal_or_zero();
+    }
 }
 
 fn run(
@@ -325,7 +358,7 @@ fn hydrogenic_density(
         if !excess.is_finite() || excess <= 0.0 {
             return Err(AtomReject::NonFiniteValue);
         }
-        let z_shell = excess.powf(SHELL_CHARGE_POWER);
+        let z_shell = math::powf(excess, SHELL_CHARGE_POWER);
         if !z_shell.is_finite() || z_shell <= 0.0 {
             return Err(AtomReject::NonFiniteValue);
         }
@@ -365,9 +398,9 @@ struct Grid {
 
 impl Grid {
     fn new() -> Self {
-        let h = (R_MAX_BOHR / R_MIN_BOHR).ln() / (GRID_POINTS - 1) as f64;
+        let h = math::log(R_MAX_BOHR / R_MIN_BOHR) / (GRID_POINTS - 1) as f64;
         let r = (0..GRID_POINTS)
-            .map(|i| R_MIN_BOHR * (i as f64 * h).exp())
+            .map(|i| R_MIN_BOHR * math::exp(i as f64 * h))
             .collect();
         Self { r, h, h2: h * h }
     }
@@ -428,7 +461,7 @@ fn fill_g(l: u32, v: &[f64], energy: f64, r: &[f64], g: &mut [f64]) {
 }
 
 fn series_y(r: f64, l: u32, z: f64) -> f64 {
-    r.powf(l as f64 + 0.5) * (1.0 - z * r / (l as f64 + 1.0))
+    math::powf(r, l as f64 + 0.5) * (1.0 - z * r / (l as f64 + 1.0))
 }
 
 enum Side {
@@ -526,7 +559,7 @@ fn matched_wave(grid: &Grid, l: u32, z: f64, scratch: &mut Scratch) -> Result<Ma
     let s_b = scratch.g[ib].max(0.0).sqrt();
     let s_b1 = scratch.g[ib - 1].max(0.0).sqrt();
     scratch.y_in[ib] = 1.0;
-    scratch.y_in[ib - 1] = (0.5 * (s_b + s_b1) * grid.h).exp();
+    scratch.y_in[ib - 1] = math::exp(0.5 * (s_b + s_b1) * grid.h);
     let h2 = grid.h2;
     for i in (m + 1..ib).rev() {
         if scratch.y_in[i].abs() > 1.0e200 {
@@ -875,7 +908,7 @@ fn slater_exchange(rho: f64) -> (f64, f64) {
     if !(rho > 0.0) {
         return (0.0, 0.0);
     }
-    let v_x = -((3.0 / PI) * rho).cbrt();
+    let v_x = -math::cbrt((3.0 / PI) * rho);
     (0.75 * v_x, v_x)
 }
 
@@ -884,7 +917,7 @@ fn vwn_correlation(rho: f64) -> (f64, f64) {
     if !(rho > 0.0) {
         return (0.0, 0.0);
     }
-    let rs = (3.0 / (4.0 * PI * rho)).cbrt();
+    let rs = math::cbrt(3.0 / (4.0 * PI * rho));
     let x = rs.sqrt();
     if !x.is_finite() || x == 0.0 {
         return (0.0, 0.0);
@@ -892,10 +925,10 @@ fn vwn_correlation(rho: f64) -> (f64, f64) {
     let q = (4.0 * VWN_C - VWN_B * VWN_B).sqrt();
     let x0_poly = VWN_X0 * VWN_X0 + VWN_B * VWN_X0 + VWN_C;
     let xx = x * x + VWN_B * x + VWN_C;
-    let ln1 = -(1.0 + VWN_B / x + VWN_C / (x * x)).ln();
+    let ln1 = -math::log(1.0 + VWN_B / x + VWN_C / (x * x));
     let dx0 = x - VWN_X0;
-    let ln3 = ((dx0 * dx0) / xx).ln();
-    let ar = (q / (2.0 * x + VWN_B)).atan();
+    let ln3 = math::log((dx0 * dx0) / xx);
+    let ar = math::atan(q / (2.0 * x + VWN_B));
     let pref = (VWN_B * VWN_X0) / x0_poly;
     let angle_weight = 2.0 * (VWN_B + 2.0 * VWN_X0) / q;
     let eps = VWN_A * (ln1 + (2.0 * VWN_B / q) * ar - pref * (ln3 + angle_weight * ar));

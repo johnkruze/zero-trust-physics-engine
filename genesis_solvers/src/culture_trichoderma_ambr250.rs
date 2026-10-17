@@ -40,47 +40,42 @@
 //! the feed stops; here galacturonate uptake does not depend on the glucose
 //! supplied. The solver is not validated against measurement.
 //!
-//! The second scoring of 2026-10-09 (`evidence/checks/second_party/V-41`)
+//! The second scoring of 2026-10-09 (`evidence/verification/second_party/V-41`)
 //! confirmed every number. It found that the form fails and not the
 //! constants: refitted to all twelve cultures the same equations still miss
 //! the same three lines (4.30 g/L, 5.21 g/L and 0.0108 mol). The eight fitted
 //! cultures were fed one glucose level, which cannot fix any dependence of
 //! galacturonate oxidation on the glucose supplied.
 //!
-//! What the solver refuses since that scoring, set with the held-back
-//! cultures seen and not a blind choice. A feed whose glucose is outside the
-//! fitted cultures' own, [`FEED_GLUCOSE_MIN_G_PER_L`] to
-//! [`FEED_GLUCOSE_MAX_G_PER_L`] (29.375 to 34.676 g/L, which the record
-//! rounds to 29.4 to 34.7), is refused as `FeedGlucoseOutOfRange`: outside it
-//! galacturonate and mucic acid are wrong by 6 to 8 g/L from about 60 h on.
-//! The four held-back questions, fed 10.077, 11.06, 48.32 and 52.101 g/L, are
-//! therefore refused today; the build that answered them and its four sealed
-//! answers are the record of why. A record that ends later than
-//! [`RUN_END_MAX_H`], 215 h, is refused as `RunTooLong`: mucic acid, carbon
-//! dioxide and oxygen were compared with measurement to 215 h, mucic acid
-//! fails after it, and no fitted culture had galacturonate left when its
-//! feed stopped near 250 h. Dry biomass is compared to 170 h only.
+//! What the solver answers. Every start, feed, schedule and record the
+//! equations can take, held only by their own limits: a concentration is not
+//! below zero, a feed is not below zero, the broth stays in the vessel, above
+//! zero and up to [`VOLUME_MAX_ML`], the 250 mL the ambr 250 vessel holds, a
+//! concentration the settled record drives below zero is refused
+//! (`ConcentrationBelowZero`), a step that does not settle is refused
+//! (`NotSettled`), and both ledgers must close. A record ends by
+//! [`RUN_END_MAX_H`], the capacity of one solve. Water only dilutes and a
+//! sample takes broth as it is, with no fitted constant. Every compound is
+//! taken as dissolved, as the mucic acid crystals are.
 //!
-//! What the solver refuses since 0.7.0, the operating record held to the
-//! eight fitted cultures' own. Those cultures were unfed until 21.18 or
-//! 22.87 h, fed 0.0914 to 0.2234 mL/h in the segment where the feed began,
-//! and 0.2432 to 0.3301 mL/h in every later segment to 211.28 or 213.18 h;
-//! none went unfed or below 0.2432 mL/h once its feed had begun, in those
-//! segments. A segment's feed is an even
-//! rate over the segment, and that rate must lie inside this schedule at
-//! every hour of the segment: no feed before [`FEED_START_EARLIEST_H`], at
-//! most [`FEED_START_RATE_MAX_ML_PER_H`] before [`FEED_START_WINDOW_END_H`]
-//! and [`FEED_RATE_MAX_ML_PER_H`] after, at least
-//! [`FEED_START_RATE_MIN_ML_PER_H`] from [`FEED_START_LATEST_H`] and
-//! [`FEED_RATE_MIN_ML_PER_H`] from [`FEED_FULL_FROM_H`]. A rate above
-//! [`FEED_RATE_MAX_ML_PER_H`] is `FeedRateOutOfRange`; any other feed outside
-//! the schedule is `FeedScheduleOutOfRange`. A segment that runs from before
-//! 43.45 h to after 45.19 h has no rate inside and is refused. The water, the
-//! samples and the broth volume are held to the fitted cultures' own spans:
-//! water -0.296 to 0.19 mL/h, samples of at most 4.3 mL, broth 98.0 to
-//! 122.15 mL. The starting biomass, glucose and galacturonate are held to the
-//! fitted cultures' own: 0.600 to 1.034, 20.097 to 21.025 and 4.146 to 4.745
-//! g/L.
+//! What was compared, stated and not enforced. The twelve compared cultures,
+//! the eight fitted and the four held back, were started at 0.600 to 1.067
+//! g/L biomass, 20.097 to 21.151 g/L glucose and 4.146 to 4.774 g/L
+//! galacturonate; fed 10.077 to 52.101 g/L glucose (fitted 29.375 to
+//! 34.676; outside it galacturonate and mucic acid were wrong by 6 to 8 g/L
+//! from about 60 h on) and 88.5 to 103.3 g/L galacturonate; unfed until
+//! 21.18 or 22.87 h, fed 0.0914 to 0.2234 mL/h in the segment where the feed
+//! began, 0.2421 to 0.3301 mL/h in every later segment to 211.28 or 213.18
+//! h, and from 211.28 h, when the feeds were slowed and then stopped, 0.0093
+//! to 0.2601 mL/h. Their records end at 307.12 and 312 h, and mucic acid,
+//! carbon dioxide and oxygen were compared to 215 h, after which mucic acid
+//! misses its line on the fitted cultures themselves. Their segments were at
+//! most 98.8 h, their water -0.3122 to 0.2284 mL/h, their samples 4.3 mL and
+//! their broth 97.67 to 127.70 mL. Until this version every start, feed and
+//! the feed schedule were held to the twelve cultures' own, and a record to
+//! 312 h; through engine 0.8.0 the four held-back questions were refused,
+//! and the build that answered them for the scored run is the record of the
+//! score.
 //!
 //! What is left out. Yeast extract, as a nutrient and as carbon; nitrogen,
 //! with ammonia taken as its source in the electron count; oxygen limitation
@@ -126,12 +121,14 @@
 //! of its scale between one halving and the next. The finer of the last two
 //! is returned.
 //!
-//! Range ends. A limit on a number the caller's arithmetic produces (a
-//! segment's length, a rate, a time, the volume) is held with an allowance of
-//! [`RANGE_END_ALLOWANCE`] of that limit itself, so that a record that ends
-//! exactly on a limit in decimal is inside it in binary. A limit at zero has
-//! no allowance.
+//! Range ends. The broth volume, a number the caller's arithmetic produces,
+//! is held to the vessel with an allowance of [`RANGE_END_ALLOWANCE`] of the
+//! limit itself, so that a broth that ends exactly at 250 mL in decimal is
+//! inside it in binary. A limit at zero has no allowance, and the record's
+//! end, a capacity, has none: a record that ends at [`RUN_END_MAX_H`] or
+//! before is answered.
 
+use crate::normal::NormalOrZero;
 use std::fmt;
 
 /// Largest glucose uptake, g glucose per g biomass per hour. Fitted.
@@ -170,99 +167,54 @@ pub const MUCIC_ACID_ELECTRONS_PER_MOL: f64 = 18.0;
 
 /// Broth in the vessel at inoculation, mL.
 pub const CHARGE_ML: f64 = 110.0;
-/// Smallest starting biomass taken, g/L: the smallest the fitted cultures were
-/// started with, 0.600000000000156 in T2 YE 0 (2) and the second block's
-/// others, rounded outward to the thousandth. It was 0.3 until 0.7.0.
-pub const BIOMASS_MIN_G_PER_L: f64 = 0.6;
-/// Largest starting biomass taken, g/L: the largest the fitted cultures were
-/// started with, 1.0333 in T2 YE 1 (2), rounded outward to the thousandth. It
-/// was 1.5 until 0.7.0.
-pub const BIOMASS_MAX_G_PER_L: f64 = 1.034;
-/// Smallest starting glucose taken, g/L: the smallest the fitted cultures were
-/// started with, 20.097 in T2 YE 0.5 (1). It was 19.0 until 0.7.0.
-pub const GLUCOSE_MIN_G_PER_L: f64 = 20.097;
-/// Largest starting glucose taken, g/L: the largest the fitted cultures were
-/// started with, 21.025 in T2 YE 1 (2). It was 22.0 until 0.7.0.
-pub const GLUCOSE_MAX_G_PER_L: f64 = 21.025;
-/// Smallest starting galacturonate taken, g/L: the smallest the fitted cultures
-/// were started with, 4.146 in T2 YE 0 (2). It was 3.5 until 0.7.0.
-pub const GALACTURONATE_MIN_G_PER_L: f64 = 4.146;
-/// Largest starting galacturonate taken, g/L: the largest the fitted cultures
-/// were started with, 4.7445 in T2 pH 4 (1), rounded outward to the thousandth.
-/// It was 5.5 until 0.7.0.
-pub const GALACTURONATE_MAX_G_PER_L: f64 = 4.745;
-/// Smallest glucose in the feed taken, g/L: the smallest of the eight fitted
-/// cultures, T2 YE 0.5 (1). It was 9.0 for the scored run, which showed the
-/// model wrong at a feed of about 10.
-pub const FEED_GLUCOSE_MIN_G_PER_L: f64 = 29.375;
-/// Largest glucose in the feed taken, g/L: the largest of the eight fitted
-/// cultures, T2 YE 0 (2). It was 54.0 for the scored run, which showed the
-/// model wrong at a feed of about 50.
-pub const FEED_GLUCOSE_MAX_G_PER_L: f64 = 34.676;
-/// Smallest galacturonate in the feed taken, g/L.
-pub const FEED_GALACTURONATE_MIN_G_PER_L: f64 = 80.0;
-/// Largest galacturonate in the feed taken, g/L. The constants were fitted at 88.5 to 103.3.
-pub const FEED_GALACTURONATE_MAX_G_PER_L: f64 = 110.0;
+/// The starting biomass of the twelve compared cultures, g/L: 0.600000000000156
+/// in T2 YE 0 (2) and the second block's others, to 1.0667 in T2 glucose 50
+/// (2), rounded outward to the thousandth. Stated, not enforced: any start
+/// from zero is answered. Until this version it was the start's range.
+pub const COMPARED_BIOMASS_G_PER_L: (f64, f64) = (0.6, 1.067);
+/// The starting glucose of the twelve compared cultures, g/L: 20.097 in T2 YE
+/// 0.5 (1) to 21.151 in T2 glucose 10 (2). Stated, not enforced.
+pub const COMPARED_GLUCOSE_G_PER_L: (f64, f64) = (20.097, 21.151);
+/// The starting galacturonate of the twelve compared cultures, g/L: 4.146 in
+/// T2 YE 0 (2) to 4.7735 in T2 glucose 50 (1), rounded outward to the
+/// thousandth. Stated, not enforced.
+pub const COMPARED_GALACTURONATE_G_PER_L: (f64, f64) = (4.146, 4.774);
+/// The glucose in the feed of the twelve compared cultures, g/L: the held-back
+/// T2 glucose 10 (1) to T2 glucose 50 (2), where galacturonate and mucic acid
+/// were wrong by 6 to 8 g/L from about 60 h on. Stated, not enforced.
+pub const COMPARED_FEED_GLUCOSE_G_PER_L: (f64, f64) = (10.077, 52.101);
+/// The feed glucose of the eight fitted cultures, g/L: T2 YE 0.5 (1) to
+/// T2 YE 0 (2). Stated, not enforced.
+pub const FITTED_FEED_GLUCOSE_G_PER_L: (f64, f64) = (29.375, 34.676);
+/// The galacturonate in the feed of the twelve compared cultures, g/L: the
+/// fitted 88.5 to 103.3, the held-back 89.257 to 97.5675. Stated, not
+/// enforced; until this version a feed outside 80 to 110 g/L was refused.
+pub const COMPARED_FEED_GALACTURONATE_G_PER_L: (f64, f64) = (88.5, 103.3);
 /// Fewest segments of an operating record.
 pub const SEGMENTS_MIN: usize = 1;
 /// Most segments of an operating record.
 pub const SEGMENTS_MAX: usize = 32;
-/// Shortest segment taken, h.
-pub const SEGMENT_MIN_H: f64 = 1.0;
-/// Longest segment taken, h. The longest between two samples of a fitted culture was 98.8.
-pub const SEGMENT_MAX_H: f64 = 100.0;
-/// Latest end of a record, h after inoculation: the end of what was compared
-/// with measurement for mucic acid, carbon dioxide and oxygen. The fitted
-/// cultures ran 307 to 312 h, and it was 320 for the scored run; after 215 h
-/// mucic acid misses its line on the fitted cultures themselves.
-pub const RUN_END_MAX_H: f64 = 215.0;
-/// Fastest feed taken, mL/h, in any segment: the fastest segment of the
-/// fitted cultures, 0.3301 mL/h in T2 pH 4 (2) from 43.45 to 67.45 h. It was
-/// 0.40 until 0.7.0.
-pub const FEED_RATE_MAX_ML_PER_H: f64 = 0.331;
-/// Earliest time the feed may run, h after inoculation. The fitted cultures
-/// were unfed until 21.18 h (block 1) or 22.87 h (block 2); a segment that
-/// starts before this takes no feed.
-pub const FEED_START_EARLIEST_H: f64 = 21.18;
-/// End of the window in which the feed is started, h: until this hour the
-/// feed is at most [`FEED_START_RATE_MAX_ML_PER_H`]. The second block's first
-/// full-rate segment starts at 43.45 h.
-pub const FEED_START_WINDOW_END_H: f64 = 43.45;
-/// Fastest feed while it is being started, mL/h: the fastest segment in
-/// which a fitted culture's feed began, 0.2234 mL/h in T2 YE 0.5 (2).
-pub const FEED_START_RATE_MAX_ML_PER_H: f64 = 0.2234;
-/// Latest time the feed may still be off, h: from this hour a segment is fed
-/// at least [`FEED_START_RATE_MIN_ML_PER_H`]. The second block's feed began
-/// at 22.87 h.
-pub const FEED_START_LATEST_H: f64 = 22.87;
-/// Slowest feed while it is being started, mL/h: the slowest segment in which
-/// a fitted culture's feed began, 0.0914 mL/h in T2 pH 4 (1).
-pub const FEED_START_RATE_MIN_ML_PER_H: f64 = 0.0913;
-/// Time from which the feed runs at its full rate, h: from this hour a
-/// segment is fed at least [`FEED_RATE_MIN_ML_PER_H`]. The first block's
-/// first fed segment ends at 45.18 h.
-pub const FEED_FULL_FROM_H: f64 = 45.19;
-/// Slowest feed taken once it runs at its full rate, mL/h: the slowest
-/// segment of the fitted cultures after the one in which the feed began,
-/// 0.2432 mL/h in T2 YE 0.5 (1) from 189.18 to 213.18 h. No fitted culture
-/// went unfed or below this in those segments.
-pub const FEED_RATE_MIN_ML_PER_H: f64 = 0.243;
-/// Fastest loss of water taken, mL/h, as a negative rate: the fitted cultures
-/// lost up to 0.2956 mL/h over a segment. It was -0.40 until 0.7.0.
-pub const WATER_RATE_MIN_ML_PER_H: f64 = -0.296;
-/// Fastest gain of water taken, mL/h: the fitted cultures gained up to 0.1894
-/// mL/h over a segment. It was 0.30 until 0.7.0.
-pub const WATER_RATE_MAX_ML_PER_H: f64 = 0.19;
-/// Largest sample taken, mL. Every sample of the fitted cultures was 4.3. It
-/// was 5.0 until 0.7.0.
-pub const SAMPLE_MAX_ML: f64 = 4.3;
-/// Smallest broth volume taken, mL: the fitted cultures held 98.03 mL at the
-/// least, at the end of a segment or after its sample. It was 90 until 0.7.0.
-pub const VOLUME_MIN_ML: f64 = 98.0;
-/// Largest broth volume taken, mL: the fitted cultures held 122.15 mL at the
-/// most by 215 h, the end of the record (127.70 mL at 259.28 h, after it). It
-/// was 135 until 0.7.0.
-pub const VOLUME_MAX_ML: f64 = 122.15;
+/// The longest segment of the twelve compared cultures, h: 98.8 h between two
+/// samples. Stated, not enforced: any segment above zero length is answered.
+pub const COMPARED_SEGMENT_MAX_H: f64 = 98.82;
+/// Latest end of a record, h after inoculation: the capacity of one solve, and
+/// no physics. A solve steps every hour of the record in steps of at most
+/// [`FIRST_STEP_H`], then with every step halved, up to [`MAX_HALVINGS`]
+/// times: up to 511 passes' worth, about 10,240 Runge-Kutta steps for each
+/// hour. At 1000 h the slowest solve, every halving taken, took 0.68 s on one
+/// core of an Apple M4 Pro (2026-10-14; 0.22 s at 312 h). The twelve compared
+/// cultures' records end at 307.12 and 312 h ([`COMPARED_RECORD_END_H`]);
+/// until this version that was the limit.
+pub const RUN_END_MAX_H: f64 = 1000.0;
+/// The end of the twelve compared cultures' records, h. Stated, not enforced.
+pub const COMPARED_RECORD_END_H: f64 = 312.0;
+/// The end of what was compared with measurement for mucic acid, carbon
+/// dioxide and oxygen, h. Stated, not enforced.
+pub const COMPARED_RUN_END_H: f64 = 215.0;
+/// Most broth the vessel holds, mL: the top of the ambr 250 vessel's working
+/// volume. Below zero there is no broth; at zero the dilution rate is not
+/// finite. The twelve compared cultures held 97.67 to 127.70 mL.
+pub const VOLUME_MAX_ML: f64 = 250.0;
 /// Fraction of a limit by which a computed number may pass it: decimal ends are inside.
 pub const RANGE_END_ALLOWANCE: f64 = 1.0e-12;
 
@@ -291,33 +243,29 @@ pub const REFERENCE_RETRIEVED: &str = "2026-10-09";
 pub enum CultureReject {
     /// An intermediate value was NaN or infinite, or an input was when the solver is called directly: through the gateway no input can be, since a number that is not finite is not JSON.
     NonFiniteValue,
-    /// `biomass_g_per_l` is outside [`BIOMASS_MIN_G_PER_L`]..=[`BIOMASS_MAX_G_PER_L`], the starts of the eight fitted cultures.
-    BiomassOutOfRange { biomass_g_per_l: f64 },
-    /// `glucose_g_per_l` is outside [`GLUCOSE_MIN_G_PER_L`]..=[`GLUCOSE_MAX_G_PER_L`], the starts of the eight fitted cultures.
-    GlucoseOutOfRange { glucose_g_per_l: f64 },
-    /// `galacturonate_g_per_l` is outside [`GALACTURONATE_MIN_G_PER_L`]..=[`GALACTURONATE_MAX_G_PER_L`], the starts of the eight fitted cultures.
-    GalacturonateOutOfRange { galacturonate_g_per_l: f64 },
-    /// `feed_glucose_g_per_l` is outside [`FEED_GLUCOSE_MIN_G_PER_L`]..=[`FEED_GLUCOSE_MAX_G_PER_L`], the feeds of the eight fitted cultures.
-    FeedGlucoseOutOfRange { feed_glucose_g_per_l: f64 },
-    /// `feed_galacturonate_g_per_l` is outside [`FEED_GALACTURONATE_MIN_G_PER_L`]..=[`FEED_GALACTURONATE_MAX_G_PER_L`], the feeds measured.
-    FeedGalacturonateOutOfRange { feed_galacturonate_g_per_l: f64 },
+    /// `biomass_g_per_l` is below zero: a concentration is not negative.
+    BiomassNegative { biomass_g_per_l: f64 },
+    /// `glucose_g_per_l` is below zero: a concentration is not negative.
+    GlucoseNegative { glucose_g_per_l: f64 },
+    /// `galacturonate_g_per_l` is below zero: a concentration is not negative.
+    GalacturonateNegative { galacturonate_g_per_l: f64 },
+    /// `feed_glucose_g_per_l` is below zero: a concentration is not negative.
+    FeedGlucoseNegative { feed_glucose_g_per_l: f64 },
+    /// `feed_galacturonate_g_per_l` is below zero: a concentration is not negative.
+    FeedGalacturonateNegative { feed_galacturonate_g_per_l: f64 },
     /// The record has fewer than [`SEGMENTS_MIN`] or more than [`SEGMENTS_MAX`] segments.
     SegmentCountOutOfRange { segments: usize },
     /// The end times, the feed volumes, the water volumes and the sample volumes are not one for each segment.
     SegmentsDoNotMatch { ends: usize, feeds: usize, waters: usize, samples: usize },
-    /// A segment is shorter than [`SEGMENT_MIN_H`] or longer than [`SEGMENT_MAX_H`], or ends at or before the segment before it.
-    SegmentLengthOutOfRange { segment: usize, length_h: f64 },
-    /// The record ends later than [`RUN_END_MAX_H`] after inoculation, the end of what was compared with measurement.
+    /// A segment ends at or before the segment before it, or at or before inoculation.
+    SegmentNotRising { segment: usize, length_h: f64 },
+    /// The record ends later than [`RUN_END_MAX_H`] after inoculation, the capacity of one solve: its Runge-Kutta steps grow with the record's length, up to 10,240 for each hour when every halving is taken.
     RunTooLong { end_h: f64 },
-    /// A segment's feed is below zero or faster than [`FEED_RATE_MAX_ML_PER_H`].
-    FeedRateOutOfRange { segment: usize, feed_ml_per_h: f64 },
-    /// A segment's feed is outside the fitted cultures' schedule at some hour of the segment: fed before [`FEED_START_EARLIEST_H`], faster than [`FEED_START_RATE_MAX_ML_PER_H`] before [`FEED_START_WINDOW_END_H`], slower than [`FEED_START_RATE_MIN_ML_PER_H`] from [`FEED_START_LATEST_H`], or slower than [`FEED_RATE_MIN_ML_PER_H`] from [`FEED_FULL_FROM_H`].
-    FeedScheduleOutOfRange { segment: usize, start_h: f64, end_h: f64, feed_ml_per_h: f64, least_ml_per_h: f64, most_ml_per_h: f64 },
-    /// A segment's water is outside [`WATER_RATE_MIN_ML_PER_H`]..=[`WATER_RATE_MAX_ML_PER_H`].
-    WaterRateOutOfRange { segment: usize, water_ml_per_h: f64 },
-    /// A segment's sample is below zero or above [`SAMPLE_MAX_ML`].
-    SampleOutOfRange { segment: usize, sample_ml: f64 },
-    /// The broth volume leaves [`VOLUME_MIN_ML`]..=[`VOLUME_MAX_ML`] at the end of a segment or after its sample.
+    /// A segment's feed is below zero: no pump takes broth back into the feed.
+    FeedRateNegative { segment: usize, feed_ml: f64 },
+    /// A segment's sample is below zero.
+    SampleNegative { segment: usize, sample_ml: f64 },
+    /// The broth is not above zero, or is more than the vessel's [`VOLUME_MAX_ML`], at the end of a segment or after its sample.
     VolumeOutOfRange { segment: usize, volume_ml: f64 },
     /// A concentration fell below zero in the settled record.
     ConcentrationBelowZero { segment: usize },
@@ -334,19 +282,17 @@ impl CultureReject {
     pub fn name(&self) -> &'static str {
         match self {
             Self::NonFiniteValue => "NonFiniteValue",
-            Self::BiomassOutOfRange { .. } => "BiomassOutOfRange",
-            Self::GlucoseOutOfRange { .. } => "GlucoseOutOfRange",
-            Self::GalacturonateOutOfRange { .. } => "GalacturonateOutOfRange",
-            Self::FeedGlucoseOutOfRange { .. } => "FeedGlucoseOutOfRange",
-            Self::FeedGalacturonateOutOfRange { .. } => "FeedGalacturonateOutOfRange",
+            Self::BiomassNegative { .. } => "BiomassNegative",
+            Self::GlucoseNegative { .. } => "GlucoseNegative",
+            Self::GalacturonateNegative { .. } => "GalacturonateNegative",
+            Self::FeedGlucoseNegative { .. } => "FeedGlucoseNegative",
+            Self::FeedGalacturonateNegative { .. } => "FeedGalacturonateNegative",
             Self::SegmentCountOutOfRange { .. } => "SegmentCountOutOfRange",
             Self::SegmentsDoNotMatch { .. } => "SegmentsDoNotMatch",
-            Self::SegmentLengthOutOfRange { .. } => "SegmentLengthOutOfRange",
+            Self::SegmentNotRising { .. } => "SegmentNotRising",
             Self::RunTooLong { .. } => "RunTooLong",
-            Self::FeedRateOutOfRange { .. } => "FeedRateOutOfRange",
-            Self::FeedScheduleOutOfRange { .. } => "FeedScheduleOutOfRange",
-            Self::WaterRateOutOfRange { .. } => "WaterRateOutOfRange",
-            Self::SampleOutOfRange { .. } => "SampleOutOfRange",
+            Self::FeedRateNegative { .. } => "FeedRateNegative",
+            Self::SampleNegative { .. } => "SampleNegative",
             Self::VolumeOutOfRange { .. } => "VolumeOutOfRange",
             Self::ConcentrationBelowZero { .. } => "ConcentrationBelowZero",
             Self::NotSettled { .. } => "NotSettled",
@@ -360,73 +306,56 @@ impl fmt::Display for CultureReject {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::NonFiniteValue => write!(f, "an input or a computed value was not finite"),
-            Self::BiomassOutOfRange { biomass_g_per_l } => write!(
+            Self::BiomassNegative { biomass_g_per_l } => {
+                write!(f, "starting biomass {biomass_g_per_l} g/L is below zero: a concentration is not negative")
+            }
+            Self::GlucoseNegative { glucose_g_per_l } => {
+                write!(f, "starting glucose {glucose_g_per_l} g/L is below zero: a concentration is not negative")
+            }
+            Self::GalacturonateNegative { galacturonate_g_per_l } => write!(
                 f,
-                "starting biomass {biomass_g_per_l} g/L is outside {BIOMASS_MIN_G_PER_L}..={BIOMASS_MAX_G_PER_L}, the starts of the eight fitted cultures"
+                "starting galacturonate {galacturonate_g_per_l} g/L is below zero: a concentration is not negative"
             ),
-            Self::GlucoseOutOfRange { glucose_g_per_l } => write!(
+            Self::FeedGlucoseNegative { feed_glucose_g_per_l } => {
+                write!(f, "feed glucose {feed_glucose_g_per_l} g/L is below zero: a concentration is not negative")
+            }
+            Self::FeedGalacturonateNegative { feed_galacturonate_g_per_l } => write!(
                 f,
-                "starting glucose {glucose_g_per_l} g/L is outside {GLUCOSE_MIN_G_PER_L}..={GLUCOSE_MAX_G_PER_L}, the starts of the eight fitted cultures"
-            ),
-            Self::GalacturonateOutOfRange { galacturonate_g_per_l } => write!(
-                f,
-                "starting galacturonate {galacturonate_g_per_l} g/L is outside {GALACTURONATE_MIN_G_PER_L}..={GALACTURONATE_MAX_G_PER_L}, the starts of the eight fitted cultures"
-            ),
-            Self::FeedGlucoseOutOfRange { feed_glucose_g_per_l } => write!(
-                f,
-                "feed glucose {feed_glucose_g_per_l} g/L is outside {FEED_GLUCOSE_MIN_G_PER_L}..={FEED_GLUCOSE_MAX_G_PER_L}, the feeds of the eight fitted cultures"
-            ),
-            Self::FeedGalacturonateOutOfRange { feed_galacturonate_g_per_l } => write!(
-                f,
-                "feed galacturonate {feed_galacturonate_g_per_l} g/L is outside {FEED_GALACTURONATE_MIN_G_PER_L}..={FEED_GALACTURONATE_MAX_G_PER_L}, the feeds measured"
+                "feed galacturonate {feed_galacturonate_g_per_l} g/L is below zero: a concentration is not negative"
             ),
             Self::SegmentCountOutOfRange { segments } => {
-                write!(f, "{segments} segments is outside {SEGMENTS_MIN}..={SEGMENTS_MAX}")
+                write!(f, "{segments} segments is outside {SEGMENTS_MIN} to {SEGMENTS_MAX} segments")
             }
             Self::SegmentsDoNotMatch { ends, feeds, waters, samples } => write!(
                 f,
                 "{ends} end times, {feeds} feed volumes, {waters} water volumes and {samples} sample volumes are not one for each segment"
             ),
-            Self::SegmentLengthOutOfRange { segment, length_h } => write!(
+            Self::SegmentNotRising { segment, length_h } => write!(
                 f,
-                "segment {segment} is {length_h} h long, outside {SEGMENT_MIN_H}..={SEGMENT_MAX_H}"
+                "segment {} is {length_h} h long: it does not end after the segment before it",
+                segment + 1
             ),
-            Self::RunTooLong { end_h } => {
-                write!(f, "the record ends at {end_h} h, later than {RUN_END_MAX_H} h after inoculation, the end of what was compared with measurement")
-            }
-            Self::FeedRateOutOfRange { segment, feed_ml_per_h } => write!(
+            Self::RunTooLong { end_h } => write!(
                 f,
-                "segment {segment} is fed at {feed_ml_per_h} mL/h, outside 0..={FEED_RATE_MAX_ML_PER_H}"
+                "the record ends at {end_h} h, later than {RUN_END_MAX_H} h after inoculation, the capacity of one solve: its Runge-Kutta steps grow with the record's length, up to 10,240 for each hour when every halving is taken"
             ),
-            // A range is written low to high. Where the schedule asks more at
-            // the segment's end than it allows at its start, no feed is
-            // inside, and the sentence says so in place of a range.
-            Self::FeedScheduleOutOfRange { segment, start_h, end_h, feed_ml_per_h, least_ml_per_h, most_ml_per_h }
-                if least_ml_per_h > most_ml_per_h =>
-            {
-                write!(
-                    f,
-                    "segment {segment}, from {start_h} h to {end_h} h, is fed at {feed_ml_per_h} mL/h, and no feed lies inside the feeds of the eight fitted cultures over those hours: they allow at most {most_ml_per_h} mL/h from its start and ask at least {least_ml_per_h} mL/h by its end, so the segment cannot be fed; end a segment between those hours"
-                )
-            }
-            Self::FeedScheduleOutOfRange { segment, start_h, end_h, feed_ml_per_h, least_ml_per_h, most_ml_per_h } => write!(
+            Self::FeedRateNegative { segment, feed_ml } => write!(
                 f,
-                "segment {segment}, from {start_h} h to {end_h} h, is fed at {feed_ml_per_h} mL/h, outside {least_ml_per_h}..={most_ml_per_h}, the feeds of the eight fitted cultures over those hours"
+                "segment {} is fed {feed_ml} mL, below zero: no pump takes broth back into the feed",
+                segment + 1
             ),
-            Self::WaterRateOutOfRange { segment, water_ml_per_h } => write!(
+            Self::SampleNegative { segment, sample_ml } => write!(
                 f,
-                "segment {segment} takes water at {water_ml_per_h} mL/h, outside {WATER_RATE_MIN_ML_PER_H}..={WATER_RATE_MAX_ML_PER_H}"
-            ),
-            Self::SampleOutOfRange { segment, sample_ml } => write!(
-                f,
-                "segment {segment} ends with a sample of {sample_ml} mL, outside 0..={SAMPLE_MAX_ML}"
+                "segment {} ends with a sample of {sample_ml} mL, below zero",
+                segment + 1
             ),
             Self::VolumeOutOfRange { segment, volume_ml } => write!(
                 f,
-                "the broth is {volume_ml} mL at the end of segment {segment}, outside {VOLUME_MIN_ML}..={VOLUME_MAX_ML}"
+                "the broth is {volume_ml} mL at the end of segment {}: it must be above 0 and at most {VOLUME_MAX_ML} mL, the vessel's working volume",
+                segment + 1
             ),
             Self::ConcentrationBelowZero { segment } => {
-                write!(f, "a concentration is below zero at the end of segment {segment}")
+                write!(f, "a concentration is below zero at the end of segment {}", segment + 1)
             }
             Self::NotSettled { halvings } => {
                 write!(f, "a published number was still moving after {halvings} halvings of the step")
@@ -679,9 +608,8 @@ fn pass(reactions: &Reactions, question: &Question<'_>, pieces: u32) -> Pass {
         electrons_supplied += feed_electrons_per_l * question.feed_ml[segment] / 1000.0;
         let carbon_found = carbon_per_l(&y) * y[4] + carbon_drawn + y[5];
         let electrons_found = electrons_per_l(&y) * y[4] + electrons_drawn + 4.0 * y[6];
-        carbon_residual = carbon_residual.max(((carbon_found - carbon_supplied) / carbon_supplied).abs());
-        electron_residual = electron_residual
-            .max(((electrons_found - electrons_supplied) / electrons_supplied).abs());
+        carbon_residual = carbon_residual.max(ledger_gap(carbon_found, carbon_supplied));
+        electron_residual = electron_residual.max(ledger_gap(electrons_found, electrons_supplied));
         if !(carbon_found.is_finite() && electrons_found.is_finite()) {
             carbon_residual = f64::NAN;
         }
@@ -700,43 +628,21 @@ fn pass(reactions: &Reactions, question: &Question<'_>, pieces: u32) -> Pass {
     }
 }
 
+/// What a ledger found against what was supplied, over what was supplied. A
+/// vessel and a feed with no carbon at all supply none: nothing can be found,
+/// and the ledger closes at zero if nothing is.
+fn ledger_gap(found: f64, supplied: f64) -> f64 {
+    if supplied == 0.0 {
+        if found == 0.0 { 0.0 } else { f64::INFINITY }
+    } else {
+        ((found - supplied) / supplied).abs()
+    }
+}
+
 /// Each end is held with the allowance of its own size: an end at zero has none.
 fn inside(value: f64, minimum: f64, maximum: f64) -> bool {
     value >= minimum - RANGE_END_ALLOWANCE * minimum.abs()
         && value <= maximum + RANGE_END_ALLOWANCE * maximum.abs()
-}
-
-/// `time_h` is before `limit_h`, by more than the allowance of the limit.
-fn before(time_h: f64, limit_h: f64) -> bool {
-    time_h < limit_h - RANGE_END_ALLOWANCE * limit_h
-}
-
-/// `time_h` is after `limit_h`, by more than the allowance of the limit.
-fn after(time_h: f64, limit_h: f64) -> bool {
-    time_h > limit_h + RANGE_END_ALLOWANCE * limit_h
-}
-
-/// The feed rates the fitted cultures were fed at, at every hour of a
-/// segment from `start_h` to `end_h`: the slowest and the fastest an even
-/// rate over the whole segment may be. The fastest is zero where the segment
-/// starts before the feed could run, and the slowest is above the fastest
-/// where the segment spans the start window and the full feed both.
-fn feed_schedule(start_h: f64, end_h: f64) -> (f64, f64) {
-    let most = if before(start_h, FEED_START_EARLIEST_H) {
-        0.0
-    } else if before(start_h, FEED_START_WINDOW_END_H) {
-        FEED_START_RATE_MAX_ML_PER_H
-    } else {
-        FEED_RATE_MAX_ML_PER_H
-    };
-    let least = if after(end_h, FEED_FULL_FROM_H) {
-        FEED_RATE_MIN_ML_PER_H
-    } else if after(end_h, FEED_START_LATEST_H) {
-        FEED_START_RATE_MIN_ML_PER_H
-    } else {
-        0.0
-    };
-    (least, most)
 }
 
 /// Every limit the question itself shows, in the order the solver asks them.
@@ -756,30 +662,20 @@ pub fn check_question(question: &Question<'_>) -> Result<(), CultureReject> {
     {
         return Err(CultureReject::NonFiniteValue);
     }
-    if !(question.biomass_g_per_l >= BIOMASS_MIN_G_PER_L && question.biomass_g_per_l <= BIOMASS_MAX_G_PER_L) {
-        return Err(CultureReject::BiomassOutOfRange { biomass_g_per_l: question.biomass_g_per_l });
+    if !(question.biomass_g_per_l >= 0.0) {
+        return Err(CultureReject::BiomassNegative { biomass_g_per_l: question.biomass_g_per_l });
     }
-    if !(question.glucose_g_per_l >= GLUCOSE_MIN_G_PER_L && question.glucose_g_per_l <= GLUCOSE_MAX_G_PER_L) {
-        return Err(CultureReject::GlucoseOutOfRange { glucose_g_per_l: question.glucose_g_per_l });
+    if !(question.glucose_g_per_l >= 0.0) {
+        return Err(CultureReject::GlucoseNegative { glucose_g_per_l: question.glucose_g_per_l });
     }
-    if !(question.galacturonate_g_per_l >= GALACTURONATE_MIN_G_PER_L
-        && question.galacturonate_g_per_l <= GALACTURONATE_MAX_G_PER_L)
-    {
-        return Err(CultureReject::GalacturonateOutOfRange {
-            galacturonate_g_per_l: question.galacturonate_g_per_l,
-        });
+    if !(question.galacturonate_g_per_l >= 0.0) {
+        return Err(CultureReject::GalacturonateNegative { galacturonate_g_per_l: question.galacturonate_g_per_l });
     }
-    if !(question.feed_glucose_g_per_l >= FEED_GLUCOSE_MIN_G_PER_L
-        && question.feed_glucose_g_per_l <= FEED_GLUCOSE_MAX_G_PER_L)
-    {
-        return Err(CultureReject::FeedGlucoseOutOfRange {
-            feed_glucose_g_per_l: question.feed_glucose_g_per_l,
-        });
+    if !(question.feed_glucose_g_per_l >= 0.0) {
+        return Err(CultureReject::FeedGlucoseNegative { feed_glucose_g_per_l: question.feed_glucose_g_per_l });
     }
-    if !(question.feed_galacturonate_g_per_l >= FEED_GALACTURONATE_MIN_G_PER_L
-        && question.feed_galacturonate_g_per_l <= FEED_GALACTURONATE_MAX_G_PER_L)
-    {
-        return Err(CultureReject::FeedGalacturonateOutOfRange {
+    if !(question.feed_galacturonate_g_per_l >= 0.0) {
+        return Err(CultureReject::FeedGalacturonateNegative {
             feed_galacturonate_g_per_l: question.feed_galacturonate_g_per_l,
         });
     }
@@ -802,41 +698,27 @@ pub fn check_question(question: &Question<'_>) -> Result<(), CultureReject> {
     for segment in 0..segments {
         let end_h = question.segment_end_h[segment];
         let length_h = end_h - start_h;
-        if !inside(length_h, SEGMENT_MIN_H, SEGMENT_MAX_H) {
-            return Err(CultureReject::SegmentLengthOutOfRange { segment, length_h });
+        if !(length_h > 0.0) {
+            return Err(CultureReject::SegmentNotRising { segment, length_h });
         }
-        if !inside(end_h, 0.0, RUN_END_MAX_H) {
+        if !(end_h <= RUN_END_MAX_H) {
             return Err(CultureReject::RunTooLong { end_h });
         }
-        let feed_ml_per_h = question.feed_ml[segment] / length_h;
-        if !(question.feed_ml[segment] >= 0.0 && inside(feed_ml_per_h, 0.0, FEED_RATE_MAX_ML_PER_H)) {
-            return Err(CultureReject::FeedRateOutOfRange { segment, feed_ml_per_h });
-        }
-        let (least_ml_per_h, most_ml_per_h) = feed_schedule(start_h, end_h);
-        if !(least_ml_per_h <= most_ml_per_h && inside(feed_ml_per_h, least_ml_per_h, most_ml_per_h)) {
-            return Err(CultureReject::FeedScheduleOutOfRange {
-                segment,
-                start_h,
-                end_h,
-                feed_ml_per_h,
-                least_ml_per_h,
-                most_ml_per_h,
-            });
-        }
-        let water_ml_per_h = question.water_ml[segment] / length_h;
-        if !inside(water_ml_per_h, WATER_RATE_MIN_ML_PER_H, WATER_RATE_MAX_ML_PER_H) {
-            return Err(CultureReject::WaterRateOutOfRange { segment, water_ml_per_h });
+        if !(question.feed_ml[segment] >= 0.0) {
+            return Err(CultureReject::FeedRateNegative { segment, feed_ml: question.feed_ml[segment] });
         }
         let sample_ml = question.sample_ml[segment];
-        if !(sample_ml >= 0.0 && sample_ml <= SAMPLE_MAX_ML) {
-            return Err(CultureReject::SampleOutOfRange { segment, sample_ml });
+        if !(sample_ml >= 0.0) {
+            return Err(CultureReject::SampleNegative { segment, sample_ml });
         }
+        // The broth through the segment moves linearly from its start to its
+        // end, so it stays inside the vessel if both ends do.
         volume_ml += question.feed_ml[segment] + question.water_ml[segment];
-        if !inside(volume_ml, VOLUME_MIN_ML, VOLUME_MAX_ML) {
+        if !(volume_ml > 0.0 && inside(volume_ml, 0.0, VOLUME_MAX_ML)) {
             return Err(CultureReject::VolumeOutOfRange { segment, volume_ml });
         }
         volume_ml -= sample_ml;
-        if !inside(volume_ml, VOLUME_MIN_ML, VOLUME_MAX_ML) {
+        if !(volume_ml > 0.0 && inside(volume_ml, 0.0, VOLUME_MAX_ML)) {
             return Err(CultureReject::VolumeOutOfRange { segment, volume_ml });
         }
         start_h = end_h;
@@ -846,8 +728,33 @@ pub fn check_question(question: &Question<'_>) -> Result<(), CultureReject> {
 
 /// The culture at the end of every segment of the record, settled, or the
 /// named limit that stopped it.
+///
+/// Each value of the answer below the normal range is written as zero
+/// with its sign ([`crate::normal`]).
 pub fn solve(question: &Question<'_>) -> Result<Culture, CultureReject> {
+    crate::normal::held(solve_as_computed(question))
+}
+
+/// The answer as the equations compute it, before a value below the
+/// normal range is written as zero.
+fn solve_as_computed(question: &Question<'_>) -> Result<Culture, CultureReject> {
     settle(&Reactions::of_the_specimen(), question)
+}
+
+impl NormalOrZero for Culture {
+    fn normal_or_zero(&mut self) {
+        self.biomass_g_per_l.normal_or_zero();
+        self.glucose_g_per_l.normal_or_zero();
+        self.galacturonate_g_per_l.normal_or_zero();
+        self.mucic_acid_g_per_l.normal_or_zero();
+        self.volume_ml.normal_or_zero();
+        self.carbon_dioxide_mol.normal_or_zero();
+        self.oxygen_mol.normal_or_zero();
+        self.carbon_supplied_mol.normal_or_zero();
+        self.carbon_residual.normal_or_zero();
+        self.electron_residual.normal_or_zero();
+        self.settle_gap.normal_or_zero();
+    }
 }
 
 fn settle(reactions: &Reactions, question: &Question<'_>) -> Result<Culture, CultureReject> {
@@ -1036,7 +943,7 @@ mod tests {
     /// it was fitted on: the measured values within the stated allowances.
     #[test]
     fn the_opened_culture_of_the_zenodo_record_is_followed() {
-        assert!(ENDS_H[SERVED_SEGMENTS - 1] <= RUN_END_MAX_H && ENDS_H[SERVED_SEGMENTS] > RUN_END_MAX_H);
+        assert!(ENDS_H[SERVED_SEGMENTS - 1] <= COMPARED_RUN_END_H && ENDS_H[SERVED_SEGMENTS] > COMPARED_RUN_END_H);
         let culture = solve(&opened()).expect("settles");
         assert_eq!(culture.biomass_g_per_l.len(), SERVED_SEGMENTS);
         for segment in 0..SERVED_SEGMENTS {
@@ -1073,17 +980,15 @@ mod tests {
 
     /// The same culture against values worked outside Rust with Python
     /// mpmath at 50 digits, the step halved there until fifteen figures
-    /// stood (`evidence/checks/crosscheck/culture_trichoderma_ambr250/`).
-    /// Those values are of the whole record, to 307 h, which `solve` refuses
-    /// since the record ends at 215 h: the integration is called past the
-    /// check of the question, as a test of the arithmetic and of nothing the
-    /// solver serves. The whole record through `solve` is `RunTooLong`, and
-    /// the nine served segments are the first nine of the whole, bit for bit
-    /// where both settle at the same halving.
+    /// stood (`evidence/verification/crosscheck/culture_trichoderma_ambr250/`).
+    /// Those values are of the whole record, to 307 h, which `solve` answers
+    /// since engine 0.9.0 (it refused it from 0.7.0, when the record ended at
+    /// 215 h), and the nine segments compared to 215 h are the first nine of
+    /// the whole, bit for bit where both settle at the same halving.
     #[test]
     fn the_settled_culture_matches_fifty_digit_arithmetic() {
-        assert_eq!(solve(&whole_opened()), Err(CultureReject::RunTooLong { end_h: ENDS_H[SERVED_SEGMENTS] }));
         let culture = integrate(&Reactions::of_the_specimen(), &whole_opened()).expect("settles");
+        assert_eq!(solve(&whole_opened()), Ok(culture.clone()));
         let served = solve(&opened()).expect("settles");
         if served.halvings == culture.halvings {
             for segment in 0..SERVED_SEGMENTS {
@@ -1164,108 +1069,69 @@ mod tests {
         let base = asked(&record);
         let name = |question: &Question<'_>| solve(question).expect_err("refused").name();
         assert_eq!(name(&Question { biomass_g_per_l: f64::NAN, ..base.clone() }), "NonFiniteValue");
-        assert_eq!(name(&Question { biomass_g_per_l: 0.29, ..base.clone() }), "BiomassOutOfRange");
-        assert_eq!(name(&Question { biomass_g_per_l: 1.51, ..base.clone() }), "BiomassOutOfRange");
-        assert_eq!(name(&Question { glucose_g_per_l: 18.9, ..base.clone() }), "GlucoseOutOfRange");
-        assert_eq!(name(&Question { glucose_g_per_l: 50.0, ..base.clone() }), "GlucoseOutOfRange");
-        assert_eq!(name(&Question { galacturonate_g_per_l: 0.0, ..base.clone() }), "GalacturonateOutOfRange");
-        // The starts are the eight fitted cultures' own: one unit in the last place outside each
-        // end is refused, and the 0.6.0 ends with it.
-        assert_eq!((BIOMASS_MIN_G_PER_L, BIOMASS_MAX_G_PER_L), (0.6, 1.034));
-        assert_eq!((GLUCOSE_MIN_G_PER_L, GLUCOSE_MAX_G_PER_L), (20.097, 21.025));
-        assert_eq!((GALACTURONATE_MIN_G_PER_L, GALACTURONATE_MAX_G_PER_L), (4.146, 4.745));
-        let below = |x: f64| f64::from_bits(x.to_bits() - 1);
-        let above = |x: f64| f64::from_bits(x.to_bits() + 1);
-        for biomass in [below(BIOMASS_MIN_G_PER_L), above(BIOMASS_MAX_G_PER_L), 0.3, 1.5, 0.59, 1.04] {
-            assert_eq!(name(&Question { biomass_g_per_l: biomass, ..base.clone() }), "BiomassOutOfRange", "{biomass}");
-        }
-        for glucose in [below(GLUCOSE_MIN_G_PER_L), above(GLUCOSE_MAX_G_PER_L), 19.0, 22.0, 20.09, 21.03] {
-            assert_eq!(name(&Question { glucose_g_per_l: glucose, ..base.clone() }), "GlucoseOutOfRange", "{glucose}");
-        }
-        for galacturonate in [below(GALACTURONATE_MIN_G_PER_L), above(GALACTURONATE_MAX_G_PER_L), 3.5, 5.5, 4.14, 4.75] {
-            assert_eq!(
-                name(&Question { galacturonate_g_per_l: galacturonate, ..base.clone() }),
-                "GalacturonateOutOfRange",
-                "{galacturonate}"
-            );
-        }
-        // The eight fitted starts are inside.
-        for (biomass, glucose, galacturonate) in [
-            (0.9333333333333046, 20.151, 4.656499999999999),
-            (0.600000000000156, 20.676, 4.146),
-            (0.9333333333333046, 20.097, 4.6754999999999995),
-            (0.600000000000156, 20.782, 4.5525),
-            (0.9333333333333046, 20.439, 4.7145),
-            (1.0333333333333676, 21.025, 4.619),
-            (0.9333333333333046, 20.37, 4.7445),
-            (0.8666666666666453, 20.886, 4.6025),
+        // A concentration below zero, by one unit in the last place, is named; zero is inside.
+        let below_zero = -f64::from_bits(1);
+        for (question, refused) in [
+            (Question { biomass_g_per_l: below_zero, ..base.clone() }, "BiomassNegative"),
+            (Question { glucose_g_per_l: below_zero, ..base.clone() }, "GlucoseNegative"),
+            (Question { galacturonate_g_per_l: below_zero, ..base.clone() }, "GalacturonateNegative"),
+            (Question { feed_glucose_g_per_l: below_zero, ..base.clone() }, "FeedGlucoseNegative"),
+            (Question { feed_galacturonate_g_per_l: below_zero, ..base.clone() }, "FeedGalacturonateNegative"),
+            (Question { biomass_g_per_l: -1.0, ..base.clone() }, "BiomassNegative"),
         ] {
-            let question = Question {
-                biomass_g_per_l: biomass,
-                glucose_g_per_l: glucose,
-                galacturonate_g_per_l: galacturonate,
-                ..base.clone()
-            };
-            assert_eq!(check_question(&question), Ok(()), "{biomass} {glucose} {galacturonate}");
+            assert_eq!(name(&question), refused);
         }
-        assert_eq!((FEED_GLUCOSE_MIN_G_PER_L, FEED_GLUCOSE_MAX_G_PER_L), (29.375, 34.676));
-        // One unit in the last place outside the fitted feeds, and the four held-back feeds.
-        for feed in [f64::from_bits(29.375_f64.to_bits() - 1), f64::from_bits(34.676_f64.to_bits() + 1), 29.37, 34.68, 10.077, 11.06, 48.32, 52.101, 9.0, 54.0] {
-            assert_eq!(name(&Question { feed_glucose_g_per_l: feed, ..base.clone() }), "FeedGlucoseOutOfRange", "{feed}");
+        for question in [
+            Question { biomass_g_per_l: 0.0, ..base.clone() },
+            Question { glucose_g_per_l: 0.0, ..base.clone() },
+            Question { galacturonate_g_per_l: 0.0, ..base.clone() },
+            Question { feed_glucose_g_per_l: 0.0, ..base.clone() },
+            Question { feed_galacturonate_g_per_l: 0.0, ..base.clone() },
+        ] {
+            assert_eq!(check_question(&question), Ok(()));
         }
-        // The eight fitted feeds are inside.
-        for feed in [31.753, 34.676, 29.375, 33.432, 30.92, 33.685, 30.109, 34.082] {
-            assert_eq!(check_question(&Question { feed_glucose_g_per_l: feed, ..base.clone() }), Ok(()), "{feed}");
+        // What engine 0.12.0 held to the twelve compared cultures' own starts
+        // and feeds, and the 0.6.0 ends with them, is asked of the physics now.
+        for question in [
+            Question { biomass_g_per_l: 0.3, ..base.clone() },
+            Question { biomass_g_per_l: 1.5, ..base.clone() },
+            Question { glucose_g_per_l: 19.0, ..base.clone() },
+            Question { glucose_g_per_l: 50.0, ..base.clone() },
+            Question { galacturonate_g_per_l: 3.5, ..base.clone() },
+            Question { galacturonate_g_per_l: 5.5, ..base.clone() },
+            Question { feed_glucose_g_per_l: 9.0, ..base.clone() },
+            Question { feed_glucose_g_per_l: 54.0, ..base.clone() },
+            Question { feed_galacturonate_g_per_l: 70.0, ..base.clone() },
+            Question { feed_galacturonate_g_per_l: 111.0, ..base.clone() },
+        ] {
+            assert_eq!(check_question(&question), Ok(()));
         }
-        assert_eq!(
-            name(&Question { feed_galacturonate_g_per_l: 111.0, ..base.clone() }),
-            "FeedGalacturonateOutOfRange"
-        );
         assert_eq!(name(&Question { segment_end_h: &[], ..base.clone() }), "SegmentCountOutOfRange");
         assert_eq!(name(&Question { feed_ml: &[0.0, 6.0], ..base.clone() }), "SegmentsDoNotMatch");
-        assert_eq!(name(&Question { segment_end_h: &[22.0, 22.5, 68.0], ..base.clone() }), "SegmentLengthOutOfRange");
-        assert_eq!(name(&Question { segment_end_h: &[22.0, 20.0, 68.0], ..base.clone() }), "SegmentLengthOutOfRange");
-        assert_eq!(name(&Question { segment_end_h: &[22.0, 44.0, 144.5], ..base.clone() }), "SegmentLengthOutOfRange");
-        assert_eq!(name(&Question { feed_ml: &[0.0, 4.4, 9.7], ..base.clone() }), "FeedRateOutOfRange");
-        assert_eq!(name(&Question { feed_ml: &[0.0, -0.1, 7.2], ..base.clone() }), "FeedRateOutOfRange");
-        // 0.4 mL/h, the old fastest feed, and 0.332 mL/h after the feed is full.
-        assert_eq!(name(&Question { feed_ml: &[0.0, 4.4, 0.4 * 24.0], ..base.clone() }), "FeedRateOutOfRange");
-        assert_eq!(name(&Question { feed_ml: &[0.0, 4.4, 0.332 * 24.0], ..base.clone() }), "FeedRateOutOfRange");
-        assert_eq!(name(&Question { water_ml: &[-9.7, -1.0, 0.5], ..base.clone() }), "WaterRateOutOfRange");
-        assert_eq!(name(&Question { water_ml: &[-2.0, 7.3, 0.5], ..base.clone() }), "WaterRateOutOfRange");
-        // Just past the fitted water spans, -0.296 and 0.19 mL/h, and the old ends -0.4 and 0.3.
-        for water in [-0.2961, 0.1901, -0.4, 0.3] {
-            assert_eq!(name(&Question { water_ml: &[-2.0, -1.0, water * 24.0], ..base.clone() }), "WaterRateOutOfRange", "{water}");
+        assert_eq!(name(&Question { segment_end_h: &[22.0, 22.0, 68.0], ..base.clone() }), "SegmentNotRising");
+        assert_eq!(name(&Question { segment_end_h: &[22.0, 20.0, 68.0], ..base.clone() }), "SegmentNotRising");
+        assert_eq!(name(&Question { segment_end_h: &[0.0, 44.0, 68.0], ..base.clone() }), "SegmentNotRising");
+        assert_eq!(name(&Question { feed_ml: &[0.0, -0.1, 7.2], ..base.clone() }), "FeedRateNegative");
+        assert_eq!(name(&Question { feed_ml: &[0.0, 4.4, below_zero], ..base.clone() }), "FeedRateNegative");
+        // 0.4 mL/h, the old fastest feed, and a feed from inoculation are asked of the vessel now.
+        for feed in [[0.0, 4.4, 0.4 * 24.0], [1.0, 4.4, 7.2], [0.0, 4.4, 0.0], [0.0, 0.0, 0.0]] {
+            assert_eq!(check_question(&Question { feed_ml: &feed, ..base.clone() }), Ok(()), "{feed:?}");
         }
-        assert_eq!(name(&Question { sample_ml: &[4.3, 4.31, 4.3], ..base.clone() }), "SampleOutOfRange");
-        assert_eq!(name(&Question { sample_ml: &[4.3, 5.0, 4.3], ..base.clone() }), "SampleOutOfRange");
-        assert_eq!(name(&Question { sample_ml: &[4.3, -1.0, 4.3], ..base.clone() }), "SampleOutOfRange");
-        // 110 - 2 - 4.3 + 4.4 - 6 = 102.1 mL, 97.8 after the second sample.
-        assert_eq!(name(&Question { water_ml: &[-2.0, -6.0, 0.5], ..base.clone() }), "VolumeOutOfRange");
-        // 110 + 4.18 + 4.4 + 4.18 + 7.2 + 0.5 = 130.46 mL less two samples, 121.86, under 122.15; with
-        // no samples it is 122.76 at the end of the second segment.
-        assert_eq!(
-            check_question(&Question { water_ml: &[4.18, 4.18, 0.5], ..base.clone() }),
-            Ok(())
-        );
-        assert_eq!(
-            name(&Question { water_ml: &[4.18, 4.18, 0.5], sample_ml: &[0.0, 0.0, 0.0], ..base.clone() }),
-            "VolumeOutOfRange"
-        );
-        let long = to(215.01);
+        // Water and samples are mass balance alone: only the broth leaving the vessel stops them.
+        for water in [[-9.7, -1.0, 0.5], [-2.0, 7.3, 0.5], [-2.0, -1.0, -0.4 * 24.0], [-2.0, -1.0, 0.3 * 24.0]] {
+            assert_eq!(check_question(&Question { water_ml: &water, ..base.clone() }), Ok(()), "{water:?}");
+        }
+        for samples in [[4.3, 4.31, 4.3], [4.3, 5.0, 4.3], [0.0, 50.0, 0.0]] {
+            assert_eq!(check_question(&Question { sample_ml: &samples, ..base.clone() }), Ok(()), "{samples:?}");
+        }
+        assert_eq!(name(&Question { sample_ml: &[4.3, -1.0, 4.3], ..base.clone() }), "SampleNegative");
+        // Broth drawn to nothing, or past what the vessel holds; a feed that overfills it.
+        assert_eq!(name(&Question { sample_ml: &[4.3, 120.0, 4.3], ..base.clone() }), "VolumeOutOfRange");
+        assert_eq!(name(&Question { water_ml: &[-110.0, -1.0, 0.5], ..base.clone() }), "VolumeOutOfRange");
+        assert_eq!(name(&Question { water_ml: &[150.0, -1.0, 0.5], ..base.clone() }), "VolumeOutOfRange");
+        assert_eq!(name(&Question { feed_ml: &[0.0, 4.4, 150.0], ..base.clone() }), "VolumeOutOfRange");
+        let long = to(RUN_END_MAX_H + 0.01);
         assert_eq!(name(&asked(&long)), "RunTooLong");
-        // The limit of the scored run, 320 h, is past the record's end today.
-        let ends = [21.5, 45.0, 140.0, 240.0, 320.0];
-        assert_eq!(
-            name(&Question {
-                segment_end_h: &ends,
-                feed_ml: &[0.0, 2.25, 23.75, 25.0, 0.0],
-                water_ml: &[-4.5, -0.75, -19.0, -20.0, 0.0],
-                sample_ml: &[4.3; 5],
-                ..base.clone()
-            }),
-            "RunTooLong"
-        );
         let many = vec![0.0; 33];
         let ends: Vec<f64> = (1..=33).map(|segment| 2.0 * f64::from(segment)).collect();
         assert_eq!(
@@ -1275,137 +1141,48 @@ mod tests {
     }
 
     /// The exact decimal ends of every range are inside it, also where the
-    /// limit is asked of a number the caller's arithmetic produced: a
-    /// segment 0.1 + 0.2 + 0.7 hours long, a feed of 0.331 mL/h over 7.3 h, a
-    /// record that ends exactly at 215 h, a volume that ends exactly at 98 mL.
+    /// limit is asked of a number the caller's arithmetic produced: a record
+    /// that ends exactly at its capacity, and a volume that ends exactly at
+    /// 250 mL.
     #[test]
     fn the_exact_ends_of_every_range_are_inside() {
         let record = short();
         let base = asked(&record);
-        for question in [
-            Question { biomass_g_per_l: BIOMASS_MIN_G_PER_L, ..base.clone() },
-            Question { biomass_g_per_l: BIOMASS_MAX_G_PER_L, ..base.clone() },
-            Question { glucose_g_per_l: GLUCOSE_MIN_G_PER_L, ..base.clone() },
-            Question { glucose_g_per_l: GLUCOSE_MAX_G_PER_L, ..base.clone() },
-            Question { galacturonate_g_per_l: GALACTURONATE_MIN_G_PER_L, ..base.clone() },
-            Question { galacturonate_g_per_l: GALACTURONATE_MAX_G_PER_L, ..base.clone() },
-            Question { feed_glucose_g_per_l: FEED_GLUCOSE_MIN_G_PER_L, ..base.clone() },
-            Question { feed_glucose_g_per_l: FEED_GLUCOSE_MAX_G_PER_L, ..base.clone() },
-            Question { feed_galacturonate_g_per_l: FEED_GALACTURONATE_MIN_G_PER_L, ..base.clone() },
-            Question { feed_galacturonate_g_per_l: FEED_GALACTURONATE_MAX_G_PER_L, ..base.clone() },
-        ] {
-            assert_eq!(check_question(&question), Ok(()));
-        }
-        // A one-hour segment reached as 0.1 + 0.2 + 0.7, which is not 1.0 in
-        // binary, fed and watered at the fastest rates.
-        let end = 44.0 + 0.1 + 0.2 + 0.7;
-        let one_hour = Question {
-            segment_end_h: &[22.0, 44.0, end],
-            feed_ml: &[0.0, 4.4, FEED_RATE_MAX_ML_PER_H],
-            water_ml: &[-2.0, -1.0, WATER_RATE_MAX_ML_PER_H],
-            sample_ml: &[4.3, 4.3, 0.0],
-            ..base.clone()
-        };
-        assert_eq!(check_question(&one_hour), Ok(()));
-        // Rates exactly at their ends over lengths that do not divide evenly:
-        // the fastest and the slowest feed while it is started, from 22 h,
-        // and once it is full, from 44 h, with the fastest gain and loss of
-        // water. 22 + 23.19 is 45.19 h, the last hour of the start window.
-        for length in [7.3_f64, 20.1, 21.45, 23.19] {
-            for feed_ml in [FEED_START_RATE_MAX_ML_PER_H * length, FEED_START_RATE_MIN_ML_PER_H * length] {
-                for water_ml in [WATER_RATE_MAX_ML_PER_H * length, WATER_RATE_MIN_ML_PER_H * length] {
-                    let question = Question {
-                        segment_end_h: &[22.0, 22.0 + length],
-                        feed_ml: &[0.0, feed_ml],
-                        water_ml: &[0.0, water_ml],
-                        sample_ml: &[0.0, 0.0],
-                        ..base.clone()
-                    };
-                    assert_eq!(check_question(&question), Ok(()), "{length} {feed_ml} {water_ml}");
-                }
-            }
-        }
-        for length in [7.3_f64, 20.1, 33.3, 41.7] {
-            for (feed_ml, water_ml) in [
-                (FEED_RATE_MAX_ML_PER_H * length, 0.0),
-                (FEED_RATE_MIN_ML_PER_H * length, WATER_RATE_MAX_ML_PER_H * length),
-                (FEED_RATE_MIN_ML_PER_H * length, WATER_RATE_MIN_ML_PER_H * length),
-            ] {
-                let question = Question {
-                    segment_end_h: &[22.0, 44.0, 44.0 + length],
-                    feed_ml: &[0.0, 4.4, feed_ml],
-                    water_ml: &[-2.0, -1.0, water_ml],
-                    sample_ml: &[4.3, 4.3, 0.0],
-                    ..base.clone()
-                };
-                assert_eq!(check_question(&question), Ok(()), "{length} {feed_ml} {water_ml}");
-            }
-        }
-        // The schedule's own hours as decimal ends: the feed begins at 21.18 h
-        // and runs at its start rate to 43.45 h, then at its fastest.
-        let hours = Question {
-            segment_end_h: &[21.18, 43.45, 67.45],
-            feed_ml: &[0.0, FEED_START_RATE_MAX_ML_PER_H * (43.45 - 21.18), FEED_RATE_MAX_ML_PER_H * 24.0],
-            water_ml: &[0.0, 0.0, 0.0],
-            sample_ml: &[4.3, 4.3, 0.0],
-            ..base.clone()
-        };
-        assert_eq!(check_question(&hours), Ok(()));
-        // Just past each rate, the limit is named.
-        let past = |feed_ml: f64, water_ml: f64| {
-            check_question(&Question {
-                segment_end_h: &[22.0, 44.0, 64.0],
-                feed_ml: &[0.0, 4.4, feed_ml],
-                water_ml: &[-2.0, -1.0, water_ml],
-                sample_ml: &[4.3, 4.3, 0.0],
-                ..base.clone()
-            })
-            .expect_err("refused")
-            .name()
-        };
-        assert_eq!(past(6.620_001, 0.0), "FeedRateOutOfRange");
-        assert_eq!(past(4.859_999, 0.0), "FeedScheduleOutOfRange");
-        assert_eq!(past(6.0, 3.800_001), "WaterRateOutOfRange");
-        assert_eq!(past(6.0, -5.920_001), "WaterRateOutOfRange");
-        // The record ends exactly at 215 h, and its last step is taken: as
-        // one decimal, and as the sum of fifty steps of 4.3 h, which in binary is
-        // 215.00000000000017, above the limit by less than the allowance.
-        assert_eq!(RUN_END_MAX_H, 215.0);
-        let summed = (0..50).fold(0.0_f64, |sum, _| sum + 4.3);
-        assert!(summed > 215.0 && summed - 215.0 < RANGE_END_ALLOWANCE * 215.0);
-        for last in [215.0, summed] {
+        // The record ends exactly at its capacity and its last step is taken:
+        // as one decimal and as the sum of 400 steps of 2.5 h, which is
+        // exact. The capacity carries no allowance: the next number above it
+        // is refused.
+        assert_eq!(RUN_END_MAX_H, 1000.0);
+        let summed = (0..400).fold(0.0_f64, |sum, _| sum + 2.5);
+        assert_eq!(summed, RUN_END_MAX_H);
+        for last in [215.01, COMPARED_RECORD_END_H, RUN_END_MAX_H, summed] {
             let record = to(last);
-            let culture = solve(&asked(&record)).expect("the record that ends on the limit settles");
-            assert_eq!(culture.biomass_g_per_l.len(), 5);
+            assert_eq!(check_question(&asked(&record)), Ok(()), "{last}");
         }
-        for past in [215.01, 215.5, 259.2840625, 280.0] {
+        for past in [RUN_END_MAX_H.next_up(), RUN_END_MAX_H + 0.01, 1100.0] {
             let record = to(past);
             assert!(matches!(check_question(&asked(&record)), Err(CultureReject::RunTooLong { .. })), "{past}");
         }
-        // The volume ends exactly at 98 mL: 110 - 5 - 4.3 + 2.2 - 0.6 - 4.3.
-        let low = Question {
-            segment_end_h: &[22.0, 44.0],
-            feed_ml: &[0.0, 2.2],
-            water_ml: &[-5.0, -0.6],
-            sample_ml: &[4.3, 4.3],
-            ..base.clone()
-        };
-        assert_eq!(check_question(&low), Ok(()));
-        // And exactly at 122.15 mL, the fitted cultures' most by 215 h: 110 + 4.18 + 4.4 + 3.57.
+        // The volume ends exactly at 250 mL, the vessel's top: 110 + 100 + 4.4 + 35.6.
         // A broth a ten-millionth of a mL above it is refused.
-        assert_eq!(VOLUME_MAX_ML, 122.15);
+        assert_eq!(VOLUME_MAX_ML, 250.0);
         let high = Question {
             segment_end_h: &[22.0, 44.0],
             feed_ml: &[0.0, 4.4],
-            water_ml: &[4.18, 3.57],
+            water_ml: &[100.0, 35.6],
             sample_ml: &[0.0, 0.0],
             ..base.clone()
         };
         assert_eq!(check_question(&high), Ok(()));
-        let over = Question { water_ml: &[4.18, 3.570_000_1], ..high.clone() };
+        let over = Question { water_ml: &[100.0, 35.600_000_1], ..high.clone() };
         assert!(matches!(check_question(&over), Err(CultureReject::VolumeOutOfRange { .. })));
-        // 127.7 mL, which the fitted cultures reached only at 259.28 h, after the record's end, is
-        // refused: 110 + 4.18 + 4.4 + 4.18 + 12 - 7.06.
+        // The same top reached by the feed alone, 110 + 140 mL in one segment.
+        let fed = Question { feed_ml: &[0.0, 140.0], water_ml: &[0.0, 0.0], ..high.clone() };
+        assert_eq!(check_question(&fed), Ok(()));
+        let overfed = Question { feed_ml: &[0.0, 140.000_000_1], ..fed.clone() };
+        assert!(matches!(check_question(&overfed), Err(CultureReject::VolumeOutOfRange { .. })));
+        // 127.7 mL, the most the compared cultures held, at 259.28 h, is inside:
+        // 110 + 4.18 + 4.4 + 4.18 + 12 - 7.06.
         let past = Question {
             segment_end_h: &[22.0, 44.0, 84.0],
             feed_ml: &[0.0, 4.4, 12.0],
@@ -1413,49 +1190,156 @@ mod tests {
             sample_ml: &[0.0, 0.0, 0.0],
             ..base
         };
-        assert!(matches!(check_question(&past), Err(CultureReject::VolumeOutOfRange { .. })));
+        assert_eq!(check_question(&past), Ok(()));
     }
 
-    /// Each end of a range is held with the allowance of its own size, not of
-    /// the larger end: a one-hour segment 5e-11 h short is refused, as the
-    /// 100 h end would have let it pass before 0.7.0, and one 5e-13 h short
-    /// is inside.
+    /// Past every wall engine 0.12.0 held at the twelve compared cultures'
+    /// own starts, feeds, schedule and record end, the same equations are
+    /// settled and both ledgers close: no biomass, ten times the biomass, no
+    /// glucose and five times the glucose at the start, no galacturonate and
+    /// thirty grams of it, a feed of no sugar at all and of 200 g/L glucose
+    /// and 300 g/L galacturonate, a feed of 1 mL/h from inoculation until the
+    /// vessel is nearly full, and a record of 1000 h. A vessel with no carbon
+    /// at all supplies none and finds none.
     #[test]
-    fn each_end_has_the_allowance_of_its_own_size() {
+    fn past_the_old_walls_the_ledgers_close() {
         let record = short();
         let base = asked(&record);
-        let segment = |length: f64| {
-            check_question(&Question {
-                segment_end_h: &[20.0, 20.0 + length],
-                feed_ml: &[0.0, 0.0],
-                water_ml: &[0.0, 0.0],
-                sample_ml: &[0.0, 0.0],
-                ..base.clone()
-            })
+        let fast = (vec![22.0, 44.0, 68.0], vec![22.0, 22.0, 24.0], vec![-2.0, -1.0, 0.5], vec![4.3, 4.3, 4.3]);
+        let thousand = to(1000.0);
+        let questions = [
+            Question { biomass_g_per_l: 0.0, ..base.clone() },
+            Question { biomass_g_per_l: 9.0, ..base.clone() },
+            Question { glucose_g_per_l: 0.0, ..base.clone() },
+            Question { glucose_g_per_l: 100.0, ..base.clone() },
+            Question { galacturonate_g_per_l: 0.0, ..base.clone() },
+            Question { galacturonate_g_per_l: 30.0, ..base.clone() },
+            Question { feed_glucose_g_per_l: 0.0, feed_galacturonate_g_per_l: 0.0, ..base.clone() },
+            Question { feed_glucose_g_per_l: 200.0, feed_galacturonate_g_per_l: 300.0, ..base.clone() },
+            asked(&fast),
+            asked(&thousand),
+        ];
+        for (index, question) in questions.iter().enumerate() {
+            let culture = solve(question).unwrap_or_else(|reject| panic!("{index}: {reject}"));
+            assert!(culture.carbon_residual <= LEDGER_TOLERANCE, "{index}: {}", culture.carbon_residual);
+            assert!(culture.electron_residual <= LEDGER_TOLERANCE, "{index}: {}", culture.electron_residual);
+            assert!(culture.settle_gap <= SETTLE_TOLERANCE, "{index}");
+            for end in 0..culture.biomass_g_per_l.len() {
+                for value in [culture.biomass_g_per_l[end], culture.glucose_g_per_l[end], culture.galacturonate_g_per_l[end], culture.mucic_acid_g_per_l[end]] {
+                    assert!(value >= 0.0, "{index}: {value}");
+                }
+            }
+        }
+        // No biomass: nothing grows, and the sugars are only fed and diluted.
+        let empty = solve(&questions[0]).expect("settles");
+        assert!(empty.biomass_g_per_l.iter().all(|x| *x == 0.0));
+        assert!(empty.carbon_dioxide_mol.iter().all(|x| *x == 0.0) && empty.oxygen_mol.iter().all(|x| *x == 0.0));
+        // Water and nothing else: no carbon supplied, none found, and the ledgers close at zero.
+        let water = Question {
+            biomass_g_per_l: 0.0,
+            glucose_g_per_l: 0.0,
+            galacturonate_g_per_l: 0.0,
+            feed_glucose_g_per_l: 0.0,
+            feed_galacturonate_g_per_l: 0.0,
+            ..base
         };
-        assert!(matches!(segment(1.0 - 5.0e-11), Err(CultureReject::SegmentLengthOutOfRange { segment: 1, .. })));
-        assert_eq!(segment(1.0 - 5.0e-13), Ok(()));
-        // The volume's lower end has its own allowance, 98e-12 mL: 98 mL less 5e-9 is refused.
-        let low = |less: f64| {
-            check_question(&Question {
-                segment_end_h: &[22.0, 44.0],
-                feed_ml: &[0.0, 2.2],
-                water_ml: &[-5.0, -0.6 - less],
-                sample_ml: &[4.3, 4.3],
-                ..base.clone()
-            })
-        };
-        assert!(matches!(low(5.0e-9), Err(CultureReject::VolumeOutOfRange { segment: 1, .. })));
-        assert_eq!(low(0.0), Ok(()));
+        let nothing = solve(&water).expect("settles");
+        assert_eq!((nothing.carbon_supplied_mol, nothing.carbon_residual, nothing.electron_residual), (0.0, 0.0, 0.0));
     }
 
-    /// The eight fitted cultures' own records to 215 h are answered, and
-    /// every schedule none of them ran is refused by name: fed before 21.18 h,
-    /// started faster than 0.2234 mL/h, started slower than 0.0913 mL/h, cut
-    /// back below 0.243 mL/h or stopped once the feed is full, or an even rate
-    /// over a segment that spans the start and the full feed.
+    /// A segment of any length above zero is mass balance alone and is
+    /// answered, where engine 0.8.0 held it to 1 to 100 h: a nanosecond, an
+    /// hour less 5e-11 h, and one segment from the start of the feed to 140 h.
+    /// The ledgers close on each.
     #[test]
-    fn the_feed_schedule_is_the_fitted_cultures_own() {
+    fn a_segment_of_any_length_above_zero_is_answered_with_its_ledgers_closed() {
+        let record = short();
+        let base = asked(&record);
+        for length in [1.0e-9, 1.0 - 5.0e-11, 0.5] {
+            let ends = [20.0, 20.0 + length, 22.0];
+            let question = Question {
+                segment_end_h: &ends,
+                feed_ml: &[0.0, 0.0, 0.0],
+                water_ml: &[0.0, 0.0, 0.0],
+                sample_ml: &[0.0, 0.0, 4.3],
+                ..base.clone()
+            };
+            let culture = solve(&question).unwrap_or_else(|reject| panic!("{length}: {reject}"));
+            assert!(culture.carbon_residual <= LEDGER_TOLERANCE && culture.electron_residual <= LEDGER_TOLERANCE);
+        }
+        let long = Question {
+            segment_end_h: &[22.0, 44.0, 140.0],
+            feed_ml: &[0.0, 4.4, 0.25 * 96.0],
+            water_ml: &[-2.0, -1.0, -0.2 * 96.0],
+            sample_ml: &[4.3, 4.3, 4.3],
+            ..base.clone()
+        };
+        let culture = solve(&long).expect("a 96 h segment");
+        assert!(culture.carbon_residual <= LEDGER_TOLERANCE && culture.electron_residual <= LEDGER_TOLERANCE);
+        assert!(matches!(
+            check_question(&Question { segment_end_h: &[20.0, 20.0, 22.0], feed_ml: &[0.0; 3], water_ml: &[0.0; 3], sample_ml: &[0.0; 3], ..base }),
+            Err(CultureReject::SegmentNotRising { segment: 1, .. })
+        ));
+    }
+
+    /// The solver's own four held-back questions, as the scored run asked
+    /// them (`evidence/research/bioreactor_trichoderma_ambr250/analysis/out/06_sealed`),
+    /// refused through engine 0.8.0: each is answered with its ledgers
+    /// closed, and with the numbers the scored run sealed, so the miss stated
+    /// in the description is the miss of the answer served.
+    const HELD_BACK: [(&str, f64, f64, f64, f64, f64, &[f64], &[f64], &[f64], &[f64]); 4] = [
+        ("T2 glucose 10 1", 0.9333, 20.541, 4.745, 10.077, 97.25800000000001, &[21.1823338888889, 45.1823338888889, 69.1823338888889, 93.1823338888889, 117.1823338888889, 141.1823338888889, 165.1823338888889, 189.1823338888889, 213.1823338888889, 312.0], &[0.0, 2.2769408513932, 7.4209772819344595, 7.126034584128041, 6.795772697699199, 6.637834842954099, 6.311979784123904, 6.061521218783299, 5.811407332876499, 11.956929094107302], &[-6.384243795763449, 0.6847229753975006, 2.751279936774848, -6.213012287497054, 2.1313274573018024, -6.1064440913340885, -1.9293141497579083, -1.9248653192173013, -2.0446094239434958, -4.354164816886855], &[4.3, 4.3, 4.3, 4.3, 4.3, 4.3, 4.3, 4.3, 4.3, 4.3]),
+        ("T2 glucose 10 2", 1.0333333333332195, 21.151, 4.6305, 11.06, 89.257, &[22.8673958333333, 43.4507291666667, 67.4507291666667, 91.4507291666667, 115.450729166667, 139.450729166667, 163.450729166667, 187.2840625, 211.2840625, 259.2840625, 307.117395833333], &[0.0, 4.51836207858949, 7.472844384940009, 7.197304398563, 6.946628554463299, 6.671063026052604, 6.445085424432797, 6.175618814988198, 5.993123871752005, 11.583537372221599, 0.4517331819969996], &[3.214795438537325, 1.3679951320698387, -1.9775159781539906, -2.5991765081020115, -2.4763898984103108, -2.477659577320602, -1.2401505950967968, -2.2103315286438456, -2.5540059515530062, -2.752333323911613, -4.280225521913631], &[4.3, 4.3, 4.3, 4.3, 4.3, 4.3, 4.3, 4.3, 4.3, 4.3, 4.3]),
+        ("T2 glucose 50 1", 0.9333, 20.632, 4.7735, 48.32, 97.5675, &[21.1823338888889, 45.1823338888889, 69.1823338888889, 93.1823338888889, 117.1823338888889, 141.1823338888889, 165.1823338888889, 189.1823338888889, 213.1823338888889, 312.0], &[0.0, 2.29150650906139, 7.420968778364999, 7.127297833556611, 6.820693240775299, 6.6458794738747, 6.311820310830203, 6.061799921393998, 5.8362764654713, 12.000256890671501], &[-6.612332810480509, 0.5947533412406093, 2.7469853750561093, -6.044975007959632, 2.6719153088087086, -5.586437587037705, -1.3672874540871918, -1.615154212668, -2.0530505676923068, -4.183223831576091], &[4.3, 4.3, 4.3, 4.3, 4.3, 4.3, 4.3, 4.3, 4.3, 4.3]),
+        ("T2 glucose 50 2", 1.06666666666662, 21.075, 4.609, 52.101, 90.34700000000001, &[22.8673958333333, 43.4507291666667, 67.4507291666667, 91.4507291666667, 115.450729166667, 139.450729166667, 163.450729166667, 187.2840625, 211.2840625, 259.2840625, 307.117395833333], &[0.0, 3.98615105523926, 7.498069897446941, 7.222724768365399, 6.947128822391399, 6.721148836119002, 6.470608684806996, 6.200873558819204, 6.042896426217794, 11.684024275857503, 0.44569881273650225], &[5.222295298264004, 1.6436722391097376, -1.4507605869519429, -1.9660635361234005, -2.080519954461412, -2.058702748594001, -0.8264547721280067, -1.9127412685511762, -2.4522179820667955, -0.6034437503395136, -5.363169304083474], &[4.3, 4.3, 4.3, 4.3, 4.3, 4.3, 4.3, 4.3, 4.3, 4.3, 4.3]),
+    ];
+    /// The scored run's last mucic acid (g/L), galacturonate (g/L) and carbon
+    /// dioxide (mol) of each held-back culture.
+    const HELD_BACK_SCORED: [(f64, f64, f64); 4] = [
+        (43.449298498570336, 9.90683556005122, 0.0723017981915361),
+        (43.923209932375805, 4.627835465931725, 0.07684392519039737),
+        (53.364552804521665, 0.03746354455317878, 0.12516486902317597),
+        (47.16596778679385, 0.0014649925858301598, 0.13611192796213184),
+    ];
+
+    #[test]
+    fn the_four_held_back_questions_are_answered_as_they_were_scored() {
+        for ((culture, biomass, glucose, galacturonate, feed_glucose, feed_galacturonate, ends, feed, water, samples), scored) in
+            HELD_BACK.iter().zip(HELD_BACK_SCORED)
+        {
+            let question = Question {
+                biomass_g_per_l: *biomass,
+                glucose_g_per_l: *glucose,
+                galacturonate_g_per_l: *galacturonate,
+                feed_glucose_g_per_l: *feed_glucose,
+                feed_galacturonate_g_per_l: *feed_galacturonate,
+                segment_end_h: ends,
+                feed_ml: feed,
+                water_ml: water,
+                sample_ml: samples,
+            };
+            let answer = solve(&question).unwrap_or_else(|reject| panic!("{culture}: {reject}"));
+            assert!(answer.carbon_residual <= LEDGER_TOLERANCE, "{culture}");
+            assert!(answer.electron_residual <= LEDGER_TOLERANCE, "{culture}");
+            let last = ends.len() - 1;
+            for (got, want) in [
+                (answer.mucic_acid_g_per_l[last], scored.0),
+                (answer.galacturonate_g_per_l[last], scored.1),
+                (answer.carbon_dioxide_mol[last], scored.2),
+            ] {
+                assert!((got - want).abs() <= 1.0e-9 * want.abs().max(1.0), "{culture}: {got} against {want}");
+            }
+        }
+    }
+
+    /// The eight fitted cultures' own records to 215 h are answered, and so
+    /// is every schedule none of them ran, which engine 0.12.0 refused by
+    /// name: fed before 21.18 h, started faster than 0.2234 mL/h or slower
+    /// than 0.0913 mL/h, cut back or stopped once the feed is full, one even
+    /// rate from the start window into the full feed, unfed to 215 h, and
+    /// 0.4 mL/h from inoculation. Each closes both ledgers.
+    #[test]
+    fn every_feed_schedule_is_answered_with_its_ledgers_closed() {
         for (culture, biomass, glucose, galacturonate, feed_glucose, feed_galacturonate, ends, feed, water) in FITTED {
             let question = Question {
                 biomass_g_per_l: biomass,
@@ -1472,81 +1356,46 @@ mod tests {
         }
         let record = short();
         let base = asked(&record);
-        let name = |ends: &[f64], feed: &[f64]| {
+        let settled = |ends: &[f64], feed: &[f64]| {
             let water = vec![0.0; ends.len()];
             let samples = vec![0.0; ends.len()];
-            check_question(&Question { segment_end_h: ends, feed_ml: feed, water_ml: &water, sample_ml: &samples, ..base.clone() })
-                .map_err(|reject| reject.name())
+            let culture = solve(&Question { segment_end_h: ends, feed_ml: feed, water_ml: &water, sample_ml: &samples, ..base.clone() })
+                .unwrap_or_else(|reject| panic!("{ends:?} {feed:?}: {reject}"));
+            assert!(culture.carbon_residual <= LEDGER_TOLERANCE && culture.electron_residual <= LEDGER_TOLERANCE, "{ends:?} {feed:?}");
         };
-        let refused = Err("FeedScheduleOutOfRange");
-        // Fed before 21.18 h, in a first segment or in one that starts at 20 h.
-        assert_eq!(name(&[22.0, 44.0], &[0.5, 4.4]), refused);
-        assert_eq!(name(&[20.0, 44.0], &[0.0, 4.4]), refused);
-        assert_eq!(name(&[21.17, 44.0], &[0.0, 4.4]), refused);
-        assert_eq!(name(&[21.18, 44.0], &[0.0, 4.4]), Ok(()));
-        // A batch past 22.87 h is a feed started late.
-        assert_eq!(name(&[22.87, 44.0], &[0.0, 4.4]), Ok(()));
-        assert_eq!(name(&[22.88, 44.0], &[0.0, 4.4]), refused);
-        assert_eq!(name(&[24.0, 44.0], &[0.0, 4.4]), refused);
-        // The start, faster or slower than any fitted culture's.
-        assert_eq!(name(&[22.0, 44.0], &[0.0, 0.2235 * 22.0]), refused);
-        assert_eq!(name(&[22.0, 44.0], &[0.0, 0.0912 * 22.0]), refused);
-        assert_eq!(name(&[22.0, 44.0], &[0.0, 0.0]), refused);
-        // Cut back, or stopped, once the feed is full.
-        assert_eq!(name(&[22.0, 44.0, 68.0], &[0.0, 4.4, 0.2429 * 24.0]), refused);
-        assert_eq!(name(&[22.0, 44.0, 68.0, 92.0], &[0.0, 4.4, 7.2, 0.0]), refused);
-        // One even rate from the start window into the full feed.
-        assert_eq!(name(&[22.0, 50.0], &[0.0, 0.23 * 28.0]), refused);
-        assert_eq!(name(&[22.0, 50.0], &[0.0, 0.2 * 28.0]), refused);
-        // Unfed to 215 h, and 0.4 mL/h from inoculation.
-        let starved: Vec<f64> = vec![24.0, 48.0, 72.0, 96.0, 120.0, 144.0, 168.0, 192.0, 215.0];
-        assert_eq!(name(&starved, &[0.0; 9]), refused);
-        assert_eq!(name(&[100.0], &[40.0]), Err("FeedRateOutOfRange"));
-        match check_question(&Question { feed_ml: &[0.0, 4.4, 0.0], ..base.clone() }) {
-            Err(CultureReject::FeedScheduleOutOfRange { segment, start_h, end_h, feed_ml_per_h, least_ml_per_h, most_ml_per_h }) => {
-                assert_eq!((segment, start_h, end_h, feed_ml_per_h), (2, 44.0, 68.0, 0.0));
-                assert_eq!((least_ml_per_h, most_ml_per_h), (FEED_RATE_MIN_ML_PER_H, FEED_RATE_MAX_ML_PER_H));
-            }
-            other => panic!("{other:?}"),
-        }
+        settled(&[22.0, 44.0], &[0.5, 4.4]);
+        settled(&[20.0, 44.0], &[0.0, 4.4]);
+        settled(&[24.0, 44.0], &[0.0, 4.4]);
+        settled(&[22.0, 44.0], &[0.0, 0.2235 * 22.0]);
+        settled(&[22.0, 44.0], &[0.0, 0.0912 * 22.0]);
+        settled(&[22.0, 44.0, 68.0], &[0.0, 4.4, 0.2419 * 24.0]);
+        settled(&[22.0, 44.0, 68.0, 92.0], &[0.0, 4.4, 7.2, 0.0]);
+        settled(&[22.0, 50.0], &[0.0, 0.23 * 28.0]);
+        settled(&[21.5, 45.0, 120.0, 211.28, 259.28, 307.12], &[0.0, 2.25, 18.75, 0.25 * 91.28, 0.25 * 48.0, 0.0]);
+        settled(&[24.0, 48.0, 72.0, 96.0, 120.0, 144.0, 168.0, 192.0, 215.0], &[0.0; 9]);
+        settled(&[100.0], &[40.0]);
     }
 
-    /// Every range a refusal writes runs low to high. A segment from before
-    /// the earliest feed to after the latest start has no rate inside, and
-    /// its sentence says so in place of a range.
+    /// Every sentence a refusal writes counts segments from 1 and writes no
+    /// range in program notation.
     #[test]
-    fn a_refusal_writes_no_range_backwards() {
-        let ends = [24.0, 48.0];
-        let question = Question {
-            biomass_g_per_l: 0.9,
-            glucose_g_per_l: 20.5,
-            galacturonate_g_per_l: 4.6,
-            feed_glucose_g_per_l: 32.0,
-            feed_galacturonate_g_per_l: 94.0,
-            segment_end_h: &ends,
-            feed_ml: &[0.0, 0.0],
-            water_ml: &[0.0, 0.0],
-            sample_ml: &[0.0, 0.0],
-        };
-        let refused = check_question(&question).expect_err("unfed across 22.87 h").to_string();
-        assert!(!refused.contains("..="), "{refused}");
-        assert!(
-            refused.contains("they allow at most 0 mL/h from its start and ask at least 0.0913 mL/h by its end"),
-            "{refused}"
-        );
-        // A range that is not empty keeps its low-to-high form.
-        let refused = check_question(&Question { segment_end_h: &[22.0, 44.0], feed_ml: &[0.0, 0.0], ..question.clone() })
-            .expect_err("unfed after the start")
-            .to_string();
-        assert!(refused.contains("outside 0.0913..=0.2234"), "{refused}");
+    fn a_refusal_counts_segments_from_one() {
+        let record = short();
+        let base = asked(&record);
+        let refused = check_question(&Question { feed_ml: &[0.0, -0.5, 7.2], ..base.clone() }).expect_err("a negative feed").to_string();
+        assert!(refused.starts_with("segment 2 is fed -0.5 mL, below zero"), "{refused}");
+        let refused = check_question(&Question { water_ml: &[-2.0, -1.0, 200.0], ..base }).expect_err("past the vessel").to_string();
+        assert!(refused.contains("at the end of segment 3"), "{refused}");
+        for sentence in [refused] {
+            assert!(!sentence.contains("..="), "{sentence}");
+        }
     }
 
     /// With no feed and no biomass decay to speak of, what the culture does
     /// is what the reactions say: at the end of a batch the glucose is gone
     /// and biomass carbon plus carbon dioxide is the glucose carbon, less
-    /// what decay returned. No fitted culture went unfed past 22.87 h, so
-    /// `solve` refuses this record; the integration is called past the check
-    /// of the question, as a test of the reactions.
+    /// what decay returned. No compared culture went unfed past 22.87 h;
+    /// engine 0.12.0 refused this record, and it is answered now.
     #[test]
     fn a_batch_ends_with_its_glucose_gone() {
         let ends = [60.0, 100.0];
@@ -1561,8 +1410,8 @@ mod tests {
             water_ml: &[0.0, 0.0],
             sample_ml: &[0.0, 0.0],
         };
-        assert_eq!(solve(&question).map_err(|reject| reject.name()), Err("FeedScheduleOutOfRange"));
-        let culture = integrate(&Reactions::of_the_specimen(), &question).expect("settles");
+        let culture = solve(&question).expect("settles");
+        assert_eq!(culture, integrate(&Reactions::of_the_specimen(), &question).expect("settles"));
         assert!(culture.glucose_g_per_l[1] < 1.0e-3);
         assert!(culture.biomass_g_per_l[0] > 7.0 && culture.biomass_g_per_l[0] < 9.5);
         assert!(culture.biomass_g_per_l[1] < culture.biomass_g_per_l[0]);
@@ -1570,5 +1419,37 @@ mod tests {
         assert!(culture.mucic_acid_g_per_l[1] < 4.6 * MUCIC_ACID_G_PER_MOL / GALACTURONATE_G_PER_MOL);
         let respiratory_quotient = culture.carbon_dioxide_mol[1] / culture.oxygen_mol[1];
         assert!(respiratory_quotient > 0.85 && respiratory_quotient < 1.1, "{respiratory_quotient}");
+    }
+
+    /// The red team's culture of engine 0.13.0 (D1): the worked culture's
+    /// start, unfed to 312 h. Its glucose and galacturonate come to 5.4e-323
+    /// and 2.4e-322 g/L as computed, under the smallest normal number; each
+    /// is answered as +0, every number of the answer is normal or zero, every
+    /// other number is the computed one bit for bit, and both ledgers close.
+    #[test]
+    fn a_concentration_under_the_smallest_normal_number_is_answered_as_zero() {
+        use crate::normal::NormalOrZero;
+        let question = Question {
+            biomass_g_per_l: 0.9,
+            glucose_g_per_l: 20.8,
+            galacturonate_g_per_l: 4.6,
+            feed_glucose_g_per_l: 32.0,
+            feed_galacturonate_g_per_l: 94.0,
+            segment_end_h: &[312.0],
+            feed_ml: &[0.0],
+            water_ml: &[0.0],
+            sample_ml: &[0.0],
+        };
+        let computed = solve_as_computed(&question).expect("settles");
+        let answered = solve(&question).expect("settles");
+        assert!(computed.glucose_g_per_l[0].is_subnormal() && computed.galacturonate_g_per_l[0].is_subnormal());
+        assert_eq!((answered.glucose_g_per_l[0].to_bits(), answered.galacturonate_g_per_l[0].to_bits()), (0, 0));
+        let mut held = computed.clone();
+        held.normal_or_zero();
+        assert_eq!(held, answered);
+        let mut again = answered.clone();
+        again.normal_or_zero();
+        assert_eq!(again, answered);
+        assert!(answered.carbon_residual <= LEDGER_TOLERANCE && answered.electron_residual <= LEDGER_TOLERANCE);
     }
 }

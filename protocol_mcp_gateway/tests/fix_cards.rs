@@ -300,7 +300,7 @@ async fn the_spring_mount_publishes_the_largest_displacement_and_velocity_it_can
     for (x_at, v_at) in [(above(x_max), 0.0), (-above(x_max), 0.0), (0.0, above(v_max)), (0.0, -above(v_max))] {
         let (status, text) = step(&base, "signal", "resonance", params(x_at, v_at)).await;
         assert_eq!(status, 422, "{x_at} {v_at}: {text}");
-        assert!(text.contains("AmplitudeAboveCard"), "{text}");
+        assert!(text.contains("EnergyAboveCard"), "{text}");
     }
     let load = json!({"accel_m_s2": 0.0});
     let (status, text) = dataset(
@@ -360,7 +360,8 @@ async fn the_published_top_of_the_generator_and_the_satellite_is_usable_and_the_
     let generator = describe(&base, "energy", "generator_mmrtg_f1").await;
     let mission = field(&generator, "phase_fields", "mission_time_s");
     let top = number(&mission["maximum"]);
-    assert!(top < 353_116_800.0 && 353_116_800.0 - top < 2.0 * floor_of(&generator));
+    // The top is where the decay heat left is the ledger's resolution, some 2,070 years on.
+    assert!(top > 6.0e10 && top < 7.0e10, "{top}");
     assert_eq!(mission["maximum_exclusive"], false);
     let floor = floor_of(&generator);
     let (status, text) = step(
@@ -379,7 +380,7 @@ async fn the_published_top_of_the_generator_and_the_satellite_is_usable_and_the_
     )
     .await;
     assert_eq!(status, 422, "{text}");
-    assert!(text.contains("MissionTimeOutsideCard"), "{text}");
+    assert!(text.contains("DecayHeatBelowLedgerResolution"), "{text}");
     let (status, text) = dataset(
         &base,
         "energy",
@@ -392,7 +393,7 @@ async fn the_published_top_of_the_generator_and_the_satellite_is_usable_and_the_
     let satellite = describe(&base, "aerospace", "satellite_lageos1").await;
     let epoch = field(&satellite, "phase_fields", "epoch_utc_s");
     let top = number(&epoch["maximum"]);
-    assert!(top < 843_134_400.0 && 843_134_400.0 - top < 2.0 * floor_of(&satellite));
+    assert!(top < 867_412_800.0 && 867_412_800.0 - top < 2.0 * floor_of(&satellite));
     let floor = floor_of(&satellite);
     let rest = |epoch_utc_s: f64| {
         json!({
@@ -407,7 +408,7 @@ async fn the_published_top_of_the_generator_and_the_satellite_is_usable_and_the_
     assert_eq!(status, 200, "{text}");
     let (status, text) = step(&base, "aerospace", "satellite_lageos1", rest(above(top))).await;
     assert_eq!(status, 422, "{text}");
-    assert!(text.contains("EpochOutsideCard"), "{text}");
+    assert!(text.contains("EpochOutsideLeapSecondSpan"), "{text}");
     let (status, text) = dataset(
         &base,
         "aerospace",
@@ -438,7 +439,7 @@ async fn the_satellite_states_the_step_error_that_was_measured() {
 }
 
 #[tokio::test]
-async fn the_cell_names_a_step_of_zero_or_less_and_refuses_a_current_never_compared() {
+async fn the_cell_names_a_step_of_zero_or_less_and_takes_any_discharge_current() {
     let base = spawn_app().await;
     let d = describe(&base, "energy", "cell_18650pf").await;
     let names: Vec<&str> = d["rejects"].as_array().unwrap().iter().map(|r| r["name"].as_str().unwrap()).collect();
@@ -452,20 +453,15 @@ async fn the_cell_names_a_step_of_zero_or_less_and_refuses_a_current_never_compa
     let (status, text) = step(&base, "energy", "cell_18650pf", json!({"soc": 0.5, "held_current_a": 2.9, "current_a": 2.9, "dt_s": floor / 2.0})).await;
     assert_eq!(status, 422, "{text}");
     assert!(!text.contains("NonPositiveDt") && text.contains("step floor"), "{text}");
-    // A current too small to move the charge was never compared: refused by name.
+    // A current too small to move the charge is a discharge: answered, at its own held current.
     for current_a in [f64::MIN_POSITIVE, 1.0e-306, 1.0e-304] {
         for soc in [0.5, 1.0, 0.0300001] {
-            let (status, text) = step(&base, "energy", "cell_18650pf", json!({"soc": soc, "held_current_a": 2.9, "current_a": current_a, "dt_s": floor})).await;
-            assert_eq!(status, 422, "{current_a} A at {soc}: {text}");
-            assert!(text.contains("CurrentNotCompared"), "{text}");
+            let (status, text) = step(&base, "energy", "cell_18650pf", json!({"soc": soc, "held_current_a": current_a, "current_a": current_a, "dt_s": floor})).await;
+            assert_eq!(status, 200, "{current_a} A at {soc}: {text}");
         }
     }
-    // At the floor a 1C step moves the charge. Below full charge the step
-    // carries a discharge on, and without from it is refused by name.
-    let (status, text) = step(&base, "energy", "cell_18650pf", json!({"soc": 0.5, "held_current_a": 2.9, "current_a": 2.9, "dt_s": floor})).await;
-    assert_eq!(status, 422, "{text}");
-    assert!(text.ends_with("(ContinuationWithoutUpstream)."), "{text}");
-    for soc in [1.0] {
+    // At the floor a 1C step moves the charge, from full and from a rested cell below it.
+    for soc in [1.0, 0.5] {
         let (status, text) = step(&base, "energy", "cell_18650pf", json!({"soc": soc, "held_current_a": 2.9, "current_a": 2.9, "dt_s": floor})).await;
         assert_eq!(status, 200, "{soc}: {text}");
         let body: Value = serde_json::from_str(&text).unwrap();
@@ -484,12 +480,12 @@ async fn the_cell_names_a_step_of_zero_or_less_and_refuses_a_current_never_compa
     )
     .await;
     assert_eq!(status, 422, "{text}");
-    assert!(text.contains("CurrentNotCompared"), "{text}");
+    assert!(text.contains("CurrentChangedDuringDischarge"), "{text}");
     assert!(!text.contains("run_seal"), "{text}");
 }
 
 #[tokio::test]
-async fn all_twenty_one_cards_carry_a_validation_of_five_parts_and_nine_say_not_compared() {
+async fn all_twenty_one_cards_carry_a_validation_of_five_parts_and_nine_are_the_companys_own_specimens() {
     let base = spawn_app().await;
     let (status, text) = {
         let client = Client::new();
@@ -499,8 +495,8 @@ async fn all_twenty_one_cards_carry_a_validation_of_five_parts_and_nine_say_not_
     assert_eq!(status, 200);
     let list: Value = serde_json::from_str(&text).unwrap();
     let cards = list["cards"].as_array().unwrap_or_else(|| list.as_array().unwrap());
-    assert_eq!(cards.len(), 31);
-    let fitted = ["cell_18650pf", "generator_mmrtg_f1", "capsule_stardust", "satellite_lageos1", "cantilever_eth", "creep_cmsx6", "capsule_insight", "reactor_spert3_fuel", "crater_ryugu_sci", "link_gothenburg_10010", "solar_system", "los_jwst_fine_guide", "tokamak_jet_dte1", "fingerpad_p02_glass", "accumulator_sbo450", "reactor_triga_jsi", "reactor_spert3_ccore"];
+    assert_eq!(cards.len(), 37);
+    let fitted = ["cell_18650pf", "generator_mmrtg_f1", "generator_mmrtg_seebeck", "capsule_stardust", "satellite_lageos1", "cantilever_eth", "creep_cmsx6", "capsule_insight", "reactor_spert3_fuel", "crater_ryugu_sci", "momentum_jwst_dihedral", "momentum_jwst_srp", "link_gothenburg_10010", "solar_system", "los_jwst_fine_guide", "tokamak_jet_dte1", "fingerpad_p02_glass", "accumulator_sbo450", "reactor_triga_jsi", "reactor_spert3_ccore", "runaway_18650_lco", "grasp_lift_glass_4tu", "tokamak_vde_mast"];
     // The reactor is fitted and has not been compared yet: its result says so.
     let awaiting = "reactor_spert3";
     // The 2170 cell was compared with its held-back tests and missed: its result says so.
@@ -513,7 +509,14 @@ async fn all_twenty_one_cards_carry_a_validation_of_five_parts_and_nine_say_not_
         let (domain, card) = (entry["domain"].as_str().unwrap(), entry["card"].as_str().unwrap());
         let d = describe(&base, domain, card).await;
         let record = d["validation"].as_object().unwrap_or_else(|| panic!("{card} has no validation"));
-        let keys: Vec<&str> = record.keys().map(String::as_str).collect();
+        let mut keys: Vec<&str> = record.keys().map(String::as_str).collect();
+        // A card calibrated to the record gives, after its five parts, the
+        // card it stands beside and what of the record was seen first.
+        if record.contains_key("companion_to") {
+            assert_eq!(keys.split_off(5), ["companion_to", "not_blind"], "{card}");
+            assert_eq!(card, "generator_mmrtg_seebeck");
+            assert_eq!(record["companion_to"], "generator_mmrtg_f1");
+        }
         assert_eq!(keys, ["object", "data", "pass_line", "result", "limits"], "{card}");
         for key in &keys {
             assert!(!record[*key].as_str().unwrap().is_empty(), "{card} {key}");
@@ -580,6 +583,12 @@ async fn all_twenty_one_cards_carry_a_validation_of_five_parts_and_nine_say_not_
             assert!(record["data"].as_str().unwrap().contains("doi 10.5281/zenodo.1009017"), "{card}");
         } else if fitted.contains(&card) {
             assert_ne!(record["result"], "not compared with a measurement", "{card}");
+        } else if ["cable_stretch", "hydraulic_fluid", "resonance", "swing", "tesseract", "thermal", "ti64_lattice", "grid_node", "battery_sag"].contains(&card) {
+            // The company's own specimens: each record names it so, and says what
+            // its runs are held to.
+            generic += 1;
+            assert!(record["object"].as_str().unwrap().contains("The company's own specimen"), "{card}");
+            assert!(record["result"].as_str().unwrap().starts_with("Reproduced:"), "{card}");
         } else {
             generic += 1;
             assert_eq!(record["result"], "not compared with a measurement", "{card}");
@@ -700,8 +709,7 @@ async fn a_final_state_handed_back_to_the_satellite_continues_the_same_orbit_to_
 /// The 18650PF cell is of one held current. A run whose segments carry the
 /// tester's logged current of a 1C discharge, 2.899 to 2.89982 A, is taken;
 /// a current 0.84 mA from the held current is refused whole, by name, before
-/// the first step, with nothing sealed, and a rest or another rate is a
-/// current never compared.
+/// the first step, with nothing sealed, and a rest is not a discharge.
 #[tokio::test]
 async fn a_cell_run_whose_current_changes_is_refused_whole_by_name() {
     let base = spawn_app().await;
@@ -735,12 +743,17 @@ async fn a_cell_run_whose_current_changes_is_refused_whole_by_name() {
         assert!(text.contains("from the held current"), "{text}");
         assert!(!text.contains("run_seal"), "{text}");
     }
-    for never in [vec![3.0, 0.0, 3.0], vec![0.0, 2.9], vec![2.9, 0.0], vec![2.9, 2.9, 1.0], vec![0.0, 0.0], vec![3.0]] {
+    for never in [vec![3.0, 0.0, 3.0], vec![0.0, 2.9], vec![2.9, 0.0], vec![0.0, 0.0]] {
         let (status, text) = ask(run(never.clone())).await;
         assert_eq!(status, 422, "{never:?}: {text}");
-        assert!(text.contains("CurrentNotCompared"), "{text}");
+        assert!(text.contains("CurrentNotDischarging"), "{text}");
         assert!(!text.contains("run_seal"), "{text}");
     }
+    let (status, text) = ask(run(vec![2.9, 2.9, 1.0])).await;
+    assert_eq!(status, 422, "{text}");
+    assert!(text.contains("CurrentChangedDuringDischarge"), "{text}");
+    let (status, text) = ask(run(vec![3.0])).await;
+    assert_eq!(status, 200, "{text}");
     let described = describe(&base, "energy", "cell_18650pf").await;
     let names: Vec<&str> =
         described["rejects"].as_array().unwrap().iter().map(|r| r["name"].as_str().unwrap()).collect();

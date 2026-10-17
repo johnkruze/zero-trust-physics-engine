@@ -1,0 +1,22 @@
+{
+ "model": "ablator_slab",
+ "verdict": "missed",
+ "protocol": {
+  "path": "evidence/research/heatshield_pica_surface/analysis/prereg.json",
+  "sha256": "b3053d707af191baddb962b52b86cc430911f8bafaf191c7617bb757e058b869",
+  "committed": null
+ },
+ "held_back": [
+  {
+   "path": "evidence/research/heatshield_pica_surface/tables/blocks_heldback.csv",
+   "sha256": "d8ee8081ae5a18614f7344bdb96328d0ce642c8836e4bd21c02b638f07f578de"
+  }
+ ],
+ "scored": {
+  "utc": "2026-10-09T20:20:19Z",
+  "evidence": "evidence/research/stardust_heatshield_model_run/final_check_31_arcjet/FINGERPRINT.txt: 'measured columns of the held-back file first read at 2026-10-09T20:20:19Z', scores_31.csv recorded then; the held-back file was opened for its condition columns only at 20:19:30Z and the 31 predictions recorded at 20:20:14Z."
+ },
+ "forecast_first": "not shown",
+ "registered_by": "backfill from the record, 2026-10-15",
+ "notes": "No commit in any crate carries b3053d70 (prereg.json), 66ede7be (heatshield_pica_surface/validation_protocol.md) or d8ee8081 (the held-back file); the served pass line states no hash. Outside Git: heatshield_pica_surface/analysis/prereg_hash.txt records prereg.json at 2026-10-07T21:14:11Z, two days before the scoring, and the final check's FINGERPRINT.txt checks it again at 18:53:30Z and 20:19:29Z on 2026-10-09. A first sitting stopped at the rehearsal (STOPPED_BEFORE_THE_31.md); the second sitting scored once. The model's development tests and the Stardust cores had no line fixed beforehand, as the pass line says. The nitrogen test refused at the time is answered now; that is a later re-run. Not a committed fingerprint: posted to the public pass-marks repository with this SHA-256 in GitHub-signed commit 2bdaf2d0042c939ff8033fbf443b2be73a4322c1 at 2026-10-13T17:53:09Z, after the scoring. The pass line's text, with no hash, first enters commits protocol_mcp_gateway 4267c3f817bc7589fac4a1c8fed3ef7c7be5903c and genesis_solvers e007989471c0a5e3b45a144e1a67700dad7100fc at 2026-10-09T20:52:52Z, 33 min after the scoring."
+}

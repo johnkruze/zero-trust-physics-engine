@@ -241,10 +241,10 @@ fn each_revision_that_begins_with_initialize_is_spoken_with_a_key_and_without() 
             // The notification that ends it: 202 with no body.
             let reply = door.legacy(version, r#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#);
             assert_eq!((reply.status, reply.body.as_str()), (202, ""), "{at}");
-            // ping, and the list: sixteen tools, and with a key the local connection's list byte for byte.
+            // ping, and the list: seventeen tools, and with a key the local connection's list byte for byte.
             assert_eq!(door.legacy(version, r#"{"jsonrpc":"2.0","id":1,"method":"ping"}"#).body, r#"{"jsonrpc":"2.0","id":1,"result":{}}"#, "{at}");
             let listed = body(&door.legacy(version, r#"{"jsonrpc":"2.0","id":2,"method":"tools/list"}"#));
-            assert_eq!(listed["result"]["tools"].as_array().unwrap().len(), 16, "{at}");
+            assert_eq!(listed["result"]["tools"].as_array().unwrap().len(), 18, "{at}");
             for absent in ["resultType", "ttlMs", "cacheScope"] {
                 assert!(listed["result"].get(absent).is_none(), "{at}: {absent}");
             }
@@ -307,23 +307,23 @@ fn revision_2026_07_28_is_spoken_with_no_handshake_with_a_key_and_without() {
             Door::Open { .. } => {
                 let instructions = result["instructions"].as_str().unwrap();
                 assert!(instructions.starts_with(local_found["result"]["instructions"].as_str().unwrap()));
-                assert!(instructions.contains("This is the open connection: no key is asked"), "{instructions}");
+                assert!(instructions.contains("This open connection asks no key"), "{instructions}");
                 let mut same = found.clone();
                 same["result"]["instructions"] = local_found["result"]["instructions"].clone();
                 assert_eq!(result_bytes(&same), result_bytes(&local_found));
             }
         }
 
-        // tools/list: sixteen tools, with the type of the result and the two hints the revision requires.
+        // tools/list: seventeen tools (sixteen and verify_step, the earlier name of compute_step), with the type of the result and the two hints the revision requires.
         let listed = body(&door.modern(json!(2), "tools/list", json!({})));
         let keys: Vec<&String> = listed["result"].as_object().unwrap().keys().collect();
         assert_eq!(keys, ["resultType", "ttlMs", "cacheScope", "tools"], "{at}");
         assert_eq!((&listed["result"]["resultType"], &listed["result"]["ttlMs"], &listed["result"]["cacheScope"]), (&json!("complete"), &json!(0), &json!("private")));
-        assert_eq!(listed["result"]["tools"].as_array().unwrap().len(), 16);
+        assert_eq!(listed["result"]["tools"].as_array().unwrap().len(), 18);
         if matches!(door, Door::Keyed(_)) {
             assert_eq!(result_bytes(&listed), result_bytes(&local_list), "{at}");
         }
-        // The tools are the same sixteen an earlier revision is given.
+        // The tools are the same seventeen an earlier revision is given.
         let earlier = body(&door.legacy("2025-11-25", r#"{"jsonrpc":"2.0","id":2,"method":"tools/list"}"#));
         assert_eq!(listed["result"]["tools"], earlier["result"]["tools"], "{at}");
 
@@ -537,7 +537,7 @@ async fn a_library_client_connects_in_each_of_its_ways_to_both_doors() {
             assert_eq!(info.protocol_version.as_str(), *version, "{at}");
             assert_eq!(info.server_info.as_ref().unwrap().name, "Zero-Trust Physics", "{at}");
             let listed = client.list_tools(None).await.unwrap_or_else(|error| panic!("{at}: {error:?}"));
-            assert_eq!(listed.tools.len(), 16, "{at}");
+            assert_eq!(listed.tools.len(), 18, "{at}");
             let called = client
                 .call_tool(CallToolRequestParams::new("verify_step").with_arguments(thermal_step().as_object().unwrap().clone()))
                 .await

@@ -3,25 +3,26 @@
 //!
 //! A step and a whole twist end on the compiled kernel's state to the bit. A
 //! run that ends exactly on 75 degrees, the end of the twist compared with
-//! measurement, keeps its last step, and the next step is refused by name
-//! with the run's proof kept up to the last step that landed. The request
-//! that answered to 80 degrees in 0.6.0 is refused at the step past 75. Each refusal a request can reach is named and carries no proof: a
-//! force or a rate outside the range the card holds in, every condition the
-//! comparison of 2026-10-09 missed, a start at any twist but zero, a load
-//! changed in a later segment, a step outside the card's floor and ceiling,
-//! a missing input, a key the card does not have. Both exact ends of each
-//! range land and the next number outside each is refused. The one flag is
-//! the event of full slip, and the run still verifies. `validate_series`
-//! compares the torque. The local and the web connection return the same
-//! bytes.
+//! measurement, carries no flag beyond the compared range; the request that
+//! was refused past 75 degrees through engine 0.9 lands to 80, its frames
+//! past 75 flagged. Each refusal a request can reach is named and carries no
+//! proof: no contact, a rate not above zero, a step past the quadrature step,
+//! a start at any twist but zero, a load changed in a later segment, a step
+//! outside the card's floor and ceiling, a missing input, a key the card
+//! does not have. Every condition the comparison of 2026-10-09 missed lands.
+//! The event of full slip and the frame beyond the compared range are the
+//! two flags, and the run still verifies. `validate_series` compares the
+//! torque. The local and the web connection return the same bytes.
 //!
 //! No measurement of the finger is read here.
+
+mod answer_text;
 
 use std::process::Stdio;
 use std::time::Duration;
 
 use genesis_kernel::fingerpad_p02_glass::{
-    self, FLAG_FULL_SLIP, FingerPadLoad, FingerPadP02Glass, FingerPadState, StepReject,
+    self, FLAG_BEYOND_COMPARED, FLAG_FULL_SLIP, FingerPadLoad, FingerPadP02Glass, FingerPadState,
 };
 use genesis_kernel::frame::LastStateFrame64;
 use protocol_mcp_gateway::app;
@@ -46,10 +47,12 @@ async fn post(base: &str, path: &str, body: &Value) -> (u16, String) {
     let url = format!("{base}{path}");
     let mut last_error = None;
     for _ in 0..20 {
-        match client.post(&url).json(body).send().await {
+        match client.post(&url).header(reqwest::header::CONTENT_TYPE, "application/json").body(answer_text::as_sent(body)).send().await {
             Ok(response) => {
                 let status = response.status().as_u16();
-                return (status, response.text().await.unwrap());
+                let text = response.text().await.unwrap();
+                answer_text::remember(&text);
+                return (status, text);
             }
             Err(error) => {
                 last_error = Some(error);
@@ -153,7 +156,7 @@ async fn a_step_of_the_finger_pad_is_the_compiled_step_to_the_bit() {
     assert_eq!(answer["state"]["held_twist_rate_deg_s"], 20.0);
     assert!(answer["sha256_seal"].as_str().is_some_and(|seal| seal.len() == 64));
     assert!(answer["receipt_sha256"].as_str().is_some_and(|seal| seal.len() == 64));
-    assert_eq!(answer["engine_version"], "genesis_kernel_v0.9.0");
+    assert_eq!(answer["engine_version"], "genesis_kernel_v0.12.0");
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -211,23 +214,26 @@ async fn a_twist_to_75_degrees_keeps_its_last_step_and_the_next_is_refused_by_na
         assert!((twist - 75.0).abs() < 4.0e-9, "{twist}");
     }
 
-    // One step more is refused, and the run keeps its proof up to the 150th.
-    // The 160 steps that answered to 80 degrees in 0.6.0 are refused at the
-    // same step: the twist from 75 to 80 degrees was never compared, and the
-    // measured plate slowed to a stop there.
+    // Through engine 0.9 one step more was refused as TwistBeyondMeasured, and
+    // the 160 steps that answered to 80 degrees in 0.6.0 were refused at the
+    // same step. Both land now; each frame past 75 degrees carries
+    // FLAG_BEYOND_COMPARED, and the tape holds.
     for steps in [151_u64, 160] {
         let segments = json!([{ "steps": steps, "load": load(2.07, 50.0) }]);
         let (status, text) =
             post(&base, "/run_trajectory", &run_body(0.0, 0.01, segments, 1)).await;
         assert_eq!(status, 200, "{text}");
         let tape: Value = serde_json::from_str(&text).unwrap();
-        assert_eq!(tape["outcome"], "refused", "{steps}");
-        assert_eq!(tape["reject"], format!("{:?}", StepReject::TwistBeyondMeasured));
-        assert_eq!(tape["steps_landed"], 150, "{steps}");
-        let detail = tape["reject_detail"].as_str().unwrap();
-        assert!(detail.contains("TwistBeyondMeasured"), "{detail}");
-        assert!(detail.contains("the step ends beyond 75 degrees"), "{detail}");
-        assert!(tape["run_seal"].as_str().is_some_and(|seal| seal.len() == 64));
+        assert_eq!(tape["outcome"], "completed", "{steps}");
+        assert_eq!(tape["steps_landed"], steps, "{steps}");
+        let frames = tape["frames"].as_array().unwrap();
+        assert_eq!(flags_of(&frames[149]), FLAG_FULL_SLIP);
+        for frame in &frames[150..] {
+            assert_eq!(flags_of(frame), FLAG_FULL_SLIP | FLAG_BEYOND_COMPARED);
+        }
+        let state = kernel_run(held, 0.01, steps as usize);
+        assert_state_is(&tape["final_state"], &state, "past 75 degrees");
+        assert_eq!(tape["final_state"]["beyond_compared"], true);
         let (status, report) = post(&base, "/verify_tape", &tape).await;
         assert_eq!(status, 200, "{report}");
         assert_eq!(serde_json::from_str::<Value>(&report).unwrap()["holds"], true, "{report}");
@@ -244,15 +250,14 @@ async fn the_description_states_the_compared_twist_and_the_largest_work() {
     let (status, text) = post(&base, "/describe_card", &which).await;
     assert_eq!(status, 200, "{text}");
     for words in [
-        "a step of a run that would end beyond 75 degrees is refused as TwistBeyondMeasured",
-        "at the step that would end beyond 75 degrees",
-        "a run that ends exactly on 75 degrees keeps its last step",
-        "where the largest work inside the range is 0.0126 J",
-        "The slowest whole twist is then at most 384,000 steps",
+        "past 75 degrees a run goes on, each frame carrying FLAG_BEYOND_COMPARED",
+        "A run goes on past 75 degrees, the end of the twist compared with measurement",
+        "the work of a twist to 75 degrees at 2.07 N and 50 degrees a second is 0.0126 J",
+        "refused as TwistStepAboveQuadrature",
     ] {
         assert!(text.contains(words), "{words}");
     }
-    for words in ["0.015 J", "409,600", "end beyond 80 degrees", "ends exactly on 80 degrees"] {
+    for words in ["0.015 J", "409,600", "end beyond 80 degrees", "ends exactly on 80 degrees", "TwistBeyondMeasured", "NormalForceOutsideCard"] {
         assert!(!text.contains(words), "{words}");
     }
 }
@@ -265,21 +270,14 @@ async fn each_limit_a_request_can_reach_is_named_and_carries_no_proof() {
     let below = |x: f64| f64::from_bits(x.to_bits() - 1);
     let above = |x: f64| f64::from_bits(x.to_bits() + 1);
     let cases: Vec<(Value, &str)> = vec![
-        // The next 64-bit number outside each end of each range.
-        (step_body(0.0, &load(below(1.93), 20.0), 0.01), "NormalForceOutsideCard"),
-        (step_body(0.0, &load(above(2.07), 20.0), 0.01), "NormalForceOutsideCard"),
-        (step_body(0.0, &load(2.0, below(5.0)), 0.01), "TwistRateOutsideCard"),
-        (step_body(0.0, &load(2.0, above(50.0)), 0.01), "TwistRateOutsideCard"),
-        (step_body(0.0, &load(1.929, 20.0), 0.01), "NormalForceOutsideCard"),
-        (step_body(0.0, &load(2.071, 20.0), 0.01), "NormalForceOutsideCard"),
-        // Every condition of the comparison of 2026-10-09 at which the card
-        // missed its slip-torque mark, held back or fitted.
-        (step_body(0.0, &load(0.5, 20.0), 0.01), "NormalForceOutsideCard"),
-        (step_body(0.0, &load(1.0, 20.0), 0.01), "NormalForceOutsideCard"),
-        (step_body(0.0, &load(5.0, 20.0), 0.01), "NormalForceOutsideCard"),
-        (step_body(0.0, &load(10.0, 20.0), 0.01), "NormalForceOutsideCard"),
-        (step_body(0.0, &load(2.0, 100.0), 0.01), "TwistRateOutsideCard"),
-        (step_body(0.0, &load(2.0, -20.0), 0.01), "TwistRateOutsideCard"),
+        // A force and a rate of zero or less.
+        (step_body(0.0, &load(0.0, 20.0), 0.01), "NoContact"),
+        (step_body(0.0, &load(-2.0, 20.0), 0.01), "NoContact"),
+        (step_body(0.0, &load(2.0, 0.0), 0.01), "TwistRateNotPositive"),
+        (step_body(0.0, &load(2.0, -20.0), 0.01), "TwistRateNotPositive"),
+        // A step that turns the plate past 0.05 of the characteristic twist.
+        (step_body(0.0, &load(2.0, 100.0), 0.01), "TwistStepAboveQuadrature"),
+        (step_body(0.0, &load(2.0, 1000.0), 0.001), "TwistStepAboveQuadrature"),
         // A start at any twist but zero, one that would read as zero in a
         // 32-bit frame slot included.
         (step_body(1.0e-46, &good, 0.01), "TwistNotStartedFromZero"),
@@ -305,20 +303,35 @@ async fn each_limit_a_request_can_reach_is_named_and_carries_no_proof() {
         assert_eq!(status, 422, "{text}");
         assert!(text.contains("TwistNotStartedFromZero") && !text.contains("run_seal"), "{text}");
     }
-    // Both exact ends of each range land.
-    for body in [
-        step_body(0.0, &load(1.93, 20.0), 0.01),
-        step_body(0.0, &load(2.07, 20.0), 0.01),
-        step_body(0.0, &load(2.0, 5.0), 0.01),
-        step_body(0.0, &load(2.0, 50.0), 0.01),
-        step_body(0.0, &load(1.93, 5.0), 0.01),
-        step_body(0.0, &load(2.07, 50.0), 0.01),
-        step_body(0.0, &good, 0.01),
-        step_body(0.0, &good, floor),
-        step_body(-0.0, &good, 0.01),
+    // Every condition the comparison of 2026-10-09 missed lands, and what lies
+    // past the forces and rates measured lands flagged.
+    for (body, beyond) in [
+        (step_body(0.0, &load(1.93, 20.0), 0.01), false),
+        (step_body(0.0, &load(2.07, 20.0), 0.01), false),
+        (step_body(0.0, &load(2.0, 5.0), 0.01), false),
+        (step_body(0.0, &load(2.0, 50.0), 0.01), false),
+        (step_body(0.0, &load(below(1.93), 20.0), 0.01), false),
+        (step_body(0.0, &load(above(2.07), 20.0), 0.01), false),
+        (step_body(0.0, &load(0.5, 20.0), 0.01), false),
+        (step_body(0.0, &load(1.0, 20.0), 0.01), false),
+        (step_body(0.0, &load(5.0, 20.0), 0.01), false),
+        (step_body(0.0, &load(10.0, 20.0), 0.01), false),
+        (step_body(0.0, &load(2.0, 100.0), 0.004), false),
+        (step_body(0.0, &load(below(0.5), 20.0), 0.01), true),
+        (step_body(0.0, &load(above(10.0), 20.0), 0.01), true),
+        (step_body(0.0, &load(2.0, below(5.0)), 0.01), true),
+        (step_body(0.0, &load(2.0, above(100.0)), 0.004), true),
+        (step_body(0.0, &load(0.01, 20.0), 0.01), true),
+        (step_body(0.0, &load(500.0, 20.0), 0.01), true),
+        (step_body(0.0, &load(2.0, 0.1), 0.01), true),
+        (step_body(0.0, &good, 0.01), false),
+        (step_body(0.0, &good, floor), false),
+        (step_body(-0.0, &good, 0.01), false),
     ] {
         let (status, text) = post(&base, "/verify_physics", &body).await;
         assert_eq!(status, 200, "{body}: {text}");
+        let answer: Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(answer["state"]["beyond_compared"], beyond, "{body}: {text}");
     }
     // A missing input is refused: nothing defaults.
     for key in ["normal_force_n", "twist_rate_deg_s", "twist_deg", "dt_s"] {
@@ -336,11 +349,11 @@ async fn each_limit_a_request_can_reach_is_named_and_carries_no_proof() {
         assert_eq!(status, 422, "{key}: {text}");
         assert!(text.contains(key) && !text.contains("sha256_seal"), "{key}: {text}");
     }
-    // A force off the card in a later segment refuses the whole run before its first step.
-    let segments = json!([{ "steps": 1, "load": good }, { "steps": 1, "load": load(5.0, 20.0) }]);
+    // A force of no contact in a later segment refuses the whole run before its first step.
+    let segments = json!([{ "steps": 1, "load": good }, { "steps": 1, "load": load(0.0, 20.0) }]);
     let (status, text) = post(&base, "/run_trajectory", &run_body(0.0, 0.01, segments, 1)).await;
     assert_eq!(status, 422, "{text}");
-    assert!(text.contains("NormalForceOutsideCard") && !text.contains("run_seal"), "{text}");
+    assert!(text.contains("NoContact") && !text.contains("run_seal"), "{text}");
 }
 
 /// No measured twist changed its force or its rate, and a run whose later
@@ -444,7 +457,7 @@ impl Local {
     }
 
     async fn tool(&mut self, name: &str, arguments: &Value) -> (String, bool) {
-        let line = json!({"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":name,"arguments":arguments}});
+        let line = answer_text::tool_call(7, name, arguments);
         let answer: Value = serde_json::from_str(&self.raw(&line.to_string()).await).unwrap();
         (
             answer["result"]["content"][0]["text"].as_str().unwrap().to_string(),
@@ -461,7 +474,7 @@ async fn the_local_connection_lists_the_finger_pad_and_gives_the_bytes_of_the_we
     assert!(!error);
     let listed: Value = serde_json::from_str(&listed).unwrap();
     let cards = listed["cards"].as_array().unwrap();
-    assert_eq!(cards.len(), 31);
+    assert_eq!(cards.len(), 37);
     let entry = cards
         .iter()
         .find(|card| card["card"] == "fingerpad_p02_glass")
@@ -486,11 +499,9 @@ async fn the_local_connection_lists_the_finger_pad_and_gives_the_bytes_of_the_we
     // and the range that is left.
     let line = entry["specimen"].as_str().unwrap();
     for words in [
-        "at 2 N (1.93 to 2.07 N)",
-        "at 5 to 50 degrees a second",
         "and missed",
-        "every other load are now refused by name",
-        "which is not a test",
+        "+9.4, +29.3 and -13.0 percent",
+        "It answers at every force and rate above zero with those misses stated",
     ] {
         assert!(line.contains(words), "{words}: {line}");
     }
@@ -504,12 +515,12 @@ async fn the_local_connection_lists_the_finger_pad_and_gives_the_bytes_of_the_we
         "by the rule fixed beforehand the comparison failed: of the twelve lines three were met and nine missed",
         "35.63 against 27.55 at 10 N (+29.3 percent)",
         "A simpler rule did better than the card on the slip torque at each condition",
-        "all three held-back conditions are now refused",
+        "this one answers at every force and rate above zero, with these misses stated",
         "At 2 N and 10 degrees a second it is just outside",
         "numerically a two-constant power law of load",
         "n = 0.76 +/- 0.06 and k = 6.74 +/- 1.31 mm",
         "with the paper's own k, the mean of seven fingers, they read +22.3 and +40.8 percent",
-        "evidence/checks/second_party/V-40/",
+        "evidence/verification/second_party/V-40/",
         "SHA-256 9b7ad4088cd7af1b3255eba36cc99cc2f7297c779f76bbdc8432920f13ff7c0a",
     ] {
         assert!(result.contains(words), "{words}: {result}");
@@ -517,13 +528,13 @@ async fn the_local_connection_lists_the_finger_pad_and_gives_the_bytes_of_the_we
     let limits = description["validation"]["limits"].as_str().unwrap();
     for words in [
         "All eight constants are fitted to this finger's own trials",
-        "nothing inside it is a test",
+        "nothing there is a test",
         "one trial about the mean of its condition inside a block, 5.2 percent",
         "block to block, 13 to 15 percent",
         "finger to finger, 17 to 26 percent",
         "not randomised because the camera was refocused for each force",
         "does not know the block",
-        "the spread of the robot's force controller",
+        "+13.6 percent at 0.5 N, +9.4 at 1 N, +21.7 at 5 N and +29.3 at 10 N",
         "read 3.9 percent higher on this finger",
         "The twist at full slip is the card's weakest output",
         "the experiments were conducted on separate days",
@@ -540,9 +551,10 @@ async fn the_local_connection_lists_the_finger_pad_and_gives_the_bytes_of_the_we
         assert!(!described.contains(words), "{words}");
     }
     let flags = description["advisory_flags"].as_array().unwrap();
-    assert_eq!(flags.len(), 1, "{flags:?}");
+    assert_eq!(flags.len(), 2, "{flags:?}");
     assert_eq!(flags[0]["name"], "FLAG_FULL_SLIP");
     assert_eq!(flags[0]["kind"], "event");
+    assert_eq!(flags[1]["name"], "FLAG_BEYOND_COMPARED");
     for words in ["FLAG_FULL_SLIP, an event and not a warning", "1.1 to 6.9 percent under its limit"] {
         assert!(described.contains(words), "{words}");
     }
@@ -551,10 +563,11 @@ async fn the_local_connection_lists_the_finger_pad_and_gives_the_bytes_of_the_we
     ] {
         assert!(limits.contains(words), "{words}: {limits}");
     }
-    assert_eq!(description["rejects"].as_array().map(Vec::len), Some(11), "{}", description["rejects"]);
+    // Re-pinned for 0.10.1: after the kernel's 11 names the list holds the gateway's own three for this card, DtBelowFloor and DtAboveCeiling and ContinuationNotOnCard.
+    assert_eq!(description["rejects"].as_array().map(Vec::len), Some(15), "{}", description["rejects"]);
 
     // The worked examples of the description run as written, the same bytes on both.
-    let step = description["example_verify_step"].clone();
+    let step = description["example_compute_step"].clone();
     let (over_local, error) = local.tool("verify_step", &step).await;
     assert!(!error, "{over_local}");
     let (status, over_web) = post(&web, "/verify_physics", &step).await;
@@ -573,12 +586,10 @@ async fn the_local_connection_lists_the_finger_pad_and_gives_the_bytes_of_the_we
 
     // A refusal is the same sentence on both, marked as an error on the local connection.
     let mut off = step.clone();
-    off["parameters"]["normal_force_n"] = json!(12.0);
+    off["parameters"]["normal_force_n"] = json!(0.0);
     let (over_local, error) = local.tool("verify_step", &off).await;
     assert!(error);
     let (status, over_web) = post(&web, "/verify_physics", &off).await;
     assert_eq!(status, 422);
-    assert!(
-        over_local.contains("NormalForceOutsideCard") && over_web.contains("NormalForceOutsideCard")
-    );
+    assert!(over_local.contains("NoContact") && over_web.contains("NoContact"));
 }

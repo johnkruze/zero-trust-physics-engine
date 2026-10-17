@@ -1,0 +1,15 @@
+{
+ "model": "satellite_lageos1__ledger_2026-10-16",
+ "protocol": {
+  "path": "evidence/research/lageos1_orbit/ledger_2026-10-16/validation_protocol.md",
+  "sha256": "92cfb3802f77a398ae9b37c89e64a338aa55d14a368c58dc8ecd5ed1ee34659b",
+  "committed": null
+ },
+ "held_back": [],
+ "registered": {
+  "utc": "2026-10-16T05:41:29Z"
+ },
+ "opened": [],
+ "scored": null,
+ "registered_by": "forecast.py register"
+}

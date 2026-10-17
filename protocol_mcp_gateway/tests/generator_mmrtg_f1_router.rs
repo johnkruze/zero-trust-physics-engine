@@ -1,11 +1,13 @@
-//! The Curiosity generator card on the HTTP door: the end of the card.
+//! The Curiosity generator card on the HTTP door: the end of the record.
 //!
-//! Every step, the first included, is held to mission day 4,087 plus one
-//! rounding tolerance, 2^-22 s. A restart from a returned mission time gets
-//! the verdict the run straight through gets; a run of two steps and a run
-//! of one to the same overshoot are refused alike. The description states
-//! the clock, the tolerance, where the energy totals count from, and the
-//! second party's repeat of the comparison.
+//! Every step, the first included, compares its landing with mission day
+//! 4,087 plus one rounding tolerance, 2^-22 s, and a step past it lands with
+//! FLAG_PAST_RECORD: the record ended that day, the generator did not. A
+//! restart from a returned mission time gets the verdict the run straight
+//! through gets. The card stops where the decay heat left falls under the
+//! ledger's resolution. The description states the clock, the tolerance,
+//! where the energy totals count from, and the second party's repeat of the
+//! comparison.
 //!
 //! No measurement is read here.
 
@@ -109,26 +111,36 @@ async fn a_restart_from_a_returned_mission_time_lands_where_the_run_straight_thr
     assert_eq!(status, 200, "{text}");
 }
 
-/// Two steps at the floor whose end in decimal is 0.89 s past the last day
-/// end at the second step, as one step to the same overshoot ends: the last
-/// day is the end the card declares. In 0.6.0 the two steps landed with a
-/// proof.
+/// Steps past the last day of the record complete: two steps at the floor
+/// whose end in decimal is 0.89 s past it, a step of a day from it, and a
+/// thousand days past it, each with its proof. A start past where the decay
+/// heat left falls under the ledger's resolution is refused by name.
 #[tokio::test]
-async fn two_steps_and_one_past_the_last_day_are_refused_alike() {
+async fn steps_past_the_last_day_of_the_record_complete() {
     let base = spawn_app().await;
     let floor_s = 4.028797086407726;
     let two = run(&base, 353_116_792.832_405_8, floor_s, 2).await;
-    assert_eq!(two["outcome"], "ended", "{two}");
-    assert_eq!(two["reject"], "MissionTimeOutsideCard", "{two}");
-    assert_eq!(two["steps_landed"], 1);
-    let one = run(&base, 353_116_796.861_202_9, floor_s, 1).await;
-    assert_eq!(one["outcome"], "ended", "{one}");
-    assert_eq!(one["reject"], "MissionTimeOutsideCard", "{one}");
-    assert_eq!(one["steps_landed"], 0);
-    // A tenth of a second past by one step of a day, and by many floor steps.
-    let day = run(&base, generator_mmrtg_f1::MISSION_TIME_MAX_S - 86_400.0 + 0.1 - 86_400.0, 86_400.0, 2).await;
-    assert_eq!(day["reject"], "MissionTimeOutsideCard", "{day}");
-    assert_eq!(day["steps_landed"], 1);
+    assert_eq!(two["outcome"], "completed", "{two}");
+    assert_eq!(two["steps_landed"], 2);
+    assert!(two["run_seal"].is_string(), "{two}");
+    let day = run(&base, generator_mmrtg_f1::MISSION_TIME_MAX_S, 86_400.0, 1_000).await;
+    assert_eq!(day["outcome"], "completed", "{day}");
+    assert_eq!(day["steps_landed"], 1_000);
+    let end_s = day["final_state"]["t_s"].as_f64().unwrap();
+    assert_eq!(end_s, generator_mmrtg_f1::MISSION_TIME_MAX_S + 1_000.0 * 86_400.0);
+    assert_eq!(day["final_state"]["range_margin_s"].as_f64().unwrap(), 0.0);
+    let generator = generator_mmrtg_f1::GeneratorMmrtgF1::curiosity();
+    let ledger_end_s = generator.ledger_end_mission_time_s().unwrap();
+    let body = json!({
+        "domain": "energy", "card": "generator_mmrtg_f1",
+        "initial": { "mission_time_s": 1.01 * ledger_end_s },
+        "dt_s": 86_400.0,
+        "segments": [{ "steps": 1, "load": {} }],
+        "record_every": 1
+    });
+    let (status, text) = post(&base, "/run_trajectory", &body).await;
+    assert_ne!(status, 200, "{text}");
+    assert!(text.contains("DecayHeatBelowLedgerResolution"), "{text}");
 }
 
 /// The description states the tolerance and the compensated clock, says
@@ -141,7 +153,7 @@ async fn the_description_states_the_clock_the_totals_and_the_second_party() {
     let text = card.to_string();
     assert!(text.contains("MISSION_END_TOLERANCE_S, 2^-22 s or about 2.38e-7 s: four spacings of 64-bit numbers between 2^28 s and 2^29 s, where the last day lies"), "{text}");
     assert!(text.contains("compares its landing with mission day 4,087 plus one tolerance"), "{text}");
-    assert!(text.contains("more than twice the tolerance, 4.8e-7 s, is refused by every route"), "{text}");
+    assert!(text.contains("lands with FLAG_PAST_RECORD set"), "{text}");
     assert!(!text.contains("2^-23 s") && !text.contains("mission day 2,808 plus"), "{text}");
     assert_eq!(generator_mmrtg_f1::MISSION_END_TOLERANCE_S, 2.0_f64.powi(-22));
     assert_eq!(generator_mmrtg_f1::MISSION_TIME_MAX_S, 4_087.0 * 86_400.0);
@@ -153,8 +165,8 @@ async fn the_description_states_the_clock_the_totals_and_the_second_party() {
     assert!(!limits.contains("not yet repeated by a second party"), "{limits}");
     assert!(!limits.contains("Known defect"), "{limits}");
     assert!(limits.contains("Repeated by a second party, Grok, on 2026-10-07"), "{limits}");
-    assert!(limits.contains("evidence/checks/second_party/V-11"), "{limits}");
-    // The published top: the smallest step from it lands within the tolerance.
+    assert!(limits.contains("evidence/verification/second_party/V-11"), "{limits}");
+    // The published top is where the decay heat left is the ledger's resolution.
     let mission = card["phase_fields"]
         .as_array()
         .unwrap()
@@ -163,17 +175,16 @@ async fn the_description_states_the_clock_the_totals_and_the_second_party() {
         .unwrap();
     let top = mission["maximum"].as_f64().unwrap();
     let generator = generator_mmrtg_f1::GeneratorMmrtgF1::curiosity();
-    assert_eq!(top, generator.last_start_mission_time_s().unwrap());
-    assert!(top + generator.floor_dt_s().unwrap() <= generator_mmrtg_f1::MISSION_TIME_MAX_S + generator_mmrtg_f1::MISSION_END_TOLERANCE_S);
-    assert_eq!(top, 353_116_795.971_203_15);
+    assert_eq!(top, generator.ledger_end_mission_time_s().unwrap());
     let bound = mission["bound"].as_str().unwrap();
-    assert!(bound.starts_with("inclusive [0, 3.5311679597120315e8] s. The maximum is the latest start, not the last day"), "{bound}");
-    assert!(bound.contains("before the end of mission day 4,087 (3.531168e8 s)"), "{bound}");
-    // The summary says the miss first, and the record says what is served.
+    assert!(bound.contains("about 2,070 years after landing"), "{bound}");
+    assert!(bound.contains("DecayHeatBelowLedgerResolution"), "{bound}");
+    // The summary says the miss, and the record says what is served.
     let summary = card["specimen"].as_str().unwrap();
-    assert!(summary.starts_with("One radioisotope generator, flight unit F1, on the Curiosity rover: its daily-average electrical output from landing to mission day 4,087, with no load; on the 1,279 held-back days, 2,809 to 4,087, it was inside its line"), "{summary}");
-    assert!(summary.contains("so it failed its comparison by the rule fixed beforehand and is served with that stated"), "{summary}");
+    assert!(summary.starts_with("One radioisotope generator, flight unit F1, on the Curiosity rover: its daily-average electrical output from landing on, with no load. Compared on the 1,279 held-back days 2,809 to 4,087"), "{summary}");
+    assert!(summary.contains("so it failed by the rule fixed beforehand"), "{summary}");
+    assert!(summary.contains("FLAG_PAST_RECORD"), "{summary}");
     assert!(limits.contains("The card serves mission days 2,809 to 4,087, the days it was scored on, as the model that was scored, with no constant changed since"), "{limits}");
     assert!(!limits.contains("ends at mission day 2,808"), "{limits}");
-    assert_eq!(card["declared_ends"][0]["end"], "mission day 4,087, the last day of the published record and the last the card covers");
+    assert!(card["declared_ends"].as_array().is_none_or(|ends| ends.is_empty()), "{}", card["declared_ends"]);
 }

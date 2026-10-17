@@ -25,31 +25,31 @@ const fn number(name: &'static str, unit: &'static str, note: &'static str) -> O
 
 pub const JOURNAL_BEARING_SHEFFIELD: Solver = Solver {
     name: "journal_bearing_sheffield",
-    summary: "Oil film of the University of Sheffield journal bearing test platform at 65 °C, load 2 to 20 kN, speed 100 to 800 rpm: Sommerfeld number, eccentricity ratio and minimum film thickness. One constant, a viscosity multiplier, is fitted to measurements of this bearing.",
+    summary: "Oil film of the University of Sheffield journal bearing test platform at 65 °C, at any load and speed above zero while the film is laminar and the shaft sits at an eccentricity ratio of 0.05 to 0.95: Sommerfeld number, eccentricity ratio, attitude angle, minimum film thickness and peak film pressure. One constant, a viscosity multiplier, is fitted to measurements of this bearing; compared at 2 to 20 kN and 100 to 800 rpm, the minimum film thickness met all three lines on the sixteen held-back runs (mean absolute residual 0.058, worst 0.156); the attitude angle and the pressure were compared with nothing.",
     inputs: &[
         Input {
             name: "load_n",
-            kind: Kind::Number {
-                minimum: bearing::LOAD_MIN_N,
-                maximum: bearing::LOAD_MAX_N,
+            kind: Kind::NumberAbove {
+                above: 0.0,
+                maximum: f64::MAX,
                 unit: "N",
             },
-            refusal: Some("LoadOutOfRange"),
-            bound: "The steady load on the bearing. The range is the tested envelope of the specimen.",
+            refusal: Some("LoadNotPositive"),
+            bound: "The steady load on the bearing, above zero (LoadNotPositive otherwise). The film depends on load and speed only through the Sommerfeld number; a load the film carries only with the shaft outside an eccentricity ratio of 0.05 to 0.95 is refused as EccentricityRatioOutOfRange. The tested envelope of the specimen is 2 to 20 kN; outside it nothing was compared.",
             only_when: None,
-            asked_by_check: false,
+            asked_by_check: true,
         },
         Input {
             name: "speed_rpm",
-            kind: Kind::Number {
-                minimum: bearing::SPEED_MIN_RPM,
-                maximum: bearing::SPEED_MAX_RPM,
+            kind: Kind::NumberAbove {
+                above: 0.0,
+                maximum: f64::MAX,
                 unit: "rpm",
             },
-            refusal: Some("SpeedOutOfRange"),
-            bound: "The steady shaft speed. No other input is accepted: the bearing, the oil, the grid and the tolerances are constants of the solver.",
+            refusal: Some("SpeedNotPositive"),
+            bound: "The steady shaft speed, above zero (SpeedNotPositive otherwise). Above a film Reynolds number of 41.2 sqrt(R/c), about 1450 and near 143,000 rpm for an oil of 860 kg/m³, Taylor vortices form and the film is not laminar: refused as FilmNotLaminar. The tested envelope is 100 to 800 rpm, where the film Reynolds number is at most about 8; outside it nothing was compared, and the film is held at 65 °C at every speed. No other input is accepted: the bearing, the oil, the grid and the tolerances are constants of the solver.",
             only_when: None,
-            asked_by_check: false,
+            asked_by_check: true,
         },
     ],
     kept_inside: "The bearing, the oil, the grid and the tolerances stay inside the solver.",
@@ -64,7 +64,17 @@ pub const JOURNAL_BEARING_SHEFFIELD: Solver = Solver {
             "1",
             "Shaft offset over the radial clearance.",
         ),
-        number("minimum_film_thickness_m", "m", ""),
+        number(
+            "attitude_angle_deg",
+            "deg",
+            "Angle from the load line to the line of centres, from the film force of the settled field. Compared with no measurement.",
+        ),
+        number("minimum_film_thickness_m", "m", "Compared with measurement."),
+        number(
+            "peak_film_pressure_pa",
+            "Pa",
+            "Highest film pressure above ambient in the settled field. Compared with no measurement.",
+        ),
     ],
     invariants: &[
         number("flow_balance_residual", "fraction of the peak pressure", ""),
@@ -74,27 +84,33 @@ pub const JOURNAL_BEARING_SHEFFIELD: Solver = Solver {
     field: field_words,
     answer: "a film",
     refusals: REFUSALS,
+    door_refusals: &[],
     sections,
     validation: Some(validation),
     example,
     further_examples: &[],
     parts: &[],
-    check: nothing_more_to_check,
+    check,
     solve,
 };
 
 /// Each `BearingReject` variant with the sentence from its doc comment. The
-/// request itself shows a load or a speed outside the range, so those two
-/// refusals are not sealed.
+/// request itself shows a load or a speed of zero or less and a film that is
+/// not laminar, so those three refusals are not sealed.
 const REFUSALS: &[Refusal] = &[
     Refusal {
-        name: "LoadOutOfRange",
-        meaning: "`load_n` is outside `LOAD_MIN_N`..=`LOAD_MAX_N`.",
+        name: "LoadNotPositive",
+        meaning: "`load_n` is not above zero: a film carries no load of zero or less.",
         sealed: false,
     },
     Refusal {
-        name: "SpeedOutOfRange",
-        meaning: "`speed_rpm` is outside `SPEED_MIN_RPM`..=`SPEED_MAX_RPM`.",
+        name: "SpeedNotPositive",
+        meaning: "`speed_rpm` is not above zero: a shaft at rest makes no film.",
+        sealed: false,
+    },
+    Refusal {
+        name: "FilmNotLaminar",
+        meaning: "The film Reynolds number is above `TAYLOR_CRITICAL_NUMBER` times the square root of the radius over the clearance: Taylor vortices form, and the film is not the laminar film of the Reynolds equation.",
         sealed: false,
     },
     Refusal {
@@ -104,7 +120,7 @@ const REFUSALS: &[Refusal] = &[
     },
     Refusal {
         name: "EccentricityRatioOutOfRange",
-        meaning: "The film carries the load only at an eccentricity ratio outside `ECCENTRICITY_RATIO_MIN`..=`ECCENTRICITY_RATIO_MAX`.",
+        meaning: "The film carries the load only at an eccentricity ratio outside `ECCENTRICITY_RATIO_MIN` to `ECCENTRICITY_RATIO_MAX`.",
         sealed: true,
     },
     Refusal {
@@ -127,8 +143,9 @@ const REFUSALS: &[Refusal] = &[
 /// The `BearingReject` variant name, without its fields.
 pub fn reject_name(reject: &BearingReject) -> &'static str {
     match reject {
-        BearingReject::LoadOutOfRange { .. } => "LoadOutOfRange",
-        BearingReject::SpeedOutOfRange { .. } => "SpeedOutOfRange",
+        BearingReject::LoadNotPositive { .. } => "LoadNotPositive",
+        BearingReject::SpeedNotPositive { .. } => "SpeedNotPositive",
+        BearingReject::FilmNotLaminar { .. } => "FilmNotLaminar",
         BearingReject::NonFiniteValue => "NonFiniteValue",
         BearingReject::EccentricityRatioOutOfRange { .. } => "EccentricityRatioOutOfRange",
         BearingReject::FilmNotSettled { .. } => "FilmNotSettled",
@@ -170,7 +187,7 @@ fn sections() -> Sections {
                 "rule": "Oil is conserved in every cell: a cell under pressure balances the flow through its four faces, and a cell at ambient is one that balance would put at or below ambient.",
                 "tolerance": bearing::FLOW_BALANCE_TOLERANCE,
                 "unit": "fraction of the peak pressure",
-                "checked": "at every shaft position",
+                "compared": "at every shaft position",
                 "refusal": "FlowBalanceBroken",
             },
             {
@@ -178,7 +195,7 @@ fn sections() -> Sections {
                 "rule": "The film force equals the load.",
                 "tolerance": bearing::LOAD_TOLERANCE,
                 "unit": "fraction of the load",
-                "checked": "at acceptance",
+                "compared": "at acceptance",
                 "refusal": "LoadNotCarried",
             },
         ]),
@@ -207,8 +224,8 @@ fn validation() -> [String; 5] {
     let object = "The plain full journal bearing of the bespoke test platform of the Leonardo Centre for Tribology, University of Sheffield, flooded with mineral oil, bearing temperature 65 °C, shaft aligned, steady load and speed. Beamish, Li, Brunskill, Hunter and Dwyer-Joyce, Tribology International 148 (2020) 106295.".to_string();
     let data = "Minimum film thickness by the ultrasonic phase-change method, one value per steady run, fifty runs: five speeds from 100 to 800 rpm at ten loads from 2 to 20 kN. Mendeley Data, doi 10.17632/txdrvd382p.2, CC BY 4.0. Thirty-four runs were opened and the viscosity multiplier fitted to them; sixteen were held back by rank before any measurement was read. Record: evidence/research/tribology_sheffield_journal_bearing/.".to_string();
     let pass_line = "On the residual (solver - measured) / measured over the held-back runs: mean of the absolute residual at most 0.15, worst absolute residual at most 0.35, absolute value of the mean at most 0.10. Fixed 2026-10-09T20:11:00Z, SHA-256 5319a2f190dece027bd0f19cb339b9d950827a2e7dcde7241b251380a21de01a of analysis/prereg.json, before any measured film thickness was read.".to_string();
-    let result = "All three lines met on the sixteen held-back runs: mean absolute 0.0580, worst absolute 0.1563, mean 0.0199, computed by this solver through the gateway on 2026-10-09, once, each answer saved with its seal and its receipt. With no fitted constant the solver misses: on the sixteen held-back runs mean absolute 0.1409, worst absolute 0.2574, mean 0.1409, the film thicker than measured on all sixteen (by the second scoring, outside the engine); on the thirty-four opened runs mean absolute 0.1293, worst absolute 0.4761, mean 0.1277, not met. On the opened runs with the fitted multiplier, leaving one out, in plain Python outside the engine: mean absolute 0.0636, worst absolute 0.3339, mean 0.0085, met; through the engine: mean absolute 0.0617, worst absolute 0.3235, mean 0.0085, met, and the fitted multiplier came from these runs. A second scorer recomputed the sixteen residuals, the seals and the receipts from the protocol alone on 2026-10-09 and found the same numbers and the same verdict: evidence/checks/second_party/V-22/. Not gated: against the ultrasonic amplitude method on the same sixteen runs, mean absolute 0.2106, worst absolute 0.9356, mean -0.0648; the source restricts that method to films under 12.5 micrometres.".to_string();
-    let limits = "One constant is fitted, the viscosity multiplier. The held-back runs are every third run of the same fifty and lie among the fitted ones, inside the same loads and speeds: interpolation, not extrapolation. The model depends on load and speed only through their ratio, and eight of the sixteen share that ratio with a fitted run. That is a property of the model, not a measurement: a load or speed outside the range is refused, and a request inside the range with the same ratio is not an answer for it. The test is whether the measurements fall on one curve with one constant. Nothing is shown outside 2 to 20 kN and 100 to 800 rpm. The record says nothing of any other bearing, oil or temperature; a misaligned shaft; start-up, shut-down or a moving load; the film away from its thinnest point; the pressure; the attitude angle; friction and oil flow. The solver returns no attitude angle, no pressure, no friction and no oil flow. The settled pressure field enters the proof only through field_sha256, and no pressure was compared with measurement.".to_string();
+    let result = "All three lines met on the sixteen held-back runs: mean absolute 0.0580, worst absolute 0.1563, mean 0.0199, computed by this solver through the gateway on 2026-10-09, once, each answer saved with its seal and its receipt. With no fitted constant the solver misses: on the sixteen held-back runs mean absolute 0.1409, worst absolute 0.2574, mean 0.1409, the film thicker than measured on all sixteen (by the second scoring, outside the engine); on the thirty-four opened runs mean absolute 0.1293, worst absolute 0.4761, mean 0.1277, not met. On the opened runs with the fitted multiplier, leaving one out, in plain Python outside the engine: mean absolute 0.0636, worst absolute 0.3339, mean 0.0085, met; through the engine: mean absolute 0.0617, worst absolute 0.3235, mean 0.0085, met, and the fitted multiplier came from these runs. A second scorer recomputed the sixteen residuals, the seals and the receipts from the protocol alone on 2026-10-09 and found the same numbers and the same verdict: evidence/verification/second_party/V-22/. Not gated: against the ultrasonic amplitude method on the same sixteen runs, mean absolute 0.2106, worst absolute 0.9356, mean -0.0648; the source restricts that method to films under 12.5 micrometres.".to_string();
+    let limits = "One constant is fitted, the viscosity multiplier. The held-back runs are every third run of the same fifty and lie among the fitted ones, inside the same loads and speeds: interpolation, not extrapolation. The model depends on load and speed only through their ratio, and eight of the sixteen share that ratio with a fitted run. That is a property of the model, not a measurement. The test is whether the measurements fall on one curve with one constant. Nothing is shown outside 2 to 20 kN and 100 to 800 rpm (Sommerfeld number about 0.016 to 1.3), and the solver answers past them wherever the laminar film carries the load inside the eccentricity ratios searched; there the oil is held at 65 °C and the shell and the shaft rigid, so heating at high speed and deformation under high load are left out. Through engine 0.8.0 a load or speed outside the tested envelope was refused. The record says nothing of any other bearing, oil or temperature; a misaligned shaft; start-up, shut-down or a moving load; the film away from its thinnest point; the pressure; the attitude angle; friction and oil flow. The solver returns the attitude angle and the peak film pressure from the same settled field as the film thickness, compared with no measurement, and no friction and no oil flow.".to_string();
     [object, data, pass_line, result, limits]
 }
 
@@ -216,10 +233,11 @@ fn example() -> Value {
     json!({ "load_n": 10000, "speed_rpm": 400 })
 }
 
-/// The load and the speed are the only inputs, and their bounds are in the
-/// field list.
-fn nothing_more_to_check(_given: &Given) -> Result<(), String> {
-    Ok(())
+/// The limits of the load and the speed, asked of the solver before a
+/// physics permit is taken, each by its own name.
+fn check(given: &Given) -> Result<(), String> {
+    bearing::admit(given.number("load_n")?, given.number("speed_rpm")?)
+        .map_err(|reject| format!("Physical Violation: {reject} ({}).", reject_name(&reject)))
 }
 
 fn solve(given: &Given) -> Result<Solved, String> {
@@ -251,7 +269,9 @@ pub fn solved(returned: Result<BearingFilm, BearingReject>) -> Solved {
         result: vec![
             named("sommerfeld_number", film.sommerfeld_number),
             named("eccentricity_ratio", film.eccentricity_ratio),
+            named("attitude_angle_deg", film.attitude_angle_deg),
             named("minimum_film_thickness_m", film.minimum_film_thickness_m),
+            named("peak_film_pressure_pa", film.peak_film_pressure_pa),
         ],
         invariants: vec![
             named("flow_balance_residual", film.flow_balance_residual),
@@ -315,10 +335,11 @@ mod tests {
         let body = describe_value(JOURNAL_BEARING_SHEFFIELD.name).expect("described");
         let refusals = body["refusals"].as_array().expect("refusals");
         assert_eq!(refusals.len(), documented.len());
-        // Only the two refusals the request itself shows are answered with no seal.
+        // Only the three refusals the request itself shows are answered with no seal.
         for refusal in refusals {
-            let at_the_door =
-                refusal["name"] == "LoadOutOfRange" || refusal["name"] == "SpeedOutOfRange";
+            let at_the_door = refusal["name"] == "LoadNotPositive"
+                || refusal["name"] == "SpeedNotPositive"
+                || refusal["name"] == "FilmNotLaminar";
             let reported = if at_the_door { "422, no seal" } else { "200, outcome refused, sealed" };
             assert_eq!(refusal["reported_as"], reported, "{}", refusal["name"]);
         }
@@ -342,12 +363,12 @@ mod tests {
         assert!(journal.published_shape("result", "eccentricity_ratio_hex").is_some());
         assert!(journal.published_shape("invariants", "load_residual_n").is_some());
         assert!(journal.published_shape("result", "total_energy_ha").is_none());
-        // Compared with no measurement, so not returned.
-        assert!(journal.published_shape("result", "attitude_angle_deg").is_none());
-        assert!(journal.published_shape("result", "peak_film_pressure_pa").is_none());
+        // Compared with no measurement, and returned from the same settled field.
+        assert!(journal.published_shape("result", "attitude_angle_deg").is_some());
+        assert!(journal.published_shape("result", "peak_film_pressure_pa").is_some());
         let names: Vec<&str> = journal.result.iter().map(|output| output.name).collect();
-        assert_eq!(names, ["sommerfeld_number", "eccentricity_ratio", "minimum_film_thickness_m"]);
-        assert!(!journal.summary.contains("attitude") && !journal.summary.contains("pressure"));
+        assert_eq!(names, ["sommerfeld_number", "eccentricity_ratio", "attitude_angle_deg", "minimum_film_thickness_m", "peak_film_pressure_pa"]);
+        assert!(journal.summary.contains("the attitude angle and the pressure were compared with nothing"));
         assert!(atom.published_shape("result", "eccentricity_ratio").is_none());
         assert!(atom.published_shape("invariants", "flow_balance_residual").is_none());
         assert!(crate::solvers::find("atom").is_none());
@@ -384,7 +405,8 @@ mod tests {
                 .as_object()
                 .expect("properties")
                 .len(),
-            2
+            // The two fields, and signed, an instrument's signature beside them.
+            3
         );
         assert!(!journal.to_string().contains("atomic_number"));
         let none = Value::Object(solve_schema_in(&View::limited([], [])));
@@ -409,7 +431,7 @@ mod tests {
         }
         assert!(limits.contains("interpolation, not extrapolation"));
         assert!(limits.contains("One constant is fitted"));
-        assert!(limits.contains("The solver returns no attitude angle, no pressure"));
-        assert!(limits.contains("no pressure was compared with measurement"));
+        assert!(limits.contains("The solver returns the attitude angle and the peak film pressure from the same settled field"));
+        assert!(limits.contains("compared with no measurement"));
     }
 }

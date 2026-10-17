@@ -105,10 +105,7 @@
 //! booked work and a falsely booked torque are each refused by name in this
 //! file's tests. Honest steps at the ceiling stayed under 1.0 × 10⁻¹³ of a
 //! limit of 10⁻¹² over a million steps, 114 years, from the 1999 state,
-//! measured before the card held a state to where the compared run went;
-//! that run is now refused 5,934.6 days from the 1999 state as
-//! [`StepReject::DistanceOutsideComparedRun`], Saturn farther from the Sun
-//! than 9.97 au.
+//! from the 1999 state.
 //!
 //! The ledger is carried from run to run. A run starts from positions,
 //! velocities and a [`SolarSystemLedger`]: the anchors `E_anchor` and
@@ -187,33 +184,34 @@
 //! of 1800 s. It went on 7,670 days, to 2020-01-01, but the last range
 //! compared with measurement is MESSENGER's of 2015-03-18, 5,920.4 days
 //! (16.2 years) after the start; from 16.2 to 21 years the run was compared
-//! only with DE441, a calculation. The compared run here is that run to the
-//! end of day 5,922, as far as the scoring needed to compare the last range
-//! (it compares a range only up to one day before the run's end). The card
-//! holds a start state, and every landing, to three more things the compared
-//! run held to, and refuses by name outside them:
+//! only with DE441, a calculation. Two Mars files met their lines (Mars
+//! Odyssey to 2006, 695 m at most against 700 m) and MESSENGER at Mercury met
+//! (2.08 km at most); Odyssey after 2006 and Mars Reconnaissance Orbiter
+//! missed, by at most 8 to 10 percent of their lines, in mid-2007. The card
+//! computes past that run on the same forces and both ledgers, and states
+//! where the run went:
 //!
-//! - Each body's distance from its primary inside the distances the run went
-//!   through, [`COMPARED_DISTANCE_M`], each end rounded outward to 0.01 au.
-//!   The run swept the whole orbit of each inner body, of Jupiter and of the
+//! - Each body's distance from its primary went through
+//!   [`COMPARED_DISTANCE_M`], each end rounded outward to 0.01 au. The run
+//!   swept the whole orbit of each inner body, of Jupiter and of the
 //!   asteroids, and only part of the orbits of Saturn, Uranus and Neptune.
-//!   [`StepReject::DistanceOutsideComparedRun`]. Carried on past day 5,922 in
-//!   the same steps, the run is refused 5,934.6 days from the start, Saturn
-//!   farther from the Sun than 9.97 au: no date is held, and this is where
-//!   the start state compared with measurement for 16.2 years stops.
-//! - No two bodies but the Earth and the Moon closer than
-//!   [`PAIR_SEPARATION_MIN_M`], 0.26 au; the run's closest such pair was
-//!   Mercury and Venus at 0.2631 au. No two of the three asteroids closer
-//!   than [`ASTEROID_SEPARATION_MIN_M`], 0.38 au; the run's closest were Ceres
-//!   and Vesta at 0.3885 au. Point masses closer than that were never
-//!   compared, and bodies inside one another are not point masses.
-//!   [`StepReject::BodiesTooClose`]; two bodies at exactly one point are
-//!   [`StepReject::BodiesCoincide`].
-//! - The centre of mass of the thirteen bodies no farther than
-//!   [`CENTRE_OF_MASS_DISTANCE_MAX_M`], 1.2 × 10⁵ m, from the origin; the
-//!   run's was within 1.1493 × 10⁵ m. A state moved bodily is the same motion
-//!   in other numbers, and its rounding is not the run's: moved 6 × 10¹³ m,
-//!   the Moon is 98.5 m off in a year. [`StepReject::OriginOutsideCard`].
+//!   A state outside those distances, inside the bodies' bands, is computed.
+//!   Carried on past day 5,922 in the same steps, the run goes on; until
+//!   engine 0.9 it was refused 5,934.6 days from the start, Saturn farther
+//!   from the Sun than 9.97 au.
+//! - The closest two bodies but the Earth and the Moon came was
+//!   [`PAIR_SEPARATION_MIN_M`], 0.26 au, rounded down from Mercury and Venus
+//!   at 0.2631 au; the closest two asteroids, [`ASTEROID_SEPARATION_MIN_M`],
+//!   0.38 au, from Ceres and Vesta at 0.3885 au. Any separation is computed;
+//!   two bodies at exactly one point are [`StepReject::BodiesCoincide`]. A
+//!   close encounter needs a smaller step, and the ledger refuses one taken
+//!   too large. The card has no figures and no tides of the bodies other
+//!   than the Earth's J2 on the Moon.
+//! - The centre of mass of the thirteen bodies stayed within
+//!   [`CENTRE_OF_MASS_DISTANCE_MAX_M`], 1.2 × 10⁵ m, of the origin; the run's
+//!   was 0.9841 × 10⁵ to 1.1493 × 10⁵ m. A state moved bodily is the same
+//!   motion with other rounding, and is computed at any offset: moved
+//!   6 × 10¹³ m, the Moon is 98.5 m off in a year.
 //!
 //! `core` only: no heap and no standard prelude. The card and the state are
 //! `Copy`. The 16-byte frame proof is not touched.
@@ -223,6 +221,7 @@ extern crate core;
 use core::prelude::v1::*;
 
 use crate::frame::LastStateFrame64;
+use crate::normal::{normal_or_zero, normal_or_zero_each, normal_or_zero_rows};
 
 /// How many bodies the card carries.
 pub const BODIES: usize = 13;
@@ -347,15 +346,15 @@ pub const DISTANCE_BAND_M: [[f64; 2]; BODIES] = [
     [2.0 * ASTRONOMICAL_UNIT_M, 3.6 * ASTRONOMICAL_UNIT_M],
     [2.0 * ASTRONOMICAL_UNIT_M, 2.7 * ASTRONOMICAL_UNIT_M],
 ];
-/// Each body's distance from its primary, incoming or landing, must also lie
-/// in this band: the distances the compared run went through, 5,922 days
+/// Each body's distance from its primary in the compared run, not a limit:
+/// the distances that run went through, 5,922 days
 /// from the 1999 state in steps of 1800 s, to the last range compared with
 /// measurement, each end rounded outward to 0.01 au, and to 1000 km for the
 /// Moon. Metres. The Sun's own row is not used. The run swept the whole
 /// orbit of each inner body, of Jupiter and of the asteroids; Saturn, Uranus
 /// and Neptune went through only part of theirs (Saturn 9.0309 to 9.9679 au,
-/// Uranus 19.8862 to 20.0988 au, Neptune 29.9668 to 30.1333 au), and a state
-/// with one of them elsewhere was not compared.
+/// Uranus 19.8862 to 20.0988 au, Neptune 29.9668 to 30.1333 au). A state with
+/// one of them elsewhere is computed; it was not compared.
 #[cfg_attr(rustfmt, rustfmt::skip)]
 pub const COMPARED_DISTANCE_M: [[f64; 2]; BODIES] = [
     [0.0, 0.0],
@@ -377,22 +376,21 @@ pub const COMPARED_DISTANCE_M: [[f64; 2]; BODIES] = [
 /// barycentre is at rest. The 1999 state has 0.00004 m/s.
 pub const CENTRE_OF_MASS_SPEED_MAX_M_S: f64 = 0.01;
 /// The largest distance of the centre of mass of the thirteen bodies from
-/// the origin, incoming or landing, metres. The positions are taken from the
+/// the origin in the compared run, rounded up, metres; not a limit. The positions are taken from the
 /// barycentre of the Solar System, and a state moved bodily away from it is
 /// the same motion carried in other numbers, with other rounding. In the
 /// compared run, 5,922 days from the 1999 state in steps of 1800 s, to the
 /// last range compared with measurement, the centre of mass went from
-/// 0.9841 × 10⁵ m to 1.1493 × 10⁵ m from the origin. The line is
-/// 1.2 × 10⁵ m.
+/// 0.9841 × 10⁵ m to 1.1493 × 10⁵ m from the origin.
 pub const CENTRE_OF_MASS_DISTANCE_MAX_M: f64 = 1.2e5;
-/// The smallest distance between any two bodies but the Earth and the Moon,
-/// incoming or landing, metres: 0.26 au. In the compared run the closest such
+/// The smallest distance between any two bodies but the Earth and the Moon
+/// in the compared run, rounded down, metres: 0.26 au; not a limit. In the compared run the closest such
 /// pair was Mercury and Venus at 0.2631 au, then Venus and the Earth at
 /// 0.2661 au.
 pub const PAIR_SEPARATION_MIN_M: f64 = 0.26 * ASTRONOMICAL_UNIT_M;
-/// The smallest distance between two of the three asteroids, incoming or
-/// landing, metres: 0.38 au. Their bands overlap, so nothing else keeps them
-/// apart. In the compared run the closest two were Ceres and Vesta at
+/// The smallest distance between two of the three asteroids in the compared
+/// run, rounded down, metres: 0.38 au; not a limit. Their bands overlap, so
+/// they can meet. In the compared run the closest two were Ceres and Vesta at
 /// 0.3885 au.
 pub const ASTEROID_SEPARATION_MIN_M: f64 = 0.38 * ASTRONOMICAL_UNIT_M;
 /// Index of the first of the three asteroids, Ceres; Pallas and Vesta follow.
@@ -432,16 +430,10 @@ pub enum StepReject {
     DistanceOutsideCard,
     /// The semi-major axis of a body's orbit about its primary, incoming or landing, is outside that body's band, or the orbit is not closed.
     OrbitOutsideCard,
-    /// A body's distance from its primary, incoming or landing, is outside the distances the compared run went through up to the last range compared with measurement, 16.2 years after the 1999 state: Mercury 0.30 to 0.47 au, Venus 0.71 to 0.73, the Earth 0.98 to 1.02, the Moon 356 000 to 407 000 km, Mars 1.38 to 1.67, Jupiter 4.94 to 5.46, Saturn 9.03 to 9.97, Uranus 19.88 to 20.10, Neptune 29.96 to 30.14, Ceres 2.54 to 2.99, Pallas 2.13 to 3.42, Vesta 2.14 to 2.58 au.
-    DistanceOutsideComparedRun,
     /// Two bodies, incoming or landing, are at exactly one point, where the attraction between them has no value.
     BodiesCoincide,
-    /// Two bodies other than the Earth and the Moon, incoming or landing, are closer than 0.26 au, or two of the three asteroids closer than 0.38 au: closer than any pair in the compared run.
-    BodiesTooClose,
     /// The centre of mass of the thirteen bodies, incoming or landing, moves faster than 0.01 m/s.
     FrameOutsideCard,
-    /// The centre of mass of the thirteen bodies, incoming or landing, is more than 120 000 m from the origin.
-    OriginOutsideCard,
     /// The orbit of the Earth-Moon barycentre about the Sun, incoming or landing, is not inclined 21 to 27 degrees to the z axis, as the ecliptic is to the ICRF equator: the axes are not those of the ICRF.
     AxesOutsideCard,
     /// The incoming ledger, or the trial step, gained energy that the work of relativity and of the Earth's oblateness does not account for.
@@ -465,11 +457,7 @@ pub struct SolarSystem {
     pub earth_radius_m: f64,
     pub earth_pole: [f64; 3],
     pub distance_band_m: [[f64; 2]; BODIES],
-    pub compared_distance_m: [[f64; 2]; BODIES],
     pub centre_of_mass_speed_max_m_s: f64,
-    pub centre_of_mass_distance_max_m: f64,
-    pub pair_separation_min_m: f64,
-    pub asteroid_separation_min_m: f64,
     pub orbit_pole_cosine_min: f64,
     pub orbit_pole_cosine_max: f64,
     pub ledger_scale_energy: f64,
@@ -488,11 +476,7 @@ impl SolarSystem {
             earth_radius_m: EARTH_RADIUS_M,
             earth_pole: EARTH_POLE,
             distance_band_m: DISTANCE_BAND_M,
-            compared_distance_m: COMPARED_DISTANCE_M,
             centre_of_mass_speed_max_m_s: CENTRE_OF_MASS_SPEED_MAX_M_S,
-            centre_of_mass_distance_max_m: CENTRE_OF_MASS_DISTANCE_MAX_M,
-            pair_separation_min_m: PAIR_SEPARATION_MIN_M,
-            asteroid_separation_min_m: ASTEROID_SEPARATION_MIN_M,
             orbit_pole_cosine_min: ORBIT_POLE_COSINE_MIN,
             orbit_pole_cosine_max: ORBIT_POLE_COSINE_MAX,
             ledger_scale_energy: LEDGER_SCALE_ENERGY,
@@ -514,8 +498,6 @@ impl SolarSystem {
             if !same_bits(self.gm_m3_s2[body], GM_M3_S2[body])
                 || !same_bits(self.distance_band_m[body][0], DISTANCE_BAND_M[body][0])
                 || !same_bits(self.distance_band_m[body][1], DISTANCE_BAND_M[body][1])
-                || !same_bits(self.compared_distance_m[body][0], COMPARED_DISTANCE_M[body][0])
-                || !same_bits(self.compared_distance_m[body][1], COMPARED_DISTANCE_M[body][1])
             {
                 return false;
             }
@@ -532,9 +514,6 @@ impl SolarSystem {
             && same_bits(self.earth_j2, EARTH_J2)
             && same_bits(self.earth_radius_m, EARTH_RADIUS_M)
             && same_bits(self.centre_of_mass_speed_max_m_s, CENTRE_OF_MASS_SPEED_MAX_M_S)
-            && same_bits(self.centre_of_mass_distance_max_m, CENTRE_OF_MASS_DISTANCE_MAX_M)
-            && same_bits(self.pair_separation_min_m, PAIR_SEPARATION_MIN_M)
-            && same_bits(self.asteroid_separation_min_m, ASTEROID_SEPARATION_MIN_M)
             && same_bits(self.orbit_pole_cosine_min, ORBIT_POLE_COSINE_MIN)
             && same_bits(self.orbit_pole_cosine_max, ORBIT_POLE_COSINE_MAX)
             && same_bits(self.ledger_scale_energy, LEDGER_SCALE_ENERGY)
@@ -750,8 +729,25 @@ struct Trial {
 /// Advance one RK4 step and write the frame.
 ///
 /// `load` is empty. A rejected step leaves `state` and `frame` as they were.
+///
+/// A value of the landed state below the normal range is written as zero
+/// with its sign ([`crate::normal`]).
 #[must_use]
 pub fn step(
+    system: &SolarSystem,
+    state: &mut SolarSystemState,
+    frame: &mut LastStateFrame64,
+    load: SolarSystemLoad,
+    dt_s: f64,
+) -> Result<(), StepReject> {
+    step_as_computed(system, state, frame, load, dt_s)?;
+    normal_or_zero_state(state);
+    Ok(())
+}
+
+/// The step as its equations compute it, before a value of the landed
+/// state below the normal range is written as zero.
+fn step_as_computed(
     system: &SolarSystem,
     state: &mut SolarSystemState,
     frame: &mut LastStateFrame64,
@@ -761,6 +757,26 @@ pub fn step(
     validate(system, state, load, dt_s)?;
     let predicted = integrate(system, &recorded(state), dt_s)?;
     commit(system, state, frame, dt_s, &predicted)
+}
+
+/// Each value of a landed state below the normal range written as zero
+/// with its sign ([`crate::normal`]): the state carried to the next step
+/// and published holds no subnormal number.
+fn normal_or_zero_state(state: &mut SolarSystemState) {
+    state.t_s = normal_or_zero(state.t_s);
+    normal_or_zero_rows(&mut state.position_m);
+    normal_or_zero_rows(&mut state.velocity_m_s);
+    state.energy = normal_or_zero(state.energy);
+    state.energy_anchor = normal_or_zero(state.energy_anchor);
+    state.booked_work = normal_or_zero(state.booked_work);
+    state.energy_defect = normal_or_zero(state.energy_defect);
+    normal_or_zero_each(&mut state.angular_momentum);
+    normal_or_zero_each(&mut state.angular_momentum_anchor);
+    normal_or_zero_each(&mut state.booked_torque);
+    state.turning_defect = normal_or_zero(state.turning_defect);
+    state.residual_conservation_error = normal_or_zero(state.residual_conservation_error);
+    normal_or_zero_each(&mut state.earth_to_mars_m);
+    state.earth_mars_distance_m = normal_or_zero(state.earth_mars_distance_m);
 }
 
 fn recorded(state: &SolarSystemState) -> Trial {
@@ -1082,9 +1098,7 @@ struct Place {
 }
 
 /// The derived fields at one set of positions and velocities. A body outside
-/// its band, an orbit outside it, a body where the compared run never had it,
-/// two bodies at one point or closer than the
-/// compared run came, a moving frame, a centre of mass far from the origin or
+/// its band, an orbit outside it, two bodies at one point, a moving frame or
 /// axes that are not the ICRF's are refused by name.
 fn place(
     system: &SolarSystem,
@@ -1119,50 +1133,16 @@ fn place(
         }
         body += 1;
     }
-    // Then each body's distance is held to the distances the compared run
-    // went through; inside the bands, so the bands name a body far off first.
-    let mut body = 1;
-    while body < BODIES {
-        let primary = if body == MOON { EARTH } else { SUN };
-        let x = sub(r[body], r[primary]);
-        let distance_m = dot(x, x).sqrt();
-        let span = system.compared_distance_m[body];
-        if !(distance_m >= span[0] && distance_m <= span[1]) {
-            return Err(StepReject::DistanceOutsideComparedRun);
-        }
-        body += 1;
-    }
     // Two bodies at one point: named here, before the energy divides by the
     // distance between them. The bands above keep every body off its own
     // primary, so the pairs that can meet are the asteroids, whose bands
-    // overlap. Then every pair but the Earth and the Moon is held apart by
-    // the closest that pair's kind came in the compared run.
+    // overlap.
     let mut i = 0;
     while i < BODIES {
         let mut j = i + 1;
         while j < BODIES {
             if r[i][0] == r[j][0] && r[i][1] == r[j][1] && r[i][2] == r[j][2] {
                 return Err(StepReject::BodiesCoincide);
-            }
-            j += 1;
-        }
-        i += 1;
-    }
-    let mut i = 0;
-    while i < BODIES {
-        let mut j = i + 1;
-        while j < BODIES {
-            if !(i == EARTH && j == MOON) {
-                let d = sub(r[j], r[i]);
-                let apart_m = dot(d, d).sqrt();
-                let least_m = if i >= FIRST_ASTEROID {
-                    system.asteroid_separation_min_m
-                } else {
-                    system.pair_separation_min_m
-                };
-                if !(apart_m >= least_m) {
-                    return Err(StepReject::BodiesTooClose);
-                }
             }
             j += 1;
         }
@@ -1211,9 +1191,6 @@ fn place(
     let from_origin_m = dot(centre, centre).sqrt() / total;
     if !from_origin_m.is_finite() {
         return Err(StepReject::NonFiniteState);
-    }
-    if !(from_origin_m <= system.centre_of_mass_distance_max_m) {
-        return Err(StepReject::OriginOutsideCard);
     }
     let cosine = orbit_pole_cosine(system, r, v);
     if !(cosine >= system.orbit_pole_cosine_min && cosine <= system.orbit_pole_cosine_max) {
@@ -1318,7 +1295,7 @@ mod tests {
 
     // After 48 steps of 1800 s from the 1999 state, recomputed outside the
     // engine in 50-digit arithmetic:
-    // evidence/checks/crosscheck/solar_system/recomputed_48_steps_of_1800_s.json.
+    // evidence/verification/crosscheck/solar_system/recomputed_48_steps_of_1800_s.json.
     #[cfg_attr(rustfmt, rustfmt::skip)]
     const RECOMPUTED_DAY_POSITION_M: [[f64; 3]; BODIES] = [
         [-1248552101.1327434, 26363153.611735843, 47598967.38828745], // sun
@@ -1599,15 +1576,12 @@ mod tests {
                     || named == Some(StepReject::OrbitOutsideCard)
             );
         }
-        // one metre apart is not one point, and is closer than the compared run came
+        // one metre apart is not one point: the state is taken
         let mut near = state;
         near.position_m[PALLAS] = state.position_m[CERES];
         near.position_m[PALLAS][0] += 1.0;
         near.velocity_m_s[PALLAS] = state.velocity_m_s[CERES];
-        assert_eq!(
-            SolarSystemState::refusal(&system, &near.position_m, &near.velocity_m_s),
-            Some(StepReject::BodiesTooClose)
-        );
+        assert_eq!(SolarSystemState::refusal(&system, &near.position_m, &near.velocity_m_s), None);
         // the Moon at the Earth's place and Venus at Mercury's are named by the band, as before
         let mut on_primary = state;
         on_primary.position_m[MOON] = state.position_m[EARTH];
@@ -1902,9 +1876,11 @@ mod tests {
     /// The run that was compared with measurement, from the 1999 state in
     /// steps of 1800 s to the end of day 5,922, as far as the scoring needed
     /// to compare the last range compared with measurement (MESSENGER,
-    /// 5,920.4 days), lands every step
-    /// inside every limit, and its distances, closest pairs and farthest
-    /// centre are the ones the limits were taken from.
+    /// 5,920.4 days), lands every step, and its distances, closest pairs and
+    /// farthest centre are the ones the card's description states. Carried
+    /// on past day 5,934.6, where until engine 0.9 the card refused it with
+    /// Saturn farther from the Sun than 9.97 au, it lands for another hundred
+    /// days with both ledgers under the limit.
     #[test]
     fn the_compared_run_stays_inside_the_card() {
         let (system, mut state, mut frame) = start();
@@ -1968,37 +1944,27 @@ mod tests {
         );
         assert!(farthest_centre > 1.1492e5 && farthest_centre < 1.1494e5, "{farthest_centre}");
         assert!(farthest_centre <= CENTRE_OF_MASS_DISTANCE_MAX_M);
-        // carried on past the last measured range in the same steps, the run
-        // is refused when Saturn goes farther from the Sun than the run had it
-        let named = loop {
-            let before = state;
-            match step(&system, &mut state, &mut frame, SolarSystemLoad {}, 1800.0) {
-                Ok(()) => k += 1,
-                Err(reject) => {
-                    assert_eq!(state, before);
-                    break reject;
-                }
-            }
-            assert!(k < 2 * 5922 * 48);
-        };
-        assert_eq!(named, StepReject::DistanceOutsideComparedRun);
-        assert_eq!(k, 284_862, "{k}");
+        // carried on past the last measured range in the same steps, past
+        // where Saturn leaves the distances the run had it at
+        while k < 6035 * 48 {
+            assert_eq!(step(&system, &mut state, &mut frame, SolarSystemLoad {}, 1800.0), Ok(()), "{k}");
+            assert!(state.residual_conservation_error < RESIDUAL_CONSERVATION_LIMIT);
+            k += 1;
+        }
         let saturn = norm(sub(state.position_m[7], state.position_m[SUN])) / au;
-        assert!(saturn < 9.97 && saturn > 9.9699, "{saturn}");
+        assert!(saturn > 9.97, "{saturn}");
     }
 
     /// Saturn (nearer the Sun), Uranus and Neptune moved along the line from
-    /// the Sun to just outside the distances the compared run went through,
-    /// inside their bands, are refused as DistanceOutsideComparedRun, incoming
-    /// and at a landing. Uranus moved to just inside, with the Sun moved to
-    /// keep the centre of mass where it was, is taken. Saturn farther from
-    /// the Sun than the run had it is named where the run itself goes there,
-    /// in the_compared_run_stays_inside_the_card.
+    /// the Sun to outside the distances the compared run went through, inside
+    /// their bands, are computed: the state is taken and a hundred steps of
+    /// 3600 s land with both ledgers under the limit. Outside the band itself
+    /// the band is named.
     #[test]
-    fn a_body_where_the_compared_run_never_had_it_is_named() {
+    fn a_body_where_the_compared_run_never_had_it_is_computed() {
         let (system, state, _) = start();
         let au = ASTRONOMICAL_UNIT_M;
-        let moved_to = |body: usize, to_au: f64, keep_centre: bool| {
+        let moved_to = |body: usize, to_au: f64| {
             let x = sub(state.position_m[body], state.position_m[SUN]);
             let from = norm(x);
             let by = to_au * au / from - 1.0;
@@ -2006,9 +1972,7 @@ mod tests {
             let mut axis = 0;
             while axis < 3 {
                 moved.position_m[body][axis] += by * x[axis];
-                if keep_centre {
-                    moved.position_m[SUN][axis] -= GM_M3_S2[body] / GM_M3_S2[SUN] * by * x[axis];
-                }
+                moved.position_m[SUN][axis] -= GM_M3_S2[body] / GM_M3_S2[SUN] * by * x[axis];
                 axis += 1;
             }
             moved
@@ -2016,27 +1980,28 @@ mod tests {
         for (body, to_au) in [(7, 9.02), (8, 19.87), (8, 20.11), (9, 29.95), (9, 30.15)] {
             let band = DISTANCE_BAND_M[body];
             assert!(to_au * au > band[0] && to_au * au < band[1]);
-            let moved = moved_to(body, to_au, false);
+            let span = COMPARED_DISTANCE_M[body];
+            assert!(to_au * au < span[0] || to_au * au > span[1]);
+            let moved = moved_to(body, to_au);
             assert_eq!(
                 SolarSystemState::refusal(&system, &moved.position_m, &moved.velocity_m_s),
-                Some(StepReject::DistanceOutsideComparedRun),
+                None,
                 "{} {to_au}",
                 BODY_NAMES[body]
             );
-            refused(&system, &moved, 1800.0, StepReject::DistanceOutsideComparedRun);
-            assert!(SolarSystemState::try_state(&system, moved.position_m, moved.velocity_m_s).is_none());
+            let mut running = SolarSystemState::try_state(&system, moved.position_m, moved.velocity_m_s)
+                .expect("computed");
+            let mut frame = blank_frame();
+            for _ in 0..100 {
+                assert_eq!(step(&system, &mut running, &mut frame, SolarSystemLoad {}, 3600.0), Ok(()));
+                assert!(running.residual_conservation_error < RESIDUAL_CONSERVATION_LIMIT);
+            }
         }
-        let inside = moved_to(8, 19.89, true);
-        assert_eq!(SolarSystemState::refusal(&system, &inside.position_m, &inside.velocity_m_s), None);
-        // outside the band itself the band is named first, as before
-        let far = moved_to(8, 17.9, false);
+        let far = moved_to(8, 17.9);
         assert_eq!(
             SolarSystemState::refusal(&system, &far.position_m, &far.velocity_m_s),
             Some(StepReject::DistanceOutsideCard)
         );
-        let mut altered = system;
-        altered.compared_distance_m[8][0] = 18.0 * au;
-        assert!(!altered.is_valid());
     }
 
     fn centre_from_origin_m(r: &[[f64; 3]; BODIES]) -> f64 {
@@ -2055,179 +2020,131 @@ mod tests {
         norm(centre) / total
     }
 
-    /// Pallas inside Ceres, 100 km, 600 km and 1000 km from its centre, and
-    /// Pallas 0.379 au from Vesta, are refused as BodiesTooClose, incoming
-    /// and at a landing. Venus brought within 0.26 au of the Earth is
-    /// refused; the Earth and the Moon are held by the Moon's band alone.
+    /// Where the card stood at 0.26 au between two bodies and 0.38 au between
+    /// two asteroids, a close pair is computed. Pallas 1000 km and 3000 km from
+    /// Ceres, just outside the two bodies' radii, lands a hundred steps of 10 s
+    /// and 60 s with both ledgers under the limit;
+    /// a metre apart the same step flings Pallas off and is refused by name,
+    /// by the ledger or Pallas's band, with the state kept. Pallas
+    /// closing on Vesta at 1 km/s from 0.3801 au lands twenty steps of 3600 s.
     #[test]
-    fn two_bodies_closer_than_the_compared_run_are_named() {
+    fn two_bodies_closer_than_the_compared_run_are_computed() {
         let (system, state, _) = start();
         const CERES: usize = 10;
         const PALLAS: usize = 11;
         const VESTA: usize = 12;
-        for apart_m in [1.0, 1.0e5, 6.0e5, 1.0e6] {
+        let beside_ceres = |apart_m: f64| {
             let mut near = state;
             near.position_m[PALLAS] = state.position_m[CERES];
             near.position_m[PALLAS][0] += apart_m;
             near.velocity_m_s[PALLAS] = state.velocity_m_s[CERES];
-            refused(&system, &near, 10.0, StepReject::BodiesTooClose);
-            assert_eq!(
-                SolarSystemState::refusal(&system, &near.position_m, &near.velocity_m_s),
-                Some(StepReject::BodiesTooClose)
-            );
-            assert!(SolarSystemState::try_state(&system, near.position_m, near.velocity_m_s).is_none());
-        }
-        // Pallas put on Vesta's own orbit, turned about the Sun's z axis until
-        // it is 0.379 au and 0.381 au from Vesta: the same orbit, inside both bands
-        let beside_vesta = |apart_au: f64, closing_m_s: f64| {
-            let x = sub(state.position_m[VESTA], state.position_m[SUN]);
-            let u = sub(state.velocity_m_s[VESTA], state.velocity_m_s[SUN]);
-            let across = (x[0] * x[0] + x[1] * x[1]).sqrt();
-            let angle = 2.0 * crate::math::asin(apart_au * ASTRONOMICAL_UNIT_M / (2.0 * across));
-            let (sin, cos) = (crate::math::sin(angle), crate::math::cos(angle));
-            let turn = |a: [f64; 3]| [cos * a[0] - sin * a[1], sin * a[0] + cos * a[1], a[2]];
-            let mut near = state;
-            let (tx, tu) = (turn(x), turn(u));
-            let mut axis = 0;
-            while axis < 3 {
-                near.position_m[PALLAS][axis] = state.position_m[SUN][axis] + tx[axis];
-                near.velocity_m_s[PALLAS][axis] = state.velocity_m_s[SUN][axis] + tu[axis];
-                axis += 1;
-            }
-            let to = sub(near.position_m[VESTA], near.position_m[PALLAS]);
-            let gap = norm(to);
-            assert!((gap / ASTRONOMICAL_UNIT_M - apart_au).abs() < 1.0e-9);
-            let mut axis = 0;
-            while axis < 3 {
-                near.velocity_m_s[PALLAS][axis] += closing_m_s * to[axis] / gap;
-                axis += 1;
-            }
             near
         };
-        for (apart_au, taken) in [(0.379, false), (0.381, true)] {
-            let near = beside_vesta(apart_au, 0.0);
-            let named = SolarSystemState::refusal(&system, &near.position_m, &near.velocity_m_s);
-            assert_eq!(named, if taken { None } else { Some(StepReject::BodiesTooClose) }, "{apart_au}");
-        }
-        // a landing: Pallas 0.3801 au from Vesta, closing on it at 1 km/s, in steps of 3600 s
-        let closing = beside_vesta(0.3801, 1000.0);
-        let mut running = SolarSystemState::try_state(&system, closing.position_m, closing.velocity_m_s)
-            .expect("0.3801 au apart is taken");
-        let mut frame = blank_frame();
-        let mut landed = 0;
-        let named = loop {
-            let before = running;
-            match step(&system, &mut running, &mut frame, SolarSystemLoad {}, 3600.0) {
-                Ok(()) => landed += 1,
-                Err(reject) => {
-                    assert_eq!(running, before);
-                    break reject;
-                }
+        for (apart_m, dt_s) in [(1.0e6, 10.0), (3.0e6, 60.0)] {
+            let near = beside_ceres(apart_m);
+            assert_eq!(SolarSystemState::refusal(&system, &near.position_m, &near.velocity_m_s), None);
+            let mut running = SolarSystemState::try_state(&system, near.position_m, near.velocity_m_s)
+                .expect("computed");
+            let mut frame = blank_frame();
+            for _ in 0..100 {
+                assert_eq!(step(&system, &mut running, &mut frame, SolarSystemLoad {}, dt_s), Ok(()), "{apart_m}");
+                assert!(running.residual_conservation_error < RESIDUAL_CONSERVATION_LIMIT);
             }
-            assert!(landed < 20);
-        };
-        assert_eq!(named, StepReject::BodiesTooClose);
-        assert!(landed >= 1, "{landed}");
-        // Venus pulled toward the Earth to 0.259 au; its band is 0.70 au from the Sun at least
-        let to_earth = sub(state.position_m[EARTH], state.position_m[2]);
-        let venus_gap = norm(to_earth);
+            let gap = norm(sub(running.position_m[PALLAS], running.position_m[CERES]));
+            assert!(gap < apart_m, "{apart_m}: {gap}");
+        }
+        let touching = beside_ceres(1.0);
+        let running = SolarSystemState::try_state(&system, touching.position_m, touching.velocity_m_s)
+            .expect("a metre apart is a state");
+        let mut trial = running;
+        let mut frame = blank_frame();
+        let named = step(&system, &mut trial, &mut frame, SolarSystemLoad {}, 10.0);
+        assert!(
+            matches!(
+                named,
+                Err(StepReject::SpontaneousGeneration
+                    | StepReject::FirstLawBreach
+                    | StepReject::AngularMomentumBreach
+                    | StepReject::OrbitOutsideCard
+                    | StepReject::DistanceOutsideCard
+                    | StepReject::NonFiniteState)
+            ),
+            "{named:?}"
+        );
+        assert_eq!(trial, running);
+        // Pallas put on Vesta's own orbit, turned about the Sun's z axis until
+        // it is 0.3801 au from Vesta, then closing on it at 1 km/s
+        let x = sub(state.position_m[VESTA], state.position_m[SUN]);
+        let u = sub(state.velocity_m_s[VESTA], state.velocity_m_s[SUN]);
+        let across = (x[0] * x[0] + x[1] * x[1]).sqrt();
+        let angle = 2.0 * crate::math::asin(0.3801 * ASTRONOMICAL_UNIT_M / (2.0 * across));
+        let (sin, cos) = (crate::math::sin(angle), crate::math::cos(angle));
+        let turn = |a: [f64; 3]| [cos * a[0] - sin * a[1], sin * a[0] + cos * a[1], a[2]];
         let mut near = state;
-        let along = 1.0 - 0.259 * ASTRONOMICAL_UNIT_M / venus_gap;
+        let (tx, tu) = (turn(x), turn(u));
         let mut axis = 0;
         while axis < 3 {
-            near.position_m[2][axis] += along * to_earth[axis];
+            near.position_m[PALLAS][axis] = state.position_m[SUN][axis] + tx[axis];
+            near.velocity_m_s[PALLAS][axis] = state.velocity_m_s[SUN][axis] + tu[axis];
             axis += 1;
         }
-        let named = SolarSystemState::refusal(&system, &near.position_m, &near.velocity_m_s);
-        let venus_from_sun = norm(sub(near.position_m[2], near.position_m[SUN]));
-        if venus_from_sun >= DISTANCE_BAND_M[2][0] && venus_from_sun <= DISTANCE_BAND_M[2][1] {
-            assert!(
-                named == Some(StepReject::BodiesTooClose) || named == Some(StepReject::OrbitOutsideCard),
-                "{named:?}"
-            );
+        let to = sub(near.position_m[VESTA], near.position_m[PALLAS]);
+        let gap = norm(to);
+        let mut axis = 0;
+        while axis < 3 {
+            near.velocity_m_s[PALLAS][axis] += 1000.0 * to[axis] / gap;
+            axis += 1;
         }
-        let mut altered = system;
-        altered.pair_separation_min_m = 0.0;
-        assert!(!altered.is_valid());
-        let mut altered = system;
-        altered.asteroid_separation_min_m = 0.0;
-        assert!(!altered.is_valid());
+        let mut running = SolarSystemState::try_state(&system, near.position_m, near.velocity_m_s)
+            .expect("0.3801 au apart is taken");
+        for _ in 0..20 {
+            assert_eq!(step(&system, &mut running, &mut frame, SolarSystemLoad {}, 3600.0), Ok(()));
+        }
+        assert!(norm(sub(running.position_m[VESTA], running.position_m[PALLAS])) < 0.3801 * ASTRONOMICAL_UNIT_M);
     }
 
-    /// Every position moved bodily, with the velocities as they were: the
-    /// centre of mass just inside 120 000 m from the origin is taken, just
-    /// outside it, and 6 × 10¹³ m out, is refused as OriginOutsideCard,
-    /// incoming and at a landing.
+    /// Where the card stood at 120 000 m, every position moved bodily, with the
+    /// velocities as they were, is computed: moved 10^9 m and 6 × 10^13 m, ten
+    /// steps of 3600 s land with both ledgers under the limit and the Moon
+    /// within a metre of the unmoved run. Moved 10^30 m, the Moon and the Earth
+    /// round to one number, and the state is refused by name, not computed.
     #[test]
-    fn a_state_far_from_the_origin_is_named() {
+    fn a_state_far_from_the_origin_is_computed() {
         let (system, state, _) = start();
-        let moved_by = |s: &SolarSystemState, by: [f64; 3]| {
+        let moved_by = |s: &SolarSystemState, by: f64| {
             let mut moved = *s;
             let mut body = 0;
             while body < BODIES {
                 let mut axis = 0;
                 while axis < 3 {
-                    moved.position_m[body][axis] += by[axis];
+                    moved.position_m[body][axis] += by;
                     axis += 1;
                 }
                 body += 1;
             }
             moved
         };
-        let start_centre = centre_from_origin_m(&state.position_m);
-        assert!(start_centre > 9.8e4 && start_centre < 9.9e4, "{start_centre}");
-        // along the direction the centre already lies in
-        let mut centre = [0.0_f64; 3];
-        let mut total = 0.0;
-        let mut body = 0;
-        while body < BODIES {
-            total += GM_M3_S2[body];
-            let mut axis = 0;
-            while axis < 3 {
-                centre[axis] += GM_M3_S2[body] * state.position_m[body][axis];
-                axis += 1;
-            }
-            body += 1;
-        }
-        let unit = [centre[0] / (total * start_centre), centre[1] / (total * start_centre), centre[2] / (total * start_centre)];
-        for (to_m, taken) in [(1.199e5, true), (1.201e5, false), (1.0e9, false)] {
-            let by = (to_m - start_centre) * 1.0;
-            let moved = moved_by(&state, [unit[0] * by, unit[1] * by, unit[2] * by]);
-            let named = SolarSystemState::refusal(&system, &moved.position_m, &moved.velocity_m_s);
-            assert_eq!(named, if taken { None } else { Some(StepReject::OriginOutsideCard) }, "{to_m}");
-        }
-        let far = moved_by(&state, [6.0e13, 6.0e13, 6.0e13]);
-        refused(&system, &far, 1800.0, StepReject::OriginOutsideCard);
-        assert!(SolarSystemState::try_state(&system, far.position_m, far.velocity_m_s).is_none());
-        // a landing: the centre drifting out at 0.009 m/s from 119 990 m
-        let by = 1.1999e5 - start_centre;
-        let mut drifting = moved_by(&state, [unit[0] * by, unit[1] * by, unit[2] * by]);
-        let mut body = 0;
-        while body < BODIES {
-            let mut axis = 0;
-            while axis < 3 {
-                drifting.velocity_m_s[body][axis] += 0.009 * unit[axis];
-                axis += 1;
-            }
-            body += 1;
-        }
-        let mut running = SolarSystemState::try_state(&system, drifting.position_m, drifting.velocity_m_s)
-            .expect("inside the line and slow enough");
+        let mut plain = state;
         let mut frame = blank_frame();
-        let mut named = None;
-        let mut k = 0;
-        while k < 10 && named.is_none() {
-            let before = running;
-            if let Err(reject) = step(&system, &mut running, &mut frame, SolarSystemLoad {}, 3600.0) {
-                assert_eq!(running, before);
-                named = Some(reject);
-            }
-            k += 1;
+        for _ in 0..10 {
+            assert_eq!(step(&system, &mut plain, &mut frame, SolarSystemLoad {}, 3600.0), Ok(()));
         }
-        assert_eq!(named, Some(StepReject::OriginOutsideCard));
-        let mut altered = system;
-        altered.centre_of_mass_distance_max_m = 1.0e20;
-        assert!(!altered.is_valid());
+        for by in [1.0e9, 6.0e13] {
+            let moved = moved_by(&state, by);
+            assert_eq!(SolarSystemState::refusal(&system, &moved.position_m, &moved.velocity_m_s), None, "{by}");
+            let mut running = SolarSystemState::try_state(&system, moved.position_m, moved.velocity_m_s)
+                .expect("computed");
+            for _ in 0..10 {
+                assert_eq!(step(&system, &mut running, &mut frame, SolarSystemLoad {}, 3600.0), Ok(()), "{by}");
+                assert!(running.residual_conservation_error < RESIDUAL_CONSERVATION_LIMIT);
+            }
+            let moon = sub(running.position_m[MOON], running.position_m[EARTH]);
+            let moon_plain = sub(plain.position_m[MOON], plain.position_m[EARTH]);
+            assert!(norm(sub(moon, moon_plain)) < 1.0, "{by}: {}", norm(sub(moon, moon_plain)));
+        }
+        let lost = moved_by(&state, 1.0e30);
+        assert!(SolarSystemState::refusal(&system, &lost.position_m, &lost.velocity_m_s).is_some());
+        assert!(SolarSystemState::try_state(&system, lost.position_m, lost.velocity_m_s).is_none());
     }
 
     /// The ledger a run returns, carried into the next run, holds that run to

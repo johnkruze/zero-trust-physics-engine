@@ -1,10 +1,10 @@
 [package]
 name = "genesis_seal_parquet"
-version = "0.2.0"
+version = "0.5.0"
 edition = "2024"
 license = "Apache-2.0"
 rust-version = "1.88"
-description = "Converts a sealed dataset to Parquet, after its seal has been checked."
+description = "Converts a sealed dataset to Parquet, after its seal has been verified."
 
 [lib]
 name = "genesis_seal_parquet"

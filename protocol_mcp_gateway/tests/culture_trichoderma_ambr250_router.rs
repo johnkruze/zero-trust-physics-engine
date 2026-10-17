@@ -1,6 +1,8 @@
 //! `culture_trichoderma_ambr250` through `POST /solve`, against a direct call
 //! to `genesis_solvers`, with its refusals at the door and its description.
 
+mod answer_text;
+
 use std::time::Duration;
 
 use genesis_solvers::culture_trichoderma_ambr250::{self as culture, Question};
@@ -23,7 +25,7 @@ async fn spawn_app() -> String {
 async fn post(base: &str, path: &str, body: &Value) -> (u16, String) {
     let client = Client::new();
     let url = format!("{base}{path}");
-    let text = serde_json::to_string(body).unwrap();
+    let text = answer_text::as_sent(body);
     let mut last_error = None;
     for _ in 0..20 {
         match client
@@ -35,7 +37,9 @@ async fn post(base: &str, path: &str, body: &Value) -> (u16, String) {
         {
             Ok(response) => {
                 let status = response.status().as_u16();
-                return (status, response.text().await.unwrap());
+                let text = response.text().await.unwrap();
+                answer_text::remember(&text);
+                return (status, text);
             }
             Err(error) => {
                 last_error = Some(error);
@@ -168,7 +172,7 @@ async fn a_culture_matches_the_solver_bit_for_bit_and_its_proof_holds() {
     // The proof holds, and an edited number breaks it by name.
     let (status, text) = post(&base, "/verify_solution", &body).await;
     assert_eq!(status, 200, "{text}");
-    assert_eq!(serde_json::from_str::<Value>(&text).unwrap(), json!({ "holds": true, "cause": null, "checked": protocol_mcp_gateway::WHOLE_SOLUTION_CHECKED }));
+    assert_eq!(serde_json::from_str::<Value>(&text).unwrap(), json!({ "holds": true, "values_hold": true, "cause": null, "compared": protocol_mcp_gateway::WHOLE_SOLUTION_COMPUTED }));
     let mut moved = body.clone();
     let hex = body["result"]["carbon_dioxide_mol_hex"][2].as_str().unwrap();
     moved["result"]["carbon_dioxide_mol_hex"][2] = json!(flip_hex(hex));
@@ -193,96 +197,44 @@ async fn a_culture_matches_the_solver_bit_for_bit_and_its_proof_holds() {
 #[tokio::test]
 async fn a_question_outside_the_card_is_422_with_its_name_and_no_seal() {
     let base = spawn_app().await;
+    let below_zero = -f64::MIN_POSITIVE;
     let cases: Vec<(Value, &str)> = vec![
-        (asked(|p| p["biomass_g_per_l"] = json!(0.29)), "BiomassOutOfRange"),
-        (asked(|p| p["biomass_g_per_l"] = json!(1.51)), "BiomassOutOfRange"),
-        (asked(|p| p["glucose_g_per_l"] = json!(22.01)), "GlucoseOutOfRange"),
-        (asked(|p| p["galacturonate_g_per_l"] = json!(3.49)), "GalacturonateOutOfRange"),
-        // The starts are the eight fitted cultures' own: the next number outside each end.
-        (asked(|p| p["biomass_g_per_l"] = json!(f64::from_bits(0.6_f64.to_bits() - 1))), "BiomassOutOfRange"),
-        (asked(|p| p["biomass_g_per_l"] = json!(f64::from_bits(1.034_f64.to_bits() + 1))), "BiomassOutOfRange"),
-        (asked(|p| p["glucose_g_per_l"] = json!(f64::from_bits(20.097_f64.to_bits() - 1))), "GlucoseOutOfRange"),
-        (asked(|p| p["glucose_g_per_l"] = json!(f64::from_bits(21.025_f64.to_bits() + 1))), "GlucoseOutOfRange"),
-        (asked(|p| p["galacturonate_g_per_l"] = json!(f64::from_bits(4.146_f64.to_bits() - 1))), "GalacturonateOutOfRange"),
-        (asked(|p| p["galacturonate_g_per_l"] = json!(f64::from_bits(4.745_f64.to_bits() + 1))), "GalacturonateOutOfRange"),
-        // The broth a ten-millionth of a mL above 122.15 mL, the fitted cultures' most by 215 h.
+        // A concentration below zero, by the least normal number below it.
+        (asked(|p| p["biomass_g_per_l"] = json!(below_zero)), "BiomassNegative"),
+        (asked(|p| p["glucose_g_per_l"] = json!(below_zero)), "GlucoseNegative"),
+        (asked(|p| p["galacturonate_g_per_l"] = json!(below_zero)), "GalacturonateNegative"),
+        (asked(|p| p["feed_glucose_g_per_l"] = json!(below_zero)), "FeedGlucoseNegative"),
+        (asked(|p| p["feed_galacturonate_g_per_l"] = json!(-1.0)), "FeedGalacturonateNegative"),
+        // The broth a ten-millionth of a mL above 250 mL, what the vessel holds.
         (
             asked(|p| {
                 p["segment_end_h"] = json!([22.0, 44.0]);
                 p["feed_ml"] = json!([0.0, 4.4]);
-                p["water_ml"] = json!([4.18, 3.570_000_1]);
+                p["water_ml"] = json!([100.0, 35.600_000_1]);
                 p["sample_ml"] = json!([0.0, 0.0]);
             }),
             "VolumeOutOfRange",
         ),
-        (asked(|p| p["feed_glucose_g_per_l"] = json!(29.374)), "FeedGlucoseOutOfRange"),
-        (asked(|p| p["feed_glucose_g_per_l"] = json!(34.677)), "FeedGlucoseOutOfRange"),
-        // The range of the scored run, and the four held-back feeds, are refused today.
-        (asked(|p| p["feed_glucose_g_per_l"] = json!(9.0)), "FeedGlucoseOutOfRange"),
-        (asked(|p| p["feed_glucose_g_per_l"] = json!(54.0)), "FeedGlucoseOutOfRange"),
-        (asked(|p| p["feed_glucose_g_per_l"] = json!(10.077)), "FeedGlucoseOutOfRange"),
-        (asked(|p| p["feed_glucose_g_per_l"] = json!(11.06)), "FeedGlucoseOutOfRange"),
-        (asked(|p| p["feed_glucose_g_per_l"] = json!(48.32)), "FeedGlucoseOutOfRange"),
-        (asked(|p| p["feed_glucose_g_per_l"] = json!(52.101)), "FeedGlucoseOutOfRange"),
-        // A record past 215 h, as every measured culture's whole record is.
-        (asked(|p| to(p, 215.01)), "RunTooLong"),
+        // A feed that overfills the vessel: 0.4 mL/h from inoculation to 400 h.
         (
             asked(|p| {
-                p["segment_end_h"] = json!([21.5, 45.0, 140.0, 240.0, 320.0]);
-                p["feed_ml"] = json!([0.0, 2.25, 23.75, 25.0, 0.0]);
-                p["water_ml"] = json!([-4.5, -0.75, -19.0, -20.0, 0.0]);
-                p["sample_ml"] = json!([4.3, 4.3, 4.3, 4.3, 4.3]);
-            }),
-            "RunTooLong",
-        ),
-        // A culture starved to 215 h and one fed 0.4 mL/h from inoculation,
-        // each of which was once answered with a proof.
-        (
-            asked(|p| {
-                p["segment_end_h"] = json!([24.0, 48.0, 72.0, 96.0, 120.0, 144.0, 168.0, 192.0, 215.0]);
-                p["feed_ml"] = json!([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]);
-                p["water_ml"] = json!([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]);
-                p["sample_ml"] = json!([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 4.3]);
-                p["glucose_g_per_l"] = json!(20.8);
-            }),
-            "FeedScheduleOutOfRange",
-        ),
-        (
-            asked(|p| {
-                p["segment_end_h"] = json!([100.0]);
-                p["feed_ml"] = json!([40.0]);
+                p["segment_end_h"] = json!([400.0]);
+                p["feed_ml"] = json!([160.0]);
                 p["water_ml"] = json!([-15.0]);
                 p["sample_ml"] = json!([0.0]);
             }),
-            "FeedRateOutOfRange",
+            "VolumeOutOfRange",
         ),
-        // The feed stopped once full, cut back, started before 21.18 h, and one
-        // even rate from the start window into the full feed.
-        (asked(|p| p["feed_ml"] = json!([0.0, 2.25, 7.5, 0.0])), "FeedScheduleOutOfRange"),
-        (asked(|p| p["feed_ml"] = json!([0.0, 2.25, 5.5, 7.125])), "FeedScheduleOutOfRange"),
-        (asked(|p| p["feed_ml"] = json!([0.5, 2.25, 7.5, 7.125])), "FeedScheduleOutOfRange"),
-        (asked(|p| p["segment_end_h"] = json!([21.5, 45.25, 69.0, 93.5])), "FeedScheduleOutOfRange"),
-        // The dilution inputs past the fitted spans, at the old ends of 0.7.0's predecessor.
-        (asked(|p| p["water_ml"] = json!([-4.5, -0.75, 7.2, -0.25])), "WaterRateOutOfRange"),
-        (asked(|p| p["sample_ml"] = json!([4.3, 4.3, 5.0, 4.3])), "SampleOutOfRange"),
-        (asked(|p| p["feed_galacturonate_g_per_l"] = json!(110.5)), "FeedGalacturonateOutOfRange"),
+        // A record past 1000 h, the capacity of one solve.
+        (asked(|p| to(p, 1000.01)), "RunTooLong"),
         (asked(|p| p["feed_ml"] = json!([0.0, 2.25, 7.5])), "SegmentsDoNotMatch"),
-        (asked(|p| p["segment_end_h"] = json!([21.5, 22.0, 69.0, 93.5])), "SegmentLengthOutOfRange"),
-        (asked(|p| p["segment_end_h"] = json!([21.5, 45.0, 40.0, 93.5])), "SegmentLengthOutOfRange"),
-        (asked(|p| p["feed_ml"] = json!([0.0, 9.6, 7.5, 7.125])), "FeedRateOutOfRange"),
-        (asked(|p| p["water_ml"] = json!([-8.7, -0.75, 1.5, -0.25])), "WaterRateOutOfRange"),
-        (asked(|p| p["sample_ml"] = json!([4.3, 4.3, 4.31, 4.3])), "SampleOutOfRange"),
-        (asked(|p| p["water_ml"] = json!([-6.0, -6.0, 1.5, -0.25])), "VolumeOutOfRange"),
-        // One segment 5e-11 h short of an hour: the 1 h end has its own allowance, 1e-12 h.
-        (
-            asked(|p| {
-                p["segment_end_h"] = json!([20.0, 20.999_999_999_95]);
-                p["feed_ml"] = json!([0.0, 0.0]);
-                p["water_ml"] = json!([0.0, 0.0]);
-                p["sample_ml"] = json!([0.0, 0.0]);
-            }),
-            "SegmentLengthOutOfRange",
-        ),
+        (asked(|p| p["segment_end_h"] = json!([21.5, 21.5, 69.0, 93.5])), "SegmentNotRising"),
+        (asked(|p| p["segment_end_h"] = json!([21.5, 45.0, 40.0, 93.5])), "SegmentNotRising"),
+        (asked(|p| p["feed_ml"] = json!([0.0, -0.01, 7.5, 7.125])), "FeedRateNegative"),
+        (asked(|p| p["sample_ml"] = json!([4.3, 4.3, -0.01, 4.3])), "SampleNegative"),
+        // Broth drawn to nothing, and evaporated to nothing.
+        (asked(|p| p["sample_ml"] = json!([4.3, 4.3, 120.0, 4.3])), "VolumeOutOfRange"),
+        (asked(|p| p["water_ml"] = json!([-110.0, -0.75, 1.5, -0.25])), "VolumeOutOfRange"),
     ];
     for (request, name) in cases {
         let (status, text) = post(&base, "/solve", &request).await;
@@ -290,6 +242,7 @@ async fn a_question_outside_the_card_is_422_with_its_name_and_no_seal() {
         assert!(text.starts_with("Physical Violation: "), "{text}");
         assert!(text.contains(name), "{name}: {text}");
         assert!(!text.contains("solution_seal"), "{text}");
+        assert!(!text.contains("..="), "{text}");
     }
     // The feed is one for the whole record: there is no key to change it part way.
     let (status, text) =
@@ -309,12 +262,51 @@ async fn a_question_outside_the_card_is_422_with_its_name_and_no_seal() {
         });
         let (status, text) = post(&base, "/solve", &request).await;
         assert_eq!(status, 422, "{text}");
-        assert_eq!(text, format!("Missing required parameter: '{key}'"));
+        assert_eq!(text, format!("Missing required parameter: '{key}' (InputMissing)."));
     }
     // The exact decimal ends are answered: the feeds of the fitted cultures, a
     // record that ends at 215 h, a feed at exactly 0.331 mL/h over 7.3 h, and
-    // a feed that begins at exactly 21.18 h at 0.2234 mL/h to 43.45 h.
+    // a feed that begins at exactly 21.18 h at 0.2234 mL/h to 43.45 h. And
+    // past every wall engine 0.12.0 held at the twelve compared cultures'
+    // own starts, feeds, schedule and record end: no biomass and 0.29 to
+    // 1.51 g/L, the scored run's feed ends, 9 and 54 g/L, the next numbers
+    // outside the compared starts and feeds, a starved culture, a feed of
+    // 0.4 mL/h from inoculation, a feed stopped, cut back or started early,
+    // and records to 312.01 and 1000 h. Each is answered with its ledgers
+    // closed and a proof that holds.
     for request in [
+        asked(|p| p["biomass_g_per_l"] = json!(0.0)),
+        asked(|p| p["biomass_g_per_l"] = json!(0.29)),
+        asked(|p| p["biomass_g_per_l"] = json!(1.51)),
+        asked(|p| p["glucose_g_per_l"] = json!(0.0)),
+        asked(|p| p["glucose_g_per_l"] = json!(22.01)),
+        asked(|p| p["galacturonate_g_per_l"] = json!(3.49)),
+        asked(|p| p["galacturonate_g_per_l"] = json!(f64::from_bits(4.774_f64.to_bits() + 1))),
+        asked(|p| p["feed_glucose_g_per_l"] = json!(9.0)),
+        asked(|p| p["feed_glucose_g_per_l"] = json!(54.0)),
+        asked(|p| p["feed_glucose_g_per_l"] = json!(f64::from_bits(10.077_f64.to_bits() - 1))),
+        asked(|p| p["feed_galacturonate_g_per_l"] = json!(110.5)),
+        asked(|p| p["feed_galacturonate_g_per_l"] = json!(0.0)),
+        asked(|p| {
+            p["segment_end_h"] = json!([24.0, 48.0, 72.0, 96.0, 120.0, 144.0, 168.0, 192.0, 215.0]);
+            p["feed_ml"] = json!([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]);
+            p["water_ml"] = json!([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]);
+            p["sample_ml"] = json!([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 4.3]);
+            p["glucose_g_per_l"] = json!(20.8);
+        }),
+        asked(|p| {
+            p["segment_end_h"] = json!([100.0]);
+            p["feed_ml"] = json!([40.0]);
+            p["water_ml"] = json!([-15.0]);
+            p["sample_ml"] = json!([0.0]);
+        }),
+        asked(|p| p["feed_ml"] = json!([0.0, 2.25, 7.5, 0.0])),
+        asked(|p| p["feed_ml"] = json!([0.0, 2.25, 5.5, 7.125])),
+        asked(|p| p["feed_ml"] = json!([0.5, 2.25, 7.5, 7.125])),
+        asked(|p| p["segment_end_h"] = json!([21.5, 45.25, 69.0, 93.5])),
+        asked(|p| p["feed_ml"] = json!([0.0, 9.6, 7.5, 7.125])),
+        asked(|p| to(p, 312.01)),
+        asked(|p| to(p, 1000.0)),
         asked(|p| p["feed_glucose_g_per_l"] = json!(29.375)),
         asked(|p| p["feed_glucose_g_per_l"] = json!(34.676)),
         asked(|p| p["biomass_g_per_l"] = json!(0.6)),
@@ -331,6 +323,36 @@ async fn a_question_outside_the_card_is_422_with_its_name_and_no_seal() {
             p["sample_ml"] = json!([0.0, 0.0]);
         }),
         asked(|p| to(p, 215.0)),
+        // Past the fitted cultures' spans, where engine 0.8.0 refused by name:
+        // the held-back feeds, a record to 312 h, water and samples past their
+        // old spans, broth below 98 and above 122.15 mL, a segment of 5e-11 h
+        // short of an hour.
+        asked(|p| p["feed_glucose_g_per_l"] = json!(10.077)),
+        asked(|p| p["feed_glucose_g_per_l"] = json!(11.06)),
+        asked(|p| p["feed_glucose_g_per_l"] = json!(48.32)),
+        asked(|p| p["feed_glucose_g_per_l"] = json!(52.101)),
+        asked(|p| p["feed_glucose_g_per_l"] = json!(29.374)),
+        asked(|p| p["biomass_g_per_l"] = json!(1.067)),
+        asked(|p| p["glucose_g_per_l"] = json!(21.151)),
+        asked(|p| p["galacturonate_g_per_l"] = json!(4.774)),
+        asked(|p| to(p, 215.01)),
+        asked(|p| to(p, 312.0)),
+        asked(|p| p["water_ml"] = json!([-4.5, -0.75, 7.2, -0.25])),
+        asked(|p| p["water_ml"] = json!([-8.7, -0.75, 1.5, -0.25])),
+        asked(|p| p["water_ml"] = json!([-6.0, -6.0, 1.5, -0.25])),
+        asked(|p| p["sample_ml"] = json!([4.3, 4.3, 5.0, 4.3])),
+        asked(|p| {
+            p["segment_end_h"] = json!([22.0, 44.0]);
+            p["feed_ml"] = json!([0.0, 4.4]);
+            p["water_ml"] = json!([4.18, 3.570_000_1]);
+            p["sample_ml"] = json!([0.0, 0.0]);
+        }),
+        asked(|p| {
+            p["segment_end_h"] = json!([20.0, 20.999_999_999_95]);
+            p["feed_ml"] = json!([0.0, 0.0]);
+            p["water_ml"] = json!([0.0, 0.0]);
+            p["sample_ml"] = json!([0.0, 0.0]);
+        }),
         asked(|p| {
             p["segment_end_h"] = json!([21.5, 45.0, 52.3, 93.5]);
             p["feed_ml"] = json!([0.0, 2.25, 0.331 * 7.3, 11.0]);
@@ -348,6 +370,10 @@ async fn a_question_outside_the_card_is_422_with_its_name_and_no_seal() {
         assert_eq!(body["outcome"], "converged", "{text}");
         let segments = request["parameters"]["segment_end_h"].as_array().unwrap().len();
         assert_eq!(body["result"]["biomass_g_per_l"].as_array().unwrap().len(), segments);
+        assert!(body["invariants"]["carbon_residual"].as_f64().unwrap() <= culture::LEDGER_TOLERANCE);
+        let (status, checked) = post(&base, "/verify_solution", &body).await;
+        assert_eq!(status, 200, "{checked}");
+        assert_eq!(serde_json::from_str::<Value>(&checked).unwrap()["holds"], true, "{checked}");
     }
 }
 
@@ -357,12 +383,12 @@ async fn the_description_says_what_is_fitted_and_its_example_runs_unchanged() {
     let listed = reqwest::get(format!("{base}/solvers")).await.unwrap();
     let listed: Value = serde_json::from_str(&listed.text().await.unwrap()).unwrap();
     let solvers = listed["solvers"].as_array().expect("solvers");
-    assert_eq!(solvers.len(), 13);
+    assert_eq!(solvers.len(), 24);
     assert_eq!(solvers[10]["solver"], "culture_trichoderma_ambr250");
     let summary = solvers[10]["summary"].as_str().expect("a sentence");
     assert!(summary.contains("six constants are fitted to this organism's own measurements"), "{summary}");
-    assert!(summary.contains("it met three of its six lines and missed three (galacturonate, mucic acid and carbon dioxide), a second scoring confirmed it, and it is not validated against measurement."), "{summary}");
-    assert!(summary.ends_with("Since then it refuses by name a feed outside the fitted 29.375 to 34.676 g/L glucose and a record longer than 215 h, so the four held-back questions are refused today, and since 0.7.0 a starting biomass, glucose or galacturonate, a feed schedule, water, sample or broth volume outside the fitted cultures' own."), "{summary}");
+    assert!(summary.contains("it met three of its six lines and missed three (galacturonate 4.60 g/L against 2.74, mucic acid 6.45 g/L against 4.51, carbon dioxide 0.01125 mol against 0.00265), a second scoring confirmed it, and it is not validated against measurement."), "{summary}");
+    assert!(summary.ends_with("it was compared on the twelve cultures' own starts, feeds and schedule, to 312 h."), "{summary}");
 
     let (status, text) =
         post(&base, "/describe_solver", &json!({ "solver": "culture_trichoderma_ambr250" })).await;
@@ -375,7 +401,7 @@ async fn the_description_says_what_is_fitted_and_its_example_runs_unchanged() {
     }
     let limits = described["validation"]["limits"].as_str().unwrap();
     assert!(limits.contains("extrapolation in the glucose of the feed"), "{limits}");
-    assert!(limits.contains("The carbon and electron ledgers close for any constants: they check the arithmetic."));
+    assert!(limits.contains("The carbon and electron ledgers close for any constants: they test the arithmetic."));
     let pass_line = described["validation"]["pass_line"].as_str().unwrap();
     assert!(pass_line.contains("68b833108c589ce7a6e063ec84b21483fa50c7cffa145108e69ed0de816c92db"));
     assert!(pass_line.contains("is not evidence for the model"));
@@ -388,16 +414,16 @@ async fn the_description_says_what_is_fitted_and_its_example_runs_unchanged() {
         "only the oxygen line is evidence for the model",
         "It therefore misses the glucose and the carbon dioxide lines on its own fitted data",
         "572ce3bedbb195b637045a60c5e2452f5b939315fc6fa699a9545949c5c63f71",
-        "evidence/checks/second_party/V-41",
+        "evidence/verification/second_party/V-41",
         "The form fails, not the constants",
         "4.30 g/L, 5.21 g/L and 0.0108 mol",
         "one level cannot identify any dependence of galacturonate oxidation on the glucose supplied",
         "five to six times the line of 0.00265",
         "3.33 g/L in galacturonate and 0.0063 mol in carbon dioxide",
         "the held-back error is 10.6 g/L in place of 6.45",
-        "are therefore refused by this build",
+        "Since engine 0.9.0 the solver answers its four held-back questions",
         "and on seven of them 0.0088 and 0.0111 mol of gas: T2 pH 4 (2) has a blank online volume",
-        "FeedScheduleOutOfRange",
+        "slowed to as little as 0.009 mL/h from 211.28 h",
     ] {
         assert!(result.contains(words), "{words}: {result}");
     }
@@ -411,22 +437,23 @@ async fn the_description_says_what_is_fitted_and_its_example_runs_unchanged() {
     let inputs = described["inputs"].as_array().expect("inputs");
     assert_eq!(inputs.len(), 9);
     assert_eq!(inputs[3]["name"], "feed_glucose_g_per_l");
-    assert_eq!(inputs[3]["minimum"], culture::FEED_GLUCOSE_MIN_G_PER_L);
-    assert_eq!(inputs[3]["maximum"], culture::FEED_GLUCOSE_MAX_G_PER_L);
-    assert_eq!((inputs[3]["minimum"].as_f64(), inputs[3]["maximum"].as_f64()), (Some(29.375), Some(34.676)));
+    assert_eq!((inputs[3]["minimum"].as_f64(), inputs[3]["maximum"].as_f64()), (Some(0.0), Some(f64::MAX)));
+    assert_eq!(culture::COMPARED_FEED_GLUCOSE_G_PER_L, (10.077, 52.101));
+    assert!(inputs[3]["bound"].as_str().unwrap().contains("The twelve compared cultures were fed 10.077 to 52.101 g/L"), "{}", inputs[3]);
     assert_eq!(inputs[5]["name"], "segment_end_h");
-    assert!(inputs[5]["bound"].as_str().unwrap().contains("the record ends by 215 h"), "{}", inputs[5]);
+    assert!(inputs[5]["bound"].as_str().unwrap().contains("the record ends by 1000 h (RunTooLong past it), the capacity of one solve and no physics"), "{}", inputs[5]);
+    assert_eq!(inputs[5]["maximum"], culture::RUN_END_MAX_H);
     assert!(!inputs[5]["bound"].as_str().unwrap().contains("untested"), "{}", inputs[5]);
     assert_eq!(inputs[6]["name"], "feed_ml");
-    assert!(inputs[6]["bound"].as_str().unwrap().contains("none went unfed, below 0.2432 mL/h or above 0.3301 mL/h in those segments once its feed had begun"), "{}", inputs[6]);
+    assert!(inputs[6]["bound"].as_str().unwrap().contains("from 211.28 h, when every feed was slowed and then stopped, 0.0093 to 0.2601 mL/h"), "{}", inputs[6]);
     assert_eq!(inputs[8]["name"], "sample_ml");
-    assert_eq!(inputs[8]["maximum"], culture::SAMPLE_MAX_ML);
-    assert_eq!(inputs[8]["maximum"], 4.3);
+    assert_eq!(inputs[8]["maximum"], culture::VOLUME_MAX_ML);
+    assert_eq!(inputs[8]["maximum"], 250.0);
     // Each output says in its own note how its comparison came out.
     let returns = serde_json::to_string(&described["returns"]).unwrap();
     for words in [
         "Not held anywhere: 0.0088 mol",
-        "misses it after, which is why the record ends there",
+        "misses it after, to the records' end at 312 h",
         "Compared with measurement to 170 h only",
         "evidence for the bookkeeping of glucose and not for the kinetics",
     ] {
@@ -434,8 +461,9 @@ async fn the_description_says_what_is_fitted_and_its_example_runs_unchanged() {
     }
     let refusals = serde_json::to_string(&described["refusals"]).unwrap();
     assert!(refusals.contains("through the gateway no input can be, since a number that is not finite is not JSON"));
-    assert_eq!(described["refusals"].as_array().expect("refusals").len(), 19);
-    assert!(refusals.contains("FeedScheduleOutOfRange"));
+    assert_eq!(described["refusals"].as_array().expect("refusals").len(), 17);
+    assert!(!refusals.contains("FeedScheduleOutOfRange") && !refusals.contains("FeedRateOutOfRange"));
+    assert!(refusals.contains("FeedRateNegative") && refusals.contains("BiomassNegative"));
     assert_eq!(described["reference"]["url"], "https://zenodo.org/records/5846028");
 
     let example = described["example_solve"].clone();

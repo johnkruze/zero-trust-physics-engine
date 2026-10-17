@@ -1,0 +1,22 @@
+{
+ "model": "cell_2170_model3",
+ "verdict": "met in part",
+ "protocol": {
+  "path": "evidence/research/tesla_model3_2170_physical/final_check/DECLARATION.md",
+  "sha256": "bd6bd253022d020ba92519b0d0eab65d7c1bfd961ca760dfa245c117cdc898c8",
+  "committed": null
+ },
+ "held_back": [
+  {
+   "path": "evidence/research/tesla_model3_2170_physical/final_check/runs_to_open.txt",
+   "sha256": "233cfa3b96d55c2208d744ee3e70d55b3e5cb94f049073542b4b67f8b035e315"
+  }
+ ],
+ "scored": {
+  "utc": "2026-10-09T19:56:26Z",
+  "evidence": "evidence/research/tesla_model3_2170_physical/final_check/FINGERPRINT_FINAL_CHECK.txt: final/predictions_table.csv at 19:56:02Z 'written before any voltage of these runs was read', final/scores.csv at 19:56:26Z 'the measured voltages were read after the line above'."
+ },
+ "forecast_first": "not shown",
+ "registered_by": "backfill from the record, 2026-10-15",
+ "notes": "The document that fixes this model's own comparison is the final-check declaration: which runs of cells m1000 and m448-N are opened (runs_to_open.txt above, the list of files, not their contents), the five conditions and expected counts behind 'met in part', and the hashes of the plan round3/FINAL_CHECK_PLAN.md (6c42a249...) and of the marks' code code/score.py (53262735...). It and the plan were fingerprinted outside Git in FINGERPRINT_FINAL_CHECK.txt at 2026-10-09T19:53:39Z, 2 min 23 s before the predictions; neither hash is in any commit. The served pass line is 'the same marks as for the cell_2170_m80 card, unchanged since its protocol': that protocol, evidence/research/tesla_model3_2170/validation_protocol.md (488fe0af..., unchanged on disk), is in protocol_mcp_gateway commit f78bbd949955d3964972e1e1c2be5867a55cc295 at 2026-10-09T08:06:19Z as the m80 card's pass line, before this scoring; it fixes the marks but not this model's forecast. If the lead counts that commit as this model's protocol, the order would be held for the marks alone. This card's own first commit, e796e39c7e167dccf9eabc18fc8892d516e57c0a (committer 2026-10-09T20:52:52Z, 56 min after the scoring), carries the pass line with no hash and the result 'not yet run on cells it has never seen'. The public pass mark (GitHub-signed commit ba49e7b14a0ed572a138eeb3878684d5ca6f9e3f, 2026-10-13T17:55:00Z) was posted with the hash of the m80 protocol. Fresh-eyes check: evidence/verification/fresh_eyes_0.6.0/cell_2170_model3."
+}

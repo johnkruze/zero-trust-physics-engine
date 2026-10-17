@@ -246,14 +246,24 @@ fn what_the_door_and_its_library_answer_to_a_key_header_is_what_the_pages_state(
         assert_eq!((reply.status, reply.body.as_str()), (400, ""), "{reply:?}");
     }
     // A header section that does not fit the library's buffer: 431 with no body. The buffer is set by
-    // MAX_HEADER_BYTES (65,536); measured, the first key value refused is 114,563 bytes long.
+    // MAX_HEADER_BYTES (65,536). The library stops reading once what it holds reaches the buffer, and
+    // its last read may bring up to one buffer more, as many bytes as the socket has delivered by then,
+    // so the first length refused depends on how the bytes arrive (measured once at 114,563). What
+    // holds whatever the delivery: a header section that fits the buffer is read, and one of twice the
+    // buffer or more is refused.
+    let buffer = protocol_mcp_gateway::hosted::MAX_HEADER_BYTES;
     let reply = send(format!("Bearer {}", "a".repeat(1 << 20)).as_bytes());
     assert_eq!((reply.status, reply.body.as_str()), (431, ""), "{reply:?}");
-    let reply = send(format!("Bearer {}", "a".repeat(114_563)).as_bytes());
+    let reply = send(format!("Bearer {}", "a".repeat(2 * buffer)).as_bytes());
     assert_eq!((reply.status, reply.body.as_str()), (431, ""), "{reply:?}");
-    // Below that the door reads the value, and a key that long is just a wrong key.
-    let reply = send(format!("Bearer {}", "a".repeat(114_562)).as_bytes());
+    // Inside the buffer the door reads the value, and a key that long is just a wrong key.
+    let reply = send(format!("Bearer {}", "a".repeat(buffer - 1024)).as_bytes());
     assert!(unauthorized(&reply), "{reply:?}");
+    // Between the two, the answer is one of those two, never a third.
+    for length in [buffer + 1, 114_562, 114_563, 2 * buffer - 1024] {
+        let reply = send(format!("Bearer {}", "a".repeat(length)).as_bytes());
+        assert!(unauthorized(&reply) || (reply.status, reply.body.as_str()) == (431, ""), "{length}: {reply:?}");
+    }
     // Spaces or a tab around the value are stripped by the library; the key still has to be right.
     assert_eq!(send(format!("Bearer {KEY} ").as_bytes()).status, 200);
     assert_eq!(send(format!("Bearer {KEY}\t").as_bytes()).status, 200);

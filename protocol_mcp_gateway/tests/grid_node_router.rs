@@ -117,7 +117,7 @@ async fn a_held_voltage_at_the_bound_is_refused_where_it_rings_past_the_bound() 
     assert_eq!(body["steps_landed"], landed, "{body}");
     assert_eq!(
         body["reject_detail"],
-        format!("Physical Failure: the grid step landed with |voltage_v| above 595.7150486594088 V, the inclusive maximum of the grid_node card (VoltageOutsideCard). The run is sealed to step {landed}. The state at step {} was refused and is not sealed.", landed + 1)
+        format!("Physical Failure: the grid step landed with |voltage_v| above 595.7150486594088 V, the energy bound of the grid_node card: the shunt holds more energy than the link takes as heat to its melting point (VoltageOutsideCard). The run is sealed to step {landed}. The state at step {} was refused and is not sealed.", landed + 1)
     );
     let state = &body["final_state"];
     assert_eq!(number(state, "voltage_v").to_bits(), last.voltage_v.to_bits());
@@ -268,4 +268,32 @@ async fn a_restart_matches_the_state_and_starts_the_peak_again() {
         assert_eq!(number(&again["final_state"], key).to_bits(), number(&straight["final_state"], key).to_bits(), "{key}");
     }
     assert!(number(&again["final_state"], "voltage_spike_v") < number(&straight["final_state"], "voltage_spike_v"));
+}
+
+/// The worked run of the fuse link carries a real load: the node at its
+/// catalogue 48 V with 10 A through the link, 10 ms at the card's own step.
+/// The link visibly warms and the run lands. Its second worked example is a
+/// start above the melting point of copper, turned away by name with no seal.
+#[tokio::test]
+async fn the_worked_run_carries_a_load_that_warms_the_link_and_the_worked_refusal_is_named() {
+    let base = spawn_app().await;
+    let (status, described) = post(&base, "/describe_card", &json!({ "domain": "energy", "card": "grid_node" })).await;
+    assert_eq!(status, 200, "{described}");
+    let described: Value = serde_json::from_str(&described).unwrap();
+    let run = &described["example_run_trajectory"];
+    assert_eq!(run["segments"][0]["load"]["load_current_a"], 10.0);
+    assert_eq!(run["segments"][0]["load"]["upstream_voltage_v"], grid_node::CATALOG_VOLTAGE_V);
+    assert_eq!(run["dt_s"].as_f64().unwrap().to_bits(), GridNode::copper_fuse_link().gate_dt_s().unwrap().to_bits());
+    let (status, text) = post(&base, "/run_trajectory", run).await;
+    assert_eq!(status, 200, "{text}");
+    let answer: Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(answer["outcome"], "completed", "{text}");
+    assert_eq!(answer["steps_landed"], 10_000);
+    let warmed = number(&answer["final_state"], "temperature_k") - grid_node::REFERENCE_TEMPERATURE_K;
+    assert!(warmed > 10.0 && warmed < 20.0, "the link warmed by {warmed} K");
+    let refused = &described["example_refused"];
+    let (status, text) = post(&base, "/run_trajectory", &refused["run_trajectory"]).await;
+    assert_eq!(status, 422, "{text}");
+    assert_eq!(text, refused["answered"].as_str().unwrap());
+    assert!(text.contains("(TemperatureOutsideCard)") && !text.contains("run_seal"), "{text}");
 }

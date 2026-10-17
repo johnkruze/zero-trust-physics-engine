@@ -24,20 +24,33 @@
 //!
 //! Left out: rain on the path that differs from rain at the gauge, which
 //! stands at one end; drift of the dry level during an event; dew; snow and
-//! sleet; the temperature and the drop sizes of the rain. A rain rate above
-//! 84 mm/h, the highest one-minute rate in the fitting data, is
-//! [`StepReject::RainRateOutsideCard`]. Nothing is extrapolated.
+//! sleet; the temperature and the drop sizes of the rain. A rain rate below
+//! zero is [`StepReject::NegativeRainRate`]. Any rate from zero up is
+//! computed: P.838-3 is a recommendation for any rain rate, the water on the
+//! antennas builds toward its own ceiling at any rate above zero, and the map
+//! and the power ledger are exact at any rate. The constants were fitted on
+//! one-minute rates of 0 or 6 to 84 mm/h, and compared with a month whose
+//! rain reached 54 mm/h; no rate above 84 mm/h was measured at this gauge.
 //!
 //! The gauge counts 0.1 mm, so each of its one-minute rates is 0 or at least
-//! 6 mm/h, and the card was fitted and compared on those rates only. A rate
-//! above zero and below 6 mm/h is [`StepReject::RainRateBelowGaugeCount`].
-//! The fit and the comparison fed rain held through whole gauge minutes. The
-//! state carries the seconds already spent in the current gauge minute and the
-//! rain rate held since that minute began; a step inside a minute whose rate
-//! is another number is [`StepReject::RainNotHeldForGaugeMinute`]. A step that
-//! starts on a minute's boundary may carry any rate on the card. A boundary is
-//! reached when the clock of the minute is within [`GAUGE_MINUTE_ALLOWANCE_S`]
-//! of 60 s, half the step floor.
+//! 6 mm/h, and every rate the card was fitted and compared on is one of
+//! those. A rate above zero and below 6 mm/h is computed as any other: the
+//! rain term is `k R^α L` at that rate, and the water on the antennas builds
+//! toward 2.13 dB as at any rate above zero, which was fitted only at rates of
+//! 6 mm/h and up. The fit and the comparison fed rain held through whole gauge
+//! minutes at a step of 60 s; the map of the water on the antennas is exact
+//! for any rate held over a step, at any step length, so the rain may change
+//! at any step. The state still carries the seconds spent in the current
+//! gauge minute and the rate of the last step, as reported quantities: no
+//! limit depends on them. A minute is complete when its clock is within
+//! [`GAUGE_MINUTE_ALLOWANCE_S`] of 60 s, half the step floor.
+//!
+//! The dry level is the caller's. Below [`DRY_PATH_LOSS_FLOOR_DB`], 44.32 dB,
+//! the free-space loss of this path, 124.667 dB, less the gain of two ideal
+//! circular apertures of 0.3 m at this frequency, 40.172 dB each, it is
+//! [`StepReject::DryPathLossBelowFreeSpace`]: no pair of these antennas has
+//! that much gain. The 18 fitted events lay between 51.75 and 52.55 dB and
+//! the held-back month between 52.60 and 52.90 dB.
 //!
 //! Every reading of August 2015 was held back from the fit. The protocol,
 //! fixed before August was opened, and the fit are in
@@ -122,11 +135,18 @@
 //! An antenna attenuation that is not the exact map breaks this account and
 //! is [`StepReject::AntennaAccountBreach`].
 //!
-//! [`LinkGothenburg10010::gate_dt_s`] is 60 s, the gauge's minute and the
-//! step the three constants were fitted at. The public step does not apply
-//! that clock. [`LinkGothenburg10010::floor_dt_s`], about 5.7e-5 s, is the
-//! smallest step the card stands behind. The public step does not apply it
-//! either. The gateway refuses a step outside the two.
+//! [`LinkGothenburg10010::gate_dt_s`] is set by the arithmetic of the step
+//! and not by the data: the map is exact at any step, and the one number that
+//! loses figures as the step grows is the water built in the step, `W_max dt −
+//! I`, a difference of two numbers near `W_max dt`. Its rounding, one part in
+//! 2^52 of `W_max dt / τ_w` at most, is held at a thousandth of the antenna
+//! account's limit: [`GATE_DT_S`], `ANTENNA_ACCOUNT_LIMIT / 1000 × τ_w ×
+//! 2^52`, 364 791 569 s, about 11.6 years, in one step. The three constants
+//! were fitted at the gauge's 60 s step; one step and many steps over the same
+//! span give the same state and the same energies to rounding.
+//! [`LinkGothenburg10010::floor_dt_s`], about 5.7e-5 s, the gauge's minute
+//! over 2^20, is the smallest step the card stands behind. The public step
+//! applies neither. The gateway refuses a step outside the two.
 //!
 //! The step calls [`crate::math::exp`], [`crate::math::exp_m1`] and
 //! [`crate::math::log`].
@@ -136,6 +156,7 @@ extern crate core;
 use core::prelude::v1::*;
 
 use crate::frame::LastStateFrame64;
+use crate::normal::normal_or_zero;
 
 /// Carrier frequency of sublink 587. The dataset, `cml/cml_metadata.csv`.
 pub const FREQUENCY_GHZ: f64 = 32.445;
@@ -164,26 +185,35 @@ pub const ANTENNA_WETTING_TIME_S: f64 = 81.0;
 /// Time the water on the antennas takes to dry once the rain stops. Fitted,
 /// this link, the 18 rain events of June and July 2015.
 pub const ANTENNA_DRYING_TIME_S: f64 = 404.0;
-/// Highest one-minute rain rate at the gauge in the fitting data. Past this
-/// the step is refused.
+/// Highest one-minute rain rate at the gauge in the fitting data. A rate above
+/// it is computed; the frame's margin to it is then below zero.
 pub const RAIN_RATE_MAX_MM_H: f64 = 84.0;
-/// Lowest dry level the card takes. The 18 fitted events lie between 51.75
-/// and 52.55 dB and the monthly median moved 0.6 dB from June to July.
-pub const DRY_PATH_LOSS_MIN_DB: f64 = 50.0;
-/// Highest dry level the card takes.
-pub const DRY_PATH_LOSS_MAX_DB: f64 = 54.0;
+/// Lowest dry level a pair of these antennas can have: the free-space loss
+/// over this path at this frequency, [`free_space_loss_db`], less the gain of
+/// two ideal circular apertures of the antenna's diameter,
+/// [`ideal_aperture_gain_db`], `124.667 − 2 × 40.172` dB. An aperture of a
+/// given area has no more gain than the ideal one, so a lower dry level is a
+/// gain no pair of 0.3 m dishes can have. The two functions, with the crate's
+/// own logarithm, give 44.3232538878642 dB; this is that number rounded
+/// down at the eighth decimal, so the bound never refuses a level they allow.
+pub const DRY_PATH_LOSS_FLOOR_DB: f64 = 44.32325388;
 /// The gauge's minute, and the step the three fitted constants were fitted at.
 pub const GAUGE_STEP_S: f64 = 60.0;
-/// Step ceiling divided by step floor: 2^20.
-pub const GATE_OVER_FLOOR: f64 = 1_048_576.0;
-/// One count of the gauge, 0.1 mm, in one minute. Every one-minute rate of the
-/// fitting data and of the held-back month is 0 or at least this.
-pub const RAIN_RATE_ONE_COUNT_MM_H: f64 = 6.0;
+/// The gauge's minute divided by the step floor: 2^20.
+pub const GAUGE_STEP_OVER_FLOOR: f64 = 1_048_576.0;
+/// Largest step the card stands behind, s: `ANTENNA_ACCOUNT_LIMIT / 1000 ×
+/// ANTENNA_WETTING_TIME_S × 2^52`. The water built in a wet step is `(W_max dt
+/// − I) / τ_w`, a difference of two numbers near `W_max dt`, and it rounds by
+/// up to one part in 2^52 of `W_max dt / τ_w`; at this step that is a
+/// thousandth of the antenna account's limit. Nothing else in the step loses
+/// figures as the step grows: the water's map, its integral and each energy
+/// are exact at any step.
+pub const GATE_DT_S: f64 = 364_791_569.817_010_2;
 /// A gauge minute is complete when its clock is within this of 60 s: half the
 /// step floor, `GAUGE_STEP_S / 2^21`, about 2.9e-5 s. A sum of steps that
 /// should make a whole minute rounds by far less, and no step the gateway
 /// takes is shorter than twice this.
-pub const GAUGE_MINUTE_ALLOWANCE_S: f64 = GAUGE_STEP_S / (2.0 * GATE_OVER_FLOOR);
+pub const GAUGE_MINUTE_ALLOWANCE_S: f64 = GAUGE_STEP_S / (2.0 * GAUGE_STEP_OVER_FLOOR);
 /// Terms of the series that integrates each energy over a step.
 const ENERGY_SERIES_TERMS: u32 = 24;
 /// `ln 10 / 10`: a decibel as a natural logarithm of a power ratio.
@@ -212,16 +242,12 @@ pub enum StepReject {
     NonPositiveDt,
     /// A recorded constant is not this link's.
     InvalidLink,
-    /// The rain rate is below zero or above 84 mm/h, the highest one-minute rate in the fitting data.
-    RainRateOutsideCard,
-    /// The rain rate is above zero and below 6 mm/h, one count of the gauge in a minute: the gauge gives no such one-minute rate, and none was compared with the link.
-    RainRateBelowGaugeCount,
-    /// The rain rate changed inside a gauge minute: it is not the rate held since the minute began, and only rain held through whole gauge minutes was compared with the link.
-    RainNotHeldForGaugeMinute,
+    /// The rain rate is below zero: rain does not fall upward.
+    NegativeRainRate,
     /// The seconds already spent in the current gauge minute are below zero or not below 60 s.
     GaugeMinuteOutsideCard,
-    /// The dry level is outside 50 to 54 dB.
-    DryPathLossOutsideCard,
+    /// The dry level is below 44.32 dB, the free-space loss of this path less the gain of two ideal 0.3 m apertures: no pair of these antennas has that much gain.
+    DryPathLossBelowFreeSpace,
     /// The attenuation of the water on the antennas is below zero or above the most the card gives it, 2.13 dB.
     AntennaWaterOutsideCard,
     /// The trial step delivered more power than the dry path carries.
@@ -235,7 +261,7 @@ pub enum StepReject {
 /// The rain at the gauge, held through the step.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct LinkLoad {
-    /// Rain rate at the Barlastplatsen gauge, mm/h. 0, or 6 to 84.
+    /// Rain rate at the Barlastplatsen gauge, mm/h. Zero or more.
     pub rain_rate_mm_h: f64,
 }
 
@@ -262,12 +288,12 @@ pub struct LinkGothenburg10010 {
     pub antenna_drying_time_s: f64,
     /// Recorded copy of [`RAIN_RATE_MAX_MM_H`].
     pub rain_rate_max_mm_h: f64,
-    /// Recorded copy of [`DRY_PATH_LOSS_MIN_DB`].
-    pub dry_path_loss_min_db: f64,
-    /// Recorded copy of [`DRY_PATH_LOSS_MAX_DB`].
-    pub dry_path_loss_max_db: f64,
+    /// Recorded copy of [`DRY_PATH_LOSS_FLOOR_DB`].
+    pub dry_path_loss_floor_db: f64,
     /// Recorded copy of [`GAUGE_STEP_S`].
     pub gauge_step_s: f64,
+    /// Recorded copy of [`GATE_DT_S`].
+    pub gate_dt_s: f64,
     /// Recorded copy of [`RESIDUAL_CONSERVATION_LIMIT`].
     pub residual_conservation_limit: f64,
     /// Recorded copy of [`ANTENNA_ACCOUNT_LIMIT`].
@@ -289,9 +315,9 @@ impl LinkGothenburg10010 {
             antenna_wetting_time_s: ANTENNA_WETTING_TIME_S,
             antenna_drying_time_s: ANTENNA_DRYING_TIME_S,
             rain_rate_max_mm_h: RAIN_RATE_MAX_MM_H,
-            dry_path_loss_min_db: DRY_PATH_LOSS_MIN_DB,
-            dry_path_loss_max_db: DRY_PATH_LOSS_MAX_DB,
+            dry_path_loss_floor_db: DRY_PATH_LOSS_FLOOR_DB,
             gauge_step_s: GAUGE_STEP_S,
+            gate_dt_s: GATE_DT_S,
             residual_conservation_limit: RESIDUAL_CONSERVATION_LIMIT,
             antenna_account_limit: ANTENNA_ACCOUNT_LIMIT,
         };
@@ -314,23 +340,25 @@ impl LinkGothenburg10010 {
             && self.antenna_wetting_time_s.to_bits() == ANTENNA_WETTING_TIME_S.to_bits()
             && self.antenna_drying_time_s.to_bits() == ANTENNA_DRYING_TIME_S.to_bits()
             && self.rain_rate_max_mm_h.to_bits() == RAIN_RATE_MAX_MM_H.to_bits()
-            && self.dry_path_loss_min_db.to_bits() == DRY_PATH_LOSS_MIN_DB.to_bits()
-            && self.dry_path_loss_max_db.to_bits() == DRY_PATH_LOSS_MAX_DB.to_bits()
+            && self.dry_path_loss_floor_db.to_bits() == DRY_PATH_LOSS_FLOOR_DB.to_bits()
             && self.gauge_step_s.to_bits() == GAUGE_STEP_S.to_bits()
+            && self.gate_dt_s.to_bits() == GATE_DT_S.to_bits()
             && self.residual_conservation_limit.to_bits() == RESIDUAL_CONSERVATION_LIMIT.to_bits()
             && self.antenna_account_limit.to_bits() == ANTENNA_ACCOUNT_LIMIT.to_bits()
             && self.antenna_water_max_db > 0.0
             && self.antenna_wetting_time_s > 0.0
             && self.antenna_drying_time_s > 0.0
             && self.rain_rate_max_mm_h > 0.0
-            && self.dry_path_loss_max_db > self.dry_path_loss_min_db
+            && self.dry_path_loss_floor_db > 0.0
+            && self.gate_dt_s > self.gauge_step_s
     }
 
-    /// Largest step the card stands behind: the gauge's minute, the step the
-    /// three fitted constants were fitted at. Not applied by [`step`].
+    /// Largest step the card stands behind: [`GATE_DT_S`], set by the
+    /// rounding of the water built in one step, a thousandth of the antenna
+    /// account's limit. Not applied by [`step`].
     #[must_use]
     pub fn gate_dt_s(&self) -> Option<f64> {
-        let gate = self.gauge_step_s;
+        let gate = self.gate_dt_s;
         if gate.is_finite() && gate > 0.0 {
             Some(gate)
         } else {
@@ -338,16 +366,18 @@ impl LinkGothenburg10010 {
         }
     }
 
-    /// Smallest step the card stands behind: [`Self::gate_dt_s`] divided by
+    /// Smallest step the card stands behind: the gauge's minute divided by
     /// 2^20, about 5.7e-5 s. At that step the water on the antennas moves by
     /// at most seven parts in ten million of its ceiling, which 64-bit
     /// arithmetic still resolves to nine figures. Under that a step is mostly
     /// rounding. Not applied by [`step`].
     #[must_use]
     pub fn floor_dt_s(&self) -> Option<f64> {
-        match self.gate_dt_s() {
-            Some(gate_dt_s) => Some(gate_dt_s / GATE_OVER_FLOOR),
-            None => None,
+        let gauge = self.gauge_step_s;
+        if gauge.is_finite() && gauge > 0.0 {
+            Some(gauge / GAUGE_STEP_OVER_FLOOR)
+        } else {
+            None
         }
     }
 
@@ -434,13 +464,14 @@ pub struct LinkState {
     /// `|antenna_account_defect_db| / W_max`. An account of the fitted model:
     /// bookkeeping that follows from the model and not a conservation law.
     pub antenna_account_error: f64,
-    /// `RAIN_RATE_MAX_MM_H − rain_rate_mm_h`.
+    /// `RAIN_RATE_MAX_MM_H − rain_rate_mm_h`: below zero for a rate above the
+    /// highest of the fitting data.
     pub rain_rate_margin_mm_h: f64,
     /// Seconds already spent in the current gauge minute, from 0 to under 60.
-    /// Zero on a minute's boundary.
+    /// Zero on a minute's boundary. Reported; no limit depends on it.
     pub gauge_minute_elapsed_s: f64,
-    /// Rain rate held since the current gauge minute began. A step inside the
-    /// minute must carry this rate.
+    /// Rain rate of the last step, or the rate stated at the start. Reported;
+    /// no limit depends on it.
     pub gauge_minute_rain_mm_h: f64,
     /// It rained through the last step.
     pub raining: bool,
@@ -461,10 +492,8 @@ impl LinkState {
 
     /// Anchor both ledgers as [`Self::try_new`] does, part way through a
     /// gauge minute: `gauge_minute_elapsed_s` seconds of it already spent,
-    /// with `gauge_minute_rain_mm_h` held since it began. A state handed back
-    /// from a step carries both, so a link continued from it cannot change
-    /// its rain inside a minute. At zero seconds the rate is not used, and it
-    /// must still be on the card.
+    /// with `gauge_minute_rain_mm_h` the rate of the last step. Both are
+    /// reported and no limit depends on them; the rate must not be below zero.
     pub fn try_continue(
         link: &LinkGothenburg10010,
         dry_path_loss_db: f64,
@@ -482,8 +511,8 @@ impl LinkState {
         if !link.is_valid() {
             return Err(StepReject::InvalidLink);
         }
-        if !dry_level_on_card(dry_path_loss_db) {
-            return Err(StepReject::DryPathLossOutsideCard);
+        if !dry_level_possible(dry_path_loss_db) {
+            return Err(StepReject::DryPathLossBelowFreeSpace);
         }
         if !antenna_water_on_card(antenna_water_db) {
             return Err(StepReject::AntennaWaterOutsideCard);
@@ -532,8 +561,25 @@ impl LinkState {
 /// Advance one exact step and write the frame.
 ///
 /// A rejected step leaves `state` and `frame` as they were.
+///
+/// A value of the landed state below the normal range is written as zero
+/// with its sign ([`crate::normal`]).
 #[must_use]
 pub fn step(
+    link: &LinkGothenburg10010,
+    state: &mut LinkState,
+    frame: &mut LastStateFrame64,
+    load: LinkLoad,
+    dt_s: f64,
+) -> Result<(), StepReject> {
+    step_as_computed(link, state, frame, load, dt_s)?;
+    normal_or_zero_state(state);
+    Ok(())
+}
+
+/// The step as its equations compute it, before a value of the landed
+/// state below the normal range is written as zero.
+fn step_as_computed(
     link: &LinkGothenburg10010,
     state: &mut LinkState,
     frame: &mut LastStateFrame64,
@@ -548,19 +594,42 @@ pub fn step(
     commit(link, state, frame, load, dt_s, advanced)
 }
 
-fn rain_on_card(rain_rate_mm_h: f64) -> bool {
-    rain_rate_mm_h >= 0.0 && rain_rate_mm_h <= RAIN_RATE_MAX_MM_H
+/// Each value of a landed state below the normal range written as zero
+/// with its sign ([`crate::normal`]): the state carried to the next step
+/// and published holds no subnormal number.
+fn normal_or_zero_state(state: &mut LinkState) {
+    state.t_s = normal_or_zero(state.t_s);
+    state.dry_path_loss_db = normal_or_zero(state.dry_path_loss_db);
+    state.antenna_water_db = normal_or_zero(state.antenna_water_db);
+    state.rain_rate_mm_h = normal_or_zero(state.rain_rate_mm_h);
+    state.rain_attenuation_db = normal_or_zero(state.rain_attenuation_db);
+    state.path_loss_db = normal_or_zero(state.path_loss_db);
+    state.received_level_dbm = normal_or_zero(state.received_level_dbm);
+    state.received_power_w = normal_or_zero(state.received_power_w);
+    state.dry_path_power_w = normal_or_zero(state.dry_path_power_w);
+    state.dry_path_energy_j = normal_or_zero(state.dry_path_energy_j);
+    state.received_energy_j = normal_or_zero(state.received_energy_j);
+    state.rain_energy_j = normal_or_zero(state.rain_energy_j);
+    state.antenna_energy_j = normal_or_zero(state.antenna_energy_j);
+    state.energy_defect_j = normal_or_zero(state.energy_defect_j);
+    state.residual_conservation_error = normal_or_zero(state.residual_conservation_error);
+    state.antenna_account_anchor_db = normal_or_zero(state.antenna_account_anchor_db);
+    state.antenna_built_db = normal_or_zero(state.antenna_built_db);
+    state.antenna_dried_db = normal_or_zero(state.antenna_dried_db);
+    state.antenna_account_defect_db = normal_or_zero(state.antenna_account_defect_db);
+    state.antenna_account_error = normal_or_zero(state.antenna_account_error);
+    state.rain_rate_margin_mm_h = normal_or_zero(state.rain_rate_margin_mm_h);
+    state.gauge_minute_elapsed_s = normal_or_zero(state.gauge_minute_elapsed_s);
+    state.gauge_minute_rain_mm_h = normal_or_zero(state.gauge_minute_rain_mm_h);
 }
 
-/// A rain rate on the card: 0, or one gauge count a minute up to 84 mm/h.
+/// A rain rate of zero or more.
 fn rain_rate_check(rain_rate_mm_h: f64) -> Result<(), StepReject> {
-    if !rain_on_card(rain_rate_mm_h) {
-        return Err(StepReject::RainRateOutsideCard);
+    if rain_rate_mm_h >= 0.0 {
+        Ok(())
+    } else {
+        Err(StepReject::NegativeRainRate)
     }
-    if rain_rate_mm_h > 0.0 && rain_rate_mm_h < RAIN_RATE_ONE_COUNT_MM_H {
-        return Err(StepReject::RainRateBelowGaugeCount);
-    }
-    Ok(())
 }
 
 fn gauge_minute_on_card(gauge_minute_elapsed_s: f64) -> bool {
@@ -579,8 +648,8 @@ fn gauge_minute_after(gauge_minute_elapsed_s: f64, dt_s: f64) -> f64 {
     }
 }
 
-fn dry_level_on_card(dry_path_loss_db: f64) -> bool {
-    dry_path_loss_db >= DRY_PATH_LOSS_MIN_DB && dry_path_loss_db <= DRY_PATH_LOSS_MAX_DB
+fn dry_level_possible(dry_path_loss_db: f64) -> bool {
+    dry_path_loss_db >= DRY_PATH_LOSS_FLOOR_DB
 }
 
 fn antenna_water_on_card(antenna_water_db: f64) -> bool {
@@ -606,8 +675,8 @@ fn validate(
         return Err(StepReject::InvalidLink);
     }
     rain_rate_check(load.rain_rate_mm_h)?;
-    if !dry_level_on_card(state.dry_path_loss_db) {
-        return Err(StepReject::DryPathLossOutsideCard);
+    if !dry_level_possible(state.dry_path_loss_db) {
+        return Err(StepReject::DryPathLossBelowFreeSpace);
     }
     if !antenna_water_on_card(state.antenna_water_db) {
         return Err(StepReject::AntennaWaterOutsideCard);
@@ -615,11 +684,8 @@ fn validate(
     if !gauge_minute_on_card(state.gauge_minute_elapsed_s) {
         return Err(StepReject::GaugeMinuteOutsideCard);
     }
-    rain_rate_check(state.gauge_minute_rain_mm_h)?;
-    if state.gauge_minute_elapsed_s > 0.0 && load.rain_rate_mm_h != state.gauge_minute_rain_mm_h {
-        return Err(StepReject::RainNotHeldForGaugeMinute);
-    }
-    Ok(())
+    rain_rate_check(state.gauge_minute_rain_mm_h)
+
 }
 
 struct ExactStep {
@@ -866,9 +932,9 @@ mod tests {
 
     use super::{
         ANTENNA_ACCOUNT_LIMIT, ANTENNA_DRYING_TIME_S, ANTENNA_WATER_MAX_DB, ANTENNA_WETTING_TIME_S,
-        DRY_PATH_LOSS_MAX_DB, DRY_PATH_LOSS_MIN_DB, ExactStep, FLAG_RAINING, FREQUENCY_GHZ,
+        DRY_PATH_LOSS_FLOOR_DB, ExactStep, FLAG_RAINING, FREQUENCY_GHZ, GATE_DT_S,
         LinkGothenburg10010, LinkLoad, LinkState, NEPER_PER_DB, PATH_LENGTH_KM,
-        RAIN_COEFFICIENT_DB_PER_KM, RAIN_EXPONENT, RAIN_RATE_MAX_MM_H, RAIN_RATE_ONE_COUNT_MM_H,
+        RAIN_COEFFICIENT_DB_PER_KM, RAIN_EXPONENT, RAIN_RATE_MAX_MM_H,
         RESIDUAL_CONSERVATION_LIMIT, SENT_LEVEL_DBM, StepReject, commit, exact_map,
         free_space_loss_db, ideal_aperture_gain_db, step, validate,
     };
@@ -951,8 +1017,13 @@ mod tests {
     fn the_card_is_its_constants_and_its_two_clocks() {
         let link = LinkGothenburg10010::sublink_587();
         assert!(link.is_valid());
-        assert_eq!(link.gate_dt_s(), Some(60.0));
+        assert_eq!(link.gate_dt_s(), Some(GATE_DT_S));
         assert_eq!(link.floor_dt_s(), Some(60.0 / 1_048_576.0));
+        // The ceiling is the account's limit over a thousand, times the
+        // wetting time, over the rounding of one part in 2^52.
+        let from_arithmetic = ANTENNA_ACCOUNT_LIMIT / 1000.0 * ANTENNA_WETTING_TIME_S
+            / f64::EPSILON;
+        assert!((GATE_DT_S - from_arithmetic).abs() <= 1.0e-6 * from_arithmetic);
         let mut other = link;
         other.antenna_water_max_db = 2.0;
         assert!(!other.is_valid());
@@ -971,6 +1042,16 @@ mod tests {
         let gain = 20.0 * (std::f64::consts::PI * 0.3 / wavelength_m).log10();
         assert!((ideal_aperture_gain_db() - gain).abs() < 1.0e-11);
         assert!((ideal_aperture_gain_db() - 40.172).abs() < 1.0e-3);
+    }
+
+    /// The floor of the dry level is the free-space loss less two ideal
+    /// apertures, rounded down, so it never refuses a level the two allow.
+    #[test]
+    fn the_floor_of_the_dry_level_is_free_space_less_two_ideal_apertures() {
+        let floor = free_space_loss_db() - 2.0 * ideal_aperture_gain_db();
+        assert!((floor - 44.323_253_888).abs() < 1.0e-8, "{floor}");
+        assert!(DRY_PATH_LOSS_FLOOR_DB <= floor);
+        assert!(floor - DRY_PATH_LOSS_FLOOR_DB < 1.0e-8);
     }
 
     /// 0 dBm is one milliwatt, 30 dBm one watt, and −46.7 dBm is 21.38 nW.
@@ -1101,18 +1182,44 @@ mod tests {
         }
     }
 
+    /// Where the card stood at 84 mm/h, the highest rate of the fitting
+    /// data, a rate past it is computed: the rain term is `k R^α L`, the water
+    /// builds as at any rate, both ledgers close, and the margin goes below
+    /// zero. At 10^300 mm/h the rain takes all the power the dry path
+    /// carries, the received power is zero, and the ledger still closes. A
+    /// rate below zero is refused by name.
     #[test]
-    fn the_last_rain_rate_on_the_card_lands_and_the_next_number_is_refused() {
+    fn a_rain_rate_past_the_fitted_84_mm_h_is_computed_and_the_ledger_closes() {
         let (link, state, _) = dry_start();
         let mut trial = state;
         let mut frame = zero_frame();
         step(&link, &mut trial, &mut frame, rain(RAIN_RATE_MAX_MM_H), MINUTE_S)
-            .expect("84 mm/h is on the card");
+            .expect("84 mm/h lands");
         assert_eq!(frame.force_torque, 0.0);
-        let above = f64::from_bits(RAIN_RATE_MAX_MM_H.to_bits() + 1);
-        refused(&link, &state, rain(above), MINUTE_S, StepReject::RainRateOutsideCard);
-        refused(&link, &state, rain(-5.0e-324), MINUTE_S, StepReject::RainRateOutsideCard);
-        refused(&link, &state, rain(1.0e300), MINUTE_S, StepReject::RainRateOutsideCard);
+        for rate in [f64::from_bits(RAIN_RATE_MAX_MM_H.to_bits() + 1), 150.0, 300.0, 1_000.0, 1.0e6] {
+            let mut trial = state;
+            let mut frame = zero_frame();
+            for _ in 0..30 {
+                step(&link, &mut trial, &mut frame, rain(rate), MINUTE_S).expect("computed");
+                assert!(trial.residual_conservation_error < 1.0e-12, "{rate}");
+                assert!(trial.antenna_account_error < 1.0e-12, "{rate}");
+            }
+            let expected = RAIN_COEFFICIENT_DB_PER_KM * rate.powf(RAIN_EXPONENT) * PATH_LENGTH_KM;
+            assert!((trial.rain_attenuation_db - expected).abs() < 1.0e-9 * expected, "{rate}");
+            assert!(trial.antenna_water_db <= ANTENNA_WATER_MAX_DB);
+            assert!(trial.rain_rate_margin_mm_h < 0.0);
+            assert_eq!(frame.flags, FLAG_RAINING);
+        }
+        // At 300 mm/h the rain alone takes about 50 dB on this path.
+        let mut trial = state;
+        step(&link, &mut trial, &mut frame, rain(300.0), MINUTE_S).expect("computed");
+        assert!(trial.rain_attenuation_db > 40.0 && trial.rain_attenuation_db < 60.0);
+        let mut trial = state;
+        step(&link, &mut trial, &mut frame, rain(1.0e300), MINUTE_S).expect("all the power");
+        assert_eq!(trial.received_power_w, 0.0);
+        assert!(trial.residual_conservation_error < 1.0e-12);
+        refused(&link, &state, rain(-5.0e-324), MINUTE_S, StepReject::NegativeRainRate);
+        refused(&link, &state, rain(-1.0), MINUTE_S, StepReject::NegativeRainRate);
         // Negative zero is zero rain.
         let mut trial = state;
         step(&link, &mut trial, &mut frame, rain(-0.0), MINUTE_S).expect("no rain");
@@ -1138,11 +1245,8 @@ mod tests {
         refused(&other, &state, rain(6.0), MINUTE_S, StepReject::InvalidLink);
 
         let mut low = state;
-        low.dry_path_loss_db = f64::from_bits(DRY_PATH_LOSS_MIN_DB.to_bits() - 1);
-        refused(&link, &low, rain(6.0), MINUTE_S, StepReject::DryPathLossOutsideCard);
-        let mut high = state;
-        high.dry_path_loss_db = f64::from_bits(DRY_PATH_LOSS_MAX_DB.to_bits() + 1);
-        refused(&link, &high, rain(6.0), MINUTE_S, StepReject::DryPathLossOutsideCard);
+        low.dry_path_loss_db = f64::from_bits(DRY_PATH_LOSS_FLOOR_DB.to_bits() - 1);
+        refused(&link, &low, rain(6.0), MINUTE_S, StepReject::DryPathLossBelowFreeSpace);
 
         let mut soaked = state;
         soaked.antenna_water_db = f64::from_bits(ANTENNA_WATER_MAX_DB.to_bits() + 1);
@@ -1155,10 +1259,9 @@ mod tests {
     #[test]
     fn a_start_off_the_card_is_not_made() {
         let link = LinkGothenburg10010::sublink_587();
-        assert!(LinkState::try_new(&link, DRY_PATH_LOSS_MIN_DB, 0.0).is_some());
-        assert!(LinkState::try_new(&link, DRY_PATH_LOSS_MAX_DB, ANTENNA_WATER_MAX_DB).is_some());
-        assert!(LinkState::try_new(&link, 49.999, 0.0).is_none());
-        assert!(LinkState::try_new(&link, 54.001, 0.0).is_none());
+        assert!(LinkState::try_new(&link, DRY_PATH_LOSS_FLOOR_DB, 0.0).is_some());
+        assert!(LinkState::try_new(&link, 80.0, ANTENNA_WATER_MAX_DB).is_some());
+        assert!(LinkState::try_new(&link, 44.322, 0.0).is_none());
         assert!(LinkState::try_new(&link, DRY_DB, -0.001).is_none());
         assert!(LinkState::try_new(&link, DRY_DB, 2.131).is_none());
         assert!(LinkState::try_new(&link, f64::NAN, 0.0).is_none());
@@ -1398,88 +1501,115 @@ mod tests {
         assert!(ANTENNA_ACCOUNT_LIMIT < 1.0e-5);
     }
 
-    /// Rule 3. A rain rate above zero and under one gauge count a minute is
-    /// refused by name, as a load and as the rate of a minute carried in;
-    /// 6 mm/h and zero land.
+    /// Where the card stood below one gauge count a minute, 6 mm/h, a light
+    /// rain is computed: the rain term is `k R^α L` at that rate, the water
+    /// builds toward its ceiling as at any rate above zero, and both ledgers
+    /// close. Zero is no rain and the water dries.
     #[test]
-    fn a_rain_rate_under_one_gauge_count_is_refused_by_name() {
+    fn a_rain_rate_under_one_gauge_count_is_computed_and_the_ledger_closes() {
         let (link, state, _) = dry_start();
-        for rate in [5.0e-324, 1.0e-30, 1.0, 5.999_999_999_999_999] {
-            refused(&link, &state, rain(rate), MINUTE_S, StepReject::RainRateBelowGaugeCount);
-            assert_eq!(
-                LinkState::try_continue(&link, DRY_DB, 0.0, 0.0, rate),
-                Err(StepReject::RainRateBelowGaugeCount)
-            );
+        for rate in [5.0e-324, 1.0e-30, 0.1, 1.0, 5.999_999_999_999_999] {
+            let mut trial = state;
+            let mut frame = zero_frame();
+            for _ in 0..20 {
+                step(&link, &mut trial, &mut frame, rain(rate), MINUTE_S).expect("computed");
+                assert!(trial.residual_conservation_error < 1.0e-12, "{rate}");
+                assert!(trial.antenna_account_error < 1.0e-12, "{rate}");
+            }
+            assert_eq!(frame.flags, FLAG_RAINING);
+            assert!(trial.rain_attenuation_db < 2.0, "{rate}");
+            // The antenna term does not depend on the rate.
+            assert!((trial.antenna_water_db - ANTENNA_WATER_MAX_DB).abs() < 1.0e-5);
+            assert!(LinkState::try_continue(&link, DRY_DB, 0.0, 0.0, rate).is_ok());
         }
-        let below_six = f64::from_bits(RAIN_RATE_ONE_COUNT_MM_H.to_bits() - 1);
-        refused(&link, &state, rain(below_six), MINUTE_S, StepReject::RainRateBelowGaugeCount);
         let mut trial = state;
         let mut frame = zero_frame();
-        step(&link, &mut trial, &mut frame, rain(RAIN_RATE_ONE_COUNT_MM_H), MINUTE_S)
-            .expect("one count lands");
-        let mut trial = state;
         step(&link, &mut trial, &mut frame, rain(0.0), MINUTE_S).expect("no rain lands");
         assert_eq!(trial.antenna_water_db, 0.0);
     }
 
-    /// Rule 3. Rain changed inside a gauge minute is refused by name and the
-    /// state and the proof are kept; rain held through the minute in ten
-    /// steps lands where one minute does, and the next minute takes a new
-    /// rate.
+    /// Where the card stood when the rain changed inside a gauge minute, the
+    /// step is computed: the map is exact for the rate each step holds, so
+    /// ten seconds at one rate and fifty at another land where the same two
+    /// pieces land taken in any number of steps, and both ledgers close.
     #[test]
-    fn rain_changed_inside_a_gauge_minute_is_refused_by_name() {
+    fn rain_changed_inside_a_gauge_minute_is_computed_and_the_ledger_closes() {
         let (link, start, mut frame) = dry_start();
         let mut state = start;
         step(&link, &mut state, &mut frame, rain(36.0), 10.0).expect("ten seconds");
         assert_eq!(state.gauge_minute_elapsed_s, 10.0);
         assert_eq!(state.gauge_minute_rain_mm_h, 36.0);
-        refused(&link, &state, rain(0.0), 10.0, StepReject::RainNotHeldForGaugeMinute);
-        refused(&link, &state, rain(42.0), 50.0, StepReject::RainNotHeldForGaugeMinute);
-        for _ in 0..5 {
-            step(&link, &mut state, &mut frame, rain(36.0), 10.0).expect("the same rain");
-        }
+        step(&link, &mut state, &mut frame, rain(0.0), 10.0).expect("a change inside the minute");
+        step(&link, &mut state, &mut frame, rain(42.0), 40.0).expect("another");
         assert_eq!(state.gauge_minute_elapsed_s, 0.0);
-        let mut minute = start;
-        step(&link, &mut minute, &mut frame, rain(36.0), MINUTE_S).expect("a minute");
-        assert!((state.antenna_water_db - minute.antenna_water_db).abs() < 1.0e-14);
-        step(&link, &mut state, &mut frame, rain(0.0), 10.0).expect("a new minute");
-
-        // A step that runs across a boundary at the held rate lands, and the
-        // clock of the next minute carries on from it.
-        let mut state = start;
-        step(&link, &mut state, &mut frame, rain(12.0), 45.0).expect("45 s");
-        step(&link, &mut state, &mut frame, rain(12.0), 45.0).expect("to 90 s");
-        assert!((state.gauge_minute_elapsed_s - 30.0).abs() < 1.0e-12);
-        refused(&link, &state, rain(18.0), 30.0, StepReject::RainNotHeldForGaugeMinute);
-
-        // A minute made of steps that do not sum exactly to 60 s in binary
-        // still ends on the boundary.
-        let mut state = start;
-        for _ in 0..7 {
-            step(&link, &mut state, &mut frame, rain(18.0), MINUTE_S / 7.0).expect("a seventh");
+        assert!(state.residual_conservation_error < 1.0e-12);
+        assert!(state.antenna_account_error < 1.0e-12);
+        let mut fine = start;
+        for _ in 0..10 {
+            step(&link, &mut fine, &mut frame, rain(36.0), 1.0).expect("a second");
         }
-        assert_eq!(state.gauge_minute_elapsed_s, 0.0);
-        step(&link, &mut state, &mut frame, rain(6.0), MINUTE_S / 7.0).expect("a new minute");
+        for _ in 0..100 {
+            step(&link, &mut fine, &mut frame, rain(0.0), 0.1).expect("a tenth");
+        }
+        for _ in 0..8 {
+            step(&link, &mut fine, &mut frame, rain(42.0), 5.0).expect("five seconds");
+        }
+        assert!((fine.antenna_water_db - state.antenna_water_db).abs() < 1.0e-13);
+        assert!((fine.received_energy_j - state.received_energy_j).abs()
+            < 1.0e-12 * state.received_energy_j);
+        // The rain changing every second for an hour keeps both ledgers.
+        let mut state = start;
+        for i in 0..3600_u32 {
+            let rate = [0.0, 3.0, 18.0, 120.0, 0.5][(i % 5) as usize];
+            step(&link, &mut state, &mut frame, rain(rate), 1.0).expect("each second");
+        }
+        assert!(state.residual_conservation_error < 1.0e-12);
+        assert!(state.antenna_account_error < 1.0e-10);
     }
 
-    /// Restart family. A state started part way through a minute carries the
-    /// minute's rain, so restarting cannot change the rain inside a minute;
-    /// a start off the minute's clock is refused by name.
+    /// Where the card stood at the gauge's 60 s step, one step of a day, a
+    /// year, or the ceiling lands where many steps land, and both ledgers
+    /// close; past the ceiling the antenna account still closes for one step,
+    /// and its rounding grows as the step does.
     #[test]
-    fn a_start_part_way_through_a_minute_holds_its_rain() {
+    fn a_step_far_past_the_gauge_minute_lands_where_many_steps_do() {
+        let (link, start, mut frame) = dry_start();
+        for (dt_s, steps) in [(3_600.0, 24_u32), (86_400.0, 1), (MINUTE_S * 7.0, 13)] {
+            let mut one = start;
+            step(&link, &mut one, &mut frame, rain(24.0), dt_s * f64::from(steps)).expect("one");
+            let mut many = start;
+            for _ in 0..steps * 60 {
+                step(&link, &mut many, &mut frame, rain(24.0), dt_s / 60.0).expect("many");
+            }
+            assert!((one.antenna_water_db - many.antenna_water_db).abs() < 1.0e-13);
+            assert!((one.received_energy_j - many.received_energy_j).abs()
+                < 1.0e-12 * one.received_energy_j);
+            assert!(one.residual_conservation_error < 1.0e-12);
+            assert!(many.antenna_account_error < 1.0e-10);
+        }
+        for dt_s in [86_400.0 * 365.25, GATE_DT_S] {
+            for rate in [0.0, 24.0] {
+                let mut one = LinkState::try_new(&link, DRY_DB, 1.0).expect("a start");
+                step(&link, &mut one, &mut frame, rain(rate), dt_s).expect("at the ceiling");
+                assert!(one.residual_conservation_error < 1.0e-12, "{dt_s}");
+                assert!(one.antenna_account_error <= ANTENNA_ACCOUNT_LIMIT / 1000.0, "{dt_s} {}", one.antenna_account_error);
+            }
+        }
+    }
+
+    /// Restart family. A state started part way through a minute takes any
+    /// rate at its first step; a start off the minute's clock, or with a rate
+    /// below zero, is refused by name.
+    #[test]
+    fn a_start_part_way_through_a_minute_takes_any_rain() {
         let link = LinkGothenburg10010::sublink_587();
         let state = LinkState::try_continue(&link, DRY_DB, 0.3, 30.0, 36.0).expect("a start");
         assert_eq!(state.t_s, 0.0);
-        refused(&link, &state, rain(0.0), 10.0, StepReject::RainNotHeldForGaugeMinute);
         let mut trial = state;
         let mut frame = zero_frame();
-        step(&link, &mut trial, &mut frame, rain(36.0), 30.0).expect("the rest of the minute");
-        assert_eq!(trial.gauge_minute_elapsed_s, 0.0);
-        step(&link, &mut trial, &mut frame, rain(0.0), 30.0).expect("a new minute");
-        // At zero seconds the minute's rain is not used.
-        let state = LinkState::try_continue(&link, DRY_DB, 0.3, 0.0, 36.0).expect("a start");
-        let mut trial = state;
-        step(&link, &mut trial, &mut frame, rain(0.0), 10.0).expect("on a boundary");
+        step(&link, &mut trial, &mut frame, rain(0.0), 10.0).expect("another rate");
+        assert_eq!(trial.gauge_minute_elapsed_s, 40.0);
+        assert_eq!(trial.gauge_minute_rain_mm_h, 0.0);
         for elapsed in [-1.0e-300, MINUTE_S, 61.0] {
             assert_eq!(
                 LinkState::try_continue(&link, DRY_DB, 0.0, elapsed, 0.0),
@@ -1491,9 +1621,10 @@ mod tests {
             Err(StepReject::NonFiniteState)
         );
         assert_eq!(
-            LinkState::try_continue(&link, DRY_DB, 0.0, 0.0, 84.5),
-            Err(StepReject::RainRateOutsideCard)
+            LinkState::try_continue(&link, DRY_DB, 0.0, 0.0, -0.5),
+            Err(StepReject::NegativeRainRate)
         );
+        assert!(LinkState::try_continue(&link, DRY_DB, 0.0, 0.0, 84.5).is_ok());
         let last = f64::from_bits(MINUTE_S.to_bits() - 1);
         assert!(LinkState::try_continue(&link, DRY_DB, 0.0, last, 0.0).is_ok());
         // A state written by hand with its minute off the card is refused at the step.
@@ -1501,8 +1632,41 @@ mod tests {
         bad.gauge_minute_elapsed_s = MINUTE_S;
         refused(&link, &bad, rain(0.0), 1.0, StepReject::GaugeMinuteOutsideCard);
         let (_, mut bad, _) = dry_start();
-        bad.gauge_minute_rain_mm_h = 3.0;
-        refused(&link, &bad, rain(0.0), 1.0, StepReject::RainRateBelowGaugeCount);
+        bad.gauge_minute_rain_mm_h = -3.0;
+        refused(&link, &bad, rain(0.0), 1.0, StepReject::NegativeRainRate);
+    }
+
+    /// Where the card stood at 50 and 54 dB, any dry level from the free-space
+    /// floor up is computed with both ledgers closed; under the floor it is
+    /// refused by name.
+    #[test]
+    fn a_dry_level_from_the_free_space_floor_up_is_computed() {
+        let link = LinkGothenburg10010::sublink_587();
+        for dry_db in [DRY_PATH_LOSS_FLOOR_DB, 45.0, 49.0, 55.0, 70.0, 140.0] {
+            let mut state = LinkState::try_new(&link, dry_db, 0.0).expect("a start");
+            let mut frame = zero_frame();
+            for rate in [0.0, 12.0, 84.0, 200.0, 0.0] {
+                step(&link, &mut state, &mut frame, rain(rate), MINUTE_S).expect("computed");
+                assert!(state.residual_conservation_error < 1.0e-12, "{dry_db}");
+                assert!(state.antenna_account_error < 1.0e-12, "{dry_db}");
+            }
+            assert!((state.path_loss_db - dry_db - state.antenna_water_db).abs() < 1.0e-12 * dry_db);
+        }
+        let below = f64::from_bits(DRY_PATH_LOSS_FLOOR_DB.to_bits() - 1);
+        assert_eq!(
+            LinkState::try_continue(&link, below, 0.0, 0.0, 0.0),
+            Err(StepReject::DryPathLossBelowFreeSpace)
+        );
+        assert_eq!(
+            LinkState::try_continue(&link, -10.0, 0.0, 0.0, 0.0),
+            Err(StepReject::DryPathLossBelowFreeSpace)
+        );
+        // A dry level so large that the dry path carries no power in 64 bits
+        // is refused as not finite, not computed.
+        let mut state = LinkState::try_new(&link, DRY_DB, 0.0).expect("a start");
+        state.dry_path_loss_db = 1.0e4;
+        state.dry_path_power_w = 0.0;
+        refused(&link, &state, rain(6.0), MINUTE_S, StepReject::NonFiniteState);
     }
 
     /// A trial step that is not a number is refused before it is written.

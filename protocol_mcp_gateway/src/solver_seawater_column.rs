@@ -10,7 +10,7 @@ use crate::solvers::{
 };
 
 /// What has been compared with measurement, and how it came out.
-pub const COMPARED: &str = "Compared on 2026-10-09, once, with constants and scoring rule fixed beforehand, and all three lines were met. Five of the ten held-back legs could be scored (legs 7, 8, 9, 10 and 13; 632 stations): the median difference from the echo sounder was +4.59 m against 10 allowed; 0.804 of the stations were within 20 m against 0.80 needed, which is two stations more than the line; and the five legs' own medians were +4.30 to +4.92 m against 15 allowed. The 0.80 line was met by two stations and is thin: the binomial standard error of the fraction is 0.016, and with leg 9, 10 or 13 left out it falls under 0.80 (0.790, 0.789, 0.798). The test is one-sided: all three lines are met only for a constant shift of the solver's depth between -14.55 m and +0.10 m, so the solver sits at the deep edge. The fraction within 20 m is governed by the roughness of the sea floor, not by the model: on flat sea floor the scatter is 2.7 m. Where the three soundings of a station agree within 20 m (488 stations) 0.891 were within 20 m. The other five held-back legs (5, 11, 12, 14 and 15) give no sounding at the bottom of the cast and were not tested. Legs 14 and 15 were compared after the fact with the sounding at the start of the cast, a worse measurement (0.769 within 20 m on the scored stations), and give 0.775; pooled in as if scored, the fraction would be 632 of 792, 0.798. A model of one density and one gravity (1025 kg/m³, 9.81 m/s², the model this subject had before) gave a median of +48.17 m and 0.133 within 20 m on the same stations and missed all three lines. The earlier equation of state, EOS-80, also meets all three lines on the same stations (+3.72 m, 509 of 632), and so does a quadratic in the maximum pressure with three constants fitted on the opened leg (511 of 632). The comparison separates the solver from one density and one gravity, 48 m off, and does not separate equations of state. What the physics shows is the legs' medians spreading over 0.6 m for the solver against 12 m for the quadratic, and the three lines do not measure that. On the opened leg (129 stations) the solver gave +2.87 m and 0.907. The scoring was done by the agent that built the solver. A second scoring of 2026-10-09, on the same machine and from the scorer's own cut of the raw files, found the same numbers: evidence/checks/second_party/V-29/.";
+pub const COMPARED: &str = "Compared on 2026-10-09, once, with constants and scoring rule fixed beforehand, and all three lines were met. Five of the ten held-back legs could be scored (legs 7, 8, 9, 10 and 13; 632 stations): the median difference from the echo sounder was +4.59 m against 10 allowed; 0.804 of the stations were within 20 m against 0.80 needed, which is two stations more than the line; and the five legs' own medians were +4.30 to +4.92 m against 15 allowed. The 0.80 line was met by two stations and is thin: the binomial standard error of the fraction is 0.016, and with leg 9, 10 or 13 left out it falls under 0.80 (0.790, 0.789, 0.798). The test is one-sided: all three lines are met only for a constant shift of the solver's depth between -14.55 m and +0.10 m, so the solver sits at the deep edge. The fraction within 20 m is governed by the roughness of the sea floor, not by the model: on flat sea floor the scatter is 2.7 m. Where the three soundings of a station agree within 20 m (488 stations) 0.891 were within 20 m. The other five held-back legs (5, 11, 12, 14 and 15) give no sounding at the bottom of the cast and were not tested. Legs 14 and 15 were compared after the fact with the sounding at the start of the cast, a worse measurement (0.769 within 20 m on the scored stations), and give 0.775; pooled in as if scored, the fraction would be 632 of 792, 0.798. A model of one density and one gravity (1025 kg/m³, 9.81 m/s², the model this subject had before) gave a median of +48.17 m and 0.133 within 20 m on the same stations and missed all three lines. The earlier equation of state, EOS-80, also meets all three lines on the same stations (+3.72 m, 509 of 632), and so does a quadratic in the maximum pressure with three constants fitted on the opened leg (511 of 632). The comparison separates the solver from one density and one gravity, 48 m off, and does not separate equations of state. What the physics shows is the legs' medians spreading over 0.6 m for the solver against 12 m for the quadratic, and the three lines do not measure that. On the opened leg (129 stations) the solver gave +2.87 m and 0.907. The scoring was done by the agent that built the solver. A second scoring of 2026-10-09, on the same machine and from the scorer's own cut of the raw files, found the same numbers: evidence/verification/second_party/V-29/.";
 
 /// One array of the cast, one number for each level.
 const fn levels(
@@ -66,48 +66,48 @@ pub const SEAWATER_COLUMN: Solver = Solver {
         Input {
             name: "latitude_deg",
             kind: Kind::Number {
-                minimum: column::COMPARED_LATITUDE_MIN_DEG,
-                maximum: column::COMPARED_LATITUDE_MAX_DEG,
+                minimum: column::LATITUDE_MIN_DEG,
+                maximum: column::LATITUDE_MAX_DEG,
                 unit: "deg",
             },
-            refusal: Some("LatitudeOutsideCompared"),
-            bound: "Latitude of the cast, north positive. It sets gravity at the sea surface. The casts compared with measurement lie from -34.0023 to +26.4108, and a latitude outside that is refused as LatitudeOutsideCompared; outside -90..=90 it is LatitudeOutOfRange.",
+            refusal: Some("LatitudeOutOfRange"),
+            bound: "Latitude of the cast, north positive, -90 to 90 degrees; outside that it is not a latitude and is refused as LatitudeOutOfRange. It enters only gravity at the sea surface, whose formula holds at every latitude. The casts compared with measurement lie from -34.0023 to +26.4108 (Indian Ocean); there the echo-sounder depth was matched to a median of +4.59 m, with 0.804 of stations within 20 m. The Arctic and the Southern Ocean are answered and were not compared.",
             only_when: None,
             asked_by_check: true,
         },
         levels(
             "sea_pressure_dbar",
             column::SEA_PRESSURE_MIN_DBAR,
-            column::COMPARED_DEEPEST_MAX_DBAR,
+            column::SEA_PRESSURE_MAX_DBAR,
             "dbar",
-            "DeeperThanCompared",
-            "Sea pressure of each level, as a CTD records it: absolute pressure less one standard atmosphere. Rising from the first level to the last, the first no deeper than 20 dbar, no two neighbours more than 100 dbar apart. A pressure below 0 or above 10000 dbar, the limit of the Gibbs function, is refused as PressureOutOfRange. The deepest last level compared with measurement is 6108 dbar, and a cast whose last level is deeper is refused as DeeperThanCompared.",
+            "PressureOutOfRange",
+            "Sea pressure of each level, as a CTD records it: absolute pressure less one standard atmosphere. Rising from the first level to the last, the first no deeper than 20 dbar (FirstLevelTooDeep: the layer above it is weighed at the first level's water alone), no two neighbours more than 100 dbar apart (LevelGapTooWide: each layer between levels takes the mean of its two). A pressure below 0 or above 10000 dbar, the limit of the Gibbs function, is refused as PressureOutOfRange. The deepest last level compared with measurement is 6108 dbar; the solver's equations give 9712.78 m for 10000 dbar at Practical Salinity 35, 0 degC and latitude 30, against 9712.653 m from Unesco 1983.",
         ),
         levels(
             "temperature_c",
-            column::COMPARED_TEMPERATURE_MIN_C,
-            column::COMPARED_TEMPERATURE_MAX_C,
+            column::TEMPERATURE_MIN_C,
+            column::TEMPERATURE_MAX_C,
             "degC",
-            "TemperatureOutsideCompared",
-            "In-situ temperature of each level on ITS-90, one for each pressure. The temperatures compared with measurement run from 0.5088 to 31.169 degC, and a level outside them is refused as TemperatureOutsideCompared. Two limits of the physics are asked first. Above 40 degC, or below the floor of the water part, IAPWS SR7-09, is TemperatureOutOfRange: that floor is -2.65 degC at absolute pressure zero, as SR7-09 states it for pure water, so -2.6575 degC at sea pressure 0, falling by 0.000743 degC for each dbar. Below the freezing temperature of air-free seawater of the level's salinity at its pressure, where IAPWS R13-08 states the seawater function no longer holds, is TemperatureBelowFreezing: about -1.92 degC at Practical Salinity 35 and sea pressure 0.",
+            "TemperatureOutOfRange",
+            "In-situ temperature of each level on ITS-90, one for each pressure, answered from the freezing temperature of the level's own water up to 40 degC. The temperatures compared with measurement ran from 0.5088 to 31.169 degC. Two limits of the physics stop it. Above 40 degC, or below the floor of the water part, IAPWS SR7-09, is TemperatureOutOfRange: that floor is -2.65 degC at absolute pressure zero, as SR7-09 states it for pure water, so -2.6575 degC at sea pressure 0, falling by 0.000743 degC for each dbar. Below the freezing temperature of air-free seawater of the level's salinity at its pressure, where IAPWS R13-08 states the seawater function no longer holds, is TemperatureBelowFreezing: about -1.92 degC at Practical Salinity 35 and sea pressure 0.",
         ),
         levels(
             "practical_salinity",
-            column::COMPARED_SALINITY_MIN,
-            column::COMPARED_SALINITY_MAX,
+            column::PRACTICAL_SALINITY_MIN,
+            column::PRACTICAL_SALINITY_MAX,
             "PSS-78",
-            "SalinityOutsideCompared",
-            "Practical Salinity of each level, one for each pressure. The solver takes Absolute Salinity as 35.16504/35 g/kg times this. The salinities compared with measurement run from 30.9805 to 40.0731, and a level outside them is refused as SalinityOutsideCompared; outside 0..=41.8, the range of the Gibbs function, it is SalinityOutOfRange.",
+            "SalinityOutOfRange",
+            "Practical Salinity of each level, one for each pressure. The solver takes Absolute Salinity as 35.16504/35 g/kg times this. Outside 0 to 41.8, the range of the Gibbs function, it is refused as SalinityOutOfRange. The salinities compared with measurement ran from 30.9805 to 40.0731; fresh, brackish and hypersaline water are answered and were not compared.",
         ),
         Input {
             name: "height_above_bottom_m",
             kind: Kind::Number {
                 minimum: column::HEIGHT_ABOVE_BOTTOM_MIN_M,
-                maximum: column::COMPARED_HEIGHT_ABOVE_BOTTOM_MAX_M,
+                maximum: column::HEIGHT_ABOVE_BOTTOM_MAX_M,
                 unit: "m",
             },
-            refusal: Some("HeightAboveBottomOutsideCompared"),
-            bound: "Height of the last level above the sea floor, as an altimeter reads it. Give 0 when the question stops at the last level: the sea-floor depth and the echo are then those of the last level. The water between the last level and the sea floor is taken at the last level's sound speed. The greatest height compared with measurement is 86 m, and a greater one is refused as HeightAboveBottomOutsideCompared; a height below 0 or above 100 m is HeightAboveBottomOutOfRange.",
+            refusal: Some("HeightAboveBottomOutOfRange"),
+            bound: "Height of the last level above the sea floor, as an altimeter reads it. Give 0 when the question stops at the last level: the sea-floor depth and the echo are then those of the last level. The water between the last level and the sea floor is taken at the last level's sound speed. A height below 0, or above 100 m, where too much of the column would be water no level measured, is refused as HeightAboveBottomOutOfRange. The greatest height above bottom of a compared cast was 86 m.",
             only_when: None,
             asked_by_check: true,
         },
@@ -130,6 +130,7 @@ pub const SEAWATER_COLUMN: Solver = Solver {
     field: field_words,
     answer: "a settled column",
     refusals: REFUSALS,
+    door_refusals: &[],
     sections,
     validation: Some(validation),
     example,
@@ -149,7 +150,7 @@ const REFUSALS: &[Refusal] = &[
     },
     Refusal {
         name: "LatitudeOutOfRange",
-        meaning: "`latitude_deg` is outside `LATITUDE_MIN_DEG`..=`LATITUDE_MAX_DEG`.",
+        meaning: "`latitude_deg` is outside `LATITUDE_MIN_DEG` to `LATITUDE_MAX_DEG`.",
         sealed: false,
     },
     Refusal {
@@ -164,12 +165,12 @@ const REFUSALS: &[Refusal] = &[
     },
     Refusal {
         name: "PressureOutOfRange",
-        meaning: "A level's sea pressure is outside `SEA_PRESSURE_MIN_DBAR`..=`SEA_PRESSURE_MAX_DBAR`, the range of the Gibbs function.",
+        meaning: "A level's sea pressure is outside `SEA_PRESSURE_MIN_DBAR` to `SEA_PRESSURE_MAX_DBAR`, the range of the Gibbs function.",
         sealed: false,
     },
     Refusal {
         name: "FirstLevelTooDeep",
-        meaning: "The first level is deeper than `FIRST_LEVEL_MAX_DBAR`, so the water above it was not measured.",
+        meaning: "The first level is deeper than `FIRST_LEVEL_MAX_DBAR`: the layer from the sea surface down to it has no level above it to take a mean with, so it is weighed at the first level's specific volume alone, and the solver takes that one-level layer no thicker than this.",
         sealed: false,
     },
     Refusal {
@@ -184,7 +185,7 @@ const REFUSALS: &[Refusal] = &[
     },
     Refusal {
         name: "SalinityOutOfRange",
-        meaning: "A level's Practical Salinity is outside `PRACTICAL_SALINITY_MIN`..=`PRACTICAL_SALINITY_MAX`.",
+        meaning: "A level's Practical Salinity is outside `PRACTICAL_SALINITY_MIN` to `PRACTICAL_SALINITY_MAX`.",
         sealed: false,
     },
     Refusal {
@@ -199,32 +200,7 @@ const REFUSALS: &[Refusal] = &[
     },
     Refusal {
         name: "HeightAboveBottomOutOfRange",
-        meaning: "`height_above_bottom_m` is outside `HEIGHT_ABOVE_BOTTOM_MIN_M`..=`HEIGHT_ABOVE_BOTTOM_MAX_M`.",
-        sealed: false,
-    },
-    Refusal {
-        name: "LatitudeOutsideCompared",
-        meaning: "`latitude_deg` is outside `COMPARED_LATITUDE_MIN_DEG`..=`COMPARED_LATITUDE_MAX_DEG`, the latitudes of the casts compared with measurement.",
-        sealed: false,
-    },
-    Refusal {
-        name: "HeightAboveBottomOutsideCompared",
-        meaning: "`height_above_bottom_m` is above `COMPARED_HEIGHT_ABOVE_BOTTOM_MAX_M`, the greatest height of the casts compared with measurement.",
-        sealed: false,
-    },
-    Refusal {
-        name: "DeeperThanCompared",
-        meaning: "The last level is deeper than `COMPARED_DEEPEST_MAX_DBAR`, the deepest last level of the casts compared with measurement.",
-        sealed: false,
-    },
-    Refusal {
-        name: "SalinityOutsideCompared",
-        meaning: "A level's Practical Salinity is outside `COMPARED_SALINITY_MIN`..=`COMPARED_SALINITY_MAX`, the salinities of the casts compared with measurement.",
-        sealed: false,
-    },
-    Refusal {
-        name: "TemperatureOutsideCompared",
-        meaning: "A level's temperature is outside `COMPARED_TEMPERATURE_MIN_C`..=`COMPARED_TEMPERATURE_MAX_C`, the temperatures of the casts compared with measurement.",
+        meaning: "`height_above_bottom_m` is outside `HEIGHT_ABOVE_BOTTOM_MIN_M` to `HEIGHT_ABOVE_BOTTOM_MAX_M`.",
         sealed: false,
     },
     Refusal {
@@ -281,14 +257,14 @@ fn sections() -> Sections {
                 "tolerance": column::HYDROSTATIC_TOLERANCE,
                 "depth_rounding_spacings": column::DEPTH_ROUNDING_SPACINGS,
                 "unit": "fraction of the layer's pressure step",
-                "checked": "at acceptance, on every layer",
+                "compared": "at acceptance, on every layer",
                 "refusal": "HydrostaticBalanceBroken",
             },
             {
                 "name": "column_weight_residual_dbar",
                 "rule": "The weight of all the layers is the last level's pressure. Published; it follows from the layers.",
                 "unit": "dbar",
-                "checked": "at acceptance",
+                "compared": "at acceptance",
             },
         ]),
         convergence: json!({
@@ -303,10 +279,10 @@ fn sections() -> Sections {
             "url_saline_part": column::REFERENCE_URL_SALINE,
             "retrieved": column::REFERENCE_RETRIEVED,
             "tolerance": column::REFERENCE_TOLERANCE,
-            "test": "iapws_check_values_of_the_water_part_and_the_saline_part",
-            "covers": "The four derivatives of the Gibbs function the solver uses, for the water part at three points and for the saline part at three points, with the density and the sound speed of water, to the nine figures the tables print. The freezing temperature is held to the check values of ice Ih in IAPWS R10-06 (2009) Table 6, the chemical potential of water in R13-08 Table 8, the melting point of pure water at normal pressure, and within 0.5 mK of the TEOS-10 toolbox polynomial at seven points, in the test the_freezing_temperature_meets_the_check_values_of_ice_water_and_salt.",
+            "test": "iapws_published_values_of_the_water_part_and_the_saline_part",
+            "covers": "The four derivatives of the Gibbs function the solver uses, for the water part at three points and for the saline part at three points, with the density and the sound speed of water, to the nine figures the tables print. The freezing temperature is held to the test values of ice Ih in IAPWS R10-06 (2009) Table 6, the chemical potential of water in R13-08 Table 8, the melting point of pure water at normal pressure, and within 0.5 mK of the TEOS-10 toolbox polynomial at seven points, in the test the_freezing_temperature_meets_the_published_values_of_ice_water_and_salt.",
             "kind": "A reference calculation. It is not a measurement.",
-            "also": "The solver's equations give 9712.78 m for the depth of 10000 dbar in an ocean of salinity 35 and 0 degC at latitude 30, and the earlier equation of state (Unesco 1983) gives 9712.653 m, held to a quarter of a metre in the test the_standard_ocean_is_within_a_quarter_metre_of_the_unesco_depth. The served solver refuses that cast: latitude 30 is outside the latitudes compared, so it is refused as LatitudeOutsideCompared, and 10000 dbar and 0 degC are also deeper and colder than any cast compared.",
+            "also": "The solver's equations give 9712.78 m for the depth of 10000 dbar in an ocean of salinity 35 and 0 degC at latitude 30, and the earlier equation of state (Unesco 1983) gives 9712.653 m, held to a quarter of a metre in the test the_standard_ocean_is_within_a_quarter_metre_of_the_unesco_depth. The served solver answers that cast; latitude 30, 10000 dbar and 0 degC are each outside the casts compared with measurement.",
         }),
     }
 }
@@ -316,7 +292,7 @@ fn validation() -> [String; 5] {
     let data = "Public files of the CLIVAR and Carbon Hydrographic Data Office (cchdo.ucsd.edu): the station summary and the CTD casts of each leg. Measured: the pressure, temperature and salinity of every level, the height above bottom, and the echo sounder's reading. Not measured: the density and the sound speed, which are the TEOS-10 reference equations, and gravity, which is a formula. One leg (leg 6, I09N, 130 stations) was opened and the scoring rule written on it. Ten legs, in other parts of the ocean, were held back unread until the one scored run.".to_string();
     let pass_line = "Fixed on 2026-10-09 before any number of a held-back leg was read. The scored number at a station is the solver's echo-sounder depth less the reading. Over all scored stations of the ten held-back legs: the median within 10 m, and at least 0.80 of the stations within 20 m. For each held-back leg with 20 or more scored stations: its median within 15 m. The solver passes when all three hold. Medians, because the sounder's errors are one-sided: it hears the shallowest point inside its beam.".to_string();
     let limits = format!(
-        "Nothing is fitted. What the comparison tests is the whole chain at about a fifth of a percent: pressure to depth through the density, and depth to echo time through the sound speed. It cannot tell TEOS-10 from another modern equation of state: the echo depth by EOS-80 differs from this solver's by 1.12 m in the median, 27 parts in a hundred thousand. No transducer depth, tide or sea state is applied: the solver computes the echo depth from the sea surface. The cruise reports give about 5 m for the depth of the ADCP transducer; no report gives the depth of the 12 kHz sounder's transducer, and one report lists that sounder in the bow chamber. The range answered is the envelope of the casts compared: latitudes -34.0023 to +26.4108, the last level no deeper than {compared_deepest} dbar, temperatures 0.5088 to 31.169 degC, Practical Salinity 30.9805 to 40.0731, and the last level no more than 86 m above the sea floor. A cast outside it is refused by name (LatitudeOutsideCompared, DeeperThanCompared, TemperatureOutsideCompared, SalinityOutsideCompared, HeightAboveBottomOutsideCompared), although the Gibbs function itself reaches to {deepest} dbar, Practical Salinity 0 to 41.8 and 40 degC: polar water, trenches, fresh and brackish water, and hot or hypersaline water were not compared. Through engine 0.6.0 such casts were answered with a proof. The compared casts had 8 to 612 levels, 1 to 66 dbar apart; the solver takes 2 to 1024 levels up to 100 dbar apart, and thinning a scored cast from every 10 to every 100 dbar moved its echo depth by 0.022 m. Seawater below its freezing temperature is refused as TemperatureBelowFreezing; through engine 0.6.0 it was answered down to the floor of the pure-water part. The water between the last level and the sea floor is taken at the last level's sound speed. Absolute Salinity is taken as Reference Salinity; the composition anomaly, at most 0.03 g/kg in the open ocean, is left out. The held-back legs are other places and months, not other instruments: the same ship, the same sounder, the same recorder and logging practice, and for the five that could be scored the same CTD group as the opened leg. The solver's depths are steadily deeper than the sounder's: about +3 m on flat sea floor and +4.6 m pooled, rough floor adding about 1.5 m. A transducer a few metres below the surface accounts for the sign and the size of that offset, and it is not proven. With a transducer depth of 4.27 or 5.0 m applied, 515 or 516 of the 632 stations are within 20 m. A cast whose levels lie close together at depth is answered: any pressures that rise from level to level are taken, down to two neighbouring 64-bit numbers, and no least spacing of levels is declared. Through engine 0.5.0 a cast with levels closer than about 0.02 to 0.05 dbar at depth was refused as HydrostaticBalanceBroken, because the balance measured the rounding of a depth of thousands of metres as a fraction of a thin layer's pressure step; the balance now allows each layer that rounding, half the spacing of 64-bit numbers at its depth, and no cast answered before has changed by a bit. A proof shows that an answer was not changed, not that the model matches the sea.",
+        "Nothing is fitted. What the comparison tests is the whole chain at about a fifth of a percent: pressure to depth through the density, and depth to echo time through the sound speed. It cannot tell TEOS-10 from another modern equation of state: the echo depth by EOS-80 differs from this solver's by 1.12 m in the median, 27 parts in a hundred thousand. No transducer depth, tide or sea state is applied: the solver computes the echo depth from the sea surface. The cruise reports give about 5 m for the depth of the ADCP transducer; no report gives the depth of the 12 kHz sounder's transducer, and one report lists that sounder in the bow chamber. The casts compared span latitudes -34.0023 to +26.4108, the last level no deeper than {compared_deepest} dbar, temperatures 0.5088 to 31.169 degC, Practical Salinity 30.9805 to 40.0731, and the last level no more than 86 m above the sea floor. The solver answers past that envelope to the limits of the Gibbs function and of its method: any latitude, down to {deepest} dbar, Practical Salinity 0 to 41.8, from the freezing temperature of the level's water up to 40 degC, and up to 100 m above the sea floor. Polar water, trenches, fresh and brackish water, and hot or hypersaline water are answered and were not compared. Through engine 0.6.0 such casts were answered with a proof; engines 0.7.0 and 0.8.0 refused them by name. The compared casts had 8 to 612 levels, 1 to 66 dbar apart; the solver takes 2 to 1024 levels up to 100 dbar apart, and thinning a scored cast from every 10 to every 100 dbar moved its echo depth by 0.022 m. Seawater below its freezing temperature is refused as TemperatureBelowFreezing; through engine 0.6.0 it was answered down to the floor of the pure-water part. The water between the last level and the sea floor is taken at the last level's sound speed. Absolute Salinity is taken as Reference Salinity; the composition anomaly, at most 0.03 g/kg in the open ocean, is left out. The held-back legs are other places and months, not other instruments: the same ship, the same sounder, the same recorder and logging practice, and for the five that could be scored the same CTD group as the opened leg. The solver's depths are steadily deeper than the sounder's: about +3 m on flat sea floor and +4.6 m pooled, rough floor adding about 1.5 m. A transducer a few metres below the surface accounts for the sign and the size of that offset, and it is not proven. With a transducer depth of 4.27 or 5.0 m applied, 515 or 516 of the 632 stations are within 20 m. A cast whose levels lie close together at depth is answered: any pressures that rise from level to level are taken, down to two neighbouring 64-bit numbers, and no least spacing of levels is declared. Through engine 0.5.0 a cast with levels closer than about 0.02 to 0.05 dbar at depth was refused as HydrostaticBalanceBroken, because the balance measured the rounding of a depth of thousands of metres as a fraction of a thin layer's pressure step; the balance now allows each layer that rounding, half the spacing of 64-bit numbers at its depth, and no cast answered before has changed by a bit. A proof shows that an answer was not changed, not that the model matches the sea.",
         deepest = column::SEA_PRESSURE_MAX_DBAR,
         compared_deepest = column::COMPARED_DEEPEST_MAX_DBAR,
     );
@@ -513,12 +489,8 @@ mod tests {
         short.pop();
         for (field, value, name) in [
             ("latitude_deg", json!(91.0), "LatitudeOutOfRange"),
-            ("latitude_deg", json!(-34.1), "LatitudeOutsideCompared"),
             ("height_above_bottom_m", json!(100.5), "HeightAboveBottomOutOfRange"),
-            ("height_above_bottom_m", json!(86.5), "HeightAboveBottomOutsideCompared"),
             ("temperature_c", json!([-2.0, 20.9, 18.2, 16.1, 14.3, 11.8, 10.2, 9.0, 7.6, 6.1, 5.0, 4.2, 3.7]), "TemperatureBelowFreezing"),
-            ("temperature_c", json!([21.5, 20.9, 18.2, 16.1, 14.3, 11.8, 10.2, 9.0, 7.6, 6.1, 5.0, 4.2, 0.4]), "TemperatureOutsideCompared"),
-            ("practical_salinity", json!([35.6, 35.6, 35.7, 35.5, 35.3, 35.0, 34.8, 34.7, 34.55, 34.45, 34.42, 34.45, 41.0]), "SalinityOutsideCompared"),
             ("temperature_c", Value::Array(short), "LevelsDoNotMatch"),
             ("sea_pressure_dbar", json!([0.0, 50.0, 100.0, 150.0, 200.0, 300.0, 400.0, 500.0, 600.0, 700.0, 800.0, 900.0, 1000.5]), "LevelGapTooWide"),
             ("sea_pressure_dbar", json!([0.0, 50.0, 100.0, 150.0, 200.0, 300.0, 400.0, 500.0, 600.0, 700.0, 800.0, 800.0, 900.0]), "PressureNotRising"),
@@ -529,6 +501,32 @@ mod tests {
             let message = refused(field, value);
             assert!(message.starts_with("Physical Violation: "), "{message}");
             assert!(message.ends_with(&format!("({name}).")), "{message}");
+        }
+        // Past the casts compared with measurement, where engine 0.8.0
+        // refused at the door, the cast is answered.
+        for (field, value) in [
+            ("latitude_deg", json!(-34.1)),
+            ("latitude_deg", json!(78.9)),
+            ("latitude_deg", json!(-90.0)),
+            ("height_above_bottom_m", json!(86.5)),
+            ("height_above_bottom_m", json!(100.0)),
+            ("temperature_c", json!([21.5, 20.9, 18.2, 16.1, 14.3, 11.8, 10.2, 9.0, 7.6, 6.1, 5.0, 4.2, 0.4])),
+            ("temperature_c", json!([-1.8, 20.9, 18.2, 16.1, 14.3, 11.8, 10.2, 9.0, 7.6, 6.1, 5.0, 4.2, 3.7])),
+            ("practical_salinity", json!([35.6, 35.6, 35.7, 35.5, 35.3, 35.0, 34.8, 34.7, 34.55, 34.45, 34.42, 34.45, 41.0])),
+            ("practical_salinity", json!([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])),
+        ] {
+            let mut parameters = example();
+            parameters[field] = value;
+            let given = crate::solution::read_parameters(&SEAWATER_COLUMN, parameters.as_object().expect("an object"))
+                .unwrap_or_else(|error| panic!("{field}: {}", error.message()));
+            let Solved::Answer(answer) = solve(&given).expect("runs") else {
+                panic!("{field} was refused");
+            };
+            let residual = match &answer.invariants[0].1 {
+                Published::Number(residual) => *residual,
+                _ => panic!("a number"),
+            };
+            assert!(residual <= column::HYDROSTATIC_TOLERANCE, "{field} {residual}");
         }
     }
 

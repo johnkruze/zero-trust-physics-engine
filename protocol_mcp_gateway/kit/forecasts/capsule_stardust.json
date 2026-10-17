@@ -1,0 +1,16 @@
+{
+ "model": "capsule_stardust",
+ "verdict": "met",
+ "protocol": {
+  "path": "evidence/research/stardust_entry/analysis/prereg.json",
+  "sha256": "5cbb71685c5d6785d7882d547a76810e29171b1f89b4b633cc19dbcc67ff6684",
+  "committed": null
+ },
+ "scored": {
+  "utc": "2026-10-06T18:17:42Z",
+  "evidence": "Birth time of evidence/research/stardust_entry/analysis/out/02_v1_reproduction.json and .log (11:17:42 PDT), the first trajectory scored against the three marks after prereg.json was hashed, outside the engine; the ladder followed at 18:18:51Z and the run through the engine at 2026-10-06T20:12:32Z (analysis/out/10_engine_comparison.log)."
+ },
+ "forecast_first": "not shown",
+ "registered_by": "backfill from the record, 2026-10-15",
+ "notes": "No commit in any crate carries 5cbb7168 (prereg.json), 50d5ba5f (prereg_amendment_1.json) or fd5b5d7b (validation_protocol.md); the served pass line states no hash. Outside Git: analysis/prereg.sha256.txt records the prereg.json hash at 2026-10-06T18:15:52Z, before any trajectory script existed. Amendment 1 (analysis/prereg_amendment_1.json, hash recorded 2026-10-06T20:10:55Z) was written after the forecast scores were known and before the engine comparison; it changes the card's air tables and another departure, and says no gate moved. The measured values (NASA's reconstruction, 32.89 g and 137.9 s) were published and known when the marks were fixed; nothing was held back in the sense of unseen data. Not a committed fingerprint: posted to github.com/johnkruze/zero-trust-physics-pass-marks with this SHA-256 in GitHub-signed commit f71b14e93b8867e1787d2e283e79358c12c8c95c at 2026-10-13T17:54:25Z, after the scoring. A later re-run: evidence/research/stardust_entry/fix_0.7.0/RESULT_0.7.0.md. The pass line's text, with no hash, first enters a commit in protocol_mcp_gateway 5fe78e256745fbafda10971bf539f9b30acef726 at 2026-10-07T20:15:14Z, after the scoring."
+}

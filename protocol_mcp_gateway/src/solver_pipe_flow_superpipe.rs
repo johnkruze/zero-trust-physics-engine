@@ -26,41 +26,41 @@ pub const PIPE_FLOW_SUPERPIPE: Solver = Solver {
     summary: SUMMARY,
     inputs: &[
         // Every limit is asked by the solver's own check, in its order: the
-        // Reynolds number below the range has three names, and the Reynolds
-        // number over the pressure spans two fields.
+        // Reynolds number below the range has two names, and the Mach number
+        // spans three fields.
         Input {
             name: "bulk_reynolds_number",
             kind: Kind::Number {
-                minimum: pipe::REYNOLDS_MIN,
+                minimum: pipe::TRANSITIONAL_BELOW_REYNOLDS,
                 maximum: pipe::REYNOLDS_MAX,
                 unit: "1",
             },
-            refusal: Some("ReynoldsOutOfRange"),
-            bound: "Bulk velocity times the bore (129.36 mm) over the kinematic viscosity. The two ends are the lowest and the highest Reynolds numbers of the Superpipe profiles compared: 31,577 (Zagarola and Smits 1998) and 35,724,000 (McKeon et al. 2004). Below 2300 the flow is laminar and is refused as LaminarFlow; from 2300 to below 4000 it is transitional and is refused as TransitionalFlow; a turbulent Reynolds number outside the two ends is ReynoldsOutOfRange. The held-back comparison starts at 74,345: below it the comparison is only with the opened Zagarola-Smits set used to choose the outer shape (friction rms 1.31 percent, where Prandtl-Karman's 0.77 was better).",
+            refusal: Some("ReynoldsAboveGrid"),
+            bound: "Bulk velocity times the bore (129.36 mm) over the kinematic viscosity, answered for fully turbulent flow from 4000 to 10,000,000,000. Below 2300 the flow is laminar and is refused as LaminarFlow; from 2300 to below 4000 it is transitional and is refused as TransitionalFlow; above 1e10 the grid's first node leaves the viscous sublayer and it is refused as ReynoldsAboveGrid. The equations depend on the Reynolds number alone. The Superpipe profiles compared ran from 31,577 (Zagarola and Smits 1998) to 35,724,000 (McKeon et al. 2004): friction rms 1.38 percent, the friction factor falling below the measured one as the Reynolds number rises, 2.7 percent low at 35.7 million. The held-back comparison starts at 74,345: below it the comparison is only with the opened Zagarola-Smits set used to choose the outer shape (friction rms 1.31 percent, where Prandtl-Karman's 0.77 was better). Below 31,577 and above 35,724,000 nothing was compared.",
             only_when: None,
             asked_by_check: true,
         },
         Input {
             name: "static_pressure_pa",
-            kind: Kind::Number {
-                minimum: pipe::PRESSURE_MIN_PA,
-                maximum: pipe::PRESSURE_MAX_PA,
+            kind: Kind::NumberAbove {
+                above: 0.0,
+                maximum: f64::MAX,
                 unit: "Pa",
             },
-            refusal: Some("PressureOutOfRange"),
-            bound: "Absolute static pressure of the air in the pipe. The two ends are the lowest and highest pressures of the compared runs: 100,090 Pa and 18,928,000 Pa. The lowest pressure, and every pressure below the 101,325 Pa of NSTAP case 1, rests only on the opened set used to choose the outer shape. The NSTAP files give a gauge pressure, taken over one standard atmosphere. The bulk Reynolds number over this pressure is held to 0.314857 to 1.996870 per Pa, the compared runs' own extremes (ReynoldsPerPascalOutOfRange): at the compared temperatures that is a bulk velocity of about 3.9 to 30.8 m/s, the compared runs' own.",
+            refusal: Some("PressureNotPositive"),
+            bound: "Absolute static pressure of the air in the pipe, above zero (PressureNotPositive otherwise). It does not enter the solve: with the temperature it gives the density of ideal-gas air, the bulk velocity and its Mach number, and a bulk Mach number above 0.3 is refused as MachAboveIncompressible. The compared runs were at 100,090 to 18,928,000 Pa, at bulk velocities of about 3.9 to 30.8 m/s; the lowest pressure, and every pressure below the 101,325 Pa of NSTAP case 1, rests only on the opened set used to choose the outer shape. At the Superpipe's highest pressures air is about 3 percent denser than ideal and more viscous, so the Mach number given there is low by up to about a fifth.",
             only_when: None,
             asked_by_check: true,
         },
         Input {
             name: "temperature_k",
             kind: Kind::Number {
-                minimum: pipe::TEMPERATURE_MIN_K,
-                maximum: pipe::TEMPERATURE_MAX_K,
+                minimum: pipe::AIR_VISCOSITY_LAW_K.0,
+                maximum: pipe::AIR_VISCOSITY_LAW_K.1,
                 unit: "K",
             },
-            refusal: Some("TemperatureOutOfRange"),
-            bound: "Temperature of the air. The two ends are the coldest and warmest compared runs: 291.79 K (NSTAP case 3) and 300.13 K. Above 298.4 K, the warmest held-back run, the temperature rests only on the opened set used to choose the outer shape.",
+            refusal: Some("TemperatureOutsideViscosityLaw"),
+            bound: "Temperature of the air, 170 to 1900 K, where Sutherland's law gives its viscosity within 2 percent (F. M. White, Viscous Fluid Flow, Table 1-2); outside it the bulk velocity cannot be known and it is refused as TemperatureOutsideViscosityLaw. It does not enter the solve, only the Mach number. The compared runs were at 291.79 to 300.13 K; above 298.4 K, the warmest held-back run, the temperature rests only on the opened set used to choose the outer shape.",
             only_when: None,
             asked_by_check: true,
         },
@@ -84,6 +84,7 @@ pub const PIPE_FLOW_SUPERPIPE: Solver = Solver {
         output("friction_to_bulk_velocity_ratio", "1", Shape::Number, "Friction velocity over the bulk velocity, sqrt(f/8), from the friction factor."),
         output("karman_number", "1", Shape::Number, "Radius in viscous units, u_tau R / nu, from the friction factor and the Reynolds number."),
         output("pressure_drop_per_m_over_bulk_dynamic_pressure", "m^-1", Shape::Number, "f / D: the pressure drop per metre is this times rho U_b^2 / 2, with the caller's density and bulk velocity."),
+        output("bulk_mach_number", "1", Shape::Number, "Bulk velocity over the speed of sound of ideal-gas air with Sutherland's viscosity at the asked pressure and temperature: Re mu / (rho D) over sqrt(1.4 R T). At most 0.3."),
         output("profile_y_over_radius", "1", Shape::Numbers, "Wall distance over the radius of each profile station: 25 fixed stations from 0.0002 to 1 (the axis), less those nearer the wall than was compared at this Reynolds number: below 50 viscous units up to 5,975,000 (the highest NSTAP profile), and above it below 0.010591 of the radius, the nearest compared point of the Pitot profiles (y+ 1054 at 6.11 million, 5444 at 35.7 million)."),
         output("profile_y_plus", "1", Shape::Numbers, "The same distances in viscous units, each at least 50, and above Reynolds number 5,975,000 at least the y+ of 0.010591 of the radius."),
         output("profile_u_plus", "1", Shape::Numbers, "Mean velocity over the friction velocity at each station. Compared with measurement (line P3, met)."),
@@ -98,6 +99,7 @@ pub const PIPE_FLOW_SUPERPIPE: Solver = Solver {
     field: field_words,
     answer: "a settled flow",
     refusals: REFUSALS,
+    door_refusals: &[],
     sections,
     validation: Some(validation),
     example,
@@ -107,7 +109,7 @@ pub const PIPE_FLOW_SUPERPIPE: Solver = Solver {
     solve,
 };
 
-const SUMMARY: &str = "Fully developed, smooth-wall, turbulent air flow in the Princeton Superpipe (129.36 mm bore), a mixing length with van Driest damping with nothing fitted (kappa 0.41, A+ 26): Darcy friction factor, centreline-to-bulk velocity ratio and the mean velocity profile, bulk Reynolds number 31,577 to 35,724,000, laminar, transitional and rough-wall flow refused by name; compared once with held-back Superpipe measurements of A. J. Smits' group: the friction line met (rms 1.38 percent, worst 2.69, against Prandtl-Karman's 2.17 rms) and the profile line met (1.59 percent), the centreline line missed at one of 21 profiles (2.99 percent low against 2 percent, the NSTAP profile at 81,330), so by the rule fixed beforehand the comparison failed; the friction factor falls below the measured one as the Reynolds number rises, 2.7 percent low at 35.7 million.";
+const SUMMARY: &str = "Fully developed, smooth-wall, turbulent air flow in the Princeton Superpipe (129.36 mm bore), a mixing length with van Driest damping with nothing fitted (kappa 0.41, A+ 26): Darcy friction factor, centreline-to-bulk velocity ratio and the mean velocity profile, answered for fully turbulent flow at bulk Reynolds number 4000 to 1e10 and bulk Mach number up to 0.3, laminar, transitional, rough-wall and compressible flow refused by name; compared at bulk Reynolds number 31,577 to 35,724,000 and compared once with held-back Superpipe measurements of A. J. Smits' group: the friction line met (rms 1.38 percent, worst 2.69, against Prandtl-Karman's 2.17 rms) and the profile line met (1.59 percent), the centreline line missed at one of 21 profiles (2.99 percent low against 2 percent, the NSTAP profile at 81,330), so by the rule fixed beforehand the comparison failed; the friction factor falls below the measured one as the Reynolds number rises, 2.7 percent low at 35.7 million.";
 
 /// Each `PipeReject` variant with the sentence from its doc comment. A
 /// refusal the request itself shows is not sealed.
@@ -128,23 +130,8 @@ const REFUSALS: &[Refusal] = &[
         sealed: false,
     },
     Refusal {
-        name: "ReynoldsOutOfRange",
-        meaning: "The bulk Reynolds number is turbulent but outside `REYNOLDS_MIN`..=`REYNOLDS_MAX`, the range compared with measurement.",
-        sealed: false,
-    },
-    Refusal {
-        name: "PressureOutOfRange",
-        meaning: "The static pressure is outside `PRESSURE_MIN_PA`..=`PRESSURE_MAX_PA`.",
-        sealed: false,
-    },
-    Refusal {
-        name: "TemperatureOutOfRange",
-        meaning: "The temperature is outside `TEMPERATURE_MIN_K`..=`TEMPERATURE_MAX_K`.",
-        sealed: false,
-    },
-    Refusal {
-        name: "ReynoldsPerPascalOutOfRange",
-        meaning: "The bulk Reynolds number over the static pressure is outside `REYNOLDS_PER_PASCAL_MIN`..=`REYNOLDS_PER_PASCAL_MAX`: at the compared temperatures, a bulk velocity no compared run had.",
+        name: "ReynoldsAboveGrid",
+        meaning: "The bulk Reynolds number is above `REYNOLDS_MAX`, where the grid's first node leaves the viscous sublayer.",
         sealed: false,
     },
     Refusal {
@@ -155,6 +142,21 @@ const REFUSALS: &[Refusal] = &[
     Refusal {
         name: "RoughWall",
         meaning: "The wall is rougher than the Superpipe's `WALL_ROUGHNESS_RMS_MAX_UM`: a rough-wall flow, which this solver is not of.",
+        sealed: false,
+    },
+    Refusal {
+        name: "PressureNotPositive",
+        meaning: "The static pressure is not above zero: no gas.",
+        sealed: false,
+    },
+    Refusal {
+        name: "TemperatureOutsideViscosityLaw",
+        meaning: "The temperature is outside 170 to 1900 K (`AIR_VISCOSITY_LAW_K`), where Sutherland's law gives the viscosity of air, so the bulk velocity cannot be known.",
+        sealed: false,
+    },
+    Refusal {
+        name: "MachAboveIncompressible",
+        meaning: "The bulk Mach number is above `MACH_MAX`: the flow is compressible, and this solver's density is constant.",
         sealed: false,
     },
     Refusal {
@@ -200,12 +202,12 @@ pub fn reject_name(reject: &PipeReject) -> &'static str {
         PipeReject::InputNotFinite { .. } => "InputNotFinite",
         PipeReject::LaminarFlow { .. } => "LaminarFlow",
         PipeReject::TransitionalFlow { .. } => "TransitionalFlow",
-        PipeReject::ReynoldsOutOfRange { .. } => "ReynoldsOutOfRange",
-        PipeReject::PressureOutOfRange { .. } => "PressureOutOfRange",
-        PipeReject::TemperatureOutOfRange { .. } => "TemperatureOutOfRange",
-        PipeReject::ReynoldsPerPascalOutOfRange { .. } => "ReynoldsPerPascalOutOfRange",
+        PipeReject::ReynoldsAboveGrid { .. } => "ReynoldsAboveGrid",
         PipeReject::RoughnessNegative { .. } => "RoughnessNegative",
         PipeReject::RoughWall { .. } => "RoughWall",
+        PipeReject::PressureNotPositive { .. } => "PressureNotPositive",
+        PipeReject::TemperatureOutsideViscosityLaw { .. } => "TemperatureOutsideViscosityLaw",
+        PipeReject::MachAboveIncompressible { .. } => "MachAboveIncompressible",
         PipeReject::NonFiniteValue => "NonFiniteValue",
         PipeReject::SingularSystem => "SingularSystem",
         PipeReject::ImbalanceGrew { .. } => "ImbalanceGrew",
@@ -236,7 +238,8 @@ fn sections() -> Sections {
             "grid_intervals": pipe::GRID_INTERVALS,
             "grid_stretch": pipe::GRID_STRETCH,
             "grid": "Wall distance over the radius at node j of N: (exp(14 j/N) - 1)/(exp(14) - 1). Finite volumes about each node.",
-            "fitted": "Nothing. kappa and A+ are the literature's. The outer shape was chosen on the opened set's friction factors among five forms with no fitted constant, four published and Nikuradse's distribution rescaled to wall slope kappa (chosen; 1.3 percent rms against 2.2 for the form as published, which had the better opened centreline error, 1.2 percent against 1.4), before any held-back file was opened. The grid was fixed against itself: from 1600 to 6400 intervals the friction factor moves by 1.1e-5 and the centreline ratio by 1.3e-5, relative, at either end of the range.",
+            "fitted": "Nothing. kappa and A+ are the literature's. The outer shape was chosen on the opened set's friction factors among five forms with no fitted constant, four published and Nikuradse's distribution rescaled to wall slope kappa (chosen; 1.3 percent rms against 2.2 for the form as published, which had the better opened centreline error, 1.2 percent against 1.4), before any held-back file was opened. The grid was fixed against itself: from 1600 to 6400 intervals the friction factor moves by 1.1e-5 and the centreline ratio by 1.3e-5, relative, at either end of the compared range; doubling the grid moves the friction factor by 2.6e-5 at 1e10, the top served, where the first node is at y+ 0.78.",
+            "mach_number": "Ideal-gas air, R 287.05 J/(kg K), ratio of heat capacities 1.4, Sutherland's viscosity 1.716e-5 Pa s (T/273 K)^1.5 (384 K)/(T + 111 K): bulk velocity Re mu R T / (p D), over sqrt(1.4 R T). It holds the incompressible answer to a bulk Mach number of 0.3, where the density of the air brought to rest changes by about 4.5 percent.",
             "solver_units": "The radius and the bulk velocity as one.",
         }),
         invariants: json!([
@@ -246,7 +249,7 @@ fn sections() -> Sections {
                 "tolerance": pipe::IMBALANCE_TOLERANCE,
                 "cap": pipe::IMBALANCE_CAP,
                 "unit": "1",
-                "checked": "every Newton iteration",
+                "compared": "every Newton iteration",
                 "refusal": "NonFiniteValue, ImbalanceGrew or NotSettled",
             },
             {
@@ -254,7 +257,7 @@ fn sections() -> Sections {
                 "rule": "The volume flux of the settled profile equals the asked bulk velocity times the section. It is a linear constraint of every Newton step.",
                 "tolerance": pipe::FLUX_TOLERANCE,
                 "unit": "1",
-                "checked": "after every Newton iteration",
+                "compared": "after every Newton iteration",
                 "refusal": "FluxBroken",
             },
             {
@@ -262,7 +265,7 @@ fn sections() -> Sections {
                 "rule": "The shear force on the grid face nearest the wall equals the pressure force on the section it encloses: wall shear times perimeter equals pressure drop times area. It is the sum of the node balances, so it holds their total to the tolerance where each node is held to the imbalance tolerance alone.",
                 "tolerance": pipe::MOMENTUM_LEDGER_TOLERANCE,
                 "unit": "pressure force on the section",
-                "checked": "at acceptance",
+                "compared": "at acceptance",
                 "refusal": "MomentumLedgerBroken",
             },
         ]),
@@ -290,7 +293,7 @@ fn validation() -> [String; 5] {
     let object = "The Princeton Superpipe of A. J. Smits' group, Princeton University: a closed-loop compressed-air pipe flow facility whose test section has a bore of 129.36 mm and a smooth wall, 0.15 um rms, run from atmospheric pressure to about 19 MPa to reach bulk Reynolds numbers from 3.16e4 to 3.57e7. The solver settles the fully developed mean flow at one bulk Reynolds number with a mixing length and van Driest damping. Nothing is fitted.".to_string();
     let data = "Downloaded 2026-10-11 from the Smits group's pages (https://smits.princeton.edu/superpipe-pitot-data, https://smits.princeton.edu/zagarola/, https://smits.princeton.edu/mckeon/, https://smits.princeton.edu/superpipe-turbulence-data); the pages state no licence and carry the footer of the Trustees of Princeton University. Opened: the twelve Pitot profiles of M. V. Zagarola and A. J. Smits (J. Fluid Mech. 373, 1998; 0.9 mm probe) below Reynolds number 1e6, used to choose the outer shape of the mixing length. Held back until the protocol was fingerprinted: the 25 Pitot profiles of B. J. McKeon, J. Li, W. Jiang, J. F. Morrison and A. J. Smits (J. Fluid Mech. 501, 2004; 0.3 mm probe and three larger at two Reynolds numbers, with the McKeon-Smits static-pressure correction), 19 distinct Reynolds numbers 7.4e4 to 3.57e7, each file stating its friction factor, bulk and maximum velocities; the nine smooth-pipe NSTAP profiles of M. Hultmark, M. Vallikivi, S. C. C. Bailey and A. J. Smits (Phys. Rev. Lett. 108, 2012; J. Fluid Mech. 728, 2013), 8.1e4 to 6.0e6, whose friction factor is stated as a quarter of Darcy's; and the 14 Zagarola-Smits profiles above 1e6, reported but not gated. The McKeon and Zagarola-Smits headers state the measured pressure drop, from which their friction factors come; the NSTAP files state a friction velocity and a friction factor and do not state how the friction velocity was obtained. The profiles are first-hand, as tabulated by the group.".to_string();
     let pass_line = "Fixed on 2026-10-11 before any held-back file was opened (protocol SHA-256 704700a99d27cdd566d47a92182d363f31ad8d1ee774c1e75c84a8de75b26893). P1: on the McKeon 2004 friction factors, rms relative error at most 3 percent and worst at most 5 percent, and rms below the Prandtl-Karman law's. P2: on the McKeon profiles above 1e6 and every NSTAP profile, every centreline-to-bulk ratio within 2 percent, and rms below the log law integrated over the section (1 + 3.75 sqrt(f_PK/8)). P3: on the same profiles, at every point from y+ = 50 to the axis (and at least two Pitot diameters from the wall), pooled rms of u+ at most 2 percent, worst profile at most 3 percent, and pooled rms below the log law u+ = ln(y+)/0.40 + 5.5. The comparison passes only if all three do.".to_string();
-    let limits = "Every compared run is of air in the one 129.36 mm smooth pipe at 291.8 to 300.1 K; the range served is the envelope of those runs' Reynolds number, pressure, temperature and Reynolds number over pressure, and a box is wider than the runs themselves, which lie along a line from low Reynolds number at low pressure to high at high pressure. The model has no compressibility, no roughness and no development length: the flow is fully developed and the density and viscosity constant. Its friction factor falls below the measured one as the Reynolds number rises (-0.7 percent at 1e6, -1.4 at 1e7, -2.7 at 3.57e7), so its error is largest at the top of the range. The question put to the data's authors is about the one missed line: whether the bulk velocity of NSTAP case 1 (Reynolds number 81,330) was measured independently or integrated from its profile, and how uncertain it is. The centreline ratio is low throughout, by 0.75 to 1.8 percent on 20 of 21 held-back profiles. Below Reynolds number 74,345, at the lowest pressure and at the highest temperature the only comparison is with the opened set that chose the outer shape. The profile is served only where it was compared: from 50 viscous units out up to Reynolds number 5,975,000, and above that from 0.010591 of the radius out (y+ 1054 at 6.11 million, 5444 at 35.7 million), the nearest point of the Pitot profiles. The checks show the equations were solved, not that they describe the air. A proof shows that an answer was not changed, not that the model matches the air.".to_string();
+    let limits = "Every compared run is of air in the one 129.36 mm smooth pipe at 291.8 to 300.1 K, at 100,090 to 18,928,000 Pa and bulk velocities of about 3.9 to 30.8 m/s; the runs lie along a line from low Reynolds number at low pressure to high at high pressure. The solver answers past that envelope wherever its equations hold: fully turbulent flow from Reynolds number 4000 to 1e10, any pressure above zero, 170 to 1900 K, up to a bulk Mach number of 0.3. Through engine 0.8.0 a question outside the compared Reynolds numbers, pressures, temperatures and bulk velocities was refused by name. Below 31,577 and above 35,724,000 nothing was compared, and the friction error, growing with the Reynolds number inside the compared range, is unmeasured there. The model has no compressibility, no roughness and no development length: the flow is fully developed and the density and viscosity constant. Its friction factor falls below the measured one as the Reynolds number rises (-0.7 percent at 1e6, -1.4 at 1e7, -2.7 at 3.57e7), so its error is largest at the top of the compared range. The question put to the data's authors is about the one missed line: whether the bulk velocity of NSTAP case 1 (Reynolds number 81,330) was measured independently or integrated from its profile, and how uncertain it is. The centreline ratio is low throughout, by 0.75 to 1.8 percent on 20 of 21 held-back profiles. Below Reynolds number 74,345, at the lowest pressure and at the highest temperature the only comparison is with the opened set that chose the outer shape. The profile is served only where it was compared: from 50 viscous units out up to Reynolds number 5,975,000, and above that from 0.010591 of the radius out (y+ 1054 at 6.11 million, 5444 at 35.7 million), the nearest point of the Pitot profiles. The ledgers show the equations were solved, not that they describe the air. A proof shows that an answer was not changed, not that the model matches the air.".to_string();
     [object, data, pass_line, RESULT.to_string(), limits]
 }
 
@@ -367,6 +370,7 @@ pub fn solved(returned: Result<PipeFlow, PipeReject>) -> Solved {
                 "pressure_drop_per_m_over_bulk_dynamic_pressure",
                 flow.pressure_drop_per_m_over_bulk_dynamic_pressure,
             ),
+            one("bulk_mach_number", flow.bulk_mach_number),
             many("profile_y_over_radius", flow.profile_y_over_radius),
             many("profile_y_plus", flow.profile_y_plus),
             many("profile_u_plus", flow.profile_u_plus),
@@ -455,6 +459,8 @@ mod tests {
         let summary = PIPE_FLOW_SUPERPIPE.summary;
         assert!(summary.contains("nothing fitted"));
         assert!(summary.contains("31,577 to 35,724,000"));
+        assert!(summary.contains("4000 to 1e10"));
+        assert!(!summary.contains("..="));
         assert!(summary.contains("by the rule fixed beforehand the comparison failed"));
         assert!(summary.contains("the centreline line missed at one of 21 profiles"));
         assert!(summary.ends_with("2.7 percent low at 35.7 million."));

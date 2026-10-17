@@ -1,0 +1,27 @@
+{
+ "model": "grasp_lift_glass_4tu",
+ "verdict": "missed",
+ "protocol": {
+  "path": "evidence/research/grasp_slip_4tu/validation_protocol.md",
+  "sha256": "51df1473e92b2182863ac8a30f9520368bce9ae3fd7e30b3dffe4ae3a45410b6",
+  "committed": {
+   "crate": "genesis_kernel",
+   "commit": "b02ae5b7366f5e549da658e6b3a18815eb9f1aeb",
+   "utc": "2026-10-15T00:55:22Z",
+   "how": "The card's commit 'The card grasp_lift_glass_4tu ...' carries in its message 'The pass marks and forecast were fixed before this commit and before any held-back file was fetched: evidence/research/grasp_slip_4tu/validation_protocol.md, SHA-256 51df1473...10b6; prereg.json 3a39c4b5...839e8. Forecast: L1 missed, L2 met, L3 missed, L4 missed.' Author time 00:55:09Z."
+  }
+ },
+ "held_back": [
+  {
+   "path": "evidence/research/grasp_slip_4tu/raw/4tu_19329506/FETCHED.tsv",
+   "sha256": "6a08d47a6b87b9146b3446d0789751cbb116741b2e8ace94a0f4ea125021f2ff"
+  }
+ ],
+ "scored": {
+  "utc": "2026-10-15T01:36:22Z",
+  "evidence": "Birth time of evidence/research/grasp_slip_4tu/engine_runs_heldback/ (18:36:22 PDT); RESULT.md: 'Scored once, 2026-10-15 01:36 UTC, by analysis/05_engine_score.py'. The first held-back file was fetched at 01:13:22Z (raw/4tu_19329506/FETCHED.tsv, rows marked held)."
+ },
+ "forecast_first": "held",
+ "registered_by": "backfill from the record, 2026-10-15",
+ "notes": "Committed 18 min before the first held-back file was fetched and 41 min before the scoring; validation_protocol.md and analysis/prereg.json (3a39c4b5..., also in the message) on disk still have the committed hashes. The held_back file above records each fetched file with its time, SHA-256 and role (192 development, 116 held back). Outside Git: analysis/prereg_hash.txt (born 00:54:54Z) gives both and the addendum; analysis/opened_before_hash.sha256 lists the files opened before the hash. The addendum (validation_protocol_addendum.md, bed23070..., and analysis/prereg_addendum.json, 76bde929..., born 01:11:52Z) was written after the commit and before any held-back file was fetched; it fixes the scoring program and the binary and changes no line or mark; its hash is in no commit. The forecast is in the commit message itself, and the result matched it. Later commits carrying the hash: genesis_kernel 1380acf2e4c6b3887455cb027565b975383286ad (02:04:02Z) and protocol_mcp_gateway c9866555817f6fc7eecfcbd234f43c6fdbc3f50c (02:04:31Z, 8-hex prefix). analysis/07_final_build_recompute.py (02:05Z) is a later recompute on the final build. Commit times are the committer's clock. No mark for it in the local copy of the public pass-marks repository (command-center/sales/github/pass-marks/, posted 2026-10-13)."
+}

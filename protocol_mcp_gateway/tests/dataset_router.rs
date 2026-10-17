@@ -7,6 +7,8 @@
 
 mod dataset_cases;
 
+mod answer_text;
+
 use std::time::{Duration, Instant};
 
 use dataset_cases::{
@@ -50,6 +52,7 @@ async fn post_text(base: &str, path: &str, body: &str) -> (u16, String) {
             Ok(response) => {
                 let status = response.status().as_u16();
                 let text = response.text().await.unwrap();
+                answer_text::remember(&text);
                 return (status, text);
             }
             Err(error) => {
@@ -62,7 +65,7 @@ async fn post_text(base: &str, path: &str, body: &str) -> (u16, String) {
 }
 
 async fn post(base: &str, path: &str, body: &Value) -> (u16, String) {
-    post_text(base, path, &serde_json::to_string(body).unwrap()).await
+    post_text(base, path, &answer_text::as_sent(body)).await
 }
 
 /// A dataset that must come back 200, as text and as a value.
@@ -450,9 +453,11 @@ async fn verify_dataset_holds_on_a_genuine_answer_and_says_how_chains_were_check
         assert_eq!(report["frames_file"], "matches the hash in the head");
         assert_eq!(report["merkle_root"], answer["head"]["merkle_root"]);
         assert_eq!(report["dataset_seal"], answer["head"]["dataset_seal"]);
-        // Without the frames the chains are checked from the last link on.
+        // Without the frames the chains are checked from the last link on;
+        // since 0.12.0 the plan is run again and an answer without the frames
+        // it carries is not the engine's answer, named at frames_hex.
         let without = verify(&base, &answer["head"], &rows_of(&answer), &Value::Null).await;
-        assert_eq!(without["holds"], true, "{without}");
+        assert_eq!((without["holds"].clone(), without["cause"].clone(), without["differs_at"].clone()), (json!(false), json!("answer_text"), json!("frames_hex")), "{without}");
         assert_eq!(without["chains"], "not rebuilt: the frames were not given");
         assert_eq!(without["frames_file"], "not given");
     }
@@ -499,14 +504,17 @@ async fn verify_dataset_names_the_first_break_for_each_attack() {
     swapped.swap(0, 1);
     assert_break(&base, "two rows swapped", &head, &swapped, &frames, Broken { cause: "plan", row: Some(0) }).await;
 
+    // A count of rows that is not the plan's is still the break `plan`, and the
+    // answer now names the first place that does not hold its own row, where
+    // it named no row: place 1 for row 1 dropped, place 3 for a fourth row.
     let mut dropped = rows.clone();
     dropped.remove(1);
-    assert_break(&base, "a row dropped", &head, &dropped, &frames, Broken { cause: "plan", row: None }).await;
+    assert_break(&base, "a row dropped", &head, &dropped, &frames, Broken { cause: "plan", row: Some(1) }).await;
 
     // The doubled last leaf: the same head and the last row twice.
     let mut doubled = rows.clone();
     doubled.push(rows[2].clone());
-    assert_break(&base, "the last row repeated", &head, &doubled, &frames, Broken { cause: "plan", row: None }).await;
+    assert_break(&base, "the last row repeated", &head, &doubled, &frames, Broken { cause: "plan", row: Some(3) }).await;
 
     // A row of another plan with the same card.
     let (_, other) = dataset(&base, &grid_request("frames")).await;
@@ -556,6 +564,188 @@ async fn verify_dataset_names_the_first_break_for_each_attack() {
     assert_break(&base, "the dataset seal", &edited, &rows, &frames, Broken { cause: "dataset_seal", row: None }).await;
 }
 
+/// What `verify_dataset` answers for rows with one fault: whether it holds,
+/// the break it names, the row it names, and the kind of fault in words.
+async fn assert_fault(base: &str, name: &str, head: &Value, rows: &[Value], frames: &Value, cause: &str, row: u64, says: &str) {
+    for frames in [frames, &Value::Null] {
+        let report = verify(base, head, rows, frames).await;
+        assert_eq!(report["holds"], false, "{name}: {report}");
+        assert_eq!(report["cause"], cause, "{name}: {report}");
+        assert_eq!(report["row"], row, "{name}: {report}");
+        assert_eq!(report["fault"], says, "{name}: {report}");
+        // No seal rebuilt from rows that do not hold is returned.
+        assert_eq!((&report["merkle_root"], &report["dataset_seal"]), (&Value::Null, &Value::Null), "{name}");
+    }
+}
+
+/// A row changed, two swapped, one dropped (the first, a middle one, the
+/// last) and one repeated: each is named by the first place in the rows as
+/// they were sent that does not hold its own row, with the kind of fault in
+/// plain words, in a list, in a grid and in a list whose runs are all one
+/// request, with the frames and without them.
+#[tokio::test]
+async fn verify_dataset_names_the_first_row_changed_swapped_dropped_or_repeated() {
+    let base = spawn_app().await;
+    let same = run(290.0, 2.5, 3);
+    let equal_runs = request(json!({ "kind": "list", "runs": [same.clone(), same.clone(), same.clone(), same.clone(), same] }), "frames", "inline");
+    let five = request(
+        json!({ "kind": "list", "runs": [run(280.0, 0.0, 4), run(290.0, 2.5, 3), run(300.0, 5.0, 5), run(310.0, 1.0, 2), run(320.0, 4.0, 3)] }),
+        "frames",
+        "inline",
+    );
+    for (plan, by_request) in [(five, true), (grid_request("frames"), true), (equal_runs, false)] {
+        let (_, answer) = dataset(&base, &plan).await;
+        let head = answer["head"].clone();
+        let rows = rows_of(&answer);
+        let frames = answer["frames_hex"].clone();
+        let last = rows.len() as u64 - 1;
+        let counts = |sent: u64| format!(" Rows read: {sent}; rows in the plan: {}.", last + 1);
+        // Rows that share one request are told apart by the number each carries, and the first break is its leaf.
+        let out_of_place = if by_request { "plan" } else { "leaf" };
+
+        // Untouched: it holds, and the answer names no row and no fault.
+        let held = verify(&base, &head, &rows, &frames).await;
+        assert_eq!((held["holds"].clone(), held["row"].clone(), held.get("fault")), (json!(true), Value::Null, None), "{held}");
+
+        // One changed, in a value a seal covers.
+        let mut changed = rows.clone();
+        let digit = changed[2]["final_state"]["temperature_k_hex"].as_str().unwrap().to_string();
+        changed[2]["final_state"]["temperature_k_hex"] = json!(flip_digit(&digit, 15));
+        assert_fault(&base, "a hex digit", &head, &changed, &frames, "state", 2,
+            "A row was changed: a sealed value of row 2 was altered. Its state_digest is not the digest of the hex values and flags of its final state and its two conservation errors.").await;
+        let mut changed = rows.clone();
+        changed[2]["steps_landed"] = json!(changed[2]["steps_landed"].as_u64().unwrap() - 1);
+        assert_fault(&base, "a count of steps", &head, &changed, &frames, "run_seal", 2,
+            "A row was changed: the run_seal of row 2 is not the seal its last_link, outcome, steps_landed, reject and state_digest give, so one of those, or the run_seal, was altered.").await;
+
+        // Two swapped.
+        let mut swapped = rows.clone();
+        swapped.swap(1, 2);
+        assert_fault(&base, "two swapped", &head, &swapped, &frames, out_of_place, 1,
+            "Two rows are swapped: row 2 stands in the place of row 1, and row 1 in the place of row 2.").await;
+
+        // One dropped: the first, a middle one, the last.
+        let mut dropped = rows.clone();
+        dropped.remove(0);
+        assert_fault(&base, "the first dropped", &head, &dropped, &frames, "plan", 0,
+            &format!("A row was dropped: row 0 is the first row missing, and the row in its place is row 1.{}", counts(last))).await;
+        let mut dropped = rows.clone();
+        dropped.remove(2);
+        assert_fault(&base, "a middle one dropped", &head, &dropped, &frames, "plan", 2,
+            &format!("A row was dropped: row 2 is the first row missing, and the row in its place is row 3.{}", counts(last))).await;
+        let mut dropped = rows.clone();
+        dropped.pop();
+        assert_fault(&base, "the last dropped", &head, &dropped, &frames, "plan", last,
+            &format!("A row was dropped: every row read stands in its own place, and row {last} is the first row missing, after the last row read.{}", counts(last))).await;
+
+        // One repeated: beside itself, after the last row, and in the place of another.
+        let mut repeated = rows.clone();
+        repeated.insert(3, rows[2].clone());
+        assert_fault(&base, "one repeated beside itself", &head, &repeated, &frames, "plan", 3,
+            &format!("A row is repeated: row 2 stands in its own place and again in place 3.{}", counts(last + 2))).await;
+        let mut repeated = rows.clone();
+        repeated.push(rows[0].clone());
+        assert_fault(&base, "one repeated after the last", &head, &repeated, &frames, "plan", last + 1,
+            &format!("A row is repeated: row 0 stands in its own place and again in place {}, after the plan's last row.{}", last + 1, counts(last + 2))).await;
+        let mut repeated = rows.clone();
+        repeated[2] = rows[1].clone();
+        assert_fault(&base, "one repeated in the place of another", &head, &repeated, &frames, out_of_place, 2,
+            "A row is repeated: row 1 stands in its own place and again in the place of row 2, so row 2 is missing.").await;
+    }
+}
+
+/// A head may state a plan of any number of rows. Naming the row a misplaced
+/// row is does not walk such a plan: the search for its place is held to a
+/// fixed amount of work, and the answer comes at once.
+#[tokio::test]
+async fn a_head_that_states_a_plan_of_a_thousand_million_rows_is_answered_at_once() {
+    let base = spawn_app().await;
+    let (_, answer) = dataset(&base, &grid_request("none")).await;
+    let rows = rows_of(&answer);
+    let mut head = answer["head"].clone();
+    let values = |step: f64| -> Vec<f64> { (0..40_000).map(|n| 280.0 + f64::from(n) * step).collect() };
+    head["request"]["plan"]["axes"][0]["values"] = json!(values(0.0005));
+    head["request"]["plan"]["axes"][1]["values"] = json!(values(0.00025).iter().map(|value| value - 280.0).collect::<Vec<_>>());
+    let stated = DatasetRequest::from_value(head["request"].clone()).unwrap_or_else(|e| panic!("{e}"));
+    assert_eq!(stated.totals().rows, 1_600_000_000);
+    // The head carries the true hash of the plan it states, so the rows are read against that plan.
+    head["plan_sha256"] = json!(stated.plan_sha256());
+    head["rows"] = json!(stated.totals().rows);
+    let started = Instant::now();
+    let report = verify(&base, &head, &[rows[5].clone(), rows[4].clone()], &Value::Null).await;
+    assert!(started.elapsed() < Duration::from_secs(10), "{:?}", started.elapsed());
+    assert_eq!((report["holds"].clone(), report["cause"].clone(), report["row"].clone()), (json!(false), json!("plan"), json!(0)), "{report}");
+    assert_eq!(
+        report["fault"],
+        "A row is out of its place or not of this plan: the row in place 0 does not carry the request the plan gives row 0. Rows read: 2; rows in the plan: 1600000000."
+    );
+}
+
+/// A decimal of a final state is covered by no seal, so a dataset with one
+/// changed still holds; the answer names the row and says what was changed.
+/// It does so too when the hash of the rows in the head and the head's
+/// receipt, which have no key, were worked out again over the changed rows.
+#[tokio::test]
+async fn verify_dataset_names_the_row_whose_decimal_is_not_its_hex() {
+    let base = spawn_app().await;
+    let (_, answer) = dataset(&base, &list_request("frames")).await;
+    let head = answer["head"].clone();
+    let frames = answer["frames_hex"].clone();
+    let mut rows = rows_of(&answer);
+    let exact = rows[1]["final_state"]["temperature_k"].clone();
+    let hex = rows[1]["final_state"]["temperature_k_hex"].clone();
+    rows[1]["final_state"]["temperature_k"] = json!(1234.5);
+    assert_eq!(rows[1]["final_state"]["temperature_k_hex"], hex);
+    assert_ne!(rows[1]["final_state"]["temperature_k"], exact);
+    // Since 0.11.0 the long form writes each row again as the engine writes
+    // it from its hex values, and a decimal that is not its hex's value does
+    // not hold: the seals hold, and the text is not the engine's.
+    let named = |report: &Value| (report["holds"].clone(), report["cause"].clone(), report["row"].clone(), report["differs_at"].clone());
+    let at_row_1 = (json!(false), json!("answer_text"), json!(1), json!("rows[1].final_state.temperature_k"));
+    let report = verify(&base, &head, &rows, &frames).await;
+    assert_eq!(named(&report), at_row_1, "{report}");
+    assert_eq!(report["rows_file"], "does not match the hash in the head");
+    assert!(report["dataset_seal"].is_null() && report.get("fault").is_none() && report.get("what_to_report").is_none(), "{report}");
+
+    // The head's hash of the rows and its receipt worked out again: every
+    // file check now matches, and the row is still named.
+    let mut text = Vec::new();
+    for row in &rows {
+        text.extend_from_slice(serde_json::to_string(row).unwrap().as_bytes());
+        text.push(b'\n');
+    }
+    let mut forged = head.as_object().unwrap().clone();
+    forged.shift_remove("receipt_sha256");
+    forged.insert("rows_sha256".to_string(), json!(digest_hex(&text)));
+    let wire = genesis_seal::receipt::with_receipt(&serde_json::to_string(&Value::Object(forged)).unwrap());
+    let forged: Value = serde_json::from_str(&wire).unwrap();
+    let report = verify(&base, &forged, &rows, &frames).await;
+    assert_eq!(named(&report), at_row_1, "{report}");
+    assert_eq!(report["receipt"], "matches", "{report}");
+    assert_eq!(report["rows_file"], "matches the hash in the head", "{report}");
+
+    // A decimal written with fewer digits is not the value either; one
+    // written another way that reads as the same number is the value and not
+    // the engine's text: since 0.12.0 the plan is run again and the answer
+    // compared byte for byte, so it is named, with no fault.
+    let mut rounded = rows_of(&answer);
+    rounded[2]["final_state"]["temperature_k"] = json!(300.0);
+    assert_ne!(rounded[2]["final_state"]["temperature_k"], rows_of(&answer)[2]["final_state"]["temperature_k"]);
+    let report = verify(&base, &head, &rounded, &frames).await;
+    assert_eq!(named(&report), (json!(false), json!("answer_text"), json!(2), json!("rows[2].final_state.temperature_k")), "{report}");
+    let as_made = rows_of(&answer);
+    assert_eq!(as_made[0]["final_state"]["t_s"], json!(0.4));
+    let body = serde_json::to_string(&json!({ "head": head, "rows": as_made, "frames_hex": frames })).unwrap();
+    let respelled = body.replacen("\"t_s\":0.4,", "\"t_s\":4e-1,", 1);
+    assert_ne!(body, respelled);
+    let (status, text) = post_text(&base, "/verify_dataset", &respelled).await;
+    assert_eq!(status, 200, "{text}");
+    let report: Value = serde_json::from_str(&text).unwrap();
+    assert_eq!((report["holds"].clone(), report["row"].clone(), report.get("fault")), (json!(false), json!(0), None), "{report}");
+    assert_eq!((report["cause"].clone(), report["differs_at"].clone()), (json!("answer_text"), json!("rows[0].final_state.t_s")), "{report}");
+    assert!(report["difference"].as_str().unwrap().contains("is written 4e-1, and the engine writes 0.4"), "{report}");
+}
+
 #[tokio::test]
 async fn verify_dataset_refuses_what_it_cannot_read() {
     let base = spawn_app().await;
@@ -563,8 +753,8 @@ async fn verify_dataset_refuses_what_it_cannot_read() {
     let good = json!({ "head": answer["head"], "rows": answer["rows"], "frames_hex": answer["frames_hex"] });
     let cases = [
         ("an unknown key", { let mut b = good.clone(); b["extra"] = json!(1); b }, "'extra' is not a field"),
-        ("no head", { let mut b = good.clone(); b.as_object_mut().unwrap().remove("head"); b }, "Missing required parameter: 'head'"),
-        ("no frames_hex", { let mut b = good.clone(); b.as_object_mut().unwrap().remove("frames_hex"); b }, "Missing required parameter: 'frames_hex'"),
+        ("no head", { let mut b = good.clone(); b.as_object_mut().unwrap().remove("head"); b }, "Missing required parameter: 'head' (InputMissing)."),
+        ("no frames_hex", { let mut b = good.clone(); b.as_object_mut().unwrap().remove("frames_hex"); b }, "Missing required parameter: 'frames_hex' (InputMissing)."),
         ("capital hex", { let mut b = good.clone(); b["frames_hex"] = json!("AB"); b }, "lowercase hex"),
         ("odd hex", { let mut b = good.clone(); b["frames_hex"] = json!("abc"); b }, "lowercase hex"),
         ("rows not an array", { let mut b = good.clone(); b["rows"] = json!({}); b }, "'rows' must be a JSON array"),
@@ -640,9 +830,22 @@ async fn a_dataset_made_without_the_engine_holds_and_a_replayed_row_exposes_it()
     let rows: Vec<Value> = made.rows.iter().map(|row| row.to_value()).collect();
     let frames = Value::String(hex::encode(made.frames_bytes().unwrap()));
 
+    // Every seal holds: the long form names the engine version the head
+    // states, which is not this engine's, and says its seals hold.
     let report = verify(&base, &head, &rows, &frames).await;
-    assert_eq!(report["holds"], true, "an unkeyed seal holds without the engine: {report}");
-    assert_eq!(report["cause"], Value::Null);
+    assert_eq!((report["holds"].clone(), report["cause"].clone()), (json!(false), json!("engine_version")), "an unkeyed seal holds without the engine: {report}");
+    assert!(report["difference"].as_str().unwrap().contains("Its seals, recomputed by this engine's rules, hold;"), "{report}");
+    // Made with this engine's version string, its seals still hold, and the
+    // first place named is a text the engine does not write: the made-up
+    // state has not the card's fields. Only the replay below tells its numbers.
+    let mut named = assemble(&plan, protocol_mcp_gateway::ENGINE_VERSION, &results).unwrap();
+    named.head.rows_sha256 = Some(digest_hex(&named.rows_text()));
+    named.head.frames_sha256 = named.frames_bytes().map(|bytes| digest_hex(&bytes));
+    let named_head: Value = serde_json::from_str(&named.head.wire()).unwrap();
+    let named_rows: Vec<Value> = named.rows.iter().map(|row| row.to_value()).collect();
+    let named_frames = Value::String(hex::encode(named.frames_bytes().unwrap()));
+    let report = verify(&base, &named_head, &named_rows, &named_frames).await;
+    assert_eq!((report["holds"].clone(), report["cause"].clone(), report["row"].clone()), (json!(false), json!("answer_text"), json!(0)), "{report}");
 
     // Replaying any row through the engine gives another run seal.
     for row in &rows {

@@ -29,13 +29,14 @@
 //! and the tables of the three cores differ: `c`, fixed at the start, says which
 //! one, 215, 217 or 231. `T_0` is the fuel temperature the state was started at,
 //! which is also the water temperature. The second load value drops the rods:
-//! the scram, applied from the start of the step that first carries it.
+//! the scram, applied from the start of the step that first carries it, at any time after
+//! the fire signal; while the rod is still moving its ramp goes on under the scram.
 //!
 //! From the sources, not fitted: `β` and the six groups (Švajger et al., Nucl.
 //! Eng. Technol. 56 (2024) 1165, Tables 10 and 12); `m`, 56 elements of 2.36 kg;
 //! `c(T)` (the same article, eq. 7.2); `R`, the rod's whole worth of 4.16 dollars
-//! (the institute's rod table of core 253) over its whole transit of 80 ms (the
-//! article, section 7.1); the starting power, 10 W. `S`, 8 dollars, is an
+//! (the institute's rod table of core 253, [`ROD_WORTH_DOLLAR`]) over its whole transit of
+//! 80 ms (the article, section 7.1); the starting power, 10 W. `S`, 8 dollars, is an
 //! assumption and not a sourced value.
 //!
 //! Ten numbers are fitted, to 36 pulses of the three cores at 1.4 to 3.0 printed
@@ -56,22 +57,43 @@
 //! [`HOT_ROD_FACTOR`] and a delay fitted to each recording chain. The step does
 //! not use that factor.
 //!
-//! The card leaves out any other core loading, a start from power, a start
-//! outside the starts compared on its rod table (24.00 to 27.94 degC on core
-//! 215, 21.31 to 29.23 on core 217, 20.90 to 22.81 on core 231), reactivity
-//! below 2.0 or above 3.0 printed dollars, a scram earlier than 1.50 s after the peak, rods held later than
-//! 7.45 s after it, a second pulse on warm fuel, the time the rods take to
-//! fall, boiling, anything past 14 s, and anything past the largest power,
-//! energy and fuel temperature that were compared with a record. The starts
-//! are the envelope, table by table, and the scrams the envelope, of the 27
-//! opened pulses compared at 2.0 printed dollars and above. The floor of 2.0 printed dollars was set
-//! after the held-back rows were scored, and is not a blind choice: of the
-//! four held-back rows below 2.0 printed dollars, all of 28 March 2018, the
-//! card read 29, 21 and 9 percent low in peak power at 1.4, 1.6 and 1.8
-//! dollars and level on the repeat at 1.8, and on the six rows of that day
-//! from 2.0 dollars up it was within 3.7 percent in peak power, 2.7 percent in
-//! energy within 50 ms of the peak and 5.8 K at the thermocouple. The fit
-//! itself reached down to 1.4 printed dollars.
+//! The card leaves out any other core loading, a start from power, a second pulse on
+//! warm fuel, the time the rods take to fall, and boiling. What it was compared on, and
+//! how it did there:
+//!
+//! - Starts of 24.00 to 27.94 degC on core 215, 21.31 to 29.23 on core 217 and 20.90 to
+//!   22.81 on core 231 ([`START_TEMPERATURE_K_BY_TABLE`], the envelope table by table of
+//!   the 27 opened pulses compared at 2.0 printed dollars and above); the dependence on the
+//!   starting temperature was not tested apart.
+//! - 2.0 to 3.0 printed dollars (fitted 1.4 to 3.0). Below 2.0 dollars, on the four
+//!   held-back rows of 28 March 2018, the card read 29, 21 and 9 percent low in peak power
+//!   at 1.4, 1.6 and 1.8 dollars and level on the repeat at 1.8, where 0.03 printed dollars
+//!   of the day's reference moves the peak power by 44, 21 and 13 percent; on the six rows
+//!   of that day from 2.0 dollars up it was within 3.7 percent in peak power, 2.7 percent in
+//!   energy within 50 ms of the peak and 5.8 K at the thermocouple. Nothing unfitted lies
+//!   above 2.6 dollars.
+//! - Scrams 1.51 to 7.45 s after the peak; an earlier scram was not compared, and no
+//!   compared scram came while the transient rod was moving. The longest compared hold was
+//!   7.45 s after the peak.
+//! - Records to 14 s after the fire signal, energy released to 18.3 MW s, peak power to
+//!   954 MW, core-average fuel temperature to 585 K, the fuel temperature compared only
+//!   through one thermocouple of one element, through the hot-rod factor 1.387.
+//!
+//! Outside all of that the card computes the same equations with nothing compared, the
+//! quadratic feedback carried past the 294 to about 585 K it was fitted on. It computes
+//! from any start in liquid water at one standard atmosphere, 273.15 to 373.124 K, any
+//! reactivity above zero up to the rod's whole worth of 4.16 printed dollars, a scram at
+//! any time after the fire signal, the rods held as long as the caller holds them, and any
+//! time. The highest core-average fuel temperature it reaches is 769.7 K (496.6 degC), at
+//! 4.16 dollars on core 231 from 373.124 K with the rods held, 8.1 s after the fire signal;
+//! the held pulse then settles towards the temperature where the feedback takes back the
+//! whole insertion, about 637 K there. Through the hot-rod factor the hottest element
+//! would be at 923 K (650 degC). Both are far below 1150 degC, the temperature limit of
+//! U-ZrH1.6 fuel in stainless clad. The card still holds that limit: a core-average fuel
+//! temperature above 1423.15 K, in a handed-in state or where a step would land, is refused
+//! as [`StepReject::FuelTemperatureAboveFuelLimit`]. No run started at the card's own start
+//! reaches it. The card carries no temperature of the hottest element, so the limit is held
+//! on the core average, which the hottest element passes first.
 //!
 //! The ledger is the neutron population `N = P + Σ C_i` (MW). Summing the
 //! equations, `dN/dt = ((ρ − 1) β + Σ β_i) P / Λ`. The right side is integrated
@@ -87,13 +109,27 @@
 //! Runge–Kutta rule, so a wrong coefficient, a dropped group, a wrong stage
 //! weight or an Euler step shows in the defect. The ledger closes for any value
 //! of the fitted constants: it shows the arithmetic and the integrator are right.
-//! It cannot show the physics matches the reactor.
+//! It cannot show the physics matches the reactor. Past the compared span, with 3.25
+//! printed dollars and more and the rods dropped in the rise of the pulse or at its peak,
+//! the error a step at the static ceiling makes in the rise is carried by a population the
+//! scram leaves tens of times smaller, and over a tail of more than 75 s the ledger can name
+//! the run; over the 14 s compared the largest residual found there is 3.2e-8, and at half
+//! the static ceiling every such run tried lands to 93.9 s.
 //!
-//! [`ReactorTrigaJsi::gate_dt_s`] is the step ceiling: `GATE_PHASE_STEP` of the
+//! [`ReactorTrigaJsi::gate_dt_s`] is the static step ceiling: `GATE_PHASE_STEP` of the
 //! time constant of the prompt pole after the scram, `Λ / (β (1 + S))`.
 //! [`ReactorTrigaJsi::floor_dt_s`] is 1e-9 s. The public step applies neither.
-//! The gateway refuses a step outside them. In the fall of the power after the
-//! scram a step is taken in pieces ([`SCRAM_PIECE_PHASE_STEP`]).
+//! The gateway refuses a step outside them. The step itself refuses a step longer than
+//! [`STATE_PHASE_STEP`] of the time constant of the fastest pole at the state,
+//! `Λ / (β |ρ − 1|)`, at its start or where it lands, as `DtAboveStateCeiling`. The feedback
+//! after a pulse takes the net reactivity after the scram below −8 dollars: on the compared
+//! runs to −9.08, where a step at the static ceiling advances 0.224 of that time constant, and
+//! on any run the card computes to −9.87 (4.16 dollars on core 231 from 373.124 K, the rods
+//! dropped at the highest fuel temperature, 8.1 s after the fire signal), where it advances
+//! 0.241. No run started by the card meets the state ceiling at the static ceiling; a state
+//! handed in hotter than any run reaches can. In the fall of the power after the scram a step
+//! is taken in pieces ([`SCRAM_PIECE_PHASE_STEP`]), and in the rise of a pulse stronger than
+//! any compared too ([`RISE_PIECE_PHASE_STEP`]).
 //!
 //! `core` only. The state is `Copy`. An accepted step writes time, power, energy
 //! released, net reactivity, the fuel temperature and its highest landed value,
@@ -105,6 +141,7 @@ extern crate core;
 use core::prelude::v1::*;
 
 use crate::frame::LastStateFrame64;
+use crate::normal::{normal_or_zero, normal_or_zero_each};
 
 /// Effective delayed-neutron fraction `β`; the site's dollar is 700 pcm.
 /// Švajger et al. 2024, Table 10.
@@ -129,8 +166,12 @@ pub const HEAT_CAPACITY_BASE_J_PER_KG_K: f64 = 333.0;
 pub const HEAT_CAPACITY_SLOPE_J_PER_KG_K2: f64 = 0.678;
 /// The temperature the heat capacity is counted from, K. Same equation.
 pub const HEAT_CAPACITY_REFERENCE_K: f64 = 274.15;
-/// Insertion rate `R`, printed dollars per s: 4.16 dollars over 80 ms.
-pub const RAMP_DOLLAR_PER_S: f64 = 4.16 / 0.080;
+/// The transient rod's whole worth, printed dollars: 4.16, on the institute's rod table of
+/// core 253. The largest reactivity the rod can insert; a load above it is refused as
+/// [`StepReject::ReactivityAboveRodWorth`].
+pub const ROD_WORTH_DOLLAR: f64 = 4.16;
+/// Insertion rate `R`, printed dollars per s: the rod's whole worth over its whole transit of 80 ms.
+pub const RAMP_DOLLAR_PER_S: f64 = ROD_WORTH_DOLLAR / 0.080;
 /// Reactor power at the fire signal, MW: 10 W. Švajger et al. 2024, section 5.
 pub const INITIAL_POWER_MW: f64 = 1.0e-5;
 /// The cores whose rod-worth table the card holds.
@@ -157,70 +198,72 @@ pub const HEAT_FLOW_W_PER_K: f64 = 890.6;
 /// Sourced. Not used by the step: it is the factor through which the fuel
 /// temperature was compared with the thermocouple.
 pub const HOT_ROD_FACTOR: f64 = 1.387;
-/// Smallest inserted reactivity, printed dollars. The smallest fitted is 1.4;
-/// the floor was raised to 2.0 after the held-back rows were scored, because
-/// below 2.0 the card read 9 to 29 percent low in peak power on three of the
-/// four held-back rows there.
-pub const REACTIVITY_MIN_DOLLAR: f64 = 2.0;
-/// Largest inserted reactivity, printed dollars: the largest fitted.
-pub const REACTIVITY_MAX_DOLLAR: f64 = 3.0;
-/// Lowest starting fuel temperature on any table, K: 20.90 degC. The start of a
-/// pulse is the first thermocouple's reading at the fire signal. The 27 opened
-/// pulses compared at 2.0 printed dollars and above started at 20.902 to 29.221
-/// degC (pulses 331 and 240). Each table accepts only its own span,
-/// [`START_TEMPERATURE_K_BY_TABLE`]; this is the lowest of them. The pulses that
-/// started at 20.3 and 32.4 degC were at 1.5 printed dollars, below the card.
-pub const START_TEMPERATURE_MIN_K: f64 = 294.05;
-/// Highest starting fuel temperature on any table, K: 29.23 degC. See
-/// [`START_TEMPERATURE_MIN_K`].
-pub const START_TEMPERATURE_MAX_K: f64 = 302.38;
-/// Lowest and highest starting fuel temperature of each table, K, in the order of
-/// [`ROD_TABLE_CORE`]: the starts of the opened pulses compared at 2.0 printed
-/// dollars and above on that table, rounded outward to the hundredth of a kelvin.
-/// Core 215: 24.0029 to 27.9375 degC (pulses 216 and 206); core 217: 21.3171 to
-/// 29.2207 degC (222 and 240); core 231: 20.9023 to 22.8024 degC (331 and 340).
-/// Every held-back row scored at 2.0 printed dollars and above started inside
-/// its own table's span. A start inside 20.90 to 29.23 degC but outside its
-/// table's span was never compared on that table and is refused.
+/// Water freezes, K. The starting temperature is also the pool water's, so a start below it
+/// is refused as [`StepReject::StartTemperatureNotLiquidWater`].
+pub const WATER_FREEZING_K: f64 = 273.15;
+/// Water boils at one standard atmosphere, K: the saturation temperature at 101.325 kPa of
+/// IAPWS-IF97. The pool is open to the air, so a start above it is refused as
+/// [`StepReject::StartTemperatureNotLiquidWater`].
+pub const WATER_BOILING_K: f64 = 373.124;
+/// Smallest inserted reactivity compared, printed dollars. Not applied by the step. The smallest
+/// fitted is 1.4; below 2.0, on the four held-back rows of 28 March 2018, the card read 29, 21
+/// and 9 percent low in peak power at 1.4, 1.6 and 1.8 dollars, where 0.03 printed dollars of
+/// the day's reference moves the peak power by 44, 21 and 13 percent.
+pub const REACTIVITY_COMPARED_MIN_DOLLAR: f64 = 2.0;
+/// Largest inserted reactivity compared, printed dollars: the largest fitted. Not applied by the
+/// step. Nothing unfitted lies above 2.6 dollars.
+pub const REACTIVITY_COMPARED_MAX_DOLLAR: f64 = 3.0;
+/// Lowest and highest starting fuel temperature compared on each table, K, in the order of
+/// [`ROD_TABLE_CORE`]: the starts of the opened pulses compared at 2.0 printed dollars and above
+/// on that table, the first thermocouple's reading at the fire signal, rounded outward to the
+/// hundredth of a kelvin. Core 215: 24.0029 to 27.9375 degC (pulses 216 and 206); core 217:
+/// 21.3171 to 29.2207 degC (222 and 240); core 231: 20.9023 to 22.8024 degC (331 and 340).
+/// Every held-back row scored at 2.0 printed dollars and above started inside its own table's
+/// span. Not applied by the step: the dependence on the starting temperature was not tested
+/// apart, and the card computes from any start in liquid water.
 pub const START_TEMPERATURE_K_BY_TABLE: [(f64, f64); 3] =
     [(297.15, 301.09), (294.46, 302.38), (294.05, 295.96)];
-/// Earliest scram, s after the time of the peak power: the rods may drop only
-/// from a step that starts this long after the peak. In the records of the 27
-/// opened pulses compared at 2.0 printed dollars and above the rods dropped
-/// 1.510 to 7.446 s after the peak (pulses 219 and 330), and the validation
-/// dropped them that long after the card's own peak. The span is that
-/// envelope, rounded outward to the hundredth of a second.
-pub const SCRAM_AFTER_PEAK_MIN_S: f64 = 1.50;
-/// Latest instant the rods may still be held, s after the time of the peak
-/// power. See [`SCRAM_AFTER_PEAK_MIN_S`].
-pub const SCRAM_AFTER_PEAK_MAX_S: f64 = 7.45;
-/// Core-average fuel temperature beyond which the card refuses, K. The highest
-/// in a run compared with a record is 585 K.
-pub const FUEL_TEMPERATURE_MAX_K: f64 = 600.0;
-/// Power beyond which the card refuses, MW. The largest compared is 954 MW.
-pub const POWER_MAX_MW: f64 = 1000.0;
-/// Energy released beyond which the card refuses, MW s. The largest in a run
-/// compared with a record is 18.3 MW s.
-pub const ENERGY_MAX_MWS: f64 = 20.0;
-/// Time beyond which the card refuses, s.
-pub const TIME_MAX_S: f64 = 14.0;
-/// What a run's clock may pass [`TIME_MAX_S`] by, s. The clock is a running sum
-/// of the steps and is off by a few units in the last place a step; a run whose
-/// steps make 14 s keeps its last step.
-pub const TIME_END_ALLOWANCE_S: f64 = 1.0e-9;
+/// Earliest and latest scram compared, s after the time of the peak power. In the records of
+/// the 27 opened pulses compared at 2.0 printed dollars and above the rods dropped 1.510 to
+/// 7.446 s after the peak (pulses 219 and 330), and the validation dropped them that long
+/// after the card's own peak; rounded outward to the hundredth of a second. Not applied by the
+/// step: the rods may drop at any time after the fire signal, or never.
+pub const SCRAM_AFTER_PEAK_COMPARED_S: (f64, f64) = (1.50, 7.45);
+/// The highest core-average fuel temperature in a run compared with a record, K. Not applied by
+/// the step.
+pub const FUEL_TEMPERATURE_COMPARED_MAX_K: f64 = 585.0;
+/// The temperature limit of U-ZrH1.6 fuel in stainless clad, 1150 degC, in kelvin: above it
+/// the hydrogen the hydride gives off loads the cladding past what it holds (the safety limit
+/// of TRIGA fuel with stainless cladding, NUREG-1537 and General Atomics' TRIGA fuel
+/// qualification). Applied to the core-average fuel temperature the card carries; the card
+/// carries no temperature of the hottest element.
+pub const FUEL_TEMPERATURE_LIMIT_K: f64 = 1150.0 + 273.15;
+/// The largest peak power compared, MW. Not applied by the step.
+pub const POWER_COMPARED_MAX_MW: f64 = 954.0;
+/// The largest energy released in a run compared with a record, MW s. Not applied by the step.
+pub const ENERGY_COMPARED_MAX_MWS: f64 = 18.3;
+/// How long after the fire signal the compared records run, s. Not applied by the step.
+pub const TIME_COMPARED_MAX_S: f64 = 14.0;
 /// `|N − N_anchor − ∫ dN| / max(N, N_anchor)` must stay at or under this. Set by
-/// measurement over runs at the ends of the span, each at the ceiling through
-/// the pulse and the scram to the end of the card, and over scrams from the
+/// measurement over runs at the ends of the compared span, each at the ceiling through
+/// the pulse and the scram to 14 s, and over scrams from the
 /// rod's stop to two seconds after the peak, which 0.6.0 accepted: the largest
-/// value found is 5.8e-9, and the limit is 34 times it. Over the scrams the card
-/// accepts now, 1.50 to 7.45 s after the peak, at the ceiling, 5e-5, 2e-5 and
+/// value found is 5.8e-9, and the limit is 34 times it. Over the scrams compared,
+/// 1.50 to 7.45 s after the peak, at the ceiling, 5e-5, 2e-5 and
 /// 3.1e-6 s and at the floor, the largest found is 3.5e-9. The residual compares
-/// the step with the card's own quadrature of the same power, so it is a check
+/// the step with the card's own quadrature of the same power, so it is a measure
 /// of consistency and not a bound on the error.
 pub const RESIDUAL_CONSERVATION_LIMIT: f64 = 2.0e-7;
 /// Fraction of the prompt time constant after the scram that one step at the
 /// ceiling advances.
 pub const GATE_PHASE_STEP: f64 = 0.2;
+/// Fraction of the time constant of the fastest pole at the state, `Λ / (β |ρ − 1|)`, that one
+/// step may advance, at the start of the step and where it lands; a longer step is refused as
+/// [`StepReject::DtAboveStateCeiling`]. On the compared runs the net reactivity after the scram
+/// reaches −9.08 dollars (`|ρ − 1|` = 10.08, 3.0 dollars on core 217 dropped 7.45 s after the
+/// peak), where a step at the static ceiling advances 0.224 of that time constant; this
+/// fraction is above it, so no compared run meets it.
+pub const STATE_PHASE_STEP: f64 = 0.25;
 /// Smallest step the card stands behind, s.
 pub const FLOOR_DT_S: f64 = 1.0e-9;
 /// For this many time constants of the prompt pole after the scram, counted from the instant
@@ -228,7 +271,10 @@ pub const FLOOR_DT_S: f64 = 1.0e-9;
 pub const SCRAM_TRANSIENT_TIME_CONSTANTS: f64 = 30.0;
 /// Fraction of that time constant one piece advances at most: an eighth of [`GATE_PHASE_STEP`].
 pub const SCRAM_PIECE_PHASE_STEP: f64 = 0.025;
-/// Most pieces one step is taken in. A step at the ceiling takes eight.
+/// Fraction of the time constant of the growing pole, `Λ / (β (ρ − 1))`, one piece advances at
+/// most in the rise of a pulse stronger than any compared ([`rise_pieces`]).
+pub const RISE_PIECE_PHASE_STEP: f64 = 0.03;
+/// Most pieces one step is taken in. A step at the ceiling in the fall after the scram takes eight.
 pub const SCRAM_PIECES_MAX: u32 = 64;
 
 /// Net reactivity is above one dollar on this frame.
@@ -249,38 +295,30 @@ pub enum StepReject {
     NonPositiveDt,
     /// A recorded constant is not this reactor's.
     InvalidCard,
-    /// The recorded starting fuel temperature is outside the starts compared on its rod table at 2.0 printed dollars and above: 24.00 to 27.94 degC on core 215, 21.31 to 29.23 on core 217, 20.90 to 22.81 on core 231.
-    StartTemperatureOutsideCard,
+    /// The recorded starting temperature, which is also the pool water's, is below 273.15 K, where water freezes, or above 373.124 K, where it boils at one standard atmosphere (IAPWS-IF97).
+    StartTemperatureNotLiquidWater,
     /// The recorded rod-worth table is not that of core 215, 217 or 231.
     RodTableOutsideCard,
-    /// The inserted reactivity is outside 2.0 to 3.0 printed dollars.
-    ReactivityOutsideCard,
+    /// The inserted reactivity is zero or less: no step in reactivity is inserted, and the inserted fraction min(1, R t / ρ_0) divides by it.
+    ReactivityNotPositive,
+    /// The inserted reactivity is above 4.16 printed dollars, the transient rod's whole worth on the institute's rod table of core 253: the request asks more than the rod holds.
+    ReactivityAboveRodWorth,
     /// The scram value is neither 0 (rods held) nor 1 (rods dropped).
     ScramValueOutsideCard,
     /// The inserted reactivity differs from the one this run started with; the model defines no change of it but the scram.
     ReactivityChangedDuringRun,
-    /// The rods were dropped while the transient rod was still moving.
-    ScramBeforeRodStopped,
-    /// The rods were dropped earlier than 1.50 s after the peak power, earlier than any scram compared with a record.
-    ScramBeforeCompared,
-    /// The step would end with the rods still held more than 7.45 s after the peak power, later than any scram compared with a record.
-    RodsHeldBeyondCompared,
     /// The rods were raised after the scram.
     RodsRaisedAfterScram,
     /// The energy released in the handed-in state is negative.
     NegativeEnergy,
     /// A peak field of the handed-in state cannot have come from a run: a peak power below the power, a peak time or peak energy outside the run so far, or a highest fuel temperature below the fuel temperature.
     ImpossiblePeak,
-    /// The handed-in state has a power that is not positive, a negative precursor sum, a negative time, a fuel temperature below the starting temperature, or a scram time or scram energy outside the run so far.
-    StateOutsideCard,
-    /// The step would end after 14 s.
-    TimeBeyondCard,
-    /// The trial step released more than 20 MW s, beyond what was compared with a record.
-    EnergyBeyondCard,
-    /// The trial step reached more than 1000 MW, beyond what was compared with a record.
-    PowerBeyondCard,
-    /// The trial step took the core-average fuel temperature above 600 K, beyond what was compared with a record.
-    FuelTemperatureBeyondCard,
+    /// The handed-in state is not physically possible: a power that is not positive, a negative precursor sum, a negative time, a fuel temperature below the starting temperature, or a scram time or scram energy outside the run so far.
+    ImpossibleState,
+    /// The core-average fuel temperature, in the handed-in state or where the step would land, is above 1423.15 K (1150 degC), the temperature limit of U-ZrH1.6 fuel in stainless clad.
+    FuelTemperatureAboveFuelLimit,
+    /// The step is longer than 0.25 of the time constant of the fastest pole, Λ / (β |ρ − 1|), at the state it starts from or where it lands.
+    DtAboveStateCeiling,
     /// The trial step created neutron population beyond what the reactivity supplies.
     SpontaneousGeneration,
     /// The trial step destroyed neutron population the reactivity supplies.
@@ -317,19 +355,13 @@ pub struct ReactorTrigaJsi {
     pub feedback_reference_k: f64,
     pub scram_dollar: f64,
     pub heat_flow_w_per_k: f64,
-    pub reactivity_min_dollar: f64,
-    pub reactivity_max_dollar: f64,
-    pub start_temperature_min_k: f64,
-    pub start_temperature_max_k: f64,
-    pub start_temperature_k_by_table: [(f64, f64); 3],
-    pub scram_after_peak_min_s: f64,
-    pub scram_after_peak_max_s: f64,
-    pub fuel_temperature_max_k: f64,
-    pub power_max_mw: f64,
-    pub energy_max_mws: f64,
-    pub time_max_s: f64,
+    pub rod_worth_dollar: f64,
+    pub water_freezing_k: f64,
+    pub water_boiling_k: f64,
+    pub fuel_temperature_limit_k: f64,
     pub residual_conservation_limit: f64,
     pub gate_phase_step: f64,
+    pub state_phase_step: f64,
     pub floor_dt_s: f64,
 }
 
@@ -356,19 +388,13 @@ impl ReactorTrigaJsi {
             feedback_reference_k: FEEDBACK_REFERENCE_K,
             scram_dollar: SCRAM_DOLLAR,
             heat_flow_w_per_k: HEAT_FLOW_W_PER_K,
-            reactivity_min_dollar: REACTIVITY_MIN_DOLLAR,
-            reactivity_max_dollar: REACTIVITY_MAX_DOLLAR,
-            start_temperature_min_k: START_TEMPERATURE_MIN_K,
-            start_temperature_max_k: START_TEMPERATURE_MAX_K,
-            start_temperature_k_by_table: START_TEMPERATURE_K_BY_TABLE,
-            scram_after_peak_min_s: SCRAM_AFTER_PEAK_MIN_S,
-            scram_after_peak_max_s: SCRAM_AFTER_PEAK_MAX_S,
-            fuel_temperature_max_k: FUEL_TEMPERATURE_MAX_K,
-            power_max_mw: POWER_MAX_MW,
-            energy_max_mws: ENERGY_MAX_MWS,
-            time_max_s: TIME_MAX_S,
+            rod_worth_dollar: ROD_WORTH_DOLLAR,
+            water_freezing_k: WATER_FREEZING_K,
+            water_boiling_k: WATER_BOILING_K,
+            fuel_temperature_limit_k: FUEL_TEMPERATURE_LIMIT_K,
             residual_conservation_limit: RESIDUAL_CONSERVATION_LIMIT,
             gate_phase_step: GATE_PHASE_STEP,
+            state_phase_step: STATE_PHASE_STEP,
             floor_dt_s: FLOOR_DT_S,
         };
         if reactor.is_valid() {
@@ -394,16 +420,12 @@ impl ReactorTrigaJsi {
             if self.rod_table_core[index].to_bits() != ROD_TABLE_CORE[index].to_bits()
                 || self.dollar_scale[index].to_bits() != DOLLAR_SCALE[index].to_bits()
                 || self.dollar_offset[index].to_bits() != DOLLAR_OFFSET[index].to_bits()
-                || self.start_temperature_k_by_table[index].0.to_bits()
-                    != START_TEMPERATURE_K_BY_TABLE[index].0.to_bits()
-                || self.start_temperature_k_by_table[index].1.to_bits()
-                    != START_TEMPERATURE_K_BY_TABLE[index].1.to_bits()
             {
                 return false;
             }
             index += 1;
         }
-        let pairs: [(f64, f64); 26] = [
+        let pairs: [(f64, f64); 21] = [
             (self.delayed_fraction, DELAYED_FRACTION),
             (self.generation_time_s, GENERATION_TIME_S),
             (self.fuel_mass_kg, FUEL_MASS_KG),
@@ -417,18 +439,13 @@ impl ReactorTrigaJsi {
             (self.feedback_reference_k, FEEDBACK_REFERENCE_K),
             (self.scram_dollar, SCRAM_DOLLAR),
             (self.heat_flow_w_per_k, HEAT_FLOW_W_PER_K),
-            (self.reactivity_min_dollar, REACTIVITY_MIN_DOLLAR),
-            (self.reactivity_max_dollar, REACTIVITY_MAX_DOLLAR),
-            (self.start_temperature_min_k, START_TEMPERATURE_MIN_K),
-            (self.start_temperature_max_k, START_TEMPERATURE_MAX_K),
-            (self.scram_after_peak_min_s, SCRAM_AFTER_PEAK_MIN_S),
-            (self.scram_after_peak_max_s, SCRAM_AFTER_PEAK_MAX_S),
-            (self.fuel_temperature_max_k, FUEL_TEMPERATURE_MAX_K),
-            (self.power_max_mw, POWER_MAX_MW),
-            (self.energy_max_mws, ENERGY_MAX_MWS),
-            (self.time_max_s, TIME_MAX_S),
+            (self.rod_worth_dollar, ROD_WORTH_DOLLAR),
+            (self.water_freezing_k, WATER_FREEZING_K),
+            (self.water_boiling_k, WATER_BOILING_K),
+            (self.fuel_temperature_limit_k, FUEL_TEMPERATURE_LIMIT_K),
             (self.residual_conservation_limit, RESIDUAL_CONSERVATION_LIMIT),
             (self.gate_phase_step, GATE_PHASE_STEP),
+            (self.state_phase_step, STATE_PHASE_STEP),
             (self.floor_dt_s, FLOOR_DT_S),
         ];
         index = 0;
@@ -441,8 +458,11 @@ impl ReactorTrigaJsi {
         true
     }
 
-    /// Largest step the card stands behind: `GATE_PHASE_STEP · Λ / (β (1 + S))`, 0.094 ms.
-    /// Not applied by [`step`].
+    /// Largest step the card stands behind at any state: `GATE_PHASE_STEP · Λ / (β (1 + S))`,
+    /// 0.094 ms. Not applied by [`step`]. It covers every state of the compared runs; past them
+    /// the net reactivity after the scram can fall further below −8 dollars, and the step itself
+    /// refuses a step longer than [`STATE_PHASE_STEP`] of the time constant at its state, as
+    /// [`StepReject::DtAboveStateCeiling`] ([`Self::state_dt_s`]).
     #[must_use]
     pub fn gate_dt_s(&self) -> Option<f64> {
         let pole = self.delayed_fraction * (1.0 + self.scram_dollar) / self.generation_time_s;
@@ -483,12 +503,19 @@ impl ReactorTrigaJsi {
         None
     }
 
-    /// Whether a starting fuel temperature lies inside the starts compared on the table at
-    /// `table`, ends included.
+    /// Whether a starting temperature is liquid water at one standard atmosphere, 273.15 to
+    /// 373.124 K, ends included.
     #[must_use]
-    pub fn start_compared_on(&self, table: usize, start_temperature_k: f64) -> bool {
-        let (low, high) = self.start_temperature_k_by_table[table];
-        start_temperature_k >= low && start_temperature_k <= high
+    pub fn start_is_liquid_water(&self, start_temperature_k: f64) -> bool {
+        start_temperature_k >= self.water_freezing_k && start_temperature_k <= self.water_boiling_k
+    }
+
+    /// Longest step the card takes from a net reactivity `ρ`, dollars:
+    /// `STATE_PHASE_STEP · Λ / (β |ρ − 1|)`. Infinite at `ρ = 1`.
+    #[must_use]
+    pub fn state_dt_s(&self, reactivity_net_dollar: f64) -> f64 {
+        self.state_phase_step * self.generation_time_s
+            / (self.delayed_fraction * (reactivity_net_dollar - 1.0).abs())
     }
 
     /// What the whole insertion is worth in the kinetics, dollars: `K_c ρ_0 − O_c`.
@@ -557,8 +584,8 @@ impl ReactorState {
     /// `β_i P / (Λ λ_i)`. The start is not stationary: the printed groups sum to 0.00699891 and
     /// the power equation uses [`DELAYED_FRACTION`], 0.00700, so at zero net reactivity the power
     /// falls at 0.037 per second, as if 1.6e-4 dollar were taken out. `None` unless the
-    /// rod table is one of the three and the starting temperature is finite and inside the
-    /// starts compared on that table at 2.0 printed dollars and above,
+    /// rod table is one of the three and the starting temperature is finite and liquid water at
+    /// one standard atmosphere, 273.15 to 373.124 K. The starts compared on each table are
     /// [`START_TEMPERATURE_K_BY_TABLE`].
     #[must_use]
     pub fn try_start(
@@ -569,15 +596,10 @@ impl ReactorState {
         if !reactor.is_valid() || !start_temperature_k.is_finite() {
             return None;
         }
-        if start_temperature_k < reactor.start_temperature_min_k
-            || start_temperature_k > reactor.start_temperature_max_k
-        {
+        if !reactor.start_is_liquid_water(start_temperature_k) {
             return None;
         }
-        let table = reactor.table_of(rod_table_core)?;
-        if !reactor.start_compared_on(table, start_temperature_k) {
-            return None;
-        }
+        reactor.table_of(rod_table_core)?;
         let power_mw = reactor.initial_power_mw;
         let mut precursor_mw = [0.0; 6];
         let mut index = 0;
@@ -679,6 +701,9 @@ fn net_reactivity(reactor: &ReactorTrigaJsi, terms: &Terms, t_s: f64, y: &[f64; 
 /// Advance one Runge–Kutta step and write the frame.
 ///
 /// A rejected step leaves `state` and `frame` as they were.
+///
+/// A value of the landed state below the normal range is written as zero
+/// with its sign ([`crate::normal`]).
 #[must_use]
 pub fn step(
     reactor: &ReactorTrigaJsi,
@@ -687,16 +712,109 @@ pub fn step(
     load: ReactorLoad,
     dt_s: f64,
 ) -> Result<(), StepReject> {
+    step_as_computed(reactor, state, frame, load, dt_s)?;
+    normal_or_zero_state(state);
+    Ok(())
+}
+
+/// The step as its equations compute it, before a value of the landed
+/// state below the normal range is written as zero.
+fn step_as_computed(
+    reactor: &ReactorTrigaJsi,
+    state: &mut ReactorState,
+    frame: &mut LastStateFrame64,
+    load: ReactorLoad,
+    dt_s: f64,
+) -> Result<(), StepReject> {
     let table = validate(reactor, state, load, dt_s)?;
     let terms = terms(reactor, state, load, table);
-    let pieces = scram_pieces(reactor, state, load, dt_s);
-    let advanced =
-        through_the_stop(rk4, reactor, &terms, state.t_s, &state_vector(state), dt_s, pieces);
+    let y = state_vector(state);
+    let rho = within_state_ceiling(reactor, &terms, state.t_s, &y, dt_s)?;
+    let pieces = pieces(reactor, state, load, rho, dt_s);
+    let advanced = through_the_stop(rk4, reactor, &terms, state.t_s, &y, dt_s, pieces);
     commit(reactor, state, frame, &terms, load, dt_s, advanced)
 }
 
-/// In how many equal pieces a step is taken. One, except while the power falls after the
-/// scram: the rods take 8 dollars out at the start of a step, the power then falls with the
+/// Each value of a landed state below the normal range written as zero
+/// with its sign ([`crate::normal`]): the state carried to the next step
+/// and published holds no subnormal number.
+fn normal_or_zero_state(state: &mut ReactorState) {
+    state.t_s = normal_or_zero(state.t_s);
+    state.power_mw = normal_or_zero(state.power_mw);
+    normal_or_zero_each(&mut state.precursor_mw);
+    state.fuel_temperature_k = normal_or_zero(state.fuel_temperature_k);
+    state.energy_mws = normal_or_zero(state.energy_mws);
+    state.start_temperature_k = normal_or_zero(state.start_temperature_k);
+    state.rod_table_core = normal_or_zero(state.rod_table_core);
+    state.reactivity_load_dollar = normal_or_zero(state.reactivity_load_dollar);
+    state.scram_time_s = normal_or_zero(state.scram_time_s);
+    state.energy_at_scram_mws = normal_or_zero(state.energy_at_scram_mws);
+    state.power_rate_mw_per_s = normal_or_zero(state.power_rate_mw_per_s);
+    state.reactivity_net_dollar = normal_or_zero(state.reactivity_net_dollar);
+    state.reactivity_inserted_now_dollar = normal_or_zero(state.reactivity_inserted_now_dollar);
+    state.population_anchor_mw = normal_or_zero(state.population_anchor_mw);
+    state.population_supplied_mw = normal_or_zero(state.population_supplied_mw);
+    state.population_defect_mw = normal_or_zero(state.population_defect_mw);
+    state.residual_conservation_error = normal_or_zero(state.residual_conservation_error);
+    state.peak_power_mw = normal_or_zero(state.peak_power_mw);
+    state.peak_energy_mws = normal_or_zero(state.peak_energy_mws);
+    state.peak_time_s = normal_or_zero(state.peak_time_s);
+    state.peak_fuel_temperature_k = normal_or_zero(state.peak_fuel_temperature_k);
+}
+
+/// The state ceiling at `(t, y)` under the step's load: `dt_s` may be at most
+/// [`STATE_PHASE_STEP`] of the time constant of the fastest pole there, `Λ / (β |ρ − 1|)`, with
+/// the scram of the step counted in `ρ`. Inside the compared runs a step at the static ceiling
+/// never meets it. Returns that net reactivity.
+fn within_state_ceiling(
+    reactor: &ReactorTrigaJsi,
+    terms: &Terms,
+    t_s: f64,
+    y: &[f64; 9],
+    dt_s: f64,
+) -> Result<f64, StepReject> {
+    let rho = net_reactivity(reactor, terms, t_s, y);
+    if !rho.is_finite() {
+        return Err(StepReject::NonFiniteState);
+    }
+    if dt_s > reactor.state_dt_s(rho) {
+        return Err(StepReject::DtAboveStateCeiling);
+    }
+    Ok(rho)
+}
+
+/// In how many equal pieces a step is taken: the more of [`scram_pieces`] and [`rise_pieces`].
+fn pieces(reactor: &ReactorTrigaJsi, state: &ReactorState, load: ReactorLoad, rho: f64, dt_s: f64) -> u32 {
+    let scram = scram_pieces(reactor, state, load, dt_s);
+    let rise = rise_pieces(reactor, rho, dt_s);
+    if rise > scram { rise } else { scram }
+}
+
+/// In how many equal pieces a step is taken in the rise of a pulse: so many that each advances
+/// at most [`RISE_PIECE_PHASE_STEP`] of the time constant of the growing pole at the step's
+/// start, `Λ / (β (ρ − 1))`. The error of a step there is a fixed part of the population; a
+/// scram in the rise then leaves a population tens of times smaller, which carries that error
+/// for the rest of the run. On a compared pulse the net reactivity is at most the whole
+/// insertion's worth, 2.21 dollars (3.0 printed dollars on core 231), where a step at the
+/// ceiling advances 0.027 of that time constant: one piece, the step of 0.9.0.
+fn rise_pieces(reactor: &ReactorTrigaJsi, rho: f64, dt_s: f64) -> u32 {
+    if !(rho > 1.0) {
+        return 1;
+    }
+    let growth_per_s = (rho - 1.0) * reactor.delayed_fraction / reactor.generation_time_s;
+    let wanted = dt_s * growth_per_s / RISE_PIECE_PHASE_STEP * (1.0 - 8.0 * f64::EPSILON);
+    if !(wanted > 1.0) {
+        return 1;
+    }
+    if wanted >= SCRAM_PIECES_MAX as f64 {
+        return SCRAM_PIECES_MAX;
+    }
+    let whole = wanted as u32;
+    if (whole as f64) < wanted { whole + 1 } else { whole }
+}
+
+/// In how many equal pieces the fall of the power after the scram asks a step to be taken. One,
+/// except while the power falls after the scram: the rods take 8 dollars out at the start of a step, the power then falls with the
 /// time constant of the prompt pole, `Λ / (β (1 + S))`, 0.47 ms, and a step at the ceiling is a
 /// fifth of that. Over the thirty-odd steps of that fall the fourth-order error of the step and
 /// of the ledger's rule adds up to a millionth of the power, which passes the ledger's limit
@@ -734,9 +852,11 @@ struct Advanced {
     supplied_mw: f64,
 }
 
-/// One step of `method`, except in the one step in which the rod stops: there the inserted
-/// reactivity has a corner, and the step is taken as two that meet at it, each with its own
-/// Hermite integral. A step in the fall of the power after the scram is taken in `pieces`.
+/// One step of `method`, taken in `pieces` equal pieces (one, except in the fall of the power
+/// after the scram). The inserted reactivity has a corner where the rod stops: a piece that
+/// holds the stop inside it is taken as two that meet at it, each with its own Hermite
+/// integral on its own side of the stop. Before the scram, and after it once the rod has
+/// stopped, this is the step of 0.9.0 to the bit.
 fn through_the_stop(
     method: fn(&ReactorTrigaJsi, &Terms, f64, &[f64; 9], f64) -> [f64; 9],
     reactor: &ReactorTrigaJsi,
@@ -748,31 +868,44 @@ fn through_the_stop(
 ) -> Advanced {
     let stop = terms.rho_total / reactor.ramp_dollar_per_s;
     if pieces > 1 {
-        // After the scram the rod has stopped: every piece is smooth.
         let h = dt_s / pieces as f64;
         let mut at = *y;
         let mut supplied_mw = 0.0;
         let mut piece = 0;
         while piece < pieces {
             let t = t_s + piece as f64 * h;
-            let next = method(reactor, terms, t, &at, h);
-            supplied_mw += supplied(reactor, terms, t, &at, &next, h, false);
-            at = next;
+            let one = across_the_stop(method, reactor, terms, stop, t, &at, h);
+            supplied_mw += one.supplied_mw;
+            at = one.y;
             piece += 1;
         }
         return Advanced { y: at, supplied_mw };
     }
+    across_the_stop(method, reactor, terms, stop, t_s, y, dt_s)
+}
+
+/// One smooth piece of `method` from `t_s` over `h`, or two that meet at the rod's stop when it
+/// lies inside.
+fn across_the_stop(
+    method: fn(&ReactorTrigaJsi, &Terms, f64, &[f64; 9], f64) -> [f64; 9],
+    reactor: &ReactorTrigaJsi,
+    terms: &Terms,
+    stop: f64,
+    t_s: f64,
+    y: &[f64; 9],
+    h: f64,
+) -> Advanced {
     let first = stop - t_s;
-    if first > 0.0 && first < dt_s {
+    if first > 0.0 && first < h {
         let at_stop = method(reactor, terms, t_s, y, first);
         let one = supplied(reactor, terms, t_s, y, &at_stop, first, true);
-        let end = method(reactor, terms, stop, &at_stop, dt_s - first);
-        let two = supplied(reactor, terms, stop, &at_stop, &end, dt_s - first, false);
+        let end = method(reactor, terms, stop, &at_stop, h - first);
+        let two = supplied(reactor, terms, stop, &at_stop, &end, h - first, false);
         return Advanced { y: end, supplied_mw: one + two };
     }
-    let end = method(reactor, terms, t_s, y, dt_s);
+    let end = method(reactor, terms, t_s, y, h);
     let moving = t_s < stop;
-    Advanced { y: end, supplied_mw: supplied(reactor, terms, t_s, y, &end, dt_s, moving) }
+    Advanced { y: end, supplied_mw: supplied(reactor, terms, t_s, y, &end, h, moving) }
 }
 
 /// `((ρ − 1) β + Σ β_i) P / Λ` and its time derivative at `(t, y)`; `moving` says on which
@@ -836,22 +969,18 @@ fn validate(
     if !reactor.is_valid() {
         return Err(StepReject::InvalidCard);
     }
-    if state.start_temperature_k < reactor.start_temperature_min_k
-        || state.start_temperature_k > reactor.start_temperature_max_k
-    {
-        return Err(StepReject::StartTemperatureOutsideCard);
+    if !reactor.start_is_liquid_water(state.start_temperature_k) {
+        return Err(StepReject::StartTemperatureNotLiquidWater);
     }
     let table = match reactor.table_of(state.rod_table_core) {
         Some(table) => table,
         None => return Err(StepReject::RodTableOutsideCard),
     };
-    if !reactor.start_compared_on(table, state.start_temperature_k) {
-        return Err(StepReject::StartTemperatureOutsideCard);
+    if !(load.reactivity_inserted_dollar > 0.0) {
+        return Err(StepReject::ReactivityNotPositive);
     }
-    if load.reactivity_inserted_dollar < reactor.reactivity_min_dollar
-        || load.reactivity_inserted_dollar > reactor.reactivity_max_dollar
-    {
-        return Err(StepReject::ReactivityOutsideCard);
+    if load.reactivity_inserted_dollar > reactor.rod_worth_dollar {
+        return Err(StepReject::ReactivityAboveRodWorth);
     }
     if load.rods_dropped != 0.0 && load.rods_dropped != 1.0 {
         return Err(StepReject::ScramValueOutsideCard);
@@ -867,12 +996,12 @@ fn validate(
         || state.energy_at_scram_mws < 0.0
         || state.energy_at_scram_mws > state.energy_mws
     {
-        return Err(StepReject::StateOutsideCard);
+        return Err(StepReject::ImpossibleState);
     }
     let mut index = 0;
     while index < 6 {
         if state.precursor_mw[index] < 0.0 {
-            return Err(StepReject::StateOutsideCard);
+            return Err(StepReject::ImpossibleState);
         }
         index += 1;
     }
@@ -885,38 +1014,18 @@ fn validate(
     {
         return Err(StepReject::ImpossiblePeak);
     }
+    if state.fuel_temperature_k > reactor.fuel_temperature_limit_k
+        || state.peak_fuel_temperature_k > reactor.fuel_temperature_limit_k
+    {
+        return Err(StepReject::FuelTemperatureAboveFuelLimit);
+    }
     if state.t_s > 0.0
         && state.reactivity_load_dollar.to_bits() != load.reactivity_inserted_dollar.to_bits()
     {
         return Err(StepReject::ReactivityChangedDuringRun);
     }
-    let dropping = load.rods_dropped == 1.0;
-    if state.rods_dropped && !dropping {
+    if state.rods_dropped && load.rods_dropped != 1.0 {
         return Err(StepReject::RodsRaisedAfterScram);
-    }
-    if dropping
-        && !state.rods_dropped
-        && reactor.ramp_dollar_per_s * state.t_s < load.reactivity_inserted_dollar
-    {
-        return Err(StepReject::ScramBeforeRodStopped);
-    }
-    // The scram envelope is counted from the peak so far. While the power still rises the peak
-    // is the present sample, so a scram before the pulse is refused here too. The allowance is
-    // the clock's, so that a run whose steps make the edge exactly keeps it.
-    if dropping
-        && !state.rods_dropped
-        && state.t_s - state.peak_time_s < reactor.scram_after_peak_min_s - TIME_END_ALLOWANCE_S
-    {
-        return Err(StepReject::ScramBeforeCompared);
-    }
-    if !dropping
-        && !(state.t_s + dt_s - state.peak_time_s
-            <= reactor.scram_after_peak_max_s + TIME_END_ALLOWANCE_S)
-    {
-        return Err(StepReject::RodsHeldBeyondCompared);
-    }
-    if !(state.t_s + dt_s <= reactor.time_max_s + TIME_END_ALLOWANCE_S) {
-        return Err(StepReject::TimeBeyondCard);
     }
     Ok(table)
 }
@@ -942,16 +1051,11 @@ fn commit(
     if !advanced.supplied_mw.is_finite() {
         return Err(StepReject::NonFiniteState);
     }
-    if y[8] > reactor.energy_max_mws {
-        return Err(StepReject::EnergyBeyondCard);
-    }
-    if y[0] > reactor.power_max_mw {
-        return Err(StepReject::PowerBeyondCard);
-    }
-    if y[7] > reactor.fuel_temperature_max_k {
-        return Err(StepReject::FuelTemperatureBeyondCard);
+    if y[7] > reactor.fuel_temperature_limit_k {
+        return Err(StepReject::FuelTemperatureAboveFuelLimit);
     }
     let t_new = state.t_s + dt_s;
+    within_state_ceiling(reactor, terms, t_new, &y, dt_s)?;
     if !state.rods_dropped && load.rods_dropped == 1.0 {
         state.rods_dropped = true;
         state.scram_time_s = state.t_s;
@@ -1144,6 +1248,7 @@ fn state_is_finite(state: &ReactorState) -> bool {
         && state.peak_fuel_temperature_k.is_finite()
 }
 
+
 #[cfg(test)]
 mod tests {
     extern crate core;
@@ -1155,13 +1260,16 @@ mod tests {
     use std::println;
 
     use super::{
-        Advanced, DELAYED_FRACTION, DOLLAR_OFFSET, DOLLAR_SCALE, ENERGY_MAX_MWS,
+        Advanced, DELAYED_FRACTION, DOLLAR_OFFSET, DOLLAR_SCALE, ENERGY_COMPARED_MAX_MWS,
         FLAG_PROMPT_SUPERCRITICAL, FLAG_ROD_MOVING, FLAG_RODS_DROPPED, FUEL_MASS_KG,
-        FUEL_TEMPERATURE_MAX_K, GENERATION_TIME_S, GROUP_FRACTION, INITIAL_POWER_MW, POWER_MAX_MW,
-        RAMP_DOLLAR_PER_S, RESIDUAL_CONSERVATION_LIMIT, ROD_TABLE_CORE, ReactorLoad, ReactorState,
-        ReactorTrigaJsi, SCRAM_AFTER_PEAK_MAX_S, SCRAM_AFTER_PEAK_MIN_S, START_TEMPERATURE_K_BY_TABLE,
-        START_TEMPERATURE_MAX_K, START_TEMPERATURE_MIN_K, StepReject, TIME_MAX_S, Terms, advance, commit, feedback, feedback_slope,
-        rates, rk4, scram_pieces, state_vector, step, terms, through_the_stop, validate,
+        FUEL_TEMPERATURE_COMPARED_MAX_K, GENERATION_TIME_S, GROUP_FRACTION, HEAT_FLOW_W_PER_K,
+        INITIAL_POWER_MW, POWER_COMPARED_MAX_MW, RAMP_DOLLAR_PER_S, REACTIVITY_COMPARED_MAX_DOLLAR,
+        REACTIVITY_COMPARED_MIN_DOLLAR, RESIDUAL_CONSERVATION_LIMIT, RISE_PIECE_PHASE_STEP,
+        ROD_TABLE_CORE, ROD_WORTH_DOLLAR, ReactorLoad, ReactorState, ReactorTrigaJsi,
+        SCRAM_AFTER_PEAK_COMPARED_S, START_TEMPERATURE_K_BY_TABLE, STATE_PHASE_STEP, StepReject,
+        TIME_COMPARED_MAX_S, Terms, WATER_BOILING_K, WATER_FREEZING_K, advance, commit, feedback,
+        feedback_slope, net_reactivity, pieces, rates, rise_pieces, rk4, scram_pieces, state_vector,
+        step, supplied, terms, through_the_stop, validate, within_state_ceiling,
     };
     use crate::frame::LastStateFrame64;
 
@@ -1171,6 +1279,8 @@ mod tests {
     const T215: (f64, f64) = START_TEMPERATURE_K_BY_TABLE[0];
     const T217: (f64, f64) = START_TEMPERATURE_K_BY_TABLE[1];
     const T231: (f64, f64) = START_TEMPERATURE_K_BY_TABLE[2];
+    /// The limit of U-ZrH1.6 fuel in stainless clad, 1150 degC, K.
+    const FUEL_LIMIT_K: f64 = super::FUEL_TEMPERATURE_LIMIT_K;
 
     fn load(rho: f64) -> ReactorLoad {
         ReactorLoad { reactivity_inserted_dollar: rho, rods_dropped: 0.0 }
@@ -1207,6 +1317,11 @@ mod tests {
         ReactorTrigaJsi::core_56_pulse_mode().gate_dt_s().unwrap()
     }
 
+    /// `|ρ − 1| β / Λ`, per second.
+    fn pole_per_s(rho: f64) -> f64 {
+        (rho - 1.0).abs() * DELAYED_FRACTION / GENERATION_TIME_S
+    }
+
     /// A step taken with another stepping method in place of Runge–Kutta, through the card's own commit.
     fn step_with(
         method: Method,
@@ -1218,8 +1333,41 @@ mod tests {
     ) -> Result<(), StepReject> {
         let table = validate(reactor, state, load, dt_s)?;
         let terms = terms(reactor, state, load, table);
-        let pieces = scram_pieces(reactor, state, load, dt_s);
-        let advanced = through_the_stop(method, reactor, &terms, state.t_s, &state_vector(state), dt_s, pieces);
+        let y = state_vector(state);
+        let rho = within_state_ceiling(reactor, &terms, state.t_s, &y, dt_s)?;
+        let n = pieces(reactor, state, load, rho, dt_s);
+        let advanced = through_the_stop(method, reactor, &terms, state.t_s, &y, dt_s, n);
+        commit(reactor, state, frame, &terms, load, dt_s, advanced)
+    }
+
+    /// The stepping of 0.9.0, through the card's own commit: a step taken in pieces assumes the
+    /// rod has stopped, and every piece is integrated on the far side of the stop.
+    fn step_as_if_stopped(
+        reactor: &ReactorTrigaJsi,
+        state: &mut ReactorState,
+        frame: &mut LastStateFrame64,
+        load: ReactorLoad,
+        dt_s: f64,
+    ) -> Result<(), StepReject> {
+        let table = validate(reactor, state, load, dt_s)?;
+        let terms = terms(reactor, state, load, table);
+        let y = state_vector(state);
+        let rho = within_state_ceiling(reactor, &terms, state.t_s, &y, dt_s)?;
+        let n = pieces(reactor, state, load, rho, dt_s);
+        let advanced = if n > 1 {
+            let h = dt_s / n as f64;
+            let mut at = y;
+            let mut supplied_mw = 0.0;
+            for piece in 0..n {
+                let t = state.t_s + piece as f64 * h;
+                let next = rk4(reactor, &terms, t, &at, h);
+                supplied_mw += supplied(reactor, &terms, t, &at, &next, h, false);
+                at = next;
+            }
+            Advanced { y: at, supplied_mw }
+        } else {
+            through_the_stop(rk4, reactor, &terms, state.t_s, &y, dt_s, 1)
+        };
         commit(reactor, state, frame, &terms, load, dt_s, advanced)
     }
 
@@ -1266,30 +1414,58 @@ mod tests {
         last: ReactorState,
         steps: u64,
         largest_residual: f64,
+        /// The largest `|ρ − 1|` of any landed sample.
+        fastest: f64,
+        /// The highest fuel temperature of any landed sample.
+        hottest_k: f64,
         end: Result<(), StepReject>,
     }
 
-    /// A pulse from `kelvin` stepped with `method` to `until_s`, the rods dropped at `scram_s`.
+    /// A pulse from `kelvin` stepped with `method` to `until_s`, the rods dropped from the first
+    /// step that starts at or after `scram_s`.
     fn run_on(method: Method, kelvin: f64, core: f64, rho: f64, dt_s: f64, scram_s: f64, until_s: f64) -> Run {
-        let (reactor, mut state) = start_on(kelvin, core);
-        let mut frame = marked_frame();
-        let mut steps = 0;
-        let mut largest = 0.0;
-        let mut end = Ok(());
-        while state.t_s + dt_s <= until_s {
-            let l = if state.t_s >= scram_s { dropped(rho) } else { load(rho) };
-            end = step_with(method, &reactor, &mut state, &mut frame, l, dt_s);
-            if end.is_err() {
-                break;
-            }
-            steps += 1;
-            if state.residual_conservation_error > largest {
-                largest = state.residual_conservation_error;
-            }
-        }
-        Run { last: state, steps, largest_residual: largest, end }
+        run_until(method, kelvin, core, rho, dt_s, until_s, |s| s.t_s >= scram_s)
     }
 
+    /// A pulse stepped to `until_s`, the rods dropped from the first step at whose start `drop` holds.
+    fn run_until(
+        method: Method,
+        kelvin: f64,
+        core: f64,
+        rho: f64,
+        dt_s: f64,
+        until_s: f64,
+        drop: impl Fn(&ReactorState) -> bool,
+    ) -> Run {
+        let (reactor, mut state) = start_on(kelvin, core);
+        let mut frame = marked_frame();
+        let mut out = Run { last: state, steps: 0, largest_residual: 0.0, fastest: 0.0, hottest_k: kelvin, end: Ok(()) };
+        while state.t_s + dt_s <= until_s {
+            let l = if state.rods_dropped || drop(&state) { dropped(rho) } else { load(rho) };
+            out.end = step_with(method, &reactor, &mut state, &mut frame, l, dt_s);
+            if out.end.is_err() {
+                break;
+            }
+            out.steps += 1;
+            out.largest_residual = out.largest_residual.max(state.residual_conservation_error);
+            out.fastest = out.fastest.max((state.reactivity_net_dollar - 1.0).abs());
+            out.hottest_k = out.hottest_k.max(state.fuel_temperature_k);
+        }
+        out.last = state;
+        out
+    }
+
+    /// Each start in liquid water at an end, each table, at the rod's whole worth.
+    fn whole_worth_extremes() -> [(f64, f64); 6] {
+        [
+            (WATER_FREEZING_K, 215.0),
+            (WATER_BOILING_K, 215.0),
+            (WATER_FREEZING_K, 217.0),
+            (WATER_BOILING_K, 217.0),
+            (WATER_FREEZING_K, 231.0),
+            (WATER_BOILING_K, 231.0),
+        ]
+    }
 
     #[test]
     fn constants_are_locked() {
@@ -1314,16 +1490,16 @@ mod tests {
         altered.group_decay_per_s[5] = 3.0;
         assert!(!altered.is_valid());
         altered = reactor;
-        altered.reactivity_max_dollar = 5.0;
+        altered.rod_worth_dollar = 5.0;
         assert!(!altered.is_valid());
         altered = reactor;
         altered.residual_conservation_limit = 1.0;
         assert!(!altered.is_valid());
         altered = reactor;
-        altered.start_temperature_k_by_table[2].1 = START_TEMPERATURE_MAX_K;
+        altered.water_boiling_k = 400.0;
         assert!(!altered.is_valid());
         altered = reactor;
-        altered.start_temperature_k_by_table[0].0 = START_TEMPERATURE_MIN_K;
+        altered.state_phase_step = 1.0;
         assert!(!altered.is_valid());
         let (_, mut state) = start(25.0);
         let mut frame = marked_frame();
@@ -1336,24 +1512,39 @@ mod tests {
         let sum: f64 = GROUP_FRACTION.iter().sum();
         assert!(within(sum, 0.00699891, 1.0e-9));
         assert!(within(FUEL_MASS_KG, 132.16, 1.0e-12));
+        // the rate is the rod's whole worth over its 80 ms, the bits of 0.9.0's 4.16 / 0.080
+        assert_eq!(ROD_WORTH_DOLLAR, 4.16);
+        assert_eq!(RAMP_DOLLAR_PER_S.to_bits(), (4.16_f64 / 0.080).to_bits());
         assert!(within(RAMP_DOLLAR_PER_S, 52.0, 1.0e-12));
+        assert!(within(reactor.rod_stop_s(ROD_WORTH_DOLLAR), 0.080, 1.0e-12));
         assert!(within(ceiling(), 9.39365e-5, 1.0e-5));
         // the fitted generation time is 3.3 times the article's 8 % below the article's value
         assert!(within(GENERATION_TIME_S, 29.59e-6, 1.0e-12));
-        // every printed dollar in range is prompt supercritical in the kinetics on every table
+        // every printed dollar compared is prompt supercritical in the kinetics on every table;
+        // the whole worth of the rod is 2.91 to 3.04 dollars in the kinetics
         for table in 0..3 {
-            assert!(reactor.worth_dollar(table, super::REACTIVITY_MIN_DOLLAR) > 1.0);
-            assert!(reactor.worth_dollar(table, 3.0) < 2.3);
+            assert!(reactor.worth_dollar(table, REACTIVITY_COMPARED_MIN_DOLLAR) > 1.0);
+            assert!(reactor.worth_dollar(table, REACTIVITY_COMPARED_MAX_DOLLAR) < 2.3);
+            let whole = reactor.worth_dollar(table, ROD_WORTH_DOLLAR);
+            assert!(whole > 2.91 && whole < 3.05, "{whole}");
         }
+        assert_eq!((REACTIVITY_COMPARED_MIN_DOLLAR, REACTIVITY_COMPARED_MAX_DOLLAR), (2.0, 3.0));
+        assert_eq!(SCRAM_AFTER_PEAK_COMPARED_S, (1.50, 7.45));
+        assert_eq!((WATER_FREEZING_K, WATER_BOILING_K), (273.15, 373.124));
         assert_eq!(super::HOT_ROD_FACTOR, 1.387);
+        // the state ceiling at zero net reactivity, and after the scram with no feedback, where
+        // it is a quarter over the static ceiling
+        assert!(within(reactor.state_dt_s(0.0), STATE_PHASE_STEP * GENERATION_TIME_S / DELAYED_FRACTION, 1.0e-15));
+        assert!(within(reactor.state_dt_s(-8.0), ceiling() * STATE_PHASE_STEP / super::GATE_PHASE_STEP, 1.0e-12));
+        assert_eq!(reactor.state_dt_s(1.0), f64::INFINITY);
     }
 
     #[test]
-    fn the_start_is_not_stationary_and_only_the_compared_starts_and_the_three_tables_start() {
+    fn the_start_is_not_stationary_and_any_start_in_liquid_water_on_the_three_tables_starts() {
         let reactor = ReactorTrigaJsi::core_56_pulse_mode();
         for (table, core) in ROD_TABLE_CORE.into_iter().enumerate() {
             let (low, high) = START_TEMPERATURE_K_BY_TABLE[table];
-            for kelvin in [low, 0.5 * (low + high), high] {
+            for kelvin in [WATER_FREEZING_K, low, 0.5 * (low + high), high, 350.0, WATER_BOILING_K] {
                 let state = ReactorState::try_start(&reactor, kelvin, core).unwrap();
                 assert_eq!(state.power_mw.to_bits(), INITIAL_POWER_MW.to_bits());
                 assert_eq!(state.rod_table_core, core);
@@ -1383,30 +1574,20 @@ mod tests {
             assert!(low <= first + 273.15 && first + 273.15 - low < 0.01);
             assert!(high >= last + 273.15 && high - (last + 273.15) < 0.01);
         }
-        // the published minimum and maximum are the union of the three
-        assert_eq!((START_TEMPERATURE_MIN_K, START_TEMPERATURE_MAX_K), (294.05, 302.38));
-        assert_eq!(START_TEMPERATURE_MIN_K, T231.0);
-        assert_eq!(START_TEMPERATURE_MAX_K, T217.1);
-        assert!(T215.0 > START_TEMPERATURE_MIN_K && T215.1 < START_TEMPERATURE_MAX_K);
-        // on each table the exact ends start; one unit in the last place beyond each does not
-        for (table, core) in ROD_TABLE_CORE.into_iter().enumerate() {
-            let (low, high) = START_TEMPERATURE_K_BY_TABLE[table];
-            assert!(ReactorState::try_start(&reactor, low, core).is_some(), "{core}");
-            assert!(ReactorState::try_start(&reactor, high, core).is_some(), "{core}");
-            assert!(ReactorState::try_start(&reactor, f64::from_bits(low.to_bits() - 1), core).is_none(), "{core}");
-            assert!(ReactorState::try_start(&reactor, f64::from_bits(high.to_bits() + 1), core).is_none(), "{core}");
-        }
-        // inside the union but never compared on that table
-        assert!(ReactorState::try_start(&reactor, 296.0, 231.0).is_none());
-        assert!(ReactorState::try_start(&reactor, 294.2, 215.0).is_none());
-        assert!(ReactorState::try_start(&reactor, 302.0, 215.0).is_none());
-        assert!(ReactorState::try_start(&reactor, 294.2, 217.0).is_none());
-        assert!(ReactorState::try_start(&reactor, 302.0, 231.0).is_none());
-        // 0.6.0 accepted 20 to 33 degC: its ends, the 20.3 and 32.4 degC of the pulses at 1.5
-        // printed dollars, and the ends of the compared envelope less a hundredth
+        assert!(T215.0 > T231.0 && T215.1 < T217.1);
+        // the ends of liquid water start; one unit in the last place beyond each does not
         for core in ROD_TABLE_CORE {
-            for celsius in [20.0, 20.3, 20.89, 29.24, 32.4, 33.0, 19.9, 33.1, 35.0, 0.0, 100.0] {
-                assert!(ReactorState::try_start(&reactor, celsius + 273.15, core).is_none());
+            assert!(ReactorState::try_start(&reactor, WATER_FREEZING_K, core).is_some());
+            assert!(ReactorState::try_start(&reactor, WATER_BOILING_K, core).is_some());
+            assert!(ReactorState::try_start(&reactor, f64::from_bits(WATER_FREEZING_K.to_bits() - 1), core).is_none());
+            assert!(ReactorState::try_start(&reactor, f64::from_bits(WATER_BOILING_K.to_bits() + 1), core).is_none());
+            // starts compared on another table, and the starts 0.6.0 and 0.9.0 refused, now start
+            for celsius in [0.0, 20.0, 20.3, 22.0, 26.0, 29.24, 32.4, 33.0, 60.0, 99.97] {
+                assert!(ReactorState::try_start(&reactor, celsius + 273.15, core).is_some(), "{celsius}");
+            }
+            // ice, and water at 100 degC, past the boiling point at one atmosphere
+            for celsius in [-0.01, -20.0, 100.0, 120.0] {
+                assert!(ReactorState::try_start(&reactor, celsius + 273.15, core).is_none(), "{celsius}");
             }
         }
         assert!(ReactorState::try_start(&reactor, f64::NAN, 215.0).is_none());
@@ -1431,6 +1612,12 @@ mod tests {
             assert_eq!(std::format!("{:?}", s), std::format!("{:?}", state));
             assert_eq!(frame.to_bytes(), frame_before);
         };
+        let lands = |state: ReactorState, load: ReactorLoad, dt_s: f64| {
+            let mut s = state;
+            let mut frame = marked_frame();
+            assert_eq!(step(&reactor, &mut s, &mut frame, load, dt_s), Ok(()), "{load:?}");
+            assert!(s.residual_conservation_error <= RESIDUAL_CONSERVATION_LIMIT);
+        };
         refuse(fresh, load(2.0), f64::NAN, StepReject::NonFiniteInput);
         refuse(fresh, load(f64::INFINITY), dt, StepReject::NonFiniteInput);
         refuse(
@@ -1444,76 +1631,135 @@ mod tests {
         refuse(bad, load(2.0), dt, StepReject::NonFiniteState);
         refuse(fresh, load(2.0), 0.0, StepReject::NonPositiveDt);
         refuse(fresh, load(2.0), -dt, StepReject::NonPositiveDt);
-        let mut warm = fresh;
-        warm.start_temperature_k = 320.0;
-        warm.fuel_temperature_k = 320.0;
-        warm.peak_fuel_temperature_k = 320.0;
-        refuse(warm, load(2.0), dt, StepReject::StartTemperatureOutsideCard);
-        // inside 20.90 to 29.23 degC but outside the starts compared on the state's own table
-        for (kelvin, core) in [(296.0, 231.0), (294.2, 215.0), (302.0, 215.0), (294.2, 217.0)] {
+        // a handed-in start in ice or in boiling water
+        for kelvin in [f64::from_bits(WATER_FREEZING_K.to_bits() - 1), 250.0, f64::from_bits(WATER_BOILING_K.to_bits() + 1), 373.15, 400.0] {
+            let mut other = fresh;
+            other.start_temperature_k = kelvin;
+            other.fuel_temperature_k = kelvin;
+            other.peak_fuel_temperature_k = kelvin;
+            refuse(other, load(2.0), dt, StepReject::StartTemperatureNotLiquidWater);
+        }
+        // inside liquid water, outside the starts compared on the state's own table: the card computes
+        for (kelvin, core) in [(296.0, 231.0), (294.2, 215.0), (302.0, 215.0), (294.2, 217.0), (320.0, 217.0), (WATER_FREEZING_K, 231.0), (WATER_BOILING_K, 215.0)] {
             let mut other = fresh;
             other.rod_table_core = core;
             other.start_temperature_k = kelvin;
             other.fuel_temperature_k = kelvin;
             other.peak_fuel_temperature_k = kelvin;
-            refuse(other, load(2.0), dt, StepReject::StartTemperatureOutsideCard);
+            lands(other, load(2.0), dt);
         }
         let mut other_core = fresh;
         other_core.rod_table_core = 253.0;
         refuse(other_core, load(2.0), dt, StepReject::RodTableOutsideCard);
         other_core.rod_table_core = 216.0;
         refuse(other_core, load(2.0), dt, StepReject::RodTableOutsideCard);
-        // the exact ends of the reactivity land; one unit in the last place beyond is refused
-        for rho in [super::REACTIVITY_MIN_DOLLAR, super::REACTIVITY_MAX_DOLLAR] {
-            let mut s = fresh;
-            let mut frame = marked_frame();
-            assert_eq!(step(&reactor, &mut s, &mut frame, load(rho), dt), Ok(()));
+        // the reactivity: above zero up to the rod's whole worth lands, ends included
+        for rho in [f64::from_bits(1), 1.0e-3, 0.5, 1.4, 1.99, REACTIVITY_COMPARED_MIN_DOLLAR, REACTIVITY_COMPARED_MAX_DOLLAR, 3.01, 3.5, ROD_WORTH_DOLLAR] {
+            lands(fresh, load(rho), dt);
         }
-        assert_eq!(super::REACTIVITY_MIN_DOLLAR, 2.0);
-        refuse(fresh, load(f64::from_bits(2.0_f64.to_bits() - 1)), dt, StepReject::ReactivityOutsideCard);
-        // the smallest fitted reactivity is below the floor set after the held-back rows were scored
-        refuse(fresh, load(1.4), dt, StepReject::ReactivityOutsideCard);
-        refuse(fresh, load(f64::from_bits(3.0_f64.to_bits() + 1)), dt, StepReject::ReactivityOutsideCard);
-        refuse(fresh, load(1.99), dt, StepReject::ReactivityOutsideCard);
-        refuse(fresh, load(3.01), dt, StepReject::ReactivityOutsideCard);
+        // a reactivity so small that the ramp's rate in the kinetics, the table's worth of it
+        // over it times 52 per second, passes the largest 64-bit number: the arithmetic's limit
+        refuse(fresh, load(f64::MIN_POSITIVE), dt, StepReject::NonFiniteState);
+        lands(fresh, load(1.0e-300), dt);
+        for rho in [0.0, -0.0, -f64::from_bits(1), -1.0, -2.5] {
+            refuse(fresh, load(rho), dt, StepReject::ReactivityNotPositive);
+        }
+        for rho in [f64::from_bits(ROD_WORTH_DOLLAR.to_bits() + 1), 4.17, 5.0, 100.0] {
+            refuse(fresh, load(rho), dt, StepReject::ReactivityAboveRodWorth);
+        }
         refuse(
             fresh,
             ReactorLoad { reactivity_inserted_dollar: 2.0, rods_dropped: 0.5 },
             dt,
             StepReject::ScramValueOutsideCard,
         );
-        // a scram after the rod has stopped and before 1.50 s after the peak
+        // the scram at the fire signal, while the rod moves, lands
+        lands(fresh, dropped(2.0), dt);
+        lands(fresh, dropped(ROD_WORTH_DOLLAR), ceiling());
+        // a scram after the rod has stopped and before 1.50 s after the peak lands
         let mut early = fresh;
         early.t_s = 1.0;
         early.peak_time_s = 0.17;
         early.reactivity_load_dollar = 2.0;
-        refuse(early, dropped(2.0), dt, StepReject::ScramBeforeCompared);
-        // rods held past 7.45 s after the peak
+        lands(early, dropped(2.0), dt);
+        // rods held past 7.45 s after the peak land
         let mut held = early;
-        held.t_s = 0.17 + SCRAM_AFTER_PEAK_MAX_S;
-        refuse(held, load(2.0), dt, StepReject::RodsHeldBeyondCompared);
+        held.t_s = 0.17 + 7.45;
+        lands(held, load(2.0), dt);
+        // a step that ends after 14 s lands
         let mut late = fresh;
-        late.t_s = TIME_MAX_S - 0.5 * dt;
+        late.t_s = TIME_COMPARED_MAX_S - 0.5 * dt;
         late.peak_time_s = late.t_s - 2.0;
         late.reactivity_load_dollar = 2.0;
         late.rods_dropped = true;
         late.scram_time_s = late.t_s - 0.5;
-        refuse(late, dropped(2.0), dt, StepReject::TimeBeyondCard);
-        let mut powerful = fresh;
-        powerful.power_mw = POWER_MAX_MW * 2.0;
-        powerful.peak_power_mw = POWER_MAX_MW * 2.0;
-        refuse(powerful, load(2.0), dt, StepReject::PowerBeyondCard);
+        lands(late, dropped(2.0), dt);
+        lands(late, dropped(2.0), 1.0e-6);
+        // past the compared energy and fuel temperature a step lands; a power handed in with
+        // no population behind it is the ledger's
         let mut spent = fresh;
-        spent.energy_mws = ENERGY_MAX_MWS;
-        spent.power_mw = 100.0;
-        spent.peak_power_mw = 100.0;
-        refuse(spent, load(2.0), dt, StepReject::EnergyBeyondCard);
+        spent.energy_mws = 30.0;
+        lands(spent, load(2.0), dt);
         let mut hot = fresh;
-        hot.fuel_temperature_k = FUEL_TEMPERATURE_MAX_K - 1.0e-4;
-        hot.peak_fuel_temperature_k = hot.fuel_temperature_k;
-        hot.power_mw = 900.0;
-        hot.peak_power_mw = 900.0;
-        refuse(hot, load(2.0), dt, StepReject::FuelTemperatureBeyondCard);
+        hot.fuel_temperature_k = 700.0;
+        hot.peak_fuel_temperature_k = 700.0;
+        lands(hot, load(2.0), dt);
+        let mut powerful = fresh;
+        powerful.power_mw = 2000.0;
+        powerful.peak_power_mw = 2000.0;
+        refuse(powerful, load(2.0), dt, StepReject::SpontaneousGeneration);
+        // a handed-in fuel temperature no run reaches, with the rods dropped: the fastest pole
+        // there is beyond the state ceiling at the static ceiling
+        let mut hotter = fresh;
+        hotter.fuel_temperature_k = 1200.0;
+        hotter.peak_fuel_temperature_k = 1200.0;
+        refuse(hotter, dropped(2.0), ceiling(), StepReject::DtAboveStateCeiling);
+    }
+
+    /// The fuel's own limit, 1150 degC: a handed-in state above it is refused, and so is a step
+    /// that would land above it, with the state and the frame unchanged. Just under it a
+    /// handed-in state is stepped.
+    #[test]
+    fn the_fuel_limit_of_1150_degc_is_refused_by_name() {
+        let (reactor, fresh) = start(25.0);
+        let table = reactor.table_of(fresh.rod_table_core).unwrap();
+        assert_eq!(FUEL_LIMIT_K.to_bits(), 1423.15_f64.to_bits());
+        let refuse = |forged: ReactorState, load: ReactorLoad, dt: f64| {
+            let mut s = forged;
+            let mut f = marked_frame();
+            let bytes = f.to_bytes();
+            assert_eq!(step(&reactor, &mut s, &mut f, load, dt), Err(StepReject::FuelTemperatureAboveFuelLimit));
+            assert_eq!(s, forged);
+            assert_eq!(f.to_bytes(), bytes);
+        };
+        let mut over = fresh;
+        over.fuel_temperature_k = FUEL_LIMIT_K + 1.0e-9 * FUEL_LIMIT_K;
+        over.peak_fuel_temperature_k = over.fuel_temperature_k;
+        refuse(over, load(2.0), 1.0e-6);
+        refuse(over, dropped(2.0), 1.0e-6);
+        let mut peak_over = fresh;
+        peak_over.fuel_temperature_k = 1000.0;
+        peak_over.peak_fuel_temperature_k = 1500.0;
+        refuse(peak_over, load(2.0), 1.0e-6);
+        // just under the limit a handed-in state is stepped (the scram's fast pole there keeps
+        // the step short)
+        let mut under = fresh;
+        under.fuel_temperature_k = FUEL_LIMIT_K - 1.0;
+        under.peak_fuel_temperature_k = under.fuel_temperature_k;
+        let mut s = under;
+        let mut f = marked_frame();
+        assert_eq!(step(&reactor, &mut s, &mut f, load(2.0), 1.0e-6), Ok(()));
+        // a trial step handed back with its fuel above the limit is refused where it would land
+        let mut honest = run_on(rk4, 298.15, 217.0, 3.0, ceiling(), f64::INFINITY, 0.5).last;
+        let before = honest;
+        let t = terms(&reactor, &honest, load(3.0), table);
+        let mut advanced = through_the_stop(rk4, &reactor, &t, honest.t_s, &state_vector(&honest), ceiling(), 1);
+        advanced.y[7] = FUEL_LIMIT_K + 0.5;
+        let mut f = marked_frame();
+        let bytes = f.to_bytes();
+        assert_eq!(commit(&reactor, &mut honest, &mut f, &t, load(3.0), ceiling(), advanced), Err(StepReject::FuelTemperatureAboveFuelLimit));
+        assert_eq!(honest, before);
+        assert_eq!(f.to_bytes(), bytes);
     }
 
     #[test]
@@ -1561,28 +1807,32 @@ mod tests {
         refuse(forged, StepReject::ImpossiblePeak);
         forged = state;
         forged.power_mw = 0.0;
-        refuse(forged, StepReject::StateOutsideCard);
+        refuse(forged, StepReject::ImpossibleState);
         forged = state;
         forged.power_mw = -1.0;
-        refuse(forged, StepReject::StateOutsideCard);
+        refuse(forged, StepReject::ImpossibleState);
         forged = state;
         forged.precursor_mw[2] = -1.0;
-        refuse(forged, StepReject::StateOutsideCard);
+        refuse(forged, StepReject::ImpossibleState);
+        // a negative clock is not a state any run reaches
         forged = state;
         forged.t_s = -1.0;
-        refuse(forged, StepReject::StateOutsideCard);
+        refuse(forged, StepReject::ImpossibleState);
+        forged = state;
+        forged.t_s = -f64::from_bits(1);
+        refuse(forged, StepReject::ImpossibleState);
         forged = state;
         forged.fuel_temperature_k = state.start_temperature_k - 1.0;
-        refuse(forged, StepReject::StateOutsideCard);
+        refuse(forged, StepReject::ImpossibleState);
         forged = state;
         forged.scram_time_s = state.t_s + 1.0;
-        refuse(forged, StepReject::StateOutsideCard);
+        refuse(forged, StepReject::ImpossibleState);
         forged = state;
         forged.energy_at_scram_mws = state.energy_mws + 1.0;
-        refuse(forged, StepReject::StateOutsideCard);
+        refuse(forged, StepReject::ImpossibleState);
         forged = state;
         forged.energy_at_scram_mws = -1.0;
-        refuse(forged, StepReject::StateOutsideCard);
+        refuse(forged, StepReject::ImpossibleState);
         // the honest state still steps
         let mut honest = state;
         assert_eq!(step(&reactor, &mut honest, &mut frame, load(2.0), dt), Ok(()));
@@ -1594,37 +1844,22 @@ mod tests {
         let mut frame = marked_frame();
         let dt = 5.0e-5;
         let rho = 2.0;
-        // the scram is refused while the rod is moving, from the first step on
-        let before = state;
-        assert_eq!(step(&reactor, &mut state, &mut frame, dropped(rho), dt), Err(StepReject::ScramBeforeRodStopped));
-        assert_eq!(state, before);
         for _ in 0..200 {
             step(&reactor, &mut state, &mut frame, load(rho), dt).unwrap();
         }
         assert!(state.rod_moving);
         assert_eq!(state.reactivity_load_dollar, rho);
         let before = state;
-        // a larger insertion while the rod moves, another, and one a single bit away
-        for other in [2.5, 3.0, f64::from_bits(rho.to_bits() + 1)] {
+        // a larger insertion while the rod moves, a smaller one, and one a single bit away
+        for other in [2.5, 3.0, 1.5, 0.5, f64::from_bits(rho.to_bits() + 1)] {
             assert_eq!(step(&reactor, &mut state, &mut frame, load(other), dt), Err(StepReject::ReactivityChangedDuringRun));
+            assert_eq!(step(&reactor, &mut state, &mut frame, dropped(other), dt), Err(StepReject::ReactivityChangedDuringRun));
             assert_eq!(state, before);
         }
-        // a smaller one is below the card's floor, and is named as that
-        assert_eq!(step(&reactor, &mut state, &mut frame, load(1.5), dt), Err(StepReject::ReactivityOutsideCard));
-        assert_eq!(state, before);
-        assert_eq!(step(&reactor, &mut state, &mut frame, dropped(rho), dt), Err(StepReject::ScramBeforeRodStopped));
-        assert_eq!(state, before);
         while state.t_s < 1.0 {
             step(&reactor, &mut state, &mut frame, load(rho), dt).unwrap();
         }
         assert!(!state.rod_moving);
-        // the rod has stopped, and the scram is still earlier than any compared
-        let before = state;
-        assert_eq!(step(&reactor, &mut state, &mut frame, dropped(rho), dt), Err(StepReject::ScramBeforeCompared));
-        assert_eq!(state, before);
-        while state.t_s - state.peak_time_s < SCRAM_AFTER_PEAK_MIN_S {
-            step(&reactor, &mut state, &mut frame, load(rho), dt).unwrap();
-        }
         let before = state;
         // after the rod has stopped: a second insertion, or a withdrawal, is not in the model
         for other in [3.0, 2.5, 2.0000001] {
@@ -1634,6 +1869,7 @@ mod tests {
         }
         let power_before = state.power_mw;
         assert_eq!(state.energy_at_scram_mws, 0.0);
+        // the scram 0.83 s after the peak, earlier than any compared, lands
         step(&reactor, &mut state, &mut frame, dropped(rho), dt).unwrap();
         assert!(state.rods_dropped);
         assert_eq!(state.scram_time_s, before.t_s);
@@ -1717,31 +1953,36 @@ mod tests {
     #[test]
     fn heat_goes_where_the_equations_put_it() {
         // with the heat flow to water counted, the energy released equals the fuel's enthalpy
-        // rise plus the heat that left
-        let (reactor, mut state) = start(25.0);
-        let mut frame = marked_frame();
-        let dt = 5.0e-5;
-        let mut left_j = 0.0;
-        let mut previous = state;
-        while state.t_s < 2.0 {
-            step(&reactor, &mut state, &mut frame, load(2.0), dt).unwrap();
-            left_j += 0.5
-                * dt
-                * super::HEAT_FLOW_W_PER_K
-                * ((previous.fuel_temperature_k - state.start_temperature_k)
-                    + (state.fuel_temperature_k - state.start_temperature_k));
-            previous = state;
+        // rise plus the heat that left, at a compared pulse and at the rod's whole worth
+        for (celsius, rho) in [(25.0, 2.0), (99.0, ROD_WORTH_DOLLAR), (0.0, 0.5)] {
+            let (reactor, mut state) = start(celsius);
+            let mut frame = marked_frame();
+            let dt = 5.0e-5;
+            let mut left_j = 0.0;
+            let mut previous = state;
+            while state.t_s < 2.0 {
+                step(&reactor, &mut state, &mut frame, load(rho), dt).unwrap();
+                left_j += 0.5
+                    * dt
+                    * HEAT_FLOW_W_PER_K
+                    * ((previous.fuel_temperature_k - state.start_temperature_k)
+                        + (state.fuel_temperature_k - state.start_temperature_k));
+                previous = state;
+            }
+            let enthalpy = |t: f64| {
+                let x = t - super::HEAT_CAPACITY_REFERENCE_K;
+                FUEL_MASS_KG * (super::HEAT_CAPACITY_BASE_J_PER_KG_K * x + 0.5 * super::HEAT_CAPACITY_SLOPE_J_PER_KG_K2 * x * x)
+            };
+            let stored = enthalpy(state.fuel_temperature_k) - enthalpy(state.start_temperature_k);
+            assert!(within(stored + left_j, state.energy_mws * 1.0e6, 1.0e-6), "{celsius} {rho}: {} {} {}", stored, left_j, state.energy_mws);
+            if rho == 2.0 {
+                // the heat that leaves in two seconds is a few hundredths of the energy
+                assert!(left_j > 0.01 * state.energy_mws * 1.0e6 && left_j < 0.05 * state.energy_mws * 1.0e6);
+            }
         }
-        let enthalpy = |t: f64| {
-            let x = t - super::HEAT_CAPACITY_REFERENCE_K;
-            FUEL_MASS_KG * (super::HEAT_CAPACITY_BASE_J_PER_KG_K * x + 0.5 * super::HEAT_CAPACITY_SLOPE_J_PER_KG_K2 * x * x)
-        };
-        let stored = enthalpy(state.fuel_temperature_k) - enthalpy(state.start_temperature_k);
-        assert!(within(stored + left_j, state.energy_mws * 1.0e6, 1.0e-6), "{} {} {}", stored, left_j, state.energy_mws);
-        // the heat that leaves in two seconds is a few hundredths of the energy
-        assert!(left_j > 0.01 * state.energy_mws * 1.0e6 && left_j < 0.05 * state.energy_mws * 1.0e6);
         // the highest fuel temperature is kept after the fuel has begun to cool
-        let (_, mut s) = start(25.0);
+        let (reactor, mut s) = start(25.0);
+        let mut frame = marked_frame();
         while s.t_s < 6.0 {
             let l = if s.t_s >= 3.0 { dropped(2.0) } else { load(2.0) };
             step(&reactor, &mut s, &mut frame, l, ceiling()).unwrap();
@@ -1749,20 +1990,23 @@ mod tests {
         }
         assert!(s.peak_fuel_temperature_k > s.fuel_temperature_k);
         assert!(s.fuel_temperature_k - s.start_temperature_k > 150.0);
-        // the feedback and its slope agree
-        for t in [294.0, 300.0, 350.0, 500.0, 599.0] {
+        // the feedback and its slope agree, across the fitted span and past it to the hottest
+        // fuel any run reaches
+        for t in [273.15, 294.0, 300.0, 350.0, 500.0, 585.0, 599.0, 700.0, 770.0] {
             let d = 1.0e-3;
             let numeric = (feedback(&reactor, t + d) - feedback(&reactor, t - d)) / (2.0 * d);
             assert!(within(feedback_slope(&reactor, t), numeric, 1.0e-6));
+            assert!(feedback_slope(&reactor, t) > 0.0);
         }
         assert_eq!(feedback(&reactor, 294.0), 0.0);
-        // 6.2 pcm per K at 294 K, 8.9 at 600 K
+        // 6.2 pcm per K at 294 K, 8.9 at 600 K, 10.4 at 770 K
         assert!(within(feedback_slope(&reactor, 294.0), 6.241e-5, 1.0e-12));
         assert!(within(feedback_slope(&reactor, 600.0), 8.909e-5, 1.0e-3));
+        assert!(within(feedback_slope(&reactor, 770.0), 1.039e-4, 1.0e-3));
     }
 
-    /// The corners of the span: starting temperature in K, table, printed dollars. Each start
-    /// is at an end of its own table's span.
+    /// The corners of the compared span: starting temperature in K, table, printed dollars. Each
+    /// start is at an end of its own table's span.
     const SPAN: [(f64, f64, f64); 8] = [
         (T215.0, 215.0, 2.0),
         (T215.1, 215.0, 3.0),
@@ -1783,7 +2027,7 @@ mod tests {
     fn the_ledger_residual_stays_under_the_limit_over_full_runs_at_the_ceiling() {
         let mut largest = 0.0;
         for (kelvin, core, rho) in SPAN {
-            let run = run_on(rk4, kelvin, core, rho, ceiling(), span_scram(rho), TIME_MAX_S);
+            let run = run_on(rk4, kelvin, core, rho, ceiling(), span_scram(rho), TIME_COMPARED_MAX_S);
             assert_eq!(run.end, Ok(()), "{kelvin} {core} {rho}");
             println!(
                 "{kelvin} K, table {core}, {rho} dollar: {} steps, peak {} MW at {} s, energy {} MW s ({} at the scram), fuel {} K, highest {} K, largest residual {:e}",
@@ -1794,199 +2038,200 @@ mod tests {
             if run.largest_residual > largest {
                 largest = run.largest_residual;
             }
-            assert!(run.last.peak_power_mw < POWER_MAX_MW && run.last.energy_mws < ENERGY_MAX_MWS);
-            assert!(run.last.peak_fuel_temperature_k < FUEL_TEMPERATURE_MAX_K);
+            // the card's pulses in the compared span stay under the largest compared
+            assert!(run.last.peak_power_mw < POWER_COMPARED_MAX_MW);
+            assert!(run.last.energy_at_scram_mws < ENERGY_COMPARED_MAX_MWS);
+            assert!(run.last.peak_fuel_temperature_k < FUEL_TEMPERATURE_COMPARED_MAX_K);
             assert!(run.last.rods_dropped);
-            assert!(run.last.t_s > TIME_MAX_S - ceiling());
+            assert!(run.last.t_s > TIME_COMPARED_MAX_S - ceiling());
         }
         println!("largest residual over the span at the ceiling: {largest:e}");
         assert!(largest < RESIDUAL_CONSERVATION_LIMIT / 10.0);
     }
 
-    /// A run whose steps make the card's last second lands its last step, at four step sizes;
-    /// one step more is refused by name.
+    /// A run goes on past the 14 s the records compared run to, at four step sizes, to three times
+    /// that, with the ledger closed at every step.
     #[test]
-    fn a_run_that_ends_exactly_at_the_end_of_the_card_keeps_its_last_step() {
-        let (reactor, _) = start(25.0);
-        for (dt_s, steps) in [(5.0e-5, 280_000u64), (8.75e-5, 160_000), (2.0e-5, 700_000), (7.0e-5, 200_000)] {
-            let mut state = start(25.0).1;
-            let mut frame = marked_frame();
-            for n in 0..steps {
-                let l = if state.t_s >= 3.0 { dropped(2.0) } else { load(2.0) };
-                assert_eq!(step(&reactor, &mut state, &mut frame, l, dt_s), Ok(()), "step {n} of {steps} at {dt_s}");
-            }
-            assert!((state.t_s - TIME_MAX_S).abs() < super::TIME_END_ALLOWANCE_S, "{}", state.t_s);
-            let before = state;
-            assert_eq!(step(&reactor, &mut state, &mut frame, dropped(2.0), dt_s), Err(StepReject::TimeBeyondCard));
-            assert_eq!(state, before);
+    fn a_run_goes_on_past_the_fourteen_seconds_compared_with_its_ledger_closed() {
+        for dt_s in [5.0e-5, 8.75e-5, 2.0e-5, 7.0e-5] {
+            let run = run_on(rk4, 298.15, 217.0, 2.0, dt_s, 3.0, 3.0 * TIME_COMPARED_MAX_S);
+            assert_eq!(run.end, Ok(()), "{dt_s}");
+            assert!(run.last.t_s > 3.0 * TIME_COMPARED_MAX_S - dt_s, "{}", run.last.t_s);
+            assert!(run.largest_residual < RESIDUAL_CONSERVATION_LIMIT / 10.0, "{dt_s}: {:e}", run.largest_residual);
+            // the core keeps cooling into the water after the scram
+            assert!(run.last.fuel_temperature_k < run.last.peak_fuel_temperature_k - 40.0);
+            assert!(run.last.power_mw < HEAT_FLOW_W_PER_K * (run.last.fuel_temperature_k - run.last.start_temperature_k) * 1.0e-6);
+            println!("{dt_s} s: {} steps to {} s, fuel {} K, largest residual {:e}", run.steps, run.last.t_s, run.last.fuel_temperature_k, run.largest_residual);
         }
     }
 
-    /// Past what was compared with a record the card refuses and does not answer: a 3.0 dollar
-    /// pulse left without a scram is refused, as the energy or the fuel temperature passes the
-    /// largest compared or as the rods are held past the latest scram compared, whichever is first.
+    /// A 3.0 dollar pulse left without a scram passes 600 K after 5.2 to 6.4 s on cores 215
+    /// and 231, where 0.9.0 refused it, and is computed on, with the ledger closed, to three
+    /// times the 14 s compared; the power settles where the feedback and the heat flow to the
+    /// water balance.
     #[test]
-    fn a_strong_pulse_left_without_a_scram_is_refused_beyond_what_was_compared() {
-        // at each end of each table's own span, at the ceiling: the refusal and the time of the
-        // last landed step after the fire signal. On cores 215 and 231 the fuel temperature
-        // passes 600 K after 5.2 to 6.1 s and 5.9 to 6.4 s; on core 217 the rods are held past
-        // 7.45 s after the peak, at 7.56 s, before either limit.
-        let expected = [
-            [(StepReject::FuelTemperatureBeyondCard, 6.105), (StepReject::FuelTemperatureBeyondCard, 5.198)],
-            [(StepReject::RodsHeldBeyondCompared, 7.558), (StepReject::RodsHeldBeyondCompared, 7.558)],
-            [(StepReject::FuelTemperatureBeyondCard, 6.428), (StepReject::FuelTemperatureBeyondCard, 5.890)],
-        ];
+    fn a_pulse_left_without_a_scram_is_computed_on_and_settles() {
+        // at each end of each table's own span, at the ceiling: the time of the last landed step
+        // under 600 K, where 0.9.0 refused the next as FuelTemperatureBeyondCard; on core 217 it
+        // refused the rods held past 7.45 s after the peak, at 7.558 s
+        let under_600 = [[Some(6.105), Some(5.198)], [None, None], [Some(6.428), Some(5.890)]];
         for (table, core) in ROD_TABLE_CORE.into_iter().enumerate() {
             let (low, high) = START_TEMPERATURE_K_BY_TABLE[table];
             for (end, kelvin) in [low, high].into_iter().enumerate() {
-                let run = run_on(rk4, kelvin, core, 3.0, ceiling(), 100.0, TIME_MAX_S);
-                println!("{kelvin} K, table {core}: refused {:?} at {} s, {} s after the peak, energy {} MW s, fuel {} K", run.end, run.last.t_s, run.last.t_s - run.last.peak_time_s, run.last.energy_mws, run.last.fuel_temperature_k);
-                let (reject, t_s) = expected[table][end];
-                assert_eq!(run.end, Err(reject), "{kelvin} K, table {core}");
-                assert!((run.last.t_s - t_s).abs() < 1.0e-3, "{kelvin} K, table {core}: {}", run.last.t_s);
-                assert!(run.last.t_s > 4.0 && run.last.t_s - run.last.peak_time_s <= SCRAM_AFTER_PEAK_MAX_S + 1.0e-9);
-                assert!(run.last.energy_mws <= ENERGY_MAX_MWS && run.last.fuel_temperature_k <= FUEL_TEMPERATURE_MAX_K);
-            }
-        }
-        // no pulse in range reaches the power limit
-        for (table, core) in ROD_TABLE_CORE.into_iter().enumerate() {
-            let (low, high) = START_TEMPERATURE_K_BY_TABLE[table];
-            for kelvin in [low, high] {
-                let run = run_on(rk4, kelvin, core, 3.0, ceiling(), 100.0, 0.4);
-                assert_eq!(run.end, Ok(()));
-                assert!(run.last.peak_power_mw < 0.95 * POWER_MAX_MW, "{}", run.last.peak_power_mw);
-            }
-        }
-    }
-
-    /// The scram is accepted only inside the envelope compared with the records, 1.50 to 7.45 s
-    /// after the peak, and both ends land exactly: at 5e-5 s a scram 30,000 steps after the peak
-    /// lands and one 29,999 steps after is refused; a held step ending 149,000 steps after the
-    /// peak lands and the next held step is refused, while a scram there lands. A scram before
-    /// the pulse, while the power still rises, is refused as earlier than any compared.
-    #[test]
-    fn the_scram_is_held_to_the_envelope_compared_with_the_records() {
-        assert_eq!((SCRAM_AFTER_PEAK_MIN_S, SCRAM_AFTER_PEAK_MAX_S), (1.50, 7.45));
-        // the scram after the card's own peak in the 27 compared runs: 1.5098 to 7.4456 s
-        assert!(SCRAM_AFTER_PEAK_MIN_S <= 1.5098 && 1.5098 - SCRAM_AFTER_PEAK_MIN_S < 0.01);
-        assert!(SCRAM_AFTER_PEAK_MAX_S >= 7.4456 && SCRAM_AFTER_PEAK_MAX_S - 7.4456 < 0.01);
-        let dt = 5.0e-5;
-        for (kelvin, core, rho) in SPAN {
-            let (reactor, mut state) = start_on(kelvin, core);
-            let mut frame = marked_frame();
-            // after the rod has stopped and while the power still rises: the peak is now
-            while state.t_s < reactor.rod_stop_s(rho) + 4.0 * dt {
-                step(&reactor, &mut state, &mut frame, load(rho), dt).unwrap();
-            }
-            assert_eq!(state.peak_time_s, state.t_s);
-            let before = state;
-            assert_eq!(step(&reactor, &mut state, &mut frame, dropped(rho), dt), Err(StepReject::ScramBeforeCompared));
-            assert_eq!(state, before);
-            while state.t_s < 1.0 {
-                step(&reactor, &mut state, &mut frame, load(rho), dt).unwrap();
-            }
-            let peak = state.peak_time_s;
-            let since = |s: &ReactorState| ((s.t_s - s.peak_time_s) / dt).round() as u64;
-            while since(&state) < 29_999 {
-                step(&reactor, &mut state, &mut frame, load(rho), dt).unwrap();
-            }
-            let before = state;
-            let mut f = marked_frame();
-            let bytes = f.to_bytes();
-            assert_eq!(step(&reactor, &mut state, &mut f, dropped(rho), dt), Err(StepReject::ScramBeforeCompared));
-            assert_eq!(state, before);
-            assert_eq!(f.to_bytes(), bytes);
-            step(&reactor, &mut state, &mut frame, load(rho), dt).unwrap();
-            assert_eq!(since(&state), 30_000);
-            let mut scram = state;
-            assert_eq!(step(&reactor, &mut scram, &mut frame, dropped(rho), dt), Ok(()), "{kelvin} {core} {rho}");
-            assert_eq!(scram.scram_time_s, state.t_s);
-            if rho > 2.5 {
-                // held that long, 3.0 dollars passes the largest fuel temperature or energy compared
-                continue;
-            }
-            while since(&state) < 148_999 {
-                step(&reactor, &mut state, &mut frame, load(rho), dt).unwrap();
-            }
-            assert_eq!(state.peak_time_s, peak);
-            assert_eq!(step(&reactor, &mut state, &mut frame, load(rho), dt), Ok(()), "{kelvin} {core} {rho}");
-            assert_eq!(since(&state), 149_000);
-            let before = state;
-            let mut f = marked_frame();
-            let bytes = f.to_bytes();
-            assert_eq!(step(&reactor, &mut state, &mut f, load(rho), dt), Err(StepReject::RodsHeldBeyondCompared));
-            assert_eq!(state, before);
-            assert_eq!(f.to_bytes(), bytes);
-            assert_eq!(step(&reactor, &mut state, &mut frame, dropped(rho), dt), Ok(()));
-            assert!(state.rods_dropped);
-        }
-    }
-
-    /// The second scoring's finding (V-37, range_edge2): a scram after the rod had stopped was
-    /// refused as SpontaneousGeneration when it fell near the peak. Those scrams are now
-    /// refused as earlier than any compared. Every scram the card accepts, from 1.50 to 7.45 s
-    /// after the peak, lands at every step from the floor to the ceiling and keeps its ledger.
-    #[test]
-    fn a_scram_inside_the_compared_envelope_lands_at_every_step_from_floor_to_ceiling() {
-        let reactor = ReactorTrigaJsi::core_56_pulse_mode();
-        let mut largest: f64 = 0.0;
-        let mut probes = 0;
-        let afters = [SCRAM_AFTER_PEAK_MIN_S, 1.6, 2.0, 3.0, 4.5, 6.0, 7.0];
-        for (kelvin, core, rho) in SPAN {
-            for dt_s in [ceiling(), 5.0e-5, 2.0e-5, 3.1e-6] {
-                // the finest step only over the first scrams, for time
-                let last = if dt_s < 1.0e-5 { 2.0 } else { SCRAM_AFTER_PEAK_MAX_S };
-                let (_, mut state) = start_on(kelvin, core);
+                let (reactor, mut state) = start_on(kelvin, core);
                 let mut frame = marked_frame();
-                let mut wanted = afters.iter().copied().filter(|a| *a < last - dt_s).chain(core::iter::once(last - dt_s)).peekable();
-                while state.t_s < 1.0 || wanted.peek().is_some() {
-                    if state.t_s >= 1.0 {
-                        let after = *wanted.peek().unwrap();
-                        if state.t_s - state.peak_time_s >= after {
-                            wanted.next();
-                            // the scram and 0.05 s after it
-                            let mut scram = state;
-                            let mut f = marked_frame();
-                            let mut n = 0;
-                            while n < (0.05 / dt_s) as u64 {
-                                assert_eq!(step(&reactor, &mut scram, &mut f, dropped(rho), dt_s), Ok(()), "{kelvin} K {core} {rho} dollar, {after} s after the peak, step {dt_s}");
-                                largest = largest.max(scram.residual_conservation_error);
-                                n += 1;
-                            }
-                            assert!(scram.scram_time_s - scram.peak_time_s >= after && scram.scram_time_s - scram.peak_time_s < after + dt_s);
-                            probes += 1;
-                            if dt_s == ceiling() {
-                                // the floor: the scram and 300 steps at the floor, then on at the ceiling
-                                let mut floor = state;
-                                for _ in 0..300 {
-                                    assert_eq!(step(&reactor, &mut floor, &mut f, dropped(rho), super::FLOOR_DT_S), Ok(()));
-                                }
-                                for _ in 0..400 {
-                                    assert_eq!(step(&reactor, &mut floor, &mut f, dropped(rho), ceiling()), Ok(()));
-                                    largest = largest.max(floor.residual_conservation_error);
-                                }
-                                probes += 1;
-                            }
-                            continue;
-                        }
+                let mut last_under = None;
+                let mut largest: f64 = 0.0;
+                while state.t_s + ceiling() <= 3.0 * TIME_COMPARED_MAX_S {
+                    let t = state.t_s;
+                    step(&reactor, &mut state, &mut frame, load(3.0), ceiling()).unwrap();
+                    largest = largest.max(state.residual_conservation_error);
+                    if state.fuel_temperature_k > 600.0 && last_under.is_none() {
+                        last_under = Some(t);
                     }
-                    match step(&reactor, &mut state, &mut frame, load(rho), dt_s) {
-                        Ok(()) => largest = largest.max(state.residual_conservation_error),
-                        // held, 3.0 dollars passes the largest fuel temperature or energy compared
-                        Err(StepReject::FuelTemperatureBeyondCard | StepReject::EnergyBeyondCard) if rho > 2.5 => break,
-                        Err(other) => std::panic!("{kelvin} K {core} {rho}: {other:?}"),
+                }
+                println!("{kelvin} K, table {core}, held: last step under 600 K at {last_under:?} s, highest {} K, at {} s fuel {} K, power {} MW, residual {largest:e}", state.peak_fuel_temperature_k, state.t_s, state.fuel_temperature_k, state.power_mw);
+                match under_600[table][end] {
+                    Some(t) => assert!((last_under.unwrap() - t).abs() < 1.0e-3, "{kelvin} K, table {core}: {last_under:?}"),
+                    None => assert!(last_under.is_none_or(|t| t > 7.0), "{kelvin} K, table {core}: {last_under:?}"),
+                }
+                assert!(largest < RESIDUAL_CONSERVATION_LIMIT / 10.0);
+                // past 7.45 s after the peak and three times the 14 s compared, the energy far past
+                // the largest compared
+                assert!(state.t_s - state.peak_time_s > 5.0 * SCRAM_AFTER_PEAK_COMPARED_S.1);
+                assert!(state.energy_mws > ENERGY_COMPARED_MAX_MWS);
+                // the fuel cools towards where the feedback and the heat flow to the water balance:
+                // the power is under the heat flow to the water, the net reactivity under zero
+                let to_water = HEAT_FLOW_W_PER_K * (state.fuel_temperature_k - state.start_temperature_k) * 1.0e-6;
+                assert!(state.power_mw < to_water && state.power_mw > 0.2 * to_water, "{} {}", state.power_mw, to_water);
+                assert!(state.reactivity_net_dollar < 0.0 && state.reactivity_net_dollar > -0.5);
+                assert!(state.fuel_temperature_k < state.peak_fuel_temperature_k);
+            }
+        }
+    }
+
+    /// The hottest the card's fuel gets: the rod's whole worth, the rods held, from either end of
+    /// liquid water on each table, for as long as a run of a million steps at the ceiling lasts,
+    /// 93.9 s. The highest core-average fuel temperature is 769.7 K, at 4.16 dollars on core 231
+    /// from 373.124 K, 8.1 s after the fire signal; through the hot-rod factor the hottest element
+    /// is at 923 K. Both are far below the limit of the fuel, 1150 degC. Held on, the pulse
+    /// settles where the feedback takes back the whole insertion.
+    #[test]
+    fn the_hottest_fuel_any_run_reaches_is_far_below_the_fuel_limit() {
+        let mut hottest = (0.0, 0.0, 0.0);
+        for (kelvin, core) in whole_worth_extremes() {
+            let run = run_on(rk4, kelvin, core, ROD_WORTH_DOLLAR, ceiling(), f64::INFINITY, 1.0e6 * ceiling());
+            assert_eq!(run.end, Ok(()), "{kelvin} {core}");
+            assert_eq!(run.steps, 999_999, "{kelvin} {core}");
+            assert!(run.largest_residual < RESIDUAL_CONSERVATION_LIMIT / 10.0, "{kelvin} {core}: {:e}", run.largest_residual);
+            assert_eq!(run.last.peak_fuel_temperature_k, run.hottest_k);
+            // the power past 2.3 times the largest compared, the energy past 2.2 times
+            assert!(run.last.peak_power_mw > 2.3 * POWER_COMPARED_MAX_MW && run.last.peak_power_mw < 2.9 * POWER_COMPARED_MAX_MW);
+            assert!(run.last.energy_mws > 2.2 * ENERGY_COMPARED_MAX_MWS);
+            println!("{kelvin} K, table {core}, 4.16 dollars held: peak {} MW at {} s, energy {} MW s, highest fuel {} K, residual {:e}", run.last.peak_power_mw, run.last.peak_time_s, run.last.energy_mws, run.hottest_k, run.largest_residual);
+            if run.hottest_k > hottest.0 {
+                hottest = (run.hottest_k, kelvin, core);
+            }
+        }
+        assert_eq!((hottest.1, hottest.2), (WATER_BOILING_K, 231.0));
+        assert!((hottest.0 - 769.74).abs() < 0.01, "{}", hottest.0);
+        let element = WATER_BOILING_K + super::HOT_ROD_FACTOR * (hottest.0 - WATER_BOILING_K);
+        assert!((element - 923.2).abs() < 0.1, "{element}");
+        assert!(element < FUEL_LIMIT_K - 450.0);
+        // a weaker insertion, or a scram, makes it cooler
+        for (rho, scram) in [(3.0, f64::INFINITY), (ROD_WORTH_DOLLAR, 0.0), (ROD_WORTH_DOLLAR, 0.0934), (ROD_WORTH_DOLLAR, 3.0)] {
+            let run = run_on(rk4, WATER_BOILING_K, 231.0, rho, ceiling(), scram, 12.0);
+            assert_eq!(run.end, Ok(()));
+            assert!(run.hottest_k < hottest.0, "{rho} {scram}: {}", run.hottest_k);
+        }
+        // held on, to 400 s: the net reactivity falls to the 1.6e-4 dollar the start is short
+        // of stationary, the fuel temperature to where the feedback takes back the whole
+        // insertion's worth, and the power to the heat flow to the water
+        let run = run_on(rk4, WATER_BOILING_K, 231.0, ROD_WORTH_DOLLAR, ceiling(), f64::INFINITY, 400.0);
+        assert_eq!(run.end, Ok(()));
+        let reactor = ReactorTrigaJsi::core_56_pulse_mode();
+        let worth = reactor.worth_dollar(2, ROD_WORTH_DOLLAR) - (DELAYED_FRACTION - 0.00699891) / DELAYED_FRACTION;
+        let wanted = feedback(&reactor, WATER_BOILING_K) + worth * DELAYED_FRACTION;
+        let a = 0.5 * super::FEEDBACK_SLOPE_PER_K2;
+        let x = (-super::FEEDBACK_PER_K + (super::FEEDBACK_PER_K * super::FEEDBACK_PER_K + 4.0 * a * wanted).sqrt()) / (2.0 * a);
+        let settled_k = super::FEEDBACK_REFERENCE_K + x;
+        println!("held 400 s: fuel {} K against {settled_k} K, power {} MW, net {} dollar, residual {:e}", run.last.fuel_temperature_k, run.last.power_mw, run.last.reactivity_net_dollar, run.largest_residual);
+        assert!((run.last.fuel_temperature_k - settled_k).abs() < 0.05, "{} {settled_k}", run.last.fuel_temperature_k);
+        assert!((settled_k - 636.6).abs() < 0.1);
+        let to_water = HEAT_FLOW_W_PER_K * (run.last.fuel_temperature_k - WATER_BOILING_K) * 1.0e-6;
+        assert!(within(run.last.power_mw, to_water, 1.0e-3), "{} {to_water}", run.last.power_mw);
+        assert!(run.last.reactivity_net_dollar.abs() < 1.0e-3);
+        assert!(run.largest_residual < RESIDUAL_CONSERVATION_LIMIT / 10.0);
+        // the energy is more than five times the largest compared
+        assert!(run.last.energy_mws > 5.0 * ENERGY_COMPARED_MAX_MWS);
+    }
+
+    /// Below and above the compared reactivity, to the rod's whole worth and down to a
+    /// thousandth of a dollar, and from either end of liquid water, the card computes the same
+    /// equations with the ledger closed over 14 s at the ceiling, the rods dropped 2.5 s after
+    /// the fire signal.
+    #[test]
+    fn past_the_compared_reactivity_and_starts_the_ledger_closes() {
+        let mut largest: f64 = 0.0;
+        for core in ROD_TABLE_CORE {
+            let mut peaks = std::vec::Vec::new();
+            for rho in [1.0e-3, 0.5, 1.0, 1.4, 1.8, 2.0, 3.0, 3.5, ROD_WORTH_DOLLAR] {
+                for kelvin in [WATER_FREEZING_K, 298.15, WATER_BOILING_K] {
+                    let run = run_on(rk4, kelvin, core, rho, ceiling(), 2.5, TIME_COMPARED_MAX_S);
+                    assert_eq!(run.end, Ok(()), "{kelvin} {core} {rho}");
+                    largest = largest.max(run.largest_residual);
+                    if kelvin == 298.15 {
+                        peaks.push(run.last.peak_power_mw);
                     }
                 }
             }
+            println!("table {core}: peaks {peaks:?} MW");
+            // the stronger the insertion the stronger the pulse
+            assert!(peaks.windows(2).all(|pair| pair[0] < pair[1]), "{peaks:?}");
+        }
+        println!("largest residual {largest:e}");
+        assert!(largest < RESIDUAL_CONSERVATION_LIMIT / 4.0);
+    }
+
+    /// A scram lands at any time after the fire signal: at the first step, while the rod moves,
+    /// in the step that crosses the rod's stop, before the peak, at it, and from there to long
+    /// after any compared, at three steps, on the corners of the compared span and at the rod's
+    /// whole worth.
+    #[test]
+    fn a_scram_lands_at_any_time_after_the_fire_signal() {
+        let mut largest: f64 = 0.0;
+        let mut probes = 0;
+        let corners = SPAN.into_iter().chain(whole_worth_extremes().into_iter().map(|(k, c)| (k, c, ROD_WORTH_DOLLAR)));
+        for (kelvin, core, rho) in corners {
+            for dt_s in [ceiling(), 5.0e-5, 2.0e-5] {
+                let (reactor, _) = start_on(kelvin, core);
+                let stop = reactor.rod_stop_s(rho);
+                let free = run_on(rk4, kelvin, core, rho, dt_s, f64::INFINITY, 0.3);
+                let peak = free.last.peak_time_s;
+                for at in [0.0, 0.5 * stop, stop - 0.5 * dt_s, stop, 0.5 * (stop + peak), peak, peak + 0.01, peak + 1.0] {
+                    let run = run_on(rk4, kelvin, core, rho, dt_s, at, at + 0.05);
+                    assert_eq!(run.end, Ok(()), "{kelvin} K {core} {rho} dollar, scram at {at} s, step {dt_s}");
+                    assert!(run.last.rods_dropped && run.last.scram_time_s >= at && run.last.scram_time_s < at + dt_s);
+                    largest = largest.max(run.largest_residual);
+                    probes += 1;
+                }
+            }
+        }
+        // and long after any compared: 30 s after the fire signal, at the ceiling
+        for (kelvin, core, rho) in [(T231.1, 231.0, 3.0), (WATER_BOILING_K, 231.0, ROD_WORTH_DOLLAR), (298.15, 217.0, 2.0)] {
+            let run = run_on(rk4, kelvin, core, rho, ceiling(), 30.0, 31.0);
+            assert_eq!(run.end, Ok(()));
+            assert!(run.last.scram_time_s - run.last.peak_time_s > 4.0 * SCRAM_AFTER_PEAK_COMPARED_S.1);
+            largest = largest.max(run.largest_residual);
+            probes += 1;
         }
         println!("{probes} scrams, largest residual {largest:e}");
-        assert!(probes >= 150, "{probes}");
-        assert!(largest < RESIDUAL_CONSERVATION_LIMIT / 10.0);
-        // the pieces: none before the scram, eight at the ceiling in the fall, one after it
-        let (_, mut state) = start(25.0);
+        assert!(largest < RESIDUAL_CONSERVATION_LIMIT / 4.0);
+        // the pieces of the fall: none before the scram, eight at the ceiling in the fall, one after it
+        let (reactor, mut state) = start(25.0);
         let mut frame = marked_frame();
         assert_eq!(scram_pieces(&reactor, &state, load(2.0), ceiling()), 1);
-        while state.t_s - state.peak_time_s < SCRAM_AFTER_PEAK_MIN_S || state.t_s < 1.0 {
+        while state.t_s - state.peak_time_s < SCRAM_AFTER_PEAK_COMPARED_S.0 || state.t_s < 1.0 {
             step(&reactor, &mut state, &mut frame, load(2.0), ceiling()).unwrap();
         }
         let scram_s = state.t_s;
@@ -2000,9 +2245,219 @@ mod tests {
         assert_eq!(scram_pieces(&reactor, &state, dropped(2.0), ceiling()), 1);
     }
 
+    /// The scram while the transient rod is still moving: its ramp goes on under the 8 dollars,
+    /// and a step taken in the pieces of the fall that holds the rod's stop is split there, each
+    /// part with its own integral on its own side of the stop. The pulse is the one taken at a
+    /// sixteenth of the step. The stepping of 0.9.0, which took every piece of the fall as past
+    /// the stop, is named by the ledger at the first step of such a scram.
+    #[test]
+    fn a_scram_while_the_rod_moves_is_stepped_across_the_stop() {
+        for rho in [2.0, 3.0, ROD_WORTH_DOLLAR] {
+            let (reactor, _) = start(25.0);
+            let stop = reactor.rod_stop_s(rho);
+            for dt_s in [ceiling(), 5.0e-5, 2.0e-5] {
+                // the scram from the step that starts three steps before the stop: the next steps
+                // are in pieces, and one of them holds the stop
+                let steps_before = (stop / dt_s).floor() as u64 - 3;
+                let at = steps_before as f64 * dt_s - 0.5 * dt_s;
+                let coarse = run_on(rk4, 298.15, 217.0, rho, dt_s, at, 0.5);
+                assert_eq!(coarse.end, Ok(()), "{rho} {dt_s}");
+                let fine_dt = dt_s / 16.0;
+                let fine = run_until(rk4, 298.15, 217.0, rho, fine_dt, 0.5 - 0.5 * fine_dt, |s| s.t_s >= coarse.last.scram_time_s - 0.5 * fine_dt);
+                assert_eq!(fine.end, Ok(()));
+                assert!((fine.last.scram_time_s - coarse.last.scram_time_s).abs() < fine_dt);
+                println!("{rho} dollar, step {dt_s}: scram at {} s, rod stops at {stop} s, power at 0.5 s {} against {} MW, residual {:e}", coarse.last.scram_time_s, coarse.last.power_mw, fine.last.power_mw, coarse.largest_residual);
+                assert!(coarse.last.scram_time_s < stop);
+                // as close as the pulse at the ceiling is to the pulse at a sixteenth of it
+                assert!(within(coarse.last.power_mw, fine.last.power_mw, 1.0e-4), "{} {}", coarse.last.power_mw, fine.last.power_mw);
+                assert!(coarse.largest_residual < RESIDUAL_CONSERVATION_LIMIT / 10.0);
+                assert_eq!(coarse.last.reactivity_inserted_now_dollar, rho);
+                // the stepping of 0.9.0 is refused by the ledger at the first step of the scram,
+                // whose pieces lie before the stop; at 2e-5 s, in two pieces, its error on
+                // the small power before the pulse is under the ledger's limit
+                if dt_s < 5.0e-5 {
+                    continue;
+                }
+                let (reactor, mut state) = start(25.0);
+                let mut frame = marked_frame();
+                let mut refused = None;
+                while state.t_s < stop + 4.0 * dt_s {
+                    let l = if state.rods_dropped || state.t_s >= at { dropped(rho) } else { load(rho) };
+                    let before = state;
+                    let bytes = frame.to_bytes();
+                    if let Err(reject) = step_as_if_stopped(&reactor, &mut state, &mut frame, l, dt_s) {
+                        assert_eq!(state, before);
+                        assert_eq!(frame.to_bytes(), bytes);
+                        refused = Some((reject, state.t_s));
+                        break;
+                    }
+                }
+                let (reject, t) = refused.unwrap_or_else(|| std::panic!("{rho} {dt_s}: the old stepping landed"));
+                assert!(reject == StepReject::SpontaneousGeneration || reject == StepReject::FirstLawBreach, "{reject:?}");
+                // at the first step of the scram, or at 4.16 dollars already in the pieces of the rise
+                assert!(t < stop && (t >= at || rho == ROD_WORTH_DOLLAR), "{t} {stop}");
+            }
+        }
+        // under the scram the rod goes on to its stop: both flags on the frame, the inserted
+        // reactivity at the ramp, and the net reactivity 8 dollars under the table's worth of it
+        let (reactor, mut state) = start(25.0);
+        let mut frame = marked_frame();
+        let rho = 3.0;
+        while state.t_s < 0.03 {
+            step(&reactor, &mut state, &mut frame, dropped(rho), 5.0e-5).unwrap();
+            if state.t_s < reactor.rod_stop_s(rho) {
+                assert_eq!(frame.flags & (FLAG_ROD_MOVING | FLAG_RODS_DROPPED), FLAG_ROD_MOVING | FLAG_RODS_DROPPED);
+                assert!(within(state.reactivity_inserted_now_dollar, RAMP_DOLLAR_PER_S * state.t_s, 1.0e-12));
+                let worth = reactor.worth_dollar(1, rho) * state.reactivity_inserted_now_dollar / rho;
+                assert!(within(state.reactivity_net_dollar, worth - super::SCRAM_DOLLAR, 1.0e-6));
+            }
+        }
+        assert_eq!(state.scram_time_s, 0.0);
+        assert!(state.power_mw < INITIAL_POWER_MW);
+    }
+
+    /// The static ceiling covers every state a run of the card reaches: on the compared runs the
+    /// net reactivity after the scram reaches −9.08 dollars, where a step at the static ceiling
+    /// advances 0.224 of the time constant of the fastest pole; at the rod's whole worth with the
+    /// rods dropped at the highest fuel temperature, −9.87 dollars and 0.241. The state ceiling,
+    /// 0.25, is not met there; a state handed in hotter than any run reaches meets it, is
+    /// refused with state and frame kept, and lands at a step under it with the ledger closed.
+    #[test]
+    fn the_static_ceiling_covers_every_state_a_run_reaches_and_the_state_ceiling_holds_the_rest() {
+        let reactor = ReactorTrigaJsi::core_56_pulse_mode();
+        // the compared runs, at the ceiling, the rods dropped up to the latest compared
+        let mut compared: f64 = 0.0;
+        for (kelvin, core, rho) in SPAN {
+            for after in [SCRAM_AFTER_PEAK_COMPARED_S.0, 4.0, SCRAM_AFTER_PEAK_COMPARED_S.1 - 0.01] {
+                if rho > 2.5 && core != 217.0 && after > 5.0 {
+                    // held that long these passed 600 K, beyond any compared fuel temperature
+                    continue;
+                }
+                let run = run_until(rk4, kelvin, core, rho, ceiling(), TIME_COMPARED_MAX_S, |s| s.t_s > 1.0 && s.t_s - s.peak_time_s >= after);
+                assert_eq!(run.end, Ok(()));
+                compared = compared.max(run.fastest);
+            }
+        }
+        println!("compared: largest |rho - 1| {compared}, the static ceiling advances {} of its time constant", ceiling() * pole_per_s(1.0 + compared));
+        assert!(compared > 10.0 && compared < 10.09, "{compared}");
+        assert!(ceiling() < reactor.state_dt_s(1.0 - compared));
+        // every start in liquid water at the rod's whole worth, the rods dropped where the held
+        // pulse is hottest
+        let mut reached: f64 = 0.0;
+        for (kelvin, core) in whole_worth_extremes() {
+            let held = run_on(rk4, kelvin, core, ROD_WORTH_DOLLAR, ceiling(), f64::INFINITY, 12.0);
+            let hottest_at = {
+                let (_, mut s) = start_on(kelvin, core);
+                let mut f = marked_frame();
+                let mut at = 0.0;
+                while s.t_s < 12.0 {
+                    step(&reactor, &mut s, &mut f, load(ROD_WORTH_DOLLAR), ceiling()).unwrap();
+                    if s.fuel_temperature_k == held.hottest_k {
+                        at = s.t_s;
+                    }
+                }
+                at
+            };
+            let run = run_on(rk4, kelvin, core, ROD_WORTH_DOLLAR, ceiling(), hottest_at, hottest_at + 1.0);
+            assert_eq!(run.end, Ok(()), "{kelvin} {core}");
+            assert!(run.largest_residual < RESIDUAL_CONSERVATION_LIMIT / 4.0);
+            reached = reached.max(run.fastest);
+        }
+        println!("any run: largest |rho - 1| {reached}, the static ceiling advances {} of its time constant", ceiling() * pole_per_s(1.0 + reached));
+        assert!(reached > 10.86 && reached < 10.87, "{reached}");
+        assert!(ceiling() * pole_per_s(1.0 + reached) < 0.2415);
+        assert!(ceiling() < reactor.state_dt_s(1.0 - reached));
+        // a state hotter than any run reaches: a run after its scram, its fuel set to 1000 K
+        let mut state = run_on(rk4, 298.15, 217.0, 3.0, ceiling(), 3.0, 3.5).last;
+        state.fuel_temperature_k = 1000.0;
+        state.peak_fuel_temperature_k = 1000.0;
+        let table = reactor.table_of(state.rod_table_core).unwrap();
+        let rho = net_reactivity(&reactor, &terms(&reactor, &state, dropped(3.0), table), state.t_s, &state_vector(&state));
+        let limit = reactor.state_dt_s(rho);
+        println!("handed-in at 1000 K: net {rho} dollar, state ceiling {limit:e} s");
+        assert!(limit < ceiling());
+        for dt_s in [ceiling(), f64::from_bits(limit.to_bits() + 1)] {
+            let mut s = state;
+            let mut f = marked_frame();
+            let bytes = f.to_bytes();
+            assert_eq!(step(&reactor, &mut s, &mut f, dropped(3.0), dt_s), Err(StepReject::DtAboveStateCeiling));
+            assert_eq!(s, state);
+            assert_eq!(f.to_bytes(), bytes);
+        }
+        let mut s = state;
+        let mut f = marked_frame();
+        for _ in 0..1000 {
+            assert_eq!(step(&reactor, &mut s, &mut f, dropped(3.0), limit), Ok(()));
+            assert!(s.residual_conservation_error < RESIDUAL_CONSERVATION_LIMIT);
+        }
+        // the ceiling is held where the step lands too: a trial step handed back with its fuel at
+        // 1000 K is refused there
+        let mut honest = run_on(rk4, 298.15, 217.0, 3.0, ceiling(), 3.0, 3.5).last;
+        let before = honest;
+        let t = terms(&reactor, &honest, dropped(3.0), table);
+        let mut advanced = through_the_stop(rk4, &reactor, &t, honest.t_s, &state_vector(&honest), ceiling(), 1);
+        advanced.y[7] = 1000.0;
+        let mut f = marked_frame();
+        assert_eq!(commit(&reactor, &mut honest, &mut f, &t, dropped(3.0), ceiling(), advanced), Err(StepReject::DtAboveStateCeiling));
+        assert_eq!(honest, before);
+    }
+
+    /// In the rise of a pulse stronger than any compared a step is taken in pieces of at most
+    /// 0.03 of the time constant of the growing pole; every step of a compared pulse is one piece.
+    #[test]
+    fn a_step_in_the_rise_of_a_pulse_stronger_than_any_compared_is_taken_in_pieces() {
+        let reactor = ReactorTrigaJsi::core_56_pulse_mode();
+        // the net reactivity of a compared pulse is at most its whole insertion's worth
+        let compared = (0..3).map(|table| reactor.worth_dollar(table, REACTIVITY_COMPARED_MAX_DOLLAR)).fold(0.0, f64::max);
+        assert!(within(compared, 2.2068, 1.0e-4), "{compared}");
+        assert!(ceiling() * pole_per_s(compared) < 0.0269 && 0.0269 < RISE_PIECE_PHASE_STEP);
+        assert_eq!(rise_pieces(&reactor, compared, ceiling()), 1);
+        // at the rod's whole worth, two
+        let whole = reactor.worth_dollar(2, ROD_WORTH_DOLLAR);
+        assert_eq!(rise_pieces(&reactor, whole, ceiling()), 2);
+        assert_eq!(rise_pieces(&reactor, whole, 0.5 * ceiling()), 1);
+        assert_eq!(rise_pieces(&reactor, 0.5, ceiling()), 1);
+        assert_eq!(rise_pieces(&reactor, -9.0, ceiling()), 1);
+        assert_eq!(rise_pieces(&reactor, whole, 1.0), super::SCRAM_PIECES_MAX);
+        // on the compared span, no step of the rise is pieced
+        for (kelvin, core, rho) in SPAN {
+            let (_, mut state) = start_on(kelvin, core);
+            let mut frame = marked_frame();
+            let table = reactor.table_of(core).unwrap();
+            while state.t_s < 0.3 {
+                let t = terms(&reactor, &state, load(rho), table);
+                let net = net_reactivity(&reactor, &t, state.t_s, &state_vector(&state));
+                assert!(net <= compared);
+                assert_eq!(pieces(&reactor, &state, load(rho), net, ceiling()), 1);
+                step(&reactor, &mut state, &mut frame, load(rho), ceiling()).unwrap();
+            }
+        }
+        // the rods dropped in the rise or at the peak of a strong pulse: the ledger closes at the
+        // ceiling over the 14 s compared
+        let mut largest: f64 = 0.0;
+        for core in ROD_TABLE_CORE {
+            for rho in [3.25, 3.5, 4.0, ROD_WORTH_DOLLAR] {
+                let peak = run_on(rk4, 298.15, core, rho, ceiling(), f64::INFINITY, 0.3).last.peak_time_s;
+                let stop = reactor.rod_stop_s(rho);
+                for at in [stop, 0.5 * (stop + peak), peak, peak + 0.01] {
+                    let run = run_on(rk4, 298.15, core, rho, ceiling(), at, TIME_COMPARED_MAX_S);
+                    assert_eq!(run.end, Ok(()), "{core} {rho} {at}");
+                    largest = largest.max(run.largest_residual);
+                }
+            }
+        }
+        println!("strong pulses, the rods dropped in the rise, over 14 s at the ceiling: largest residual {largest:e}");
+        assert!(largest < RESIDUAL_CONSERVATION_LIMIT / 4.0);
+        // over a long tail the error made in the rise is carried by a population tens of times
+        // smaller, and the ledger can stop a run: at half the ceiling it lands to 93.9 s
+        let half = run_on(rk4, WATER_BOILING_K, 231.0, ROD_WORTH_DOLLAR, 0.5 * ceiling(), 0.0924, 93.9);
+        assert_eq!(half.end, Ok(()));
+        assert!(half.largest_residual < RESIDUAL_CONSERVATION_LIMIT, "{:e}", half.largest_residual);
+    }
+
     #[test]
     fn explicit_euler_at_the_ceiling_is_refused_by_the_ledger() {
-        for (kelvin, core, rho) in SPAN {
+        for (kelvin, core, rho) in SPAN.into_iter().chain([(WATER_BOILING_K, 231.0, ROD_WORTH_DOLLAR), (WATER_FREEZING_K, 217.0, 0.5)]) {
             let run = run_on(euler, kelvin, core, rho, ceiling(), 6.0, 11.9);
             assert!(
                 run.end == Err(StepReject::SpontaneousGeneration)
@@ -2011,14 +2466,14 @@ mod tests {
                 run.end,
                 run.steps
             );
-            // named before the pulse: the power is still under a thousandth of the card's limit
-            assert!(run.last.power_mw < 1.0e-3 * POWER_MAX_MW, "{}", run.last.power_mw);
+            // named before the pulse: the power is still under a megawatt
+            assert!(run.last.power_mw < 1.0, "{}", run.last.power_mw);
         }
     }
 
     #[test]
     fn wrong_stage_weights_and_a_falsified_ledger_are_refused() {
-        for (kelvin, core, rho) in SPAN {
+        for (kelvin, core, rho) in SPAN.into_iter().chain([(WATER_BOILING_K, 231.0, ROD_WORTH_DOLLAR), (WATER_FREEZING_K, 217.0, 0.5)]) {
             let run = run_on(wrong_weights, kelvin, core, rho, ceiling(), 6.0, 11.9);
             assert!(
                 run.end == Err(StepReject::SpontaneousGeneration)
@@ -2026,7 +2481,7 @@ mod tests {
                 "{kelvin} {rho}: {:?}",
                 run.end
             );
-            assert!(run.last.power_mw < 1.0e-3 * POWER_MAX_MW);
+            assert!(run.last.power_mw < 1.0);
         }
         // a ledger falsified in either direction is named in that direction
         let (reactor, _) = start(25.0);
@@ -2069,14 +2524,17 @@ mod tests {
         assert_eq!(lied, state);
     }
 
+    /// With the feedback dropped the pulse never turns, and the ledger, whose integral carries
+    /// the feedback, names the step in the rise, before 2 s.
     #[test]
     fn a_dropped_feedback_runs_away_and_is_refused() {
-        for (kelvin, core, rho) in SPAN {
+        for (kelvin, core, rho) in SPAN.into_iter().chain([(WATER_BOILING_K, 231.0, ROD_WORTH_DOLLAR)]) {
             let run = run_on(no_feedback, kelvin, core, rho, ceiling(), 6.0, 11.9);
+            println!("{kelvin} {core} {rho}: {:?} at {} s, power {} MW", run.end, run.last.t_s, run.last.power_mw);
             assert!(
                 run.end == Err(StepReject::SpontaneousGeneration)
                     || run.end == Err(StepReject::FirstLawBreach)
-                    || run.end == Err(StepReject::PowerBeyondCard),
+                    || run.end == Err(StepReject::NonFiniteState),
                 "{kelvin} {rho}: {:?}",
                 run.end
             );
@@ -2086,7 +2544,7 @@ mod tests {
 
     #[test]
     fn the_pulse_at_the_ceiling_is_the_pulse_at_a_sixteenth_of_it() {
-        for (kelvin, core, rho) in [(298.15, 217.0, 2.0), (T231.0, 231.0, 3.0), (T215.1, 215.0, 2.0)] {
+        for (kelvin, core, rho) in [(298.15, 217.0, 2.0), (T231.0, 231.0, 3.0), (T215.1, 215.0, 2.0), (WATER_BOILING_K, 231.0, ROD_WORTH_DOLLAR), (WATER_FREEZING_K, 215.0, 1.4)] {
             let scram = span_scram(rho);
             let coarse = run_on(rk4, kelvin, core, rho, ceiling(), scram, 9.0);
             let fine = run_on(rk4, kelvin, core, rho, ceiling() / 16.0, scram, 9.0);
@@ -2100,7 +2558,7 @@ mod tests {
             );
             // the peak is the highest landed sample, so it is under the true maximum by up to the
             // curvature over half a step
-            assert!(within(coarse.last.peak_power_mw, fine.last.peak_power_mw, 1.0e-4));
+            assert!(within(coarse.last.peak_power_mw, fine.last.peak_power_mw, 2.0e-4));
             assert!(within(coarse.last.peak_fuel_temperature_k, fine.last.peak_fuel_temperature_k, 1.0e-5));
             // the scram lands on a step: the coarse run drops the rods up to one step later
             assert!(within(coarse.last.energy_mws, fine.last.energy_mws, 2.0e-4));

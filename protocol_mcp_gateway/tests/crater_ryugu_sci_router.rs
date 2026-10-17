@@ -4,13 +4,15 @@
 //! bytes, and its receipt verifies. The whole growth, 1,600 steps from 1.75 m,
 //! ends on the kernel loop's state to the bit: the crater stops on step 1,597
 //! at 8.571304329477922 m, the frames from there carry the flag, and the tape
-//! verifies. A step handed back as a new start continues the same growth.
+//! verifies. A step handed back as a new start goes on with the wall at the speed the card sets from its radius.
 //! Each refusal a request can reach is named and carries no proof: a radius
-//! under the card or above the radius at which the crater stops, a step of
+//! under the ledger's resolution or above the radius at which the crater stops, a step of
 //! zero or less, a step outside the card's floor and ceiling, a missing
 //! input, a wall speed or a load the card does not take.
 //!
 //! No measurement of the crater is read here.
+
+mod answer_text;
 
 use std::time::Duration;
 
@@ -23,6 +25,10 @@ use reqwest::Client;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use tokio::net::TcpListener;
+
+/// The start of the research record's reference run and of the worked
+/// examples: 1.75 m, the card's floor until engine 0.9.
+const START_M: f64 = 1.75;
 
 async fn spawn_app() -> String {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -48,7 +54,9 @@ async fn post_text(base: &str, path: &str, body: &str) -> (u16, String) {
         {
             Ok(response) => {
                 let status = response.status().as_u16();
-                return (status, response.text().await.unwrap());
+                let text = response.text().await.unwrap();
+                answer_text::remember(&text);
+                return (status, text);
             }
             Err(error) => {
                 last_error = Some(error);
@@ -60,7 +68,7 @@ async fn post_text(base: &str, path: &str, body: &str) -> (u16, String) {
 }
 
 async fn post(base: &str, path: &str, body: &Value) -> (u16, String) {
-    post_text(base, path, &serde_json::to_string(body).unwrap()).await
+    post_text(base, path, &answer_text::as_sent(body)).await
 }
 
 fn sha256_hex(bytes: &[u8]) -> String {
@@ -205,8 +213,9 @@ fn slots(frame_hex: &str) -> (f64, f32, f32, f32, u64) {
 async fn a_step_of_the_crater_matches_the_compiled_step_with_the_same_proof_bytes_and_its_receipt_verifies() {
     let base = spawn_app().await;
     let cases = [
-        step_body(RADIUS_FLOOR_M, ceiling()),
-        step_body(RADIUS_FLOOR_M, floor()),
+        step_body(START_M, ceiling()),
+        step_body(START_M, floor()),
+        step_body(RADIUS_FLOOR_M, 1.0e-6),
         step_body(4.0, 0.1),
         step_body(8.5, ceiling()),
         // The last step of the growth, and a crater that has already stopped.
@@ -248,12 +257,12 @@ async fn a_step_of_the_crater_matches_the_compiled_step_with_the_same_proof_byte
         assert_eq!(again, answer);
         seals.push((response.sha256_seal, state.stopped));
     }
-    // The last two steps end stopped; the first four do not.
-    assert_eq!(seals.iter().map(|(_, stopped)| *stopped).collect::<Vec<_>>(), [false, false, false, false, true, true]);
+    // The last two steps end stopped; the first five do not.
+    assert_eq!(seals.iter().map(|(_, stopped)| *stopped).collect::<Vec<_>>(), [false, false, false, false, false, true, true]);
     let mut distinct: Vec<&String> = seals.iter().map(|(seal, _)| seal).collect();
     distinct.sort();
     distinct.dedup();
-    assert_eq!(distinct.len(), 6, "six different steps, six different proofs");
+    assert_eq!(distinct.len(), 7, "seven different steps, seven different proofs");
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -275,7 +284,7 @@ async fn a_step_handed_back_as_a_new_start_continues_the_same_growth() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn the_whole_growth_stops_on_step_1597_at_the_final_radius_and_its_tape_verifies() {
     let base = spawn_app().await;
-    let request = run_body(RADIUS_FLOOR_M, 0.25, 1_600, 100);
+    let request = run_body(START_M, 0.25, 1_600, 100);
     assert_eq!(
         serde_json::to_string(&request).unwrap(),
         r#"{"domain":"aerospace","card":"crater_ryugu_sci","initial":{"radius_m":1.75},"dt_s":0.25,"segments":[{"steps":1600,"load":{}}],"record_every":100}"#
@@ -288,7 +297,7 @@ async fn the_whole_growth_stops_on_step_1597_at_the_final_radius_and_its_tape_ve
     let frames = tape["frames"].as_array().unwrap();
     assert_eq!(frames.len(), 16);
 
-    let (state, worst, stopped_on, kept) = direct_loop(RADIUS_FLOOR_M, 0.25, 1_600, 100);
+    let (state, worst, stopped_on, kept) = direct_loop(START_M, 0.25, 1_600, 100);
     assert_eq!(stopped_on, Some(1_597));
     let last = &tape["final_state"];
     assert_state_is(last, &state, "1,600 steps");
@@ -325,7 +334,7 @@ async fn the_whole_growth_stops_on_step_1597_at_the_final_radius_and_its_tape_ve
     assert_eq!(report["holds"], true, "{report}");
 
     // Recorded at every step from 1,590: the flag first appears on step 1,597.
-    let (state_1590, _, _, _) = direct_loop(RADIUS_FLOOR_M, 0.25, 1_590, 1_590);
+    let (state_1590, _, _, _) = direct_loop(START_M, 0.25, 1_590, 1_590);
     let (status, answer) = post(&base, "/run_trajectory", &run_body(state_1590.radius_m, 0.25, 10, 1)).await;
     assert_eq!(status, 200, "{answer}");
     let tail: Value = serde_json::from_str(&answer).unwrap();
@@ -341,19 +350,21 @@ async fn the_whole_growth_stops_on_step_1597_at_the_final_radius_and_its_tape_ve
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn each_bound_lands_at_the_last_number_inside_and_is_refused_by_name_at_the_next_outside() {
     let base = spawn_app().await;
-    for radius_m in [RADIUS_FLOOR_M, above(RADIUS_FLOOR_M), below(FINAL_RADIUS_M), FINAL_RADIUS_M] {
-        let (status, text) = post(&base, "/verify_physics", &step_body(radius_m, ceiling())).await;
+    for radius_m in [RADIUS_FLOOR_M, above(RADIUS_FLOOR_M), 1.0, below(FINAL_RADIUS_M), FINAL_RADIUS_M] {
+        // Near the floor the wall moves at 214 m/s, and a step of a microsecond lands.
+        let dt_s = if radius_m < 1.5 { 1.0e-6 } else { ceiling() };
+        let (status, text) = post(&base, "/verify_physics", &step_body(radius_m, dt_s)).await;
         assert_eq!(status, 200, "{radius_m}: {text}");
-        let (status, text) = post(&base, "/run_trajectory", &run_body(radius_m, ceiling(), 3, 1)).await;
+        let (status, text) = post(&base, "/run_trajectory", &run_body(radius_m, dt_s, 3, 1)).await;
         assert_eq!(status, 200, "{radius_m}: {text}");
         let tape: Value = serde_json::from_str(&text).unwrap();
         assert_eq!(tape["inputs"]["initial"]["radius_m"].as_f64().unwrap().to_bits(), radius_m.to_bits());
     }
     for (radius_m, name) in [
-        (below(RADIUS_FLOOR_M), "RadiusBelowCard"),
-        (1.0, "RadiusBelowCard"),
-        (0.0, "RadiusBelowCard"),
-        (-4.0, "RadiusBelowCard"),
+        (below(RADIUS_FLOOR_M), "RadiusBelowLedgerResolution"),
+        (0.1, "RadiusBelowLedgerResolution"),
+        (0.0, "RadiusBelowLedgerResolution"),
+        (-4.0, "RadiusBelowLedgerResolution"),
         (above(FINAL_RADIUS_M), "RadiusAboveFinal"),
         (8.8, "RadiusAboveFinal"),
         (7250.0, "RadiusAboveFinal"),
@@ -399,7 +410,7 @@ async fn a_missing_input_a_wall_speed_a_load_and_a_card_constant_are_refused() {
         step["parameters"].as_object_mut().unwrap().remove(key);
         let (status, text) = post(&base, "/verify_physics", &step).await;
         assert_eq!(status, 422, "{key}: {text}");
-        assert_eq!(text, format!("Missing required parameter: '{key}'"));
+        assert_eq!(text, format!("Missing required parameter: '{key}' (InputMissing)."));
     }
     // The wall's speed, the impactor, Ryugu and the card's constants are not
     // fields of a request: in a step, at the start of a run and in a load.
@@ -442,7 +453,7 @@ async fn the_card_is_listed_and_described_with_its_record() {
     let base = spawn_app().await;
     let list: Value = Client::new().get(format!("{base}/cards")).send().await.unwrap().json().await.unwrap();
     let cards = list["cards"].as_array().unwrap();
-    assert_eq!(cards.len(), 31);
+    assert_eq!(cards.len(), 37);
     assert_eq!(cards[20]["domain"], "aerospace");
     assert_eq!(cards[20]["card"], "crater_ryugu_sci");
     assert!(cards[20]["specimen"].as_str().unwrap().contains("fitted in the laboratory on Earth and not to Ryugu"));
@@ -450,7 +461,10 @@ async fn the_card_is_listed_and_described_with_its_record() {
     assert_eq!(status, 200, "{text}");
     let body: Value = serde_json::from_str(&text).unwrap();
     assert_eq!(body["phase_fields"][0]["name"], "radius_m");
-    assert_eq!(body["rejects"].as_array().map(Vec::len), Some(9));
+    // Re-pinned for 0.10.1: after the kernel's 9 names the list holds the gateway's own two, DtBelowFloor and DtAboveCeiling.
+    // The kernel's nine, DtBelowFloor and DtAboveCeiling, and, since the fix
+    // pass of 0.14.0, ContinuationNotOnCard: a continuation before the stop.
+    assert_eq!(body["rejects"].as_array().map(Vec::len), Some(12));
     let record = &body["validation"];
     assert!(record["limits"].as_str().unwrap().contains("Nothing is fitted to Ryugu"));
     // Sentences held in the one line of the list, the result and the limits.
@@ -476,14 +490,14 @@ async fn the_card_is_listed_and_described_with_its_record() {
         "Engine 0.7.0, with the constants retyped, does not",
         "the team's submitted manuscript says growth would stop by about 300 s",
         "SHA-256 425ef2b93d69be6f05da11eaf6ad4c4debecc37d548672950465d68ef2bf3b04) was overwritten by a later build; two later builds, 05efbd06… and 043d5765…, returned the answer byte for byte",
-        "evidence/checks/second_party/V-30/",
+        "evidence/verification/second_party/V-30/",
     ] {
         assert!(result.contains(words), "{words}: {result}");
     }
     assert!(!result.contains("to the last bit"), "{result}");
     let limits = record["limits"].as_str().unwrap();
     for words in [
-        "Nothing in this comparison was blind: one known measured number and a rough prediction of 8.6 m were in hand before the protocol's hash was recorded",
+        "The comparison is not blind: the measured diameter and a prediction of 8.6 m worked out by hand were in hand before the protocol's hash was recorded, and all of Schmidt's Table 1, the four held-back centrifuge craters included, was seen while it was transcribed",
         "The impactor was a hollow copper shell 13 cm across, of 2 kg; the card models it as a solid copper sphere of the same mass, of radius 3.76 cm, at the full 2 km/s",
         "the same law gives 7.83 m, 8.0 percent above the measurement and inside the allowance",
         "(the shell, 2 km/s, g = 1.2e-4 m/s2) it gives 7.50 m, 3.5 percent above",
@@ -497,10 +511,35 @@ async fn the_card_is_listed_and_described_with_its_record() {
         assert!(limits.contains(words), "{words}: {limits}");
     }
     // Both worked examples run as written.
-    let (status, answer) = post(&base, "/verify_physics", &body["example_verify_step"]).await;
+    let (status, answer) = post(&base, "/verify_physics", &body["example_compute_step"]).await;
     assert_eq!(status, 200, "{answer}");
     let (status, answer) = post(&base, "/run_trajectory", &body["example_run_trajectory"]).await;
     assert_eq!(status, 200, "{answer}");
     let tape: Value = serde_json::from_str(&answer).unwrap();
     assert_eq!(tape["final_state"]["stopped"], true);
+}
+
+/// Where the card stood at 1.75 m, a run from the floor, 0.1622 m, at a
+/// step of 2 microseconds lands on the kernel's own loop bit for bit with the
+/// ledger closed, and its tape verifies; at the ceiling its first step is
+/// refused by the ledger, sealed with nothing landed.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_run_from_the_floor_lands_on_the_kernel_loop_and_its_tape_verifies() {
+    let base = spawn_app().await;
+    let (status, answer) = post(&base, "/run_trajectory", &run_body(RADIUS_FLOOR_M, 2.0e-6, 20_000, 1_000)).await;
+    assert_eq!(status, 200, "{}", &answer[..answer.len().min(400)]);
+    let tape: Value = serde_json::from_str(&answer).unwrap();
+    assert_eq!(tape["outcome"], "completed", "{}", tape["reject_detail"]);
+    let (state, worst, _, _) = direct_loop(RADIUS_FLOOR_M, 2.0e-6, 20_000, 1_000);
+    assert_state_is(&tape["final_state"], &state, "from the floor");
+    assert!(worst < 1.0e-6, "{worst:e}");
+    assert!(state.radius_m > 0.5, "{}", state.radius_m);
+    let (status, report) = post(&base, "/verify_tape", &tape).await;
+    assert_eq!(status, 200, "{report}");
+    assert_eq!(serde_json::from_str::<Value>(&report).unwrap()["holds"], true);
+    let (status, answer) = post(&base, "/run_trajectory", &run_body(RADIUS_FLOOR_M, ceiling(), 3, 1)).await;
+    assert_eq!(status, 200, "{answer}");
+    let tape: Value = serde_json::from_str(&answer).unwrap();
+    assert_eq!(tape["outcome"], "refused", "{answer}");
+    assert_eq!(tape["steps_landed"], 0);
 }

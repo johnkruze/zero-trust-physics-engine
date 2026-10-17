@@ -22,7 +22,7 @@
 //! report's 50 W. This card carries both. The ramp is the report's design
 //! figure, a constant acceleration and a constant worth per inch, and not a
 //! recorded rod motion. The starting power is a fitted effective value and
-//! not a measurement: the second scoring (`checks/second_party/V-25`) found 7
+//! not a measurement: the second scoring (`verification/second_party/V-25`) found 7
 //! to 11 W across the things it varied, 50 W excluded under this model, and
 //! 10 to 15 ms of fixed-time error left in the insertion, which shows as late
 //! peaks on the fastest tests.
@@ -38,15 +38,30 @@
 //! ```
 //!
 //! `ρ_0` and `v` are the load: the reactivity inserted and the coolant flow
-//! rate. A burst has one of each. The first landed step records them in the
-//! state, and a later step that carries another reactivity or another flow
-//! rate is refused by name and the state kept: a second insertion, a
-//! withdrawal or a jump is not the one ramp of the equations, and no tested
-//! burst changed its flow. `T_in` is the inlet temperature the state was started at. The card
-//! has three bands of inlet temperature, the three the report tested and
-//! gives constants for: 56 to 92 degF, 251 to 259 degF, 498 to 501 degF.
-//! `l*`, `K`, `A` and `C_w` are per band. Between the bands nothing was
-//! measured and the card refuses.
+//! rate. A burst has one reactivity. The first landed step records it in the
+//! state, and a later step that carries another is refused by name and the state kept: a second
+//! insertion, a withdrawal or a jump is not the one ramp of the equations. Each step may carry
+//! its own flow rate: the flow enters only through the sweep of the water temperature, and the
+//! sweep integral of the ledger is booked per step at that step's flow. No tested burst changed
+//! its flow, and a burst whose flow changes was not compared. `T_in` is the inlet temperature the
+//! state was started at. The card has three bands of inlet temperature, the three the report
+//! tested and gives constants for: 56 to 92 degF, 251 to 259 degF, 498 to 501 degF. `l*`, `K`,
+//! `A` and `C_w` are per band. Between the bands nothing was measured and the card refuses.
+//!
+//! Compared per band on the tested periods: 0.769 to 1.210 dollars at 56 to 92 degF, 0.919 to
+//! 1.207 at 251 to 259 degF, 0.837 to 1.227 at 498 to 501 degF; on the 30 held-back tests peak
+//! power met its lines in every band and the time of the peak was missed in the two cooler bands
+//! (root mean square 5.22 and 8.46 percent against 5, worst 12.24 and 14.88 percent against 10).
+//! Outside those spans the card computes the same ramp and feedback at any reactivity above zero
+//! ([`StepReject::ReactivityNotPositive`] below it), and nothing was compared; the Doppler term
+//! grows without bound, so a first maximum always comes. The cold band was tested with no flow,
+//! 251 to 259 degF at 2.4 to 22 ft/s and 498 to 501 degF at 4.8 to 24 ft/s; the card computes
+//! at any flow of zero or more in any band, the cold band included ([`StepReject::NegativeFlow`]
+//! below zero). The longest scored time of peak is 13.7 s, the largest energy to the peak in
+//! Tables III and V 15 MW s, the largest peak power 410 MW; past them the card computes the same
+//! burst to its first maximum, with no limit of time, energy or power. The fuel lump is about a
+//! fourteenth of the heat capacity of the fuel and is not a temperature of the fuel itself, so
+//! the card has no melting limit to stop at.
 //!
 //! Locked from the report: `l*` (Table II), the six-group set (Appendix B
 //! 3.3, stated for 500 degF and used in all three bands), `K` (Appendix B
@@ -63,8 +78,8 @@
 //! scoring redid on its own and reached to all six. The file
 //! `out/f03_fit_full.json` now on disk is a later fit and differs in the sixth
 //! figure (`analysis/v2/note_which_fit_the_card_carries.md`). Thirty tests
-//! were held back, among them the whole 260 degF series; the protocol is
-//! `validation_protocol_v2.md`.
+//! were held back, among them the whole series the report names for about 260 degF, whose inlet
+//! temperatures were 251 to 259 degF; the protocol is `validation_protocol_v2.md`.
 //!
 //! The fuel temperature is one lump weighted to where the feedback is made.
 //! Its heat capacity comes out near one tenth of the whole UO2. The report
@@ -75,7 +90,7 @@
 //!
 //! The card leaves out hot standby and operating power (a start from 1 MW or
 //! 19 MW with a steady temperature field), boiling, void, pressure, anything
-//! after the first maximum, a load changed during a burst, any other core.
+//! after the first maximum, a reactivity changed during a burst, any other core.
 //!
 //! The ledger is the neutron population `N = P + Σ C_i` (MW). Summing the
 //! equations, `dN/dt = ρ P / l*`. The integral of `ρ P` has two parts in
@@ -99,7 +114,7 @@
 //! matches the reactor.
 //!
 //! What the residual is, as the second scoring measured it on the fastest run
-//! of each band with a ledger of its own (`checks/second_party/V-25`,
+//! of each band with a ledger of its own (`verification/second_party/V-25`,
 //! `ledger.py`). It names a wrong method. Named on all three runs: explicit
 //! Euler, the midpoint and Heun's second-order methods, Kutta's third-order
 //! method, Runge–Kutta with one stage weight wrong by 1e-3 and by 1e-5, a
@@ -117,9 +132,8 @@
 //! sits at 2.3e-8 and 2.6e-8, far under it; on the third it is 3.0e-7.
 //!
 //! An incoming state is held to what the card itself writes: no energy,
-//! temperature rise or precursor sum below zero, a power above zero, energy
-//! and power and peak power inside the card's limits, the peak fields a
-//! sample of this run, the card's start at time zero, and every derived field
+//! temperature rise or precursor sum below zero, a power above zero, a clock at or above zero,
+//! the peak fields a sample of this run, the card's start at time zero, and every derived field
 //! equal bit for bit to the card's own arithmetic on the rest of the state.
 //! A state that fails is refused by name and kept as it was. Three things the
 //! state cannot show are not refused. While the rod is moving the state holds
@@ -128,14 +142,25 @@
 //! After the rod has stopped the equations hold no time, so a clock moved
 //! later, with the rest of the state as it was, steps on. And the energy
 //! released is tied to the fuel temperature rise only to rounding, so an
-//! energy between zero and the limit that disagrees with it, written into the
+//! energy at or above zero that disagrees with it, written into the
 //! state and into its peak sample together, is not named.
 //!
-//! [`ReactorSpert3Fuel::gate_dt_s`] is the step ceiling:
-//! `GATE_PHASE_STEP · l*` of the cold band, 0.2 of the time constant of the
-//! prompt pole at zero net reactivity, where every run starts.
-//! [`ReactorSpert3Fuel::floor_dt_s`] is 1e-9 s. The public step applies
-//! neither. The gateway refuses a step outside them.
+//! [`ReactorSpert3Fuel::gate_dt_s`] is the static step ceiling:
+//! `GATE_PHASE_STEP · l*` of the cold band, 0.43 ms, 0.2 of the time constant of the
+//! prompt pole at zero net reactivity, where every run starts. Past the compared spans the step
+//! ceiling follows the state: the step itself refuses, state and frame kept, a step longer than
+//! 0.2 of the time constant of the fastest pole at the state it starts from or at the state it
+//! would land on, or 0.045 of it when that pole is growing ([`GROWTH_PHASE_STEP`],
+//! [`StepReject::DtAboveStateCeiling`]): the prompt pole, of size up to `|1 − ρ| / l*`, the
+//! feedback pole of the fuel and the water temperature, and the sweep `2 v / L` of the water.
+//! At the static ceiling the growing prompt pole passes 0.045 of its time constant per step
+//! above a net reactivity of about 1.22 dollars, just above the compared spans (1.21 to 1.23),
+//! and a flow above about 226 m/s makes the sweep faster than the static ceiling allows: at 2
+//! dollars the state ceiling is 97 µs, at 6 dollars 20 µs. Inside the compared spans, at the
+//! static ceiling, the state ceiling refuses no step.
+//! [`ReactorSpert3Fuel::floor_dt_s`] is 1e-9 s. The public step applies neither the static
+//! ceiling nor the floor; the gateway refuses a step outside them. The state ceiling the step
+//! applies.
 //!
 //! `core` only, and `sqrt` from the platform. The state is `Copy`. An
 //! accepted step writes time, power, energy released, net reactivity, the
@@ -148,6 +173,7 @@ extern crate core;
 use core::prelude::v1::*;
 
 use crate::frame::LastStateFrame64;
+use crate::normal::{normal_or_zero, normal_or_zero_each};
 
 /// Delayed-neutron group fractions `b_i`, fractions of the total delayed
 /// fraction; sum 1. IDO-17281, Appendix B 3.3 (report page 109), stated for
@@ -155,16 +181,21 @@ use crate::frame::LastStateFrame64;
 pub const GROUP_FRACTION: [f64; 6] = [0.0352, 0.2014, 0.1858, 0.4006, 0.1437, 0.0333];
 /// Delayed-neutron decay constants `λ_i`, per second. Same table.
 pub const GROUP_DECAY_PER_S: [f64; 6] = [0.0127, 0.0317, 0.1167, 0.3142, 1.4007, 3.8803];
-/// Lowest inlet temperature of each band, K: 56, 251 and 498 degF.
-/// IDO-17281 Tables III and V.
+/// Lowest inlet temperature of each band, K: 56, 251 and 498 degF. IDO-17281 Tables III and V.
+/// Written (F − 32) / 1.8 + 273.15, the conversion of the research scripts and of every
+/// compared request (held-back tests 38 at 56 degF, 70 at 251 degF and 54 at 498 degF were sent
+/// at these numbers). It lies one or two units in the last place below (F + 459.67) / 1.8, the
+/// conversion both E-core cards use for a temperature they state, so a tested edge converted
+/// either way is inside its band.
 pub const BAND_INLET_MIN_K: [f64; 3] = [
     (56.0 - 32.0) / 1.8 + 273.15,
     (251.0 - 32.0) / 1.8 + 273.15,
     (498.0 - 32.0) / 1.8 + 273.15,
 ];
-/// Highest inlet temperature of each band, K: 92, 259 and 501 degF, rounded
-/// outward: each is the smallest double at or above the exact edge, so the
-/// tested edge converted as (F + 459.67) / 1.8 is inside its band.
+/// Highest inlet temperature of each band, K: 92, 259 and 501 degF, converted as
+/// (F + 459.67) / 1.8, the conversion both E-core cards use: 92 degF is 306.48333333333335 K in
+/// both. Each is the smallest double at or above the exact edge, so the tested edge converted
+/// either way is inside its band.
 pub const BAND_INLET_MAX_K: [f64; 3] = [
     (92.0 + 459.67) / 1.8,
     (259.0 + 459.67) / 1.8,
@@ -186,26 +217,26 @@ pub const BAND_MODERATOR_COEFFICIENT_DOLLAR_PER_K: [f64; 3] = [0.0072, 0.036, 0.
 /// composition) scaled by density, times specific heat; NIST Chemistry
 /// WebBook at 294.26 K 0.0853 MPa, 399.3 K and 533.15 K at 10.44 MPa.
 pub const BAND_WATER_HEAT_CAPACITY_MWS_PER_K: [f64; 3] = [0.50331, 0.48072, 0.46672];
-/// Smallest reactivity of each band, dollars: the inhour value of the longest
+/// Smallest reactivity compared in each band, dollars: the inhour value of the longest
 /// scored reactor period of the band (1010, 249 and 592 ms) with the band's
 /// `l*`, not rounded: the value the compared request asked, which is this
-/// crate's inhour sum or one unit in the last place below it. Until 0.7.0 it
-/// was rounded outward to 0.768, 0.919 and 0.836.
+/// crate's inhour sum or one unit in the last place below it. Below it the card computes the
+/// same equations at any reactivity above zero, and nothing was compared.
 pub const BAND_REACTIVITY_MIN_DOLLAR: [f64; 3] = [0.7686211839115998, 0.9192304970495506, 0.8366515135277093];
-/// Largest reactivity of each band, dollars: the inhour value of the
+/// Largest reactivity compared in each band, dollars: the inhour value of the
 /// shortest tested period (10, 10.3 and 9.7 ms), not rounded: the value the
 /// compared request asked, which is this crate's inhour sum or one unit in
-/// the last place above it. Until 0.7.0 it was rounded outward to 1.211,
-/// 1.208 and 1.229.
+/// the last place above it. Above it the card computes the same equations, and nothing was
+/// compared.
 pub const BAND_REACTIVITY_MAX_DOLLAR: [f64; 3] = [1.2102315121058187, 1.206741353802147, 1.2273310554599017];
-/// Smallest coolant flow rate of each band, m/s, the smallest tested: no
-/// flow in the cold band, 2.4 ft/s at 260 degF and 4.8 ft/s at 500 degF
-/// (IDO-17281 Table V). Each is the largest double at or below the exact
-/// value.
+/// Smallest coolant flow rate tested in each band, m/s: no flow in the cold band, 2.4 ft/s at
+/// 251 to 259 degF and 4.8 ft/s at 498 to 501 degF (IDO-17281 Table V). Each is the largest
+/// double at or below the exact value. The card computes at any flow of zero or more in any
+/// band; the flow enters only through the sweep of the water temperature.
 pub const BAND_FLOW_MIN_M_PER_S: [f64; 3] = [0.0, 0.73152, 1.46304];
-/// Largest coolant flow rate of each band, m/s, the largest tested: none
-/// cold, 22 ft/s at 260 degF and 24 ft/s at 500 degF (IDO-17281 Table V).
-/// Each is the smallest double at or above the exact value.
+/// Largest coolant flow rate tested in each band, m/s: none cold, 22 ft/s at 251 to 259 degF
+/// and 24 ft/s at 498 to 501 degF (IDO-17281 Table V). Each is the smallest double at or above
+/// the exact value.
 pub const BAND_FLOW_MAX_M_PER_S: [f64; 3] = [0.0, 22.0 * 0.3048, 24.0 * 0.3048];
 /// Share of the power deposited promptly in the water, `f_w`. IDO-17281
 /// Appendix B, heat-source fractions.
@@ -224,15 +255,6 @@ pub const FUEL_HEAT_CAPACITY_MWS_PER_K: f64 = 0.0260616;
 /// Weight on the water-temperature feedback. Fitted; one number for the
 /// three bands. It came out below one.
 pub const WATER_FEEDBACK_WEIGHT: f64 = 0.28586;
-/// Energy released beyond which the card refuses, MW s. The largest in
-/// Tables III and V is 15.
-pub const ENERGY_MAX_MWS: f64 = 30.0;
-/// Power beyond which the card refuses, MW. The largest in Tables III and V
-/// is 410.
-pub const POWER_MAX_MW: f64 = 1000.0;
-/// Time beyond which the card refuses, s. The longest scored time of peak is
-/// 13.7 s.
-pub const TIME_MAX_S: f64 = 20.0;
 /// `|N − N_anchor − W / l*| / max(N, N_anchor)` must stay at or under this.
 /// Set by measurement over ten runs at the ends of each band's span, each at
 /// the ceiling to its first maximum: the largest value found is 2.6e-8, on
@@ -240,14 +262,21 @@ pub const TIME_MAX_S: f64 = 20.0;
 /// residual compares the step with the card's own quadrature of the same
 /// power, so it names a wrong method and is not a bound on the error: it
 /// reads the true error of the state low by about 11 to 15 times. The outside
-/// recomputation (`checks/crosscheck/reactor_spert3_fuel`) puts the card's
+/// recomputation (`verification/crosscheck/reactor_spert3_fuel`) puts the card's
 /// error at the ceiling at 3.1e-7 at worst, and the second scoring
-/// (`checks/second_party/V-25`) at 3.3e-7, 3.0e-7 and 3.8e-7 on the fastest
+/// (`verification/second_party/V-25`) at 3.3e-7, 3.0e-7 and 3.8e-7 on the fastest
 /// run of each band, above this limit on two of the three.
 pub const RESIDUAL_CONSERVATION_LIMIT: f64 = 3.0e-7;
 /// Fraction of the prompt time constant `l*` that one step at the ceiling
-/// advances.
+/// advances, and of the time constant of the fastest pole at the state ceiling.
 pub const GATE_PHASE_STEP: f64 = 0.2;
+/// Fraction of the time constant of a growing pole that one step advances at most, at the
+/// state ceiling. Inside the compared spans the static ceiling gives the growing prompt pole at
+/// most 0.0434 of its time constant per step (1.227 dollars at 498 to 501 degF); held to 0.045
+/// past them, the ledger residual of runs from 1.5 to 6 dollars stays at or under 3.9e-8 of the
+/// limit's 3e-7, as inside them (2.6e-8), where 0.07 lets it reach 1.6e-7. A growing pole is
+/// followed more closely than a decaying one because the error of a step grows with it.
+pub const GROWTH_PHASE_STEP: f64 = 0.045;
 /// Smallest step the card stands behind, s.
 pub const FLOOR_DT_S: f64 = 1.0e-9;
 
@@ -269,24 +298,20 @@ pub enum StepReject {
     InvalidCard,
     /// The recorded inlet temperature is in none of the three tested bands: 56 to 92, 251 to 259, 498 to 501 degF.
     InletTemperatureOutsideCard,
-    /// The reactivity is outside the span tested in this band.
-    ReactivityOutsideCard,
-    /// The coolant flow rate is outside the span tested in this band: none in the cold band, 2.4 to 22 ft/s at 260 degF and 4.8 to 24 ft/s at 500 degF.
-    FlowOutsideCard,
+    /// The held reactivity is zero or less: no step in reactivity is inserted, and there is no burst.
+    ReactivityNotPositive,
+    /// The coolant flow rate is below zero: the flow runs through the core from the inlet, and a flow the other way is not a flow rate of this core.
+    NegativeFlow,
     /// The state is past the first maximum of power; nothing after it is on the card.
     PastFirstMaximum,
-    /// The step would end after 20 s.
-    TimeBeyondCard,
+    /// The incoming state holds a time below zero.
+    NegativeTime,
+    /// The step is longer than 0.2 of the time constant of the fastest pole at the state it starts from or at the state it would land on, or 0.045 of it when that pole is growing: the prompt pole |1 - net reactivity| / l*, the feedback pole of the fuel and the water temperature, or the sweep 2 v / L of the water.
+    DtAboveStateCeiling,
     /// The incoming state holds an energy released, a temperature rise or a precursor sum below zero, or a power that is not above zero.
     NegativeState,
-    /// The incoming state or the trial step holds more than 30 MW s released.
-    EnergyBeyondCard,
-    /// The incoming state or the trial step holds a power, or a peak power, above 1000 MW.
-    PowerBeyondCard,
     /// The reactivity of the load is not the one the first step of this burst sent the rod to; a burst is one insertion, ramped in and then held.
     ReactivityChangedDuringBurst,
-    /// The coolant flow rate of the load is not the one of the first step of this burst; no tested burst changed its flow.
-    FlowChangedDuringBurst,
     /// The incoming state is not one this card writes: at time zero it is not the card's start; later, its clock, inserted reactivity and rod flag are not on the ramp to the burst's reactivity, or its power rate, net reactivity, ledger anchor, defect or residual, a flag or a peak field is not what the card computes from the rest of the state.
     InconsistentState,
     /// The trial step created neutron population beyond what the reactivity supplies.
@@ -295,8 +320,9 @@ pub enum StepReject {
     FirstLawBreach,
 }
 
-/// What the operator sets for one burst. The first landed step records it in the state, and
-/// every later step of that burst must carry the same reactivity and the same flow rate.
+/// What the operator sets for one burst. The first landed step records it in the state. Every
+/// later step of that burst must carry the same reactivity; each step may carry its own flow
+/// rate.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ReactorLoad {
     /// Dollars of reactivity the transient rod inserts in all, `ρ_0`.
@@ -326,11 +352,9 @@ pub struct ReactorSpert3Fuel {
     pub doppler_strength_dollar_per_sqrt_k: f64,
     pub fuel_heat_capacity_mws_per_k: f64,
     pub water_feedback_weight: f64,
-    pub energy_max_mws: f64,
-    pub power_max_mw: f64,
-    pub time_max_s: f64,
     pub residual_conservation_limit: f64,
     pub gate_phase_step: f64,
+    pub growth_phase_step: f64,
     pub floor_dt_s: f64,
 }
 
@@ -363,11 +387,9 @@ impl ReactorSpert3Fuel {
             doppler_strength_dollar_per_sqrt_k: DOPPLER_STRENGTH_DOLLAR_PER_SQRT_K,
             fuel_heat_capacity_mws_per_k: FUEL_HEAT_CAPACITY_MWS_PER_K,
             water_feedback_weight: WATER_FEEDBACK_WEIGHT,
-            energy_max_mws: ENERGY_MAX_MWS,
-            power_max_mw: POWER_MAX_MW,
-            time_max_s: TIME_MAX_S,
             residual_conservation_limit: RESIDUAL_CONSERVATION_LIMIT,
             gate_phase_step: GATE_PHASE_STEP,
+            growth_phase_step: GROWTH_PHASE_STEP,
             floor_dt_s: FLOOR_DT_S,
         };
         if reactor.is_valid() {
@@ -416,15 +438,14 @@ impl ReactorSpert3Fuel {
             && self.fuel_heat_capacity_mws_per_k.to_bits()
                 == FUEL_HEAT_CAPACITY_MWS_PER_K.to_bits()
             && self.water_feedback_weight.to_bits() == WATER_FEEDBACK_WEIGHT.to_bits()
-            && self.energy_max_mws.to_bits() == ENERGY_MAX_MWS.to_bits()
-            && self.power_max_mw.to_bits() == POWER_MAX_MW.to_bits()
-            && self.time_max_s.to_bits() == TIME_MAX_S.to_bits()
             && self.residual_conservation_limit.to_bits() == RESIDUAL_CONSERVATION_LIMIT.to_bits()
             && self.gate_phase_step.to_bits() == GATE_PHASE_STEP.to_bits()
+            && self.growth_phase_step.to_bits() == GROWTH_PHASE_STEP.to_bits()
             && self.floor_dt_s.to_bits() == FLOOR_DT_S.to_bits()
     }
 
-    /// The band an inlet temperature falls in: 0 cold, 1 about 260 degF, 2 about 500 degF.
+    /// The band an inlet temperature falls in: 0 for 56 to 92 degF, 1 for 251 to 259 degF, 2 for
+    /// 498 to 501 degF.
     #[must_use]
     pub fn band_of(&self, inlet_temperature_k: f64) -> Option<usize> {
         let mut band = 0;
@@ -440,7 +461,8 @@ impl ReactorSpert3Fuel {
     }
 
     /// Largest step the card stands behind: `GATE_PHASE_STEP · l*` of the cold band, 0.43 ms.
-    /// Not applied by [`step`].
+    /// Past the compared spans the state ceiling of the step binds as well
+    /// ([`StepReject::DtAboveStateCeiling`]). Not applied by [`step`].
     #[must_use]
     pub fn gate_dt_s(&self) -> Option<f64> {
         let l_star = self.band_generation_time_reduced_s[0];
@@ -504,8 +526,8 @@ pub struct ReactorState {
     /// Reactivity of the load of the first landed step, `ρ_0`: where the rod of this burst is
     /// sent. Zero at the start, before any step has landed.
     pub burst_reactivity_dollar: f64,
-    /// Coolant flow rate of the load of the first landed step, `v`. Zero at the start.
-    pub burst_coolant_flow_m_per_s: f64,
+    /// Coolant flow rate of the load of the last landed step, `v`. Zero at the start.
+    pub coolant_flow_held_m_per_s: f64,
     /// Set by the step that lands, with the insertion complete, on a power no longer rising. The next step is refused.
     pub past_first_maximum: bool,
     /// Net reactivity above one dollar.
@@ -553,7 +575,7 @@ impl ReactorState {
             peak_energy_mws: 0.0,
             peak_time_s: 0.0,
             burst_reactivity_dollar: 0.0,
-            burst_coolant_flow_m_per_s: 0.0,
+            coolant_flow_held_m_per_s: 0.0,
             past_first_maximum: false,
             prompt_supercritical: false,
             rod_moving: true,
@@ -621,8 +643,25 @@ fn net_reactivity(terms: &Terms, t_s: f64, y: &[f64; 10]) -> f64 {
 /// Advance one Runge–Kutta step and write the frame.
 ///
 /// A rejected step leaves `state` and `frame` as they were.
+///
+/// A value of the landed state below the normal range is written as zero
+/// with its sign ([`crate::normal`]).
 #[must_use]
 pub fn step(
+    reactor: &ReactorSpert3Fuel,
+    state: &mut ReactorState,
+    frame: &mut LastStateFrame64,
+    load: ReactorLoad,
+    dt_s: f64,
+) -> Result<(), StepReject> {
+    step_as_computed(reactor, state, frame, load, dt_s)?;
+    normal_or_zero_state(state);
+    Ok(())
+}
+
+/// The step as its equations compute it, before a value of the landed
+/// state below the normal range is written as zero.
+fn step_as_computed(
     reactor: &ReactorSpert3Fuel,
     state: &mut ReactorState,
     frame: &mut LastStateFrame64,
@@ -633,6 +672,32 @@ pub fn step(
     let terms = terms(reactor, band, state.inlet_temperature_k, load);
     let advanced = rk4_through_the_stop(reactor, &terms, state.t_s, &state_vector(state), dt_s);
     commit(reactor, state, frame, &terms, load, dt_s, advanced)
+}
+
+/// Each value of a landed state below the normal range written as zero
+/// with its sign ([`crate::normal`]): the state carried to the next step
+/// and published holds no subnormal number.
+fn normal_or_zero_state(state: &mut ReactorState) {
+    state.t_s = normal_or_zero(state.t_s);
+    state.power_mw = normal_or_zero(state.power_mw);
+    normal_or_zero_each(&mut state.precursor_mw);
+    state.fuel_temperature_rise_k = normal_or_zero(state.fuel_temperature_rise_k);
+    state.water_temperature_rise_k = normal_or_zero(state.water_temperature_rise_k);
+    state.energy_mws = normal_or_zero(state.energy_mws);
+    state.inlet_temperature_k = normal_or_zero(state.inlet_temperature_k);
+    state.power_rate_mw_per_s = normal_or_zero(state.power_rate_mw_per_s);
+    state.reactivity_net_dollar = normal_or_zero(state.reactivity_net_dollar);
+    state.reactivity_inserted_now_dollar = normal_or_zero(state.reactivity_inserted_now_dollar);
+    state.population_anchor_mw = normal_or_zero(state.population_anchor_mw);
+    state.insertion_integral_dollar_mws = normal_or_zero(state.insertion_integral_dollar_mws);
+    state.sweep_integral_k2 = normal_or_zero(state.sweep_integral_k2);
+    state.population_defect_mw = normal_or_zero(state.population_defect_mw);
+    state.residual_conservation_error = normal_or_zero(state.residual_conservation_error);
+    state.peak_power_mw = normal_or_zero(state.peak_power_mw);
+    state.peak_energy_mws = normal_or_zero(state.peak_energy_mws);
+    state.peak_time_s = normal_or_zero(state.peak_time_s);
+    state.burst_reactivity_dollar = normal_or_zero(state.burst_reactivity_dollar);
+    state.coolant_flow_held_m_per_s = normal_or_zero(state.coolant_flow_held_m_per_s);
 }
 
 /// One Runge–Kutta step, except in the one step in which the rod stops: there the inserted
@@ -680,33 +745,75 @@ fn validate(
         Some(band) => band,
         None => return Err(StepReject::InletTemperatureOutsideCard),
     };
-    if load.reactivity_inserted_dollar < reactor.band_reactivity_min_dollar[band]
-        || load.reactivity_inserted_dollar > reactor.band_reactivity_max_dollar[band]
-    {
-        return Err(StepReject::ReactivityOutsideCard);
+    if !(load.reactivity_inserted_dollar > 0.0) {
+        return Err(StepReject::ReactivityNotPositive);
     }
-    if load.coolant_flow_m_per_s < reactor.band_flow_min_m_per_s[band]
-        || load.coolant_flow_m_per_s > reactor.band_flow_max_m_per_s[band]
-    {
-        return Err(StepReject::FlowOutsideCard);
+    if load.coolant_flow_m_per_s < 0.0 {
+        return Err(StepReject::NegativeFlow);
     }
     if state.past_first_maximum {
         return Err(StepReject::PastFirstMaximum);
     }
-    if !(state.t_s >= 0.0) || !(state.t_s + dt_s <= reactor.time_max_s) {
-        return Err(StepReject::TimeBeyondCard);
+    if !(state.t_s >= 0.0) {
+        return Err(StepReject::NegativeTime);
     }
     incoming_state_is_the_cards(reactor, state, load, band)?;
+    let terms = terms(reactor, band, state.inlet_temperature_k, load);
+    if dt_above_state_ceiling(reactor, &terms, state.t_s, &state_vector(state), dt_s) {
+        return Err(StepReject::DtAboveStateCeiling);
+    }
     Ok(band)
+}
+
+/// Whether `dt_s` is longer than the state ceiling at the state `(t, y)` under one load:
+/// [`GATE_PHASE_STEP`] of the time constant of the fastest pole there, or
+/// [`GROWTH_PHASE_STEP`] of it when that pole is a growing one.
+///
+/// The fast part of the equations, linearised about the state, is the power and the two
+/// temperatures: `dP'/dt = b P' − (P / l*) (G / (2u) θ_f' + A θ_w')`, with `b = (ρ − 1) / l*`
+/// and `u = √(T_in + θ_f)`, and `dθ_f'/dt` and `dθ_w'/dt` the shares of `P'`. With
+/// `c = (G (1 − f_w) / (2u C_f) + A f_w / C_w) P / l*`, the poles of the power and the
+/// feedback are the roots of `s² − b s + c = 0`: real when `b² ≥ 4c`, the faster of size
+/// `|b| / 2 + √(b² / 4 − c)`, the prompt pole, at most `|1 − ρ| / l*`, growing above one dollar;
+/// a complex pair of size `√c` otherwise, the feedback pole. The sweep of the water temperature,
+/// `2 v / L`, is a pole of its own. The delayed-neutron poles, slower than 3.9 per second, are
+/// left out.
+fn dt_above_state_ceiling(
+    reactor: &ReactorSpert3Fuel,
+    terms: &Terms,
+    t_s: f64,
+    y: &[f64; 10],
+    dt_s: f64,
+) -> bool {
+    let rho_net = net_reactivity(terms, t_s, y);
+    let b = (rho_net - 1.0) / terms.l_star;
+    let u = (terms.inlet + y[7]).sqrt();
+    let c = (terms.doppler * terms.fuel_rate / (2.0 * u) + terms.water_feedback * terms.water_rate)
+        * y[0]
+        / terms.l_star;
+    if !(b.is_finite() && c.is_finite() && terms.sweep.is_finite()) {
+        return true;
+    }
+    let prompt_or_feedback = if b * b < 4.0 * c {
+        c.sqrt() * dt_s > reactor.gate_phase_step
+    } else {
+        let size = 0.5 * b.abs() + (0.25 * b * b - c).sqrt();
+        let phi = if b > 0.0 {
+            reactor.growth_phase_step
+        } else {
+            reactor.gate_phase_step
+        };
+        size * dt_s > phi
+    };
+    prompt_or_feedback || terms.sweep * dt_s > reactor.gate_phase_step
 }
 
 /// The incoming state held to what this card itself writes.
 ///
 /// Every landed step leaves the energy, both temperature rises and the precursor sums at or
-/// above zero and the power above it, the energy and the power inside the card's limits, and
-/// every derived field (the inserted and the net reactivity, the power rate, the ledger's
+/// above zero and the power above it, and every derived field (the inserted and the net reactivity, the power rate, the ledger's
 /// defect and residual, the flags) equal, bit for bit, to what the card computes again here
-/// from the rest of the state under the burst's load. A state at time zero is the card's start
+/// from the rest of the state under the burst's reactivity. A state at time zero is the card's start
 /// and nothing else. A state that fails any of these was not written by this card.
 fn incoming_state_is_the_cards(
     reactor: &ReactorSpert3Fuel,
@@ -728,12 +835,6 @@ fn incoming_state_is_the_cards(
     {
         return Err(StepReject::NegativeState);
     }
-    if state.energy_mws > reactor.energy_max_mws {
-        return Err(StepReject::EnergyBeyondCard);
-    }
-    if state.power_mw > reactor.power_max_mw || state.peak_power_mw > reactor.power_max_mw {
-        return Err(StepReject::PowerBeyondCard);
-    }
     let start = match ReactorState::try_start(reactor, state.inlet_temperature_k) {
         Some(start) => start,
         None => return Err(StepReject::InconsistentState),
@@ -748,19 +849,19 @@ fn incoming_state_is_the_cards(
     if load.reactivity_inserted_dollar != state.burst_reactivity_dollar {
         return Err(StepReject::ReactivityChangedDuringBurst);
     }
-    if load.coolant_flow_m_per_s != state.burst_coolant_flow_m_per_s {
-        return Err(StepReject::FlowChangedDuringBurst);
-    }
+    // The flow of a step may be another than the last one's: the derived fields do not depend
+    // on it, and the sweep integral is booked per step at the flow of that step.
     let terms = terms(reactor, band, state.inlet_temperature_k, load);
     let derived = derive(reactor, &terms, state);
-    if state.population_anchor_mw.to_bits() != start.population_anchor_mw.to_bits()
-        || state.reactivity_inserted_now_dollar.to_bits() != derived.inserted_dollar.to_bits()
+    // Each held as the landed step wrote it, a value below the normal range as zero.
+    if state.population_anchor_mw.to_bits() != normal_or_zero(start.population_anchor_mw).to_bits()
+        || state.reactivity_inserted_now_dollar.to_bits() != normal_or_zero(derived.inserted_dollar).to_bits()
         || state.rod_moving != derived.rod_moving
-        || state.reactivity_net_dollar.to_bits() != derived.net_dollar.to_bits()
-        || state.power_rate_mw_per_s.to_bits() != derived.power_rate_mw_per_s.to_bits()
+        || state.reactivity_net_dollar.to_bits() != normal_or_zero(derived.net_dollar).to_bits()
+        || state.power_rate_mw_per_s.to_bits() != normal_or_zero(derived.power_rate_mw_per_s).to_bits()
         || state.prompt_supercritical != derived.prompt_supercritical
-        || state.population_defect_mw.to_bits() != derived.population_defect_mw.to_bits()
-        || state.residual_conservation_error.to_bits() != derived.residual.to_bits()
+        || state.population_defect_mw.to_bits() != normal_or_zero(derived.population_defect_mw).to_bits()
+        || state.residual_conservation_error.to_bits() != normal_or_zero(derived.residual).to_bits()
     {
         return Err(StepReject::InconsistentState);
     }
@@ -855,7 +956,7 @@ fn same_bits(a: &ReactorState, b: &ReactorState) -> bool {
         && a.peak_energy_mws.to_bits() == b.peak_energy_mws.to_bits()
         && a.peak_time_s.to_bits() == b.peak_time_s.to_bits()
         && a.burst_reactivity_dollar.to_bits() == b.burst_reactivity_dollar.to_bits()
-        && a.burst_coolant_flow_m_per_s.to_bits() == b.burst_coolant_flow_m_per_s.to_bits()
+        && a.coolant_flow_held_m_per_s.to_bits() == b.coolant_flow_held_m_per_s.to_bits()
         && a.past_first_maximum == b.past_first_maximum
         && a.prompt_supercritical == b.prompt_supercritical
         && a.rod_moving == b.rod_moving
@@ -949,7 +1050,7 @@ fn commit(
     terms: &Terms,
     load: ReactorLoad,
     dt_s: f64,
-    advanced: [f64; 10],
+    mut advanced: [f64; 10],
 ) -> Result<(), StepReject> {
     let saved = *state;
     let mut index = 0;
@@ -959,11 +1060,13 @@ fn commit(
         }
         index += 1;
     }
-    if advanced[9] > reactor.energy_max_mws {
-        return Err(StepReject::EnergyBeyondCard);
-    }
-    if advanced[0] > reactor.power_max_mw {
-        return Err(StepReject::PowerBeyondCard);
+    // A value below the normal range is carried as zero (`crate::normal`):
+    // the derived fields below are computed from the values the state
+    // carries, as the check of an incoming state computes them again.
+    normal_or_zero_each(&mut advanced);
+    // The state ceiling at the state the step would land on.
+    if dt_above_state_ceiling(reactor, terms, state.t_s + dt_s, &advanced, dt_s) {
+        return Err(StepReject::DtAboveStateCeiling);
     }
     let y_old = state_vector(state);
     let t_old = state.t_s;
@@ -989,6 +1092,8 @@ fn commit(
             2.0 * y_old[8] * k_old[8],
             2.0 * advanced[8] * k_new[8],
         );
+    state.insertion_integral_dollar_mws = normal_or_zero(state.insertion_integral_dollar_mws);
+    state.sweep_integral_k2 = normal_or_zero(state.sweep_integral_k2);
     state.t_s = t_new;
     state.power_mw = advanced[0];
     index = 0;
@@ -999,9 +1104,9 @@ fn commit(
     state.fuel_temperature_rise_k = advanced[7];
     state.water_temperature_rise_k = advanced[8];
     state.energy_mws = advanced[9];
-    state.power_rate_mw_per_s = k_new[0];
-    state.reactivity_inserted_now_dollar = inserted(terms, t_new);
-    state.reactivity_net_dollar = net_reactivity(terms, t_new, &advanced);
+    state.power_rate_mw_per_s = normal_or_zero(k_new[0]);
+    state.reactivity_inserted_now_dollar = normal_or_zero(inserted(terms, t_new));
+    state.reactivity_net_dollar = normal_or_zero(net_reactivity(terms, t_new, &advanced));
     let population = population_mw(state);
     state.population_defect_mw = population
         - state.population_anchor_mw
@@ -1021,7 +1126,7 @@ fn commit(
     state.past_first_maximum = !state.rod_moving && !(state.power_rate_mw_per_s > 0.0);
     state.prompt_supercritical = state.reactivity_net_dollar > 1.0;
     state.burst_reactivity_dollar = load.reactivity_inserted_dollar;
-    state.burst_coolant_flow_m_per_s = load.coolant_flow_m_per_s;
+    state.coolant_flow_held_m_per_s = load.coolant_flow_m_per_s;
     if !state_is_finite(state) || !(scale > 0.0) {
         *state = saved;
         return Err(StepReject::NonFiniteState);
@@ -1163,7 +1268,7 @@ fn state_is_finite(state: &ReactorState) -> bool {
         && state.peak_energy_mws.is_finite()
         && state.peak_time_s.is_finite()
         && state.burst_reactivity_dollar.is_finite()
-        && state.burst_coolant_flow_m_per_s.is_finite()
+        && state.coolant_flow_held_m_per_s.is_finite()
 }
 
 
@@ -1180,16 +1285,23 @@ mod tests {
     use super::{
         ACTIVE_LENGTH_M, BAND_FLOW_MAX_M_PER_S, BAND_FLOW_MIN_M_PER_S,
         BAND_GENERATION_TIME_REDUCED_S, BAND_INLET_MAX_K, BAND_INLET_MIN_K, BAND_RAMP_DOLLAR_PER_S2,
-        BAND_REACTIVITY_MAX_DOLLAR, BAND_REACTIVITY_MIN_DOLLAR, BAND_WATER_HEAT_CAPACITY_MWS_PER_K, DOPPLER_STRENGTH_DOLLAR_PER_SQRT_K, ENERGY_MAX_MWS,
+        BAND_REACTIVITY_MAX_DOLLAR, BAND_REACTIVITY_MIN_DOLLAR, BAND_WATER_HEAT_CAPACITY_MWS_PER_K, DOPPLER_STRENGTH_DOLLAR_PER_SQRT_K,
         FLAG_PROMPT_SUPERCRITICAL, FLAG_ROD_MOVING, FLOOR_DT_S, FUEL_HEAT_CAPACITY_MWS_PER_K,
-        GROUP_DECAY_PER_S, GROUP_FRACTION, INITIAL_POWER_MW, POWER_MAX_MW, ReactorLoad,
-        ReactorSpert3Fuel, ReactorState, RESIDUAL_CONSERVATION_LIMIT, StepReject, TIME_MAX_S,
+        GATE_PHASE_STEP, GROUP_DECAY_PER_S, GROUP_FRACTION, GROWTH_PHASE_STEP, INITIAL_POWER_MW,
+        ReactorLoad, ReactorSpert3Fuel, ReactorState, RESIDUAL_CONSERVATION_LIMIT, StepReject,
         Terms, WATER_FEEDBACK_WEIGHT, WATER_PROMPT_HEATING_FRACTION, advance, commit, derive, rates,
         rk4, rk4_through_the_stop, state_vector, step, terms, validate,
     };
     use crate::frame::LastStateFrame64;
 
+    /// Fahrenheit to kelvin, (F + 459.67) / 1.8, as both E-core cards convert.
     fn kelvin(fahrenheit: f64) -> f64 {
+        (fahrenheit + 459.67) / 1.8
+    }
+
+    /// Fahrenheit to kelvin as the research scripts and every compared request wrote it,
+    /// (F - 32) / 1.8 + 273.15, one or two units in the last place lower.
+    fn kelvin_as_compared(fahrenheit: f64) -> f64 {
         (fahrenheit - 32.0) / 1.8 + 273.15
     }
 
@@ -1312,7 +1424,7 @@ mod tests {
                 }
                 Err(reject) => break Err(reject),
             }
-            if steps > 200_000 {
+            if steps > 3_000_000 {
                 break Ok(());
             }
         };
@@ -1380,6 +1492,17 @@ mod tests {
         altered.group_decay_per_s[5] = 3.01;
         assert!(!altered.is_valid());
         altered = reactor;
+        altered.growth_phase_step = 0.2;
+        assert!(!altered.is_valid());
+        assert_eq!(GROWTH_PHASE_STEP.to_bits(), 0.045_f64.to_bits());
+        // The growing prompt pole of the largest compared reactivity of each band advances at
+        // most 0.0434 of its time constant in a step at the static ceiling, under the fraction.
+        let mut most: f64 = 0.0;
+        for band in 0..3 {
+            most = most.max((BAND_REACTIVITY_MAX_DOLLAR[band] - 1.0) * ceiling() / BAND_GENERATION_TIME_REDUCED_S[band]);
+        }
+        assert!(most > 0.0434 && most < GROWTH_PHASE_STEP, "{most}");
+        altered = reactor;
         altered.residual_conservation_limit = 1.0;
         assert!(!altered.is_valid());
         let (_, mut state) = start(70.0);
@@ -1421,12 +1544,12 @@ mod tests {
     }
 
     #[test]
-    fn each_tested_edge_lands_by_either_conversion_and_the_next_double_out_is_refused() {
+    fn each_tested_edge_lands_by_either_conversion_and_the_next_double_out_of_a_band_is_refused() {
         let reactor = ReactorSpert3Fuel::e_core_low_initial_power();
         let hot_flow = [(0.0, 0.0), (2.4, 22.0), (4.8, 24.0)];
         for (band, (low, high)) in [(56.0, 92.0), (251.0, 259.0), (498.0, 501.0)].into_iter().enumerate() {
             for fahrenheit in [low, high] {
-                for k in [kelvin(fahrenheit), (fahrenheit + 459.67) / 1.8] {
+                for k in [kelvin_as_compared(fahrenheit), kelvin(fahrenheit)] {
                     assert_eq!(reactor.band_of(k), Some(band), "{fahrenheit} degF as {k} K");
                     assert!(ReactorState::try_start(&reactor, k).is_some());
                 }
@@ -1435,7 +1558,7 @@ mod tests {
             assert_eq!(reactor.band_of(BAND_INLET_MAX_K[band].next_up()), None);
             // the flow edges: the tested values, read as a decimal in m/s or converted from ft/s
             let (slow, fast) = hot_flow[band];
-            let mut state = ReactorState::try_start(&reactor, kelvin(low)).unwrap();
+            let state = ReactorState::try_start(&reactor, kelvin(low)).unwrap();
             for flow in [slow * 0.3048, fast * 0.3048, BAND_FLOW_MIN_M_PER_S[band], BAND_FLOW_MAX_M_PER_S[band]] {
                 let mut s = state;
                 let mut frame = marked_frame();
@@ -1443,13 +1566,14 @@ mod tests {
                 let load = ReactorLoad { reactivity_inserted_dollar: rho, coolant_flow_m_per_s: flow };
                 assert!(step(&reactor, &mut s, &mut frame, load, 1.0e-4).is_ok(), "{low} degF {flow} m/s");
             }
-            if band > 0 {
-                for flow in [BAND_FLOW_MIN_M_PER_S[band].next_down(), BAND_FLOW_MAX_M_PER_S[band].next_up()] {
-                    let mut frame = marked_frame();
-                    let rho = 0.5 * (BAND_REACTIVITY_MIN_DOLLAR[band] + BAND_REACTIVITY_MAX_DOLLAR[band]);
-                    let load = ReactorLoad { reactivity_inserted_dollar: rho, coolant_flow_m_per_s: flow };
-                    assert_eq!(step(&reactor, &mut state, &mut frame, load, 1.0e-4), Err(StepReject::FlowOutsideCard));
-                }
+            // the next doubles out of the tested flows land too: the flow of the band is no wall
+            for flow in [BAND_FLOW_MIN_M_PER_S[band].next_down(), BAND_FLOW_MAX_M_PER_S[band].next_up()] {
+                let flow = if flow < 0.0 { 0.0 } else { flow };
+                let mut s = state;
+                let mut frame = marked_frame();
+                let rho = 0.5 * (BAND_REACTIVITY_MIN_DOLLAR[band] + BAND_REACTIVITY_MAX_DOLLAR[band]);
+                let load = ReactorLoad { reactivity_inserted_dollar: rho, coolant_flow_m_per_s: flow };
+                assert!(step(&reactor, &mut s, &mut frame, load, 1.0e-4).is_ok(), "{low} degF {flow} m/s");
             }
         }
         // the tested decimals in m/s: 1.46304 is 4.8 ft/s and 6.7056 is 22 ft/s
@@ -1486,50 +1610,93 @@ mod tests {
         let mut between = fresh;
         between.inlet_temperature_k = kelvin(400.0);
         refuse(between, load(1.0, 14.0), dt, StepReject::InletTemperatureOutsideCard);
-        refuse(fresh, load(0.767, 0.0), dt, StepReject::ReactivityOutsideCard);
-        refuse(fresh, load(1.212, 0.0), dt, StepReject::ReactivityOutsideCard);
-        // the cold band has no flow; the hot bands have no stagnant water
-        refuse(fresh, load(1.0, 14.0), dt, StepReject::FlowOutsideCard);
+        // a reactivity of zero or less inserts nothing, in every band
+        refuse(fresh, load(0.0, 0.0), dt, StepReject::ReactivityNotPositive);
+        refuse(fresh, load(-0.0, 0.0), dt, StepReject::ReactivityNotPositive);
+        refuse(fresh, load(-1.0, 0.0), dt, StepReject::ReactivityNotPositive);
         let (_, hot) = start(500.0);
-        refuse(hot, load(1.0, 0.0), dt, StepReject::FlowOutsideCard);
-        refuse(hot, load(1.0, 2.3), dt, StepReject::FlowOutsideCard);
-        refuse(hot, load(1.0, 24.1), dt, StepReject::FlowOutsideCard);
-        // each hot band has its own tested flows: 2.4 to 22 ft/s at 260 degF, 4.8 to 24 at 500
-        refuse(hot, load(1.0, 2.4), dt, StepReject::FlowOutsideCard);
-        refuse(hot, load(1.0, 4.7), dt, StepReject::FlowOutsideCard);
-        let (_, warm_flow) = start(259.0);
-        refuse(warm_flow, load(1.0, 22.1), dt, StepReject::FlowOutsideCard);
-        refuse(warm_flow, load(1.0, 24.0), dt, StepReject::FlowOutsideCard);
-        refuse(warm_flow, load(1.0, 2.3), dt, StepReject::FlowOutsideCard);
-        // each band has its own reactivity span
-        refuse(hot, load(0.80, 14.0), dt, StepReject::ReactivityOutsideCard);
+        refuse(hot, load(-f64::MIN_POSITIVE, 14.0), dt, StepReject::ReactivityNotPositive);
         let (_, warm) = start(259.0);
-        refuse(warm, load(0.90, 14.0), dt, StepReject::ReactivityOutsideCard);
-        refuse(warm, load(1.22, 14.0), dt, StepReject::ReactivityOutsideCard);
+        refuse(warm, load(0.0, 14.0), dt, StepReject::ReactivityNotPositive);
+        // a flow below zero, in every band; zero written with either sign is no flow
+        refuse(fresh, load(1.0, -1.0), dt, StepReject::NegativeFlow);
+        refuse(
+            hot,
+            ReactorLoad { reactivity_inserted_dollar: 1.0, coolant_flow_m_per_s: -f64::MIN_POSITIVE },
+            dt,
+            StepReject::NegativeFlow,
+        );
+        refuse(warm, load(1.0, -14.0), dt, StepReject::NegativeFlow);
+        // the old walls of reactivity and flow, and past them, land in every band: the cold band
+        // with flow, the hot bands with none and with more than was tested, each band's
+        // reactivity below and above its span
+        for (state, rho, flow) in [
+            (fresh, 0.767, 0.0),
+            (fresh, 1.212, 0.0),
+            (fresh, 1.0, 14.0),
+            (fresh, 0.1, 100.0),
+            (hot, 1.0, 0.0),
+            (hot, 1.0, 2.3),
+            (hot, 1.0, 24.1),
+            (hot, 0.80, 14.0),
+            (hot, 2.0, 50.0),
+            (warm, 1.0, 2.3),
+            (warm, 1.0, 24.0),
+            (warm, 0.90, 14.0),
+            (warm, 1.22, 14.0),
+        ] {
+            let mut s = state;
+            let mut frame = marked_frame();
+            step(&reactor, &mut s, &mut frame, load(rho, flow), dt).unwrap();
+            assert_eq!(frame.proof, [0xA5; 16]);
+        }
+        refuse(between, load(-1.0, -1.0), dt, StepReject::InletTemperatureOutsideCard);
         let mut done = fresh;
         done.past_first_maximum = true;
         refuse(done, load(1.0, 0.0), dt, StepReject::PastFirstMaximum);
-        let mut late = fresh;
-        late.t_s = TIME_MAX_S - 0.5 * dt;
-        refuse(late, load(1.0, 0.0), dt, StepReject::TimeBeyondCard);
-        // an incoming state beyond the card's limits
+        // a clock below zero; the order: the load before the first maximum, the first maximum
+        // before the clock
+        let mut early = fresh;
+        early.t_s = -0.5 * dt;
+        refuse(early, load(1.0, 0.0), dt, StepReject::NegativeTime);
+        refuse(early, load(0.0, 0.0), dt, StepReject::ReactivityNotPositive);
+        refuse(done, load(1.0, -1.0), dt, StepReject::NegativeFlow);
+        let mut early_done = early;
+        early_done.past_first_maximum = true;
+        refuse(early_done, load(1.0, 0.0), dt, StepReject::PastFirstMaximum);
+        // a state with a power and an energy far past the old 1000 MW and 30 MW s is no longer
+        // refused for them; written by hand it is still not the card's start
         let mut powerful = fresh;
-        powerful.power_mw = POWER_MAX_MW * 2.0;
-        refuse(powerful, load(1.0, 0.0), dt, StepReject::PowerBeyondCard);
+        powerful.power_mw = 2000.0;
+        refuse(powerful, load(1.0, 0.0), dt, StepReject::InconsistentState);
         let mut spent = fresh;
-        spent.energy_mws = ENERGY_MAX_MWS * 1.01;
-        refuse(spent, load(1.0, 0.0), dt, StepReject::EnergyBeyondCard);
-        // a trial step beyond them, from a state the card itself landed: the public step applies
-        // no ceiling, and one step of 0.2 s or of 0.5 s from the rise of a 1.2 dollar cold burst,
-        // at 5 MW, leaves the card
+        spent.energy_mws = 31.0;
+        refuse(spent, load(1.0, 0.0), dt, StepReject::InconsistentState);
+        // a trial step too long for the state, from a state the card itself landed: the public
+        // step applies no static ceiling, and one step of 0.2 s or of 0.5 s from the rise of a
+        // 1.2 dollar cold burst, at 5 MW, is far over the state ceiling
         let mut rising = fresh;
         let mut frame = marked_frame();
         for _ in 0..400 {
             step(&reactor, &mut rising, &mut frame, load(1.2, 0.0), ceiling()).unwrap();
         }
         assert!(rising.power_mw > 5.0 && rising.power_mw < 6.0 && !rising.past_first_maximum);
-        refuse(rising, load(1.2, 0.0), 0.2, StepReject::EnergyBeyondCard);
-        refuse(rising, load(1.2, 0.0), 0.5, StepReject::PowerBeyondCard);
+        refuse(rising, load(1.2, 0.0), 0.2, StepReject::DtAboveStateCeiling);
+        refuse(rising, load(1.2, 0.0), 0.5, StepReject::DtAboveStateCeiling);
+        refuse(rising, load(1.2, 0.0), f64::MAX, StepReject::DtAboveStateCeiling);
+        // the landing past the state ceiling is named at the landing: a fuel temperature that
+        // would take the net reactivity far below zero makes the prompt pole too fast
+        let t = terms(&reactor, 0, rising.inlet_temperature_k, load(1.2, 0.0));
+        let mut advanced = rk4_through_the_stop(&reactor, &t, rising.t_s, &state_vector(&rising), ceiling());
+        advanced[7] = 1.0e5;
+        let mut landing = rising;
+        let mut f = marked_frame();
+        assert_eq!(
+            commit(&reactor, &mut landing, &mut f, &t, load(1.2, 0.0), ceiling(), advanced),
+            Err(StepReject::DtAboveStateCeiling)
+        );
+        assert_eq!(landing, rising);
+        assert_eq!(f.to_bytes(), marked_frame().to_bytes());
     }
 
     /// The state of a cold burst of 1.1 dollars after `steps` steps at the ceiling, with its frame.
@@ -1579,8 +1746,10 @@ mod tests {
             refused_and_kept(&reactor, moving, frame, load(1.2, 0.0), StepReject::ReactivityChangedDuringBurst);
             refused_and_kept(&reactor, moving, frame, load(0.9, 0.0), StepReject::ReactivityChangedDuringBurst);
         }
-        // a reactivity outside the band's span keeps its own name
-        refused_and_kept(&reactor, stopped, frame, load(1.3, 0.0), StepReject::ReactivityOutsideCard);
+        // a reactivity outside the band's span is no other name: it is not the burst's
+        refused_and_kept(&reactor, stopped, frame, load(1.3, 0.0), StepReject::ReactivityChangedDuringBurst);
+        // a reactivity of zero or less is named as that first
+        refused_and_kept(&reactor, stopped, frame, load(0.0, 0.0), StepReject::ReactivityNotPositive);
         // the same load goes on to the first maximum, and it is the maximum of the run that
         // never stopped to ask: 808 steps, as the second scoring's run of 1.1 dollars alone
         let (mut state, mut frame) = (stopped, frame);
@@ -1592,37 +1761,87 @@ mod tests {
         assert_eq!(steps, 808);
         assert_eq!(whole.steps, 808);
         assert_eq!(state, whole.last);
-        assert_eq!(state.peak_power_mw, 77.87511026749316);
+        assert_eq!(state.peak_power_mw, 77.87511026749317);
         assert_eq!(state.peak_time_s, 0.34701000000000076);
+        // The second scoring's own request, at 70 degF written (F - 32) / 1.8 + 273.15, one unit
+        // in the last place lower: its peak, to the last bit.
+        let reactor = ReactorSpert3Fuel::e_core_low_initial_power();
+        let mut compared = ReactorState::try_start(&reactor, kelvin_as_compared(70.0)).unwrap();
+        let mut f = marked_frame();
+        while step(&reactor, &mut compared, &mut f, load(1.1, 0.0), ceiling()).is_ok() {}
+        assert_eq!(compared.peak_power_mw, 77.87511026749316);
+        assert_eq!(compared.peak_time_s, 0.34701000000000076);
     }
 
+    /// A flow changed during the burst: each step is computed at its own flow, and the sweep
+    /// integral of the ledger is booked per step at that step's flow. The ledger closes on every
+    /// step, in both hot bands and in the cold band, which was tested with no flow.
     #[test]
-    fn a_flow_changed_during_the_burst_is_refused_by_name_and_the_state_is_kept() {
-        for (fahrenheit, high, low) in [(259.0, 22.0, 2.4), (500.0, 24.0, 4.8)] {
-            for steps in [1, 50, 400] {
-                let (reactor, mut state) = start(fahrenheit);
-                let mut frame = marked_frame();
-                for _ in 0..steps {
-                    step(&reactor, &mut state, &mut frame, load(1.1, high), ceiling()).unwrap();
-                }
-                assert_eq!(state.burst_coolant_flow_m_per_s, feet(high));
-                refused_and_kept(&reactor, state, frame, load(1.1, low), StepReject::FlowChangedDuringBurst);
-                refused_and_kept(&reactor, state, frame, load(1.1, high - 0.1), StepReject::FlowChangedDuringBurst);
-                // both changed: the reactivity is named first
-                refused_and_kept(&reactor, state, frame, load(1.0, low), StepReject::ReactivityChangedDuringBurst);
-                // a flow outside the band's span keeps its own name
-                refused_and_kept(&reactor, state, frame, load(1.1, 30.0), StepReject::FlowOutsideCard);
+    fn a_flow_changed_during_the_burst_is_computed_at_each_step_with_the_ledger_closed() {
+        for (fahrenheit, high, low) in [(259.0, 22.0, 2.4), (500.0, 24.0, 4.8), (70.0, 0.0, 20.0)] {
+            let (reactor, mut state) = start(fahrenheit);
+            let mut frame = marked_frame();
+            for _ in 0..50 {
                 step(&reactor, &mut state, &mut frame, load(1.1, high), ceiling()).unwrap();
             }
+            assert_eq!(state.coolant_flow_held_m_per_s, feet(high));
+            // Alternate the flow every 25 steps to the first maximum.
+            let mut steps = 0;
+            let mut worst = 0.0_f64;
+            let end = loop {
+                let flow = if (steps / 25) % 2 == 0 { low } else { high };
+                match step(&reactor, &mut state, &mut frame, load(1.1, flow), ceiling()) {
+                    Ok(()) => {
+                        assert_eq!(state.coolant_flow_held_m_per_s, feet(flow));
+                        worst = worst.max(state.residual_conservation_error);
+                        steps += 1;
+                    }
+                    Err(end) => break end,
+                }
+            };
+            assert_eq!(end, StepReject::PastFirstMaximum, "{fahrenheit}");
+            assert!(worst < RESIDUAL_CONSERVATION_LIMIT, "{fahrenheit}: {worst:e}");
+            let steady_low = run_to_first_maximum(fahrenheit, load(1.1, low), ceiling()).last;
+            let steady_high = run_to_first_maximum(fahrenheit, load(1.1, high), ceiling()).last;
+            println!(
+                "{fahrenheit} degF 1.1 dollars, flow {high} and {low} ft/s in turn: peak {} MW at {} s, worst residual {worst:e}; held at {low}: {} MW, at {high}: {} MW",
+                state.peak_power_mw, state.peak_time_s, steady_low.peak_power_mw, steady_high.peak_power_mw
+            );
+            // The peak lies between those of the two flows held through.
+            let (least, most) = if steady_low.peak_power_mw < steady_high.peak_power_mw {
+                (steady_low.peak_power_mw, steady_high.peak_power_mw)
+            } else {
+                (steady_high.peak_power_mw, steady_low.peak_power_mw)
+            };
+            assert!(state.peak_power_mw >= least * (1.0 - 1.0e-9) && state.peak_power_mw <= most * (1.0 + 1.0e-9));
         }
-        // the cold band has one flow, none; zero written with either sign is that flow
+        // A step integrated at one flow and booked at another is named by the ledger.
+        let (reactor, mut state) = start(500.0);
+        let mut frame = marked_frame();
+        for _ in 0..600 {
+            step(&reactor, &mut state, &mut frame, load(1.1, 24.0), ceiling()).unwrap();
+        }
+        let integrated = terms(&reactor, 2, state.inlet_temperature_k, load(1.1, 24.0));
+        let booked = terms(&reactor, 2, state.inlet_temperature_k, load(1.1, 2400.0));
+        let advanced = rk4_through_the_stop(&reactor, &integrated, state.t_s, &state_vector(&state), ceiling());
+        let mut tried = state;
+        let mut tried_frame = frame;
+        let got = commit(&reactor, &mut tried, &mut tried_frame, &booked, load(1.1, 2400.0), ceiling(), advanced);
+        assert!(
+            got == Err(StepReject::SpontaneousGeneration) || got == Err(StepReject::FirstLawBreach)
+                || got == Err(StepReject::DtAboveStateCeiling),
+            "{got:?}"
+        );
+        assert_eq!(tried, state);
+        assert_eq!(tried_frame.to_bytes(), frame.to_bytes());
+        // zero written with either sign is the same flow
         let (reactor, mut state, mut frame) = cold_burst(10);
         let minus = ReactorLoad { reactivity_inserted_dollar: 1.1, coolant_flow_m_per_s: -0.0 };
         let mut other = state;
         let mut other_frame = frame;
         step(&reactor, &mut state, &mut frame, load(1.1, 0.0), ceiling()).unwrap();
         step(&reactor, &mut other, &mut other_frame, minus, ceiling()).unwrap();
-        other.burst_coolant_flow_m_per_s = 0.0;
+        other.coolant_flow_held_m_per_s = 0.0;
         assert_eq!(std::format!("{:?}", state), std::format!("{:?}", other));
     }
 
@@ -1739,7 +1958,7 @@ mod tests {
         // which landed and gave a peak energy of 2.214 MW s for 3.215; and a peak power of
         // 1e9 MW, which landed, was written to the frame and stayed
         refuse(&|s| s.energy_mws = -1.0, StepReject::NegativeState);
-        refuse(&|s| s.peak_power_mw = 1.0e9, StepReject::PowerBeyondCard);
+        refuse(&|s| s.peak_power_mw = 1.0e9, StepReject::InconsistentState);
         // below zero
         refuse(&|s| s.energy_mws = -f64::MIN_POSITIVE, StepReject::NegativeState);
         refuse(&|s| s.fuel_temperature_rise_k = -1.0e-9, StepReject::NegativeState);
@@ -1747,17 +1966,16 @@ mod tests {
         refuse(&|s| s.precursor_mw[5] = -1.0e-9, StepReject::NegativeState);
         refuse(&|s| s.power_mw = 0.0, StepReject::NegativeState);
         refuse(&|s| s.power_mw = -s.power_mw, StepReject::NegativeState);
-        // beyond the limits
-        refuse(&|s| s.energy_mws = 31.0, StepReject::EnergyBeyondCard);
-        refuse(&|s| s.energy_mws = f64::from_bits(ENERGY_MAX_MWS.to_bits() + 1), StepReject::EnergyBeyondCard);
-        refuse(&|s| s.power_mw = 1000.5, StepReject::PowerBeyondCard);
-        refuse(&|s| s.peak_power_mw = f64::from_bits(POWER_MAX_MW.to_bits() + 1), StepReject::PowerBeyondCard);
+        // beyond the old limits of 30 MW s and 1000 MW, written by hand: not the card's state
+        refuse(&|s| s.energy_mws = 31.0, StepReject::InconsistentState);
+        refuse(&|s| s.power_mw = 1000.5, StepReject::InconsistentState);
+        refuse(&|s| s.peak_power_mw = 1000.5, StepReject::InconsistentState);
         // not finite
         refuse(&|s| s.peak_energy_mws = f64::NAN, StepReject::NonFiniteState);
         refuse(&|s| s.peak_time_s = f64::INFINITY, StepReject::NonFiniteState);
         refuse(&|s| s.energy_mws = f64::NEG_INFINITY, StepReject::NonFiniteState);
         refuse(&|s| s.burst_reactivity_dollar = f64::NAN, StepReject::NonFiniteState);
-        refuse(&|s| s.burst_coolant_flow_m_per_s = f64::INFINITY, StepReject::NonFiniteState);
+        refuse(&|s| s.coolant_flow_held_m_per_s = f64::INFINITY, StepReject::NonFiniteState);
         // the peak fields are not a sample of this run
         refuse(&|s| s.peak_power_mw = 0.5 * s.power_mw, StepReject::InconsistentState);
         refuse(&|s| s.peak_power_mw = 500.0, StepReject::InconsistentState);
@@ -1777,7 +1995,7 @@ mod tests {
         refuse(&|s| s.t_s = 0.05, StepReject::InconsistentState);
         refuse(&|s| s.t_s = 0.0, StepReject::InconsistentState);
         refuse(&|s| s.t_s = -0.0, StepReject::InconsistentState);
-        refuse(&|s| s.t_s = -1.0e-3, StepReject::TimeBeyondCard);
+        refuse(&|s| s.t_s = -1.0e-3, StepReject::NegativeTime);
         refuse(&|s| s.rod_moving = true, StepReject::InconsistentState);
         refuse(&|s| s.reactivity_inserted_now_dollar = 1.0, StepReject::InconsistentState);
         // the load this burst was started with, rewritten in the state to match a new one
@@ -1801,7 +2019,7 @@ mod tests {
             let mut under = moving;
             under.burst_reactivity_dollar = 0.1;
             let low = ReactorLoad { reactivity_inserted_dollar: 0.1, coolant_flow_m_per_s: 0.0 };
-            refused_and_kept(&reactor, under, moving_frame, low, StepReject::ReactivityOutsideCard);
+            refused_and_kept(&reactor, under, moving_frame, low, StepReject::InconsistentState);
             under.burst_reactivity_dollar = 0.8;
             assert!(moving.reactivity_inserted_now_dollar < 0.8);
             let mut f = moving_frame;
@@ -2065,8 +2283,9 @@ mod tests {
             if run.largest_residual > largest {
                 largest = run.largest_residual;
             }
-            assert!(run.last.peak_power_mw < POWER_MAX_MW && run.last.energy_mws < ENERGY_MAX_MWS);
-            assert!(run.last.t_s < TIME_MAX_S);
+            // inside the compared spans: under the old margins of 1000 MW, 30 MW s and 20 s
+            assert!(run.last.peak_power_mw < 1000.0 && run.last.energy_mws < 30.0);
+            assert!(run.last.t_s < 20.0);
         }
         println!("largest residual over the span at the ceiling: {largest:e}");
         assert!(largest < RESIDUAL_CONSERVATION_LIMIT / 10.0);
@@ -2084,7 +2303,7 @@ mod tests {
                 run.steps
             );
             // named before the burst: the power is still under a thousandth of the card's limit
-            assert!(run.last.power_mw < 1.0e-3 * POWER_MAX_MW, "{}", run.last.power_mw);
+            assert!(run.last.power_mw < 1.0, "{}", run.last.power_mw);
             assert!(!run.last.past_first_maximum);
         }
     }
@@ -2159,7 +2378,7 @@ mod tests {
     }
 
     #[test]
-    fn a_dropped_doppler_feedback_runs_away_and_is_refused_at_the_edge_of_the_card() {
+    fn a_dropped_doppler_feedback_runs_away_and_is_named() {
         fn no_doppler(
             reactor: &ReactorSpert3Fuel,
             terms: &Terms,
@@ -2174,8 +2393,7 @@ mod tests {
         let run = run_with(no_doppler, 70.0, load(1.2, 0.0), ceiling());
         assert!(
             run.end == Err(StepReject::SpontaneousGeneration)
-                || run.end == Err(StepReject::PowerBeyondCard)
-                || run.end == Err(StepReject::EnergyBeyondCard),
+                || run.end == Err(StepReject::DtAboveStateCeiling),
             "{:?}",
             run.end
         );
@@ -2293,5 +2511,126 @@ mod tests {
         println!("period measured on the card {measured} s, inhour 0.0593 s");
         assert!(within(measured, 0.0593, 1.0e-6));
         let _ = (DOPPLER_STRENGTH_DOLLAR_PER_SQRT_K, WATER_FEEDBACK_WEIGHT);
+    }
+
+    /// The step for a run past the compared spans: the static ceiling, held under the state
+    /// ceiling of the growing prompt pole at the full reactivity, and of the sweep of the water,
+    /// a thousandth under.
+    fn under_the_state_ceiling(fahrenheit: f64, rho: f64, flow_fps: f64) -> f64 {
+        let reactor = ReactorSpert3Fuel::e_core_low_initial_power();
+        let band = reactor.band_of(kelvin(fahrenheit)).unwrap();
+        let l_star = BAND_GENERATION_TIME_REDUCED_S[band];
+        let mut dt = ceiling();
+        if rho > 1.0 {
+            dt = dt.min(GROWTH_PHASE_STEP * l_star / (rho - 1.0));
+        }
+        let sweep = 2.0 * feet(flow_fps) / ACTIVE_LENGTH_M;
+        if sweep > 0.0 {
+            dt = dt.min(GATE_PHASE_STEP / sweep);
+        }
+        0.999 * dt
+    }
+
+    /// The static ceiling covers the compared spans: in each band, across 21 reactivities of its
+    /// span at its smallest and largest tested flow, run at the ceiling, no step is refused by the
+    /// state ceiling.
+    #[test]
+    fn inside_the_compared_spans_the_state_ceiling_never_binds_at_the_static_ceiling() {
+        let flows = [(0.0, 0.0), (2.4, 22.0), (4.8, 24.0)];
+        let temperatures = [(56.0, 92.0), (251.0, 259.0), (498.0, 501.0)];
+        for band in 0..3 {
+            for index in 0..=20 {
+                let low = BAND_REACTIVITY_MIN_DOLLAR[band];
+                let high = BAND_REACTIVITY_MAX_DOLLAR[band];
+                let rho = if index == 20 { high } else { low + (high - low) * (index as f64) / 20.0 };
+                for flow in [flows[band].0, flows[band].1] {
+                    for fahrenheit in [temperatures[band].0, temperatures[band].1] {
+                        let run = run_to_first_maximum(fahrenheit, load(rho, flow), ceiling());
+                        assert_eq!(run.end, Err(StepReject::PastFirstMaximum), "band {band} rho {rho} flow {flow}");
+                    }
+                }
+            }
+        }
+    }
+
+    /// Past the compared spans the state ceiling binds: above a net reactivity of about 1.22
+    /// dollars the growing prompt pole advances more than 0.045 of its time constant in a step at
+    /// the static ceiling, and a flow above about 226 m/s makes the sweep of the water faster. A run at the static ceiling is refused there by name, the state and the frame
+    /// kept; a run under the state ceiling lands to its first maximum with the ledger closed.
+    #[test]
+    fn past_the_compared_spans_the_state_ceiling_binds_and_a_run_under_it_lands() {
+        let reactor = ReactorSpert3Fuel::e_core_low_initial_power();
+        for (fahrenheit, rho, flow) in [(70.0, 2.5, 0.0), (70.0, 5.0, 0.0), (500.0, 3.0, 14.0), (255.0, 2.5, 14.0), (500.0, 1.1, 1000.0)] {
+            let (_, mut state) = start(fahrenheit);
+            let mut frame = marked_frame();
+            let end = loop {
+                let before = state;
+                let before_frame = frame;
+                match step(&reactor, &mut state, &mut frame, load(rho, flow), ceiling()) {
+                    Ok(()) => {}
+                    Err(end) => {
+                        assert_eq!(state, before);
+                        assert_eq!(frame.to_bytes(), before_frame.to_bytes());
+                        break end;
+                    }
+                }
+            };
+            assert_eq!(end, StepReject::DtAboveStateCeiling, "{fahrenheit} degF {rho} dollars {flow} ft/s");
+            println!(
+                "{fahrenheit} degF {rho} dollars {flow} ft/s at the static ceiling: refused at {} s, net reactivity {} dollars",
+                state.t_s, state.reactivity_net_dollar
+            );
+            let dt = under_the_state_ceiling(fahrenheit, rho, flow);
+            let run = run_to_first_maximum(fahrenheit, load(rho, flow), dt);
+            println!(
+                "  at {dt:e} s: {} steps, peak {} MW at {} s, energy {} MW s, fuel rise {} K, worst residual {:e}",
+                run.steps, run.last.peak_power_mw, run.last.peak_time_s, run.last.peak_energy_mws,
+                run.last.fuel_temperature_rise_k, run.largest_residual
+            );
+            assert_eq!(run.end, Err(StepReject::PastFirstMaximum), "{fahrenheit} degF {rho} dollars {flow} ft/s");
+            assert!(run.largest_residual < RESIDUAL_CONSERVATION_LIMIT);
+        }
+    }
+
+    /// The old walls, each band's reactivity span, its tested flows, 20 s, 30 MW s and 1000 MW,
+    /// run past to several times beyond: every burst reaches its first maximum, every step with
+    /// the ledger closed.
+    #[test]
+    fn past_every_old_wall_the_burst_reaches_its_first_maximum_with_the_ledger_closed() {
+        let mut longest = 0.0_f64;
+        let mut most_energy = 0.0_f64;
+        let mut most_power = 0.0_f64;
+        for (fahrenheit, rho, flow) in [
+            (70.0, 0.3, 0.0),
+            (70.0, 0.5, 0.0),
+            (70.0, 1.0, 20.0),
+            (70.0, 1.5, 0.0),
+            (70.0, 2.0, 0.0),
+            (70.0, 4.0, 0.0),
+            (255.0, 0.5, 0.0),
+            (255.0, 1.0, 50.0),
+            (255.0, 3.0, 14.0),
+            (500.0, 0.4, 14.0),
+            (500.0, 1.0, 0.0),
+            (500.0, 1.0, 100.0),
+            (500.0, 2.0, 24.0),
+            (500.0, 6.0, 24.0),
+        ] {
+            let dt = under_the_state_ceiling(fahrenheit, rho, flow);
+            let run = run_to_first_maximum(fahrenheit, load(rho, flow), dt);
+            println!(
+                "{fahrenheit} degF {rho} dollars {flow} ft/s at {dt:e} s: {} steps, peak {} MW at {} s, energy to peak {} MW s, fuel rise {} K, worst residual {:e}",
+                run.steps, run.last.peak_power_mw, run.last.peak_time_s, run.last.peak_energy_mws,
+                run.last.fuel_temperature_rise_k, run.largest_residual
+            );
+            assert_eq!(run.end, Err(StepReject::PastFirstMaximum), "{fahrenheit} degF {rho} dollars {flow} ft/s");
+            assert!(run.largest_residual < RESIDUAL_CONSERVATION_LIMIT);
+            longest = longest.max(run.last.peak_time_s);
+            most_energy = most_energy.max(run.last.peak_energy_mws);
+            most_power = most_power.max(run.last.peak_power_mw);
+        }
+        assert!(longest > 3.0 * 20.0, "{longest}");
+        assert!(most_energy > 2.0 * 30.0, "{most_energy}");
+        assert!(most_power > 5.0 * 1000.0, "{most_power}");
     }
 }

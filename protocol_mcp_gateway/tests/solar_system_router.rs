@@ -18,6 +18,8 @@
 //! No measurement is read here. The start is the card's own worked example,
 //! the state of 1999-01-01 00:00 TDB from JPL Horizons.
 
+mod answer_text;
+
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::time::Duration;
@@ -61,7 +63,9 @@ async fn post_text(base: &str, path: &str, body: &str) -> (u16, String) {
         {
             Ok(response) => {
                 let status = response.status().as_u16();
-                return (status, response.text().await.unwrap());
+                let text = response.text().await.unwrap();
+                answer_text::remember(&text);
+                return (status, text);
             }
             Err(error) => {
                 last_error = Some(error);
@@ -73,7 +77,7 @@ async fn post_text(base: &str, path: &str, body: &str) -> (u16, String) {
 }
 
 async fn post(base: &str, path: &str, body: &Value) -> (u16, String) {
-    post_text(base, path, &serde_json::to_string(body).unwrap()).await
+    post_text(base, path, &answer_text::as_sent(body)).await
 }
 
 fn sha256_hex(bytes: &[u8]) -> String {
@@ -271,7 +275,7 @@ async fn a_step_of_the_system_matches_the_compiled_step_with_the_same_proof_byte
         assert_eq!(status, 200, "{answer}");
         let response: VerifyPhysicsResponse = serde_json::from_str(&answer).unwrap();
         assert_eq!(response.inputs, request);
-        assert_eq!(response.engine_version, "genesis_kernel_v0.9.0");
+        assert_eq!(response.engine_version, "genesis_kernel_v0.12.0");
 
         let mut state = SolarSystemState::try_state(&system, position_m, velocity_m_s).unwrap();
         let mut frame = blank_frame(commit_request_proof(&request));
@@ -377,7 +381,7 @@ async fn one_day_ends_on_the_kernel_loop_and_handed_back_it_continues_the_same_m
         bare.remove(key);
         let (status, text) = post(&base, "/run_trajectory", &run_from(bare, 1800.0, 48, 48)).await;
         assert_eq!(status, 422, "{key}: {text}");
-        assert!(text.contains(&format!("Missing required parameter: '{key}'")) && !text.contains("run_seal"), "{key}: {text}");
+        assert!(text.contains(&format!("Missing required parameter: '{key}' (InputMissing).")) && !text.contains("run_seal"), "{key}: {text}");
     }
     // A ledger begun again at the returned state is a new start: it is taken, and
     // its ledger is not the run's.
@@ -460,10 +464,10 @@ async fn a_state_off_the_card_is_refused_by_the_card_s_own_name_and_nothing_is_p
     inside_r[11] = position_m[10];
     inside_r[11][0] += 1.0e5;
     assert_eq!(inside_r[11], [113102846429.3008, 361147974066.7736, 146744266009.8253]);
-    assert_eq!(SolarSystemState::refusal(&system, &inside_r, &met_v), Some(StepReject::BodiesTooClose));
-    // Every position moved 6e13 m along each axis: refused, accepted and sealed in 0.6.0.
+    assert_eq!(SolarSystemState::refusal(&system, &inside_r, &met_v), None);
+    // Every position moved 6e13 m along each axis: computed, the same motion with other rounding.
     let shifted_r = position_m.map(|r| [r[0] + 6.0e13, r[1] + 6.0e13, r[2] + 6.0e13]);
-    assert_eq!(SolarSystemState::refusal(&system, &shifted_r, &velocity_m_s), Some(StepReject::OriginOutsideCard));
+    assert_eq!(SolarSystemState::refusal(&system, &shifted_r, &velocity_m_s), None);
     // Uranus at 19.87 au from the Sun along its own direction: inside its band
     // of 18.0 to 20.4 au, outside the 19.88 to 20.10 au the compared run went
     // through up to the last range compared with measurement.
@@ -473,19 +477,13 @@ async fn a_state_off_the_card_is_refused_by_the_card_s_own_name_and_nothing_is_p
     for axis in 0..3 {
         uranus_r[8][axis] = sun[axis] + x[axis] * (19.87 * AU_M / distance_m);
     }
-    assert_eq!(
-        SolarSystemState::refusal(&system, &uranus_r, &velocity_m_s),
-        Some(StepReject::DistanceOutsideComparedRun)
-    );
+    assert_eq!(SolarSystemState::refusal(&system, &uranus_r, &velocity_m_s), None);
 
     for (r, v, name) in [
         (&far, &velocity_m_s, "DistanceOutsideCard"),
         (&position_m, &stopped, "OrbitOutsideCard"),
-        (&uranus_r, &velocity_m_s, "DistanceOutsideComparedRun"),
         (&position_m, &moving, "FrameOutsideCard"),
         (&met_r, &met_v, "BodiesCoincide"),
-        (&inside_r, &met_v, "BodiesTooClose"),
-        (&shifted_r, &velocity_m_s, "OriginOutsideCard"),
         (&ecliptic_r, &ecliptic_v, "AxesOutsideCard"),
     ] {
         let (status, text) = post(&base, "/verify_physics", &step_body(r, v, 1800.0)).await;
@@ -498,6 +496,26 @@ async fn a_state_off_the_card_is_refused_by_the_card_s_own_name_and_nothing_is_p
         // by the card's name, and not by the sentence for a state that is not finite
         assert!(!text.contains("builds no starting state"), "{name}: {text}");
     }
+    // Where 0.10 refused, the card computes: Uranus outside the compared run's
+    // distances, the state moved 6e13 m, and Pallas 3000 km from Ceres, in
+    // steps of 60 s. Each run completes, its tape verifies, and the moved
+    // run's Earth-to-Mars distance is the unmoved run's to a metre.
+    let mut beside_r = position_m;
+    beside_r[11] = position_m[10];
+    beside_r[11][0] += 3.0e6;
+    for (r, v, dt_s) in [(&uranus_r, &velocity_m_s, 1800.0), (&shifted_r, &velocity_m_s, 1800.0), (&beside_r, &met_v, 60.0)] {
+        let (status, text) = post(&base, "/run_trajectory", &run_body(r, v, dt_s, 48, 48)).await;
+        assert_eq!(status, 200, "{text}");
+        let tape: Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(tape["outcome"], "completed", "{text}");
+        let (status, report) = post(&base, "/verify_tape", &tape).await;
+        assert_eq!(status, 200, "{report}");
+        assert_eq!(serde_json::from_str::<Value>(&report).unwrap()["holds"], true);
+    }
+    let (plain, _) = direct_loop(position_m, velocity_m_s, 1800.0, 48);
+    let (moved, _) = direct_loop(shifted_r, velocity_m_s, 1800.0, 48);
+    assert!((plain.earth_mars_distance_m - moved.earth_mars_distance_m).abs() < 1.0);
+
     // What the check of the axes cannot tell is taken: a turn about the z axis,
     // and Ceres and Pallas in each other's place.
     let (sin, cos) = 30.0_f64.to_radians().sin_cos();
@@ -536,7 +554,7 @@ async fn a_step_outside_the_floor_and_the_ceiling_a_missing_input_and_a_load_are
     missing["parameters"].as_object_mut().unwrap().remove("vesta_velocity_m_s");
     let (status, text) = post(&base, "/verify_physics", &missing).await;
     assert_eq!(status, 422, "{text}");
-    assert!(text.contains("Missing required parameter: 'vesta_velocity_m_s'"), "{text}");
+    assert!(text.contains("Missing required parameter: 'vesta_velocity_m_s' (InputMissing)."), "{text}");
     // A vector of two numbers, and one that is not a number.
     let mut short = step_body(&position_m, &velocity_m_s, 1800.0);
     short["parameters"]["moon_position_m"] = json!([1.0, 2.0]);
@@ -738,7 +756,7 @@ impl Local {
 
     /// The whole answer line of a tool call, as the hosted connection frames it.
     async fn call(&mut self, name: &str, arguments: &Value) -> String {
-        let line = json!({"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":name,"arguments":arguments}});
+        let line = answer_text::tool_call(7, name, arguments);
         self.raw(&line.to_string()).await
     }
 }
@@ -787,7 +805,7 @@ impl Hosted {
     }
 
     async fn call(&self, key: &str, tool: &str, arguments: &Value) -> String {
-        let body = json!({"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":tool,"arguments":arguments}});
+        let body = answer_text::tool_call(7, tool, arguments);
         let response = reqwest::Client::new()
             .post(format!("{}/mcp", self.base))
             .header("Content-Type", "application/json")
@@ -810,6 +828,7 @@ fn result_text(answer: &str) -> (String, bool) {
         .as_str()
         .unwrap_or_else(|| panic!("no text in {answer}"))
         .to_string();
+    answer_text::remember(&text);
     (text, value["result"]["isError"] == true)
 }
 
@@ -860,8 +879,10 @@ async fn the_three_connections_list_the_system_and_give_the_same_bytes_for_its_d
         refusals,
         [
             "NonFiniteInput", "NonFiniteState", "NonPositiveDt", "InvalidSystem", "DistanceOutsideCard",
-            "OrbitOutsideCard", "DistanceOutsideComparedRun", "BodiesCoincide", "BodiesTooClose", "FrameOutsideCard", "OriginOutsideCard",
-            "AxesOutsideCard", "SpontaneousGeneration", "FirstLawBreach", "AngularMomentumBreach"
+            "OrbitOutsideCard", "BodiesCoincide", "FrameOutsideCard",
+            "AxesOutsideCard", "SpontaneousGeneration", "FirstLawBreach", "AngularMomentumBreach",
+            // The gateway's own three for this card follow the kernel's twelve.
+            "DtBelowFloor", "DtAboveCeiling", "ContinuationWithoutUpstream"
         ]
     );
     for reject in description["rejects"].as_array().unwrap() {
@@ -874,13 +895,14 @@ async fn the_three_connections_list_the_system_and_give_the_same_bytes_for_its_d
     let rule = description.to_string();
     assert!(rule.contains("359 m for the Moon, 90 m for Mercury, 4.3 m for the Earth, 0.30 m for Venus, 0.21 m for Mars and under 0.2 m for each other body, the three asteroids among them"), "{rule}");
     assert!(!rule.contains("under 0.2 m for every other body"));
-    assert!(rule.contains("refused as BodiesTooClose") && rule.contains("refused as OriginOutsideCard"));
-    assert!(rule.contains("is refused as DistanceOutsideComparedRun") && rule.contains("the compared run is refused 5,934.6 days from the 1999 state, Saturn farther from the Sun than 9.97 au"));
+    assert!(!rule.contains("are refused as BodiesTooClose") && !rule.contains("is refused as OriginOutsideCard"));
+    assert!(rule.contains("A state outside those distances, inside the bands, is computed") && rule.contains("until engine 0.9 it was refused 5,934.6 days from the 1999 state"));
+    assert!(rule.contains("Mars Odyssey to 2006 met its line (695 m at most against 700 m)"));
     assert!(rule.contains("Saturn 9.03 to 9.97, Uranus 19.88 to 20.10, Neptune 29.96 to 30.14"));
     assert!(rule.contains("up to the last range compared with measurement, 16.2 years after the 1999 state"));
     assert!(rule.contains("From 16.2 to 21 years the run was compared only with DE441, a calculation"));
-    assert!(rule.contains("Its distance from the Sun is from 18.0 to 20.4 au, and within the distances the compared run went through, 19.88 to 20.10 au"));
-    assert!(rule.contains("Mercury and Venus at 0.2631 au") && rule.contains("the compared run's was within 114929 m"));
+    assert!(rule.contains("Its distance from the Sun is from 18.0 to 20.4 au; the compared run, to the last range compared with measurement, went through 19.88 to 20.10 au, and a distance outside that, inside the band, is computed"));
+    assert!(rule.contains("Mercury and Venus at 0.2631 au") && rule.contains("the compared run's stayed 98 409 to 114 929 m from it"));
     assert!(!rule.contains("7,739") && !rule.contains("10.07") && !rule.contains("19.81") && !rule.contains("200000 m"));
     assert!(!rule.contains("for up to 21 years to where the stations measured"));
     let record = description["validation"].as_object().unwrap();
@@ -892,7 +914,7 @@ async fn the_three_connections_list_the_system_and_give_the_same_bytes_for_its_d
     // Sentences held in the one line of the list, the data, the result and
     // the limits.
     assert!(summary.ends_with(
-        "The comparison started from JPL's own state of 1999 and was made with range measurements that state was fitted to."
+        "The comparison started from JPL's own state of 1999 and was made with range measurements that state was fitted to: over 16.2 years one Mars file, Mars Odyssey up to 2006, and MESSENGER at Mercury met their lines, two Mars files missed by at most 10 percent in mid-2007, and the Jupiter and Saturn files were not compared."
     ), "{summary}");
     assert!(record["data"].as_str().unwrap().contains("Park et al. 2021 for DE440 and DE441, Giorgini et al. for Horizons"));
     let result = record["result"].as_str().unwrap();
@@ -914,7 +936,7 @@ async fn the_three_connections_list_the_system_and_give_the_same_bytes_for_its_d
         "end 5 to 24 m apart on the Moon after 21 years, so the 10 m line could not have been held",
         "Against a 32-digit run the engine is 9.5 m off on the Moon and 0.92 m on the Earth",
         "78 m on the Moon, 17.9 m on Mercury and under 1 m on the Earth",
-        "evidence/checks/second_party/V-31/",
+        "evidence/verification/second_party/V-31/",
     ] {
         assert!(result.contains(words), "{words}: {result}");
     }
@@ -924,17 +946,17 @@ async fn the_three_connections_list_the_system_and_give_the_same_bytes_for_its_d
         "grows about in proportion to time (T^0.96), so the line is too tight just after the opened span and twice too loose at 15 years",
         "leave about 20 km and 10 km with JPL's own ephemeris through this reduction",
         "this is an inference from DE441 and is not stated in the files' headers",
-        "No registered comparison was made for Jupiter or Saturn, and after that correction the Cassini file still fails the check on the reduction, at 590 m rms",
-        "FrameOutsideCard checks the speed of the centre of mass and nothing else",
+        "No registered comparison was made for Jupiter or Saturn, and after that correction the Cassini file still fails the test of the reduction, at 590 m rms",
+        "FrameOutsideCard tests the speed of the centre of mass and nothing else",
         "AxesOutsideCard: the orbit of the Earth-Moon barycentre about the Sun must be inclined 21 to 27 degrees to the z axis",
         "falls from 24.94 to 22.56 degrees from 9999 BC to AD 9999",
         "a state given in ecliptic axes instead of ICRF axes has about 0 degrees and is refused",
         "a turn of the axes about the z axis, by any angle",
         "Ceres and Pallas, given in each other's place, which are taken without a refusal",
         "Two bodies at exactly one point are refused by a name of the card, BodiesCoincide",
-        "OriginOutsideCard checks where the centre of mass is, no more than 120000 m from the origin",
-        "any pair but the Earth and the Moon under 0.26 au, any two asteroids under 0.38 au",
-        "the compared run is refused 5,934.6 days from the 1999 state, Saturn farther from the Sun than 9.97 au",
+        "Where the centre of mass is, is not held",
+        "any pair but the Earth and the Moon under 0.26 au or any two asteroids under 0.38 au, are computed as point masses",
+        "passes day 5,934.6, where Saturn goes farther from the Sun than 9.97 au",
         "carry that one state forward for up to 16.2 years to where the stations measured (the run went on to 21 years, compared only with DE441)",
         "Neptune at another longitude for instance, was not itself compared",
     ] {
@@ -944,7 +966,7 @@ async fn the_three_connections_list_the_system_and_give_the_same_bytes_for_its_d
     assert!(!limits.contains("163 of the 166") && !limits.contains("29 percent over"), "{limits}");
 
     // The tools that compute: the same bytes on the three connections.
-    let step = description["example_verify_step"].clone();
+    let step = description["example_compute_step"].clone();
     let run = description["example_run_trajectory"].clone();
     for (tool, route, arguments) in [("verify_step", "/verify_physics", &step), ("run_trajectory", "/run_trajectory", &run)] {
         let on_local = local.call(tool, arguments).await;

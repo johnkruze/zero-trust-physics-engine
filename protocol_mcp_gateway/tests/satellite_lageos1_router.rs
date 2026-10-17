@@ -14,6 +14,8 @@
 //!
 //! The start states are the saved validation requests of the compared runs.
 
+mod answer_text;
+
 use std::time::Duration;
 
 use genesis_kernel::satellite_lageos1::{self, SatelliteLageos1};
@@ -40,13 +42,15 @@ async fn post(base: &str, path: &str, body: &Value) -> (u16, String) {
         match client
             .post(&url)
             .header(reqwest::header::CONTENT_TYPE, "application/json")
-            .body(serde_json::to_string(body).unwrap())
+            .body(answer_text::as_sent(body))
             .send()
             .await
         {
             Ok(response) => {
                 let status = response.status().as_u16();
-                return (status, response.text().await.unwrap());
+                let text = response.text().await.unwrap();
+                answer_text::remember(&text);
+                return (status, text);
             }
             Err(error) => {
                 last_error = Some(error);
@@ -108,36 +112,27 @@ fn one_step(initial: &Value, dt_s: f64) -> Value {
     json!({ "domain": "aerospace", "card": "satellite_lageos1", "parameters": parameters })
 }
 
-const HORIZON: &str = "the forecast would end more than seven days, 604800 s, from the state taken from a published orbit, counted as forecast_elapsed_s at the start plus t_s, or the stated forecast_elapsed_s is below zero; the compared runs were seven days long (HorizonOutsideCard).";
-const ORBIT: &str = "Physical Failure: the orbit is not closed, or is in neither of the two compared orbits: LAGEOS-1, semi-major axis 12 265 to 12 275 km, eccentricity 0.0034 to 0.0044 and inclination 109.80 to 109.83 degrees, and LAGEOS-2, 12 158 to 12 166 km, 0.0132 to 0.0138 and 52.63 to 52.66 degrees; no other orbit was compared (OrbitOutsideCard). That state is not sealed.";
-
-/// A run of 70,000 steps of 10 s from a compared start. The first 60,480,
-/// seven days, land and are sealed; the next is refused by name.
+/// A run of 70,000 steps of 10 s from a compared start, where the card
+/// stood at seven days: every step lands with both ledgers under their
+/// limits, past seven days, and the tape verifies.
 #[tokio::test]
-async fn a_run_past_seven_days_is_refused_at_seven_days() {
+async fn a_run_past_seven_days_is_computed_and_its_tape_verifies() {
     let base = spawn_app().await;
     let body = run(&base, &trajectory(initial(START_EPOCH_UTC_S, 0.0), 10.0, 70_000, 10_000)).await;
-    assert_eq!(body["outcome"], "refused", "{body}");
-    assert_eq!(body["reject"], "HorizonOutsideCard");
-    assert_eq!(
-        body["reject_detail"],
-        format!("Physical Failure: {HORIZON} The run is sealed to step 60480. The state at step 60481 was refused and is not sealed.")
-    );
-    assert_eq!(body["steps_landed"], 60_480);
-    assert_eq!(body["final_state"]["t_s"], SEVEN_DAYS_S);
-    assert_eq!(body["final_state"]["forecast_elapsed_s"], SEVEN_DAYS_S);
+    assert_eq!(body["outcome"], "completed", "{body}");
+    assert_eq!(body["steps_landed"], 70_000);
+    assert_eq!(body["final_state"]["forecast_elapsed_s"], 700_000.0);
+    assert!(body["final_state"]["residual_conservation_error"].as_f64().unwrap() < 1.0e-10);
+    assert!(body["final_state"]["angular_momentum_defect_m2_s"].is_number());
     assert!(tape_holds(&base, &body).await);
 }
 
-/// A forecast carried on by restarts from its own returned states stops where
-/// the run straight through stops, and a start that leaves out the time since
-/// the published state is refused.
+/// A forecast carried on by restarts from its own returned states carries
+/// on past seven days; a stated time since the published state still needs
+/// from, and a start that leaves it out is refused.
 #[tokio::test]
-async fn a_restart_carries_the_time_since_the_published_state_and_cannot_pass_seven_days() {
+async fn a_restart_carries_the_time_since_the_published_state_past_seven_days() {
     let base = spawn_app().await;
-    // A state stated as 604 700 s old carries a forecast on: without from it
-    // is refused by name. Continued from the sealed run that took it there,
-    // ten 10 s steps land and the eleventh would pass seven days.
     let stated = trajectory(initial(START_EPOCH_UTC_S, SEVEN_DAYS_S - 100.0), 10.0, 20, 1);
     let (status, text) = post(&base, "/run_trajectory", &stated).await;
     assert_eq!(status, 422, "{text}");
@@ -154,31 +149,12 @@ async fn a_restart_carries_the_time_since_the_published_state_and_cannot_pass_se
     let mut carried_on = trajectory(handed, 10.0, 20, 1);
     carried_on["from"] = json!({ "request": upstream, "run_seal": up["run_seal"] });
     let body = run(&base, &carried_on).await;
-    assert_eq!(body["outcome"], "refused", "{body}");
-    assert_eq!(body["reject"], "HorizonOutsideCard");
-    assert_eq!(body["steps_landed"], 10);
-    let end = &body["final_state"];
-    assert_eq!(end["forecast_elapsed_s"], SEVEN_DAYS_S);
-    assert_eq!(end["t_s"], 100.0);
-    assert!(tape_holds(&base, &body).await);
-    // Handed back as it was returned, the state takes no step.
-    let again = json!({
-        "epoch_utc_s": end["epoch_utc_s"],
-        "forecast_elapsed_s": end["forecast_elapsed_s"],
-        "position_m": end["position_m"],
-        "velocity_m_s": end["velocity_m_s"]
-    });
-    // Handed back as it was returned, the state carries the forecast on, and a
-    // run that was refused part way is not carried on: no step is taken.
-    let (status, text) = post(&base, "/verify_physics", &one_step(&again, 10.0)).await;
-    assert_eq!(status, 422, "{text}");
-    assert!(text.ends_with("(ContinuationWithoutUpstream)."), "{text}");
-    let mut step = one_step(&again, 10.0);
-    step["from"] = json!({ "request": carried_on, "run_seal": body["run_seal"] });
-    let (status, text) = post(&base, "/verify_physics", &step).await;
-    assert_eq!(status, 422, "{text}");
-    assert!(text.contains("(UpstreamOutcomeNotCarried)"), "{text}");
-    // A start without the time since the published state is refused.
+    assert_eq!(body["outcome"], "completed", "{body}");
+    assert_eq!(body["steps_landed"], 20);
+    assert_eq!(body["final_state"]["forecast_elapsed_s"], SEVEN_DAYS_S + 100.0);
+    // A continued run carries its upstream's seal and not its request: its
+    // long form is its chain's answers in order, each computed again.
+    assert!(tape_holds(&base, &json!({ "links": [up, body] })).await);
     let mut unstated = initial(START_EPOCH_UTC_S, 0.0);
     unstated.as_object_mut().unwrap().remove("forecast_elapsed_s");
     for (path, request) in [
@@ -187,28 +163,26 @@ async fn a_restart_carries_the_time_since_the_published_state_and_cannot_pass_se
     ] {
         let (status, text) = post(&base, path, &request).await;
         assert_eq!(status, 422, "{text}");
-        assert_eq!(text, "Missing required parameter: 'forecast_elapsed_s'");
+        assert_eq!(text, "Missing required parameter: 'forecast_elapsed_s' (InputMissing).");
     }
-    // Below zero and past seven days, refused by name before any step.
-    for (stated, message) in [
-        (-1.0, "Physical Failure: 'forecast_elapsed_s' -1 s is below 0 s, the inclusive minimum of the satellite_lageos1 card (HorizonOutsideCard). That state is not sealed."),
-        (604_801.0, "Physical Failure: 'forecast_elapsed_s' 604801 s is above 604800 s, the inclusive maximum of the satellite_lageos1 card (HorizonOutsideCard). That state is not sealed."),
+    // Below zero, refused by name before any step.
+    let message = "Physical Failure: 'forecast_elapsed_s' -1 s is below 0 s, the inclusive minimum of the satellite_lageos1 card (ForecastElapsedBelowZero). That state is not sealed.";
+    for (path, request) in [
+        ("/verify_physics", one_step(&initial(START_EPOCH_UTC_S, -1.0), 10.0)),
+        ("/run_trajectory", trajectory(initial(START_EPOCH_UTC_S, -1.0), 10.0, 1, 1)),
     ] {
-        for (path, request) in [
-            ("/verify_physics", one_step(&initial(START_EPOCH_UTC_S, stated), 10.0)),
-            ("/run_trajectory", trajectory(initial(START_EPOCH_UTC_S, stated), 10.0, 1, 1)),
-        ] {
-            let (status, text) = post(&base, path, &request).await;
-            assert_eq!(status, 422, "{path} {stated}: {text}");
-            assert_eq!(text, message, "{path} {stated}");
-        }
+        let (status, text) = post(&base, path, &request).await;
+        assert_eq!(status, 422, "{path}: {text}");
+        assert_eq!(text, message, "{path}");
     }
 }
 
-/// Three orbits: circles at 12 270 km, equatorial, polar and retrograde.
-/// None was compared; each is refused by name with no proof.
+/// Three orbits never compared, where the card stood at its two bands:
+/// circles at 12 270 km, equatorial, polar and retrograde. Each runs a day,
+/// lands every step with both ledgers under their limits, and its tape
+/// verifies.
 #[tokio::test]
-async fn orbits_that_were_never_compared_are_refused_by_name() {
+async fn orbits_that_were_never_compared_are_computed_and_their_tapes_verify() {
     let base = spawn_app().await;
     for velocity_m_s in [
         [0.0, 4804.88671850997, 0.0],
@@ -221,35 +195,36 @@ async fn orbits_that_were_never_compared_are_refused_by_name() {
             "position_m": [12_270_000.0, 0.0, 0.0],
             "velocity_m_s": velocity_m_s
         });
-        let (status, text) = post(&base, "/run_trajectory", &trajectory(start, 10.0, 8_640, 8_640)).await;
-        assert_eq!(status, 422, "{velocity_m_s:?}: {text}");
-        assert_eq!(text, ORBIT);
-        assert!(!text.contains("run_seal"));
+        let body = run(&base, &trajectory(start, 10.0, 8_640, 8_640)).await;
+        assert_eq!(body["outcome"], "completed", "{velocity_m_s:?}: {body}");
+        assert!(body["final_state"]["residual_conservation_error"].as_f64().unwrap() < 1.0e-9);
+        assert!(tape_holds(&base, &body).await);
     }
 }
 
-/// Dates outside the compared days: a compared start moved to 2017-01-01,
-/// which 0.6.0 answered, and a day before and after the 28 compared days.
+/// Dates: a compared start moved to 2017-01-01, the last leap second, and a
+/// day before and after the 28 compared days are computed; a second before
+/// 2017-01-01 and a day after the leap-second file expires are refused by
+/// name.
 #[tokio::test]
-async fn dates_outside_the_compared_days_are_refused_by_name() {
+async fn dates_inside_the_leap_second_span_are_computed_and_outside_it_refused() {
     let base = spawn_app().await;
-    for epoch_utc_s in [536_500_800.0, 840_715_200.0 - 86_400.0] {
-        let (status, text) =
-            post(&base, "/run_trajectory", &trajectory(initial(epoch_utc_s, 0.0), 10.0, 8_640, 12)).await;
-        assert_eq!(status, 422, "{text}");
-        assert_eq!(
-            text,
-            format!(
-                "Physical Failure: 'epoch_utc_s' {} s is below 840715200 s, the inclusive minimum of the satellite_lageos1 card (EpochOutsideCard). That state is not sealed.",
-                protocol_mcp_gateway::message_number(epoch_utc_s)
-            )
-        );
+    for epoch_utc_s in [536_500_800.0, 840_715_200.0 - 86_400.0, 843_134_400.0 + 86_400.0] {
+        let body = run(&base, &trajectory(initial(epoch_utc_s, 0.0), 10.0, 8_640, 12)).await;
+        assert_eq!(body["outcome"], "completed", "{epoch_utc_s}: {body}");
+        assert!(tape_holds(&base, &body).await);
     }
+    let early = 536_500_799.0;
+    let (status, text) = post(&base, "/run_trajectory", &trajectory(initial(early, 0.0), 10.0, 8_640, 12)).await;
+    assert_eq!(status, 422, "{text}");
+    assert_eq!(
+        text,
+        "Physical Failure: 'epoch_utc_s' 536500799 s is below 536500800 s, the inclusive minimum of the satellite_lageos1 card (EpochOutsideLeapSecondSpan). That state is not sealed."
+    );
     let late = satellite_lageos1::EPOCH_MAX_S + 86_400.0;
     let (status, text) = post(&base, "/run_trajectory", &trajectory(initial(late, 0.0), 10.0, 1, 1)).await;
     assert_eq!(status, 422, "{text}");
-    assert!(text.contains("EpochOutsideCard"), "{text}");
-    // The first compared start is the first date of the card.
+    assert!(text.contains("EpochOutsideLeapSecondSpan"), "{text}");
     let first = json!({
         "epoch_utc_s": satellite_lageos1::EPOCH_MIN_S,
         "forecast_elapsed_s": 0.0,
@@ -278,7 +253,7 @@ async fn a_single_first_step_to_the_last_date_or_to_seven_days_lands() {
         assert_eq!(body["final_state"]["epoch_utc_s"].as_f64().unwrap().to_bits(), last_s.to_bits());
 
         // A forecast stated one step short of seven days carries a forecast
-        // on: the card takes it, and without from the door refuses it by name.
+        // on: without from the door refuses it by name.
         let at_seven_days = initial(START_EPOCH_UTC_S, SEVEN_DAYS_S - dt_s);
         let (status, text) = post(&base, "/verify_physics", &one_step(&at_seven_days, dt_s)).await;
         assert_eq!(status, 422, "dt {dt_s}: {text}");
@@ -314,9 +289,9 @@ async fn the_description_states_what_was_compared_and_its_second_scoring() {
     assert_eq!(names, ["epoch_utc_s", "forecast_elapsed_s", "position_m", "velocity_m_s"]);
     let forecast = fields.iter().find(|field| field["name"] == "forecast_elapsed_s").unwrap();
     assert_eq!(forecast["minimum"], 0.0);
-    assert_eq!(forecast["maximum"], SEVEN_DAYS_S);
+    assert!(forecast["maximum"].is_null());
     let epoch = fields.iter().find(|field| field["name"] == "epoch_utc_s").unwrap();
-    assert_eq!(epoch["minimum"], 840_715_200.0);
+    assert_eq!(epoch["minimum"], 536_500_800.0);
     let card_itself = SatelliteLageos1::lageos1();
     assert_eq!(epoch["maximum"].as_f64().unwrap(), card_itself.last_start_epoch_utc_s().unwrap());
     let limits = card["validation"]["limits"].as_str().unwrap();
@@ -325,5 +300,7 @@ async fn the_description_states_what_was_compared_and_its_second_scoring() {
     assert!(!limits.contains("not yet repeated by a second party"), "{limits}");
     assert!(!limits.contains("six weeks of one season"), "{limits}");
     assert!(!limits.contains("Known defect"), "{limits}");
-    assert!(card.to_string().contains("HorizonOutsideCard"));
+    assert!(!card.to_string().contains("HorizonOutsideCard"));
+    assert!(card.to_string().contains("AngularMomentumBreach"));
+    assert!(limits.contains("none of those was compared"), "{limits}");
 }

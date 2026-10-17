@@ -1,0 +1,27 @@
+{
+ "model": "blast_wave_tnt_air",
+ "verdict": "missed",
+ "protocol": {
+  "path": "evidence/research/blast_overpressure/validation_protocol.md",
+  "sha256": "e8f3ac5d85277fd482b81c8a8c2d9eb586e85a6406c3635117a34b82e03f9416",
+  "committed": {
+   "crate": "genesis_solvers",
+   "commit": "cb528d1a13b83222bab4f1a0fdb51a040d6da4cd",
+   "utc": "2026-10-15T01:03:21Z",
+   "how": "A commit with no file changes, 'Pass marks and forecast for blast_wave_tnt_air ... fixed before scoring', whose message carries the full SHA-256 of validation_protocol.md, analysis/inputs.py, analysis/score.py and analysis/out/model_predictions.csv, and says no score has been computed."
+  }
+ },
+ "held_back": [
+  {
+   "path": "evidence/research/blast_overpressure/raw/Dewey_Sochet_2020_GaugeDatabase_propane_O2_blast_CC-BY-4.0.xlsx",
+   "sha256": "cd620a7817b81a20b7a5d0127497a74e895c20b979fbc21b0d2c699f30989d6c"
+  }
+ ],
+ "scored": {
+  "utc": "2026-10-15T01:03:34Z",
+  "evidence": "Birth time of evidence/research/blast_overpressure/analysis/out/scored.txt (18:03:34 PDT; scored.csv and scored.json at 01:03:35Z); RESULT.md: 'Scored once on 2026-10-14 by the protocol fixed in genesis_solvers commit cb528d1'."
+ },
+ "forecast_first": "held",
+ "registered_by": "backfill from the record, 2026-10-15",
+ "notes": "Committed 13 s before the score was written; validation_protocol.md, inputs.py, score.py and model_predictions.csv on disk still have the hashes in the commit message. The held-back file above is the gauge spreadsheet holding the rich and lean series (no fingerprint file names it; its SHA-256 is computed today; downloaded 2026-10-14T23:13:55Z). The protocol says the forecast is informed, not blind: before it was written the session had printed the sheets' header rows, with the authors' fitted peaks, durations and impulses for every gauge, and every measured arrival time, and had computed the model's answers at all 42 gauges; no score had been computed and the marks were the scout's proposal, unchanged. The gateway commit df84ebf3e1b81e90c49ab4145b45026fb130f5f0 (01:25:10Z, after the scoring) carries the hash in PASS_MARKS_FIXED. After the scoring, not gated: analysis/after_scoring_energy_fraction.py and the TNT comparisons. Commit times are the committer's clock. No mark for it in the local copy of the public pass-marks repository (command-center/sales/github/pass-marks/, posted 2026-10-13)."
+}

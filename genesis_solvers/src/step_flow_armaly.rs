@@ -59,7 +59,7 @@
 //! "approximately 3.3", 14 percent low, a miss of the 10 percent mark; and
 //! 8.07 at 389 against its "approximately 8".
 //!
-//! **The second scoring of 2026-10-09** (`evidence/checks/second_party/V-38`,
+//! **The second scoring of 2026-10-09** (`evidence/verification/second_party/V-38`,
 //! same machine) reached the same three verdicts on its own digitisation, 187
 //! circles: 0.0430, 0.0514 and 0.238. Of the builder's 174 circles 7 are
 //! false and 20 were missed. Its independent solver agrees with this one
@@ -90,10 +90,28 @@
 //! is the developed parabola; the parabola itself is 0.019 from the circles
 //! and the solver at 259.33 is 0.023, so this shows that the solver relaxes
 //! to it, not more. The circles at 30.31 were scored against the profile at
-//! 30, which differs from the one at 20.92 by less than 1e-6. So a station
-//! out to 30 is served at Reynolds number 100. Above 100 no profile past
-//! 13.57 step heights was compared (Armaly's Figure 16 at 389 ends there),
-//! and a station past it is refused by name.
+//! 30, which differs from the one at 20.92 by less than 1e-6. Above 100 no
+//! profile past 13.57 step heights was compared (Armaly's Figure 16 at 389
+//! ends there); a station past it is answered, out to 30 step heights, where
+//! the grid ends, at every Reynolds number. Through engine 0.8.0 it was
+//! refused by name.
+//!
+//! **Below Reynolds number 100**, the lower measured condition, the same
+//! equations are settled with Newton's method started at the asked Reynolds
+//! number, down to creeping flow: the viscosity `2 h / Re` stays finite for
+//! any Reynolds number above zero, and a Reynolds number of zero or less is
+//! refused by name. Nothing below 100 was compared with measurement.
+//!
+//! **The top, Reynolds number 400**, is where the flow over this step stops
+//! being two-dimensional. Armaly and his colleagues, page 482: "At Reynolds
+//! numbers smaller than 400 the flow maintained its two-dimensionality", as
+//! their Figure 8 shows at 397, and from 400 to 6600 the flow near the step
+//! is three-dimensional; their own two-dimensional calculation first finds
+//! the eddy on the upper wall above 420. Above 400 the solver refuses by
+//! name. From 389, the higher compared condition, to 400 the same equations
+//! are settled and nothing was compared; at 389 the rig was already showing
+//! small deviations from two-dimensionality between 7 and 12 step heights.
+//! Until this version the top was 389.
 //!
 //! The protocol, the data and the comparison are in
 //! `evidence/research/fluid_armaly_backward_step/`, and the Figure 15 reading
@@ -103,6 +121,7 @@
 //! <https://courses.washington.edu/me431/handouts/armaly-jfm-83.pdf>; the
 //! builder had not read it when the comparison was made.
 
+use crate::normal::NormalOrZero;
 use std::fmt;
 
 /// Step height `S`, millimetres.
@@ -112,22 +131,37 @@ pub const INLET_HEIGHT_MM: f64 = 5.2;
 /// Channel height downstream of the step `H`, millimetres.
 pub const CHANNEL_HEIGHT_MM: f64 = STEP_HEIGHT_MM + INLET_HEIGHT_MM;
 
-/// Lowest Reynolds number served: the lower of the two measured conditions.
-pub const REYNOLDS_MIN: f64 = 100.0;
-/// Highest Reynolds number served: the higher of the two measured conditions.
-pub const REYNOLDS_MAX: f64 = 389.0;
+/// A Reynolds number must be above this: at zero the viscosity `2 h / Re`
+/// is infinite, and below it negative.
+pub const REYNOLDS_ABOVE: f64 = 0.0;
+/// The lower of the two measured conditions compared with measurement.
+pub const COMPARED_REYNOLDS_MIN: f64 = 100.0;
+/// Highest Reynolds number served: the end of two-dimensional flow over
+/// this step. Armaly et al. (1983), page 482: "At Reynolds numbers smaller
+/// than 400 the flow maintained its two-dimensionality", shown at 397 by
+/// their Figure 8, and "the flow downstream, in the immediate vicinity of the
+/// step, was found to be three-dimensional within the Reynolds-number range
+/// 400 < Re < 6600". The solver's equations are those of steady
+/// two-dimensional flow. Until this version it was 389, the higher of the
+/// two conditions compared ([`COMPARED_REYNOLDS_MAX`]).
+pub const REYNOLDS_MAX: f64 = 400.0;
+/// The higher of the two conditions compared with measured profiles. Stated,
+/// not enforced: from it to [`REYNOLDS_MAX`] the flow is answered and was not
+/// compared.
+pub const COMPARED_REYNOLDS_MAX: f64 = 389.0;
 /// First station served, in step heights downstream of the step.
 pub const STATION_MIN_X_OVER_S: f64 = 0.0;
-/// Last station served, in step heights downstream of the step, and served
-/// only at [`REYNOLDS_MIN`]: Armaly's Figure 15 has measured profiles at
-/// Reynolds number 100 out to 30.31 step heights, and they were compared out
-/// to there. The grid ends at 30.6 step heights.
+/// Last station served, in step heights downstream of the step, at every
+/// Reynolds number: the grid ends at 30.6 step heights. At
+/// [`COMPARED_REYNOLDS_MIN`] Armaly's Figure 15 has measured profiles out to
+/// 30.31 step heights, and they were compared out to there.
 pub const STATION_MAX_X_OVER_S: f64 = 30.0;
-/// Last station served above [`REYNOLDS_MIN`]: the last station of the
-/// measured profiles at Reynolds number 389 (Armaly's Figure 16 and Figure 4
-/// of NASA Technical Memorandum 106248 both end there). No measured profile
-/// past it was compared at any Reynolds number above 100.
-pub const STATION_MAX_ABOVE_REYNOLDS_MIN_X_OVER_S: f64 = 13.57;
+/// Last station compared with a measured profile above
+/// [`COMPARED_REYNOLDS_MIN`]: the last station of the measured profiles at
+/// Reynolds number 389 (Armaly's Figure 16 and Figure 4 of NASA Technical
+/// Memorandum 106248 both end there). A station past it is answered; no
+/// measured profile past it was compared at any Reynolds number above 100.
+pub const COMPARED_STATION_MAX_ABOVE_100_X_OVER_S: f64 = 13.57;
 
 /// Grid intervals over the step height.
 pub const INTERVALS_OVER_STEP: usize = 24;
@@ -144,9 +178,11 @@ pub const OUTLET_COLUMNS: usize = 300;
 pub const LADDER: [f64; 3] = [100.0, 200.0, 300.0];
 /// Largest imbalance at which a rung of the ladder is left.
 pub const RUNG_TOLERANCE: f64 = 1.0e-4;
-/// Largest imbalance of an accepted field, in solver units.
+/// Largest imbalance of an accepted field, in solver units, times
+/// [`viscous_scale`] below Reynolds number 100.
 pub const IMBALANCE_TOLERANCE: f64 = 1.0e-9;
-/// An imbalance above this stops the solver.
+/// An imbalance above this, times [`viscous_scale`] below Reynolds number
+/// 100, stops the solver.
 pub const IMBALANCE_CAP: f64 = 1.0e4;
 /// Newton iterations allowed at one Reynolds number.
 pub const MAX_NEWTON_ITERATIONS: u32 = 12;
@@ -206,17 +242,17 @@ pub struct StepFlow {
 /// Why no flow was returned.
 #[derive(Clone, Debug, PartialEq)]
 pub enum StepReject {
-    /// `reynolds_number` is outside [`REYNOLDS_MIN`]..=[`REYNOLDS_MAX`].
+    /// `reynolds_number` is not above [`REYNOLDS_ABOVE`]: the viscosity `2 h / Re` is infinite or negative.
+    ReynoldsNotPositive { reynolds_number: f64 },
+    /// `reynolds_number` is above [`REYNOLDS_MAX`]: above 400 the flow over this step is three-dimensional (Armaly et al. 1983, page 482: two-dimensional below 400, three-dimensional from 400 to 6600), and the solver's equations are those of steady two-dimensional flow.
     ReynoldsOutOfRange { reynolds_number: f64 },
-    /// `station_x_over_s` is outside [`STATION_MIN_X_OVER_S`]..=[`STATION_MAX_X_OVER_S`].
+    /// `station_x_over_s` is outside [`STATION_MIN_X_OVER_S`] to [`STATION_MAX_X_OVER_S`], where the grid ends.
     StationOutOfRange { station_x_over_s: f64 },
-    /// `station_x_over_s` is above [`STATION_MAX_ABOVE_REYNOLDS_MIN_X_OVER_S`] at a Reynolds number above [`REYNOLDS_MIN`], where no measured profile was compared.
-    StationNotCompared { reynolds_number: f64, station_x_over_s: f64 },
     /// A value of the field or its imbalance was NaN or infinite.
     NonFiniteValue,
     /// The linear system of a Newton iteration had no usable pivot.
     SingularSystem,
-    /// The largest imbalance rose above [`IMBALANCE_CAP`].
+    /// The largest imbalance rose above [`IMBALANCE_CAP`] in the viscous scale.
     ImbalanceGrew { reynolds_number: f64, imbalance: f64 },
     /// The largest imbalance was still above the tolerance after [`MAX_NEWTON_ITERATIONS`] iterations at one Reynolds number.
     NotSettled { reynolds_number: f64, imbalance: f64, iterations: u32 },
@@ -229,20 +265,17 @@ pub enum StepReject {
 impl fmt::Display for StepReject {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::ReynoldsNotPositive { reynolds_number } => write!(
+                f,
+                "Reynolds number {reynolds_number} is not above {REYNOLDS_ABOVE}: the viscosity would be infinite or negative"
+            ),
             Self::ReynoldsOutOfRange { reynolds_number } => write!(
                 f,
-                "Reynolds number {reynolds_number} is outside {REYNOLDS_MIN}..={REYNOLDS_MAX}"
+                "Reynolds number {reynolds_number} is above {REYNOLDS_MAX}: above 400 the flow over this step is three-dimensional (Armaly et al. 1983, page 482: two-dimensional below 400, three-dimensional from 400 to 6600), and the solver's equations are those of steady two-dimensional flow"
             ),
             Self::StationOutOfRange { station_x_over_s } => write!(
                 f,
-                "station {station_x_over_s} step heights is outside {STATION_MIN_X_OVER_S}..={STATION_MAX_X_OVER_S}"
-            ),
-            Self::StationNotCompared {
-                reynolds_number,
-                station_x_over_s,
-            } => write!(
-                f,
-                "station {station_x_over_s} step heights at Reynolds number {reynolds_number} is past {STATION_MAX_ABOVE_REYNOLDS_MIN_X_OVER_S}, the last station compared with a measured profile at a Reynolds number above {REYNOLDS_MIN}; only at {REYNOLDS_MIN} were profiles compared out to {STATION_MAX_X_OVER_S}"
+                "station {station_x_over_s} step heights is outside {STATION_MIN_X_OVER_S} to {STATION_MAX_X_OVER_S} step heights, where the grid ends"
             ),
             Self::NonFiniteValue => write!(f, "a value of the field was not finite"),
             Self::SingularSystem => write!(f, "a Newton iteration had no usable pivot"),
@@ -677,29 +710,59 @@ fn speed_at(grid: &Grid, z: &[f64], i: usize, j: usize, y: &[f64]) -> f64 {
         / 1.5
 }
 
+/// The scale of the viscous term against its scale at
+/// [`COMPARED_REYNOLDS_MIN`]: `100 / Re` below 100, one from 100 up. The
+/// imbalance tolerance and cap are multiplied by it.
+pub fn viscous_scale(reynolds_number: f64) -> f64 {
+    (COMPARED_REYNOLDS_MIN / reynolds_number).max(1.0)
+}
+
 /// Settles the flow at one Reynolds number and returns it with the velocity
 /// profile at one station, or names the limit that stopped it.
+///
+/// Each value of the answer below the normal range is written as zero
+/// with its sign ([`crate::normal`]).
 pub fn solve(question: &StepQuestion) -> Result<StepFlow, StepReject> {
+    crate::normal::held(solve_as_computed(question))
+}
+
+/// The answer as the equations compute it, before a value below the
+/// normal range is written as zero.
+fn solve_as_computed(question: &StepQuestion) -> Result<StepFlow, StepReject> {
     solve_with(question, &SERVED)
 }
 
+impl NormalOrZero for StepFlow {
+    fn normal_or_zero(&mut self) {
+        self.reattachment_x_over_s.normal_or_zero();
+        self.reattachment_mm.normal_or_zero();
+        self.floor_shear_sign_changes_x_over_s.normal_or_zero();
+        self.upper_wall_shear_sign_changes_x_over_s.normal_or_zero();
+        self.profile_y_over_h.normal_or_zero();
+        self.profile_u_over_umax.normal_or_zero();
+        self.largest_imbalance.normal_or_zero();
+        self.outlet_departure.normal_or_zero();
+        self.stream_function.normal_or_zero();
+        self.vorticity.normal_or_zero();
+    }
+}
+
 /// The limits the question itself shows, in the order the solver asks them:
-/// the Reynolds number, the station, and the station that was compared at
-/// that Reynolds number. No flow is settled.
+/// the Reynolds number, then the station. No flow is settled.
 pub fn admit(question: &StepQuestion) -> Result<(), StepReject> {
     let reynolds_number = question.reynolds_number;
     let station = question.station_x_over_s;
-    if !(reynolds_number >= REYNOLDS_MIN && reynolds_number <= REYNOLDS_MAX) {
+    if reynolds_number.is_nan() {
+        return Err(StepReject::NonFiniteValue);
+    }
+    if !(reynolds_number > REYNOLDS_ABOVE) {
+        return Err(StepReject::ReynoldsNotPositive { reynolds_number });
+    }
+    if !(reynolds_number <= REYNOLDS_MAX) {
         return Err(StepReject::ReynoldsOutOfRange { reynolds_number });
     }
     if !(station >= STATION_MIN_X_OVER_S && station <= STATION_MAX_X_OVER_S) {
         return Err(StepReject::StationOutOfRange {
-            station_x_over_s: station,
-        });
-    }
-    if reynolds_number > REYNOLDS_MIN && station > STATION_MAX_ABOVE_REYNOLDS_MIN_X_OVER_S {
-        return Err(StepReject::StationNotCompared {
-            reynolds_number,
             station_x_over_s: station,
         });
     }
@@ -751,13 +814,18 @@ fn solve_with(question: &StepQuestion, numerics: &Numerics) -> Result<StepFlow, 
         .chain(std::iter::once((reynolds_number, numerics.imbalance_tolerance)));
     for (rung, tolerance) in rungs {
         let nu = 2.0 * INLET_HEIGHT_MM / rung;
+        // Below the lower measured condition the viscous term, and with it
+        // the imbalance of any field, grows as 1/Re: the tolerance and the
+        // cap are held in that scale. From 100 up the scale is one.
+        let scale = viscous_scale(rung);
+        let (tolerance, cap) = (tolerance * scale, numerics.imbalance_cap * scale);
         let mut iterations = 0_u32;
         loop {
             let imbalance = assemble(&grid, nu, &z, &mut r, &mut jac);
             if !imbalance.is_finite() {
                 return Err(StepReject::NonFiniteValue);
             }
-            if imbalance > numerics.imbalance_cap {
+            if imbalance > cap {
                 return Err(StepReject::ImbalanceGrew {
                     reynolds_number: rung,
                     imbalance,
@@ -863,12 +931,12 @@ mod tests {
     /// once for the tests that read them.
     fn low() -> &'static StepFlow {
         static FLOW: std::sync::OnceLock<StepFlow> = std::sync::OnceLock::new();
-        FLOW.get_or_init(|| solve(&ask(REYNOLDS_MIN, 3.06)).expect("settles"))
+        FLOW.get_or_init(|| solve(&ask(COMPARED_REYNOLDS_MIN, 3.06)).expect("settles"))
     }
 
     fn high() -> &'static StepFlow {
         static FLOW: std::sync::OnceLock<StepFlow> = std::sync::OnceLock::new();
-        FLOW.get_or_init(|| solve(&ask(REYNOLDS_MAX, 3.06)).expect("settles"))
+        FLOW.get_or_init(|| solve(&ask(COMPARED_REYNOLDS_MAX, 3.06)).expect("settles"))
     }
 
     fn ask(reynolds_number: f64, station_x_over_s: f64) -> StepQuestion {
@@ -919,7 +987,7 @@ mod tests {
         assert!(fraction < -0.13 && fraction > -0.15, "{fraction}");
     }
 
-    /// The upper end of the range is heavy in an unoptimised build, so this
+    /// The upper compared condition is heavy in an unoptimised build, so this
     /// is skipped by default: `cargo test --release -- --ignored`.
     #[test]
     #[ignore]
@@ -940,7 +1008,7 @@ mod tests {
         }
     }
 
-    /// The upper end of the range is heavy in an unoptimised build, so this
+    /// The upper compared condition is heavy in an unoptimised build, so this
     /// is skipped by default: `cargo test --release -- --ignored`.
     #[test]
     #[ignore]
@@ -1008,53 +1076,124 @@ mod tests {
     #[test]
     fn same_question_same_bits() {
         let a = low();
-        let b = solve(&ask(REYNOLDS_MIN, 3.06)).expect("settles");
+        let b = solve(&ask(COMPARED_REYNOLDS_MIN, 3.06)).expect("settles");
         assert_eq!(*a, b);
         assert_eq!(a.reattachment_x_over_s.to_bits(), b.reattachment_x_over_s.to_bits());
     }
 
+    /// Past the old top, 389, to the new one, 400, where the flow over this
+    /// step stops being two-dimensional: the field settles with its balance
+    /// closed, the outlet developed, one reattachment on the floor and the
+    /// upper wall still attached (Armaly's own calculation first finds the
+    /// eddy there above 420), and the reattachment lies past the one at 389.
+    /// The next number above 400 is refused by name.
+    #[test]
+    fn the_top_of_two_dimensional_flow_settles_with_its_balance_closed() {
+        let top = solve(&ask(REYNOLDS_MAX, COMPARED_STATION_MAX_ABOVE_100_X_OVER_S)).expect("settles");
+        assert!(top.largest_imbalance <= IMBALANCE_TOLERANCE, "{}", top.largest_imbalance);
+        assert!(top.outlet_departure <= OUTLET_TOLERANCE, "{}", top.outlet_departure);
+        assert!(top.upper_wall_shear_sign_changes_x_over_s.is_empty(), "{:?}", top.upper_wall_shear_sign_changes_x_over_s);
+        assert!(top.reattachment_x_over_s > 8.070951412957976 && top.reattachment_x_over_s < 9.0, "{}", top.reattachment_x_over_s);
+        let m = INTERVALS_OVER_STEP + INTERVALS_OVER_INLET + 1;
+        for column in top.stream_function.chunks_exact(m) {
+            assert!((column[m - 1] - INLET_HEIGHT_MM).abs() < 1e-12);
+            assert!(column[0].abs() < 1e-12);
+        }
+        let past = f64::from_bits(REYNOLDS_MAX.to_bits() + 1);
+        assert_eq!(admit(&ask(past, 1.0)), Err(StepReject::ReynoldsOutOfRange { reynolds_number: past }));
+    }
+
     #[test]
     fn both_ends_of_both_ranges_are_inside_and_the_next_number_is_not() {
-        // The lower end of the Reynolds range is settled in `low`, the upper
-        // in `high`, and the first station in the inlet test.
+        // The compared lower condition is settled in `low`, the upper end in
+        // `the_top_of_two_dimensional_flow_settles_with_its_balance_closed`,
+        // and the first station in the inlet test.
         assert!(low().largest_imbalance <= IMBALANCE_TOLERANCE);
-        assert!(solve(&ask(REYNOLDS_MIN, STATION_MAX_X_OVER_S)).is_ok());
-        assert!(admit(&ask(REYNOLDS_MAX, STATION_MAX_ABOVE_REYNOLDS_MIN_X_OVER_S)).is_ok());
-        for reynolds in [99.99999999999999, 389.00000000000006, 0.0, -100.0, f64::NAN, f64::INFINITY] {
-            assert!(matches!(solve(&ask(reynolds, 1.0)), Err(StepReject::ReynoldsOutOfRange { .. })), "{reynolds}");
+        assert!(solve(&ask(COMPARED_REYNOLDS_MIN, STATION_MAX_X_OVER_S)).is_ok());
+        assert!(admit(&ask(REYNOLDS_MAX, STATION_MAX_X_OVER_S)).is_ok());
+        assert!(admit(&ask(f64::from_bits(1), 1.0)).is_ok());
+        for reynolds in [400.00000000000006, 401.0, 1.0e9, f64::INFINITY] {
+            assert_eq!(solve(&ask(reynolds, 1.0)), Err(StepReject::ReynoldsOutOfRange { reynolds_number: reynolds }), "{reynolds}");
         }
+        for reynolds in [0.0, -0.0, -100.0, f64::NEG_INFINITY] {
+            assert_eq!(solve(&ask(reynolds, 1.0)), Err(StepReject::ReynoldsNotPositive { reynolds_number: reynolds }), "{reynolds}");
+        }
+        assert_eq!(solve(&ask(f64::NAN, 1.0)), Err(StepReject::NonFiniteValue));
         for station in [-1e-300, 30.000000000000004, f64::NAN, f64::NEG_INFINITY] {
             assert!(matches!(solve(&ask(100.0, station)), Err(StepReject::StationOutOfRange { .. })), "{station}");
         }
+        assert_eq!(
+            StepReject::ReynoldsNotPositive { reynolds_number: 0.0 }.to_string(),
+            "Reynolds number 0 is not above 0: the viscosity would be infinite or negative"
+        );
+        assert_eq!(
+            StepReject::StationOutOfRange { station_x_over_s: 31.0 }.to_string(),
+            "station 31 step heights is outside 0 to 30 step heights, where the grid ends"
+        );
     }
 
-    /// Profiles past 13.57 step heights were compared only at Reynolds number
-    /// 100 (Armaly's Figure 15, out to 30.31). Above 100 a station past the
-    /// last one of Figure 16 is refused by name before any flow is settled,
-    /// and the station range itself is asked first.
+    /// Below Reynolds number 100, the lower measured condition, where engine
+    /// 0.8.0 refused by name: the flow is settled down to creeping flow, to
+    /// the same imbalance tolerance with the outlet developed and one
+    /// reattachment, the volume flow the same at every station, and the
+    /// eddy behind the step shrinking as the Reynolds number falls.
     #[test]
-    fn a_station_past_the_last_compared_one_above_reynolds_100_is_refused_by_name() {
-        assert!(admit(&ask(REYNOLDS_MIN, STATION_MAX_X_OVER_S)).is_ok());
-        assert!(admit(&ask(REYNOLDS_MIN, 13.570000000000002)).is_ok());
-        for reynolds in [100.00000000000001, 149.0, 298.0, REYNOLDS_MAX] {
-            assert!(admit(&ask(reynolds, STATION_MAX_ABOVE_REYNOLDS_MIN_X_OVER_S)).is_ok(), "{reynolds}");
-            for station in [13.570000000000002, 20.0, STATION_MAX_X_OVER_S] {
-                assert_eq!(
-                    solve(&ask(reynolds, station)),
-                    Err(StepReject::StationNotCompared { reynolds_number: reynolds, station_x_over_s: station }),
-                    "{reynolds} {station}"
-                );
+    fn below_the_lower_measured_condition_the_flow_settles_down_to_creeping_flow() {
+        let m = INTERVALS_OVER_STEP + INTERVALS_OVER_INLET + 1;
+        let mut last = low().reattachment_x_over_s;
+        for reynolds in [99.99999999999999, 50.0, 10.0, 1.0, 1.0e-3, 1.0e-6] {
+            let flow = solve(&ask(reynolds, 30.0)).unwrap_or_else(|reject| panic!("{reynolds}: {reject}"));
+            assert!(flow.largest_imbalance <= IMBALANCE_TOLERANCE * viscous_scale(reynolds), "{reynolds}");
+            assert!(flow.outlet_departure <= OUTLET_TOLERANCE, "{reynolds}");
+            assert!(flow.reattachment_x_over_s < last, "{reynolds}: {} then {last}", flow.reattachment_x_over_s);
+            assert!(flow.reattachment_x_over_s > 0.0);
+            last = flow.reattachment_x_over_s;
+            for column in flow.stream_function.chunks_exact(m) {
+                assert!((column[m - 1] - INLET_HEIGHT_MM).abs() < 1e-12, "{reynolds}");
+                assert!(column[0].abs() < 1e-12, "{reynolds}");
+            }
+        }
+        // From 100 up the scale is one, so no answer served before moves.
+        assert_eq!(viscous_scale(COMPARED_REYNOLDS_MIN), 1.0);
+        assert_eq!(viscous_scale(REYNOLDS_MAX), 1.0);
+        // Creeping flow: the reattachment tends to the corner eddy of Stokes
+        // flow, 0.3507 step heights, and stops moving.
+        assert!((last - 0.35066).abs() < 1.0e-4, "{last}");
+        // Far below, the viscous term is so large that the rounding of its
+        // 64-bit numbers is larger than the flow, and a limit of the
+        // arithmetic names it: the floor shear is noise, the imbalance
+        // cannot close, or the viscosity overflows.
+        for reynolds in [1.0e-12, 1.0e-100] {
+            match solve(&ask(reynolds, 1.0)) {
+                Err(StepReject::FlowPatternNotRecognised { .. } | StepReject::ImbalanceGrew { .. } | StepReject::NotSettled { .. }) => {}
+                other => panic!("{reynolds}: {:?}", other.map(|flow| flow.reattachment_x_over_s)),
+            }
+        }
+        assert_eq!(solve(&ask(5.0e-324, 1.0)), Err(StepReject::NonFiniteValue));
+    }
+
+    /// Past 13.57 step heights above Reynolds number 100, where engine 0.8.0
+    /// refused by name: the profile is answered out to 30 step heights, the
+    /// same settled field at every station, and it relaxes to the developed
+    /// parabola of the whole channel.
+    #[test]
+    fn a_station_past_the_last_compared_one_above_reynolds_100_is_answered() {
+        let at = solve(&ask(150.0, COMPARED_STATION_MAX_ABOVE_100_X_OVER_S)).expect("settles");
+        for station in [13.570000000000002, 20.0, STATION_MAX_X_OVER_S] {
+            let flow = solve(&ask(150.0, station)).unwrap_or_else(|reject| panic!("{station}: {reject}"));
+            assert_eq!(flow.stream_function, at.stream_function, "{station}");
+            assert_eq!(flow.reattachment_x_over_s, at.reattachment_x_over_s);
+            if station == STATION_MAX_X_OVER_S {
+                for (y, u) in flow.profile_y_over_h.iter().zip(&flow.profile_u_over_umax) {
+                    let developed = 6.0 * y * (1.0 - y) * (INLET_HEIGHT_MM / CHANNEL_HEIGHT_MM) / 1.5;
+                    assert!((u - developed).abs() < OUTLET_TOLERANCE, "{y} {u} {developed}");
+                }
             }
         }
         assert!(matches!(
             admit(&ask(REYNOLDS_MAX, 30.000000000000004)),
             Err(StepReject::StationOutOfRange { .. })
         ));
-        let sentence = StepReject::StationNotCompared { reynolds_number: 389.0, station_x_over_s: 30.0 }.to_string();
-        assert_eq!(
-            sentence,
-            "station 30 step heights at Reynolds number 389 is past 13.57, the last station compared with a measured profile at a Reynolds number above 100; only at 100 were profiles compared out to 30"
-        );
     }
 
     #[test]

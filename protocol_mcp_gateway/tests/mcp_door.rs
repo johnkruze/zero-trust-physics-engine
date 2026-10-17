@@ -273,11 +273,12 @@ fn verify_tape_refuses_capital_letters_in_a_frame_by_name_on_the_mcp_door() {
         serde_json::to_vec(&json!({"jsonrpc":"2.0","id":id,"method":"tools/call","params":{"name":tool,"arguments":arguments}})).unwrap()
     };
     let answers = door.ask(&call(21, "run_trajectory", &run));
-    let tape: Value = serde_json::from_str(
-        not_the_sentinel(&answers)[0]["result"]["content"][0]["text"].as_str().unwrap(),
-    )
-    .unwrap();
-    let answers = door.ask(&call(22, "verify_tape", &tape));
+    let tape_text = not_the_sentinel(&answers)[0]["result"]["content"][0]["text"].as_str().unwrap().to_string();
+    let tape: Value = serde_json::from_str(&tape_text).unwrap();
+    // The long form holds the answer sent byte for byte: it is sent back as it came.
+    let answers = door.ask(
+        format!(r#"{{"jsonrpc":"2.0","id":22,"method":"tools/call","params":{{"name":"verify_tape","arguments":{tape_text}}}}}"#).as_bytes(),
+    );
     let report = not_the_sentinel(&answers)[0]["result"]["content"][0]["text"].as_str().unwrap().to_string();
     assert!(report.contains("\"holds\":true"), "{report}");
 

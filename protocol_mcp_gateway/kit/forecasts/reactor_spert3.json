@@ -1,0 +1,27 @@
+{
+ "model": "reactor_spert3",
+ "verdict": "missed",
+ "protocol": {
+  "path": "evidence/research/reactor_spert3/analysis/prereg.json",
+  "sha256": "47458dc27bcd9a60fe6c16ac613b2be3e15b30c7e4bb75d7624c80707e4e7ccd",
+  "committed": {
+   "crate": "protocol_mcp_gateway",
+   "commit": "86eba7539929a6a0d399cf0cbe18480ec3e9e0ec",
+   "utc": "2026-10-07T22:12:56Z",
+   "how": "The diff of 'Serve the reactor_spert3 card on all three doors.' adds to src/descriptor.rs the pass line 'Fixed before any model was run (protocol SHA-256 47458dc27bcd9a60...e7ccd)' with the result field 'not yet compared with the held-back tests'."
+  }
+ },
+ "held_back": [
+  {
+   "path": "evidence/research/reactor_spert3/transcription/table_III_cold_startup.csv",
+   "sha256": "067e646ea090e0b5ab072d540436ed0450a582ed9f19d628ed155cef20e64e9b"
+  }
+ ],
+ "scored": {
+  "utc": "2026-10-08T01:44:25Z",
+  "evidence": "evidence/research/reactor_spert3/analysis/out/09_sealed_tests_opened.json, field opened_utc, 'written before the rows were read from the CSV and before anything was scored', by the sealed engine run; the comparison script was frozen at 2026-10-08T01:03:34Z (analysis/09_engine_comparison_frozen_sha256.txt)."
+ },
+ "forecast_first": "held",
+ "registered_by": "backfill from the record, 2026-10-15",
+ "notes": "Committed 3 h 31 min before the sealed run, and prereg.json on disk still has the committed hash. Outside Git: analysis/prereg_hash.txt records it at 2026-10-07T20:09:47Z. Two amendments came before the commit and are not in any commit: amendment_1.json (5105e928..., 2026-10-07T20:40:16Z) adds three exploratory structures after the opened tests were scored; amendment_2.json (4cadd955..., 21:07:31Z) corrects two sentences; neither moves a gate, and the frozen-script record names both. validation_protocol.md (dfb35c01...) has no recorded hash. The held-back file is the transcription of all 30 tests; prereg.json says all of Table III had been seen in the page image and transcribed when it was hashed, so the ten tests were held back from fitting and scoring, not unseen. Commit times are the committer's clock, not a third party's. Also posted to github.com/johnkruze/zero-trust-physics-pass-marks in GitHub-signed commit 77d4e9999e4ce3a95c28e84e18f628eea28ca7f2 at 2026-10-13T17:55:10Z. The later fuel-temperature model, reactor_spert3_fuel, is a separate model with its own protocol (validation_protocol_v2.md)."
+}

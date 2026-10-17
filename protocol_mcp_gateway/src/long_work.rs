@@ -18,7 +18,9 @@
 //! [`crate::mcp_server::dispatch`] on a state that sees every card and
 //! solver, as the open connection's does. The arguments go to it as JSON and
 //! are read back as the same values: a number keeps its value bit for bit and
-//! its kind, whole or not, which is what a receipt follows.
+//! its kind, whole or not, which is what a receipt follows. A verification's
+//! long form also gets the exact text of its arguments as the connection read
+//! them, since it holds the answer sent byte for byte.
 //!
 //! **The permits are counted where they were.** The parent takes the address's
 //! share and one permit of the physics pool before the child starts, and holds
@@ -54,6 +56,10 @@ const CHILD_POOL: usize = 2;
 struct OneCall {
     name: String,
     arguments: Map<String, Value>,
+    /// The exact text of the arguments as the connection read them, for a
+    /// verification's long form, which holds the answer sent byte for byte.
+    #[serde(default)]
+    text: Option<String>,
     /// Whether the parent holds a physics permit for this call. Without one
     /// the child's pool is empty.
     permit: bool,
@@ -81,8 +87,8 @@ pub fn worker() -> Option<PathBuf> {
 }
 
 /// Make one tool call in a child process and wait `limit` for its result.
-pub(crate) async fn run(worker: &Path, name: &str, arguments: Map<String, Value>, permit: bool, limit: Duration) -> Ended {
-    let call = OneCall { name: name.to_string(), arguments, permit };
+pub(crate) async fn run(worker: &Path, name: &str, arguments: Map<String, Value>, text: Option<String>, permit: bool, limit: Duration) -> Ended {
+    let call = OneCall { name: name.to_string(), arguments, text, permit };
     let Ok(text) = serde_json::to_vec(&call) else { return Ended::Failed };
     let spawned = tokio::process::Command::new(worker)
         .arg(ONE_CALL_FLAG)
@@ -142,7 +148,9 @@ pub async fn one_call() -> i32 {
     } else {
         (0..CHILD_POOL).filter_map(|_| Arc::clone(&state.physics_permits).try_acquire_owned().ok()).collect()
     };
-    let result = crate::mcp_server::dispatch(&state, &call.name, call.arguments).await;
+    // A panic in the call is answered by name, InternalFault, as on every
+    // connection: the parent reads that answer like any other.
+    let result = crate::mcp_server::dispatch_guarded_text(&state, &call.name, call.arguments, call.text).await;
     let Ok(answer) = serde_json::to_vec(&result) else { return 2 };
     let mut out = tokio::io::stdout();
     if out.write_all(&answer).await.is_err() || out.flush().await.is_err() {

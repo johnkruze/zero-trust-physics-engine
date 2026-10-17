@@ -1,0 +1,27 @@
+{
+ "model": "pipe_flow_superpipe",
+ "verdict": "missed",
+ "protocol": {
+  "path": "evidence/research/fluid_princeton_superpipe/validation_protocol.md",
+  "sha256": "704700a99d27cdd566d47a92182d363f31ad8d1ee774c1e75c84a8de75b26893",
+  "committed": {
+   "crate": "genesis_solvers",
+   "commit": "d8e026eedcce0ea3c91db200c28c93d9810aa414",
+   "utc": "2026-10-11T11:05:54Z",
+   "how": "The diff adds to the solver's source the doc comment '(protocol SHA-256 704700a9...)', an 8-hex prefix; one second later protocol_mcp_gateway 9f4b02c93801f8c405c3b0f02b1bf3c262557e26 adds the pass line with the full hash, together with the scored result."
+  }
+ },
+ "held_back": [
+  {
+   "path": "evidence/research/fluid_princeton_superpipe/raw/SHA256SUMS.txt",
+   "sha256": "ae9f9bd4565baffa69c0528b48b3a1810b681e12d0dac0e4f46ef7a2c1fdb9ff"
+  }
+ ],
+ "scored": {
+  "utc": "2026-10-11T07:41:22Z",
+  "evidence": "evidence/research/fluid_princeton_superpipe/analysis/out/03_scored_run_time.txt: 'first attempt at 2026-10-11T07:41:22Z stopped with KeyError ... before any number was printed or saved; fixed and run again: 2026-10-11T07:41:29Z'."
+ },
+ "forecast_first": "not held",
+ "registered_by": "backfill from the record, 2026-10-15",
+ "notes": "The first crate commit carrying the hash is 3 h 24 min after the scored run. Outside Git: FINGERPRINT.txt, 'taken before any file under raw/held_back/ was opened', at 2026-10-11T07:39:54Z, gives validation_protocol.md (unchanged on disk), the model and scoring code and raw/SHA256SUMS.txt as 1681f41b.... The checksum list of the held-back files was rewritten after the scoring (file born 08:19:26Z) and is now ae9f9bd4..., not the fingerprinted version (pass_marks_anchor_2026-10-11/MISMATCHES.md records the same); the held_back entry above is the file as it is now. FINGERPRINT.txt also says the Rust copies under analysis/at_fingerprint/ had their header text and range constants completed after the run. Public mark: GitHub-signed commit 6f6dced59887967ff75a63fc6551a86184c52e2c at 2026-10-13T17:55:57Z."
+}

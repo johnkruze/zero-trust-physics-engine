@@ -1,0 +1,21 @@
+{
+ "model": "modulus_bam_s355",
+ "verdict": "missed",
+ "protocol": {
+  "path": "evidence/research/inverse_bam_s355_sheet/analysis/prereg.json",
+  "sha256": "e606a12456dfb449387a8a3c627401ebbc087166264b885b336b466f46dcec2d",
+  "committed": {
+   "crate": "protocol_mcp_gateway",
+   "commit": "6395f969b08eb19ce4f0e00d98df70fdfc342b92",
+   "utc": "2026-10-09T21:15:01Z",
+   "how": "The diff of 'Serve the modulus_bam_s355 solver ... and the validation record with the comparison that failed' adds the pass line 'Fixed before the held-back data were opened (analysis/prereg.json, SHA-256 e606a124...46dcec2d, and its amendment 2, SHA-256 ea32c1e8...4589da ...)' together with the failed result."
+  }
+ },
+ "scored": {
+  "utc": "2026-10-09T20:49:59Z",
+  "evidence": "Birth time of evidence/research/inverse_bam_s355_sheet/analysis/out/held_back/08_held_back_comparison.log (13:49:59 PDT); analysis/prereg_hash.txt: 'Held-back comparison, recorded 2026-10-09T20:49:59Z, before analysis/08_held_back_comparison.py was run for the first time'."
+ },
+ "forecast_first": "not held",
+ "registered_by": "backfill from the record, 2026-10-15",
+ "notes": "The first crate commit carrying the hash is 25 min after the held-back comparison and states its failed result. Outside Git, before the scoring, analysis/prereg_hash.txt records prereg.json at 2026-10-09T06:02:55Z, sections 1 to 9 of validation_protocol.md at 06:03:56Z (copy kept as analysis/validation_protocol_sections_1_to_9_as_fixed.md, ae09f56e..., unchanged; validation_protocol.md itself is now 1c11d003..., extended after), amendment 1 at 06:07:10Z (after the forecast's first run stopped) and amendment 2 (ea32c1e8..., unchanged) at 20:17:20Z, 'before any sealed member was read'; it says the folder is not under version control. A forecast outside the engine was scored at about 06:07Z to 06:10Z (analysis/out/forecast.json) and missed, which amendment 2 and analysis/06_why_the_forecast_missed.py followed. The sealed members' dimensions were read at 20:17:31Z (out/07_sealed_bar_dimensions.log). Rescorings: held_back_rerun_merged, held_back_integrated(_after_defects, _final), held_back_v060; second party evidence/verification/second_party/V-36/. Public mark: GitHub-signed commit e37555745f74eb7886d6ab0afa6eb31712c2c2e5 at 2026-10-13T17:55:54Z."
+}

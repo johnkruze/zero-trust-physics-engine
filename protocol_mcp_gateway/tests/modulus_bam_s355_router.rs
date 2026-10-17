@@ -8,6 +8,8 @@
 //! 2026-10-09, are used here only where the declared ranges are checked
 //! against the eight scans compared with measurement.
 
+mod answer_text;
+
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::time::Duration;
@@ -55,7 +57,9 @@ async fn post_text(base: &str, path: &str, text: &str) -> (u16, String) {
         {
             Ok(response) => {
                 let status = response.status().as_u16();
-                return (status, response.text().await.unwrap());
+                let text = response.text().await.unwrap();
+                answer_text::remember(&text);
+                return (status, text);
             }
             Err(error) => {
                 last_error = Some(error);
@@ -67,7 +71,7 @@ async fn post_text(base: &str, path: &str, text: &str) -> (u16, String) {
 }
 
 async fn post(base: &str, path: &str, body: &Value) -> (u16, String) {
-    post_text(base, path, &serde_json::to_string(body).unwrap()).await
+    post_text(base, path, &answer_text::as_sent(body)).await
 }
 
 /// A question: the bar, and its series in the order flatwise, torsion, edgewise.
@@ -149,7 +153,7 @@ async fn the_four_published_scans_match_the_solver_bit_for_bit() {
         let direct = direct(index);
 
         assert_eq!(body["inputs"], request);
-        assert_eq!(body["engine_version"], "genesis_solvers_v0.8.0");
+        assert_eq!(body["engine_version"], "genesis_solvers_v0.12.0");
         assert_eq!(body["outcome"], "converged");
         assert!(body["reject"].is_null());
         assert!(body["reject_detail"].is_null());
@@ -214,7 +218,7 @@ async fn the_four_published_scans_match_the_solver_bit_for_bit() {
         assert!(result["edgewise_residual_fraction"].as_f64().unwrap().abs() < 0.0025);
 
         assert_receipt(&text, &body);
-        assert_eq!(verdict(&base, &body).await, json!({ "holds": true, "cause": null, "checked": protocol_mcp_gateway::WHOLE_SOLUTION_CHECKED }));
+        assert_eq!(verdict(&base, &body).await, json!({ "holds": true, "values_hold": true, "cause": null, "compared": protocol_mcp_gateway::WHOLE_SOLUTION_COMPUTED }));
     }
 }
 
@@ -234,7 +238,7 @@ async fn the_series_without_the_edgewise_frequency_is_answered_without_its_resid
         assert_eq!(body["result"][key], whole["result"][key], "{key}");
     }
     assert_ne!(body["solution_seal"], whole["solution_seal"]);
-    assert_eq!(verdict(&base, &body).await, json!({ "holds": true, "cause": null, "checked": protocol_mcp_gateway::WHOLE_SOLUTION_CHECKED }));
+    assert_eq!(verdict(&base, &body).await, json!({ "holds": true, "values_hold": true, "cause": null, "compared": protocol_mcp_gateway::WHOLE_SOLUTION_COMPUTED }));
 
     // A solution cannot gain the residual after it was sealed.
     let mut gained = body.clone();
@@ -250,23 +254,24 @@ async fn a_request_outside_the_solver_is_422_with_no_seal() {
     let cases: Vec<(Value, String)> = vec![
         (
             json!({ "solver": SOLVER }),
-            "Missing required parameter: 'parameters' (or 'example', the name of a worked example describe_solver lists)".into(),
+            "Missing required parameter: 'parameters' (or 'example', the name of a worked example describe_solver lists) (InputMissing).".into(),
         ),
         (
             json!({ "solver": SOLVER, "parameters": { "frequencies_hz": [flatwise, torsion] } }),
-            "Missing required parameter: 'bar'".into(),
+            "Missing required parameter: 'bar' (InputMissing).".into(),
         ),
         (
             json!({ "solver": SOLVER, "parameters": { "bar": bar } }),
-            "Missing required parameter: 'frequencies_hz'".into(),
+            "Missing required parameter: 'frequencies_hz' (InputMissing).".into(),
         ),
         (
             question("ERX3", &[flatwise, torsion]),
-            "Physical Violation: 'bar' must be one of \"ERX1\", \"ERX2\", \"ERY1\", \"ERY2\"; this request has \"ERX3\".".into(),
+            // Re-pinned for 0.10.1: a bar that is not one of the four carries the name UnknownBar.
+            "Physical Violation: 'bar' must be one of \"ERX1\", \"ERX2\", \"ERY1\", \"ERY2\"; this request has \"ERX3\" (UnknownBar).".into(),
         ),
         (
             question("erx1", &[flatwise, torsion]),
-            "Physical Violation: 'bar' must be one of \"ERX1\", \"ERX2\", \"ERY1\", \"ERY2\"; this request has \"erx1\".".into(),
+            "Physical Violation: 'bar' must be one of \"ERX1\", \"ERX2\", \"ERY1\", \"ERY2\"; this request has \"erx1\" (UnknownBar).".into(),
         ),
         (
             json!({ "solver": SOLVER, "parameters": { "bar": 1, "frequencies_hz": [flatwise, torsion] } }),
@@ -304,40 +309,17 @@ async fn a_request_outside_the_solver_is_422_with_no_seal() {
             "Physical Violation: Young's modulus is not identifiable: the series holds no flatwise frequency (YoungsModulusNotIdentifiable).".into(),
         ),
         (
-            question(bar, &[1608.5, torsion]),
-            "Physical Violation: flatwise frequency 1608.5 Hz is outside 1587.428 to 1608.28 Hz (FrequencyOutOfRange).".into(),
-        ),
-        (
             question(bar, &[flatwise, -8950.895]),
-            "Physical Violation: torsion frequency -8950.895 Hz is outside 8899.446 to 8966.189 Hz (FrequencyOutOfRange).".into(),
+            "Physical Violation: torsion frequency -8950.895 Hz is not a finite number above zero (FrequencyNotPositive).".into(),
         ),
         (
             question(bar, &[flatwise, torsion, 0.0]),
-            "Physical Violation: edgewise frequency 0 Hz is outside 4695.035 to 4755.856 Hz (FrequencyOutOfRange).".into(),
-        ),
-        // The order is part of the question: an edgewise pitch in the torsion
-        // place is outside the torsion range and is not taken for a torsion pitch.
-        (
-            question(bar, &[flatwise, edgewise, torsion]),
-            "Physical Violation: torsion frequency 4700.015 Hz is outside 8899.446 to 8966.189 Hz (FrequencyOutOfRange).".into(),
-        ),
-        (
-            question(bar, &[torsion, flatwise]),
-            "Physical Violation: flatwise frequency 8950.895 Hz is outside 1587.428 to 1608.28 Hz (FrequencyOutOfRange).".into(),
-        ),
-        // The corners of the ranges served through engine 0.6.0 are outside
-        // the comparison.
-        (
-            question("ERY1", &[1200.0, 6700.0]),
-            "Physical Violation: flatwise frequency 1200 Hz is outside 1587.428 to 1608.28 Hz (FrequencyOutOfRange).".into(),
-        ),
-        (
-            question("ERY1", &[1608.28, 8936.544, 4801.5028966]),
-            "Physical Violation: edgewise frequency 4801.5028966 Hz is outside 4695.035 to 4755.856 Hz (FrequencyOutOfRange).".into(),
+            "Physical Violation: edgewise frequency 0 Hz is not a finite number above zero (FrequencyNotPositive).".into(),
         ),
         (
             question(bar, &[flatwise, torsion, edgewise, edgewise]),
-            "Physical Violation: 'frequencies_hz' holds 4 frequencies, and a series is at most 3: flatwise, torsion, edgewise.".into(),
+            // Re-pinned for 0.10.1: a fourth frequency carries the name TooManyFrequencies.
+            "Physical Violation: 'frequencies_hz' holds 4 frequencies, and a series is at most 3: flatwise, torsion, edgewise (TooManyFrequencies).".into(),
         ),
     ];
     for (request, message) in cases {
@@ -346,12 +328,25 @@ async fn a_request_outside_the_solver_is_422_with_no_seal() {
         assert_eq!(text, message, "{request}");
         assert!(!text.contains("solution_seal"), "{text}");
     }
-    // The limits themselves are inside: nothing is moved to a limit, and the
-    // value just past one is refused.
-    let (status, text) = post(&base, "/solve", &question(bar, &[1608.28, 8936.544])).await;
-    assert_eq!(status, 200, "{text}");
-    let (status, text) = post(&base, "/solve", &question(bar, &[1608.2800000000002, 8936.544])).await;
-    assert_eq!(status, 422, "{text}");
+    // The ends of the compared ranges, and past them, where engine 0.8.0
+    // refused by name: each is answered with a seal that holds, the round
+    // trip closed. The corners of the ranges served through engine 0.6.0,
+    // and an edgewise frequency past every compared one, among them.
+    for request in [
+        question(bar, &[1608.28, 8936.544]),
+        question(bar, &[1608.2800000000002, 8936.544]),
+        question(bar, &[1608.5, torsion]),
+        question("ERY1", &[1200.0, 6700.0]),
+        question("ERY1", &[1608.28, 8936.544, 4801.5028966]),
+        question("ERX1", &[1587.428, 8899.446]),
+    ] {
+        let (_, body) = solved(&base, &request).await;
+        assert_eq!(body["outcome"], "converged", "{request}");
+        for mode in ["flatwise", "torsion"] {
+            assert!(body["result"][format!("{mode}_residual_fraction")].as_f64().unwrap().abs() <= modulus::ROUND_TRIP_TOLERANCE);
+        }
+        assert_eq!(verdict(&base, &body).await, json!({ "holds": true, "values_hold": true, "cause": null, "compared": protocol_mcp_gateway::WHOLE_SOLUTION_COMPUTED }));
+    }
     // A number too large to read and a repeated key never reach the solver.
     for body in [
         format!(r#"{{"solver":"{SOLVER}","parameters":{{"bar":"ERX1","frequencies_hz":[1e999,8950.895]}}}}"#),
@@ -367,12 +362,14 @@ async fn a_request_outside_the_solver_is_422_with_no_seal() {
 async fn a_limit_the_physics_finds_is_a_sealed_refusal_with_no_result() {
     let base = spawn_app().await;
     let (bar, flatwise, edgewise, torsion) = SCANS[0];
+    let _ = edgewise;
     let cases = [
-        // The lowest flatwise pitch with the lowest torsion pitch: ERX1 would
-        // ring edgewise below the edgewise range.
-        (question(bar, &[1587.428, 8899.446]), "PredictedEdgewiseOutOfRange"),
-        // An edgewise pitch 0.3 percent off the one the other two predict, past line P2.
-        (question(bar, &[flatwise, torsion, 1.003 * edgewise]), "ModesInconsistent"),
+        // An edgewise pitch in the torsion place: no bar the same in every
+        // direction rings at that pair.
+        (question(bar, &[flatwise, 4700.015, torsion]), "PoissonRatioOutOfRange"),
+        // A torsion pitch in the flatwise place: the search leaves the moduli
+        // of every solid.
+        (question(bar, &[torsion, flatwise]), "OutsideSearchRange"),
     ];
     let mut seals = Vec::new();
     for (request, name) in cases {
@@ -386,12 +383,11 @@ async fn a_limit_the_physics_finds_is_a_sealed_refusal_with_no_result() {
             )),
             "{detail}"
         );
-        assert!(body["iterations"].is_null());
         assert!(body["result"].is_null());
         assert!(body["invariants"].is_null());
         assert!(body["field_sha256"].is_null());
         assert_receipt(&text, &body);
-        assert_eq!(verdict(&base, &body).await, json!({ "holds": true, "cause": null, "checked": protocol_mcp_gateway::WHOLE_SOLUTION_CHECKED }));
+        assert_eq!(verdict(&base, &body).await, json!({ "holds": true, "values_hold": true, "cause": null, "compared": protocol_mcp_gateway::WHOLE_SOLUTION_COMPUTED }));
 
         let mut renamed = body.clone();
         renamed["reject"] = json!("NotConverged");
@@ -408,7 +404,7 @@ async fn a_limit_the_physics_finds_is_a_sealed_refusal_with_no_result() {
 async fn every_edit_of_a_sealed_solution_is_named() {
     let base = spawn_app().await;
     let (_, body) = solved(&base, &scan(2)).await;
-    assert_eq!(verdict(&base, &body).await, json!({ "holds": true, "cause": null, "checked": protocol_mcp_gateway::WHOLE_SOLUTION_CHECKED }));
+    assert_eq!(verdict(&base, &body).await, json!({ "holds": true, "values_hold": true, "cause": null, "compared": protocol_mcp_gateway::WHOLE_SOLUTION_COMPUTED }));
 
     for key in [
         "youngs_modulus_pa_hex",
@@ -502,7 +498,11 @@ async fn the_proof_is_over_the_values_of_the_series() {
     assert_ne!(posted, text);
     let (status, report) = post_text(&base, "/verify_solution", &posted).await;
     assert_eq!(status, 200, "{report}");
-    assert_eq!(report, format!(r#"{{"holds":true,"cause":null,"checked":{}}}"#, serde_json::json!(protocol_mcp_gateway::WHOLE_SOLUTION_CHECKED)));
+    // Its seal holds; since 0.11.0 the long form also compares the copy with
+    // the answer the engine writes, and a request spelled another way has
+    // another receipt, which is the first place it names.
+    let report: Value = serde_json::from_str(&report).unwrap();
+    assert_eq!((report["holds"].clone(), report["cause"].clone(), report["differs_at"].clone()), (json!(false), json!("answer_text"), json!("receipt_sha256")), "{report}");
 
     // A number never seals the same as the string of its bits.
     for forged in [json!(format!("x{}", hex_of(1588.627))), json!("1588.627"), json!([1588.627])] {
@@ -529,7 +529,7 @@ async fn the_described_example_runs_unchanged_and_the_description_holds_its_limi
     let listed = reqwest::get(format!("{base}/solvers")).await.unwrap();
     let listed: Value = serde_json::from_str(&listed.text().await.unwrap()).unwrap();
     let solvers = listed["solvers"].as_array().expect("solvers");
-    assert_eq!(solvers.len(), 13);
+    assert_eq!(solvers.len(), 24);
     assert_eq!(solvers[4]["solver"], SOLVER);
     assert!(solvers[4]["summary"].as_str().unwrap().ends_with('.'));
 
@@ -537,15 +537,15 @@ async fn the_described_example_runs_unchanged_and_the_description_holds_its_limi
     assert_eq!(status, 200, "{text}");
     let described: Value = serde_json::from_str(&text).unwrap();
     assert_eq!(described["summary"], solvers[4]["summary"]);
-    assert_eq!(described["engine_version"], "genesis_solvers_v0.8.0");
+    assert_eq!(described["engine_version"], "genesis_solvers_v0.12.0");
     assert_eq!(described["inputs"][0]["name"], "bar");
     assert_eq!(described["inputs"][0]["allowed"], json!(["ERX1", "ERX2", "ERY1", "ERY2"]));
     assert_eq!(described["inputs"][1]["name"], "frequencies_hz");
     assert_eq!(described["inputs"][1]["most"], 3);
-    assert_eq!(described["inputs"][1]["refusal"], "FrequencyOutOfRange");
+    assert_eq!(described["inputs"][1]["refusal"], "FrequencyNotPositive");
     assert_eq!(described["locked"]["series_order"], json!(["flatwise", "torsion", "edgewise"]));
     assert_eq!(
-        described["locked"]["frequency_range_hz"],
+        described["locked"]["compared_frequency_range_hz"],
         json!({
             "flatwise": { "minimum": 1587.428, "maximum": 1608.28 },
             "torsion": { "minimum": 8899.446, "maximum": 8966.189 },
@@ -564,11 +564,11 @@ async fn the_described_example_runs_unchanged_and_the_description_holds_its_limi
         assert_eq!(entry["thickness_m"].as_f64().unwrap().to_bits(), constants.thickness_m.to_bits());
     }
     assert_eq!(described["locked"]["max_iterations"], 50);
-    assert_eq!(described["locked"]["edgewise_limit_fraction"], 0.0025);
+    assert_eq!(described["locked"]["edgewise_line_p2_fraction"], 0.0025);
     assert!(described["locked"]["not_returned"].as_str().unwrap().starts_with("Poisson's ratio."));
     assert_eq!(described["invariants"].as_array().unwrap().len(), 4);
     assert_eq!(described["invariants"][0]["tolerance"], 1.0e-8);
-    assert_eq!(described["invariants"][0]["checked"], "every iteration");
+    assert_eq!(described["invariants"][0]["compared"], "every iteration");
     assert_eq!(described["convergence"]["step_tolerance"], 1.0e-12);
     assert_eq!(described["reference"]["url"], "https://doi.org/10.5281/zenodo.6778336");
     assert_eq!(described["reference"]["retrieved"], "2026-10-09");
@@ -608,7 +608,7 @@ async fn the_described_example_runs_unchanged_and_the_description_holds_its_limi
         "made with a build of the uncommitted tree, 19 minutes before the commits the record names for it existed",
         "later builds re-made every answer bit for bit",
         "P3 for G, 0.598 against 0.601 percent",
-        "evidence/checks/second_party/V-36/",
+        "evidence/verification/second_party/V-36/",
     ] {
         assert!(result.contains(words), "{words}: {result}");
     }
@@ -627,12 +627,11 @@ async fn the_described_example_runs_unchanged_and_the_description_holds_its_limi
         "It does not test the absolute value of Young's modulus: all three frequencies scaled by one factor leave the residual unchanged.",
         "It does not test the shear modulus (3 percent in G moves the prediction 0.027 percent), the torsion end correction (0.006 percent) or the choice of shear coefficient",
         "a handbook Poisson's ratio of 0.29 predicts the same four readings within 0.082 percent",
-        "The solver cannot check the bar name against the frequencies",
+        "The solver cannot tell the bar name from the frequencies",
         "ERY1's frequencies sent under the name ERX1 converge, to 216.32 GPa",
-        "The declared ranges are the envelope of the eight scans compared with measurement, two on each of the four bars: flatwise 1587.428 to 1608.28 Hz, torsion 8899.446 to 8966.189 Hz, and edgewise from 4695.035 Hz",
-        "(PredictedEdgewiseOutOfRange)",
+        "The compared ranges are the envelope of the eight scans compared with measurement, two on each of the four bars: flatwise 1587.428 to 1608.28 Hz, torsion 8899.446 to 8966.189 Hz, and edgewise from 4695.035 Hz",
         "Inside them the answers run from 210.7 to 216.3 GPa in E and from 79.0 to 80.8 GPa in G.",
-        "A supplied edgewise frequency further than 0.25 percent from the prediction, the line P2 the prediction was compared at, is refused (ModesInconsistent).",
+        "a supplied edgewise frequency is answered with its residual as it is, past the 0.25 percent of line P2 too",
         "Through engine 0.6.0 the ranges were flatwise 1200 to 2000 Hz",
         "The shear modulus has no second measurement of any kind.",
         "summary sheet states ±1 percent (95 percent confidence) for both E and G at room temperature",
@@ -648,7 +647,7 @@ async fn the_described_example_runs_unchanged_and_the_description_holds_its_limi
         names,
         [
             "RepeatedMode",
-            "FrequencyOutOfRange",
+            "FrequencyNotPositive",
             "YoungsModulusNotIdentifiable",
             "ShearModulusNotIdentifiable",
             "OutsideSearchRange",
@@ -659,21 +658,24 @@ async fn the_described_example_runs_unchanged_and_the_description_holds_its_limi
             "NotConverged",
             "RoundTripBroken",
             "PoissonRatioOutOfRange",
-            "ModesInconsistent",
-            "PredictedEdgewiseOutOfRange",
+            // The two the entry names itself at the door follow the solver's twelve.
+            "UnknownBar",
+            "TooManyFrequencies",
         ]
     );
     let bound = described["inputs"][1]["bound"].as_str().unwrap();
-    assert!(bound.contains("flatwise 1587.428 to 1608.28 Hz, torsion 8899.446 to 8966.189 Hz, edgewise 4695.035 to 4755.856 Hz"), "{bound}");
-    assert!(bound.contains("checked against 0.25 percent"), "{bound}");
+    assert!(bound.contains("flatwise 1587.428 to 1608.28 Hz, torsion 8899.446 to 8966.189 Hz and edgewise 4695.035 to 4755.856 Hz"), "{bound}");
+    assert!(bound.contains("line P2 of the validation"), "{bound}");
+    assert!(!bound.contains("check"), "{bound}");
     assert!(!limits.contains("1200 Hz with torsion"), "{limits}");
     for refusal in refusals {
         assert!(refusal["meaning"].as_str().unwrap().ends_with('.'));
+        assert!(!refusal["meaning"].as_str().unwrap().contains("..="), "{refusal}");
     }
     let (_, body) = solved(&base, &described["example_solve"]).await;
     assert_eq!(body["outcome"], "converged");
     assert_eq!(body["inputs"], described["example_solve"]);
-    assert_eq!(verdict(&base, &body).await, json!({ "holds": true, "cause": null, "checked": protocol_mcp_gateway::WHOLE_SOLUTION_CHECKED }));
+    assert_eq!(verdict(&base, &body).await, json!({ "holds": true, "values_hold": true, "cause": null, "compared": protocol_mcp_gateway::WHOLE_SOLUTION_COMPUTED }));
     // The example is the first published scan of ERX1.
     assert_eq!(described["example_solve"], scan(0));
 }
@@ -708,20 +710,15 @@ async fn a_pair_and_the_pair_with_its_predicted_edgewise_frequency_agree() {
         assert_eq!(measured["outcome"], "converged", "{bar} {flatwise}");
         assert!(measured["result"]["edgewise_residual_fraction"].as_f64().unwrap().abs() <= 0.0025);
     }
+    // The corner whose prediction leaves the compared edgewise range, which
+    // engine 0.8.0 refused, is answered on both routes with the same moduli.
     let (_, pair) = solved(&base, &question("ERX1", &[1587.428, 8899.446])).await;
-    assert_eq!(pair["outcome"], "refused");
-    assert_eq!(pair["reject"], "PredictedEdgewiseOutOfRange");
-    let detail = pair["reject_detail"].as_str().unwrap();
-    let predicted: f64 = detail
-        .split("the predicted edgewise frequency ")
-        .nth(1)
-        .and_then(|rest| rest.split(' ').next())
-        .and_then(|number| number.parse().ok())
-        .unwrap_or_else(|| panic!("{detail}"));
+    assert_eq!(pair["outcome"], "converged");
+    let predicted = pair["result"]["edgewise_predicted_hz"].as_f64().unwrap();
     assert!(predicted < modulus::EDGEWISE_RANGE_HZ.0, "{predicted}");
-    let (status, text) = post(&base, "/solve", &question("ERX1", &[1587.428, 8899.446, predicted])).await;
-    assert_eq!(status, 422, "{text}");
-    assert!(text.ends_with("(FrequencyOutOfRange)."), "{text}");
+    let (_, again) = solved(&base, &question("ERX1", &[1587.428, 8899.446, predicted])).await;
+    assert_eq!(again["outcome"], "converged");
+    assert_eq!(again["result"]["youngs_modulus_pa_hex"], pair["result"]["youngs_modulus_pa_hex"]);
     // ERY1's frequencies under ERX1's name still converge, as the description says.
     let (_, crossed) = solved(&base, &question("ERX1", &[1608.28, 8936.544, 4755.856])).await;
     assert_eq!(crossed["outcome"], "converged");
@@ -729,21 +726,23 @@ async fn a_pair_and_the_pair_with_its_predicted_edgewise_frequency_agree() {
     assert!((e_gpa - 216.32).abs() < 0.005, "{e_gpa}");
 }
 
-/// Line P2: an edgewise frequency within 0.25 percent of the prediction is
-/// answered and one past it is a sealed refusal.
+/// Line P2 is the line the prediction was compared at: an edgewise frequency
+/// within 0.25 percent of the prediction and one past it are both answered,
+/// the residual returned as it is, with the same moduli.
 #[tokio::test]
-async fn the_edgewise_check_is_held_at_line_p2() {
+async fn the_edgewise_residual_is_returned_on_both_sides_of_line_p2() {
     let base = spawn_app().await;
     for ((bar, flatwise, _, torsion), sign) in [(COMPARED_SCANS[3], -1.0), (COMPARED_SCANS[5], 1.0)] {
         let (_, pair) = solved(&base, &question(bar, &[flatwise, torsion])).await;
         let predicted = pair["result"]["edgewise_predicted_hz"].as_f64().unwrap();
-        let (_, inside) = solved(&base, &question(bar, &[flatwise, torsion, predicted / (1.0 + sign * 0.0024)])).await;
-        assert_eq!(inside["outcome"], "converged", "{bar}");
-        let (_, past) = solved(&base, &question(bar, &[flatwise, torsion, predicted / (1.0 + sign * 0.0026)])).await;
-        assert_eq!(past["outcome"], "refused", "{bar}");
-        assert_eq!(past["reject"], "ModesInconsistent");
-        assert!(past["reject_detail"].as_str().unwrap().contains("past 0.0025"), "{past}");
-        assert_eq!(verdict(&base, &past).await, json!({ "holds": true, "cause": null, "checked": protocol_mcp_gateway::WHOLE_SOLUTION_CHECKED }));
+        for fraction in [0.0024, 0.0026] {
+            let (_, answered) = solved(&base, &question(bar, &[flatwise, torsion, predicted / (1.0 + sign * fraction)])).await;
+            assert_eq!(answered["outcome"], "converged", "{bar}");
+            let residual = answered["result"]["edgewise_residual_fraction"].as_f64().unwrap();
+            assert!((residual - sign * fraction).abs() < 1.0e-9, "{residual}");
+            assert_eq!(answered["result"]["youngs_modulus_pa_hex"], pair["result"]["youngs_modulus_pa_hex"]);
+            assert_eq!(verdict(&base, &answered).await, json!({ "holds": true, "values_hold": true, "cause": null, "compared": protocol_mcp_gateway::WHOLE_SOLUTION_COMPUTED }));
+        }
     }
 }
 
@@ -795,7 +794,7 @@ impl Local {
     }
 
     async fn call(&mut self, name: &str, arguments: &Value) -> String {
-        let line = json!({"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":name,"arguments":arguments}});
+        let line = answer_text::tool_call(7, name, arguments);
         self.raw(&line.to_string()).await
     }
 }
@@ -844,7 +843,7 @@ impl Hosted {
     }
 
     async fn call(&self, key: &str, tool: &str, arguments: &Value) -> String {
-        let body = json!({"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":tool,"arguments":arguments}});
+        let body = answer_text::tool_call(7, tool, arguments);
         let response = reqwest::Client::new()
             .post(format!("{}/mcp", self.base))
             .header("Content-Type", "application/json")
@@ -883,6 +882,7 @@ fn result_text(answer: &str) -> (String, bool) {
         .as_str()
         .unwrap_or_else(|| panic!("no text in {answer}"))
         .to_string();
+    answer_text::remember(&text);
     (text, value["result"]["isError"] == true)
 }
 
@@ -891,7 +891,7 @@ async fn the_three_connections_give_the_same_bytes_and_a_key_sees_only_its_solve
     let web = spawn_app().await;
     let mut local = Local::start().await;
     let hosted = Hosted::start(&json!([
-        client_entry("all", KEY_ALL, json!(["atom_dft", "ablator_slab", "journal_bearing_sheffield", "propeller_apc_10x7e", "modulus_bam_s355", "seawater_column", "argon_pair_gas", "fusion_pb11_lhd", "fusion_pb11_thermal", "step_flow_armaly", "culture_trichoderma_ambr250", "tokamak_dt_beam_target", "pipe_flow_superpipe"])),
+        client_entry("all", KEY_ALL, json!(["atom_dft", "ablator_slab", "journal_bearing_sheffield", "propeller_apc_10x7e", "modulus_bam_s355", "seawater_column", "argon_pair_gas", "fusion_pb11_lhd", "fusion_pb11_thermal", "step_flow_armaly", "culture_trichoderma_ambr250", "tokamak_dt_beam_target", "pipe_flow_superpipe", "culture_trichoderma_atp", "junction_nist_b7_s2", "water_hammer_oil_line", "orifice_air_chamber", "pneumatic_hose_resonance", "blast_wave_tnt_air", "stress_plate_hole_s235", "stress_plate_hole_s235_elastic", "icf_hotspot_burn", "ln2_line_dlr_fttf", "plasma_sheath_ram_c2"])),
         client_entry("bar", KEY_BAR, json!([SOLVER])),
         client_entry("atom", KEY_ATOM, json!(["atom_dft"])),
     ]))
@@ -933,7 +933,7 @@ async fn the_three_connections_give_the_same_bytes_and_a_key_sees_only_its_solve
     let on_local = local.call("verify_solution", &sealed).await;
     let (text, error) = result_text(&on_local);
     assert!(!error);
-    assert_eq!(text, format!(r#"{{"holds":true,"cause":null,"checked":{}}}"#, serde_json::json!(protocol_mcp_gateway::WHOLE_SOLUTION_CHECKED)));
+    assert_eq!(text, format!(r#"{{"holds":true,"values_hold":true,"cause":null,"compared":{}}}"#, serde_json::json!(protocol_mcp_gateway::WHOLE_SOLUTION_COMPUTED)));
     for key in [KEY_ALL, KEY_BAR] {
         assert_eq!(hosted.call(key, "verify_solution", &sealed).await, on_local, "{key}");
     }
@@ -946,7 +946,7 @@ async fn the_three_connections_give_the_same_bytes_and_a_key_sees_only_its_solve
     );
     let (text, error) = result_text(&hosted.call(KEY_ATOM, "solve", &scan(1)).await);
     assert!(error);
-    assert_eq!(text, "Solver not recognized");
+    assert_eq!(text, "Solver not recognized (UnknownSolver).");
     let (hidden, error) = result_text(&hosted.call(KEY_ATOM, "verify_solution", &sealed).await);
     assert!(error, "{hidden}");
     let mut renamed = sealed.clone();

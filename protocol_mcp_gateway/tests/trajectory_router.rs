@@ -4,6 +4,8 @@
 //! Longer runs match an in-test loop that calls the kernel step on one state.
 //! A refusal is HTTP 200. The tape check does not run physics.
 
+mod answer_text;
+
 use std::collections::BTreeSet;
 use std::time::Duration;
 
@@ -43,6 +45,7 @@ async fn post(base: &str, path: &str, body: &str) -> (u16, String) {
             Ok(response) => {
                 let status = response.status().as_u16();
                 let text = response.text().await.unwrap();
+                answer_text::remember(&text);
                 return (status, text);
             }
             Err(error) => {
@@ -54,8 +57,11 @@ async fn post(base: &str, path: &str, body: &str) -> (u16, String) {
     panic!("{path} never accepted a connection: {last_error:?}");
 }
 
+/// A value as the text it is sent as: its JSON text, with every answer the
+/// engine gave inside it as it came (the long form holds the answer sent
+/// byte for byte).
 fn wire(value: &Value) -> (String, Value) {
-    let text = serde_json::to_string(value).unwrap();
+    let text = answer_text::as_sent(value);
     let parsed: Value = serde_json::from_str(&text).unwrap();
     (text, parsed)
 }
@@ -552,7 +558,7 @@ fn assert_landed(body: &Value, residual: f64, probes: &[(&str, Probe)], steps: u
     assert_eq!(body["steps_landed"], steps, "{body}");
     assert_eq!(body["steps_requested"], steps, "{body}");
     assert!(body["reject"].is_null(), "{body}");
-    assert_eq!(body["engine_version"], "genesis_kernel_v0.9.0");
+    assert_eq!(body["engine_version"], "genesis_kernel_v0.12.0");
     let got = body["final_residual_conservation_error"]
         .as_f64()
         .expect("final residual");
@@ -638,7 +644,7 @@ fn assert_refused(
     // refusal names the refused step and the step the run is sealed to.
     let declared_end = matches!(
         (body["inputs"]["card"].as_str(), reject),
-        (Some("generator_mmrtg_f1"), Some("MissionTimeOutsideCard")) | (Some("capsule_stardust"), Some("PastFlightDeployment"))
+        (Some("capsule_stardust"), Some("PastFlightDeployment"))
     );
     match reject {
         Some(name) => assert_eq!(body["reject"], name, "{body}"),
@@ -1696,15 +1702,15 @@ async fn amplitude_above_the_card_refuses_a_driven_run() {
     });
     assert_eq!(
         refusal,
-        Refusal::Reject(resonance::StepReject::AmplitudeAboveCard)
+        Refusal::Reject(resonance::StepReject::EnergyAboveCard)
     );
     assert!(landed > 1, "amplitude ceiling on step {}", landed + 1);
     let (text, _) = wire(&request(landed + 1));
     let body = run_trajectory(&base, &text).await;
     assert_refused(
         &body,
-        Some("AmplitudeAboveCard"),
-        "Physical Failure: the mount's mechanical energy is above that of a free ring of twice the stroke (AmplitudeAboveCard). That state is not sealed.",
+        Some("EnergyAboveCard"),
+        "Physical Failure: the mount's mechanical energy is above that of a free ring of twice the stroke, four stroke energies: a displacement or a velocity of either sign larger than the card takes (EnergyAboveCard). That state is not sealed.",
         landed,
         last.residual_conservation_error,
         &resonance_probes(&last),
@@ -2137,7 +2143,15 @@ async fn tape_of(base: &str, body: &Value) -> Value {
     let (text, _) = wire(body);
     let (status, report_text) = post(base, "/verify_tape", &text).await;
     assert_eq!(status, 200, "{report_text}");
-    serde_json::from_str(&report_text).unwrap()
+    let mut report: Value = serde_json::from_str(&report_text).unwrap();
+    // The sentence of what was compared is one of two, by whether the run
+    // was computed again; the rest of the report is held to below.
+    let compared = report.as_object_mut().unwrap().shift_remove("compared");
+    assert!(
+        compared == Some(json!(protocol_mcp_gateway::LONG_FORM_COMPARED)) || compared == Some(json!(protocol_mcp_gateway::LONG_FORM_COMPUTED)),
+        "{report_text}"
+    );
+    report
 }
 
 #[tokio::test]
@@ -2434,7 +2448,11 @@ async fn a_tape_survives_a_respelling_of_its_numbers() {
     assert_eq!(tape["frames"].as_array().unwrap().len(), 4);
     let (status, report) = post(&base, "/verify_tape", &response).await;
     assert_eq!(status, 200, "{report}");
-    assert_eq!(report, r#"{"holds":true,"broken_link":null,"cause":null}"#);
+    let named = |report: &str| {
+        let report: Value = serde_json::from_str(report).unwrap();
+        (report["holds"].clone(), report["broken_link"].clone(), report["cause"].clone(), report["differs_at"].clone())
+    };
+    assert_eq!(named(&report), (json!(true), Value::Null, Value::Null, Value::Null), "{report}");
 
     // The echoed request is the first field of the response.
     assert!(
@@ -2450,9 +2468,13 @@ async fn a_tape_survives_a_respelling_of_its_numbers() {
     assert_ne!(posted, response);
     let (status, report) = post(&base, "/verify_tape", &posted).await;
     assert_eq!(status, 200, "{report}");
-    assert_eq!(report, r#"{"holds":true,"broken_link":null,"cause":null}"#);
+    // Every seal holds over the values. Since 0.11.0 the long form writes the
+    // answer again, and a request spelled another way has another receipt:
+    // the receipt is the first place named, not a seal.
+    assert_eq!(named(&report), (json!(false), Value::Null, json!("answer_text"), json!("receipt_sha256")), "{report}");
 
-    // A count written with a decimal point is the same number.
+    // A count written with a decimal point is the same number to a seal,
+    // and a request the engine turns away: the inputs are named.
     let decimal_counts = request
         .replace("\"steps\":2,", "\"steps\":2.0,")
         .replace("\"record_every\":1}", "\"record_every\":1e0}");
@@ -2460,14 +2482,14 @@ async fn a_tape_survives_a_respelling_of_its_numbers() {
     let posted = response.replacen(request, &decimal_counts, 1);
     let (status, report) = post(&base, "/verify_tape", &posted).await;
     assert_eq!(status, 200, "{report}");
-    assert_eq!(report, r#"{"holds":true,"broken_link":null,"cause":null}"#);
+    assert_eq!(named(&report), (json!(false), Value::Null, json!("answer_text"), json!("inputs")), "{report}");
 
     // A changed number is still a broken tape.
     let changed = response.replacen("\"soc\":1.0", "\"soc\":0.5", 1);
     assert_ne!(changed, response);
     let (status, report) = post(&base, "/verify_tape", &changed).await;
     assert_eq!(status, 200, "{report}");
-    assert_eq!(report, r#"{"holds":false,"broken_link":0,"cause":"chain"}"#);
+    assert_eq!(named(&report), (json!(false), json!(0), json!("chain"), Value::Null), "{report}");
 }
 
 #[tokio::test]
@@ -2595,7 +2617,7 @@ async fn an_old_domain_pair_is_not_recognized() {
         let (text, _) = wire(&body);
         let (status, response) = post(&base, "/run_trajectory", &text).await;
         assert_eq!(status, 404, "{domain}/{card}: {response}");
-        assert_eq!(response, "Card not recognized", "{domain}/{card}");
+        assert_eq!(response, "Card not recognized (UnknownCard).", "{domain}/{card}");
     }
 }
 
@@ -2668,7 +2690,8 @@ async fn a_run_at_the_card_ceiling_lands_and_the_next_number_up_is_refused() {
         assert_eq!(
             response,
             format!(
-                "Physical Violation: 'dt_s' {} is above {} s, the step ceiling of the {card} card.",
+                // Re-pinned for 0.10.1: a step above the ceiling carries the name DtAboveCeiling.
+                "Physical Violation: 'dt_s' {} is above {} s, the step ceiling of the {card} card (DtAboveCeiling).",
                 protocol_mcp_gateway::message_number(above),
                 protocol_mcp_gateway::message_number(ceiling)
             )
@@ -2870,7 +2893,7 @@ async fn thirty_days_of_the_generator_match_the_kernel() {
     let report = tape_of(&base, &body).await;
     assert_eq!(
         report,
-        json!({ "holds": true, "broken_link": null, "cause": null })
+        json!({ "holds": true, "values_hold": true, "broken_link": null, "cause": null })
     );
     let mut changed = body.clone();
     let hex = changed["frames"][17]["frame_hex"]
@@ -2881,7 +2904,7 @@ async fn thirty_days_of_the_generator_match_the_kernel() {
     let report = tape_of(&base, &changed).await;
     assert_eq!(
         report,
-        json!({ "holds": false, "broken_link": 17, "cause": "chain" })
+        json!({ "holds": false, "values_hold": false, "broken_link": 17, "cause": "chain" })
     );
     let mut state_edit = body.clone();
     let hex = state_edit["final_state"]["converter_account_error_hex"]
@@ -2892,7 +2915,7 @@ async fn thirty_days_of_the_generator_match_the_kernel() {
     let report = tape_of(&base, &state_edit).await;
     assert_eq!(
         report,
-        json!({ "holds": false, "broken_link": null, "cause": "state" })
+        json!({ "holds": false, "values_hold": false, "broken_link": null, "cause": "state" })
     );
 
     // A run from a later day starts from the generator at that mission time.
@@ -2925,7 +2948,7 @@ async fn thirty_days_of_the_generator_match_the_kernel() {
 }
 
 #[tokio::test]
-async fn the_whole_generator_range_is_one_run_and_the_next_day_is_refused() {
+async fn the_whole_generator_record_is_one_run_and_the_next_day_lands() {
     const DAYS: u64 = 4_087;
     let base = spawn_app().await;
     let (text, _) = wire(&generator_run(0.0, DAYS, 1));
@@ -2952,25 +2975,16 @@ async fn the_whole_generator_range_is_one_run_and_the_next_day_is_refused() {
     assert_eq!(frame.t, 4_087.0 * DAY_S);
     assert_eq!(tape_of(&base, &body).await["holds"], true);
 
-    // One more day leaves the card. Everything before it is sealed.
+    // One more day is past the record, not past the generator: it lands, and
+    // the steps before it are the same.
     let (text, _) = wire(&generator_run(0.0, DAYS + 1, 1));
-    let refused = run_trajectory(&base, &text).await;
-    assert_refused(
-        &refused,
-        Some("MissionTimeOutsideCard"),
-        "Physical Failure: mission time is before landing or after mission day 4,087 (MissionTimeOutsideCard). That state is not sealed.",
-        DAYS,
-        state.residual_conservation_error,
-        &generator_probes(&state),
-    );
-    assert_eq!(refused["steps_requested"], DAYS + 1);
-    assert_eq!(refused["frames"].as_array().unwrap().len(), DAYS as usize);
-    assert_eq!(refused["state_digest"], body["state_digest"]);
-    assert_ne!(refused["run_seal"], body["run_seal"]);
-    assert_eq!(
-        tape_of(&base, &refused).await,
-        json!({ "holds": true, "broken_link": null, "cause": null })
-    );
+    let past = run_trajectory(&base, &text).await;
+    assert_eq!(past["outcome"], "completed", "{past}");
+    assert_eq!(past["steps_landed"], DAYS + 1);
+    // The frame of the last day is the same, all but the proof bytes.
+    let physics = |answer: &Value| answer["frames"].as_array().unwrap()[DAYS as usize - 1]["frame_hex"].as_str().unwrap()[..96].to_string();
+    assert_eq!(physics(&past), physics(&body));
+    assert_eq!(tape_of(&base, &past).await["holds"], true);
 }
 
 #[tokio::test]
@@ -2995,16 +3009,16 @@ async fn a_generator_run_takes_an_empty_load_and_nothing_else() {
     set_fraction["initial"]["converter_fading_fraction"] = json!(1.0);
     let mut before_landing = whole.clone();
     before_landing["initial"]["mission_time_s"] = json!(-1.0);
-    let mut after_the_last_day = whole.clone();
-    after_the_last_day["initial"]["mission_time_s"] = json!(4_088.0 * DAY_S);
-    let early_card = "Physical Failure: 'mission_time_s' -1 s is below 0 s, the inclusive minimum of the generator_mmrtg_f1 card (MissionTimeOutsideCard). That state is not sealed.";
+    let mut after_the_ledger_end = whole.clone();
+    after_the_ledger_end["initial"]["mission_time_s"] = json!(1.0e11);
+    let early_card = "Physical Failure: 'mission_time_s' -1 s is below 0 s, the inclusive minimum of the generator_mmrtg_f1 card (MissionTimeBeforeLanding). That state is not sealed.";
+    let top = generator_mmrtg_f1::GeneratorMmrtgF1::curiosity().ledger_end_mission_time_s().unwrap();
     let late_card = format!(
-        "Physical Failure: 'mission_time_s' {} s is above {} s, the end of the generator_mmrtg_f1 card (MissionTimeOutsideCard). That state is not sealed.",
-        protocol_mcp_gateway::message_number(4_088.0 * DAY_S),
-        protocol_mcp_gateway::message_number(generator_mmrtg_f1::MISSION_TIME_MAX_S)
+        "Physical Failure: 'mission_time_s' 100000000000 s is above {} s, the inclusive maximum of the generator_mmrtg_f1 card (DecayHeatBelowLedgerResolution). That state is not sealed.",
+        protocol_mcp_gateway::message_number(top)
     );
     let cases = [
-        (absent, "Missing required parameter: 'load'"),
+        (absent, "Missing required parameter: 'load' (InputMissing)."),
         (
             loaded,
             "Physical Violation: 'bus_voltage_v' is not a field of this request.",
@@ -3026,7 +3040,7 @@ async fn a_generator_run_takes_an_empty_load_and_nothing_else() {
             "Physical Violation: 'converter_fading_fraction' is not a field of this request.",
         ),
         (before_landing, early_card),
-        (after_the_last_day, late_card.as_str()),
+        (after_the_ledger_end, late_card.as_str()),
     ];
     for (request, message) in cases {
         let (text, _) = wire(&request);
@@ -3204,7 +3218,7 @@ async fn the_full_capsule_entry_ends_in_the_refusal_the_kernel_gives() {
     // The tape verifies, and a changed frame is named.
     assert_eq!(
         tape_of(&base, &body).await,
-        json!({ "holds": true, "broken_link": null, "cause": null })
+        json!({ "holds": true, "values_hold": true, "broken_link": null, "cause": null })
     );
     let mut changed = body.clone();
     let hex = changed["frames"][1_188]["frame_hex"]
@@ -3214,7 +3228,7 @@ async fn the_full_capsule_entry_ends_in_the_refusal_the_kernel_gives() {
     changed["frames"][1_188]["frame_hex"] = json!(flip_hex(&hex));
     assert_eq!(
         tape_of(&base, &changed).await,
-        json!({ "holds": false, "broken_link": 1_188, "cause": "chain" })
+        json!({ "holds": false, "values_hold": false, "broken_link": 1_188, "cause": "chain" })
     );
 
     // The quantities the comparison with the flight reads are in every
@@ -3280,10 +3294,9 @@ async fn the_full_capsule_entry_ends_in_the_refusal_the_kernel_gives() {
 
 #[tokio::test]
 async fn a_capsule_run_takes_an_empty_load_and_nothing_else() {
-    const ALTITUDE: &str = "Physical Failure: altitude is above 134.7 km or below 30 km (AltitudeOutsideCard). That state is not sealed.";
-    const MACH: &str = "Physical Failure: the Mach number is below 1.0, or is above 40 below 68.96 km, where the drag table by Mach number ends (MachOutsideCard). That state is not sealed.";
-    const AIR_SPEED: &str = "Physical Failure: above 68.96 km the speed through the air is below 11900 m/s or above 12575 m/s, outside the speeds the entry compared with the flight passed through there (AirSpeedOutsideCard). That state is not sealed.";
-    const CORRIDOR: &str = "Physical Failure: the state is off the corridor the entry compared with the flight flew from the locked entry state: below 68.96 km, or moving upward above it, it is under 31 km or above 69 km, or its speed through the air or its path angle is outside the corridor at its altitude (OffComparedCorridor). That state is not sealed.";
+    const ALTITUDE: &str = "Physical Failure: altitude is above 134.7 km, the top of the drag table read by altitude (AltitudeOutsideCard). That state is not sealed.";
+    const MACH: &str = "Physical Failure: the Mach number is below 0.16, the first entry of the drag table read by Mach number, or is above 40 below 68.96 km, where that table ends (MachOutsideCard). That state is not sealed.";
+    const AIR_SPEED: &str = "Physical Failure: above 68.96 km the speed through the air is below 11900 m/s or above 12620 m/s, the highest speed the drag table by altitude was computed at (AirSpeedOutsideCard). That state is not sealed.";
     const PAST: &str = "Physical Failure: the state is under 31030 m and under Mach 1.23 at once, past the flown drogue deployment, where the capsule flew on a parachute (PastFlightDeployment). That state is not sealed.";
     let base = spawn_app().await;
     let whole = capsule_run(2, 1);
@@ -3314,7 +3327,7 @@ async fn a_capsule_run_takes_an_empty_load_and_nothing_else() {
     let mut slow = whole.clone();
     slow["initial"] = json!({
         "radius_m": earth_m + 40_000.0,
-        "radial_speed_m_s": -100.0,
+        "radial_speed_m_s": -20.0,
         "transverse_speed_m_s": capsule_stardust::AIR_ROTATION_RATE_RAD_S * (earth_m + 40_000.0)
     });
     // Three starts that engine 0.6.0 sealed: 60 km at 20 km/s (Mach 62), at
@@ -3356,10 +3369,11 @@ async fn a_capsule_run_takes_an_empty_load_and_nothing_else() {
     let past = f64::from_bits(capsule_stardust::GATE_DT_S.to_bits() + 1);
     long_step["dt_s"] = json!(past);
     let ceiling_text = format!(
-        "Physical Violation: 'dt_s' {past} is above 0.05 s, the step ceiling of the capsule_stardust card."
+        // Re-pinned for 0.10.1: a step above the ceiling carries the name DtAboveCeiling.
+        "Physical Violation: 'dt_s' {past} is above 0.05 s, the step ceiling of the capsule_stardust card (DtAboveCeiling)."
     );
     let cases = [
-        (absent, "Missing required parameter: 'load'"),
+        (absent, "Missing required parameter: 'load' (InputMissing)."),
         (
             loaded,
             "Physical Violation: 'wind_m_s' is not a field of this request.",
@@ -3378,18 +3392,24 @@ async fn a_capsule_run_takes_an_empty_load_and_nothing_else() {
         ),
         (
             short,
-            "Missing required parameter: 'transverse_speed_m_s'",
+            "Missing required parameter: 'transverse_speed_m_s' (InputMissing).",
         ),
         (above, ALTITUDE),
-        (below, ALTITUDE),
+        // 29 999 m at the entry's speeds: Mach 42, past the Mach table.
+        (below, MACH),
         (slow, MACH),
         (fast, MACH),
         (at_rest, AIR_SPEED),
         (parachute, PAST),
-        (deep, CORRIDOR),
-        (climbing, CORRIDOR),
         (long_step, ceiling_text.as_str()),
     ];
+    // Off the corridor the locked entry flew, where engines 0.7 to 0.9
+    // refused, the two runs are computed.
+    for request in [&deep, &climbing] {
+        let (text, _) = wire(request);
+        let (status, response) = post(&base, "/run_trajectory", &text).await;
+        assert_eq!(status, 200, "{text}: {response}");
+    }
     for (request, message) in cases {
         let (text, _) = wire(&request);
         let (status, response) = post(&base, "/run_trajectory", &text).await;
@@ -3474,7 +3494,8 @@ async fn a_run_at_the_card_floor_lands_and_the_next_number_down_is_refused() {
         assert_eq!(
             response,
             format!(
-                "Physical Violation: 'dt_s' {} is below {} s, the step floor of the {card} card.",
+                // Re-pinned for 0.10.1: a step below the floor carries the name DtBelowFloor.
+                "Physical Violation: 'dt_s' {} is below {} s, the step floor of the {card} card (DtBelowFloor).",
                 protocol_mcp_gateway::message_number(below),
                 protocol_mcp_gateway::message_number(floor)
             )
@@ -3510,6 +3531,10 @@ fn satellite_probes(state: &satellite_lageos1::SatelliteState) -> Vec<(&'static 
         num("jacobi_anchor_j_per_kg", state.jacobi_anchor_j_per_kg),
         num("external_work_j_per_kg", state.external_work_j_per_kg),
         num("energy_defect_j_per_kg", state.energy_defect_j_per_kg),
+        num("angular_momentum_m2_s", state.angular_momentum_m2_s),
+        num("angular_momentum_anchor_m2_s", state.angular_momentum_anchor_m2_s),
+        num("external_torque_m2_s", state.external_torque_m2_s),
+        num("angular_momentum_defect_m2_s", state.angular_momentum_defect_m2_s),
         num(
             "residual_conservation_error",
             state.residual_conservation_error,
@@ -3689,7 +3714,7 @@ async fn a_week_of_the_satellite_is_one_run_and_its_tape_verifies() {
     // The tape verifies, and a changed frame is named.
     assert_eq!(
         tape_of(&base, &body).await,
-        json!({ "holds": true, "broken_link": null, "cause": null })
+        json!({ "holds": true, "values_hold": true, "broken_link": null, "cause": null })
     );
     let mut changed = body.clone();
     let hex = changed["frames"][2_520]["frame_hex"]
@@ -3699,18 +3724,18 @@ async fn a_week_of_the_satellite_is_one_run_and_its_tape_verifies() {
     changed["frames"][2_520]["frame_hex"] = json!(flip_hex(&hex));
     assert_eq!(
         tape_of(&base, &changed).await,
-        json!({ "holds": false, "broken_link": 2_520, "cause": "chain" })
+        json!({ "holds": false, "values_hold": false, "broken_link": 2_520, "cause": "chain" })
     );
 }
 
 #[tokio::test]
 async fn a_satellite_run_takes_an_empty_load_and_nothing_else() {
-    const RADIUS: &str = "Physical Failure: distance from the Earth's centre is below 11 997 km or above 12 327 km, the radii the compared runs reached (RadiusOutsideCard). That state is not sealed.";
-    const EPOCH_EARLY: &str = "Physical Failure: 'epoch_utc_s' 840715199 s is below 840715200 s, the inclusive minimum of the satellite_lageos1 card (EpochOutsideCard). That state is not sealed.";
-    const EPOCH: &str = "Physical Failure: the time is before 2026-08-23 00:00 or after 2026-09-20 00:00 UTC, the dates of the compared runs (EpochOutsideCard). That state is not sealed.";
+    const RADIUS: &str = "Physical Failure: distance from the Earth's centre is below 6 378.1363 km, the Earth's equatorial radius, to which the field is scaled: the satellite is under the sphere of the Earth's equator, where the card's field, the series of the Earth's field outside the Earth, is not the field (RadiusBelowEarthRadius). That state is not sealed.";
+    const EPOCH_EARLY: &str = "Physical Failure: 'epoch_utc_s' 536500799 s is below 536500800 s, the inclusive minimum of the satellite_lageos1 card (EpochOutsideLeapSecondSpan). That state is not sealed.";
+    const EPOCH: &str = "Physical Failure: the time is before 2017-01-01 00:00 UTC, the last leap second, or after 2027-06-28 00:00 UTC, when the IERS leap-second file of Bulletin C 72 expires: outside that span TT - UTC is not the card's 69.184 s, or is not yet known (EpochOutsideLeapSecondSpan). That state is not sealed.";
     let base = spawn_app().await;
     let epoch_late = format!(
-        "Physical Failure: 'epoch_utc_s' {} s is above {} s, the end of the satellite_lageos1 card (EpochOutsideCard). That state is not sealed.",
+        "Physical Failure: 'epoch_utc_s' {} s is above {} s, the end of the satellite_lageos1 card (EpochOutsideLeapSecondSpan). That state is not sealed.",
         protocol_mcp_gateway::message_number(satellite_lageos1::EPOCH_MAX_S + 1.0),
         protocol_mcp_gateway::message_number(satellite_lageos1::EPOCH_MAX_S)
     );
@@ -3735,13 +3760,13 @@ async fn a_satellite_run_takes_an_empty_load_and_nothing_else() {
         .unwrap()
         .remove("epoch_utc_s");
     let mut low = whole.clone();
-    low["initial"]["position_m"] = json!([7.0e6, 0.0, 0.0]);
+    low["initial"]["position_m"] = json!([6.378e6, 0.0, 0.0]);
     let mut early = whole.clone();
     early["initial"]["epoch_utc_s"] = json!(satellite_lageos1::EPOCH_MIN_S - 1.0);
     let mut late = whole.clone();
     late["initial"]["epoch_utc_s"] = json!(satellite_lageos1::EPOCH_MAX_S + 1.0);
     let cases = [
-        (absent, "Missing required parameter: 'load'"),
+        (absent, "Missing required parameter: 'load' (InputMissing)."),
         (
             thrust,
             "Physical Violation: 'thrust_n' is not a field of this request.",
@@ -3758,7 +3783,7 @@ async fn a_satellite_run_takes_an_empty_load_and_nothing_else() {
             regraded,
             "Physical Violation: 'gm_earth_m3_s2' is not a field of this request.",
         ),
-        (no_epoch, "Missing required parameter: 'epoch_utc_s'"),
+        (no_epoch, "Missing required parameter: 'epoch_utc_s' (InputMissing)."),
         (low, RADIUS),
         (early, EPOCH_EARLY),
         (late, epoch_late.as_str()),
@@ -3779,7 +3804,7 @@ async fn a_satellite_run_takes_an_empty_load_and_nothing_else() {
     let (text, _) = wire(&to_the_end);
     let body = run_trajectory(&base, &text).await;
     assert_eq!(body["outcome"], "refused", "{body}");
-    assert_eq!(body["reject"], "EpochOutsideCard", "{body}");
+    assert_eq!(body["reject"], "EpochOutsideLeapSecondSpan", "{body}");
     assert_eq!(body["reject_detail"], sealed_to(EPOCH, 2));
     assert_eq!(body["steps_landed"], 2);
     assert_eq!(tape_of(&base, &body).await["holds"], true);

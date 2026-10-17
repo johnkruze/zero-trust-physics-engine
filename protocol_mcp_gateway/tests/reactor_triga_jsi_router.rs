@@ -6,18 +6,22 @@
 //! bit and every recorded frame byte for byte; its tape verifies and its
 //! receipt matches. A scram inside the envelope compared with the records,
 //! 1.50 to 7.45 s after the peak, lands at every time and every step tried.
-//! Each thing the model does not define is refused by name: a reactivity that
-//! changes after the start; a scram while the rod moves; a scram earlier than
-//! any compared, and rods held later than any compared; rods raised after the
-//! scram; a scram value that is neither 0 nor 1; a reactivity, a starting
-//! temperature or a rod table one number outside the card, and the starts
-//! 0.6.0 accepted outside the compared envelope; a pulse left past what was
-//! compared with a record. A run that ends exactly at the end of the card
-//! keeps its last step. The three connections give the same bytes, and the
-//! hosted door hides the card from a key that does not list it.
+//! Past every wall of 0.9.0 the run is answered and is the kernel loop's: a
+//! start anywhere in liquid water on any table, a reactivity from a
+//! thousandth of a dollar to the rod's whole worth, a scram at the fire
+//! signal, while the rod moves, before the peak and long after it, the rods
+//! held for a whole run of a million steps, and a run past 14 s. Each thing
+//! the model does not define is refused by name: a reactivity that changes
+//! after the start; rods raised after the scram; a scram value that is
+//! neither 0 nor 1; a start that is not liquid water, a reactivity of zero or
+//! less or above the rod's whole worth, and a rod table the card does not
+//! hold. The three connections give the same bytes, and the hosted door
+//! hides the card from a key that does not list it.
 //!
 //! No number a run produces is written here: every expected value comes from a
 //! direct call into `genesis_kernel`.
+
+mod answer_text;
 
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
@@ -37,8 +41,8 @@ use tokio::process::{Child, ChildStdin, ChildStdout, Command};
 
 const CARD: &str = "reactor_triga_jsi";
 /// The number of cards served, and this card's place among them.
-const CARDS: usize = 31;
-const PLACE: usize = 29;
+const CARDS: usize = 37;
+const PLACE: usize = 32;
 
 async fn spawn_app() -> String {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -58,13 +62,15 @@ async fn post(base: &str, path: &str, body: &Value) -> (u16, String) {
         match client
             .post(&url)
             .header(reqwest::header::CONTENT_TYPE, "application/json")
-            .body(serde_json::to_string(body).unwrap())
+            .body(answer_text::as_sent(body))
             .send()
             .await
         {
             Ok(response) => {
                 let status = response.status().as_u16();
-                return (status, response.text().await.unwrap());
+                let text = response.text().await.unwrap();
+                answer_text::remember(&text);
+                return (status, text);
             }
             Err(error) => {
                 last_error = Some(error);
@@ -283,14 +289,13 @@ fn recorded(frame: &Value) -> (u64, Vec<u8>, Vec<u8>) {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_pulse_with_its_scram_is_the_kernel_loop_on_each_rod_table_and_keeps_its_proof() {
     let base = spawn_app().await;
-    let reactor = reactor();
     let mut peaks = Vec::new();
     for (start_k, core, rho) in [
-        (reactor.start_temperature_k_by_table[0].0, 215.0, reactor.reactivity_min_dollar),
+        (reactor_triga_jsi::START_TEMPERATURE_K_BY_TABLE[0].0, 215.0, reactor_triga_jsi::REACTIVITY_COMPARED_MIN_DOLLAR),
         (298.15, 217.0, 2.5),
         (298.15, 215.0, 2.5),
         (295.15, 231.0, 2.5),
-        (reactor.start_temperature_k_by_table[2].1, 231.0, reactor.reactivity_max_dollar),
+        (reactor_triga_jsi::START_TEMPERATURE_K_BY_TABLE[2].1, 231.0, reactor_triga_jsi::REACTIVITY_COMPARED_MAX_DOLLAR),
     ] {
         let label = format!("{start_k} K, table {core}, {rho} dollar");
         // 2.3 s of pulse and tail, then 0.6 s after the scram.
@@ -384,23 +389,20 @@ async fn a_scram_inside_the_compared_envelope_lands_at_every_step() {
     let mut probes = 0;
     let mut largest: f64 = 0.0;
     // each start at an end of its own table's span
-    let [t215, _, t231] = reactor.start_temperature_k_by_table;
+    let [t215, _, t231] = reactor_triga_jsi::START_TEMPERATURE_K_BY_TABLE;
+    let (first, last) = reactor_triga_jsi::SCRAM_AFTER_PEAK_COMPARED_S;
     for (start_k, core, rho) in [(t231.0, 231.0, 3.0), (298.15, 217.0, 2.0), (t215.1, 215.0, 2.5), (t231.1, 231.0, 2.0)] {
         for dt_s in [ceiling(), 5.0e-5, 2.0e-5] {
             // the card's own peak time at this step, from the kernel
             let free = direct_loop(start_k, core, dt_s, &[((0.5 / dt_s) as u64, rho, 0.0)], 1_000_000);
             let peak = free.state.peak_time_s;
             let peak_steps = (peak / dt_s).round() as u64;
-            let mut afters = vec![reactor_triga_jsi::SCRAM_AFTER_PEAK_MIN_S, 2.0, 3.5];
-            if rho < 2.6 {
-                // held that long, 3.0 dollars passes the largest fuel temperature compared
-                afters.extend([5.0, 7.0, reactor_triga_jsi::SCRAM_AFTER_PEAK_MAX_S]);
-            }
-            for after in afters {
+            // held to 7.45 s after the peak, 3.0 dollars passes 600 K on core 231, where 0.9.0 refused
+            for after in [first, 2.0, 3.5, 5.0, 7.0, last] {
                 // the held steps whose clock reaches the scram instant, inside the envelope
-                let steps_after = if after == reactor_triga_jsi::SCRAM_AFTER_PEAK_MIN_S {
+                let steps_after = if after == first {
                     (after / dt_s).ceil()
-                } else if after == reactor_triga_jsi::SCRAM_AFTER_PEAK_MAX_S {
+                } else if after == last {
                     (after / dt_s).floor()
                 } else {
                     (after / dt_s).round()
@@ -420,13 +422,13 @@ async fn a_scram_inside_the_compared_envelope_lands_at_every_step() {
                 assert_state_is(&tape["final_state"], &direct.state, &label);
                 let gap = direct.state.scram_time_s - direct.state.peak_time_s;
                 assert!((gap - after).abs() < dt_s, "{label}: {gap}");
-                assert!(gap >= reactor_triga_jsi::SCRAM_AFTER_PEAK_MIN_S - 1.0e-9 && gap <= reactor_triga_jsi::SCRAM_AFTER_PEAK_MAX_S + 1.0e-9, "{label}: {gap}");
+                assert!(gap >= first - 1.0e-9 && gap <= last + 1.0e-9, "{label}: {gap}");
                 largest = largest.max(direct.largest_residual);
                 probes += 1;
             }
         }
     }
-    assert!(probes >= 60, "{probes}");
+    assert!(probes >= 72, "{probes}");
     assert!(largest < reactor_triga_jsi::RESIDUAL_CONSERVATION_LIMIT / 10.0, "{largest:e}");
 }
 
@@ -446,16 +448,10 @@ async fn what_the_model_does_not_define_is_refused_by_name() {
     let peak = direct_loop(298.15, 217.0, dt, &[(5_000, rho, 0.0)], 5_000).state.peak_time_s;
     let peak_steps = (peak / dt).round() as u64;
     let late = peak_steps + (2.0 / dt) as u64;
-    let after_pulse = peak_steps + (1.0 / dt) as u64;
     for (segments, expected, words) in [
-        // the scram while the rod is moving
-        (vec![(moving, rho, 0.0), (10, rho, 1.0)], StepReject::ScramBeforeRodStopped, "while the transient rod was still moving"),
-        // the scram after the rod has stopped and before the pulse: the peak is the present step
-        (vec![(stopped, rho, 0.0), (10, rho, 1.0)], StepReject::ScramBeforeCompared, "earlier than any scram compared with a measurement"),
-        // the scram a second after the peak
-        (vec![(after_pulse, rho, 0.0), (10, rho, 1.0)], StepReject::ScramBeforeCompared, "earlier than 1.5 s after the peak power"),
-        // rods raised after the scram
+        // rods raised after the scram, after a compared scram and after one while the rod moved
         (vec![(late, rho, 0.0), (10, rho, 1.0), (10, rho, 0.0)], StepReject::RodsRaisedAfterScram, "raised after the scram"),
+        (vec![(moving, rho, 0.0), (10, rho, 1.0), (10, rho, 0.0)], StepReject::RodsRaisedAfterScram, "raised after the scram"),
     ] {
         let label = format!("{segments:?}");
         let request = run_body(298.15, 217.0, dt, &segments, 100);
@@ -482,7 +478,7 @@ async fn what_the_model_does_not_define_is_refused_by_name() {
     // same change by the same name.
     for (segments, other) in [
         (vec![(stopped, rho, 0.0), (10, 2.5, 0.0)], 2.5),
-        (vec![(stopped, rho, 0.0), (10, 2.25, 0.0)], 2.25),
+        (vec![(stopped, rho, 0.0), (10, 1.5, 0.0)], 1.5),
         (vec![(moving, rho, 0.0), (10, above(rho), 0.0)], above(rho)),
         (vec![(stopped, rho, 0.0), (10, 3.0, 1.0)], 3.0),
     ] {
@@ -500,56 +496,76 @@ async fn what_the_model_does_not_define_is_refused_by_name() {
         let direct = direct_loop(298.15, 217.0, dt, &segments, 1);
         assert_eq!(direct.reject, Some(StepReject::ReactivityChangedDuringRun), "{label}");
     }
-
-    // On a single step: the scram at the fire signal, and a scram value between 0 and 1.
-    let (status, text) = post(&base, "/verify_physics", &step_body(298.15, 217.0, rho, 1.0, dt)).await;
-    assert_eq!(status, 422, "{text}");
-    assert!(text.contains("ScramBeforeRodStopped"), "{text}");
-    assert!(!text.contains("frame_seal"), "{text}");
+    // On a single step: a scram value between 0 and 1.
     let (status, text) = post(&base, "/verify_physics", &step_body(298.15, 217.0, rho, 0.5, dt)).await;
     assert_eq!(status, 422, "{text}");
     assert!(text.contains("ScramValueOutsideCard"), "{text}");
+}
 
-    // Past what was compared with a record the card refuses and does not answer: a pulse left
-    // without a scram is refused by name, and the run is sealed to there. At 3.0 dollars from
-    // the warm end of core 231's starts the fuel temperature passes the largest compared; at 2.0
-    // dollars on core 217 the rods are held past the latest scram compared, 7.45 s after the peak.
-    let t_max = reactor().start_temperature_max_k;
-    for (start_k, core, rho, expected) in [
-        (reactor().start_temperature_k_by_table[2].1, 231.0, 3.0, StepReject::FuelTemperatureBeyondCard),
-        (298.15, 217.0, 2.0, StepReject::RodsHeldBeyondCompared),
-        (t_max, 217.0, 3.0, StepReject::RodsHeldBeyondCompared),
-    ] {
-        let label = format!("{start_k} K, table {core}, {rho} dollar");
-        let segments = [(140_000, rho, 0.0)];
-        let request = run_body(start_k, core, dt, &segments, 10_000);
-        let (status, answer) = post(&base, "/run_trajectory", &request).await;
-        assert_eq!(status, 200, "{answer}");
-        let tape: Value = serde_json::from_str(&answer).unwrap();
-        let direct = direct_loop(start_k, core, dt, &segments, 10_000);
-        assert_eq!(direct.reject, Some(expected), "{label}");
-        assert_eq!(tape["outcome"], "refused", "{label}");
-        assert_eq!(tape["reject"], format!("{expected:?}"), "{label}");
-        assert!(tape["reject_detail"].as_str().unwrap().contains("beyond what was compared with a measurement"), "{label}: {}", tape["reject_detail"]);
-        assert_eq!(tape["steps_landed"], direct.landed, "{label}");
-        assert!(direct.state.t_s > 3.0 && direct.state.t_s < reactor_triga_jsi::TIME_MAX_S, "{label}");
-        assert!(direct.state.fuel_temperature_k <= reactor_triga_jsi::FUEL_TEMPERATURE_MAX_K, "{label}");
-        let gap = direct.state.t_s - direct.state.peak_time_s;
-        assert!(gap <= reactor_triga_jsi::SCRAM_AFTER_PEAK_MAX_S + 1.0e-9, "{label}: {gap}");
-        if expected == StepReject::RodsHeldBeyondCompared {
-            // the last held step lands at the edge and the next would pass it
-            assert!(gap + dt > reactor_triga_jsi::SCRAM_AFTER_PEAK_MAX_S + 1.0e-9, "{label}: {gap}");
-            // a scram there lands
-            let mut scram = segments.to_vec();
-            scram[0].0 = direct.landed;
-            scram.push((100, rho, 1.0));
-            let (_, answer) = post(&base, "/run_trajectory", &run_body(start_k, core, dt, &scram, 10_000)).await;
+/// Past every wall of 0.9.0 the run is answered, and it is the kernel loop's
+/// to the bit with its tape holding: a scram at the fire signal, while the rod
+/// moves, after the rod has stopped and before the peak, and a second after
+/// it (0.9.0: ScramBeforeRodStopped and ScramBeforeCompared); a 3.0 dollar
+/// pulse held past 600 K and 7.45 s after its peak (FuelTemperatureBeyondCard
+/// and RodsHeldBeyondCompared); the rod's whole worth from either end of
+/// liquid water, held for a run of a million steps, past 1000 MW, 20 MW s and
+/// 14 s (PowerBeyondCard, EnergyBeyondCard and TimeBeyondCard); a start on a
+/// table outside the starts compared on it and a reactivity below 2.0
+/// dollars (StartTemperatureOutsideCard and ReactivityOutsideCard).
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn past_every_wall_of_the_compared_span_the_run_is_answered() {
+    let base = spawn_app().await;
+    let dt = ceiling();
+    let rho = 2.0;
+    let stop_steps = (reactor().rod_stop_s(rho) / dt).ceil() as u64;
+    let peak = direct_loop(298.15, 217.0, dt, &[(5_000, rho, 0.0)], 5_000).state.peak_time_s;
+    let peak_steps = (peak / dt).round() as u64;
+    let answered = |start_k: f64, core: f64, segments: Vec<(u64, f64, f64)>, record_every: u64| {
+        let base = base.clone();
+        async move {
+            let label = format!("{start_k} K, table {core}, {segments:?}");
+            let (status, answer) = post(&base, "/run_trajectory", &run_body(start_k, core, dt, &segments, record_every)).await;
+            assert_eq!(status, 200, "{label}: {answer}");
             let tape: Value = serde_json::from_str(&answer).unwrap();
-            assert_eq!(tape["outcome"], "completed", "{label}: {}", tape["reject_detail"]);
+            assert_eq!(tape["outcome"], "completed", "{label}: {} {}", tape["reject"], tape["reject_detail"]);
+            let direct = direct_loop(start_k, core, dt, &segments, record_every);
+            assert_eq!(direct.reject, None, "{label}");
+            assert_eq!(tape["steps_landed"], direct.landed, "{label}");
+            assert_state_is(&tape["final_state"], &direct.state, &label);
+            assert!(direct.largest_residual < reactor_triga_jsi::RESIDUAL_CONSERVATION_LIMIT, "{label}");
+            let (_, report) = post(&base, "/verify_tape", &tape).await;
+            assert_eq!(serde_json::from_str::<Value>(&report).unwrap()["holds"], true, "{label}");
+            direct
         }
-        assert_state_is(&tape["final_state"], &direct.state, &label);
-        let (_, report) = post(&base, "/verify_tape", &tape).await;
-        assert_eq!(serde_json::from_str::<Value>(&report).unwrap()["holds"], true);
+    };
+    // the scram at the fire signal, while the rod moves, after it has stopped and before the
+    // peak, and a second after the peak
+    for (held, label) in [(0, "at the fire signal"), (stop_steps / 2, "while the rod moves"), (stop_steps + 10, "before the peak"), (peak_steps + (1.0 / dt) as u64, "a second after the peak")] {
+        let mut segments = vec![(20_000, rho, 1.0)];
+        if held > 0 {
+            segments.insert(0, (held, rho, 0.0));
+        }
+        let direct = answered(298.15, 217.0, segments, 1_000).await;
+        assert!(direct.state.rods_dropped, "{label}");
+        assert!(direct.flags_seen & reactor_triga_jsi::FLAG_RODS_DROPPED != 0, "{label}");
+    }
+    // a 3.0 dollar pulse held: past 600 K and 7.45 s after its peak, to 56 s
+    let direct = answered(reactor_triga_jsi::START_TEMPERATURE_K_BY_TABLE[2].1, 231.0, vec![(600_000, 3.0, 0.0)], 100_000).await;
+    assert!(direct.state.peak_fuel_temperature_k > 600.0);
+    assert!(direct.state.t_s - direct.state.peak_time_s > 7.0 * reactor_triga_jsi::SCRAM_AFTER_PEAK_COMPARED_S.1);
+    // the rod's whole worth from the warm end of liquid water on core 231, held for a whole
+    // run: the hottest fuel any run reaches, far below the fuel's limit
+    let direct = answered(reactor_triga_jsi::WATER_BOILING_K, 231.0, vec![(999_999, reactor_triga_jsi::ROD_WORTH_DOLLAR, 0.0)], 250_000).await;
+    assert!((direct.state.peak_fuel_temperature_k - 769.74).abs() < 0.01, "{}", direct.state.peak_fuel_temperature_k);
+    assert!(direct.state.peak_power_mw > 2.5 * reactor_triga_jsi::POWER_COMPARED_MAX_MW);
+    assert!(direct.state.energy_mws > 2.0 * reactor_triga_jsi::ENERGY_COMPARED_MAX_MWS);
+    assert!(direct.state.t_s > 6.0 * reactor_triga_jsi::TIME_COMPARED_MAX_S);
+    // and from ice-cold water on core 215, the rods dropped while the rod moves
+    let stop_whole = (reactor().rod_stop_s(reactor_triga_jsi::ROD_WORTH_DOLLAR) / dt) as u64;
+    answered(reactor_triga_jsi::WATER_FREEZING_K, 215.0, vec![(stop_whole - 5, reactor_triga_jsi::ROD_WORTH_DOLLAR, 0.0), (150_000, reactor_triga_jsi::ROD_WORTH_DOLLAR, 1.0)], 50_000).await;
+    // a start compared on another table, and reactivities below 2.0 dollars
+    for (start_k, core, rho) in [(302.0, 215.0, 2.0), (294.2, 231.0, 3.0), (350.0, 217.0, 1.4), (298.15, 217.0, 0.5), (298.15, 217.0, 1.0e-3)] {
+        answered(start_k, core, vec![(30_000, rho, 0.0), (10_000, rho, 1.0)], 10_000).await;
     }
 }
 
@@ -558,39 +574,30 @@ async fn each_end_of_the_card_lands_at_the_last_number_inside_and_is_refused_by_
     let base = spawn_app().await;
     let reactor = reactor();
     let dt = ceiling();
-    let (t_min, t_max) = (reactor.start_temperature_min_k, reactor.start_temperature_max_k);
-    let (r_min, r_max) = (reactor.reactivity_min_dollar, reactor.reactivity_max_dollar);
-    for (table, core) in reactor_triga_jsi::ROD_TABLE_CORE.into_iter().enumerate() {
-        let (low, high) = reactor.start_temperature_k_by_table[table];
-        for (start_k, rho) in [(low, r_min), (high, r_max), (low, r_max), (high, r_min)] {
+    let (t_min, t_max) = (reactor_triga_jsi::WATER_FREEZING_K, reactor_triga_jsi::WATER_BOILING_K);
+    let r_max = reactor_triga_jsi::ROD_WORTH_DOLLAR;
+    assert_eq!((t_min, t_max, r_max), (273.15, 373.124, 4.16));
+    for core in reactor_triga_jsi::ROD_TABLE_CORE {
+        for (start_k, rho) in [(t_min, r_max), (t_max, 1.0e-300), (t_min, 1.0e-3), (t_max, r_max), (296.0, below(2.0)), (302.0, above(3.0))] {
             let (status, text) = post(&base, "/verify_physics", &step_body(start_k, core, rho, 0.0, dt)).await;
+            assert_eq!(status, 200, "{start_k} {core} {rho}: {text}");
+            // and with the rods dropped at the fire signal
+            let (status, text) = post(&base, "/verify_physics", &step_body(start_k, core, rho, 1.0, dt)).await;
             assert_eq!(status, 200, "{start_k} {core} {rho}: {text}");
         }
     }
-    // The decimal ends as a caller writes them: the published span is the union of the three
-    // tables' spans, and each table accepts only its own.
-    assert_eq!((t_min, t_max, r_min, r_max), (294.05, 302.38, 2.0, 3.0));
-    assert_eq!(reactor.start_temperature_k_by_table, [(297.15, 301.09), (294.46, 302.38), (294.05, 295.96)]);
-    let [t215, t217, t231] = reactor.start_temperature_k_by_table;
     for (start_k, core, rho, dropped, name, field) in [
-        // inside the union, outside the starts compared on the start's own table
-        (296.0, 231.0, 2.0, 0.0, "StartTemperatureOutsideCard", "start_temperature_k"),
-        (294.2, 215.0, 2.0, 0.0, "StartTemperatureOutsideCard", "start_temperature_k"),
-        (302.0, 215.0, 3.0, 0.0, "StartTemperatureOutsideCard", "start_temperature_k"),
-        (294.2, 217.0, 2.0, 0.0, "StartTemperatureOutsideCard", "start_temperature_k"),
-        (below(t215.0), 215.0, 2.0, 0.0, "StartTemperatureOutsideCard", "start_temperature_k"),
-        (above(t215.1), 215.0, 2.0, 0.0, "StartTemperatureOutsideCard", "start_temperature_k"),
-        (below(t217.0), 217.0, 2.0, 0.0, "StartTemperatureOutsideCard", "start_temperature_k"),
-        (above(t231.1), 231.0, 3.0, 0.0, "StartTemperatureOutsideCard", "start_temperature_k"),
-        // the ends 0.6.0 accepted, outside the starts compared at 2.0 dollars and above
-        (293.15, 217.0, 2.0, 0.0, "StartTemperatureOutsideCard", "start_temperature_k"),
-        (306.15, 217.0, 2.0, 0.0, "StartTemperatureOutsideCard", "start_temperature_k"),
-        (294.0, 231.0, 2.0, 0.0, "StartTemperatureOutsideCard", "start_temperature_k"),
-        (303.0, 215.0, 3.0, 0.0, "StartTemperatureOutsideCard", "start_temperature_k"),
-        (below(t_min), 217.0, 2.0, 0.0, "StartTemperatureOutsideCard", "start_temperature_k"),
-        (above(t_max), 217.0, 2.0, 0.0, "StartTemperatureOutsideCard", "start_temperature_k"),
-        (298.15, 217.0, below(r_min), 0.0, "ReactivityOutsideCard", "reactivity_inserted_dollar"),
-        (298.15, 217.0, above(r_max), 0.0, "ReactivityOutsideCard", "reactivity_inserted_dollar"),
+        // ice and boiling water
+        (below(t_min), 217.0, 2.0, 0.0, "StartTemperatureNotLiquidWater", "start_temperature_k"),
+        (above(t_max), 217.0, 2.0, 0.0, "StartTemperatureNotLiquidWater", "start_temperature_k"),
+        (263.15, 231.0, 2.0, 0.0, "StartTemperatureNotLiquidWater", "start_temperature_k"),
+        (373.15, 215.0, 3.0, 0.0, "StartTemperatureNotLiquidWater", "start_temperature_k"),
+        // no reactivity inserted, and more than the rod holds
+        (298.15, 217.0, 0.0, 0.0, "ReactivityNotPositive", "reactivity_inserted_dollar"),
+        (298.15, 217.0, -1.0, 0.0, "ReactivityNotPositive", "reactivity_inserted_dollar"),
+        (298.15, 217.0, -f64::MIN_POSITIVE, 1.0, "ReactivityNotPositive", "reactivity_inserted_dollar"),
+        (298.15, 217.0, above(r_max), 0.0, "ReactivityAboveRodWorth", "reactivity_inserted_dollar"),
+        (298.15, 231.0, 5.0, 1.0, "ReactivityAboveRodWorth", "reactivity_inserted_dollar"),
         (298.15, 217.0, 2.0, above(1.0), "ScramValueOutsideCard", "rods_dropped"),
         (298.15, 217.0, 2.0, -1.0, "ScramValueOutsideCard", "rods_dropped"),
         // outside the published span of the rod table
@@ -620,12 +627,14 @@ async fn each_end_of_the_card_lands_at_the_last_number_inside_and_is_refused_by_
     let (status, text) = post(&base, "/verify_physics", &without).await;
     assert_eq!(status, 422, "{text}");
     assert!(text.contains("rod_table_core"), "{text}");
-    // The clock: the number over the ceiling and the number under the floor.
+    // The clock: the number over the ceiling and the number under the floor. The ceiling that
+    // follows the state is the step's own and no request at or under this ceiling reaches it.
     let floor = reactor.floor_dt_s().unwrap();
     for (dt_s, word) in [(above(dt), "step ceiling"), (below(floor), "step floor")] {
         let (status, text) = post(&base, "/verify_physics", &step_body(298.15, 217.0, 2.0, 0.0, dt_s)).await;
         assert_eq!(status, 422, "{text}");
         assert!(text.contains(word) && text.contains("reactor_triga_jsi"), "{text}");
+        assert!(!text.contains("DtAboveStateCeiling"), "{text}");
     }
     for dt_s in [dt, floor] {
         let (status, text) = post(&base, "/verify_physics", &step_body(298.15, 217.0, 2.0, 0.0, dt_s)).await;
@@ -639,23 +648,18 @@ async fn each_end_of_the_card_lands_at_the_last_number_inside_and_is_refused_by_
         assert_eq!(status, 422, "{text}");
         assert!(text.contains(field), "{text}");
     }
-    // The end of the card in time: 200,000 steps of 7e-5 s make 14 s and all land; one more
-    // is refused by name and the run is sealed to the 200,000th.
-    let segments = [(40_000, 2.0, 0.0), (160_000, 2.0, 1.0)];
-    let (status, answer) = post(&base, "/run_trajectory", &run_body(298.15, 217.0, 7.0e-5, &segments, 50_000)).await;
-    assert_eq!(status, 200, "{answer}");
-    let tape: Value = serde_json::from_str(&answer).unwrap();
-    assert_eq!(tape["outcome"], "completed", "{}", tape["reject_detail"]);
-    assert_eq!(tape["steps_landed"], 200_000);
-    let end = published(&tape["final_state"], "t_s");
-    assert!((end - reactor_triga_jsi::TIME_MAX_S).abs() < reactor_triga_jsi::TIME_END_ALLOWANCE_S, "{end}");
-    let segments = [(40_000, 2.0, 0.0), (160_001, 2.0, 1.0)];
-    let (status, answer) = post(&base, "/run_trajectory", &run_body(298.15, 217.0, 7.0e-5, &segments, 50_000)).await;
-    assert_eq!(status, 200, "{answer}");
-    let tape: Value = serde_json::from_str(&answer).unwrap();
-    assert_eq!(tape["outcome"], "refused");
-    assert_eq!(tape["reject"], "TimeBeyondCard");
-    assert_eq!(tape["steps_landed"], 200_000);
+    // Past the 14 s compared: 200,000 steps of 7e-5 s make 14 s and all land, and the run goes
+    // on, to three times that, as the kernel loop does.
+    for steps in [160_000, 160_001, 560_000] {
+        let segments = [(40_000, 2.0, 0.0), (steps, 2.0, 1.0)];
+        let (status, answer) = post(&base, "/run_trajectory", &run_body(298.15, 217.0, 7.0e-5, &segments, 50_000)).await;
+        assert_eq!(status, 200, "{answer}");
+        let tape: Value = serde_json::from_str(&answer).unwrap();
+        assert_eq!(tape["outcome"], "completed", "{}", tape["reject_detail"]);
+        assert_eq!(tape["steps_landed"], 40_000 + steps);
+        let direct = direct_loop(298.15, 217.0, 7.0e-5, &segments, 50_000);
+        assert_state_is(&tape["final_state"], &direct.state, &format!("{steps}"));
+    }
 }
 
 // --------------------------------------------------------- the three connections
@@ -704,7 +708,7 @@ impl StdioDoor {
     }
 
     async fn call(&mut self, tool: &str, arguments: &Value) -> String {
-        self.raw(&json!({"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":tool,"arguments":arguments}}).to_string())
+        self.raw(&answer_text::tool_call(7, tool, arguments).to_string())
             .await
     }
 }
@@ -752,7 +756,7 @@ impl Hosted {
     }
 
     async fn tool(&self, key: &str, tool: &str, arguments: &Value) -> String {
-        let body = json!({"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":tool,"arguments":arguments}});
+        let body = answer_text::tool_call(7, tool, arguments);
         let response = reqwest::Client::new()
             .post(format!("{}/mcp", self.base))
             .header("Content-Type", "application/json")
@@ -770,7 +774,9 @@ impl Hosted {
 
 fn result_text(answer: &str) -> String {
     let value: Value = serde_json::from_str(answer).unwrap();
-    value["result"]["content"][0]["text"].as_str().unwrap_or_else(|| panic!("no text in {answer}")).to_string()
+    let text = value["result"]["content"][0]["text"].as_str().unwrap_or_else(|| panic!("no text in {answer}")).to_string();
+    answer_text::remember(&text);
+    text
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -804,8 +810,9 @@ async fn the_three_connections_give_the_same_bytes_and_the_hosted_door_hides_the
     let pair = json!({"domain": "energy", "card": CARD});
     let described = result_text(&stdio.call("describe_card", &pair).await);
     let description: Value = serde_json::from_str(&described).unwrap();
-    assert_eq!(description["rejects"].as_array().unwrap().len(), 22);
-    let step = description["example_verify_step"].clone();
+    // After the kernel's 18 names the list holds the gateway's own three for this card, DtBelowFloor and DtAboveCeiling and ContinuationNotOnCard.
+    assert_eq!(description["rejects"].as_array().unwrap().len(), 21);
+    let step = description["example_compute_step"].clone();
     let run = description["example_run_trajectory"].clone();
     // A pulse with its scram, on another table than the worked run's.
     let scram = run_body(294.15, 231.0, 5.0e-5, &[(40_000, 2.75, 0.0), (20_000, 2.75, 1.0)], 2_000);
@@ -867,12 +874,12 @@ async fn the_three_connections_give_the_same_bytes_and_the_hosted_door_hides_the
         }
     }
     // Refusals are the same bytes on the three connections, with no proof: a reactivity
-    // outside the card, a rod table the card does not hold, a reactivity that changes.
-    let outside = run_body(298.15, 217.0, ceiling(), &[(3, 3.5, 0.0)], 1);
+    // above the rod's whole worth, a rod table the card does not hold, a reactivity that changes.
+    let outside = run_body(298.15, 217.0, ceiling(), &[(3, 4.5, 0.0)], 1);
     let no_table = run_body(298.15, 224.0, ceiling(), &[(3, 2.0, 0.0)], 1);
     let changed = run_body(298.15, 217.0, ceiling(), &[(900, 2.0, 0.0), (1, 2.5, 0.0)], 1);
     for (request, name) in [
-        (&outside, "ReactivityOutsideCard"),
+        (&outside, "ReactivityAboveRodWorth"),
         (&no_table, "RodTableOutsideCard"),
         (&changed, "ReactivityChangedDuringRun"),
     ] {
@@ -931,7 +938,7 @@ async fn the_three_connections_give_the_same_bytes_and_the_hosted_door_hides_the
     let on_fake = hosted.tool(KEY_THERMAL, "validate_series", &validation_fake).await;
     assert_eq!(on_hidden, on_fake);
     session.push(on_hidden);
-    assert_eq!(result_text(&hosted.tool(KEY_THERMAL, "describe_card", &pair).await), "Card not recognized");
+    assert_eq!(result_text(&hosted.tool(KEY_THERMAL, "describe_card", &pair).await), "Card not recognized (UnknownCard).");
 
     // Nothing the thermal key was sent names the reactor or its fields.
     let text = session.join("\n").to_lowercase();

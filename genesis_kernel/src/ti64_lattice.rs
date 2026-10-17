@@ -50,6 +50,7 @@ extern crate core;
 use core::prelude::v1::*;
 
 use crate::frame::LastStateFrame64;
+use crate::normal::{normal_or_zero, normal_or_zero_each};
 
 /// Typical annealed yield. Catalog slot `ti64_annealed_typical`.
 pub const YIELD_STRENGTH_MPA: f64 = 880.0;
@@ -456,8 +457,25 @@ pub fn nodal_torque_nm(
 /// when its temperature puts the node past yield where it stands, when its
 /// motion turns past yield inside the step, or when it lands past yield. A
 /// rejected step leaves `state` and `frame` as they were.
+///
+/// A value of the landed state below the normal range is written as zero
+/// with its sign ([`crate::normal`]).
 #[must_use]
 pub fn step(
+    cell: &Ti64LatticeCell,
+    state: &mut Ti64LatticeState,
+    frame: &mut LastStateFrame64,
+    load: Ti64Load,
+    dt_s: f64,
+) -> Result<(), StepReject> {
+    step_as_computed(cell, state, frame, load, dt_s)?;
+    normal_or_zero_state(state);
+    Ok(())
+}
+
+/// The step as its equations compute it, before a value of the landed
+/// state below the normal range is written as zero.
+fn step_as_computed(
     cell: &Ti64LatticeCell,
     state: &mut Ti64LatticeState,
     frame: &mut LastStateFrame64,
@@ -476,6 +494,26 @@ pub fn step(
         None => return Err(StepReject::NonFiniteState),
     };
     commit(cell, state, frame, load, dt_s, predicted)
+}
+
+/// Each value of a landed state below the normal range written as zero
+/// with its sign ([`crate::normal`]): the state carried to the next step
+/// and published holds no subnormal number.
+fn normal_or_zero_state(state: &mut Ti64LatticeState) {
+    state.t_s = normal_or_zero(state.t_s);
+    normal_or_zero_each(&mut state.position_m);
+    normal_or_zero_each(&mut state.velocity_m_s);
+    normal_or_zero_each(&mut state.tension_n);
+    normal_or_zero_each(&mut state.torque_nm);
+    normal_or_zero_each(&mut state.applied_force_n);
+    state.temperature_k = normal_or_zero(state.temperature_k);
+    normal_or_zero_each(&mut state.ligament_stress_pa);
+    state.von_mises_mpa = normal_or_zero(state.von_mises_mpa);
+    state.energy_j = normal_or_zero(state.energy_j);
+    state.energy_anchor_j = normal_or_zero(state.energy_anchor_j);
+    state.boundary_work_j = normal_or_zero(state.boundary_work_j);
+    state.energy_defect_j = normal_or_zero(state.energy_defect_j);
+    state.residual_conservation_error = normal_or_zero(state.residual_conservation_error);
 }
 
 fn validate(

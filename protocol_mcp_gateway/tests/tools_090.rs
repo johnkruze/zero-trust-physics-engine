@@ -124,8 +124,8 @@ async fn same_on_every_connection(calls: &[(&str, Value, bool)]) {
         // find_model says how much it compared the description with: what
         // this key sees, three cards and one solver, where the others see all.
         let through_key = local
-            .replace("\"searched\":{\"cards\":31,\"solvers\":13}", "\"searched\":{\"cards\":3,\"solvers\":1}")
-            .replace("(31 cards and 13 solvers)", "(3 cards and 1 solver)");
+            .replace("\"searched\":{\"cards\":37,\"solvers\":24}", "\"searched\":{\"cards\":3,\"solvers\":1}")
+            .replace("(37 cards and 24 solvers)", "(3 cards and 1 solver)");
         assert_eq!((status, hosted_error, hosted.as_str()), (200, *error_due, through_key.as_str()), "{tool} hosted");
         let (open_error, opened) = open.tool(tool, arguments);
         assert_eq!((open_error, opened.as_str()), (*error_due, local.as_str()), "{tool} open");
@@ -168,7 +168,7 @@ fn cite_gives_the_service_and_the_paper_first_then_the_people_whose_measurements
     assert_eq!(lines.len(), data.len() + 2);
     let keys: Vec<&str> = grid.as_object().unwrap().keys().map(String::as_str).collect();
     assert_eq!(keys, ["domain", "card", "service", "paper", "real_thing", "how_used", "data", "text", "bibtex", "about"]);
-    assert_eq!(lines[0], "John Kruze (Protocol Company). Zero-Trust Physics: a physics verifier for Super Intelligence. Served at https://mcp.zerotrustphysics.com/mcp, engine genesis_kernel_v0.9.0. Accessed [the date you asked].");
+    assert_eq!(lines[0], "John Kruze (Protocol Company). Zero-Trust Physics: a physics verifier for Super Intelligence. Served at https://mcp.zerotrustphysics.com/mcp, engine genesis_kernel_v0.12.0. Accessed [the date you asked].");
     assert!(bibtex.contains("@misc{zerotrustphysics_service,"));
     // A generic specimen stands on no measured data: the service and the paper alone, and the answer says so.
     let pack = ok(&mut door, "cite", &json!({ "domain": "energy", "card": "battery_sag" }));
@@ -193,7 +193,7 @@ fn cite_gives_the_service_and_the_paper_first_then_the_people_whose_measurements
     }
     // A solver's answers carry the solvers' engine version, and its citation of the service says that one.
     let atom = ok(&mut door, "cite", &json!({ "solver": "atom_dft" }));
-    assert_eq!(atom["service"]["engine_version"], "genesis_solvers_v0.8.0");
+    assert_eq!(atom["service"]["engine_version"], "genesis_solvers_v0.12.0");
     // With no name: how to cite the service itself: its name, who made it,
     // where it is served, and the paper.
     let service = ok(&mut door, "cite", &json!({}));
@@ -204,7 +204,7 @@ fn cite_gives_the_service_and_the_paper_first_then_the_people_whose_measurements
     assert_eq!(service["service"]["site"], "https://zerotrustphysics.com");
     assert_eq!(service["service"]["paper"], "https://doi.org/10.5281/zenodo.23305697");
     assert_eq!(service["service"]["contact"], "kruze@zerotrustphysics.com");
-    assert_eq!(service["service"]["engine_version"], "genesis_kernel_v0.9.0 and genesis_solvers_v0.8.0");
+    assert_eq!(service["service"]["engine_version"], "genesis_kernel_v0.12.0 and genesis_solvers_v0.12.0");
     let text = service["text"].as_str().unwrap();
     assert!(text.starts_with("John Kruze (Protocol Company). Zero-Trust Physics: a physics verifier for Super Intelligence. Served at https://mcp.zerotrustphysics.com/mcp"), "{text}");
     assert!(text.ends_with("https://doi.org/10.5281/zenodo.23305697"));
@@ -215,7 +215,7 @@ fn cite_gives_the_service_and_the_paper_first_then_the_people_whose_measurements
             assert_eq!(&grid["service"][key], value, "{key}");
         }
     }
-    assert_eq!(refused(&mut door, "cite", &json!({ "solver": "no_such" })), "Solver not recognized");
+    assert_eq!(refused(&mut door, "cite", &json!({ "solver": "no_such" })), "Solver not recognized (UnknownSolver).");
     assert!(refused(&mut door, "cite", &json!({ "domain": "energy", "card": "thermal", "solver": "atom_dft" })).contains("not both"));
     assert!(refused(&mut door, "cite", &json!({ "domain": "energy" })).contains("'card'"));
     assert!(refused(&mut door, "cite", &json!({ "model": "thermal" })).contains("'model'"));
@@ -225,9 +225,9 @@ fn cite_gives_the_service_and_the_paper_first_then_the_people_whose_measurements
 fn a_key_cites_and_finds_only_what_it_sees() {
     let keyed = keyed();
     let (_, error, text) = keyed.tool(KEY, "cite", &json!({ "domain": "signal", "card": "resonance" }));
-    assert_eq!((error, text.as_str()), (true, "Card not recognized"));
+    assert_eq!((error, text.as_str()), (true, "Card not recognized (UnknownCard)."));
     let (_, error, text) = keyed.tool(KEY, "cite", &json!({ "solver": "ablator_slab" }));
-    assert_eq!((error, text.as_str()), (true, "Solver not recognized"));
+    assert_eq!((error, text.as_str()), (true, "Solver not recognized (UnknownSolver)."));
     let (_, _, text) = keyed.tool(KEY, "find_model", &json!({ "description": "a satellite in orbit around the Earth" }));
     assert_eq!(parsed(&text)["count"], 0);
     let (_, _, text) = keyed.tool(KEY, "find_model", &json!({ "description": "power grid frequency after losing a link" }));
@@ -239,13 +239,13 @@ fn find_model_gives_fit_first_and_then_how_the_model_did_against_measurement() {
     let mut door = Stdio2::start(None);
     let found = ok(&mut door, "find_model", &json!({ "description": "a lithium cell discharging in the cold" }));
     assert_eq!(found["count"], 3);
-    assert_eq!(found["searched"], json!({ "cards": 31, "solvers": 13 }));
+    assert_eq!(found["searched"], json!({ "cards": 37, "solvers": 24 }));
     let first = &found["matches"][0];
     assert_eq!((first["domain"].as_str(), first["card"].as_str()), (Some("energy"), Some("cell_2170_model3")));
     assert!(first["fit"].as_str().unwrap().starts_with("matches your description on the words ") && first["fit"].as_str().unwrap().contains("\"lithium\"") && first["fit"].as_str().unwrap().contains("\"cold\""));
     assert!(first["model_of"].as_str().unwrap().contains("2170"));
     assert!(first["compared_with"].as_str().unwrap().contains("doi"), "{first}");
-    assert!(first["accuracy_against_measurement"].as_str().unwrap().starts_with("passed in part the pass marks fixed before the comparison: "));
+    assert!(first["accuracy_against_measurement"].as_str().unwrap().starts_with("passed in part the pass marks its record states: "));
     // The earlier names are gone, and so is any excerpt of the record's limits.
     for gone in ["met_its_marks", "marks", "tested_on", "cannot_answer", "why", "what", "limits"] {
         assert!(first.get(gone).is_none(), "{gone}");
@@ -253,11 +253,11 @@ fn find_model_gives_fit_first_and_then_how_the_model_did_against_measurement() {
     // A model that failed its pass marks is found, with the failure stated as accuracy and not as fit.
     let strip = ok(&mut door, "find_model", &json!({ "description": "a thin aluminium strip clamped at one end, ringing after I flick it" }));
     assert_eq!(strip["matches"][0]["card"], "cantilever_eth");
-    assert_eq!(strip["matches"][0]["accuracy_against_measurement"], "failed the pass marks fixed before the comparison: met three of four pass lines");
+    assert_eq!(strip["matches"][0]["accuracy_against_measurement"], "failed the pass marks its record states: met three of four pass lines; the comparison was not blind, as its validation says");
     assert!(strip["about"].as_str().unwrap().contains("a model that failed its pass marks is still the served model of its thing"));
     let burst = ok(&mut door, "find_model", &json!({ "description": "something falling into an atmosphere", "limit": 2 }));
     assert_eq!(burst["matches"][0]["card"], "capsule_stardust");
-    assert_eq!(burst["matches"][0]["accuracy_against_measurement"], "passed the pass marks fixed before the comparison: met all three pass lines");
+    assert_eq!(burst["matches"][0]["accuracy_against_measurement"], "passed the pass marks its record states: met all three pass lines; the comparison was not blind, as its validation says");
     assert_eq!(burst["matches"][1]["card"], "capsule_insight");
     let grid = ok(&mut door, "find_model", &json!({ "description": "power grid frequency after losing a link" }));
     assert_eq!(grid["matches"][0]["card"], "grid_gb");
@@ -265,14 +265,18 @@ fn find_model_gives_fit_first_and_then_how_the_model_did_against_measurement() {
     let cable = ok(&mut door, "find_model", &json!({ "description": "how far the mains frequency in Britain drops when the undersea power cable from France suddenly fails" }));
     assert_eq!((cable["count"].as_u64(), cable["matches"][0]["card"].as_str()), (Some(1), Some("grid_gb")));
     let pack = ok(&mut door, "find_model", &json!({ "description": "a 12S battery pack under load" }));
-    assert!(pack["matches"][0]["accuracy_against_measurement"].as_str().unwrap().starts_with("not compared with any measurement"));
+    assert!(pack["matches"][0]["accuracy_against_measurement"].as_str().unwrap().starts_with("the company's own specimen: its constants are the company's"));
     // Nothing fits: the answer is complete in itself, and sends no one to the lists.
     let none = ok(&mut door, "find_model", &json!({ "description": "the temperature of the brake discs of a freight train after an emergency stop from 100 km/h" }));
     assert_eq!(none["matches"], json!([]));
     let said = none["none_fits"].as_str().unwrap();
-    assert!(said.starts_with("Nothing served fits this description. It was compared with everything this connection serves (31 cards and 13 solvers), so reading list_cards or list_solvers will not find one"), "{said}");
-    // Who to write to for a model: the maker, by name and address. No tool keeps a list.
-    assert!(said.contains("write to John Kruze of Protocol Company at kruze@zerotrustphysics.com and name an open dataset of it"), "{said}");
+    assert!(said.starts_with("Nothing served fits this description. It was compared with everything this connection serves (37 cards and 24 solvers), and no served model fits it; list_cards and list_solvers name everything served."), "{said}");
+    // Where a request for a model goes: the maker, by name and address, said
+    // as what is so. It read "write to John Kruze of Protocol Company at ...
+    // and name an open dataset of it" until the instruction became a
+    // statement. No tool keeps a list.
+    assert!(said.contains("Requests for a model of a thing not served go to John Kruze of Protocol Company at kruze@zerotrustphysics.com."), "{said}");
+    assert!(said.contains("a request names an open dataset of it") && !said.contains("write to"), "{said}");
     assert!(!said.contains("request_model"), "{said}");
     assert_eq!(none["nearest_by_words"], json!([]));
     assert!(none["nearest_by_words_about"].as_str().unwrap().contains("there is no near model to name"));
@@ -313,9 +317,11 @@ async fn a_model_that_stops_before_computing_answers_with_its_one_sentence_and_n
     let keyed = keyed();
     let open = Open::start();
     let stops: Vec<(&str, Value, &str)> = vec![
-        ("run_trajectory", grid_run(500.0), "Physical Failure: 'loss_mw' 500 MW is below 693 MW, the inclusive minimum of the grid_gb card (LossOutsideCard). That state is not sealed."),
-        ("verify_step", json!({ "domain": "energy", "card": "thermal", "parameters": { "temperature_k": 293.15, "heat_power_w": 1.0, "ambient_k": 293.15, "dt_s": 1.0e9 } }), "Physical Violation: 'dt_s' 1000000000 is above 23.625 s, the step ceiling of the thermal card."),
-        ("solve", json!({ "solver": "atom_dft", "parameters": { "atomic_number": 40 } }), "Physical Violation: atomic number 40 is outside 1..=18."),
+        ("run_trajectory", { let mut run = grid_run(500.0); run["initial"]["demand_mw"] = json!(-1.0); run }, "Physical Failure: 'demand_mw' -1 MW is below 0 MW, the inclusive minimum of the grid_gb card (DemandNegative). That state is not sealed."),
+        // Re-pinned for 0.10.1: a step above the ceiling carries the name DtAboveCeiling.
+        ("verify_step", json!({ "domain": "energy", "card": "thermal", "parameters": { "temperature_k": 293.15, "heat_power_w": 1.0, "ambient_k": 293.15, "dt_s": 1.0e9 } }), "Physical Violation: 'dt_s' 1000000000 is above 23.625 s, the step ceiling of the thermal card (DtAboveCeiling)."),
+        // Re-pinned for 0.10.1: an atomic number outside the range carries the name AtomicNumberOutOfRange, and the entry writes the range in words.
+        ("solve", json!({ "solver": "atom_dft", "parameters": { "atomic_number": 40 } }), "Physical Violation: atomic number 40 is outside 1 to 18 (AtomicNumberOutOfRange)."),
     ];
     for (tool, request, sentence) in &stops {
         let local = stdio.blocks(tool, request);
@@ -344,10 +350,10 @@ fn a_stop_part_way_and_an_answer_are_one_block_with_the_bytes_of_0_8_1() {
     // A missing field is named; nothing is filled in.
     let mut missing = grid_run(996.0);
     missing["initial"].as_object_mut().unwrap().remove("demand_mw");
-    assert_eq!(door.blocks("run_trajectory", &missing), vec!["Missing required parameter: 'demand_mw'".to_string()]);
+    assert_eq!(door.blocks("run_trajectory", &missing), vec!["Missing required parameter: 'demand_mw' (InputMissing).".to_string()]);
     let mut unknown = grid_run(996.0);
     unknown["card"] = json!("grid_fr");
-    assert_eq!(door.blocks("run_trajectory", &unknown), vec!["Card not recognized".to_string()]);
+    assert_eq!(door.blocks("run_trajectory", &unknown), vec!["Card not recognized (UnknownCard).".to_string()]);
     // A run that stops part way is a result, sealed to its last landed step, and its bytes are those of 0.8.1:
     // the seal printed for it by the saved 0.8.1 binary is the seal it has now.
     let blocks = door.blocks("run_trajectory", &pack_run(80.0));
@@ -371,18 +377,40 @@ fn the_earlier_answers_carry_no_new_key() {
         keys(&run),
         ["inputs", "engine_version", "outcome", "steps_requested", "steps_landed", "reject", "reject_detail", "final_state",
          "final_residual_conservation_error", "final_residual_conservation_error_hex", "max_residual_conservation_error",
-         "max_residual_conservation_error_hex", "state_digest", "frames", "run_seal", "receipt_sha256"]
+         "max_residual_conservation_error_hex", "state_digest", "load_source", "frames", "run_seal", "receipt_sha256"]
     );
     assert_eq!(run["run_seal"], "37e4cf1e9c2a207785891546f45a460661c50c895a9c8257646f4ef9713c0200");
+    // One key was added, on John Kruze's word of 14 October 2026: every run
+    // answer says where its loads came from. It moves every run receipt once
+    // and no run seal; the answer with it taken out is, byte for byte, the
+    // answer pinned below.
+    assert_eq!(run["load_source"], json!({ "segments": 1, "signed": 0, "says": genesis_seal::attest::CALLERS_NUMBER }));
+    let (_, labelled) = door.tool("run_trajectory", &pack_run(50.0));
+    let label = format!(",\"load_source\":{}", serde_json::to_string(&run["load_source"]).unwrap());
+    assert_eq!(labelled.matches(&label).count(), 1);
+    let labelled_document = labelled.rsplit_once(",\"receipt_sha256\":").unwrap().0;
+    assert_eq!(run["receipt_sha256"], sha(&format!("{labelled_document}}}")));
+    let unlabelled = labelled.replacen(&label, "", 1);
+    let unlabelled_document = unlabelled.rsplit_once(",\"receipt_sha256\":").unwrap().0;
+    let run: Value = serde_json::from_str(&format!("{unlabelled_document},\"receipt_sha256\":\"{}\"}}", sha(&format!("{unlabelled_document}}}")))).unwrap();
     // The receipt covers every byte of the answer, the engine version among them, and moved with
-    // kernel 0.9.0: the same text with genesis_kernel_v0.8.0 put back gives the receipt printed
-    // before, 2329593a...515e. The run seal does not cover the version and is the seal it was.
-    assert_eq!(run["engine_version"], "genesis_kernel_v0.9.0");
-    assert_eq!(run["receipt_sha256"], "743c0cfbffc80865c572159464a6b43f7a50abac0a8fd7425579e44d9358ee52");
-    let (_, text) = door.tool("run_trajectory", &pack_run(50.0));
-    let document = text.strip_suffix(",\"receipt_sha256\":\"743c0cfbffc80865c572159464a6b43f7a50abac0a8fd7425579e44d9358ee52\"}").expect("the receipt is last");
-    assert_eq!(sha(&format!("{document}}}")), "743c0cfbffc80865c572159464a6b43f7a50abac0a8fd7425579e44d9358ee52");
-    let earlier = document.replacen("genesis_kernel_v0.9.0", "genesis_kernel_v0.8.0", 1);
+    // kernel 0.9.0, 0.10.0, 0.11.0 and 0.12.0: the same text with genesis_kernel_v0.11.0 put back
+    // gives the receipt pinned for 0.11.0, f5bd6143...636e, with genesis_kernel_v0.10.0 the
+    // receipt pinned for 0.10.0, 323535ed...7d25, with genesis_kernel_v0.9.0 the receipt pinned
+    // for 0.9.0, 743c0cfb...ee52, and with genesis_kernel_v0.8.0 the receipt printed before,
+    // 2329593a...515e. The run seal does not cover the version and is the seal it was.
+    assert_eq!(run["engine_version"], "genesis_kernel_v0.12.0");
+    assert_eq!(run["receipt_sha256"], "dc02efc588c87bcef75162bcacfe37d8fe5d65b4da5c7e135add536d96c9fe55");
+    let text = format!("{unlabelled_document},\"receipt_sha256\":\"{}\"}}", sha(&format!("{unlabelled_document}}}")));
+    let document = text.strip_suffix(",\"receipt_sha256\":\"dc02efc588c87bcef75162bcacfe37d8fe5d65b4da5c7e135add536d96c9fe55\"}").expect("the receipt is last");
+    assert_eq!(sha(&format!("{document}}}")), "dc02efc588c87bcef75162bcacfe37d8fe5d65b4da5c7e135add536d96c9fe55");
+    let before = document.replacen("genesis_kernel_v0.12.0", "genesis_kernel_v0.11.0", 1);
+    assert_eq!(sha(&format!("{before}}}")), "f5bd614398bfd91a0a039302c46a2e545013e8aec1112c44dffd7e988520636e");
+    let before = document.replacen("genesis_kernel_v0.12.0", "genesis_kernel_v0.10.0", 1);
+    assert_eq!(sha(&format!("{before}}}")), "323535ed160a543c495de118bea44d611529bdd86ba08ade320f6811a3757d25");
+    let before = document.replacen("genesis_kernel_v0.12.0", "genesis_kernel_v0.9.0", 1);
+    assert_eq!(sha(&format!("{before}}}")), "743c0cfbffc80865c572159464a6b43f7a50abac0a8fd7425579e44d9358ee52");
+    let earlier = document.replacen("genesis_kernel_v0.12.0", "genesis_kernel_v0.8.0", 1);
     assert_eq!(sha(&format!("{earlier}}}")), "2329593a18f106db67fb9d04363f8f1eb37a8e7d2ca42784a41a21609914515e");
     let step = ok(&mut door, "verify_step", &thermal_step());
     assert_eq!(keys(&step), ["inputs", "engine_version", "state", "residual_conservation_error", "sha256_seal", "receipt_sha256"]);
@@ -438,18 +466,21 @@ fn find_flip_returns_the_two_runs_either_side_each_with_the_proof_it_has_alone()
     // The same request gives the same pair, byte for byte.
     assert_eq!(door.tool("find_flip", &pack_flip()), door.tool("find_flip", &pack_flip()));
     // One stop name to another, and a run that ends beside one that completes.
+    let reactor = ok(&mut door, "describe_card", &json!({ "domain": "energy", "card": "reactor_spert3" }));
+    let reactor_run = reactor["example_run_trajectory"].clone();
+    let asked = reactor_run["segments"][0]["steps"].as_u64().unwrap();
     let ended = ok(&mut door, "find_flip", &json!({
-        "request": { "domain": "energy", "card": "generator_mmrtg_f1", "initial": { "mission_time_s": 0.0 }, "dt_s": 86400.0, "segments": [{ "steps": 4200, "load": {} }], "record_every": 4200 },
-        "vary": "dt_s", "low": 43200.0, "high": 86400.0
+        "request": reactor_run, "vary": "segments[0].steps", "low": 1, "high": asked
     }));
-    assert_eq!((ended["low_is"].as_str(), ended["high_is"].as_str()), (Some("completed"), Some("ended (MissionTimeOutsideCard)")));
+    assert_eq!((ended["low_is"].as_str(), ended["high_is"].as_str()), (Some("completed"), Some("ended (PastFirstMaximum)")), "{ended}");
     assert_eq!(ended["neighbours"], true);
     // A side that stops before computing has no proof, and says so.
-    let door_side = ok(&mut door, "find_flip", &json!({ "request": grid_run(996.0), "vary": "segments[0].load.loss_mw", "low": 400.0, "high": 996.0 }));
-    assert_eq!(door_side["low_is"], "stopped before computing (LossOutsideCard)");
+    let door_side = ok(&mut door, "find_flip", &json!({ "request": grid_run(0.0), "vary": "initial.demand_mw", "low": -1000.0, "high": 27132.0 }));
+    assert_eq!(door_side["low_is"], "stopped before computing (DemandNegative)");
     assert_eq!(door_side["low"]["run_seal"], Value::Null);
     assert!(door_side["low"]["no_proof"].as_str().unwrap().contains("no proof is issued"));
-    assert_eq!(door_side["high"]["value"], 693.0);
+    let edge = door_side["high"]["value"].as_f64().unwrap();
+    assert!((0.0..1.0e-9).contains(&edge), "{edge}");
     assert_eq!(door_side["high"]["outcome"], "completed");
 }
 
@@ -476,13 +507,15 @@ fn on_the_open_connection_a_search_is_long_work_and_is_marked_read_only() {
 fn the_new_tools_say_which_name_to_give_and_take_a_span_in_either_order() {
     let tools = protocol_mcp_gateway::mcp_server::tools_in(&protocol_mcp_gateway::view::View::full());
     let said = |name: &str| serde_json::to_string(tools.iter().find(|tool| tool.name == name).unwrap()).unwrap();
-    // A name is the name find_model or the lists give, so that no list need
-    // be read after find_model has given the name.
-    let whole = serde_json::to_string(&tools[13..]).unwrap();
+    // A name is the name find_model or the lists give: the two give the
+    // same names, which every other tool takes.
+    let whole = serde_json::to_string(&tools[13..16]).unwrap();
     assert!(!whole.contains("as list_cards names it") && !whole.contains("as list_solvers names it"));
     assert!(said("cite").contains("by the name find_model or list_cards gives") && said("cite").contains("by the name find_model or list_solvers gives"));
     assert!(said("find_flip").contains("by the name find_model or the lists give"));
-    assert!(said("find_model").contains("no list need be read after it"));
+    assert!(said("find_model").contains("are the names list_cards and list_solvers give and the names describe_card, describe_solver, cite and every other tool take"));
+    // Since 0.10.1 no description says what need not be called.
+    assert!(!whole.contains("no list need be read"), "{whole}");
     // low and high come in either order.
     assert!(said("find_flip").contains("in either order: the smaller is taken as low"));
     let mut door = Stdio2::start(None);
@@ -502,7 +535,7 @@ fn the_new_tools_say_which_name_to_give_and_take_a_span_in_either_order() {
 #[test]
 fn no_connection_keeps_anything() {
     let tools = protocol_mcp_gateway::mcp_server::tools_in(&protocol_mcp_gateway::view::View::full());
-    assert_eq!(tools.len(), 16);
+    assert_eq!(tools.len(), 18);
     let declared = serde_json::to_string(&tools).unwrap();
     for gone in ["request_model", "list_model_requests", "short address", "proof_address", "is kept", "nearest_request"] {
         assert!(!declared.contains(gone), "the tool list says {gone}");
@@ -547,7 +580,10 @@ fn no_connection_keeps_anything() {
 #[test]
 fn every_connection_says_who_it_is_first() {
     let hello = json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"t","version":"1"}}}).to_string();
-    let opening = "This is Zero-Trust Physics, a physics verifier for Super Intelligence: every answer comes with a cryptographic proof, and a model stops at the edge of what it was tested for and says why. It was made by John Kruze, Protocol Company. The story is at https://zerotrustphysics.com (for an agent, https://zerotrustphysics.com/llms.txt), the paper is https://doi.org/10.5281/zenodo.23305697, the programs that confirm a proof with no engine are at https://github.com/johnkruze/zero-trust-physics, and John Kruze is reached at kruze@zerotrustphysics.com or 928-264-7883. List the domain/card pairs, read one pair, take a step, run a trajectory, or check a tape.";
+    // Since 0.10.1 the opening names the engine's own source, and what follows
+    // it says what the tools are for in statements. Since 0.11.0 it says a
+    // model stops at a limit and names it, not at the edge of a comparison.
+    let opening = "This is Zero-Trust Physics, a physics verifier for Super Intelligence: every answer comes with a cryptographic proof, and a model stops at a mathematical or physical limit and names it; the range it was compared on, and how it did there, is in its description. It was made by John Kruze, Protocol Company. The story is at https://zerotrustphysics.com (for an agent, https://zerotrustphysics.com/llms.txt), the paper is https://doi.org/10.5281/zenodo.23305697, the engine's source is at https://github.com/johnkruze/zero-trust-physics-engine, the programs that confirm a proof with no engine are at https://github.com/johnkruze/zero-trust-physics, and John Kruze is reached at kruze@zerotrustphysics.com or 928-264-7883. list_cards and list_solvers name every model served, and find_model finds one from a plain description of a real thing.";
     let stdio = Stdio2::start(None);
     let local = parsed(&stdio.hello);
     let keyed = keyed();
@@ -560,12 +596,12 @@ fn every_connection_says_who_it_is_first() {
         assert_eq!(info["title"], "Zero-Trust Physics: a physics verifier for Super Intelligence", "{at}");
         assert_eq!(info["websiteUrl"], "https://zerotrustphysics.com", "{at}");
         assert_eq!(info["version"], env!("CARGO_PKG_VERSION"), "{at}");
-        assert_eq!(info["description"], "genesis_kernel_v0.9.0", "{at}");
+        assert_eq!(info["description"], "genesis_kernel_v0.12.0", "{at}");
         let said = answer["result"]["instructions"].as_str().unwrap();
         assert!(said.starts_with(opening), "{at}: {said}");
     }
     // The local and the keyed connection say the same; the open one adds its limits after.
     assert_eq!(local["result"]["instructions"], hosted["result"]["instructions"]);
     let (local_said, open_said) = (local["result"]["instructions"].as_str().unwrap(), opened["result"]["instructions"].as_str().unwrap());
-    assert!(open_said.starts_with(local_said) && open_said[local_said.len()..].starts_with(" This is the open connection: no key is asked"), "{open_said}");
+    assert!(open_said.starts_with(local_said) && open_said[local_said.len()..].starts_with(" This open connection asks no key"), "{open_said}");
 }

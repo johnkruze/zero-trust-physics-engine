@@ -1,0 +1,27 @@
+{
+ "model": "reactor_triga_jsi",
+ "verdict": "missed",
+ "protocol": {
+  "path": "evidence/research/reactor_triga_jsi/analysis_v2/prereg_v2.json",
+  "sha256": "9a0720f1822161c3b53cbc351d862ec4c077da51521ee1a96d7ceb85d8275ddc",
+  "committed": {
+   "crate": "protocol_mcp_gateway",
+   "commit": "06d25a458ceb7d3fdb999d35b4e58681b1b15013",
+   "utc": "2026-10-10T02:06:54Z",
+   "how": "The diff of 'Serve the reactor_triga_jsi card under its second protocol ... the result on the rows held back awaited' adds the pass line 'Protocol evidence/research/reactor_triga_jsi/validation_protocol_v2.md, fixed before anything was fitted (SHA-256 of its machine-readable copy 9a0720f1...275ddc), with two amendments'."
+  }
+ },
+ "held_back": [
+  {
+   "path": "evidence/research/reactor_triga_jsi/transcription/jsi_triga_pulses.csv",
+   "sha256": "cff9402057c12666998d2c497c22a21e664131e887bd6efc1f2c4f1b080264a3"
+  }
+ ],
+ "scored": {
+  "utc": "2026-10-10T02:09:54Z",
+  "evidence": "Birth time of evidence/research/reactor_triga_jsi/analysis_v2/out/06_score.log (19:09:54 PDT), the one scoring of the 20 held-back rows under the second protocol; score2.py and its hash record score2_hash.json were written at 02:09:22Z; RESULTS_v2.md at 02:16:14Z."
+ },
+ "forecast_first": "held",
+ "registered_by": "backfill from the record, 2026-10-15",
+ "notes": "Under the second protocol, the served card's: committed 3 min before the held-back scoring; prereg_v2.json on disk still has the committed hash, and the hashes it holds of validation_protocol_v2.md (f4e9b697...) and of the held-back table above match the disk; the model2.py and fit2.py it fingerprinted are kept unchanged as model2_prereg.py and fit2_prereg.py, while model2.py and fit2.py were changed by amendment 1. Outside Git: analysis_v2/prereg_v2_hash.txt (born 2026-10-10T01:23:03Z). The two amendments are in no commit by hash (the pass line only says they exist): amendment 1 (02f981ff..., 01:26:17Z) changes the model's step after the pulse for run time; amendment 2 (2dc1535a..., 01:38:16Z) adds a thirteenth form after the twelve registered forms had failed on the opened pulses, before any held-back outcome column was read. The held-back rows are rows of a table on disk; the description says their peak powers had been printed beside the first card before this protocol. Under the first protocol (analysis/prereg.json aeeb6730..., committed in gateway 31ca71726d8990b6568f52886c79f26919c927e8 at 2026-10-09T22:37:03Z) the first card was run on its held-back records at 22:38:33Z (analysis/out/07_heldback_runs.log); those records had been fetched from 22:23Z to 22:28:05Z, after its hash (22:22:51Z) and before that commit. Rescoring: runs_v2_v060; second party evidence/verification/second_party/V-37 and V-43. Commit times are the committer's clock. Public mark: GitHub-signed commit dee5a6dcd5a662345b67675d0c31dbe68f3e4268 at 2026-10-13T17:55:20Z."
+}

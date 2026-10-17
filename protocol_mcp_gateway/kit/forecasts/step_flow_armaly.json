@@ -1,0 +1,21 @@
+{
+ "model": "step_flow_armaly",
+ "verdict": "met",
+ "protocol": {
+  "path": "evidence/research/fluid_armaly_backward_step/validation_protocol.md",
+  "sha256": "dd3abc9bbc833852f0a53c3201994edaf23a2bd45edccf3ae3016136c3afce1a",
+  "committed": {
+   "crate": "protocol_mcp_gateway",
+   "commit": "14544db166bda87785d92c166f03794fb44f6006",
+   "utc": "2026-10-10T01:02:54Z",
+   "how": "The diff of 'Serve step_flow_armaly as the tenth solver, with a description that says it is not yet compared with the held-back measurements; this is the build that makes the scored run' adds the pass line 'Fixed on 2026-10-09 before any circle of Figure 4 was read as a number (protocol SHA-256 dd3abc9b...afce1a)'."
+  }
+ },
+ "scored": {
+  "utc": "2026-10-10T01:03:24Z",
+  "evidence": "Birth time of evidence/research/fluid_armaly_backward_step/analysis/out/scored_run/fig4_re389_digitised_auto.csv (18:03:24 PDT): the held-back circles of Figure 4 were first read as numbers by the scored run, whose folder was born at 01:03:23Z; scores.json at 01:04:25Z."
+ },
+ "forecast_first": "held",
+ "registered_by": "backfill from the record, 2026-10-15",
+ "notes": "Committed 29 s before the scored run's folder and 30 s before Figure 4 was digitised; validation_protocol.md on disk still has the committed hash. Outside Git: analysis/prereg_hash.txt (no time in it; born 2026-10-10T00:31:25Z) gives validation_protocol.md and analysis/prereg.json (d8b6ab19..., unchanged on disk); analysis/05_score_frozen_sha256.txt (born 01:03:17Z) freezes the scoring scripts. The page scan holding Figure 4 was on disk as an image from 00:25:54Z; the protocol's seal is that no circle was read as a number before the run. Figure 3 at Re 100 was opened and digitised before the protocol. A second scorer's reading followed (raw/SOURCES_ADDED_2026-10-09_second_landing.md, fix_0.7.0; evidence/verification/second_party/V-38); rescoring scored_run_v060. Commit times are the committer's clock. Public mark: GitHub-signed commit 8367c7f7d8497e3431bf110bddfa69915b288893 at 2026-10-13T17:56:15Z."
+}

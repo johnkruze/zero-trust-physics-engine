@@ -55,6 +55,7 @@ extern crate core;
 use core::prelude::v1::*;
 
 use crate::frame::LastStateFrame64;
+use crate::normal::normal_or_zero;
 
 /// Drive-mode natural frequency.
 pub const NATURAL_FREQUENCY_HZ: f64 = 80.0;
@@ -371,8 +372,25 @@ impl TesseractState {
 ///
 /// A rejected step leaves `state` and `frame` as they were. A non-finite
 /// RK4 stage is [`StepReject::NonFiniteState`].
+///
+/// A value of the landed state below the normal range is written as zero
+/// with its sign ([`crate::normal`]).
 #[must_use]
 pub fn step(
+    resonator: &Tesseract,
+    state: &mut TesseractState,
+    frame: &mut LastStateFrame64,
+    load: TesseractLoad,
+    dt_s: f64,
+) -> Result<(), StepReject> {
+    step_as_computed(resonator, state, frame, load, dt_s)?;
+    normal_or_zero_state(state);
+    Ok(())
+}
+
+/// The step as its equations compute it, before a value of the landed
+/// state below the normal range is written as zero.
+fn step_as_computed(
     resonator: &Tesseract,
     state: &mut TesseractState,
     frame: &mut LastStateFrame64,
@@ -385,6 +403,25 @@ pub fn step(
         None => return Err(StepReject::NonFiniteState),
     };
     commit(resonator, state, frame, load, dt_s, predicted)
+}
+
+/// Each value of a landed state below the normal range written as zero
+/// with its sign ([`crate::normal`]): the state carried to the next step
+/// and published holds no subnormal number.
+fn normal_or_zero_state(state: &mut TesseractState) {
+    state.t_s = normal_or_zero(state.t_s);
+    state.displacement_m = normal_or_zero(state.displacement_m);
+    state.velocity_m_s = normal_or_zero(state.velocity_m_s);
+    state.accel_m_s2 = normal_or_zero(state.accel_m_s2);
+    state.envelope_m = normal_or_zero(state.envelope_m);
+    state.kinetic_j = normal_or_zero(state.kinetic_j);
+    state.potential_j = normal_or_zero(state.potential_j);
+    state.mechanical_energy_j = normal_or_zero(state.mechanical_energy_j);
+    state.energy_anchor_j = normal_or_zero(state.energy_anchor_j);
+    state.boundary_work_j = normal_or_zero(state.boundary_work_j);
+    state.energy_defect_j = normal_or_zero(state.energy_defect_j);
+    state.residual_conservation_error = normal_or_zero(state.residual_conservation_error);
+    state.scale_factor_n = normal_or_zero(state.scale_factor_n);
 }
 
 fn validate(

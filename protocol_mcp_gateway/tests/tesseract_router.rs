@@ -113,7 +113,7 @@ async fn a_start_without_energy_defect_j_is_refused() {
         .collect();
     assert_eq!(phase, ["displacement_m", "velocity_m_s", "energy_defect_j"]);
 
-    let mut step = card["example_verify_step"].clone();
+    let mut step = card["example_compute_step"].clone();
     assert_eq!(step["parameters"]["energy_defect_j"], json!(0.0));
     step["parameters"]
         .as_object_mut()

@@ -51,6 +51,7 @@ extern crate core;
 use core::prelude::v1::*;
 
 use crate::frame::LastStateFrame64;
+use crate::normal::normal_or_zero;
 
 /// Campaign free length.
 pub const LENGTH_M: f64 = 1.20;
@@ -330,8 +331,25 @@ impl TendonState {
 /// Advance one RK4 step and write the frame.
 ///
 /// A rejected step leaves `state` and `frame` as they were.
+///
+/// A value of the landed state below the normal range is written as zero
+/// with its sign ([`crate::normal`]).
 #[must_use]
 pub fn step(
+    tendon: &Tendon,
+    state: &mut TendonState,
+    frame: &mut LastStateFrame64,
+    load: TendonLoad,
+    dt_s: f64,
+) -> Result<(), StepReject> {
+    step_as_computed(tendon, state, frame, load, dt_s)?;
+    normal_or_zero_state(state);
+    Ok(())
+}
+
+/// The step as its equations compute it, before a value of the landed
+/// state below the normal range is written as zero.
+fn step_as_computed(
     tendon: &Tendon,
     state: &mut TendonState,
     frame: &mut LastStateFrame64,
@@ -344,6 +362,25 @@ pub fn step(
         Err(reject) => return Err(reject),
     };
     commit(tendon, state, frame, load, dt_s, predicted)
+}
+
+/// Each value of a landed state below the normal range written as zero
+/// with its sign ([`crate::normal`]): the state carried to the next step
+/// and published holds no subnormal number.
+fn normal_or_zero_state(state: &mut TendonState) {
+    state.t_s = normal_or_zero(state.t_s);
+    state.elongation_m = normal_or_zero(state.elongation_m);
+    state.velocity_m_s = normal_or_zero(state.velocity_m_s);
+    state.force_n = normal_or_zero(state.force_n);
+    state.tension_n = normal_or_zero(state.tension_n);
+    state.kinetic_j = normal_or_zero(state.kinetic_j);
+    state.potential_j = normal_or_zero(state.potential_j);
+    state.mechanical_energy_j = normal_or_zero(state.mechanical_energy_j);
+    state.energy_anchor_j = normal_or_zero(state.energy_anchor_j);
+    state.boundary_work_j = normal_or_zero(state.boundary_work_j);
+    state.energy_defect_j = normal_or_zero(state.energy_defect_j);
+    state.residual_conservation_error = normal_or_zero(state.residual_conservation_error);
+    state.ultimate_margin_n = normal_or_zero(state.ultimate_margin_n);
 }
 
 fn validate(

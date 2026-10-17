@@ -48,6 +48,7 @@ extern crate core;
 use core::prelude::v1::*;
 
 use crate::frame::LastStateFrame64;
+use crate::normal::normal_or_zero;
 
 /// Bus frequency.
 pub const NOMINAL_FREQUENCY_HZ: f64 = 60.0;
@@ -381,8 +382,25 @@ impl SwingState {
 ///
 /// [`StepReject::LossOfSynchronism`] refuses a landed angle at or beyond ±π/2.
 /// A rejected step leaves `state` and `frame` as they were.
+///
+/// A value of the landed state below the normal range is written as zero
+/// with its sign ([`crate::normal`]).
 #[must_use]
 pub fn step(
+    machine: &SwingMachine,
+    state: &mut SwingState,
+    frame: &mut LastStateFrame64,
+    load: SwingLoad,
+    dt_s: f64,
+) -> Result<(), StepReject> {
+    step_as_computed(machine, state, frame, load, dt_s)?;
+    normal_or_zero_state(state);
+    Ok(())
+}
+
+/// The step as its equations compute it, before a value of the landed
+/// state below the normal range is written as zero.
+fn step_as_computed(
     machine: &SwingMachine,
     state: &mut SwingState,
     frame: &mut LastStateFrame64,
@@ -395,6 +413,24 @@ pub fn step(
         None => return Err(StepReject::NonFiniteState),
     };
     commit(machine, state, frame, load, dt_s, predicted)
+}
+
+/// Each value of a landed state below the normal range written as zero
+/// with its sign ([`crate::normal`]): the state carried to the next step
+/// and published holds no subnormal number.
+fn normal_or_zero_state(state: &mut SwingState) {
+    state.t_s = normal_or_zero(state.t_s);
+    state.delta_rad = normal_or_zero(state.delta_rad);
+    state.delta_omega_rad_s = normal_or_zero(state.delta_omega_rad_s);
+    state.pll_err_rad = normal_or_zero(state.pll_err_rad);
+    state.p_mech_pu = normal_or_zero(state.p_mech_pu);
+    state.p_elec_pu = normal_or_zero(state.p_elec_pu);
+    state.transient_energy_pu = normal_or_zero(state.transient_energy_pu);
+    state.energy_anchor_pu = normal_or_zero(state.energy_anchor_pu);
+    state.boundary_work_pu = normal_or_zero(state.boundary_work_pu);
+    state.energy_defect_pu = normal_or_zero(state.energy_defect_pu);
+    state.residual_conservation_error = normal_or_zero(state.residual_conservation_error);
+    state.synchronism_margin_rad = normal_or_zero(state.synchronism_margin_rad);
 }
 
 fn validate(

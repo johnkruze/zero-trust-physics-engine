@@ -1,0 +1,27 @@
+{
+ "model": "tokamak_vde_mast",
+ "verdict": "met in part",
+ "protocol": {
+  "path": "evidence/research/tokamak_vde_mast/FORECAST.md",
+  "sha256": "3743912cffaa1274685092dd247e5aaf596f7af0f1e8275be7a1e3ccdc4b9f70",
+  "committed": {
+   "crate": "genesis_kernel",
+   "commit": "3e3d2d7447d32ec2f905026c5c030dada7861fa5",
+   "utc": "2026-10-15T00:37:26Z",
+   "how": "A commit with no file changes, 'Forecast for tokamak_vde_mast against MAST shot 15045, fixed before scoring.', whose message carries the full SHA-256 of FORECAST.md and of analysis/measure_15045.py, greens.py, mast.py and fetch_15045.py, and says no growth rate of the card or of the measurement had been computed."
+  }
+ },
+ "held_back": [
+  {
+   "path": "evidence/research/tokamak_vde_mast/raw/FETCH_LOG.tsv",
+   "sha256": "0df512c4247a8107d3ef6130d208816834516a99c960ade0d324194d56741d7f"
+  }
+ ],
+ "scored": {
+  "utc": "2026-10-15T01:43:01Z",
+  "evidence": "Birth time of evidence/research/tokamak_vde_mast/analysis/out/scored_15045.json (18:43:01 PDT), the one comparison by analysis/score_15045.py with the run through the engine (out/runs, 01:41:32Z). The first growth-rate computations came after the commit too: the card's derivation from 00:39:39Z (out/derive_plasma.npz) and the measured growth rate at 00:45:11Z (out/measured_15045.json)."
+ },
+ "forecast_first": "held",
+ "registered_by": "backfill from the record, 2026-10-15",
+ "notes": "Committed 2 min 13 s before the first derivation output and 7 min 45 s before the measured growth rate was computed; FORECAST.md and the four scripts on disk still have the hashes in the message. The protocol is FORECAST.md (there is no validation_protocol.md in this folder). The commit was made in .build_2026-10-14/wave2_tokamak_vde (branch wave2_tokamak_vde) and is in the integration copy with the same id. The shot's 692 files were fetched from 2026-10-15T00:07:14Z to 00:29:05Z, before the forecast (raw/FETCH_LOG.tsv, above, gives the time, status and SHA-256 of each), and Windridge's published 96.3 per second, line 1's measurement, was known and quoted in the forecast. The forecast also says the scout's arithmetic on the same shot had been seen before it was written: 219 per second at onset and 94 later from a centroid of the centre-column array, 82 to 155 from EFIT's axis; what was held back was this session's own measurement rule and the card's growth rate. So the comparison is informed, not blind. The gateway commit f8a51baef5cdee8401a5a8f5a6309d323d8cf391 (02:18:52Z, after the scoring) carries the hash in the pass line. Commit times are the committer's clock. No mark for it in the local copy of the public pass-marks repository (command-center/sales/github/pass-marks/, posted 2026-10-13)."
+}

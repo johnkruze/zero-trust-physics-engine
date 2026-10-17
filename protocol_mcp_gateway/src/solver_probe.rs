@@ -239,6 +239,7 @@ pub const STAND_IN: Solver = Solver {
             sealed: true,
         },
     ],
+    door_refusals: &[],
     sections,
     validation: None,
     example,
@@ -260,7 +261,7 @@ fn sections() -> Sections {
             "rule": "The scaled sum is the last running sum.",
             "tolerance": 0.0,
             "unit": "cm",
-            "checked": "at the end",
+            "compared": "at the end",
             "refusal": null,
         }]),
         convergence: json!({ "rule": "One pass. Nothing is iterated." }),
@@ -344,7 +345,7 @@ mod tests {
     use super::{STAND_IN, stand_in};
     use crate::guard::{self, Inspection};
     use crate::keys::{self, Keys};
-    use crate::mcp_server::{dispatch, tools_in};
+    use crate::mcp_server::{dispatch_text, tools_in};
     use crate::view::View;
     use crate::{AppState, digest_hex, hosted, solution, solvers};
 
@@ -392,6 +393,7 @@ mod tests {
         /// it is an error. The local binary passes a line through
         /// `guard::inspect` and then calls `dispatch`. So does this.
         async fn local(&self, tool: &str, arguments: &str) -> (bool, String) {
+            let arguments_text = arguments;
             let line = tool_line(tool, arguments);
             match guard::inspect(line.as_bytes()) {
                 Inspection::Forward => {}
@@ -400,7 +402,7 @@ mod tests {
             }
             let arguments: Map<String, Value> = serde_json::from_str(arguments).expect("arguments");
             let state = self.state.clone();
-            let result = dispatch(&state, tool, arguments).await;
+            let result = dispatch_text(&state, tool, arguments, Some(arguments_text.to_string())).await;
             let value = serde_json::to_value(&result).expect("the result encodes");
             (
                 value["isError"] == json!(true),
@@ -442,16 +444,19 @@ mod tests {
         }
 
         async fn verdict(&self, body: &Value) -> Value {
-            let (status, text) = self
-                .all("/verify_solution", "verify_solution", &body.to_string())
-                .await;
+            self.verdict_text(&body.to_string()).await
+        }
+
+        /// The long form of an answer sent as the text given.
+        async fn verdict_text(&self, body: &str) -> Value {
+            let (status, text) = self.all("/verify_solution", "verify_solution", body).await;
             assert_eq!(status, 200, "{text}");
             serde_json::from_str(&text).expect("a report")
         }
 
         async fn assert_fails(&self, body: &Value, part: &str, label: &str) {
             let report = self.verdict(body).await;
-            assert_eq!(report, json!({ "holds": false, "cause": part, "checked": crate::solution::WHOLE_SOLUTION_CHECKED }), "{label}");
+            assert_eq!(report, json!({ "holds": false, "values_hold": false, "cause": part, "compared": crate::solution::WHOLE_SOLUTION_COMPARED }), "{label}");
         }
 
         /// A posted solution that is refused before its proof is recomputed.
@@ -511,8 +516,8 @@ mod tests {
             .iter()
             .map(|row| row["solver"].as_str().expect("a name"))
             .collect();
-        assert_eq!(names, ["atom_dft", "ablator_slab", "journal_bearing_sheffield", "propeller_apc_10x7e", "modulus_bam_s355", "seawater_column", "argon_pair_gas", "fusion_pb11_lhd", "fusion_pb11_thermal", "step_flow_armaly", "culture_trichoderma_ambr250", "tokamak_dt_beam_target", "pipe_flow_superpipe", "stand_in"]);
-        assert_eq!(listed["solvers"][13]["summary"], STAND_IN.summary);
+        assert_eq!(names, ["atom_dft", "ablator_slab", "journal_bearing_sheffield", "propeller_apc_10x7e", "modulus_bam_s355", "seawater_column", "argon_pair_gas", "fusion_pb11_lhd", "fusion_pb11_thermal", "step_flow_armaly", "culture_trichoderma_ambr250", "tokamak_dt_beam_target", "pipe_flow_superpipe", "culture_trichoderma_atp", "junction_nist_b7_s2", "water_hammer_oil_line", "orifice_air_chamber", "pneumatic_hose_resonance", "blast_wave_tnt_air", "stress_plate_hole_s235", "stress_plate_hole_s235_elastic", "icf_hotspot_burn", "ln2_line_dlr_fttf", "plasma_sheath_ram_c2", "stand_in"]);
+        assert_eq!(listed["solvers"][24]["summary"], STAND_IN.summary);
         assert!(solvers::is_known("stand_in"));
         // A view lists what it holds, in the engine's order.
         let one = View::limited([], ["stand_in".to_string()]);
@@ -634,7 +639,13 @@ mod tests {
             "additionalProperties": false
         });
         let mut solve = request.clone();
-        solve["description"] = json!("One sealed solution. The same request as POST /solve.");
+        solve["description"] = json!("One sealed solution.");
+        // The solve says at its parameters the names of an input left out
+        // and of one given with a choice it does not go with.
+        solve["properties"]["parameters"]["description"] =
+            json!(format!("{} {}", crate::mcp_server::SOLVE_MISSING_WORDS, crate::signed_load::SOLVE_SAYS));
+        // An instrument's signature may stand beside the inputs.
+        solve["properties"]["parameters"]["properties"]["signed"] = crate::signed_load::schema();
         assert_eq!(schema_of(&one, "solve"), solve);
         // A whole solution's inputs are hashed, not solved: a plain object.
         assert_eq!(schema_of(&one, "verify_solution")["properties"]["inputs"]["type"], "object");
@@ -646,9 +657,14 @@ mod tests {
 
         // The atom alone: the schema a served build gives, byte for byte.
         let atom = View::limited([], ["atom_dft".to_string()]);
+        // The schema of signed and its words stand beside the atom's one field.
         assert_eq!(
             serde_json::to_string(&schema_of(&atom, "solve")).unwrap(),
-            r#"{"type":"object","properties":{"solver":{"const":"atom_dft"},"parameters":{"type":"object","properties":{"atomic_number":{"type":"integer","minimum":1,"maximum":18}},"required":["atomic_number"],"additionalProperties":false},"example":{"type":"string","description":"In place of parameters: the name of one of the solver's worked examples as describe_solver keys it (example_solve, or a key that begins example_solve_). The request is filled with that example's parameters, and the filled request is the one solved, sealed and returned as inputs."}},"required":["solver"],"additionalProperties":false,"description":"One sealed solution. The same request as POST /solve."}"#
+            format!(
+                r#"{{"type":"object","properties":{{"solver":{{"const":"atom_dft"}},"parameters":{{"type":"object","properties":{{"atomic_number":{{"type":"integer","minimum":1,"maximum":18}},"signed":{}}},"required":["atomic_number"],"additionalProperties":false,"description":"A required input left out is refused as InputMissing, and an input given with a choice it does not go with as InputNotWithChoice, each in a sentence that names the input, and a solver the engine does not serve as UnknownSolver; nothing is filled in. {}"}},"example":{{"type":"string","description":"In place of parameters: the name of one of the solver's worked examples as describe_solver keys it (example_solve, or a key that begins example_solve_). The request is filled with that example's parameters, and the filled request is the one solved, sealed and returned as inputs."}}}},"required":["solver"],"additionalProperties":false,"description":"One sealed solution."}}"#,
+                serde_json::to_string(&crate::signed_load::schema()).unwrap(),
+                crate::signed_load::SOLVE_SAYS.replace('"', "\\\"")
+            )
         );
         assert_eq!(
             serde_json::to_string(&schema_of(&atom, "describe_solver")).unwrap(),
@@ -670,8 +686,10 @@ mod tests {
             json!({
                 "type": "object",
                 "description": format!(
-                    "The inputs of the solver named in 'solver', each a number, a whole number, a word, a flag or an array as describe_solver gives it, and no other key. {}",
-                    crate::solvers::SOLVER_NUMBER_RULE
+                    "The inputs of the solver named in 'solver', each a number, a whole number, a word, a flag or an array as describe_solver gives it, and no other key but signed. {} {} {}",
+                    crate::solvers::SOLVER_NUMBER_RULE,
+                    crate::mcp_server::SOLVE_MISSING_WORDS,
+                    crate::signed_load::SOLVE_SAYS
                 )
             })
         );
@@ -739,13 +757,17 @@ mod tests {
         assert_eq!(body["seal_parts"]["result"], digest_hex(result.as_bytes()));
         let whole = format!("{request}{version}{invariants}{result}{field}{tail}");
         assert_eq!(body["solution_seal"], digest_hex(whole.as_bytes()));
-        // Worked out with Python's hashlib, with the solvers at version 0.8.0;
-        // with 0.7.0 put back the same rule gives the seal pinned before,
-        // 07d853e7...c096. Of the six parts only the version's has moved.
-        assert_eq!(body["engine_version"], "genesis_solvers_v0.8.0");
+        // Worked out with Python's hashlib, with the solvers at version 0.12.0
+        // (the canonical math, for engine 0.14.0); with 0.11.0 put back the
+        // same rule gives the seal pinned for engine 0.13.0, 2cb15626...920d,
+        // with 0.10.0 the seal pinned for engine 0.12.0, 696e29da...a375,
+        // with 0.9.0 the seal pinned before it, 8b8feb69...8e08, and with
+        // 0.8.0 dddd976a...7170. Of the six parts only the version's has
+        // moved.
+        assert_eq!(body["engine_version"], "genesis_solvers_v0.12.0");
         assert_eq!(
             body["solution_seal"],
-            "dddd976acc1fca1c5e3aa10da46164736deed3ec4fab00360c96cfd0fed07170"
+            "27ebb2d41a8e530643cc3914a38f1e7804739cb7fe905400ae9e096865473bb3"
         );
 
         // The receipt covers the bytes before it.
@@ -755,7 +777,7 @@ mod tests {
             .expect("the receipt is last");
         assert_eq!(digest_hex(format!("{document}}}").as_bytes()), receipt);
 
-        assert_eq!(doors.verdict(&body).await, json!({ "holds": true, "cause": null, "checked": crate::solution::WHOLE_SOLUTION_CHECKED }));
+        assert_eq!(doors.verdict_text(&text).await, json!({ "holds": true, "values_hold": true, "cause": null, "compared": crate::solution::WHOLE_SOLUTION_COMPUTED }));
 
         // The description is the same bytes on each connection too.
         let (status, described) = doors
@@ -779,21 +801,21 @@ mod tests {
         assert_ne!(other["solution_seal"], body["solution_seal"]);
 
         // No sample at all is a solution too: two empty arrays, sealed.
-        let (_, empty) = doors.solved(&with("samples", json!([]))).await;
+        let (empty_text, empty) = doors.solved(&with("samples", json!([]))).await;
         assert_eq!(empty["result"]["scaled_hex"], json!([]));
         assert_eq!(empty["result"]["running_hex"], json!([]));
         assert_eq!(
             empty["seal_parts"]["result"],
             digest_hex(b"result.running_hex:[]\nresult.sample_count_hex:0000000000000000\nresult.scaled_hex:[]\nresult.scaled_sum_hex:0000000000000000\n")
         );
-        assert_eq!(doors.verdict(&empty).await, json!({ "holds": true, "cause": null, "checked": crate::solution::WHOLE_SOLUTION_CHECKED }));
+        assert_eq!(doors.verdict_text(&empty_text).await, json!({ "holds": true, "values_hold": true, "cause": null, "compared": crate::solution::WHOLE_SOLUTION_COMPUTED }));
     }
 
     #[tokio::test]
     async fn verify_solution_refuses_one_item_changed_removed_added_or_moved() {
         let doors = Connections::open().await;
-        let (_, body) = doors.solved(&sample_request()).await;
-        assert_eq!(doors.verdict(&body).await, json!({ "holds": true, "cause": null, "checked": crate::solution::WHOLE_SOLUTION_CHECKED }));
+        let (text, body) = doors.solved(&sample_request()).await;
+        assert_eq!(doors.verdict_text(&text).await, json!({ "holds": true, "values_hold": true, "cause": null, "compared": crate::solution::WHOLE_SOLUTION_COMPUTED }));
 
         let one = "3ff0000000000000";
         let edits: Vec<(&str, &str, Value)> = vec![
@@ -943,10 +965,10 @@ mod tests {
             (extra_at_the_top.to_string(), unknown("atomic_number")),
             (the_atom_s_input.to_string(), unknown("atomic_number")),
             // A missing field. Nothing is filled in.
-            (without("gain"), "Missing required parameter: 'gain'".to_string()),
-            (without("mode"), "Missing required parameter: 'mode'".to_string()),
-            (without("samples"), "Missing required parameter: 'samples'".to_string()),
-            (json!({ "solver": "stand_in" }).to_string(), "Missing required parameter: 'parameters' (or 'example', the name of a worked example describe_solver lists)".to_string()),
+            (without("gain"), "Missing required parameter: 'gain' (InputMissing).".to_string()),
+            (without("mode"), "Missing required parameter: 'mode' (InputMissing).".to_string()),
+            (without("samples"), "Missing required parameter: 'samples' (InputMissing).".to_string()),
+            (json!({ "solver": "stand_in" }).to_string(), "Missing required parameter: 'parameters' (or 'example', the name of a worked example describe_solver lists) (InputMissing).".to_string()),
             (
                 json!({ "solver": "stand_in", "parameters": [2.0, "plain", [1.5]] }).to_string(),
                 "Physical Violation: 'parameters' must be a JSON object.".to_string(),
@@ -992,11 +1014,13 @@ mod tests {
             ),
             (
                 with("samples", json!([1.5, 2.5, 100.5])).to_string(),
-                "Physical Violation: 'samples[2]' 100.5 is outside -100..=100 cm (SamplesOutOfRange).".to_string(),
+                // Re-pinned for 0.10.1: a range the door writes is written in words.
+                "Physical Violation: 'samples[2]' 100.5 is outside -100 to 100 cm (SamplesOutOfRange).".to_string(),
             ),
             (
                 with("samples", json!([-101, 2.5])).to_string(),
-                "Physical Violation: 'samples[0]' -101 is outside -100..=100 cm (SamplesOutOfRange).".to_string(),
+                // Re-pinned for 0.10.1: a range the door writes is written in words.
+                "Physical Violation: 'samples[0]' -101 is outside -100 to 100 cm (SamplesOutOfRange).".to_string(),
             ),
             (
                 with("samples", json!([1.5, "2.5"])).to_string(),
@@ -1017,15 +1041,18 @@ mod tests {
             // A number outside its range. No value is moved to a bound.
             (
                 with("gain", json!(4.5)).to_string(),
-                "Physical Violation: 'gain' 4.5 is outside 0.5..=4 (GainOutOfRange).".to_string(),
+                // Re-pinned for 0.10.1: a range the door writes is written in words.
+                "Physical Violation: 'gain' 4.5 is outside 0.5 to 4 (GainOutOfRange).".to_string(),
             ),
             (
                 with("gain", json!(0.4999999999999999)).to_string(),
-                "Physical Violation: 'gain' 0.4999999999999999 is outside 0.5..=4 (GainOutOfRange).".to_string(),
+                // Re-pinned for 0.10.1: a range the door writes is written in words.
+                "Physical Violation: 'gain' 0.4999999999999999 is outside 0.5 to 4 (GainOutOfRange).".to_string(),
             ),
             (
                 with("gain", json!(-2)).to_string(),
-                "Physical Violation: 'gain' -2 is outside 0.5..=4 (GainOutOfRange).".to_string(),
+                // Re-pinned for 0.10.1: a range the door writes is written in words.
+                "Physical Violation: 'gain' -2 is outside 0.5 to 4 (GainOutOfRange).".to_string(),
             ),
             (
                 with("gain", json!("2.0")).to_string(),
@@ -1074,11 +1101,11 @@ mod tests {
         let (status, text) = doors
             .all("/solve", "solve", r#"{"solver":"stand_out","parameters":{}}"#)
             .await;
-        assert_eq!((status, text.as_str()), (404, "Solver not recognized"));
+        assert_eq!((status, text.as_str()), (404, "Solver not recognized (UnknownSolver)."));
         let atom = r#"{"solver":"atom_dft","parameters":{"atomic_number":1}}"#;
         let (is_error, hidden) = doors.hosted("solve", atom).await;
         assert!(is_error);
-        assert_eq!(hidden, "Solver not recognized");
+        assert_eq!(hidden, "Solver not recognized (UnknownSolver).");
     }
 
     /// The stand-in refuses a sum above its limit only once it has computed
@@ -1087,7 +1114,7 @@ mod tests {
     async fn a_refusal_by_the_solver_is_sealed_under_its_name() {
         let doors = Connections::open().await;
         let request = json!({ "solver": "stand_in", "parameters": { "gain": 4.0, "mode": "plain", "samples": [50, 60, 70] } });
-        let (_, body) = doors.solved(&request).await;
+        let (text, body) = doors.solved(&request).await;
         assert_eq!(body["outcome"], "refused");
         assert_eq!(body["reject"], "SumTooLarge");
         assert_eq!(
@@ -1110,7 +1137,7 @@ mod tests {
         let mut relabelled = body.clone();
         relabelled["engine_version"] = json!("genesis_solvers_v0.4.0");
         doors.assert_fails(&relabelled, "engine_version", "the engine version changed").await;
-        assert_eq!(doors.verdict(&body).await, json!({ "holds": true, "cause": null, "checked": crate::solution::WHOLE_SOLUTION_CHECKED }));
+        assert_eq!(doors.verdict_text(&text).await, json!({ "holds": true, "values_hold": true, "cause": null, "compared": crate::solution::WHOLE_SOLUTION_COMPUTED }));
 
         let mut renamed = body.clone();
         renamed["reject"] = json!("SamplesOutOfRange");
@@ -1301,6 +1328,7 @@ mod switched {
                 sealed: false,
             },
         ],
+        door_refusals: &[],
         sections,
         validation: None,
         example,
@@ -1431,22 +1459,22 @@ mod switched_tests {
 
         assert_eq!(
             refused(with(round(), "side_cm", json!(3.0))),
-            "Physical Violation: 'side_cm' is an input only when 'shape' is \"square\"; this request has 'shape' \"round\"."
+            "Physical Violation: 'side_cm' is an input only when 'shape' is \"square\"; this request has 'shape' \"round\" (InputNotWithChoice)."
         );
         assert_eq!(
             refused(with(round(), "hollow", json!(false))),
-            "Physical Violation: 'hollow' is an input only when 'shape' is \"square\"; this request has 'shape' \"round\"."
+            "Physical Violation: 'hollow' is an input only when 'shape' is \"square\"; this request has 'shape' \"round\" (InputNotWithChoice)."
         );
         assert_eq!(
             refused(with(square(), "radius_cm", json!(2.0))),
-            "Physical Violation: 'radius_cm' is an input only when 'shape' is \"round\"; this request has 'shape' \"square\"."
+            "Physical Violation: 'radius_cm' is an input only when 'shape' is \"round\"; this request has 'shape' \"square\" (InputNotWithChoice)."
         );
         // A key of the choice made is required, and nothing is filled in.
-        assert_eq!(refused(without(round(), "radius_cm")), "Missing required parameter: 'radius_cm'");
-        assert_eq!(refused(without(square(), "side_cm")), "Missing required parameter: 'side_cm'");
-        assert_eq!(refused(without(square(), "hollow")), "Missing required parameter: 'hollow'");
-        assert_eq!(refused(without(square(), "return_marks")), "Missing required parameter: 'return_marks'");
-        assert_eq!(refused(without(round(), "shape")), "Missing required parameter: 'shape'");
+        assert_eq!(refused(without(round(), "radius_cm")), "Missing required parameter: 'radius_cm' (InputMissing).");
+        assert_eq!(refused(without(square(), "side_cm")), "Missing required parameter: 'side_cm' (InputMissing).");
+        assert_eq!(refused(without(square(), "hollow")), "Missing required parameter: 'hollow' (InputMissing).");
+        assert_eq!(refused(without(square(), "return_marks")), "Missing required parameter: 'return_marks' (InputMissing).");
+        assert_eq!(refused(without(round(), "shape")), "Missing required parameter: 'shape' (InputMissing).");
         // A key in no list, and a choice the switch does not have.
         assert_eq!(
             refused(with(round(), "corner_cm", json!(1.0))),
@@ -1482,24 +1510,25 @@ mod switched_tests {
 
         assert_eq!(
             refused(without(rounded.clone(), "corner_radius_cm")),
-            "Missing required parameter: 'corner_radius_cm'"
+            "Missing required parameter: 'corner_radius_cm' (InputMissing)."
         );
-        assert_eq!(refused(without(square(), "corners")), "Missing required parameter: 'corners'");
+        assert_eq!(refused(without(square(), "corners")), "Missing required parameter: 'corners' (InputMissing).");
         assert_eq!(
             refused(with(square(), "corner_radius_cm", json!(0.5))),
-            "Physical Violation: 'corner_radius_cm' is an input only when 'corners' is \"rounded\"; this request has 'corners' \"sharp\"."
+            "Physical Violation: 'corner_radius_cm' is an input only when 'corners' is \"rounded\"; this request has 'corners' \"sharp\" (InputNotWithChoice)."
         );
         assert_eq!(
             refused(with(round(), "corner_radius_cm", json!(0.5))),
-            "Physical Violation: 'corner_radius_cm' is an input only when 'corners' is \"rounded\"; this request has no 'corners'."
+            "Physical Violation: 'corner_radius_cm' is an input only when 'corners' is \"rounded\"; this request has no 'corners' (InputNotWithChoice)."
         );
         assert_eq!(
             refused(with(round(), "corners", json!("rounded"))),
-            "Physical Violation: 'corners' is an input only when 'shape' is \"square\"; this request has 'shape' \"round\"."
+            "Physical Violation: 'corners' is an input only when 'shape' is \"square\"; this request has 'shape' \"round\" (InputNotWithChoice)."
         );
         assert_eq!(
             refused(with(rounded.clone(), "corner_radius_cm", json!(0.6))),
-            "Physical Violation: 'corner_radius_cm' 0.6 is outside 0.1..=0.5 cm (SizeOutOfRange)."
+            // Re-pinned for 0.10.1: a range the door writes is written in words.
+            "Physical Violation: 'corner_radius_cm' 0.6 is outside 0.1 to 0.5 cm (SizeOutOfRange)."
         );
         assert_eq!(
             refused(with(square(), "corners", json!("bevelled"))),
@@ -1544,7 +1573,8 @@ mod switched_tests {
         );
         assert_eq!(
             refused(with(round(), "marks_cm", json!([1, 11]))),
-            "Physical Violation: 'marks_cm[1]' 11 is outside 0..=10 cm (MarksOutOfRange)."
+            // Re-pinned for 0.10.1: a range the door writes is written in words.
+            "Physical Violation: 'marks_cm[1]' 11 is outside 0 to 10 cm (MarksOutOfRange)."
         );
         for marks in [json!([0, 10]), json!([1, 2, 3, 4])] {
             read(with(round(), "marks_cm", marks));
@@ -1558,7 +1588,8 @@ mod switched_tests {
     fn bounds_the_check_asks_are_asked_by_the_check_and_by_nothing_else() {
         assert_eq!(
             refused(with(round(), "radius_cm", json!(5.0))),
-            "Physical Violation: 'radius_cm' 5.0 is outside 0.5..=4 cm (SizeOutOfRange)."
+            // Re-pinned for 0.10.1: a range the door writes is written in words.
+            "Physical Violation: 'radius_cm' 5.0 is outside 0.5 to 4 cm (SizeOutOfRange)."
         );
         assert_eq!(
             refused(with(square(), "side_cm", json!(9.0))),
@@ -1648,7 +1679,8 @@ mod switched_tests {
                 },
                 "required": ["shape", "marks_cm", "return_marks"],
                 "additionalProperties": false,
-                "description": "Every key in the required list, and when shape is round also radius_cm, and when shape is square also side_cm, hollow, corners, and when corners is rounded also corner_radius_cm. A key that goes with the other choice is refused by name."
+                // Such a key is refused in a sentence that names the key, as InputNotWithChoice, and the schema says so.
+                "description": "Every key in the required list, and when shape is round also radius_cm, and when shape is square also side_cm, hollow, corners, and when corners is rounded also corner_radius_cm. A key that goes with the other choice is refused in a sentence that names the key, as InputNotWithChoice."
             })
         );
         let text = schema.to_string();

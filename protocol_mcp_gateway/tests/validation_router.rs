@@ -121,7 +121,7 @@ async fn the_run_inside_carries_the_run_seal_of_the_same_run_alone_on_all_thirty
     assert_eq!(status, 200);
     let listed: Value = serde_json::from_str(&listed).unwrap();
     let cards = listed["cards"].as_array().unwrap();
-    assert_eq!(cards.len(), 31);
+    assert_eq!(cards.len(), 37);
     let mut quantities_checked = 0;
     for pair in cards {
         let (domain, card) = (pair["domain"].as_str().unwrap(), pair["card"].as_str().unwrap());
@@ -483,7 +483,7 @@ async fn every_refusal_is_by_name() {
         (
             "no component on a 3-vector",
             request(&ti64, "position_m", good.clone()),
-            "Missing required parameter: 'component'",
+            "Missing required parameter: 'component' (InputMissing).",
         ),
         (
             "a component of 3",
@@ -546,7 +546,7 @@ async fn every_refusal_is_by_name() {
         (
             "a measurement without a value",
             measured(json!([{ "step": 2 }])),
-            "Missing required parameter: 'measurements[0].value'",
+            "Missing required parameter: 'measurements[0].value' (InputMissing).",
         ),
         (
             "a value that is a string",
@@ -561,17 +561,17 @@ async fn every_refusal_is_by_name() {
         (
             "a missing run",
             json!({ "quantity": "temperature_k", "measurements": good.clone() }),
-            "Missing required parameter: 'run'",
+            "Missing required parameter: 'run' (InputMissing).",
         ),
         (
             "a missing quantity",
             json!({ "run": run.clone(), "measurements": good.clone() }),
-            "Missing required parameter: 'quantity'",
+            "Missing required parameter: 'quantity' (InputMissing).",
         ),
         (
             "missing measurements",
             json!({ "run": run.clone(), "quantity": "temperature_k" }),
-            "Missing required parameter: 'measurements'",
+            "Missing required parameter: 'measurements' (InputMissing).",
         ),
         (
             "a run refused as run_trajectory refuses it",
@@ -701,6 +701,8 @@ async fn the_answer_has_its_keys_in_order_and_no_verdict() {
             "max_abs_error_step",
             "model_values",
             "model_values_hex",
+            "load_source",
+            "measurement_source",
             "measurements_sha256",
             "validation_seal",
             "does_not_show",
@@ -1007,4 +1009,481 @@ async fn the_route_takes_a_body_of_more_than_2_mib() {
     body["note"] = json!("a".repeat(3 * 1024 * 1024));
     let text = refused(&base, &body).await;
     assert_eq!(text, "Physical Violation: 'note' is not a field of this request.");
+}
+
+/// The salt of the worked commitment of `REFERENCE.md`, "A commitment to the
+/// measurements": sixteen bytes everyone knows, for the example only.
+const WORKED_SALT: &str = "000102030405060708090a0b0c0d0e0f";
+
+/// The worked comparison of `REFERENCE.md`, as text.
+const WORKED: &str = r#"{"run":{"domain":"energy","card":"thermal","initial":{"temperature_k":293.15},"dt_s":0.1,"segments":[{"steps":5,"load":{"heat_power_w":5.0,"ambient_k":293.15}}],"record_every":1},"quantity":"temperature_k","measurements":[{"step":1,"value":293.2},{"step":3,"value":293.3},{"step":5,"value":293.4}]}"#;
+
+/// The commitment of the worked measurements under the worked salt, by the
+/// test's own arithmetic: the tag line, the committed text written out by
+/// hand, a line break and the salt's sixteen bytes.
+fn worked_commitment() -> String {
+    let mut bytes = b"zero-trust-physics/measurement-commitment/v1\n".to_vec();
+    bytes.extend_from_slice(br#"{"component":null,"measurements":[{"step":x3ff0000000000000,"value":x4072533333333333},{"step":x4008000000000000,"value":x407254cccccccccd},{"step":x4014000000000000,"value":x4072566666666666}],"quantity":"temperature_k"}"#);
+    bytes.push(b'\n');
+    bytes.extend_from_slice(&hex::decode(WORKED_SALT).unwrap());
+    assert_eq!(bytes.len(), 283);
+    sha256_hex(&bytes)
+}
+
+/// `text`, a request written as JSON text, with `"commitment": <commitment>`
+/// written in before its last brace.
+fn with_commitment(text: &str, commitment: &Value) -> String {
+    format!("{},\"commitment\":{}}}", text.strip_suffix('}').unwrap(), serde_json::to_string(commitment).unwrap())
+}
+
+/// The saved answers of the served engine 0.12.0, each with the request it
+/// answered: comparisons sent without a commitment.
+fn served_0120_answers() -> Vec<Value> {
+    let file = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/validation_0120/answers.jsonl");
+    std::fs::read_to_string(file)
+        .unwrap()
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect()
+}
+
+/// The fields of an answer of the served 0.12.0 that carry the engine's
+/// version, and so are the fields a build of another version writes
+/// otherwise. On a comparison of a run: `engine_version` and
+/// `receipt_sha256`, the receipt over every byte; such a comparison holds no
+/// seal that covers the version, so its `run_seal`, `measurements_sha256`
+/// and `validation_seal` are held byte for byte with every other field. On a
+/// comparison of a plan of solves, those two and `dataset_seal`, whose
+/// counts carry the engine version and whose rows' leaves carry solution
+/// seals that cover the solvers' version, and `validation_seal`, which
+/// covers that dataset seal in the place of a run seal.
+const VERSION_FIELDS_OF_A_RUN: &[&str] = &["engine_version", "receipt_sha256"];
+const VERSION_FIELDS_OF_SOLVES: &[&str] = &["engine_version", "dataset_seal", "validation_seal", "receipt_sha256"];
+/// The fields of the served 0.12.0's comparison of a plan of solves that
+/// canonical math moved (genesis_solvers 0.12.0 computes with
+/// genesis_kernel::math): the model value, neon's total energy, and the
+/// statistics over it. Every other byte is 0.12.0's.
+const MOVED_BY_CANONICAL_MATH: &[&str] = &[
+    "rms_error",
+    "rms_error_hex",
+    "mean_signed_error",
+    "mean_signed_error_hex",
+    "max_abs_error",
+    "max_abs_error_hex",
+    "model_values",
+    "model_values_hex",
+];
+
+/// `saved`, an answer's text, with the value of each of `fields` written as
+/// `now` holds it, every other byte as it came.
+fn with_fields_of(saved: &str, now: &Value, fields: &[&str]) -> String {
+    let parsed: Value = serde_json::from_str(saved).unwrap();
+    let mut text = saved.to_string();
+    for field in fields {
+        let was = format!("\"{field}\":{}", serde_json::to_string(&parsed[*field]).unwrap());
+        assert_eq!(text.matches(&was).count(), 1, "{field}");
+        text = text.replacen(&was, &format!("\"{field}\":{}", serde_json::to_string(&now[*field]).unwrap()), 1);
+    }
+    text
+}
+
+/// `saved`, an answer's text, with each of `fields` (a number or an array of
+/// numbers) written as the text `now` writes it, every other byte as it came.
+fn with_written_values_of(saved: &str, now: &str, fields: &[&str]) -> String {
+    let written = |text: &str, field: &str| -> (usize, usize) {
+        let key = format!("\"{field}\":");
+        assert_eq!(text.matches(&key).count(), 1, "{field}");
+        let start = text.find(&key).unwrap() + key.len();
+        let end = if text[start..].starts_with('[') {
+            start + text[start..].find(']').unwrap() + 1
+        } else {
+            start + text[start..].find([',', '}']).unwrap()
+        };
+        (start, end)
+    };
+    let mut text = saved.to_string();
+    for field in fields {
+        let (from, to) = written(now, field);
+        let (start, end) = written(&text, field);
+        text.replace_range(start..end, &now[from..to]);
+    }
+    text
+}
+
+/// A hex value of a solution as its seal's line writes it: 16 digits, or an
+/// array in brackets, item by item.
+fn hex_line(value: &Value) -> String {
+    match value {
+        Value::Array(items) => format!("[{}]", items.iter().map(hex_line).collect::<Vec<_>>().join(",")),
+        other => other.as_str().unwrap().to_string(),
+    }
+}
+
+/// The solution seal of a solve's answer at `version`, by the rule of
+/// REFERENCE.md, "A solution": the text of the request, the version line,
+/// the hex lines of the invariants and the result, the field and the tail.
+fn solution_seal_at(answer: &Value, version: &str) -> String {
+    let mut text = genesis_seal::sealed_form::sealed_form(&answer["inputs"]);
+    text.push_str(&format!("engine_version:{version}\n"));
+    for section in ["invariants", "result"] {
+        if let Some(values) = answer[section].as_object() {
+            let mut keys: Vec<&String> = values.keys().filter(|key| key.ends_with("_hex")).collect();
+            keys.sort();
+            for key in keys {
+                text.push_str(&format!("{section}.{key}:{}\n", hex_line(&values[key])));
+            }
+        }
+    }
+    text.push_str(answer["field_sha256"].as_str().unwrap_or("null"));
+    text.push_str(&format!(
+        "{{\"outcome\":{},\"iterations\":{},\"reject\":{}}}",
+        answer["outcome"], answer["iterations"], answer["reject"]
+    ));
+    sha256_hex(text.as_bytes())
+}
+
+/// The validation seal of a comparison of a plan of solves with `dataset_seal`
+/// in the place of a run seal, by the test's own arithmetic over the
+/// answer's parts.
+fn validation_seal_of_solves(answer: &Value, dataset_seal: &str) -> String {
+    let mut parts = String::new();
+    parts.push_str(dataset_seal);
+    parts.push_str(answer["measurements_sha256"].as_str().unwrap());
+    parts.push_str(&format!(
+        "{{\"quantity\":{},\"component\":{},\"outcome\":\"solves\",\"steps_landed\":{},\"reject\":null,\"compared\":{},\"not_reached\":{},\"max_abs_error_step\":{}}}",
+        answer["inputs"]["quantity"],
+        answer["inputs"].get("component").unwrap_or(&Value::Null),
+        answer["converged"],
+        answer["compared"],
+        answer["not_reached"],
+        answer["max_abs_error_row"]
+    ));
+    for key in ["rms_error_hex", "mean_signed_error_hex", "max_abs_error_hex"] {
+        parts.push_str(&format!("{key}:{}\n", answer[key].as_str().unwrap()));
+    }
+    let joined: Vec<&str> = answer["model_values_hex"].as_array().unwrap().iter().map(|hex| hex.as_str().unwrap()).collect();
+    parts.push_str(&sha256_hex(joined.join(",").as_bytes()));
+    sha256_hex(parts.as_bytes())
+}
+
+// V16
+#[tokio::test]
+async fn a_comparison_without_a_commitment_gives_the_bytes_the_served_0_12_0_gave() {
+    let base = spawn_app().await;
+    let saved = served_0120_answers();
+    assert_eq!(saved.len(), 7);
+    for item in &saved {
+        let label = item["label"].as_str().unwrap();
+        let answer = item["answer"].as_str().unwrap();
+        let (status, text) = post_text(&base, "/validate_series", item["request"].as_str().unwrap()).await;
+        assert_eq!(status, 200, "{label}: {text}");
+        let was: Value = serde_json::from_str(answer).unwrap();
+        let now: Value = serde_json::from_str(&text).unwrap();
+        assert!(was.get("commitment_opened").is_none(), "{label}");
+        // Every byte but the fields that carry the version is the byte the
+        // served 0.12.0 gave.
+        let fields = if was.get("dataset_seal").is_some() { VERSION_FIELDS_OF_SOLVES } else { VERSION_FIELDS_OF_A_RUN };
+        let moved: &[&str] = if was.get("dataset_seal").is_some() { MOVED_BY_CANONICAL_MATH } else { &[] };
+        assert_eq!(text, with_fields_of(&with_written_values_of(answer, &text, moved), &now, fields), "{label}");
+        // Those fields are this engine's: its name, and a receipt over these very bytes.
+        assert_eq!(now["engine_version"], protocol_mcp_gateway::ENGINE_VERSION, "{label}");
+        let document = text.rsplit_once(",\"receipt_sha256\":").unwrap().0;
+        assert_eq!(now["receipt_sha256"], sha256_hex(format!("{document}}}").as_bytes()), "{label}");
+        if was["engine_version"] == protocol_mcp_gateway::ENGINE_VERSION {
+            assert_eq!(text, answer, "{label}");
+        }
+    }
+
+    // The seals of the plan of solves moved by the version and by canonical
+    // math. Neon's total energy, the model value compared, was
+    // -128.23348126979533 Ha (c0600778adb63ffc) under 0.12.0 and is
+    // -128.23348126983458 Ha (c0600778adb64561) under genesis_kernel::math,
+    // 1,381 units in the last place, 3.1e-13 of it, and the statistics over
+    // it move with it. The validation seal of the saved answer's parts is the
+    // one 0.12.0 gave, and with this engine's parts and dataset seal in their
+    // place, this engine's. That dataset seal is the plan's own, run by
+    // run_dataset; with 0.12.0's version put back in its counts
+    // (genesis_kernel_v0.11.0) and in its row's solution seal
+    // (genesis_solvers_v0.10.0), it is not 0.12.0's: the row's numbers moved.
+    let item = saved.iter().find(|item| item["label"] == "a plan of solves").expect("a plan of solves");
+    let was: Value = serde_json::from_str(item["answer"].as_str().unwrap()).unwrap();
+    let (_, text) = post_text(&base, "/validate_series", item["request"].as_str().unwrap()).await;
+    let now: Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(was["model_values_hex"], json!(["c0600778adb63ffc"]));
+    assert_eq!(now["model_values_hex"], json!(["c0600778adb64561"]));
+    assert_eq!(validation_seal_of_solves(&was, was["dataset_seal"].as_str().unwrap()), was["validation_seal"]);
+    assert_eq!(validation_seal_of_solves(&now, now["dataset_seal"].as_str().unwrap()), now["validation_seal"]);
+    let request: Value = serde_json::from_str(item["request"].as_str().unwrap()).unwrap();
+    let mut plan = request["solves"].clone();
+    plan["answer"] = json!("full");
+    let (status, dataset_text) = post_text(&base, "/run_dataset", &plan.to_string()).await;
+    assert_eq!(status, 200, "{dataset_text}");
+    let dataset: Value = serde_json::from_str(&dataset_text).unwrap();
+    let head = &dataset["head"];
+    assert_eq!(head["dataset_seal"], now["dataset_seal"]);
+    let rows = dataset["rows"].as_array().unwrap();
+    assert_eq!(rows.len(), 1);
+    let (_, solved) = post_text(&base, "/solve", &rows[0]["request"].to_string()).await;
+    let solved: Value = serde_json::from_str(&solved).unwrap();
+    let solvers_version = format!("genesis_solvers_v{}", genesis_solvers::VERSION);
+    assert_eq!(solved["engine_version"], solvers_version);
+    assert_eq!(solution_seal_at(&solved, &solvers_version), rows[0]["solution_seal"]);
+    let mut leaf = rows[0]["leaf"].clone();
+    leaf["solution_seal"] = json!(solution_seal_at(&solved, "genesis_solvers_v0.10.0"));
+    let root = hex::encode(genesis_seal::tree::leaf_hash(serde_json::to_string(&leaf).unwrap().as_bytes()));
+    let counts = genesis_seal::dataset::Counts {
+        engine_version: "genesis_kernel_v0.11.0".to_string(),
+        rows: 1,
+        completed: head["completed"].as_u64().unwrap(),
+        ended: 0,
+        refused: head["refused"].as_u64().unwrap(),
+        unadmitted: head["unadmitted"].as_u64().unwrap(),
+        frames: 0,
+    };
+    assert_ne!(genesis_seal::dataset::dataset_seal(head["plan_sha256"].as_str().unwrap(), &root, &counts), was["dataset_seal"]);
+
+    // The worked comparison's seal, as REFERENCE.md gives it.
+    let worked: Value = serde_json::from_str(saved[0]["answer"].as_str().unwrap()).unwrap();
+    assert_eq!(saved[0]["request"], WORKED);
+    assert_eq!(worked["validation_seal"], "7a7a335ce509388c2f56c0fa90e6ad1bdf3520219e3cdb27f05fcde30b737b1c");
+}
+
+// V17
+#[tokio::test]
+async fn an_honest_commit_reveal_opens_and_is_sealed_bit_for_bit() {
+    let base = spawn_app().await;
+    let sha256 = worked_commitment();
+    assert_eq!(sha256, "82937bf8c51c983ab59ea7d5414dc9d31d88147cd52ff4a986ce14ea386a95b9");
+    let commitment = json!({ "sha256": sha256, "salt": WORKED_SALT });
+    let (status, plain_text) = post_text(&base, "/validate_series", WORKED).await;
+    assert_eq!(status, 200, "{plain_text}");
+    let plain: Value = serde_json::from_str(&plain_text).unwrap();
+    let committed_request = with_commitment(WORKED, &commitment);
+    let (status, text) = post_text(&base, "/validate_series", &committed_request).await;
+    assert_eq!(status, 200, "{text}");
+    let answer: Value = serde_json::from_str(&text).unwrap();
+
+    // Every number is the one the comparison gives without the commitment.
+    for key in ["run_seal", "outcome", "steps_landed", "compared", "not_reached", "rms_error_hex", "mean_signed_error_hex", "max_abs_error_hex", "max_abs_error_step", "model_values_hex", "measurements_sha256", "measurement_source", "load_source"] {
+        assert_eq!(answer[key], plain[key], "{key}");
+    }
+    assert_eq!(answer["inputs"]["commitment"], commitment);
+    // The answer gains one key, after measurements_sha256.
+    let keys: Vec<&str> = answer.as_object().unwrap().keys().map(String::as_str).collect();
+    let mut expected: Vec<&str> = plain.as_object().unwrap().keys().map(String::as_str).collect();
+    let at = expected.iter().position(|key| *key == "measurements_sha256").unwrap() + 1;
+    expected.insert(at, "commitment_opened");
+    assert_eq!(keys, expected);
+    assert!(answer["commitment_opened"].as_str().unwrap().starts_with("The measurements, the quantity and the component of this request are the ones committed"));
+
+    // The validation seal: the five parts of the comparison without one, by
+    // the test's own arithmetic, then the two lines of the commitment.
+    let mut parts = String::new();
+    parts.push_str(plain["run_seal"].as_str().unwrap());
+    parts.push_str(plain["measurements_sha256"].as_str().unwrap());
+    parts.push_str(&format!(
+        "{{\"quantity\":\"temperature_k\",\"component\":null,\"outcome\":\"completed\",\"steps_landed\":5,\"reject\":null,\"compared\":3,\"not_reached\":0,\"max_abs_error_step\":{}}}",
+        plain["max_abs_error_step"]
+    ));
+    for key in ["rms_error_hex", "mean_signed_error_hex", "max_abs_error_hex"] {
+        parts.push_str(&format!("{key}:{}\n", plain[key].as_str().unwrap()));
+    }
+    let joined: Vec<&str> = plain["model_values_hex"].as_array().unwrap().iter().map(|hex| hex.as_str().unwrap()).collect();
+    parts.push_str(&sha256_hex(joined.join(",").as_bytes()));
+    assert_eq!(sha256_hex(parts.as_bytes()), plain["validation_seal"]);
+    parts.push_str(&format!("commitment_sha256:{sha256}\ncommitment_salt:{WORKED_SALT}\n"));
+    assert_eq!(sha256_hex(parts.as_bytes()), answer["validation_seal"]);
+    assert_eq!(answer["validation_seal"], "4b9f54b6ff7aaf65393a5c37c4fcdec7ef94dce8b71850d4d17a385d8b32987c");
+
+    // The same data spelled another way, the keys in another order, open the
+    // same commitment to the same seal.
+    let respelled = with_commitment(
+        &WORKED.replace(r#"{"step":1,"value":293.2}"#, r#"{ "value": 2.932e2, "step": 1 }"#).replace("293.3}", "293.30}"),
+        &json!({ "salt": WORKED_SALT, "sha256": sha256 }),
+    );
+    let (status, again) = post_text(&base, "/validate_series", &respelled).await;
+    assert_eq!(status, 200, "{again}");
+    let again: Value = serde_json::from_str(&again).unwrap();
+    assert_eq!(again["validation_seal"], answer["validation_seal"]);
+
+    // The same bytes on the local connection.
+    let bin = env!("CARGO_BIN_EXE_mcp_stdio");
+    let transport = TokioChildProcess::new(tokio::process::Command::new(bin)).expect("spawn mcp_stdio");
+    let mut client = ().serve(transport).await.expect("initialize");
+    let body: Value = serde_json::from_str(&committed_request).unwrap();
+    let called = client
+        .call_tool(CallToolRequestParams::new("validate_series").with_arguments(arguments(&body)))
+        .await
+        .expect("tool result");
+    assert_eq!(called.is_error, Some(false));
+    assert_eq!(tool_text(&called), text);
+    client.close().await.expect("close");
+
+    // genesis_seal verify-validation opens it again from the answer alone.
+    let program = seal_program();
+    let file = scratch("committed.json");
+    std::fs::write(&file, &text).unwrap();
+    let (code, out) = run_program(&program, &file);
+    assert_eq!(code, 0, "{out}");
+    assert!(out.starts_with("holds: true\ncause: none\n"), "{out}");
+    assert!(out.contains(&format!("validation_seal: {}\ncommitment_sha256: {sha256}\ncommitment: opens\nreceipt: matches\n", answer["validation_seal"].as_str().unwrap())), "{out}");
+    // The answer of the comparison without one prints no commitment line.
+    let file = scratch("not_committed.json");
+    std::fs::write(&file, &plain_text).unwrap();
+    let (code, out) = run_program(&program, &file);
+    assert_eq!(code, 0, "{out}");
+    assert!(!out.contains("commitment"), "{out}");
+
+    // An answer rewritten from data that do not open the commitment, every
+    // other part and the receipt made again by the published rules, is
+    // named by the commitment.
+    let mut forged = answer.clone();
+    forged["inputs"]["measurements"][1]["value"] = json!(293.4);
+    let measurements = forged["inputs"]["measurements"].clone();
+    forged["measurements_sha256"] = json!(genesis_seal::validation::measurements_sha256(&measurements));
+    let measured: Vec<f64> = measurements.as_array().unwrap().iter().map(|m| m["value"].as_f64().unwrap()).collect();
+    let stats = genesis_seal::validation::statistics(&[1, 3, 5], &model_values(&answer), &measured).unwrap().unwrap();
+    forged["rms_error"] = json!(stats.rms_error);
+    forged["rms_error_hex"] = json!(stats.rms_error_hex());
+    forged["mean_signed_error"] = json!(stats.mean_signed_error);
+    forged["mean_signed_error_hex"] = json!(stats.mean_signed_error_hex());
+    forged["max_abs_error"] = json!(stats.max_abs_error);
+    forged["max_abs_error_hex"] = json!(stats.max_abs_error_hex());
+    forged["max_abs_error_step"] = json!(stats.max_abs_error_step);
+    let hexes: Vec<String> = model_values(&answer).iter().map(|v| format!("{:016x}", v.to_bits())).collect();
+    let opened = genesis_seal::commitment::Commitment { sha256: sha256.clone(), salt: WORKED_SALT.to_string() };
+    forged["validation_seal"] = json!(genesis_seal::validation::validation_seal(&genesis_seal::validation::SealParts {
+        run_seal: answer["run_seal"].as_str().unwrap(),
+        measurements_sha256: forged["measurements_sha256"].as_str().unwrap(),
+        quantity: "temperature_k",
+        component: None,
+        outcome: "completed",
+        steps_landed: 5,
+        reject: None,
+        compared: 3,
+        not_reached: 0,
+        statistics: Some(&stats),
+        model_values_hex: &hexes,
+        commitment: Some(&opened),
+    }));
+    forged.as_object_mut().unwrap().remove("receipt_sha256");
+    let document = serde_json::to_string(&forged).unwrap();
+    let receipt = sha256_hex(document.as_bytes());
+    let file = scratch("committed_forged.json");
+    std::fs::write(&file, format!("{},\"receipt_sha256\":\"{receipt}\"}}", document.strip_suffix('}').unwrap())).unwrap();
+    let (code, out) = run_program(&program, &file);
+    assert_eq!(code, 1, "{out}");
+    assert!(out.starts_with("holds: false\ncause: commitment\n"), "{out}");
+    assert!(out.contains(&format!("commitment_sha256: {sha256}\ncommitment: does not open: ")), "{out}");
+}
+
+// V18
+#[tokio::test]
+async fn data_that_do_not_open_the_commitment_are_refused_by_name_and_nothing_is_sealed() {
+    let base = spawn_app().await;
+    let sha256 = worked_commitment();
+    let commitment = json!({ "sha256": sha256, "salt": WORKED_SALT });
+    let swapped = WORKED.replace("293.2}", "@").replace("293.3}", "293.2}").replace('@', "293.3}");
+    assert_ne!(swapped, WORKED);
+    let refused_as = |name: &'static str| move |text: &str| text.ends_with(&format!("({name})."));
+    let does_not_match = refused_as("CommitmentDoesNotMatch");
+    let cases: Vec<(&str, String, Box<dyn Fn(&str) -> bool>)> = vec![
+        ("one digit of one measurement", with_commitment(&WORKED.replace("293.3}", "293.4}"), &commitment), Box::new(does_not_match)),
+        ("the last bit of one measurement", with_commitment(&WORKED.replace("293.4}", &format!("{:?}}}", f64::from_bits(293.4_f64.to_bits() + 1))), &commitment), Box::new(does_not_match)),
+        ("another salt", with_commitment(WORKED, &json!({ "sha256": sha256, "salt": "ff".repeat(16) })), Box::new(does_not_match)),
+        ("another sha256", with_commitment(WORKED, &json!({ "sha256": "ab".repeat(32), "salt": WORKED_SALT })), Box::new(does_not_match)),
+        ("two values swapped between their steps", with_commitment(&swapped, &commitment), Box::new(does_not_match)),
+        ("a measurement moved to another step", with_commitment(&WORKED.replace(r#""step":3"#, r#""step":4"#), &commitment), Box::new(does_not_match)),
+        ("a measurement dropped", with_commitment(&WORKED.replace(r#",{"step":5,"value":293.4}"#, ""), &commitment), Box::new(does_not_match)),
+        ("a measurement added", with_commitment(&WORKED.replace(r#"{"step":5,"value":293.4}"#, r#"{"step":4,"value":293.35},{"step":5,"value":293.4}"#), &commitment), Box::new(does_not_match)),
+        // Rows in another order are refused as the steps rise strictly, before the commitment is opened.
+        ("the rows reordered", with_commitment(&WORKED.replace(r#"{"step":1,"value":293.2},{"step":3,"value":293.3}"#, r#"{"step":3,"value":293.3},{"step":1,"value":293.2}"#), &commitment), Box::new(|text: &str| text == "Physical Violation: 'measurements[1].step' must be greater than the step before it.")),
+        ("a salt of eight bytes", with_commitment(WORKED, &json!({ "sha256": sha256, "salt": "0001020304050607" })), Box::new(refused_as("CommitmentSaltTooShort"))),
+        ("a salt of fifteen bytes", with_commitment(WORKED, &json!({ "sha256": sha256, "salt": &WORKED_SALT[..30] })), Box::new(refused_as("CommitmentSaltTooShort"))),
+        ("a commitment without its salt", with_commitment(WORKED, &json!({ "sha256": sha256 })), Box::new(|text: &str| text == "Missing required parameter: 'commitment.salt' (InputMissing).")),
+        ("a salt without its sha256", with_commitment(WORKED, &json!({ "salt": WORKED_SALT })), Box::new(|text: &str| text == "Missing required parameter: 'commitment.sha256' (InputMissing).")),
+        ("a sha256 in capitals", with_commitment(WORKED, &json!({ "sha256": sha256.to_uppercase(), "salt": WORKED_SALT })), Box::new(refused_as("CommitmentMalformed"))),
+        ("a salt of an odd count", with_commitment(WORKED, &json!({ "sha256": sha256, "salt": format!("{WORKED_SALT}0") })), Box::new(refused_as("CommitmentMalformed"))),
+        ("a key a commitment does not have", with_commitment(WORKED, &json!({ "sha256": sha256, "salt": WORKED_SALT, "time": "now" })), Box::new(refused_as("CommitmentMalformed"))),
+        ("a commitment of null", with_commitment(WORKED, &Value::Null), Box::new(refused_as("CommitmentMalformed"))),
+    ];
+    let bin = env!("CARGO_BIN_EXE_mcp_stdio");
+    let transport = TokioChildProcess::new(tokio::process::Command::new(bin)).expect("spawn mcp_stdio");
+    let mut client = ().serve(transport).await.expect("initialize");
+    for (label, request, named) in cases {
+        let (status, text) = post_text(&base, "/validate_series", &request).await;
+        assert_eq!(status, 422, "{label}: {text}");
+        assert!(named(&text), "{label}: {text}");
+        assert!(!text.contains("validation_seal") && !text.contains("run_seal"), "{label}: {text}");
+        let body: Value = serde_json::from_str(&request).unwrap();
+        let called = client
+            .call_tool(CallToolRequestParams::new("validate_series").with_arguments(arguments(&body)))
+            .await
+            .expect("tool result");
+        assert_eq!(called.is_error, Some(true), "{label}");
+        assert_eq!(tool_text(&called), text, "{label}");
+    }
+    client.close().await.expect("close");
+
+    // The sentence names both digests.
+    let changed = WORKED.replace("293.3}", "293.4}");
+    let (_, text) = post_text(&base, "/validate_series", &with_commitment(&changed, &commitment)).await;
+    let request: Value = serde_json::from_str(&changed).unwrap();
+    let computed = genesis_seal::commitment::commitment_sha256("temperature_k", &Value::Null, &request["measurements"], WORKED_SALT);
+    assert_eq!(
+        text,
+        format!("Physical Violation: the measurements, the quantity and the component of this request are not the ones committed: the SHA-256 of the tag, their committed text and the salt is {computed}, and commitment.sha256 is {sha256}. Nothing is computed and nothing is sealed (CommitmentDoesNotMatch).")
+    );
+}
+
+// V19
+#[tokio::test]
+async fn a_comparison_of_solves_opens_its_commitment_with_rows_in_the_place_of_steps() {
+    let base = spawn_app().await;
+    let saved = served_0120_answers();
+    let solves = saved.iter().find(|item| item["label"] == "a plan of solves").unwrap();
+    let request_text = solves["request"].as_str().unwrap();
+    let request: Value = serde_json::from_str(request_text).unwrap();
+    let measurements = &request["measurements"];
+    assert!(measurements[0].get("row").is_some());
+    let quantity = request["quantity"].as_str().unwrap();
+    let sha256 = genesis_seal::commitment::commitment_sha256(quantity, &Value::Null, measurements, WORKED_SALT);
+    let (status, text) = post_text(&base, "/validate_series", &with_commitment(request_text, &json!({ "sha256": sha256, "salt": WORKED_SALT }))).await;
+    assert_eq!(status, 200, "{text}");
+    let answer: Value = serde_json::from_str(&text).unwrap();
+    // The same comparison without the commitment, on this engine: the
+    // answer the served 0.12.0 gave, but for the fields that carry the
+    // version (V16).
+    let (_, plain) = post_text(&base, "/validate_series", request_text).await;
+    let plain: Value = serde_json::from_str(&plain).unwrap();
+    assert_eq!(answer["dataset_seal"], plain["dataset_seal"]);
+    assert_eq!(answer["measurements_sha256"], plain["measurements_sha256"]);
+    assert_ne!(answer["validation_seal"], plain["validation_seal"]);
+    let keys: Vec<&str> = answer.as_object().unwrap().keys().map(String::as_str).collect();
+    let at = keys.iter().position(|key| *key == "commitment_opened").unwrap();
+    assert_eq!((keys[at - 1], keys[at + 1]), ("measurements_sha256", "validation_seal"));
+    let program = seal_program();
+    let file = scratch("committed_solves.json");
+    std::fs::write(&file, &text).unwrap();
+    let (code, out) = run_program(&program, &file);
+    assert_eq!(code, 0, "{out}");
+    assert!(out.contains("commitment: opens\n"), "{out}");
+
+    // Another value at the row, and another salt: refused by name.
+    let mut changed = request.clone();
+    changed["measurements"][0]["value"] = json!(1.5);
+    for (label, body) in [
+        ("another value", with_commitment(&serde_json::to_string(&changed).unwrap(), &json!({ "sha256": sha256, "salt": WORKED_SALT }))),
+        ("another salt", with_commitment(request_text, &json!({ "sha256": sha256, "salt": "ee".repeat(16) }))),
+    ] {
+        let (status, text) = post_text(&base, "/validate_series", &body).await;
+        assert_eq!(status, 422, "{label}: {text}");
+        assert!(text.ends_with("(CommitmentDoesNotMatch)."), "{label}: {text}");
+    }
+    // A key a comparison of solves does not take is named with its fields.
+    let mut extra = request.clone();
+    extra["tolerance"] = json!(1);
+    let (status, text) = post(&base, "/validate_series", &extra).await;
+    assert_eq!(status, 422);
+    assert_eq!(text, "Physical Violation: 'tolerance' is not a field of a comparison of solves. Its fields are solves, quantity and measurements, and commitment when the measurements were committed.");
 }

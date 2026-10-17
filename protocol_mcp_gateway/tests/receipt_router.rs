@@ -19,7 +19,7 @@ use sha2::{Digest, Sha256};
 use tokio::net::TcpListener;
 
 const TAIL_REFUSAL: &str =
-    "Physical Violation: the text does not end with a receipt as this gateway writes one.";
+    "Physical Violation: the text does not end with a receipt as this verifier writes one.";
 const COVERS: &str = "every byte of the response before the receipt, the decimal values included.";
 const DOES_NOT_SHOW: &str = "who produced the response or when. The receipt has no key. Replaying the request through the engine shows the engine produced it.";
 
@@ -141,12 +141,16 @@ async fn a_genuine_response_from_each_of_the_four_builders_matches() {
             sha256_hex(format!("{document}}}").as_bytes()),
             "{label}"
         );
+        // Since the 0.13.0 candidate's fix pass the response's engine_version
+        // is said beside matches, with whether it is this engine's.
         let keys: Vec<&str> = report.as_object().unwrap().keys().map(String::as_str).collect();
         assert_eq!(
             keys,
-            ["matches", "receipt_sha256", "recomputed_sha256", "covers", "does_not_show"],
+            ["matches", "engine_version", "engine_version_is_this_engines", "receipt_sha256", "recomputed_sha256", "covers", "does_not_show"],
             "{label}"
         );
+        assert_eq!(report["engine_version"], serde_json::from_str::<Value>(&text).unwrap()["engine_version"], "{label}");
+        assert_eq!(report["engine_version_is_this_engines"], true, "{label}");
         assert_eq!(report["covers"], COVERS);
         assert_eq!(report["does_not_show"], DOES_NOT_SHOW);
     }
@@ -166,6 +170,8 @@ async fn a_genuine_response_from_each_of_the_four_builders_matches() {
     let report = checked(&base, &head_text).await;
     assert_eq!(report["matches"], true, "{report}");
     assert_eq!(report["receipt_sha256"], answer["head"]["receipt_sha256"]);
+    assert_eq!(report["engine_version"], answer["head"]["engine_version"]);
+    assert_eq!(report["engine_version_is_this_engines"], true);
 }
 
 // R2
@@ -187,12 +193,14 @@ async fn a_changed_decimal_beside_its_hex_holds_for_the_tape_and_breaks_the_rece
     assert_ne!(changed, text);
     assert_eq!(changed.len(), text.len());
 
-    // The tape check reads the exact hex and the seals: it still holds.
+    // The seals are over the exact hex, and they still hold; since 0.11.0
+    // the long form writes the answer again from them and names the decimal
+    // that is not its hex's value.
     let (status, tape) = post_text(&base, "/verify_tape", &changed).await;
     assert_eq!(status, 200, "{tape}");
     let tape: Value = serde_json::from_str(&tape).unwrap();
-    assert_eq!(tape["holds"], true, "{tape}");
-    assert_eq!(tape["cause"], Value::Null);
+    assert_eq!(tape["holds"], false, "{tape}");
+    assert_eq!((tape["cause"].clone(), tape["differs_at"].clone()), (json!("answer_text"), json!("final_state.temperature_k")), "{tape}");
 
     // The receipt covers the decimal: it does not match.
     let report = checked(&base, &changed).await;
@@ -222,7 +230,7 @@ async fn any_other_change_to_the_bytes_breaks_the_receipt_or_leaves_the_form() {
     assert_eq!(report["receipt_sha256"], stated);
 
     // A key moved: `engine_version` taken from its place and put last.
-    let version = r#""engine_version":"genesis_kernel_v0.9.0""#;
+    let version = r#""engine_version":"genesis_kernel_v0.12.0""#;
     assert!(text.contains(&format!("{version},")));
     let (document, tail) = split_tail(&text);
     let moved = format!("{},{version}{tail}", document.replacen(&format!("{version},"), "", 1));
@@ -283,7 +291,7 @@ async fn a_text_with_no_receipt_in_form_and_a_malformed_request_are_refused() {
     );
     assert_eq!(
         refused(&base, &json!({})).await,
-        "Missing required parameter: 'response_text'"
+        "Missing required parameter: 'response_text' (InputMissing)."
     );
     for wrong in [json!(5), json!(null), json!({ "a": 1 }), json!([text.clone()]), json!(true)] {
         assert_eq!(
@@ -315,7 +323,7 @@ async fn a_text_with_no_receipt_in_form_and_a_malformed_request_are_refused() {
 #[tokio::test]
 async fn a_response_with_a_receipt_made_by_hand_matches_so_the_receipt_is_not_proof_of_origin() {
     let base = spawn_app().await;
-    let document = r#"{"inputs":{"made":"with no engine"},"engine_version":"genesis_kernel_v0.9.0","state":{"temperature_k":1.0}}"#;
+    let document = r#"{"inputs":{"made":"with no engine"},"engine_version":"genesis_kernel_v0.12.0","state":{"temperature_k":1.0}}"#;
     let receipt = sha256_hex(document.as_bytes());
     let wire = format!("{},\"receipt_sha256\":\"{receipt}\"}}", &document[..document.len() - 1]);
     let report = checked(&base, &wire).await;
@@ -348,7 +356,7 @@ async fn the_tool_gives_the_bytes_of_the_route_and_the_list_has_sixteen_names() 
         [
             "list_cards",
             "describe_card",
-            "verify_step",
+            "compute_step",
             "run_trajectory",
             "verify_tape",
             "list_solvers",
@@ -362,9 +370,11 @@ async fn the_tool_gives_the_bytes_of_the_route_and_the_list_has_sixteen_names() 
             "cite",
             "find_model",
             "find_flip",
+            "design_run",
+            "verify_step",
         ]
     );
-    assert_eq!(listed.tools.len(), 16);
+    assert_eq!(listed.tools.len(), 18);
 
     let text = genuine(&base, "/solve", &solve()).await;
     let altered = text.replacen("\"converged\"", "\"converge_\"", 1);

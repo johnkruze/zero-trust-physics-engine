@@ -233,7 +233,7 @@ async fn a_second_check_of_a_stored_dataset_is_busy_while_one_runs() {
     assert_eq!(status, 200, "{text}");
     let answer: Value = serde_json::from_str(&text).unwrap();
     let by_seal = json!({ "dataset_seal": answer["files"]["folder"] });
-    let held = Arc::clone(&state.stored_checks).try_acquire_owned().unwrap();
+    let held = Arc::clone(&state.stored_verifications).try_acquire_owned().unwrap();
     let (status, text) = post(&client, &base, "/verify_dataset", &by_seal).await;
     assert_eq!(status, 429, "{text}");
     drop(held);
@@ -271,7 +271,7 @@ async fn the_stored_check_answers_as_the_check_of_the_files_held_whole() {
         dataset::report(&head, &rows, frames.as_deref()).map_err(|e| format!("{}", flat(e)))
     };
     let stored = |seal: &str| -> Result<String, String> {
-        dataset::check_stored(&dir.0, seal).map_err(|e| format!("{}", flat(e)))
+        dataset::verify_stored(&dir.0, seal).map_err(|e| format!("{}", flat(e)))
     };
     // Intact, with frames and with none.
     for seal in &seals {

@@ -168,6 +168,8 @@ pub fn values_at<'a>(request: &'a Value, path: &str) -> Result<Vec<Option<&'a Va
 pub enum ChainCause {
     /// A run's frames do not follow from its request.
     Chain,
+    /// A signed reading of a run's request does not verify.
+    LoadSignature,
     /// A run's state digest is not its final state's.
     State,
     /// A run's seal is not rebuilt from its parts.
@@ -190,6 +192,7 @@ impl ChainCause {
     pub fn as_str(self) -> &'static str {
         match self {
             ChainCause::Chain => "chain",
+            ChainCause::LoadSignature => "load_signature",
             ChainCause::State => "state",
             ChainCause::RunSeal => "run_seal",
             ChainCause::Upstream => "upstream",
@@ -274,6 +277,7 @@ pub fn check_chain(body: &Value) -> Result<ChainReport, Refusal> {
         if !report.holds {
             let cause = match report.cause {
                 Some(crate::run::TapeCause::Chain) => ChainCause::Chain,
+                Some(crate::run::TapeCause::LoadSignature) => ChainCause::LoadSignature,
                 Some(crate::run::TapeCause::State) => ChainCause::State,
                 _ => ChainCause::RunSeal,
             };

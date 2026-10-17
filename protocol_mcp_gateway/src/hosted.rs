@@ -135,7 +135,10 @@ pub const OPEN_PHYSICS_PERMITS_AT_LEAST: usize = 2;
 /// most half the physics pool: on a pool of two, one permit, so the other is
 /// always left for a step or a short run.
 pub const OPEN_LIGHT_RUN_STEPS: u64 = 10_000;
-/// Physics permits one source address may hold at once.
+/// Physics permits one source address may hold at once: how many of its
+/// calls compute at the same time. Every agent that reaches the door through
+/// one maker's servers arrives from that maker's addresses and shares this.
+/// `--permits-per-address` changes it.
 pub const OPEN_PERMITS_PER_ADDRESS: usize = 1;
 /// The longest request body the open door reads: 4 MiB, a quarter of what a
 /// key is given.
@@ -249,15 +252,16 @@ pub struct Options {
     pub open: Option<OpenRules>,
 }
 
-const USAGE: &str = "It reads --port <number>, --keys <file>, --dataset-dir <path> and --allowed-origin <origin>. --port and --keys are required. --allowed-origin may be given more than once. In place of --keys it reads --open, which asks no caller for a key, and with --open it reads --client-address-header <name>, --requests-per-minute <number>, --max-in-flight <number>, --max-in-flight-per-address <number>, --physics-permits <number> and --request-seconds <number>.";
+const USAGE: &str = "It reads --port <number>, --keys <file>, --dataset-dir <path> and --allowed-origin <origin>. --port and --keys are required. --allowed-origin may be given more than once. In place of --keys it reads --open, which asks no caller for a key, and with --open it reads --client-address-header <name>, --requests-per-minute <number>, --max-in-flight <number>, --max-in-flight-per-address <number>, --physics-permits <number>, --permits-per-address <number> and --request-seconds <number>.";
 
 /// The arguments only the open door reads.
-const OPEN_ONLY: [&str; 6] = [
+const OPEN_ONLY: [&str; 7] = [
     "--client-address-header",
     "--requests-per-minute",
     "--max-in-flight",
     "--max-in-flight-per-address",
     "--physics-permits",
+    "--permits-per-address",
     "--request-seconds",
 ];
 
@@ -482,9 +486,19 @@ pub async fn serve(options: Options) -> Result<(), String> {
         .await
         .map_err(|error| format!("it cannot listen on {address}: {error}."))?;
     let bound = listener.local_addr().map_err(|error| error.to_string())?;
-    println!("Hosted door running on {bound} for {} clients: {}", labels.len(), labels.join(", "));
+    announce(&format!("Hosted door running on {bound} for {} clients: {}", labels.len(), labels.join(", ")));
     serve_listener(listener, app, Limits::DEFAULT).await;
     Ok(())
+}
+
+/// What a door prints when it starts, written to standard output in one
+/// piece, every line of it in one write. Whoever started the door may have
+/// closed that output by then: the door has its port and serves whether or
+/// not anyone reads the lines, so a write that fails is let go.
+pub(crate) fn announce(text: &str) {
+    use std::io::Write;
+    let mut out = std::io::stdout().lock();
+    let _ = out.write_all(format!("{text}\n").as_bytes()).and_then(|()| out.flush());
 }
 
 /// Serve `app` on `listener` for ever, holding every connection to `limits`.
@@ -1125,6 +1139,12 @@ pub(crate) async fn answer(call: Call<'_>, bytes: BodyBuffer) -> Response {
             return json_response(StatusCode::OK, response);
         }
     }
+    // A verification's long form holds the answer sent byte for byte, so the
+    // exact text of its arguments is kept beside them.
+    let arguments_text = match guard::arguments_text(&bytes) {
+        Some((name, text)) if method == "tools/call" && guard::TEXT_TOOLS.contains(&name.as_str()) => Some(text),
+        _ => None,
+    };
     // The body has been read into a message. Its buffer goes back to the door
     // before the tool runs.
     drop(bytes);
@@ -1161,7 +1181,9 @@ pub(crate) async fn answer(call: Call<'_>, bytes: BodyBuffer) -> Response {
             }
         }
         "tools/list" => {
-            let mut listed = ListToolsResult::with_all_items(mcp_server::tools_in(state.view()));
+            // On the open door each description ends with that door's own
+            // limits for the tool, and each tool is marked read-only.
+            let mut listed = ListToolsResult::with_all_items(mcp_server::tools_for(state.view(), open));
             if modern {
                 // The hints revision 2026-07-28 requires on a list, with the
                 // values the stdio door gives: not to be kept, and not to be
@@ -1169,11 +1191,7 @@ pub(crate) async fn answer(call: Call<'_>, bytes: BodyBuffer) -> Response {
                 listed.ttl_ms = Some(0);
                 listed.cache_scope = Some(CacheScope::Private);
             }
-            let mut listed = serde_json::to_value(listed).expect("the tools encode");
-            if let Some(rules) = open {
-                rules.state_in_tools(&mut listed);
-            }
-            rpc_result(id, listed, modern)
+            rpc_result(id, serde_json::to_value(listed).expect("the tools encode"), modern)
         }
         "tools/call" => match tool_call(params) {
             Ok((name, arguments)) => {
@@ -1212,7 +1230,7 @@ pub(crate) async fn answer(call: Call<'_>, bytes: BodyBuffer) -> Response {
                     // child is given an empty pool, and answers as a full
                     // pool answers on every connection.
                     let held = crate::acquire_physics_permit(&state).ok();
-                    let ended = crate::long_work::run(worker, &name, arguments, held.is_some(), rules.request).await;
+                    let ended = crate::long_work::run(worker, &name, arguments, arguments_text, held.is_some(), rules.request).await;
                     drop(held);
                     drop(long_place);
                     drop(permit);
@@ -1222,16 +1240,22 @@ pub(crate) async fn answer(call: Call<'_>, bytes: BodyBuffer) -> Response {
                             let late = rmcp::model::CallToolResult::error(vec![rmcp::model::ContentBlock::text(rules.stopped_at_the_limit())]);
                             rpc_result(id, serde_json::to_value(late).expect("the result encodes"), modern)
                         }
-                        crate::long_work::Ended::Failed => rpc_error(id, -32603, "Internal error: the tool stopped before it finished."),
+                        // The child stopped with no result: answered by name, as a
+                        // panic in this process is.
+                        crate::long_work::Ended::Failed => {
+                            let fault = rmcp::model::CallToolResult::error(vec![rmcp::model::ContentBlock::text(mcp_server::internal_fault(&name))]);
+                            rpc_result(id, serde_json::to_value(fault).expect("the result encodes"), modern)
+                        }
                     };
                     return json_response(StatusCode::OK, text);
                 }
+                let tool = name.clone();
                 let handle = tokio::spawn(async move {
                     // The client's slot is held until the work ends, even if
                     // the caller hangs up.
                     let _slot = permit;
                     let _long_place = long_place;
-                    mcp_server::dispatch(&state, &name, arguments).await
+                    mcp_server::dispatch_text(&state, &name, arguments, arguments_text).await
                 });
                 let joined = match open {
                     // The open door waits so long for an answer and no
@@ -1254,7 +1278,12 @@ pub(crate) async fn answer(call: Call<'_>, bytes: BodyBuffer) -> Response {
                     Ok(result) => {
                         rpc_result(id, serde_json::to_value(result).expect("the result encodes"), modern)
                     }
-                    Err(_) => rpc_error(id, -32603, "Internal error: the tool stopped before it finished."),
+                    // A panic inside the call ended its task alone: the call
+                    // is answered by name, and the door goes on serving.
+                    Err(_) => {
+                        let fault = rmcp::model::CallToolResult::error(vec![rmcp::model::ContentBlock::text(mcp_server::internal_fault(&tool))]);
+                        rpc_result(id, serde_json::to_value(fault).expect("the result encodes"), modern)
+                    }
                 }
             }
             Err(text) => rpc_error(id, -32602, &text),
@@ -1379,7 +1408,7 @@ mod tests {
 
         let (status, body) = post(&url, Some("k-thermal"), &step("materials", "ti64_lattice")).await;
         assert_eq!(status, 200);
-        assert!(body.contains("Card not recognized"), "{body}");
+        assert!(body.contains("Card not recognized (UnknownCard)."), "{body}");
         let (_, unknown) = post(&url, Some("k-thermal"), &step("materials", "ti64_latticX")).await;
         assert_eq!(body, unknown);
         assert_eq!(pool.available_permits(), 2);
@@ -1391,7 +1420,7 @@ mod tests {
             .collect();
         assert_eq!(post(&url, None, &step("energy", "thermal")).await.0, 401);
         let (_, hidden) = post(&url, Some("k-thermal"), &step("materials", "ti64_lattice")).await;
-        assert!(hidden.contains("Card not recognized"), "{hidden}");
+        assert!(hidden.contains("Card not recognized (UnknownCard)."), "{hidden}");
         let (status, busy) = post(&url, Some("k-thermal"), &step("energy", "thermal")).await;
         assert_eq!(status, 200);
         assert!(busy.contains("Too many concurrent physics tasks."), "{busy}");

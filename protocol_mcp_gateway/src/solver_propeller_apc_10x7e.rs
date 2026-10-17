@@ -19,7 +19,7 @@ use crate::solvers::{
 };
 
 /// What the record says of the comparison with the held-back measurements.
-pub const HELD_BACK_RESULT: &str = "Compared once with the held-back measurements on 2026-10-09, and by the lines fixed beforehand both lines were missed. Line A, 64 points of the sweeps at 6015, 6020, 6519 and 6531 rev/min: mean error 4.85 percent of full scale against 4.0 allowed and worst 10.16 against 10.0; the solver is low at every point, by 5.0 on average in thrust coefficient and 4.7 in power coefficient. Line B, 9 rows at zero airspeed between 4144 and 6542 rev/min: mean 6.02 against 4.0 and worst 11.76 against 10.0; the thrust coefficient is within 3.0 on average and the power coefficient is 9.0 low, low in every row. With the two constants set by hand instead of fitted (−4.0 degrees and 0.020) the error on line A is mean 3.77 and worst 10.03, and on line B 6.06 and 11.85. That is not a better model: the unfitted model errs high where the fitted one errs low. It is above the measurement at every value of the fitted sweeps, by 7.6 in thrust coefficient and 9.2 in power coefficient on average, and above it at 119 of the 128 values of line A, by 2.8 and 4.5 on average, while the fitted model sits on the fitted sweeps and below every value of line A: the measurement rose with speed between the two, and the fit at 4007 to 5018 rev/min did not carry to the higher speeds. Thirteen held-back points outside advance ratio 0.10 to 0.75 and seven static rows below 4000 rev/min were refused by name and are in no line. A recomputation in 50-digit arithmetic agrees with the solver to 2.2e-14, so the solver computes the model it states and the model is what misses. Scored a second time on 2026-10-09 by a second party with its own code for the statistics, the proofs and the model, on the same machine, from the same binary and the same saved answers (evidence/checks/second_party/V-27/): the same numbers, every statistic to 1e-12 and all 93 rows, and both lines missed.";
+pub const HELD_BACK_RESULT: &str = "Compared once with the held-back measurements on 2026-10-09, and by the lines fixed beforehand both lines were missed. Line A, 64 points of the sweeps at 6015, 6020, 6519 and 6531 rev/min: mean error 4.85 percent of full scale against 4.0 allowed and worst 10.16 against 10.0; the solver is low at every point, by 5.0 on average in thrust coefficient and 4.7 in power coefficient. Line B, 9 rows at zero airspeed between 4144 and 6542 rev/min: mean 6.02 against 4.0 and worst 11.76 against 10.0; the thrust coefficient is within 3.0 on average and the power coefficient is 9.0 low, low in every row. With the two constants set by hand instead of fitted (−4.0 degrees and 0.020) the error on line A is mean 3.77 and worst 10.03, and on line B 6.06 and 11.85. That is not a better model: the unfitted model errs high where the fitted one errs low. It is above the measurement at every value of the fitted sweeps, by 7.6 in thrust coefficient and 9.2 in power coefficient on average, and above it at 119 of the 128 values of line A, by 2.8 and 4.5 on average, while the fitted model sits on the fitted sweeps and below every value of line A: the measurement rose with speed between the two, and the fit at 4007 to 5018 rev/min did not carry to the higher speeds. Thirteen held-back points outside advance ratio 0.10 to 0.75 and seven static rows below 4000 rev/min were refused by name and are in no line. A recomputation in 50-digit arithmetic agrees with the solver to 2.2e-14, so the solver computes the model it states and the model is what misses. Scored a second time on 2026-10-09 by a second party with its own code for the statistics, the proofs and the model, on the same machine, from the same binary and the same saved answers (evidence/verification/second_party/V-27/): the same numbers, every statistic to 1e-12 and all 93 rows, and both lines missed.";
 
 const fn number(
     name: &'static str,
@@ -69,40 +69,48 @@ pub const PROPELLER_APC_10X7E: Solver = Solver {
     name: "propeller_apc_10x7e",
     summary: "Thrust and shaft power of the APC Thin Electric 10x7 propeller at one rotational speed, airspeed and air density, by blade-element momentum theory on its measured blade geometry, with two blade-section constants fitted to this propeller's own measured thrust and power; on the measurements held back from the fit it missed both of its lines, by up to 10.2 percent of full scale at speeds never fitted and 11.8 at rest.",
     inputs: &[
-        number(
-            "rotational_speed_rev_per_min",
-            propeller::ROTATIONAL_SPEED_MIN_REV_PER_MIN,
-            propeller::STATIC_ROTATIONAL_SPEED_MAX_REV_PER_MIN,
-            "rev/min",
-            "RotationalSpeedOutOfRange",
-            "How fast the propeller turns. The range is the one the compared measurements span: 4007 to 6531 rev/min with the air moving (the slowest and fastest measured sweep) and 4144 to 6542 rev/min at zero airspeed (the slowest and fastest static row compared). The model has no Reynolds-number dependence, so it is not carried to other speeds.",
-        ),
+        Input {
+            name: "rotational_speed_rev_per_min",
+            kind: Kind::NumberAbove {
+                above: propeller::ROTATIONAL_SPEED_ABOVE_REV_PER_MIN,
+                maximum: propeller::ROTATIONAL_SPEED_MAX_REV_PER_MIN,
+                unit: "rev/min",
+            },
+            refusal: Some("RotationalSpeedNotPositive"),
+            bound: "How fast the propeller turns, above zero (RotationalSpeedNotPositive otherwise: the coefficients are per turn of the blades). The section's coefficients depend on the advance ratio alone, so a rotational speed acts on it only through the chord Reynolds number, held inside 44399 to 75516, the band the section's two constants are taken over (ReynoldsNumberOutOfRange), and the tip Mach number, held at or below 0.3 because the section law is incompressible (TipMachAboveIncompressible). The maximum here, about 7676 rev/min, is that Mach number with the air still; at 1.225 kg/m³ and zero airspeed the band holds about 4014 to 6828 rev/min, and thinner or denser air, or moving air, moves it. The compared measurements span 4007 to 6531 rev/min with the air moving (the slowest and fastest measured sweep) and 4144 to 6542 rev/min at zero airspeed (the slowest and fastest static row); outside them nothing was compared. There, at the speeds never fitted, 6015 to 6531 rev/min, the answer was low at every point, mean 4.85 percent of full scale and worst 10.16 against lines of 4.0 and 10.0, and at rest mean 6.02 and worst 11.76, the static shaft power about 9 percent of full scale low: both lines missed, and the error grows with speed above the fitted 4007 to 5018 rev/min. Until this version a speed outside the compared spans was refused as RotationalSpeedOutOfRange.",
+            only_when: None,
+            asked_by_check: true,
+        },
         number(
             "airspeed_m_s",
             0.0,
             propeller::AIRSPEED_MAX_M_S,
             "m/s",
-            "AdvanceRatioOutOfRange",
-            "How fast the air meets the propeller along its axis. Exactly 0 is the propeller at rest in still air. Otherwise the advance ratio, airspeed / (revolutions per second × 0.254 m), must be 0.111 to 0.748, the lowest and highest measured advance ratio compared, so the lowest and highest airspeed go with the rotational speed: 1.8829 to 12.6882 m/s at 4007 rev/min, 3.069 to 20.6806 m/s at 6531 rev/min, each end printed to four decimals and rounded inward. Each is answered where the chord Reynolds number is inside its band (see air_density_kg_m3): at 1.225 kg/m³, 1.8829 m/s at 4007 rev/min and 20.6806 m/s at 6531 rev/min are refused as ReynoldsNumberOutOfRange, the first being answered from 1.226 kg/m³ up and the second from 1.220 kg/m³ down. The maximum here, 20.680629200000013 m/s, is the largest 64-bit airspeed answered: its advance ratio at 6531 rev/min is the highest answered. The advance ratio is computed from the airspeed and the rotational speed in 64-bit arithmetic and used as computed: it is never moved to an end. A computed advance ratio below 0.111 by no more than 5 units in the last place (ADVANCE_RATIO_MIN_ALLOWANCE_ULP), or above 0.748 by no more than 4 (ADVANCE_RATIO_MAX_ALLOWANCE_ULP), is answered at that computed value: those are the rounding of forming an airspeed from an advance ratio and the advance ratio back from it, and nothing more, so an advance ratio of exactly 0.111 or 0.748, asked as airspeed = J × (rev/min / 60) × 0.254, passes the advance-ratio check at every rotational speed. A negative airspeed is refused as AirspeedNegative.",
+            "TipMachAboveIncompressible",
+            "How fast the air meets the propeller along its axis. Exactly 0 is the propeller at rest in still air. Any airspeed is answered, from zero up, until the relative speed of the air at the tip passes Mach 0.3 at 340.29 m/s (dry air at 15 degC), where the incompressible blade section no longer holds: that is refused as TipMachAboveIncompressible, and the maximum here, 102.087 m/s, is that Mach number with the blades still, so every turning propeller meets it lower (at 6531 rev/min, near 54 m/s). The advance ratio, airspeed / (revolutions per second × 0.254 m), is computed and used as computed. The compared measurements span advance ratio 0.111 to 0.748 with the air moving (at 6015 to 6531 rev/min, low at every point, mean 4.85 percent of full scale); below 0.111 and above 0.748 nothing was compared. Past zero thrust, near advance ratio 0.83, the air drives the blades: thrust and then shaft power turn negative, and the efficiency returned is not an efficiency there. A ring whose equations have no root is refused as NoBalance. Through engine 0.8.0 an advance ratio outside 0.111 to 0.748 was refused as AdvanceRatioOutOfRange. A negative airspeed is refused as AirspeedNegative.",
         ),
-        number(
-            "air_density_kg_m3",
-            propeller::AIR_DENSITY_MIN_KG_M3,
-            propeller::AIR_DENSITY_MAX_KG_M3,
-            "kg/m³",
-            "AirDensityOutOfRange",
-            "Density of the air. Thrust and power are proportional to it; the model's coefficients do not depend on it. No density was compared: the measurements give thrust and power coefficients only, the tunnel air's density was not recorded, and every comparison was sent at 1.225 kg/m³. Density moves the chord Reynolds number at three quarters of the radius (density × geometric speed there × 16.383 mm chord / 1.81e-5 Pa·s), on which the measured coefficients depend, so that Reynolds number is held inside 44399 to 75516, the band the 116 compared points span at 1.225 kg/m³, and outside it a question is refused as ReynoldsNumberOutOfRange. The band assumes the tunnel air was 1.225 kg/m³.",
-        ),
+        Input {
+            name: "air_density_kg_m3",
+            kind: Kind::NumberAbove {
+                above: propeller::AIR_DENSITY_ABOVE_KG_M3,
+                maximum: f64::MAX,
+                unit: "kg/m³",
+            },
+            refusal: Some("AirDensityNotPositive"),
+            bound: "Density of the air, above zero (AirDensityNotPositive otherwise). Thrust and power are proportional to it; the model's coefficients do not depend on it. No density was compared: the measurements give thrust and power coefficients only, the tunnel air's density was not recorded, and every comparison was sent at 1.225 kg/m³. Density moves the chord Reynolds number at three quarters of the radius (density × geometric speed there × 16.383 mm chord / 1.81e-5 Pa·s), on which a blade section's coefficients depend, and the section has one zero-lift angle and one minimum drag with no law for how they move with it, so that Reynolds number is held inside 44399 to 75516, the band the two constants are taken over (the band the 116 compared points span at 1.225 kg/m³), and outside it a question is refused as ReynoldsNumberOutOfRange: at 5000 rev/min and advance ratio 0.4 that is 0.97 to 1.65 kg/m³. The band assumes the tunnel air was 1.225 kg/m³. Through engine 0.8.0 a density outside 1.0 to 1.3 kg/m³ was refused as AirDensityOutOfRange.",
+            only_when: None,
+            asked_by_check: true,
+        },
     ],
     kept_inside: "The blade geometry, the blade section, the number of rings and the tolerances stay inside the solver.",
     result: &[
-        one("advance_ratio", "", "J = airspeed / (revolutions per second × diameter), as computed from the question; it is never moved to an end of the range."),
+        one("advance_ratio", "", "J = airspeed / (revolutions per second × diameter), as computed from the question. Compared with measurement from 0.111 to 0.748 with the air moving."),
         one("thrust_coefficient", "", "CT = thrust / (density × (rev/s)² × diameter⁴)."),
         one("power_coefficient", "", "CP = shaft power / (density × (rev/s)³ × diameter⁵)."),
         one("thrust_n", "N", ""),
         one("torque_n_m", "N·m", ""),
         one("shaft_power_w", "W", "Torque times angular speed."),
-        one("efficiency", "", "Thrust times airspeed over shaft power. 0 at zero airspeed."),
+        one("efficiency", "", "Thrust times airspeed over shaft power. 0 at zero airspeed. An efficiency only while thrust and shaft power are both positive: past zero thrust, near advance ratio 0.83, the air drives the blades."),
         rings("ring_inflow_angle_rad", "rad", "The settled inflow angle of each of the 34 rings, from the hub outward."),
         rings("ring_thrust_n", "N", "Thrust of each ring. They add up to `thrust_n`."),
         rings("ring_torque_n_m", "N·m", "Torque of each ring. They add up to `torque_n_m`."),
@@ -123,6 +131,7 @@ pub const PROPELLER_APC_10X7E: Solver = Solver {
     field: field_words,
     answer: "a settled propeller",
     refusals: REFUSALS,
+    door_refusals: &[],
     sections,
     validation: Some(validation),
     example,
@@ -144,13 +153,13 @@ const REFUSALS: &[Refusal] = &[
         sealed: false,
     },
     Refusal {
-        name: "RotationalSpeedOutOfRange",
-        meaning: "The rotational speed is outside `ROTATIONAL_SPEED_MIN_REV_PER_MIN`..=`ROTATIONAL_SPEED_MAX_REV_PER_MIN` with the air moving, or outside `STATIC_ROTATIONAL_SPEED_MIN_REV_PER_MIN`..=`STATIC_ROTATIONAL_SPEED_MAX_REV_PER_MIN` at zero airspeed.",
+        name: "RotationalSpeedNotPositive",
+        meaning: "The rotational speed is not above `ROTATIONAL_SPEED_ABOVE_REV_PER_MIN`: the coefficients are per turn of the blades, and the rings' angular momentum is that of blades turning forward.",
         sealed: false,
     },
     Refusal {
-        name: "AirDensityOutOfRange",
-        meaning: "The air density is outside `AIR_DENSITY_MIN_KG_M3`..=`AIR_DENSITY_MAX_KG_M3`.",
+        name: "AirDensityNotPositive",
+        meaning: "The air density is not above `AIR_DENSITY_ABOVE_KG_M3`: no air.",
         sealed: false,
     },
     Refusal {
@@ -159,13 +168,13 @@ const REFUSALS: &[Refusal] = &[
         sealed: false,
     },
     Refusal {
-        name: "AdvanceRatioOutOfRange",
-        meaning: "The air is moving and the advance ratio is below `ADVANCE_RATIO_MIN` by more than `ADVANCE_RATIO_MIN_ALLOWANCE_ULP` or above `ADVANCE_RATIO_MAX` by more than `ADVANCE_RATIO_MAX_ALLOWANCE_ULP` units in the last place of the end.",
+        name: "TipMachAboveIncompressible",
+        meaning: "The relative speed of the air at the tip over `SPEED_OF_SOUND_M_S` is above `TIP_MACH_MAX`: the flow over the blade is compressible, and the section is not.",
         sealed: false,
     },
     Refusal {
         name: "ReynoldsNumberOutOfRange",
-        meaning: "The chord Reynolds number at three quarters of the radius, at the question's density, is outside `REYNOLDS_NUMBER_MIN`..=`REYNOLDS_NUMBER_MAX`, the band the compared measurements span at `COMPARED_AIR_DENSITY_KG_M3`.",
+        meaning: "The chord Reynolds number at three quarters of the radius, at the question's density, is outside `REYNOLDS_NUMBER_MIN` to `REYNOLDS_NUMBER_MAX`, the band the blade section's two constants are taken over: the section has one zero-lift angle and one minimum drag and no law for how they move with the Reynolds number, and across this band alone the zero-lift angle that fits each sweep alone drifts from about −2.6 to −3.8 degrees.",
         sealed: false,
     },
     Refusal {
@@ -199,10 +208,10 @@ const REFUSALS: &[Refusal] = &[
 pub fn reject_name(reject: &PropellerReject) -> &'static str {
     match reject {
         PropellerReject::NonFiniteInput => "NonFiniteInput",
-        PropellerReject::RotationalSpeedOutOfRange { .. } => "RotationalSpeedOutOfRange",
-        PropellerReject::AirDensityOutOfRange { .. } => "AirDensityOutOfRange",
+        PropellerReject::RotationalSpeedNotPositive { .. } => "RotationalSpeedNotPositive",
+        PropellerReject::AirDensityNotPositive { .. } => "AirDensityNotPositive",
         PropellerReject::AirspeedNegative { .. } => "AirspeedNegative",
-        PropellerReject::AdvanceRatioOutOfRange { .. } => "AdvanceRatioOutOfRange",
+        PropellerReject::TipMachAboveIncompressible { .. } => "TipMachAboveIncompressible",
         PropellerReject::ReynoldsNumberOutOfRange { .. } => "ReynoldsNumberOutOfRange",
         PropellerReject::NonFiniteValue { .. } => "NonFiniteValue",
         PropellerReject::NoBalance { .. } => "NoBalance",
@@ -241,40 +250,31 @@ fn sections() -> Sections {
         "scan_steps": propeller::SCAN_STEPS,
         "angle_low_rad": propeller::ANGLE_LOW_RAD,
         "max_bisections": propeller::MAX_BISECTIONS,
-        "advance_ratio_min": propeller::ADVANCE_RATIO_MIN,
-        "advance_ratio_max": propeller::ADVANCE_RATIO_MAX,
-        "advance_ratio_min_allowance_ulp": propeller::ADVANCE_RATIO_MIN_ALLOWANCE_ULP,
-        "advance_ratio_max_allowance_ulp": propeller::ADVANCE_RATIO_MAX_ALLOWANCE_ULP,
-        "advance_ratio_end_allowance": "Units in the last place of the end, the gap between neighbouring 64-bit numbers there: 2^-56 at 0.111 and 2^-53 at 0.748. A caller forms the airspeed from an advance ratio in three rounded operations and the solver forms the advance ratio back in three more; six roundings of at most 2^-53 each move it by less than 5.3 units at 0.111 and 4.5 at 0.748, so by at most 5 whole units below and 4 above. Inside the allowance the question is answered at its own computed advance ratio; nothing is moved to the end.",
-        "advance_ratio_lowest_answered": propeller::ADVANCE_RATIO_LOWEST_ANSWERED,
-        "advance_ratio_lowest_answered_hex": format!("{:016x}", propeller::ADVANCE_RATIO_LOWEST_ANSWERED.to_bits()),
-        "advance_ratio_highest_answered": propeller::ADVANCE_RATIO_HIGHEST_ANSWERED,
-        "advance_ratio_highest_answered_hex": format!("{:016x}", propeller::ADVANCE_RATIO_HIGHEST_ANSWERED.to_bits()),
+        "compared_advance_ratio_min": propeller::ADVANCE_RATIO_MIN,
+        "compared_advance_ratio_max": propeller::ADVANCE_RATIO_MAX,
+        "tip_mach_number": "The relative speed of the air at the tip, sqrt((2π × rev/s × 0.127 m)² + airspeed²), over 340.29 m/s, dry air at 15 degC: the question holds no temperature. At 6531 rev/min and zero airspeed it is 0.255.",
         "constants_named_in_refusals": {
-            "ROTATIONAL_SPEED_MIN_REV_PER_MIN": propeller::ROTATIONAL_SPEED_MIN_REV_PER_MIN,
-            "ROTATIONAL_SPEED_MAX_REV_PER_MIN": propeller::ROTATIONAL_SPEED_MAX_REV_PER_MIN,
-            "AIR_DENSITY_MIN_KG_M3": propeller::AIR_DENSITY_MIN_KG_M3,
-            "AIR_DENSITY_MAX_KG_M3": propeller::AIR_DENSITY_MAX_KG_M3,
-            "ADVANCE_RATIO_MIN": propeller::ADVANCE_RATIO_MIN,
-            "ADVANCE_RATIO_MAX": propeller::ADVANCE_RATIO_MAX,
-            "ADVANCE_RATIO_MIN_ALLOWANCE_ULP": propeller::ADVANCE_RATIO_MIN_ALLOWANCE_ULP,
-            "ADVANCE_RATIO_MAX_ALLOWANCE_ULP": propeller::ADVANCE_RATIO_MAX_ALLOWANCE_ULP,
-            "STATIC_ROTATIONAL_SPEED_MIN_REV_PER_MIN": propeller::STATIC_ROTATIONAL_SPEED_MIN_REV_PER_MIN,
-            "STATIC_ROTATIONAL_SPEED_MAX_REV_PER_MIN": propeller::STATIC_ROTATIONAL_SPEED_MAX_REV_PER_MIN,
+            "ROTATIONAL_SPEED_ABOVE_REV_PER_MIN": propeller::ROTATIONAL_SPEED_ABOVE_REV_PER_MIN,
+            "AIR_DENSITY_ABOVE_KG_M3": propeller::AIR_DENSITY_ABOVE_KG_M3,
+            "SPEED_OF_SOUND_M_S": propeller::SPEED_OF_SOUND_M_S,
+            "TIP_MACH_MAX": propeller::TIP_MACH_MAX,
             "REYNOLDS_NUMBER_MIN": propeller::REYNOLDS_NUMBER_MIN,
             "REYNOLDS_NUMBER_MAX": propeller::REYNOLDS_NUMBER_MAX,
-            "COMPARED_AIR_DENSITY_KG_M3": propeller::COMPARED_AIR_DENSITY_KG_M3,
             "ANGLE_TOLERANCE_RAD": propeller::ANGLE_TOLERANCE_RAD,
             "BALANCE_TOLERANCE": propeller::BALANCE_TOLERANCE,
         },
     });
     let envelope = json!({
-        "static_rotational_speed_min_rev_per_min": propeller::STATIC_ROTATIONAL_SPEED_MIN_REV_PER_MIN,
-        "static_rotational_speed_max_rev_per_min": propeller::STATIC_ROTATIONAL_SPEED_MAX_REV_PER_MIN,
+        "compared_rotational_speed_min_rev_per_min": propeller::COMPARED_ROTATIONAL_SPEED_MIN_REV_PER_MIN,
+        "compared_rotational_speed_max_rev_per_min": propeller::COMPARED_ROTATIONAL_SPEED_MAX_REV_PER_MIN,
+        "static_rotational_speed_min_rev_per_min": propeller::COMPARED_STATIC_ROTATIONAL_SPEED_MIN_REV_PER_MIN,
+        "static_rotational_speed_max_rev_per_min": propeller::COMPARED_STATIC_ROTATIONAL_SPEED_MAX_REV_PER_MIN,
+        "rotational_speed_max_rev_per_min": propeller::ROTATIONAL_SPEED_MAX_REV_PER_MIN,
         "airspeed_max_m_s": propeller::AIRSPEED_MAX_M_S,
         "reynolds_number": "Chord Reynolds number at three quarters of the radius: density × sqrt((2π × rev/s × 0.75 × 0.127 m)² + airspeed²) × chord / viscosity. The band is the lowest and highest over the 116 compared points (43 fitted, 64 held back, 9 static) at 1.225 kg/m³, each rounded outward to a whole number: 44399.03 at 4007 rev/min and advance ratio 0.144, 75515.76 at 6519 rev/min and 0.734. evidence/research/propeller_apc_thin_electric_10x7/fix_0.7.0/compared_envelope.py computes it.",
         "chord_at_three_quarters_m": propeller::CHORD_AT_THREE_QUARTERS_M,
         "air_viscosity_pa_s": propeller::AIR_VISCOSITY_PA_S,
+        "compared_air_density_kg_m3": propeller::COMPARED_AIR_DENSITY_KG_M3,
     });
     if let (Some(locked), Value::Object(envelope)) = (locked.as_object_mut(), envelope) {
         locked.extend(envelope);
@@ -287,7 +287,7 @@ fn sections() -> Sections {
                 "rule": "In every ring the axial momentum given to the air equals the axial force of the blade elements.",
                 "tolerance": propeller::BALANCE_TOLERANCE,
                 "unit": "fraction of the larger side",
-                "checked": "every ring, at its settled angle; every trial angle is checked for finite values, a tip loss factor in (0, 1] and a forward blade speed",
+                "compared": "every ring, at its settled angle; every trial angle is held to finite values, a tip loss factor in (0, 1] and a forward blade speed",
                 "refusal": "MomentumBalanceBroken",
             },
             {
@@ -295,7 +295,7 @@ fn sections() -> Sections {
                 "rule": "The thrust of the blades equals the axial momentum given to the air over the whole disc.",
                 "tolerance": propeller::BALANCE_TOLERANCE,
                 "unit": "fraction of the sum of the rings' larger sides",
-                "checked": "at acceptance, against the same tolerance, after every ring has balanced",
+                "compared": "at acceptance, against the same tolerance, after every ring has balanced",
                 "refusal": "DiscBalanceBroken",
             },
         ]),
@@ -337,7 +337,7 @@ fn validation() -> [String; 5] {
         cp = propeller::POWER_COEFFICIENT_FULL_SCALE,
     );
     let result = HELD_BACK_RESULT.to_string();
-    let limits = "1. Two constants are fitted to this propeller's own measurements. On the fitted sweeps the error is 2.1 percent of full scale on average and 5.3 at worst; with the two constants set by hand instead (−4.0 degrees and 0.020) it is 8.4 and 16.3. 2. The thrust and power coefficients depend on the advance ratio alone: there is no Reynolds-number or Mach-number dependence. The chord Reynolds number at 75 percent of the radius is about 44,000 to 76,000 over the measurements (air of 1.225 kg/m³ and 1.81e-5 Pa·s, chord 16.4 mm, geometric speed): 44,000 to 58,000 in the fitted sweeps and 67,000 to 76,000 in the held-back ones. The measured thrust and power coefficients rise with rotational speed at the same advance ratio, and the model cannot follow that. It is what line A shows, and it is why the answer is too low above about 5000 rev/min, by 5 percent of full scale on average at 6000 to 6500 rev/min and by up to 10. The fitted measurements themselves, interpolated in advance ratio with no model at all, score 4.45 on average and 10.24 at worst on line A (63 of its 64 points lie between their advance ratios): no model of advance ratio alone that is faithful to the fitted data could have met the marks. The shape of the model is adequate at the higher speeds if it is refitted there: with the two constants fitted to line A itself, which the protocol does not allow and which validates nothing, the error on line A is 2.14 and 5.31 (−3.51 degrees and 0.0206). What does not carry is the constants: fitted sweep by sweep, the zero-lift angle drifts from −2.6 degrees at 4007 rev/min to about −3.5 to −3.8 at 6519 and 6531. 3. Line B missed for a different reason. At zero airspeed the measured thrust coefficient rises with speed, from 0.1051 at 4144 rev/min to 0.1139 at 6542, but the measured power coefficient falls, from 0.0536 to 0.0512, while the solver's static power coefficient is 0.0474 at every speed: 11.8 percent of full scale low at 4144 rev/min, the speed nearest the fitted ones, 7.2 low at 6542, and about 9 low throughout. No choice of the two constants moves it: line B is 6.0 to 6.2 on average with the fitted pair, the pair set by hand and the pair fitted to line A. The model's shaft power at rest is too low; that is not the effect of speed in limit 2. 4. Line A tests extrapolation in rotational speed (fitted to 5018, held back from 6015) and interpolation in advance ratio. Line B tests extrapolation in advance ratio to zero. The compared points span 4007 to 6531 rev/min and advance ratio 0.111 to 0.748 with the air moving, and 4144 to 6542 rev/min at rest; the range answered is that span, and outside it a question is refused. Inside the span, the sweeps cover the plane of speed and advance ratio unevenly: the 4007 sweep runs from 0.144 to 0.721, and the 6531 sweep from 0.111 to 0.440, so a question between sweeps is interpolated and not itself measured. No density was compared: the chord Reynolds number is held inside the band the compared points span at 1.225 kg/m³, and that band assumes the tunnel air was 1.225 kg/m³. Nothing tests another propeller or air off the axis. 5. One blade section stands for the whole blade; the hub inside 15 percent of the radius carries no load. 6. The measurement floor is far below the marks, so the misses are not measurement noise. The repeated held-back sweeps (6015 against 6020, 6519 against 6531) agree with each other to 0.15 to 0.18 percent of full scale on average and 0.29 to 0.35 at worst over the narrow band of advance ratio both cover, 0.38 to 0.48. Brandt's thesis, Table 3.1, gives the uncertainties of the rig: thrust 0.504 percent, power 0.240, torque 0.218, propeller speed 0.100, freestream velocity 0.207. 7. The five held-back files are now spent. 8. The source states no licence for the data; it asks to be cited.".to_string();
+    let limits = "1. Two constants are fitted to this propeller's own measurements. On the fitted sweeps the error is 2.1 percent of full scale on average and 5.3 at worst; with the two constants set by hand instead (−4.0 degrees and 0.020) it is 8.4 and 16.3. 2. The thrust and power coefficients depend on the advance ratio alone: there is no Reynolds-number or Mach-number dependence. The chord Reynolds number at 75 percent of the radius is about 44,000 to 76,000 over the measurements (air of 1.225 kg/m³ and 1.81e-5 Pa·s, chord 16.4 mm, geometric speed): 44,000 to 58,000 in the fitted sweeps and 67,000 to 76,000 in the held-back ones. The measured thrust and power coefficients rise with rotational speed at the same advance ratio, and the model cannot follow that. It is what line A shows, and it is why the answer is too low above about 5000 rev/min, by 5 percent of full scale on average at 6000 to 6500 rev/min and by up to 10. The fitted measurements themselves, interpolated in advance ratio with no model at all, score 4.45 on average and 10.24 at worst on line A (63 of its 64 points lie between their advance ratios): no model of advance ratio alone that is faithful to the fitted data could have met the marks. The shape of the model is adequate at the higher speeds if it is refitted there: with the two constants fitted to line A itself, which the protocol does not allow and which validates nothing, the error on line A is 2.14 and 5.31 (−3.51 degrees and 0.0206). What does not carry is the constants: fitted sweep by sweep, the zero-lift angle drifts from −2.6 degrees at 4007 rev/min to about −3.5 to −3.8 at 6519 and 6531. 3. Line B missed for a different reason. At zero airspeed the measured thrust coefficient rises with speed, from 0.1051 at 4144 rev/min to 0.1139 at 6542, but the measured power coefficient falls, from 0.0536 to 0.0512, while the solver's static power coefficient is 0.0474 at every speed: 11.8 percent of full scale low at 4144 rev/min, the speed nearest the fitted ones, 7.2 low at 6542, and about 9 low throughout. No choice of the two constants moves it: line B is 6.0 to 6.2 on average with the fitted pair, the pair set by hand and the pair fitted to line A. The model's shaft power at rest is too low; that is not the effect of speed in limit 2. 4. Line A tests extrapolation in rotational speed (fitted to 5018, held back from 6015) and interpolation in advance ratio. Line B tests extrapolation in advance ratio to zero. The compared points span 4007 to 6531 rev/min and advance ratio 0.111 to 0.748 with the air moving, and 4144 to 6542 rev/min at rest. The rotational speed, the advance ratio and the density are answered past that span, to the Reynolds band, a tip Mach number of 0.3 and the roots of the ring equations, and nothing was compared there (through engine 0.8.0 the advance ratio and the density were refused there, and until this version the rotational speed). Inside the span, the sweeps cover the plane of speed and advance ratio unevenly: the 4007 sweep runs from 0.144 to 0.721, and the 6531 sweep from 0.111 to 0.440, so a question between sweeps is interpolated and not itself measured. No density was compared: the chord Reynolds number is held inside the band the compared points span at 1.225 kg/m³, and that band assumes the tunnel air was 1.225 kg/m³. Nothing tests another propeller or air off the axis. 5. One blade section stands for the whole blade; the hub inside 15 percent of the radius carries no load. 6. The measurement floor is far below the marks, so the misses are not measurement noise. The repeated held-back sweeps (6015 against 6020, 6519 against 6531) agree with each other to 0.15 to 0.18 percent of full scale on average and 0.29 to 0.35 at worst over the narrow band of advance ratio both cover, 0.38 to 0.48. Brandt's thesis, Table 3.1, gives the uncertainties of the rig: thrust 0.504 percent, power 0.240, torque 0.218, propeller speed 0.100, freestream velocity 0.207. 7. The five held-back files are now spent. 8. The source states no licence for the data; it asks to be cited.".to_string();
     [object, data, pass_line, result, limits]
 }
 
@@ -511,10 +511,10 @@ mod tests {
     fn one_of_each() -> Vec<PropellerReject> {
         vec![
             PropellerReject::NonFiniteInput,
-            PropellerReject::RotationalSpeedOutOfRange { rotational_speed_rev_per_min: 1.0, at_rest: false },
-            PropellerReject::AirDensityOutOfRange { air_density_kg_m3: 2.0 },
+            PropellerReject::RotationalSpeedNotPositive { rotational_speed_rev_per_min: 0.0 },
+            PropellerReject::AirDensityNotPositive { air_density_kg_m3: 0.0 },
             PropellerReject::AirspeedNegative { airspeed_m_s: -1.0 },
-            PropellerReject::AdvanceRatioOutOfRange { advance_ratio: 0.9 },
+            PropellerReject::TipMachAboveIncompressible { tip_mach_number: 0.4 },
             PropellerReject::ReynoldsNumberOutOfRange { reynolds_number: 30000.0 },
             PropellerReject::NonFiniteValue { ring: 3 },
             PropellerReject::NoBalance { ring: 4 },
@@ -559,7 +559,7 @@ mod tests {
     /// every limit and every pair of limits.
     #[test]
     fn the_gateway_refuses_exactly_what_check_question_refuses() {
-        let speeds = [0.0, 4006.999, 4007.0, 4100.0, 4144.0, 5000.0, 6531.0, 6531.001, 6542.0, 6542.001, 1.0e9, -5000.0];
+        let speeds = [0.0, 1.0e-300, 1000.0, 3000.0, 4006.999, 4007.0, 4100.0, 4144.0, 5000.0, 6531.0, 6531.001, 6542.0, 6542.001, 6800.0, 7600.0, 7676.0, 7677.0, 1.0e9, -5000.0];
         let airspeeds = [-1.0, -1.0e-300, 0.0, 1.0e-300, 1.0, 1.8, 1.9, 8.0, 12.68, 12.7, 20.6, 20.7, 1.0e9];
         let densities = [0.0, 0.999, 1.0, 1.225, 1.3, 1.301, -1.0];
         let (mut refused, mut taken) = (std::collections::BTreeMap::new(), 0);
@@ -594,7 +594,7 @@ mod tests {
         let names: Vec<&str> = refused.keys().copied().collect();
         assert_eq!(
             names,
-            ["AdvanceRatioOutOfRange", "AirDensityOutOfRange", "AirspeedNegative", "ReynoldsNumberOutOfRange", "RotationalSpeedOutOfRange"]
+            ["AirDensityNotPositive", "AirspeedNegative", "ReynoldsNumberOutOfRange", "RotationalSpeedNotPositive", "TipMachAboveIncompressible"]
         );
         // An unknown key and a missing key are named and nothing is filled in.
         let mut extra = request(5000.0, 8.0, 1.225);
@@ -627,73 +627,46 @@ mod tests {
         let inputs = body["inputs"].as_array().unwrap();
         let names: Vec<&str> = inputs.iter().map(|input| input["name"].as_str().unwrap()).collect();
         assert_eq!(names, ["rotational_speed_rev_per_min", "airspeed_m_s", "air_density_kg_m3"]);
-        assert_eq!(inputs[0]["minimum"], 4007.0);
-        assert_eq!(inputs[0]["maximum"], 6542.0);
+        assert_eq!(inputs[0]["minimum"], 0.0);
+        assert_eq!(inputs[0]["minimum_exclusive"], true);
+        assert_eq!(inputs[0]["maximum"], propeller::ROTATIONAL_SPEED_MAX_REV_PER_MIN);
         assert_eq!(inputs[1]["minimum"], 0.0);
-        assert_eq!(inputs[1]["maximum"], 20.680629200000013);
         assert_eq!(inputs[1]["maximum"], propeller::AIRSPEED_MAX_M_S);
-        assert_eq!(inputs[2]["minimum"], 1.0);
-        assert_eq!(inputs[2]["maximum"], 1.3);
-        // The published maximum airspeed is answered, the next 64-bit number up is refused.
-        assert_eq!(the_gateway_says(&request(6531.0, propeller::AIRSPEED_MAX_M_S, 1.2)), None);
-        let above = the_gateway_says(&request(6531.0, propeller::AIRSPEED_MAX_M_S.next_up(), 1.2)).expect("refused");
-        assert!(above.ends_with("(AdvanceRatioOutOfRange)."), "{above}");
+        assert!((propeller::AIRSPEED_MAX_M_S - 102.087).abs() < 1e-9);
+        assert_eq!(inputs[2]["minimum"], 0.0);
+        assert_eq!(inputs[2]["minimum_exclusive"], true);
+        // The published maximum airspeed is the tip Mach limit with the
+        // blades still: at every served rotational speed it is refused there.
+        let above = the_gateway_says(&request(4007.0, propeller::AIRSPEED_MAX_M_S, 0.5)).expect("refused");
+        assert!(above.ends_with("(TipMachAboveIncompressible)."), "{above}");
         assert!(inputs[0]["bound"].as_str().unwrap().contains("4007 to 6531 rev/min with the air moving"));
         assert!(inputs[0]["bound"].as_str().unwrap().contains("4144 to 6542 rev/min at zero airspeed"));
         let density = inputs[2]["bound"].as_str().unwrap();
         assert!(density.contains("No density was compared"));
         assert!(density.contains("44399 to 75516"));
-        // The airspeeds the bound's sentence states are the solver's limits,
-        // rounded inward to four decimals: each printed end is answered at
-        // its rotational speed at a density the sentence names, and one step
-        // of the last printed decimal further out is refused.
         let bound = inputs[1]["bound"].as_str().unwrap();
-        assert!(bound.contains("1.8829 to 12.6882 m/s at 4007 rev/min, 3.069 to 20.6806 m/s at 6531 rev/min"));
-        assert!(bound.contains("the first being answered from 1.226 kg/m³ up and the second from 1.220 kg/m³ down"));
-        assert!(bound.contains("20.680629200000013 m/s"));
-        for (speed, ratio, shown, outward, density) in [
-            (4007.0, propeller::ADVANCE_RATIO_MIN, "1.8829", -1.0e-4, 1.226),
-            (4007.0, propeller::ADVANCE_RATIO_MAX, "12.6882", 1.0e-4, 1.225),
-            (6531.0, propeller::ADVANCE_RATIO_MIN, "3.069", -1.0e-4, 1.225),
-            (6531.0, propeller::ADVANCE_RATIO_MAX, "20.6806", 1.0e-4, 1.220),
+        assert!(bound.contains("advance ratio 0.111 to 0.748"));
+        assert!(bound.contains("TipMachAboveIncompressible"));
+        // Past the compared advance ratios and densities the door takes the
+        // question: the low and high ends at both speeds, the windmill, and
+        // thin and dense air where the Reynolds band holds.
+        for (speed, airspeed, density) in [
+            (4007.0, 3.0, 1.25),
+            (4007.0, 30.0, 1.225),
+            (6531.0, 2.0, 1.225),
+            (6531.0, 25.0, 1.1),
+            (5000.0, 8.47, 1.6),
+            (6531.0, 27.6, 0.8),
         ] {
-            let airspeed: f64 = ratio * (speed / 60.0) * propeller::DIAMETER_M;
-            let stated: f64 = shown.parse().unwrap();
-            assert!((airspeed - stated).abs() < 1e-4, "{airspeed} {shown}");
-            assert!(bound.contains(shown), "{shown}");
-            assert_eq!(the_gateway_says(&request(speed, stated, density)), None, "{shown} at {speed}");
-            let printed = PropellerQuestion {
-                rotational_speed_rev_per_min: speed,
-                airspeed_m_s: stated,
-                air_density_kg_m3: density,
-            };
-            let solution = propeller::solve(&printed).unwrap_or_else(|reject| panic!("{shown}: {reject}"));
-            assert_eq!(solution.advance_ratio.to_bits(), propeller::advance_ratio(&printed).to_bits());
-            let further = the_gateway_says(&request(speed, stated + outward, density)).expect("refused");
-            assert!(further.ends_with("(AdvanceRatioOutOfRange)."), "{further}");
+            assert_eq!(the_gateway_says(&request(speed, airspeed, density)), None, "{speed} {airspeed} {density}");
         }
-        // At 1.225 kg/m³ the two corners never measured are refused by their Reynolds number.
-        for (speed, shown) in [(4007.0, 1.8829), (6531.0, 20.6806)] {
-            let said = the_gateway_says(&request(speed, shown, 1.225)).expect("refused");
-            assert!(said.ends_with("(ReynoldsNumberOutOfRange)."), "{said}");
-        }
-        assert!(the_gateway_says(&request(4007.0, 1.8829, 1.225_9)).is_some());
-        assert!(the_gateway_says(&request(6531.0, 20.6806, 1.221)).is_some());
-        assert!(bound.contains("never moved to an end"));
-        assert!(bound.contains("by no more than 5 units in the last place (ADVANCE_RATIO_MIN_ALLOWANCE_ULP)"));
-        assert!(bound.contains("by no more than 4 (ADVANCE_RATIO_MAX_ALLOWANCE_ULP)"));
-        assert_eq!(body["locked"]["advance_ratio_min_allowance_ulp"], 5);
-        assert_eq!(body["locked"]["advance_ratio_max_allowance_ulp"], 4);
-        assert_eq!(body["locked"]["constants_named_in_refusals"]["ADVANCE_RATIO_MIN_ALLOWANCE_ULP"], 5);
-        assert_eq!(body["locked"]["constants_named_in_refusals"]["ADVANCE_RATIO_MAX_ALLOWANCE_ULP"], 4);
         assert_eq!(body["locked"]["constants_named_in_refusals"]["REYNOLDS_NUMBER_MIN"], 44399.0);
         assert_eq!(body["locked"]["constants_named_in_refusals"]["REYNOLDS_NUMBER_MAX"], 75516.0);
-        assert_eq!(body["locked"]["advance_ratio_lowest_answered_hex"], "3fbc6a7ef9db22cc");
-        assert_eq!(body["locked"]["advance_ratio_highest_answered_hex"], "3fe7ef9db22d0e5a");
+        assert_eq!(body["locked"]["constants_named_in_refusals"]["TIP_MACH_MAX"], 0.3);
         // The disc balance is checked at acceptance, under its own name.
         assert_eq!(body["invariants"][1]["name"], "thrust_balance_gap");
         assert_eq!(body["invariants"][1]["refusal"], "DiscBalanceBroken");
-        assert!(!body["invariants"][1]["checked"].as_str().unwrap().contains("follows from the rings"));
+        assert!(!body["invariants"][1]["compared"].as_str().unwrap().contains("follows from the rings"));
 
         let record = &body["validation"];
         for part in ["object", "data", "pass_line", "result", "limits"] {
@@ -708,6 +681,9 @@ mod tests {
         assert!(!data.contains("0.10 to 0.75"));
         let limits = record["limits"].as_str().unwrap();
         assert!(limits.contains("4007 to 6531 rev/min and advance ratio 0.111 to 0.748 with the air moving, and 4144 to 6542 rev/min at rest"));
+        for refusal in body["refusals"].as_array().unwrap() {
+            assert!(!refusal["meaning"].as_str().unwrap().contains("..="), "{refusal}");
+        }
         assert!(limits.contains("No density was compared"));
         assert!(!limits.contains("outside 4000 to 6600 rev/min"));
         assert_eq!(record["result"], HELD_BACK_RESULT);
@@ -721,7 +697,7 @@ mod tests {
             "mean 3.77 and worst 10.03",
             "the unfitted model errs high where the fitted one errs low",
             "Scored a second time on 2026-10-09 by a second party",
-            "evidence/checks/second_party/V-27/",
+            "evidence/verification/second_party/V-27/",
         ] {
             assert!(result.contains(stated), "{stated}");
         }
@@ -757,63 +733,6 @@ mod tests {
         assert!(SOLVER_SOURCE.contains(&format!("<{url}>")), "{url}");
         assert!(SOLVER_SOURCE.contains(&format!("Retrieved {retrieved}")), "{retrieved}");
         assert!(SOLVER_SOURCE.contains(&format!("fn {}()", body["reference"]["test"].as_str().unwrap())));
-    }
-
-    /// A density at which the chord Reynolds number stays inside its band
-    /// at both ends of the advance ratio at `speed`.
-    fn density_for(speed: f64) -> f64 {
-        if speed < 5000.0 { 1.25 } else { 1.2 }
-    }
-
-    /// An advance ratio of exactly 0.111 and of exactly 0.748, asked as a
-    /// caller asks it, is taken at the door at every whole rotational speed;
-    /// one unit in the last place beyond the allowance is refused with the
-    /// solver's sentence, which names both allowances.
-    #[test]
-    fn both_ends_of_the_advance_ratio_are_taken_at_every_whole_rotational_speed() {
-        for whole in 4007..=6531u32 {
-            let speed = f64::from(whole);
-            for end in [propeller::ADVANCE_RATIO_MIN, propeller::ADVANCE_RATIO_MAX] {
-                let airspeed = end * (speed / 60.0) * propeller::DIAMETER_M;
-                assert_eq!(the_gateway_says(&request(speed, airspeed, density_for(speed))), None, "{whole} {end}");
-            }
-        }
-        for (speed, airspeed) in [(6000.0, 18.9992), (6000.0, 2.8194), (4500.0, 14.2494), (4500.0, 2.11455)] {
-            assert_eq!(the_gateway_says(&request(speed, airspeed, 1.225)), None, "{speed} {airspeed}");
-        }
-        let mut refused = 0;
-        for wanted in [
-            f64::from_bits(propeller::ADVANCE_RATIO_MIN.to_bits() - u64::from(propeller::ADVANCE_RATIO_MIN_ALLOWANCE_ULP) - 1),
-            f64::from_bits(propeller::ADVANCE_RATIO_MAX.to_bits() + u64::from(propeller::ADVANCE_RATIO_MAX_ALLOWANCE_ULP) + 1),
-        ] {
-            for speed in [4007.0, 5000.0, 6000.0, 6531.0] {
-                let mut airspeed: f64 = wanted * (speed / 60.0) * propeller::DIAMETER_M;
-                for _ in 0..16 {
-                    let computed = airspeed / ((speed / 60.0) * propeller::DIAMETER_M);
-                    if computed == wanted {
-                        break;
-                    }
-                    airspeed = if computed < wanted { airspeed.next_up() } else { airspeed.next_down() };
-                }
-                let question = PropellerQuestion {
-                    rotational_speed_rev_per_min: speed,
-                    airspeed_m_s: airspeed,
-                    air_density_kg_m3: density_for(speed),
-                };
-                if propeller::advance_ratio(&question) != wanted {
-                    continue;
-                }
-                let said = the_gateway_says(&request(speed, airspeed, density_for(speed))).expect("refused");
-                assert_eq!(
-                    said,
-                    format!(
-                        "Physical Violation: advance ratio {wanted} is outside 0.111..=0.748, the advance ratios compared with measurement, by more than the allowance of 5 units in the last place below (ADVANCE_RATIO_MIN_ALLOWANCE_ULP) and 4 above (ADVANCE_RATIO_MAX_ALLOWANCE_ULP), and the airspeed is not zero (AdvanceRatioOutOfRange)."
-                    )
-                );
-                refused += 1;
-            }
-        }
-        assert!(refused >= 4, "{refused}");
     }
 
     #[test]

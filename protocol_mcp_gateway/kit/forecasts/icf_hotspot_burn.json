@@ -1,0 +1,27 @@
+{
+ "model": "icf_hotspot_burn",
+ "verdict": "missed",
+ "protocol": {
+  "path": "evidence/research/icf_nif_hotspot/validation_protocol.md",
+  "sha256": "a3ef39766b8a527947f4b8c37d3cb2563849a9da3abdabc40fe2dd4b805d8553",
+  "committed": {
+   "crate": "genesis_solvers",
+   "commit": "66a69fb98e42751e46aeab5dc8da1a3543398e4e",
+   "utc": "2026-10-14T23:54:27Z",
+   "how": "A commit with no file changes, 'Pass marks and forecast for icf_hotspot_burn against published NIF shots, fixed before scoring.', whose message carries the full SHA-256 of validation_protocol.md, of analysis/inputs.py and of analysis/score.py, and says no run of the solver on these shots' inputs has been made."
+  }
+ },
+ "held_back": [
+  {
+   "path": "evidence/research/icf_nif_hotspot/raw/shots/FINGERPRINT.txt",
+   "sha256": "499f4cdeb1c5bef7a2994b6558169d38fe0ed9fe1dccd7d9d857450a1993bc5b"
+  }
+ ],
+ "scored": {
+  "utc": "2026-10-14T23:54:36Z",
+  "evidence": "Birth time of evidence/research/icf_nif_hotspot/analysis/out/score_run.log (16:54:36 PDT), the scoring run of analysis/score.py with the solver at 9c6fb1f (about 2.5 min of computing); its output is analysis/out/scored_registered_9c6fb1f.json (born 2026-10-15T00:14:10Z, the same bytes as out/scored.json, SHA-256 4f97fd8b... in analysis/FINGERPRINT.txt). RESULT.md: 'Scored: 2026-10-14, once'."
+ },
+ "forecast_first": "held",
+ "registered_by": "backfill from the record, 2026-10-15",
+ "notes": "Committed 9 s before the scoring run began; validation_protocol.md, inputs.py and score.py on disk still have the hashes in the commit message. The commit was made in .build_2026-10-14/wave1_icf_hotspot (branch wave1-icf_hotspot), as the protocol says, and is in the integration copy with the same id. 'Held back' here means the solver had not been run on the shots' inputs: the measured yields, burn widths and burn-ups are published (raw/shots/FINGERPRINT.txt lists the papers with their SHA-256, retrieved 2026-10-14) and the protocol's forecast quotes them. analysis/FINGERPRINT.txt fingerprints the scripts and outputs after the run. Later and after the fact, not gated: the dense-shell explorations (out/dense_shell*.json), scored_final.json at 00:19:55Z, the second party's consistent reading (second_party/, out/consistent.json, 01:37Z) that the description shows as an after-the-fact re-evaluation, and raw/later_shots/ (retrieved 2026-10-15). Commit times are the committer's clock. No mark for it in the local copy of the public pass-marks repository (command-center/sales/github/pass-marks/, posted 2026-10-13)."
+}

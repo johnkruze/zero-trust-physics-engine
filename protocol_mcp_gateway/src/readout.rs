@@ -139,7 +139,7 @@ impl Plan {
         let card = request["card"].as_str().unwrap_or_default();
         let listed = object
             .get("quantities")
-            .ok_or_else(|| DoorError::Unprocessable("Missing required parameter: 'readout.quantities'".into()))?
+            .ok_or_else(|| DoorError::Unprocessable("Missing required parameter: 'readout.quantities' (InputMissing).".into()))?
             .as_array()
             .ok_or_else(|| violation("'readout.quantities' must be a JSON array of names."))?;
         if listed.is_empty() {
@@ -175,7 +175,7 @@ impl Plan {
                 }
                 let quantity = first
                     .get("quantity")
-                    .ok_or_else(|| DoorError::Unprocessable("Missing required parameter: 'readout.first_past.quantity'".into()))?
+                    .ok_or_else(|| DoorError::Unprocessable("Missing required parameter: 'readout.first_past.quantity' (InputMissing).".into()))?
                     .as_str()
                     .ok_or_else(|| violation("'readout.first_past.quantity' must be a string."))?;
                 let index = names.iter().position(|named| named.text == quantity).ok_or_else(|| {
@@ -423,6 +423,6 @@ pub(crate) fn schema() -> Value {
         },
         "required": ["quantities"],
         "additionalProperties": false,
-        "description": "Optional. The named quantities in decimals at the recorded steps, each one's minimum and maximum over every landed step with its step, its time and every other listed quantity at that step (at_minimum, at_maximum), and first_past when asked. Not part of the sealed request: the run_seal is that of the same run without it."
+        "description": "Optional. Reads quantities without the frames: {\"quantities\": [names the card publishes], \"first_past\": {\"quantity\": <one of them>, \"above\" or \"below\": <level>}}. The answer then holds the named quantities in decimals at the recorded steps, each one's minimum and maximum over every landed step with its step, its time (the step times dt_s) and every other listed quantity at that step (at_minimum, at_maximum), and first_past when asked. With record_every equal to the steps, one state is recorded and the readout gives the extremes of every step. Not part of the sealed request: the run_seal is that of the same run without it, and the receipt covers it."
     })
 }

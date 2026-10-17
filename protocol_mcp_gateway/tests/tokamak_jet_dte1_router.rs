@@ -2,18 +2,21 @@
 //!
 //! A step is bit-checked against the compiled kernel step with the same proof
 //! bytes. A run of three segments under three loads carries the kernel
-//! loop's last state to the bit, and its tape verifies. Each published bound
-//! is refused by name at the door, and so are the limits that join two
-//! fields and the envelope of the comparison: the Greenwald density of the
-//! segment's current and 0.834 of it, the safety factor of the current and
-//! the field and its compared span, the two compared spans of the tritium
-//! fraction, and at the start the temperature, the normalised beta and the
-//! confinement time. A run that reaches the envelope part way is sealed with
-//! that refusal on its last landed step. The clock is the caller's: a run
-//! continued at the returned t_s is the straight run, and a start without it
-//! is refused. A series of the run's own values compares to exactly zero.
+//! loop's last state to the bit, and its tape verifies. Each limit of physics
+//! and of a field is refused by name at the door: the published bounds at
+//! zero, a tritium fraction above 1, the Greenwald density of the segment's
+//! current, a safety factor under 2, and at the start the stores, the span of
+//! the reactivity fit, the Troyon limit and the ceiling of the start's own
+//! state. Past each old wall of the compared envelope a request is answered
+//! and carries the kernel loop to the bit. A run that reaches a limit of its
+//! state part way is sealed with that refusal on its last landed step. The
+//! clock is the caller's and has no end: a run continued at the returned t_s
+//! is the straight run past 5.475 s, and a start without it is refused. A
+//! series of the run's own values compares to exactly zero.
 //!
 //! The loads here are round numbers. No pulse of the research record is run.
+
+mod answer_text;
 
 use std::time::Duration;
 
@@ -40,7 +43,7 @@ async fn spawn_app() -> String {
 async fn post(base: &str, path: &str, body: &Value) -> (u16, String) {
     let client = Client::builder().timeout(Duration::from_secs(300)).build().unwrap();
     let url = format!("{base}{path}");
-    let text = serde_json::to_string(body).unwrap();
+    let text = answer_text::as_sent(body);
     let mut last_error = None;
     for _ in 0..20 {
         match client
@@ -52,7 +55,9 @@ async fn post(base: &str, path: &str, body: &Value) -> (u16, String) {
         {
             Ok(response) => {
                 let status = response.status().as_u16();
-                return (status, response.text().await.unwrap());
+                let text = response.text().await.unwrap();
+                answer_text::remember(&text);
+                return (status, text);
             }
             Err(error) => {
                 last_error = Some(error);
@@ -191,7 +196,7 @@ async fn a_step_of_the_tokamak_matches_the_compiled_step_with_the_same_proof_byt
     let base = spawn_app().await;
     let card = tokamak();
     let deuterium = load(10.0e6, 1.0e6, 4.0e19, 2.5e6, 2.6, 0.0);
-    let dense = TokamakLoad { line_density_per_m3: tokamak_jet_dte1::LINE_DENSITY_MAX_PER_M3, ..even_mix() };
+    let dense = TokamakLoad { line_density_per_m3: tokamak_jet_dte1::LINE_DENSITY_COMPARED_MAX_PER_M3, ..even_mix() };
     let cases = [
         (0.0, 4.0e6, 0.5e6, even_mix(), tokamak_jet_dte1::GATE_DT_S),
         (0.0, 3.0e6, 0.5e6, deuterium, tokamak_jet_dte1::FLOOR_DT_S),
@@ -279,54 +284,67 @@ async fn a_run_of_three_loads_carries_the_kernel_loop_and_its_tape_verifies() {
     assert_eq!(answer["run_seal"], tape["run_seal"]);
 }
 
+
+/// The kernel loop of a run of one load at a held step: the state after the
+/// last landed step, the steps landed, the worst residual, and the refusal
+/// that stopped it, if any.
+fn kernel_run(thermal_j: f64, fast_j: f64, load: TokamakLoad, dt_s: f64, steps: u64) -> (TokamakState, u64, f64, Option<StepReject>) {
+    let card = tokamak();
+    let mut state = TokamakState::try_start(&card, thermal_j, fast_j).unwrap();
+    let mut frame = blank_frame([0; 16]);
+    let mut worst = 0.0_f64;
+    for landed in 0..steps {
+        match tokamak_jet_dte1::step(&card, &mut state, &mut frame, load, dt_s) {
+            Ok(()) => worst = worst.max(state.residual_conservation_error),
+            Err(reject) => return (state, landed, worst, Some(reject)),
+        }
+    }
+    (state, steps, worst, None)
+}
+
+/// The step a run of this start holds: 1 ms, or the ceiling of the start's
+/// state where that is shorter.
+fn held_step(thermal_j: f64, fast_j: f64, load: &TokamakLoad) -> f64 {
+    let ceiling = tokamak().state_ceiling_dt_s(thermal_j, fast_j, *load);
+    if ceiling < 1.0e-3 { ceiling } else { 1.0e-3 }
+}
+
+/// Each limit of physics and each limit of a field is refused by name at the
+/// door, before a step: the published bounds at zero, the tritium fraction
+/// above 1, the Greenwald density, a safety factor under 2, and at the start
+/// the stores, the span of the reactivity fit, the Troyon limit and the
+/// ceiling of the start's own state.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn each_limit_is_refused_by_name_before_a_step() {
     let base = spawn_app().await;
     let card = tokamak();
     let low = load(10.0e6, 1.0e6, 2.0e19, 1.65e6, 1.80, 0.5);
-    let mid = load(10.0e6, 1.0e6, 4.0e19, 2.5e6, 2.6, 0.5);
-    let dense = TokamakLoad { line_density_per_m3: 7.85e19, ..even_mix() };
-    let thin = TokamakLoad { line_density_per_m3: 1.65e19, ..even_mix() };
+    let wide = load(20.0e6, 1.0e6, 1.65e19, 6.0e6, 6.0, 0.5);
     let cases: Vec<(f64, f64, TokamakLoad, &str)> = vec![
-        (4.0e6, 0.5e6, TokamakLoad { heating_power_w: above(24.3e6), ..even_mix() }, "HeatingPowerOutsideCard"),
-        (4.0e6, 0.5e6, TokamakLoad { heating_power_w: below(0.124e6), ..even_mix() }, "HeatingPowerOutsideCard"),
-        (4.0e6, 0.5e6, TokamakLoad { heating_power_w: 30.0e6, ..even_mix() }, "HeatingPowerOutsideCard"),
-        (4.0e6, 0.5e6, TokamakLoad { ohmic_power_w: above(2.44e6), ..even_mix() }, "OhmicPowerOutsideCard"),
-        (4.0e6, 0.5e6, TokamakLoad { ohmic_power_w: 0.0, ..even_mix() }, "OhmicPowerOutsideCard"),
-        (4.0e6, 0.5e6, TokamakLoad { plasma_current_a: above(3.84e6), ..even_mix() }, "PlasmaCurrentOutsideCard"),
-        (4.0e6, 0.5e6, TokamakLoad { plasma_current_a: below(1.65e6), ..low }, "PlasmaCurrentOutsideCard"),
-        (4.0e6, 0.5e6, TokamakLoad { toroidal_field_t: above(4.04), ..even_mix() }, "ToroidalFieldOutsideCard"),
-        (4.0e6, 0.5e6, TokamakLoad { toroidal_field_t: below(1.80), ..low }, "ToroidalFieldOutsideCard"),
+        (4.0e6, 0.5e6, TokamakLoad { heating_power_w: -1.0e-9, ..even_mix() }, "HeatingPowerNegative"),
+        (4.0e6, 0.5e6, TokamakLoad { ohmic_power_w: -1.0, ..even_mix() }, "OhmicPowerNegative"),
+        (4.0e6, 0.5e6, TokamakLoad { plasma_current_a: 0.0, ..even_mix() }, "PlasmaCurrentNotPositive"),
+        (4.0e6, 0.5e6, TokamakLoad { plasma_current_a: -3.8e6, ..even_mix() }, "PlasmaCurrentNotPositive"),
+        (4.0e6, 0.5e6, TokamakLoad { toroidal_field_t: 0.0, ..even_mix() }, "ToroidalFieldNotPositive"),
         (4.0e6, 0.5e6, TokamakLoad { tritium_fraction: -1.0e-9, ..even_mix() }, "FuelMixOutsideCard"),
-        (4.0e6, 0.5e6, TokamakLoad { tritium_fraction: above(0.504), ..even_mix() }, "FuelMixOutsideComparison"),
-        (4.0e6, 0.5e6, TokamakLoad { tritium_fraction: 0.93, ..even_mix() }, "FuelMixOutsideComparison"),
-        (4.0e6, 0.5e6, TokamakLoad { tritium_fraction: above(0.034), ..even_mix() }, "FuelMixOutsideComparison"),
-        (4.0e6, 0.5e6, TokamakLoad { tritium_fraction: below(0.451), ..even_mix() }, "FuelMixOutsideComparison"),
-        (4.0e6, 0.5e6, TokamakLoad { line_density_per_m3: below(1.65e19), ..even_mix() }, "DensityBelowCard"),
-        (4.0e6, 0.5e6, TokamakLoad { line_density_per_m3: above(7.85e19), ..even_mix() }, "DensityAboveComparison"),
-        // Inside the published maximum, above the Greenwald density of 1.65 MA.
+        (4.0e6, 0.5e6, TokamakLoad { tritium_fraction: above(1.0), ..even_mix() }, "FuelMixOutsideCard"),
+        (4.0e6, 0.5e6, TokamakLoad { line_density_per_m3: 0.0, ..even_mix() }, "DensityNotPositive"),
+        (4.0e6, 0.5e6, TokamakLoad { line_density_per_m3: -1.0, ..even_mix() }, "DensityNotPositive"),
         (4.0e6, 0.5e6, TokamakLoad { line_density_per_m3: above(card.greenwald_density_per_m3(1.65e6)), ..low }, "DensityAboveGreenwald"),
-        (4.0e6, 0.5e6, TokamakLoad { line_density_per_m3: 0.84 * card.greenwald_density_per_m3(2.5e6), ..mid }, "GreenwaldFractionAboveComparison"),
+        (4.0e6, 0.5e6, TokamakLoad { line_density_per_m3: above(card.greenwald_density_per_m3(3.8e6)), ..even_mix() }, "DensityAboveGreenwald"),
         (4.0e6, 0.5e6, TokamakLoad { plasma_current_a: 3.84e6, toroidal_field_t: 1.80, ..even_mix() }, "SafetyFactorBelowLimit"),
-        (4.0e6, 0.5e6, TokamakLoad { plasma_current_a: 3.0e6, toroidal_field_t: 3.4, ..even_mix() }, "SafetyFactorOutsideComparison"),
-        // 3.84 MA at 3.8 T: 3.65, below the 3.66 of the nine pulses; 42976 reached 3.39.
-        (4.0e6, 0.5e6, TokamakLoad { plasma_current_a: 3.84e6, toroidal_field_t: 3.8, ..even_mix() }, "SafetyFactorOutsideComparison"),
         // The start, under the first load.
-        (above(9.57e6), 0.5e6, dense, "EnergyOutsideComparison"),
-        (below(0.462e6), 0.1e6, thin, "EnergyOutsideComparison"),
-        (4.0e6, above(1.62e6), even_mix(), "EnergyOutsideComparison"),
-        // 3.5 MJ of fast ions, which only 42976 reached.
-        (4.0e6, 3.5e6, even_mix(), "EnergyOutsideComparison"),
-        (4.0e6, 0.0, even_mix(), "EnergyOutsideComparison"),
-        (2.0e6, 0.5e6, dense, "TemperatureOutsideComparison"),
-        (4.0e6, 0.5e6, thin, "TemperatureOutsideComparison"),
-        (3.0e6, 0.85e6, low, "BetaOutsideComparison"),
-        // A normalised beta of 0.131 at 3.84 MA and 4.04 T, below the 0.224 of the nine pulses.
-        (1.0e6, 0.05e6, load(10.0e6, 1.0e6, 2.0e19, 3.84e6, 4.04, 0.5), "BetaOutsideComparison"),
-        (2.0e6, 0.5e6, even_mix(), "ConfinementTimeOutsideComparison"),
+        (0.0, 0.5e6, even_mix(), "EnergyOutsideCard"),
+        (4.0e6, -1.0, even_mix(), "EnergyOutsideCard"),
+        (0.1e6, 0.0, even_mix(), "TemperatureBelowReactivityFit"),
+        // 46 MJ at 1.65e19 per cubic metre is 103 keV at the centre of the profile, under the Troyon limit of 6 MA and 6 T.
+        (46.0e6, 0.0, wide, "TemperatureAboveReactivityFit"),
+        (20.0e6, 3.0e6, even_mix(), "BetaAboveTroyon"),
         // 2.4 MJ at 1.65e19 per cubic metre, 1.65 MA and 1.80 T: 4.1 keV and a
-        // confinement time of 63 ms. 0.6.0 named such states FirstLawBreach.
-        (2.4e6, 0.1e6, load(24.3e6, 2.44e6, 1.65e19, 1.65e6, 1.80, 0.5), "ConfinementTimeOutsideComparison"),
+        // confinement time of 63 ms, whose ceiling is 0.42 ms. 0.6.0 named such
+        // states FirstLawBreach; 0.9.0 ConfinementTimeOutsideComparison.
+        (2.4e6, 0.1e6, load(24.3e6, 2.44e6, 1.65e19, 1.65e6, 1.80, 0.5), "DtAboveStateCeiling"),
+        (0.3 / card.temperature_kev(1.0, 6.0e19), 0.1e6, load(5.0e6, 1.0e6, 6.0e19, 3.8e6, 4.0, 0.5), "DtAboveStateCeiling"),
     ];
     for (thermal, fast, load, name) in cases {
         for (path, request) in [
@@ -335,28 +353,28 @@ async fn each_limit_is_refused_by_name_before_a_step() {
         ] {
             let (status, answer) = post(&base, path, &request).await;
             assert_eq!(status, 422, "{name} {path}: {answer}");
-            assert!(answer.contains(name), "{name} {path}: {answer}");
+            assert!(answer.contains(&format!("({name})")), "{name} {path}: {answer}");
             assert!(!answer.contains("FirstLawBreach"), "{answer}");
             assert!(!answer.contains("sha256_seal") && !answer.contains("run_seal"), "{answer}");
         }
     }
-    // A zero thermal energy is under the published minimum.
-    let (status, answer) = post(&base, "/verify_physics", &step_body(0.0, 0.5e6, &even_mix(), 1.0e-3)).await;
-    assert_eq!(status, 422);
-    assert!(answer.contains("EnergyOutsideComparison"), "{answer}");
-    // A later segment outside the envelope refuses the whole run.
+    // A clock below zero.
+    let (status, answer) = post(&base, "/verify_physics", &step_body_at(-1.0e-9, 4.0e6, 0.5e6, &even_mix(), 1.0e-3)).await;
+    assert_eq!(status, 422, "{answer}");
+    assert!(answer.contains("(NegativeTime)"), "{answer}");
+    // A later segment past a limit refuses the whole run.
     for (later, name) in [
         // 7.5e19 per cubic metre is above the Greenwald density of 2.0 MA, 7.23e19.
         (TokamakLoad { line_density_per_m3: 7.5e19, plasma_current_a: 2.0e6, toroidal_field_t: 2.1, ..even_mix() }, "DensityAboveGreenwald"),
-        (TokamakLoad { tritium_fraction: 0.75, ..even_mix() }, "FuelMixOutsideComparison"),
-        (TokamakLoad { tritium_fraction: 0.25, ..even_mix() }, "FuelMixOutsideComparison"),
-        (TokamakLoad { plasma_current_a: 3.84e6, toroidal_field_t: 3.8, ..even_mix() }, "SafetyFactorOutsideComparison"),
+        (TokamakLoad { tritium_fraction: 1.5, ..even_mix() }, "FuelMixOutsideCard"),
+        (TokamakLoad { toroidal_field_t: 2.0, ..even_mix() }, "SafetyFactorBelowLimit"),
+        (TokamakLoad { heating_power_w: -5.0e6, ..even_mix() }, "HeatingPowerNegative"),
     ] {
         let (status, answer) = post(&base, "/run_trajectory", &run_body(4.0e6, 0.5e6, &[(5, even_mix()), (5, later)], 1.0e-3, 1)).await;
         assert_eq!(status, 422, "{answer}");
         assert!(answer.contains(name), "{name}: {answer}");
     }
-    // The step clock.
+    // The static step clock.
     for (dt_s, words) in [
         (above(1.0e-3), "the step ceiling of the tokamak_jet_dte1 card"),
         (0.999e-6, "the step floor of the tokamak_jet_dte1 card"),
@@ -373,74 +391,155 @@ async fn each_limit_is_refused_by_name_before_a_step() {
     assert!(answer.contains("confinement_multiplier"), "{answer}");
 }
 
-/// Three requests: the step at the ceiling that 0.6.0 refused as
-/// FirstLawBreach, the run at the largest loads, the fusion power at a
-/// tritium fraction of 0.93. Each is now refused by the bound it lies
-/// outside, at the door.
+/// Past each old wall of the compared envelope a request is answered: a run
+/// of 300 steps at 1 ms, or at the ceiling of the start's state where that
+/// is shorter, carries the kernel loop to the bit and its tape verifies; and
+/// where the ceiling is shorter than 1 ms the step at 1 ms is refused by name
+/// at the door.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn requests_engine_0_6_0_answered_are_refused_by_the_bound_they_pass() {
+async fn past_each_old_wall_a_request_is_answered() {
     let base = spawn_app().await;
     let card = tokamak();
-    for (thermal, fast, load, steps, name) in [
-        // The start is tested first: 10.5 MJ is above the envelope's 9.57 MJ.
-        (10.5e6, 0.0, load(30.0e6, 6.0e6, 1.0e19, 4.5e6, 4.2, 0.5), 1_u64, "EnergyOutsideComparison"),
-        (2.0e6, 0.5e6, load(30.0e6, 6.0e6, card.greenwald_density_per_m3(4.5e6), 4.5e6, 4.2, 0.5), 1000, "HeatingPowerOutsideCard"),
-        (3.0e6, 0.5e6, load(11.0e6, 1.0e6, 4.0e19, 2.6e6, 2.85, 0.93), 100, "FuelMixOutsideComparison"),
-        // The first with the start and the loads brought into the published
-        // spans: 9.5 MJ at 1.65e19 per cubic metre is 16 keV.
-        (9.5e6, 5.59e3, load(24.3e6, 2.44e6, 1.65e19, 3.84e6, 4.04, 0.5), 1, "TemperatureOutsideComparison"),
-    ] {
-        let (status, answer) = post(&base, "/run_trajectory", &run_body(thermal, fast, &[(steps, load)], 1.0e-3, steps)).await;
-        assert_eq!(status, 422, "{name}: {answer}");
-        assert!(answer.contains(name), "{name}: {answer}");
-        assert!(!answer.contains("FirstLawBreach"), "{answer}");
-        // With no clock, it is refused too.
-        let mut request = run_body(thermal, fast, &[(steps, load)], 1.0e-3, steps);
-        request["initial"].as_object_mut().unwrap().remove("elapsed_time_s");
+    let field_for = |q: f64, current_a: f64| q * (current_a / 1.0e6) / card.safety_factor(1.0e6, 1.0);
+    let at_kev = |kev: f64, density: f64| kev / card.temperature_kev(1.0, density);
+    let points: Vec<(&str, f64, f64, TokamakLoad)> = vec![
+        ("heating 0 MW", 2.0e6, 0.0, load(0.0, 0.5e6, 3.0e19, 2.5e6, 2.6, 0.5)),
+        ("heating 30 MW", 4.0e6, 0.5e6, load(30.0e6, 1.0e6, 6.0e19, 3.8e6, 4.0, 0.5)),
+        ("ohmic 0 MW", 4.0e6, 0.5e6, load(20.0e6, 0.0, 6.0e19, 3.8e6, 4.0, 0.5)),
+        ("ohmic 5 MW", 2.0e6, 0.1e6, load(5.0e6, 5.0e6, 4.0e19, 3.8e6, 4.0, 0.5)),
+        ("current 1.0 MA at 1.0 T", 0.5e6, 0.05e6, load(2.0e6, 0.5e6, 2.0e19, 1.0e6, 1.0, 0.5)),
+        ("42976's first load", 4.0e6, 0.5e6, load(5.6e6, 3.115e6, 1.5025e19, 4.128e6, 3.827, 0.501)),
+        ("current 5 MA at 5 T", 6.0e6, 0.5e6, load(30.0e6, 1.0e6, 6.0e19, 5.0e6, 5.0, 0.5)),
+        ("field 8 T", 6.0e6, 0.5e6, load(20.0e6, 1.0e6, 6.0e19, 5.0e6, 8.0, 0.5)),
+        ("tritium 0.25", 4.0e6, 0.5e6, TokamakLoad { tritium_fraction: 0.25, ..even_mix() }),
+        ("tritium 0.93", 4.0e6, 0.5e6, TokamakLoad { tritium_fraction: 0.93, ..even_mix() }),
+        ("tritium 1.0", 4.0e6, 0.5e6, TokamakLoad { tritium_fraction: 1.0, ..even_mix() }),
+        ("density 0.5e19", 0.5e6, 0.1e6, load(10.0e6, 1.0e6, 0.5e19, 2.5e6, 2.6, 0.5)),
+        ("density 1e20 at 5 MA", 8.0e6, 1.0e6, load(20.0e6, 1.0e6, 1.0e20, 5.0e6, 5.0, 0.5)),
+        ("Greenwald 0.95 at 5 MA", 8.0e6, 1.0e6, load(20.0e6, 1.0e6, 0.95 * card.greenwald_density_per_m3(5.0e6), 5.0e6, 5.0, 0.5)),
+        ("safety factor 2.05", 4.0e6, 0.5e6, load(20.0e6, 0.5e6, 6.0e19, 3.84e6, field_for(2.05, 3.84e6), 0.5)),
+        ("safety factor 8", 2.0e6, 0.3e6, load(10.0e6, 0.5e6, 3.0e19, 2.0e6, field_for(8.0, 2.0e6), 0.5)),
+        ("thermal 20 MJ", 20.0e6, 1.0e6, load(30.0e6, 1.0e6, 1.0e20, 5.0e6, 6.0, 0.5)),
+        ("fast ions 0", 4.0e6, 0.0, even_mix()),
+        ("fast ions 3.5 MJ", 4.0e6, 3.5e6, even_mix()),
+        ("temperature 0.3 keV", at_kev(0.3, 6.0e19), 0.1e6, load(5.0e6, 1.0e6, 6.0e19, 3.8e6, 4.0, 0.5)),
+        ("temperature 15 keV", at_kev(15.0, 2.0e19), 0.5e6, load(20.0e6, 1.0e6, 2.0e19, 5.0e6, 5.0, 0.5)),
+        ("confinement 0.03 s", 2.4e6, 0.1e6, load(24.3e6, 2.44e6, 1.0e19, 1.65e6, 1.80, 0.5)),
+        ("confinement 9 s", 2.0e6, 0.5e6, load(1.0e6, 0.2e6, 6.0e19, 3.8e6, 4.0, 0.5)),
+    ];
+    let mut shorter = 0;
+    for (label, thermal, fast, load) in points {
+        let dt_s = held_step(thermal, fast, &load);
+        if dt_s < 1.0e-3 {
+            shorter += 1;
+            let (status, answer) = post(&base, "/verify_physics", &step_body(thermal, fast, &load, 1.0e-3)).await;
+            assert_eq!(status, 422, "{label}: {answer}");
+            assert!(answer.contains("(DtAboveStateCeiling)"), "{label}: {answer}");
+        }
+        let request = run_body(thermal, fast, &[(300, load)], dt_s, 300);
         let (status, answer) = post(&base, "/run_trajectory", &request).await;
-        assert_eq!(status, 422, "{name}: {answer}");
+        assert_eq!(status, 200, "{label}: {answer}");
+        let tape: Value = serde_json::from_str(&answer).unwrap();
+        let (state, landed, worst, end) = kernel_run(thermal, fast, load, dt_s, 300);
+        assert_eq!(tape["steps_landed"], landed, "{label}");
+        assert_state_is(&tape["final_state"], &state, label);
+        assert_eq!(tape["max_residual_conservation_error_hex"], format!("{:016x}", worst.to_bits()), "{label}");
+        match end {
+            None => assert_eq!(tape["outcome"], "completed", "{label}"),
+            Some(reject) => {
+                // A run stopped part way is stopped by a limit of physics or by
+                // the ceiling of a later state, never by the ledger.
+                assert!(matches!(reject, StepReject::BetaAboveTroyon | StepReject::DtAboveStateCeiling), "{label}: {reject:?}");
+                assert_eq!(tape["outcome"], "refused", "{label}");
+                assert_eq!(tape["reject"], format!("{reject:?}"), "{label}");
+            }
+        }
+        assert!(worst < 1.5e-9, "{label}: {worst}");
+        if label.starts_with("Greenwald") {
+            assert_eq!(tape["final_state"]["near_density_limit"], true, "{label}");
+        }
+        let (status, verdict) = post(&base, "/verify_tape", &tape).await;
+        assert_eq!(status, 200, "{verdict}");
+        assert_eq!(serde_json::from_str::<Value>(&verdict).unwrap()["holds"], true, "{label}");
+    }
+    assert!(shorter >= 4, "{shorter}");
+}
+
+/// Four requests engine 0.6.0 answered and 0.7.0 to 0.9.0 refused at the
+/// door by a bound of the compared envelope are answered: the run at the
+/// largest loads, the fusion power at a tritium fraction of 0.93, and a hot
+/// plasma at the smallest density. The dense one runs at its own state's
+/// ceiling, since 1 ms is above it, and nothing reaches the ledger.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn requests_engine_0_6_0_answered_are_answered_again() {
+    let base = spawn_app().await;
+    let card = tokamak();
+    for (thermal, fast, load, steps) in [
+        (10.5e6, 0.0, load(30.0e6, 6.0e6, 1.0e19, 4.5e6, 4.2, 0.5), 1_u64),
+        (2.0e6, 0.5e6, load(30.0e6, 6.0e6, card.greenwald_density_per_m3(4.5e6), 4.5e6, 4.2, 0.5), 1000),
+        (3.0e6, 0.5e6, load(11.0e6, 1.0e6, 4.0e19, 2.6e6, 2.85, 0.93), 100),
+        // 9.5 MJ at 1.65e19 per cubic metre is 16 keV.
+        (9.5e6, 5.59e3, load(24.3e6, 2.44e6, 1.65e19, 3.84e6, 4.04, 0.5), 1),
+    ] {
+        let dt_s = held_step(thermal, fast, &load);
+        let request = run_body(thermal, fast, &[(steps, load)], dt_s, steps);
+        let (status, answer) = post(&base, "/run_trajectory", &request).await;
+        assert_eq!(status, 200, "{answer}");
+        let tape: Value = serde_json::from_str(&answer).unwrap();
+        let (state, landed, _, end) = kernel_run(thermal, fast, load, dt_s, steps);
+        assert_eq!(end, None, "{thermal} {load:?}");
+        assert_eq!(tape["outcome"], "completed", "{}", tape["reject_detail"]);
+        assert_eq!(tape["steps_landed"], landed);
+        assert_state_is(&tape["final_state"], &state, "0.6.0 request");
+        assert!(!answer.contains("FirstLawBreach"), "{answer}");
     }
 }
 
+/// Full heating at 1.65 MA, 1.80 T and 0.83 of the Greenwald density, from
+/// 2 MJ at 1 ms: the stores rise past the compared normalised beta of 2.21,
+/// where 0.9.0 refused the run, until the ceiling of the state the next step
+/// would land on falls under 1 ms. The run is sealed with that refusal on
+/// its last landed step. At 2e19 per cubic metre from 1 MJ at 0.1 ms the
+/// stores go on to the Troyon limit and the run is sealed there.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn a_run_that_reaches_the_envelope_is_sealed_with_that_refusal_on_its_last_landed_step() {
+async fn a_run_that_reaches_a_limit_of_its_state_is_sealed_with_that_refusal_on_its_last_landed_step() {
     let base = spawn_app().await;
     let card = tokamak();
-    let load = load(24.3e6, 0.173e6, 0.83 * card.greenwald_density_per_m3(1.65e6), 1.65e6, 1.80, 0.0);
-    let request = run_body(2.0e6, 0.1e6, &[(5_000, load)], 1.0e-3, 100);
-    let (status, answer) = post(&base, "/run_trajectory", &request).await;
-    assert_eq!(status, 200, "{answer}");
-    let tape: Value = serde_json::from_str(&answer).unwrap();
-    assert_eq!(tape["outcome"], "refused");
-    assert_eq!(tape["reject"], "BetaOutsideComparison");
-    assert!(tape["reject_detail"].as_str().unwrap().contains("2.21"), "{}", tape["reject_detail"]);
-    let mut state = TokamakState::try_start(&card, 2.0e6, 0.1e6).unwrap();
-    let mut frame = blank_frame([0; 16]);
-    let mut landed = 0_u64;
-    let end = loop {
-        match tokamak_jet_dte1::step(&card, &mut state, &mut frame, load, 1.0e-3) {
-            Ok(()) => landed += 1,
-            Err(reject) => break reject,
-        }
-    };
-    assert_eq!(end, StepReject::BetaOutsideComparison);
-    assert_eq!(tape["steps_landed"], landed);
-    let detail = tape["reject_detail"].as_str().unwrap();
-    assert!(
-        detail.ends_with(&format!("The run is sealed to step {landed}. The state at step {} was refused and is not sealed.", landed + 1)),
-        "{detail}"
-    );
-    assert_state_is(&tape["final_state"], &state, "refused run");
-    let (status, verdict) = post(&base, "/verify_tape", &tape).await;
-    assert_eq!(status, 200, "{verdict}");
-    assert_eq!(serde_json::from_str::<Value>(&verdict).unwrap()["holds"], true);
+    let dense = load(24.3e6, 0.173e6, 0.83 * card.greenwald_density_per_m3(1.65e6), 1.65e6, 1.80, 0.0);
+    let thin = TokamakLoad { line_density_per_m3: 2.0e19, ..dense };
+    for (thermal, at, dt_s, steps, name) in [
+        (2.0e6, dense, 1.0e-3, 5_000_u64, "DtAboveStateCeiling"),
+        (1.0e6, thin, 1.0e-4, 50_000, "BetaAboveTroyon"),
+    ] {
+        let request = run_body(thermal, 0.1e6, &[(steps, at)], dt_s, 100);
+        let (status, answer) = post(&base, "/run_trajectory", &request).await;
+        assert_eq!(status, 200, "{answer}");
+        let tape: Value = serde_json::from_str(&answer).unwrap();
+        assert_eq!(tape["outcome"], "refused");
+        assert_eq!(tape["reject"], name);
+        let (state, landed, _, end) = kernel_run(thermal, 0.1e6, at, dt_s, steps);
+        assert_eq!(end.map(|reject| format!("{reject:?}")), Some(name.to_string()));
+        assert!(state.beta_normalised > 2.21, "{}", state.beta_normalised);
+        assert_eq!(tape["steps_landed"], landed);
+        let detail = tape["reject_detail"].as_str().unwrap();
+        assert!(detail.contains(&format!("({name})")), "{detail}");
+        assert!(
+            detail.ends_with(&format!("The run is sealed to step {landed}. The state at step {} was refused and is not sealed.", landed + 1)),
+            "{detail}"
+        );
+        assert_state_is(&tape["final_state"], &state, "refused run");
+        let (status, verdict) = post(&base, "/verify_tape", &tape).await;
+        assert_eq!(status, 200, "{verdict}");
+        assert_eq!(serde_json::from_str::<Value>(&verdict).unwrap()["holds"], true);
+    }
 }
 
-/// The end of the card depends on the clock, so a start carries it: a run
-/// continued at the returned t_s lands where the straight run lands, bit for
-/// bit, and still ends at 5.475 s; a request without the clock is refused.
+/// The clock is the caller's: a run continued at the returned t_s lands
+/// where the straight run lands, bit for bit, and goes on past 5.475 s, the
+/// longest compared window; a request without the clock is refused, and so
+/// is a clock below zero.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn a_continued_run_states_its_clock_and_cannot_pass_the_end_by_starting_again() {
+async fn a_continued_run_states_its_clock_and_runs_past_the_compared_window() {
     let base = spawn_app().await;
     let run = |body: Value| {
         let base = base.clone();
@@ -450,8 +549,9 @@ async fn a_continued_run_states_its_clock_and_cannot_pass_the_end_by_starting_ag
             serde_json::from_str::<Value>(&answer).unwrap()
         }
     };
-    let straight = run(run_body(4.0e6, 0.5e6, &[(3000, even_mix())], 1.0e-3, 3000)).await;
-    let first_request = run_body(4.0e6, 0.5e6, &[(1500, even_mix())], 1.0e-3, 1500);
+    let straight = run(run_body(4.0e6, 0.5e6, &[(7000, even_mix())], 1.0e-3, 7000)).await;
+    assert_eq!(straight["outcome"], "completed");
+    let first_request = run_body(4.0e6, 0.5e6, &[(5000, even_mix())], 1.0e-3, 5000);
     let first = run(first_request.clone()).await;
     let end = &first["final_state"];
     let number = |state: &Value, name: &str| f64::from_bits(u64::from_str_radix(state[format!("{name}_hex")].as_str().unwrap(), 16).unwrap());
@@ -459,9 +559,9 @@ async fn a_continued_run_states_its_clock_and_cannot_pass_the_end_by_starting_ag
         number(end, "t_s"),
         number(end, "thermal_energy_j"),
         number(end, "fast_ion_energy_j"),
-        &[(1500, even_mix())],
+        &[(2000, even_mix())],
         1.0e-3,
-        1500,
+        2000,
     );
     // The clock carries the pulse on: the request names the sealed first
     // part in from, and without it is refused by name.
@@ -470,23 +570,22 @@ async fn a_continued_run_states_its_clock_and_cannot_pass_the_end_by_starting_ag
     assert!(answer.ends_with("(ContinuationWithoutUpstream)."), "{answer}");
     second_request["from"] = json!({ "request": first_request, "run_seal": first["run_seal"] });
     let second = run(second_request).await;
+    assert_eq!(second["outcome"], "completed");
+    assert!(number(&second["final_state"], "t_s") > 5.475);
     for name in ["t_s", "thermal_energy_j", "fast_ion_energy_j"] {
         assert_eq!(second["final_state"][format!("{name}_hex")], straight["final_state"][format!("{name}_hex")], "{name}");
     }
-    // A start at 5 s, or a step at 5.474 s or 5.4745 s, stated on the
-    // caller's clock carries a pulse on, and without from is refused by
-    // name before any step (tests/run_ends_on_a_limit.rs carries a sealed run
-    // to the end of the window).
+    // A start stated past 0 on the caller's clock carries a pulse on, and
+    // without from is refused by name before any step.
     for (path, request) in [
         ("/run_trajectory", run_body_at(5.0, 4.0e6, 0.5e6, &[(1000, even_mix())], 1.0e-3, 1000)),
-        ("/verify_physics", step_body_at(5.474, 4.0e6, 0.5e6, &even_mix(), 1.0e-3)),
-        ("/verify_physics", step_body_at(5.4745, 4.0e6, 0.5e6, &even_mix(), 1.0e-3)),
+        ("/verify_physics", step_body_at(6.0, 4.0e6, 0.5e6, &even_mix(), 1.0e-3)),
     ] {
         let (status, answer) = post(&base, path, &request).await;
         assert_eq!(status, 422, "{answer}");
         assert!(answer.ends_with("(ContinuationWithoutUpstream)."), "{answer}");
     }
-    // The clock is required, and held to the window.
+    // The clock is required, and held at zero.
     let mut request = run_body(4.0e6, 0.5e6, &[(1, even_mix())], 1.0e-3, 1);
     request["initial"].as_object_mut().unwrap().remove("elapsed_time_s");
     let (status, answer) = post(&base, "/run_trajectory", &request).await;
@@ -497,11 +596,9 @@ async fn a_continued_run_states_its_clock_and_cannot_pass_the_end_by_starting_ag
     let (status, answer) = post(&base, "/verify_physics", &request).await;
     assert_eq!(status, 422, "{answer}");
     assert!(answer.contains("elapsed_time_s"), "{answer}");
-    for elapsed in [-1.0e-9, above(5.475)] {
-        let (status, answer) = post(&base, "/verify_physics", &step_body_at(elapsed, 4.0e6, 0.5e6, &even_mix(), 1.0e-3)).await;
-        assert_eq!(status, 422, "{answer}");
-        assert!(answer.contains("TimeBeyondCard"), "{answer}");
-    }
+    let (status, answer) = post(&base, "/verify_physics", &step_body_at(-1.0e-9, 4.0e6, 0.5e6, &even_mix(), 1.0e-3)).await;
+    assert_eq!(status, 422, "{answer}");
+    assert!(answer.contains("NegativeTime"), "{answer}");
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -517,12 +614,27 @@ async fn the_description_lists_the_card_its_limits_and_examples_that_run() {
         .map(|reject| reject["name"].as_str().unwrap())
         .collect();
     for name in [
+        "HeatingPowerNegative",
+        "OhmicPowerNegative",
+        "PlasmaCurrentNotPositive",
+        "ToroidalFieldNotPositive",
+        "FuelMixOutsideCard",
+        "DensityNotPositive",
         "DensityAboveGreenwald",
         "BetaAboveTroyon",
         "SafetyFactorBelowLimit",
         "TemperatureBelowReactivityFit",
         "TemperatureAboveReactivityFit",
+        "NegativeTime",
+        "StepBelowClockResolution",
+        "DtAboveStateCeiling",
+    ] {
+        assert!(rejects.contains(&name), "{name}");
+    }
+    for gone in [
+        "HeatingPowerOutsideCard",
         "FuelMixOutsideComparison",
+        "DensityBelowCard",
         "DensityAboveComparison",
         "GreenwaldFractionAboveComparison",
         "SafetyFactorOutsideComparison",
@@ -530,23 +642,21 @@ async fn the_description_lists_the_card_its_limits_and_examples_that_run() {
         "TemperatureOutsideComparison",
         "BetaOutsideComparison",
         "ConfinementTimeOutsideComparison",
+        "TimeBeyondCard",
     ] {
-        assert!(rejects.contains(&name), "{name}");
+        assert!(!rejects.contains(&gone), "{gone}");
     }
-    assert_eq!(rejects.len(), 27);
-    let (status, answer) = post(&base, "/verify_physics", &described["example_verify_step"]).await;
+    // After the kernel's 21 names the list holds the gateway's own three for this card, DtBelowFloor and DtAboveCeiling and ContinuationWithoutUpstream.
+    assert_eq!(rejects.len(), 24);
+    assert!(!text.contains("The card ends 5.475 s"), "{text}");
+    let (status, answer) = post(&base, "/verify_physics", &described["example_compute_step"]).await;
     assert_eq!(status, 200, "{answer}");
     let (status, answer) = post(&base, "/run_trajectory", &described["example_run_trajectory"]).await;
     assert_eq!(status, 200, "{answer}");
     let tape: Value = serde_json::from_str(&answer).unwrap();
     assert_eq!(tape["outcome"], "completed");
     assert_eq!(tape["steps_landed"], 1000);
-    let card = tokamak();
-    let mut state = TokamakState::try_start(&card, 4.0e6, 0.5e6).unwrap();
-    let mut frame = blank_frame([0; 16]);
-    for _ in 0..1000 {
-        tokamak_jet_dte1::step(&card, &mut state, &mut frame, even_mix(), 1.0e-3).unwrap();
-    }
+    let (state, _, _, _) = kernel_run(4.0e6, 0.5e6, even_mix(), 1.0e-3, 1000);
     assert_state_is(&tape["final_state"], &state, "example");
     // The list line states the failure and the envelope.
     let client = Client::new();

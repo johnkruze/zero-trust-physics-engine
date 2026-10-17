@@ -2,7 +2,10 @@
 //!
 //! Time and the conservation ledger stay on the specimen. A segment only
 //! replaces the load. The chain covers recorded frames, so a tape can be
-//! checked without the engine.
+//! checked without the engine. A segment's load, and the start state, may
+//! carry an instrument's signature (`signed`), verified before the specimen
+//! opens (`crate::signed_load`); every answer says where its loads came from
+//! in `load_source`.
 
 use genesis_kernel::frame::LastStateFrame64;
 use serde::Serialize;
@@ -50,6 +53,9 @@ pub struct TrajectoryResponse {
     pub max_residual_conservation_error: Option<f64>,
     pub max_residual_conservation_error_hex: Option<String>,
     pub state_digest: Option<String>,
+    /// Where each load came from: signed by a key, or the caller's number.
+    /// Outside the run seal; it follows from `inputs`, which the seal covers.
+    pub load_source: Value,
     /// Present only when the request asked for a readout.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub readout: Option<crate::readout::Readout>,
@@ -66,8 +72,14 @@ pub struct TrajectoryResponse {
 pub struct TapeReport {
     pub holds: bool,
     pub broken_link: Option<u64>,
-    /// `chain`, `run_seal`, `state`, or null when the tape holds.
+    /// `chain`, `load_signature`, `state`, `run_seal`, or null when the tape
+    /// holds.
     pub cause: Option<String>,
+    /// With `load_signature`: where the reading is, and why it does not hold.
+    pub broken_place: Option<String>,
+    pub load_fault: Option<String>,
+    /// When the tape holds: how many signed readings verified.
+    pub signed_loads: u64,
 }
 
 /// A segment's step count. Its load stays in `Prepared::request`, at
@@ -83,6 +95,8 @@ pub(crate) struct Prepared {
     record_every: u64,
     segments: Vec<Segment>,
     live: Live,
+    /// The answer's `load_source`, from the readings verified at the door.
+    load_source: Value,
 }
 
 #[derive(Serialize)]
@@ -96,6 +110,7 @@ struct RunTail<'a> {
 const CAUSE_CHAIN: &str = "chain";
 const CAUSE_RUN_SEAL: &str = "run_seal";
 const CAUSE_STATE: &str = "state";
+pub(crate) const CAUSE_LOAD_SIGNATURE: &str = "load_signature";
 
 pub async fn run(state: &crate::AppState, request: Value) -> Result<TrajectoryResponse, DoorError> {
     // The readout is not part of the run: the request without it is the one
@@ -131,7 +146,7 @@ async fn run_chained(
     // The request's own shape and numbers are named first; the card's start
     // rules, which a stated ledger meets, come after the chain is checked.
     unknown_key_first(state.view(), &request).map_err(DoorError::Unprocessable)?;
-    crate::validate_physics(&request).map_err(DoorError::Unprocessable)?;
+    crate::validate_physics_of(known_card(state.view(), &request), &request).map_err(DoorError::Unprocessable)?;
     let steps = request
         .get("segments")
         .and_then(Value::as_array)
@@ -144,6 +159,8 @@ async fn run_chained(
         .unwrap_or(0);
     let plan = crate::chain::read(state.view(), &request, from, crate::chain::Target::Run, steps)?;
     let view = state.view().clone();
+    // The fresh-start rule of this start, before the upstream is computed.
+    fresh_start_first(&view, &request, &plan.carried())?;
     crate::on_pool(state, move || {
         let carried = plan.carried();
         let (settled, request) = plan.settle()?;
@@ -170,14 +187,14 @@ pub fn check(body: &Value) -> Result<TapeReport, DoorError> {
 /// `verify_tape` as every connection answers it, as JSON text: a check by
 /// request (`request` and `run_seal`), which runs the request again under a
 /// physics permit, or the check of a whole answer, which runs no physics.
-pub async fn verify(state: &crate::AppState, body: &Value) -> Result<String, DoorError> {
+pub async fn verify(state: &crate::AppState, body: &Value, text: Option<&str>) -> Result<String, DoorError> {
     let object = body.as_object().ok_or_else(|| {
         DoorError::Unprocessable("Physical Violation: the request must be a JSON object.".into())
     })?;
-    if object.contains_key(CHAIN_LINKS) && !object.contains_key(crate::check_by_request::REQUEST) {
-        return check_chain_in(state.view(), body);
+    if object.contains_key(CHAIN_LINKS) && !object.contains_key(crate::verify_by_request::REQUEST) {
+        return verify_chain(state, body, text).await;
     }
-    let chain_seal_given = if object.contains_key(crate::check_by_request::REQUEST) {
+    let chain_seal_given = if object.contains_key(crate::verify_by_request::REQUEST) {
         match object.get(CHAIN_SEAL) {
             None => None,
             Some(Value::String(text)) if crate::json_text::is_lower_hex(text, 64) => Some(text.clone()),
@@ -190,10 +207,16 @@ pub async fn verify(state: &crate::AppState, body: &Value) -> Result<String, Doo
     } else {
         None
     };
+    // The whole answer of design_run: its long form designs it again.
+    if crate::design::is_design_answer(object) {
+        let report = crate::design::long_form(state, body, text).await?;
+        return serde_json::to_string(&report)
+            .map_err(|error| DoorError::Internal(format!("Physical Violation: the response could not be encoded. {error}")));
+    }
     let mut short = object.clone();
     short.shift_remove(CHAIN_SEAL);
-    let Some((request, given)) = crate::check_by_request::read(&short, "run_seal", "the whole run_trajectory answer")? else {
-        let report = check_in(state.view(), body)?;
+    let Some((request, given)) = crate::verify_by_request::read(&short, "run_seal", "the whole run_trajectory answer")? else {
+        let report = long_form(state, body, text).await?;
         return serde_json::to_string(&report).map_err(|error| {
             DoorError::Internal(format!(
                 "Physical Violation: the response could not be encoded. {error}"
@@ -212,23 +235,37 @@ pub async fn verify(state: &crate::AppState, body: &Value) -> Result<String, Doo
             "Physical Violation: 'chain_seal' is given and the request names no upstream in 'from', so it has no chain seal.".to_string(),
         ));
     }
-    let text = crate::check_by_request::answer(
+    let text = crate::verify_by_request::answer(
         "run_seal",
         "run_trajectory",
         given,
         &response.run_seal,
         Some(&response.receipt_sha256),
-        &crate::check_by_request::checked_with_receipt("run", "run_seal"),
-        crate::check_by_request::TEXT_NOT_COMPARED,
+        &crate::verify_by_request::compared_with_receipt("run", "run_seal"),
+        crate::verify_by_request::TEXT_NOT_COMPARED,
+        None,
     )?;
-    let Some(recomputed_chain) = recomputed_chain else {
-        return Ok(text);
-    };
-    // A chained request: the chain seal computed again is reported, and,
-    // when one is given, compared too.
     let mut report: Map<String, Value> = serde_json::from_str(&text).map_err(|error| {
         DoorError::Internal(format!("Physical Violation: the response could not be encoded. {error}"))
     })?;
+    let Some(recomputed_chain) = recomputed_chain else {
+        // Where the loads of the run computed again came from, before what
+        // was compared.
+        let compared = report.shift_remove("compared");
+        let text_not_compared = report.shift_remove("text_not_compared");
+        report.insert("load_source".into(), response.load_source.clone());
+        if let Some(compared) = compared {
+            report.insert("compared".into(), compared);
+        }
+        if let Some(text_not_compared) = text_not_compared {
+            report.insert("text_not_compared".into(), text_not_compared);
+        }
+        return serde_json::to_string(&report).map_err(|error| {
+            DoorError::Internal(format!("Physical Violation: the response could not be encoded. {error}"))
+        });
+    };
+    // A chained request: the chain seal computed again is reported, and,
+    // when one is given, compared too.
     let run_holds = report.get("holds") == Some(&Value::Bool(true));
     let chain_holds = chain_seal_given.as_deref().is_none_or(|given| given == recomputed_chain);
     report.insert("holds".into(), Value::Bool(run_holds && chain_holds));
@@ -240,24 +277,25 @@ pub async fn verify(state: &crate::AppState, body: &Value) -> Result<String, Doo
         report.shift_remove("recomputed_receipt_sha256");
         report.insert(
             "not_held".into(),
-            Value::String(crate::check_by_request::not_held(CHAIN_SEAL, "run_trajectory")),
+            Value::String(crate::verify_by_request::not_held(CHAIN_SEAL, "run_trajectory")),
         );
     }
-    let checked = report.shift_remove("checked");
+    let compared = report.shift_remove("compared");
     let text_not_compared = report.shift_remove("text_not_compared");
     // The chain seal computed again is returned only beside the chain seal
     // it was compared with: a seal nobody gave is not handed back.
     if run_holds && chain_holds && chain_seal_given.is_some() {
         report.insert("recomputed_chain_seal".into(), Value::String(recomputed_chain));
     }
+    report.insert("load_source".into(), response.load_source.clone());
     report.insert(
-        "chain_checked".into(),
+        "chain_compared".into(),
         Value::String(
-            if chain_seal_given.is_some() { CHAIN_CHECKED } else { CHAIN_CHECKED_WITHOUT_SEAL }.to_string(),
+            if chain_seal_given.is_some() { CHAIN_COMPARED } else { CHAIN_COMPARED_WITHOUT_SEAL }.to_string(),
         ),
     );
-    if let Some(checked) = checked {
-        report.insert("checked".into(), checked);
+    if let Some(compared) = compared {
+        report.insert("compared".into(), compared);
     }
     if let Some(text_not_compared) = text_not_compared {
         report.insert("text_not_compared".into(), text_not_compared);
@@ -267,60 +305,533 @@ pub async fn verify(state: &crate::AppState, body: &Value) -> Result<String, Doo
     })
 }
 
+/// What the long form of `verify_tape` answers: the seals recomputed, then
+/// the answer the engine writes for them compared with the answer sent.
+#[derive(Serialize)]
+pub struct LongReport {
+    /// Every byte of the answer sent is the engine's answer to its request.
+    pub holds: bool,
+    /// Every value of the answer sent is the engine's answer to its request,
+    /// computed again, whatever its spelling: true beside a false holds when
+    /// only the text differs (a number spelled another way, an escape).
+    pub values_hold: bool,
+    pub broken_link: Option<u64>,
+    /// `chain`, `load_signature`, `state`, `run_seal`, `chain_seal`,
+    /// `engine_version`, `answer_text`, or null when the answer holds.
+    pub cause: Option<String>,
+    /// With `load_signature`: the place of the reading that does not hold,
+    /// such as `segments[22]`. Left out otherwise.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub broken_place: Option<String>,
+    /// With `answer_text` and `engine_version`: the first field where the
+    /// answer sent is not the engine's. Left out when there is none.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub differs_at: Option<String>,
+    /// What is different, in one sentence. Left out when there is nothing.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub difference: Option<String>,
+    /// When the answer holds and its request carries signed readings: how
+    /// many verified. Left out when none is signed.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub signed_loads: Option<u64>,
+    pub compared: &'static str,
+}
+
+/// What the long form of `verify_tape` says when it computed nothing: a seal
+/// that does not hold, a signed reading that does not verify, another engine
+/// version, or inputs the engine turns away before computing.
+pub const LONG_FORM_COMPARED: &str = "No physics was run. The frames, the state digest and the run seal were recomputed from the answer's exact hex values, and its signed readings verified; cause names the first that does not hold, an answer of another engine version (engine_version), or inputs the engine turns away before computing (answer_text, at inputs). The seals have no key, so seals that hold show only that the answer is consistent with itself: an answer is computed again from its request, and compared with the engine's answer byte for byte, only when all of these hold.";
+
+/// What the long form of `verify_tape` compared when its request was
+/// computed again.
+pub const LONG_FORM_COMPUTED: &str = "The frames, the state digest and the run seal were recomputed from the answer's exact hex values. Then its request, the answer's inputs with its readout when it has one, was computed again under a physics permit and the limits of run_trajectory, the run_seal of that run was compared with the answer's, and the engine's whole answer to that request was compared with the answer sent: value by value, and then byte for byte, its words, decimals, counts, step labels and receipt included. holds is true only when every one is the same, so an answer that holds is, every byte, the engine's answer to its request; cause names the first that is not, and answer_text, with differs_at, is a text that differs while the seals hold.";
+
+impl LongReport {
+    fn of(holds: bool, cause: Option<&str>, compared: &'static str) -> Self {
+        Self {
+            holds,
+            values_hold: holds,
+            broken_link: None,
+            cause: cause.map(str::to_string),
+            broken_place: None,
+            differs_at: None,
+            difference: None,
+            signed_loads: None,
+            compared,
+        }
+    }
+}
+
+/// The steps the long form of `verify_tape` computes again, read from the
+/// answer alone; `None` for an answer it refuses before any physics, a run
+/// continued from an upstream sent alone. Every link of a chain is computed
+/// again with the links before it, as its own request with `from` computes.
+/// The open connection counts it as it counts a run.
+pub(crate) fn long_form_steps(answer: &Map<String, Value>) -> Option<u64> {
+    // A design is designed again: the steps its candidates may take together.
+    if crate::design::is_design_answer(answer) {
+        return Some(answer.get("inputs").and_then(Value::as_object).map(crate::design::steps_at_most).unwrap_or(0));
+    }
+    // The links of a chain: link i is computed again with the i links before it.
+    if let Some(links) = answer.get(CHAIN_LINKS).and_then(Value::as_array) {
+        let mut upstream = 0_u64;
+        let mut total = 0_u64;
+        for link in links {
+            let own = link.get("inputs").map(crate::chain::chained_steps).unwrap_or(0);
+            upstream = upstream.saturating_add(own);
+            total = total.saturating_add(upstream);
+        }
+        return Some(total);
+    }
+    if answer.get("chain").is_some_and(|chain| !chain.is_null()) {
+        return None;
+    }
+    Some(answer.get("inputs").map(crate::chain::chained_steps).unwrap_or(0))
+}
+
+/// The long form of `verify_tape`: the seals recomputed with no physics, and
+/// then the request the answer carries computed again under a permit and the
+/// engine's answer to it compared with the answer sent, value by value and
+/// byte for byte. The seals have no key, so an answer whose values were
+/// rewritten with every seal worked out again holds every seal; only the run
+/// shows its values are the engine's.
+async fn long_form(state: &crate::AppState, body: &Value, text: Option<&str>) -> Result<LongReport, DoorError> {
+    // A run continued from an upstream carries the upstream's seal and not its
+    // request: there is nothing whole to compute again.
+    if body.get("chain").is_some_and(|chain| !chain.is_null()) {
+        return Err(crate::rebuild::chained_alone());
+    }
+    let seals = check_in(state.view(), body)?;
+    if !seals.holds {
+        return Ok(LongReport {
+            broken_link: seals.broken_link,
+            broken_place: seals.broken_place,
+            difference: seals.load_fault,
+            ..LongReport::of(false, seals.cause.as_deref(), LONG_FORM_COMPARED)
+        });
+    }
+    let object = body.as_object().expect("a verified tape is an object");
+    let sent_text = crate::rebuild::sent_text(body, text);
+    let text = text_held(state, object, None, &sent_text).await?;
+    let holds = text.cause.is_none();
+    Ok(LongReport {
+        holds,
+        values_hold: text.values_hold,
+        broken_link: None,
+        cause: text.cause.map(str::to_string),
+        broken_place: None,
+        differs_at: text.difference.as_ref().map(|difference| difference.at.clone()),
+        difference: text.difference.map(|difference| difference.says),
+        signed_loads: (holds && seals.signed_loads > 0).then_some(seals.signed_loads),
+        compared: if text.computed { LONG_FORM_COMPUTED } else { LONG_FORM_COMPARED },
+    })
+}
+
+/// What a run's answer whose seals hold shows of its text: the cause that
+/// it is not the engine's answer to its request, with the first place and
+/// what differs, or none; and whether its request was computed again.
+pub(crate) struct TextHeld {
+    pub cause: Option<&'static str>,
+    pub difference: Option<crate::rebuild::Difference>,
+    pub computed: bool,
+    /// Every value of the answer is the engine's answer to its request,
+    /// whatever its spelling.
+    pub values_hold: bool,
+}
+
+/// The request a run's answer carries: its inputs, with the readout it was
+/// asked with when the answer holds one, and `from` when it continues the
+/// link before it in a chain.
+fn request_of(object: &Map<String, Value>, from: Option<Value>) -> Result<Value, crate::rebuild::Difference> {
+    use crate::rebuild::Difference;
+    let mut request = object
+        .get("inputs")
+        .and_then(Value::as_object)
+        .cloned()
+        .ok_or_else(|| Difference::new("inputs", "The answer's inputs are not a run_trajectory request."))?;
+    if let Some(sent) = object.get(crate::readout::READOUT) {
+        let asked = readout_asked(sent)
+            .ok_or_else(|| Difference::new("readout", "The answer's readout is not a readout the engine writes."))?;
+        request.insert(crate::readout::READOUT.to_string(), asked);
+    }
+    if let Some(from) = from {
+        request.insert("from".to_string(), from);
+    }
+    Ok(Value::Object(request))
+}
+
+/// The text of a run's answer whose seals hold, held to the engine's answer
+/// to its request: another engine version is named; otherwise the request is
+/// computed again under a physics permit and the limits of run_trajectory,
+/// its run seal compared, and its whole answer compared with the answer sent,
+/// value by value and byte for byte. `from` is the upstream a link of a
+/// chain continues; `sent_text` is the answer's text as it came.
+pub(crate) async fn text_held(
+    state: &crate::AppState,
+    object: &Map<String, Value>,
+    from: Option<Value>,
+    sent_text: &str,
+) -> Result<TextHeld, DoorError> {
+    let held = |cause: Option<&'static str>, difference: Option<crate::rebuild::Difference>, computed: bool| TextHeld { values_hold: cause.is_none(), cause, difference, computed };
+    if let Some(Value::String(version)) = object.get("engine_version") {
+        if version != crate::ENGINE_VERSION {
+            let says = crate::rebuild::another_version(version, crate::ENGINE_VERSION, "run_seal");
+            return Ok(held(Some(crate::rebuild::CAUSE_ENGINE_VERSION), Some(crate::rebuild::Difference::new("engine_version", says)), false));
+        }
+    }
+    let request = match request_of(object, from) {
+        Ok(request) => request,
+        Err(difference) => return Ok(held(Some(crate::rebuild::CAUSE_ANSWER_TEXT), Some(difference), false)),
+    };
+    let response = match run(state, request).await {
+        Ok(response) => response,
+        Err(DoorError::Unprocessable(sentence) | DoorError::NotFound(sentence)) => {
+            let says = format!("The engine writes no run for these inputs: it turns them away before computing. {sentence}");
+            return Ok(held(Some(crate::rebuild::CAUSE_ANSWER_TEXT), Some(crate::rebuild::Difference::new("inputs", says)), false));
+        }
+        Err(other) => return Err(other),
+    };
+    let sent_seal = object.get("run_seal").and_then(Value::as_str).unwrap_or_default();
+    if response.run_seal != sent_seal {
+        let says = "The request was computed again and runs to another run_seal: the answer is consistent with itself, and its sealed parts are not the engine's run of this request.";
+        return Ok(held(Some(CAUSE_RUN_SEAL), Some(crate::rebuild::Difference::new("run_seal", says)), true));
+    }
+    let engine_text = serde_json::to_string(&response).map_err(|error| {
+        DoorError::Internal(format!("Physical Violation: the response could not be encoded. {error}"))
+    })?;
+    let found = crate::rebuild::compare(&engine_text, &Value::Object(object.clone()), sent_text)?;
+    Ok(match found.difference {
+        Some(difference) => TextHeld { values_hold: found.values_hold, ..held(Some(crate::rebuild::CAUSE_ANSWER_TEXT), Some(difference), true) },
+        None => held(None, None, true),
+    })
+}
+
+/// The readout a readout answer was asked with: its quantities, and its
+/// level when it has one. `None` when the answer's readout is not one the
+/// engine writes.
+fn readout_asked(readout: &Value) -> Option<Value> {
+    let quantities: Vec<Value> = readout
+        .get("quantities")?
+        .as_array()?
+        .iter()
+        .map(|quantity| quantity.get("quantity").filter(|name| name.is_string()).cloned())
+        .collect::<Option<_>>()?;
+    let mut asked = Map::new();
+    asked.insert("quantities".into(), Value::Array(quantities));
+    if let Some(first) = readout.get("first_past") {
+        let quantity = first.get("quantity").filter(|name| name.is_string())?.clone();
+        let (side, level) = match (first.get("above"), first.get("below")) {
+            (Some(level), None) if level.is_number() => ("above", level.clone()),
+            (None, Some(level)) if level.is_number() => ("below", level.clone()),
+            _ => return None,
+        };
+        let mut past = Map::new();
+        past.insert("quantity".into(), quantity);
+        past.insert(side.into(), level);
+        asked.insert("first_past".into(), Value::Object(past));
+    }
+    Some(Value::Object(asked))
+}
+
 /// The key of a whole chain sent to `verify_tape`.
 pub(crate) const CHAIN_LINKS: &str = "links";
 /// The key of a chain seal in a check by request.
 pub(crate) const CHAIN_SEAL: &str = "chain_seal";
 
 /// What a check by request of a chained run compared, beside the run seal.
-pub(crate) const CHAIN_CHECKED: &str = "Every upstream run in 'from' was computed again and its run_seal compared with the seal given, and each handed value was compared bit for bit with the upstream's sealed answer and with the request. The chain_seal given was compared with the chain seal of that computation, and holds covers that comparison; recomputed_chain_seal, given when the check holds, is that chain seal.";
+pub(crate) const CHAIN_COMPARED: &str = "Every upstream run in 'from' was computed again and its run_seal compared with the seal given, and each handed value was compared bit for bit with the upstream's sealed answer and with the request. The chain_seal given was compared with the chain seal of that computation, and holds covers that comparison; recomputed_chain_seal, given when the comparison holds, is that chain seal.";
 
 /// What a check by request of a chained run compared when no chain seal was
 /// given.
-pub(crate) const CHAIN_CHECKED_WITHOUT_SEAL: &str = "Every upstream run in 'from' was computed again and its run_seal compared with the seal given, and each handed value was compared bit for bit with the upstream's sealed answer and with the request. No chain_seal was given, so the chain seal was not compared and is not returned: holds covers the run seal and the upstream runs alone, and run_trajectory's answer to this request carries the chain seal in chain.chain_seal.";
+pub(crate) const CHAIN_COMPARED_WITHOUT_SEAL: &str = "Every upstream run in 'from' was computed again and its run_seal compared with the seal given, and each handed value was compared bit for bit with the upstream's sealed answer and with the request. No chain_seal was given, so the chain seal was not compared and is not returned: holds covers the run seal and the upstream runs alone, and run_trajectory's answer to this request carries the chain seal in chain.chain_seal.";
+
+/// What the links form of `verify_tape` compared when a seal or a link broke
+/// before anything was computed.
+pub(crate) const CHAIN_LINKS_COMPARED: &str = "No physics was run. Each run's frames, state digest and run seal were recomputed from its answer; each link was held to name the run_seal and chain_seal of the link before it; each handed value was compared bit for bit with the upstream's sealed final state or request and with the downstream request; and each chain_seal was rebuilt. The first that does not hold is named. The seals have no key, so seals that hold show only that the chain is consistent with itself: its links are computed again only when every one holds.";
+
+/// What the links form of `verify_tape` compared when its links were computed
+/// again.
+pub(crate) const CHAIN_LINKS_COMPUTED: &str = "Each run's frames, state digest and run seal were recomputed from its answer; each link was held to name the run_seal and chain_seal of the link before it; each handed value was compared bit for bit with the upstream's sealed final state or request and with the downstream request; and each chain_seal was rebuilt. Then, in order, each link's request was put together from its answer and the links before it (its inputs, its readout, and from naming the link before with its run_seal and coupling) and computed again under a physics permit and the limits of run_trajectory, or of compute_step for a step, and the engine's whole answer to it was compared with the link sent: value by value, and then byte for byte, words, decimals and receipt included. holds is true only when every one is the same, so a chain that holds is, every byte, the engine's answers to its requests, through a coupling it serves.";
+
+/// The text of each link as it came, from the text of the whole request, or
+/// each link's JSON text when no connection gave it.
+fn link_texts(text: Option<&str>, links: &[Value]) -> Vec<String> {
+    #[derive(serde::Deserialize)]
+    struct Links<'a> {
+        #[serde(borrow)]
+        links: Vec<&'a serde_json::value::RawValue>,
+    }
+    if let Some(parsed) = text.and_then(|text| serde_json::from_str::<Links>(text).ok()) {
+        if parsed.links.len() == links.len() {
+            return parsed.links.iter().zip(links).map(|(raw, link)| crate::rebuild::sent_text(link, Some(raw.get()))).collect();
+        }
+    }
+    links.iter().map(crate::rebuild::text_of).collect()
+}
+
+/// A link's `from`: the request of the link before it, with its own `from`
+/// and without a readout, the run seal its answer gave, and the coupling the
+/// link names.
+fn from_of(upstream: &Value, upstream_answer: &Map<String, Value>, link: &Map<String, Value>) -> Value {
+    let mut request = upstream.clone();
+    if let Some(object) = request.as_object_mut() {
+        object.shift_remove(crate::readout::READOUT);
+    }
+    let mut from = Map::new();
+    from.insert("request".into(), request);
+    from.insert("run_seal".into(), upstream_answer.get("run_seal").cloned().unwrap_or(Value::Null));
+    if let Some(Value::String(coupling)) = link.get("chain").and_then(|chain| chain.get("coupling")) {
+        from.insert("coupling".into(), Value::String(coupling.clone()));
+    }
+    Value::Object(from)
+}
+
+/// A step that is the last link: its request computed again by compute_step,
+/// its sha256_seal compared, and its whole answer compared with the link sent.
+async fn step_held(state: &crate::AppState, object: &Map<String, Value>, from: Value, sent_text: &str) -> Result<TextHeld, DoorError> {
+    use crate::rebuild::{CAUSE_ANSWER_TEXT, Difference};
+    let held = |cause: Option<&'static str>, difference: Option<Difference>, computed: bool| TextHeld { values_hold: cause.is_none(), cause, difference, computed };
+    if let Some(Value::String(version)) = object.get("engine_version") {
+        if version != crate::ENGINE_VERSION {
+            let says = crate::rebuild::another_version(version, crate::ENGINE_VERSION, "sha256_seal");
+            return Ok(held(Some(crate::rebuild::CAUSE_ENGINE_VERSION), Some(Difference::new("engine_version", says)), false));
+        }
+    }
+    let Some(mut request) = object.get("inputs").and_then(Value::as_object).cloned() else {
+        return Ok(held(Some(CAUSE_ANSWER_TEXT), Some(Difference::new("inputs", "The answer's inputs are not a compute_step request.")), false));
+    };
+    request.insert("from".to_string(), from);
+    let response = match crate::compute_step(state, Value::Object(request)).await {
+        Ok(response) => response,
+        Err(DoorError::Unprocessable(sentence) | DoorError::NotFound(sentence)) => {
+            let says = format!("The engine computes no step for these inputs: it turns them away before computing. {sentence}");
+            return Ok(held(Some(CAUSE_ANSWER_TEXT), Some(Difference::new("inputs", says)), false));
+        }
+        Err(other) => return Err(other),
+    };
+    if Some(response.sha256_seal.as_str()) != object.get("sha256_seal").and_then(Value::as_str) {
+        let says = "The step was computed again and lands on another sha256_seal: its sealed parts are not the engine's step of this request.";
+        return Ok(held(Some("sha256_seal"), Some(Difference::new("sha256_seal", says)), true));
+    }
+    let engine_text = serde_json::to_string(&response).map_err(|error| {
+        DoorError::Internal(format!("Physical Violation: the response could not be encoded. {error}"))
+    })?;
+    let found = crate::rebuild::compare(&engine_text, &Value::Object(object.clone()), sent_text)?;
+    Ok(match found.difference {
+        Some(difference) => TextHeld { values_hold: found.values_hold, ..held(Some(CAUSE_ANSWER_TEXT), Some(difference), true) },
+        None => held(None, None, true),
+    })
+}
 
 /// `verify_tape` given `{"links": [...]}`: the answers of a chain in order,
-/// checked with no physics by the rule of `genesis_seal::chain`. A link that
-/// names a pair outside the view is read as a pair the engine does not have.
-fn check_chain_in(view: &View, body: &Value) -> Result<String, DoorError> {
+/// checked with no physics by the rule of `genesis_seal::chain`, and then,
+/// when every seal holds, each link's request put together from its answer
+/// and the links before it, computed again under a physics permit, and the
+/// engine's answer compared with the link sent, value by value and byte for
+/// byte. A link that names a pair outside the view is read as a pair the
+/// engine does not have.
+async fn verify_chain(state: &crate::AppState, body: &Value, text: Option<&str>) -> Result<String, DoorError> {
+    let view = state.view();
     if let Some(links) = body.get(CHAIN_LINKS).and_then(Value::as_array) {
         for link in links {
             if let Some((domain, card)) = link.get("inputs").and_then(card_pair) {
                 if view.find(domain, card).is_none() {
-                    return Err(DoorError::NotFound("Card not recognized".to_string()));
+                    return Err(DoorError::NotFound(crate::CARD_NOT_RECOGNIZED.to_string()));
                 }
             }
         }
     }
     let report = genesis_seal::chain::check_chain(body)
-        .map_err(|refusal| DoorError::Unprocessable(refusal.to_string()))?;
+        .map_err(|refusal| DoorError::Unprocessable(links_refusal(body, &refusal)))?;
+    let mut holds = report.holds;
+    let mut broken_link = report.broken_link.map(|index| index as u64);
+    let mut cause = report.cause.map(|cause| cause.as_str().to_string());
+    let mut chain_seal = report.chain_seal.clone();
+    let mut difference: Option<crate::rebuild::Difference> = None;
+    let mut computed = false;
+    let mut values_hold = false;
+    if report.holds {
+        values_hold = true;
+        // Every seal holds: each link's request is computed again, in order,
+        // with the links before it, and its answer compared.
+        let links = body.get(CHAIN_LINKS).and_then(Value::as_array).cloned().unwrap_or_default();
+        let texts = link_texts(text, &links);
+        let mut upstream: Option<(Value, Map<String, Value>)> = None;
+        for (index, (link, link_text)) in links.iter().zip(&texts).enumerate() {
+            let Some(object) = link.as_object() else { break };
+            let from = upstream.as_ref().map(|(request, answer)| from_of(request, answer, object));
+            let is_step = object.contains_key("sha256_seal") && !object.contains_key("run_seal");
+            let held = match (is_step, from.clone()) {
+                (true, Some(from)) => step_held(state, object, from, link_text).await?,
+                _ => text_held(state, object, from.clone(), link_text).await?,
+            };
+            computed |= held.computed;
+            values_hold &= held.values_hold;
+            if let Some(found) = held.cause {
+                // The first link that is not the engine's bytes is named; the
+                // links after one whose values hold are still computed, to say
+                // whether every value of the chain holds.
+                if holds {
+                    holds = false;
+                    broken_link = Some(index as u64);
+                    cause = Some(found.to_string());
+                    chain_seal = None;
+                    difference = held.difference.map(|difference| {
+                        let at = if difference.at.is_empty() { format!("links[{index}]") } else { format!("links[{index}].{}", difference.at) };
+                        crate::rebuild::Difference::new(at, difference.says)
+                    });
+                }
+                if !held.values_hold {
+                    break;
+                }
+            }
+            match request_of(object, from) {
+                Ok(request) => upstream = Some((request, object.clone())),
+                Err(_) => break,
+            }
+        }
+    }
     let mut object = Map::new();
-    object.insert("holds".into(), Value::Bool(report.holds));
+    object.insert("holds".into(), Value::Bool(holds));
+    object.insert("values_hold".into(), Value::Bool(values_hold));
     object.insert("links".into(), Value::from(report.links as u64));
-    object.insert(
-        "broken_link".into(),
-        report.broken_link.map(|index| Value::from(index as u64)).unwrap_or(Value::Null),
-    );
-    object.insert(
-        "cause".into(),
-        report.cause.map(|cause| Value::String(cause.as_str().to_string())).unwrap_or(Value::Null),
-    );
-    object.insert(
-        "chain_seal".into(),
-        report.chain_seal.map(Value::String).unwrap_or(Value::Null),
-    );
-    object.insert("checked".into(), Value::String(chain_checked_sentence(report.last_is_step)));
+    object.insert("broken_link".into(), broken_link.map(Value::from).unwrap_or(Value::Null));
+    object.insert("cause".into(), cause.map(Value::String).unwrap_or(Value::Null));
+    object.insert("chain_seal".into(), chain_seal.map(Value::String).unwrap_or(Value::Null));
+    if let Some(difference) = difference {
+        object.insert("differs_at".into(), Value::String(difference.at));
+        object.insert("difference".into(), Value::String(difference.says));
+    }
+    object.insert("compared".into(), Value::String(if computed { CHAIN_LINKS_COMPUTED } else { CHAIN_LINKS_COMPARED }.to_string()));
     serde_json::to_string(&Value::Object(object)).map_err(|error| {
         DoorError::Internal(format!("Physical Violation: the response could not be encoded. {error}"))
     })
 }
 
-fn chain_checked_sentence(last_is_step: bool) -> String {
-    let mut text = String::from("No physics was run. Each run's frames, state digest and run seal were recomputed from its answer; each link was checked to name the run_seal and chain_seal of the link before it; each handed value was compared bit for bit with the upstream's sealed final state or request and with the downstream request; and each chain_seal was rebuilt. This shows the chain is consistent with itself; sending the last request with its run_seal and chain_seal shows the engine made it and that the coupling is one it serves.");
-    if last_is_step {
-        text.push_str(" The last link is a step: its answer holds no frame, so its sha256_seal is shown by sending its request to verify_step again.");
+/// A refusal of the links form, with the name the rest of the engine gives
+/// the same thing (the breadth tests of 16 October 2026): more answers than
+/// a chain holds is `ChainTooLong`, as a request whose `from` nests deeper;
+/// a required field a link leaves out is `InputMissing`, as at the top level;
+/// and a first link that continues an upstream run carries the upstream's
+/// seal and not its request, `AnswerCarriesNoRequest`, as such an answer sent
+/// alone. A field that is there and of the wrong type is a type error, as in
+/// the long form of one answer: `genesis_seal::chain` reads a link's
+/// `outcome` that is not a string, and a `chain`'s `upstream_run_seal` or
+/// `chain_seal` that is null, as missing (the red team of 0.14.0 rc1, RT1
+/// D-1); and a field left out is missing, where it names a few by the type
+/// it wants. A refusal of one link's own run answer (its frames, its final
+/// state, its state digest) is named at that link's place, `links[i].`, as
+/// every other field of a link is, and a place is written without a dot at
+/// its end (RT1 W-2). `genesis_seal::chain` reads the links, and its other
+/// sentences are as it writes them.
+fn links_refusal(body: &Value, refusal: &genesis_seal::refusal::Refusal) -> String {
+    use genesis_seal::refusal::Refusal;
+    if let Some(placed) = placed_in_link(body, refusal) {
+        return links_refusal(body, &placed);
     }
-    text
+    let count = body.get(CHAIN_LINKS).and_then(Value::as_array).map_or(0, Vec::len);
+    match refusal {
+        Refusal::Missing(key) => match (value_at(body, key), key.rsplit('.').next()) {
+            (Some(value), Some("outcome")) if !value.is_string() => format!("Physical Violation: '{key}' must be a string."),
+            (Some(Value::Null), Some("upstream_run_seal" | "chain_seal")) => format!("Physical Violation: '{key}' must be 64 lowercase hex digits."),
+            _ => format!("Missing required parameter: '{key}' (InputMissing)."),
+        },
+        Refusal::WrongType { field, .. } if field == CHAIN_LINKS && count > genesis_seal::chain::MAX_CHAIN_LINKS => format!(
+            "Physical Violation: 'links' must be an array of at most {max} answers: the chain holds more than {max} runs, a step at its end counted as one, the most one request may carry (ChainTooLong).",
+            max = genesis_seal::chain::MAX_CHAIN_LINKS
+        ),
+        Refusal::WrongType { field, .. } if field == "links[0].chain" => format!(
+            "{refusal} An answer that continues a sealed upstream run carries the upstream's seal and not its request, so the request it was computed from cannot be computed again here ({}).",
+            crate::rebuild::NO_REQUEST
+        ),
+        // The other way about: a field a link leaves out that
+        // `genesis_seal::chain` names by the type it wants (a handed entry's
+        // from, to and unit, a continuation's coupling, a step link's state)
+        // is missing, as at the top level.
+        Refusal::WrongType { field, .. } if field.starts_with("links[") && !field.ends_with('.') && value_at(body, field).is_none() => {
+            format!("Missing required parameter: '{field}' (InputMissing).")
+        }
+        // A place genesis_seal::chain writes with a dot at its end: a chain
+        // or a handed entry that is not an object, and a handed entry with a
+        // key beyond its four, which is named.
+        Refusal::WrongType { field, expected } if field.ends_with('.') => {
+            format!("Physical Violation: '{}' must be {expected}.", field.trim_end_matches('.'))
+        }
+        Refusal::UnknownKey(field) if field.ends_with('.') => {
+            let extra = value_at(body, field)
+                .and_then(Value::as_object)
+                .and_then(|entry| entry.keys().find(|key| !["from", "to", "unit", "value_hex"].contains(&key.as_str())));
+            match extra {
+                Some(key) => format!("Physical Violation: '{field}{key}' is not a field of this request."),
+                None => format!("Physical Violation: '{}' is not a field of this request.", field.trim_end_matches('.')),
+            }
+        }
+        _ => refusal.to_string(),
+    }
+}
+
+/// A refusal `genesis_seal::chain` returned from one link's own run answer,
+/// which it names as the field of that answer alone (`frames`,
+/// `final_state`, `state_digest`), written at the link's place: the first
+/// run link whose answer the rule of a tape refuses is the one the chain's
+/// check stopped at, since every link before it was read and held. Nothing
+/// where the refusal is of the whole request or already has its place.
+fn placed_in_link(body: &Value, refusal: &genesis_seal::refusal::Refusal) -> Option<genesis_seal::refusal::Refusal> {
+    use genesis_seal::refusal::Refusal;
+    let field = match refusal {
+        Refusal::Missing(field) | Refusal::UnknownKey(field) | Refusal::NotAFieldName(field) | Refusal::NotSealed(field) => field,
+        Refusal::WrongType { field, .. } | Refusal::NotExactHex { field, .. } => field,
+        _ => return None,
+    };
+    if field == CHAIN_LINKS || field.starts_with("links[") {
+        return None;
+    }
+    let links = body.get(CHAIN_LINKS)?.as_array()?;
+    let index = links.iter().position(|link| {
+        let is_step = link.get("sha256_seal").is_some() && link.get("run_seal").is_none();
+        !is_step && genesis_seal::run::check_tape(link).is_err()
+    })?;
+    if genesis_seal::run::check_tape(&links[index]).err().as_ref() != Some(refusal) {
+        return None;
+    }
+    let place = format!("links[{index}].{field}");
+    Some(match refusal.clone() {
+        Refusal::Missing(_) => Refusal::Missing(place),
+        Refusal::UnknownKey(_) => Refusal::UnknownKey(place),
+        Refusal::NotAFieldName(_) => Refusal::NotAFieldName(place),
+        Refusal::NotSealed(_) => Refusal::NotSealed(place),
+        Refusal::WrongType { expected, .. } => Refusal::WrongType { field: place, expected },
+        Refusal::NotExactHex { digits, .. } => Refusal::NotExactHex { field: place, digits },
+        other => other,
+    })
+}
+
+/// The value at a place of the links form as `genesis_seal::chain` names it,
+/// such as `links[1].chain.chain_seal`, or nothing where there is none.
+fn value_at<'a>(body: &'a Value, place: &str) -> Option<&'a Value> {
+    let mut at = body;
+    for part in place.split('.') {
+        let (key, mut rest) = part.find('[').map_or((part, ""), |open| (&part[..open], &part[open..]));
+        if !key.is_empty() {
+            at = at.get(key)?;
+        }
+        while let Some(close) = rest.find(']') {
+            at = at.get(rest.get(1..close)?.parse::<usize>().ok()?)?;
+            rest = &rest[close + 1..];
+        }
+    }
+    Some(at)
+}
+
+/// The answer of one step sent to `verify_tape`, which verifies a run: what
+/// it is and how a step is verified (the red team of 0.13.0). It had been
+/// refused as "Missing required parameter: 'frames' (InputMissing)".
+pub(crate) const STEP_ANSWER_TO_VERIFY_TAPE: &str = "Physical Violation: this is the answer of one step (compute_step): it carries sha256_seal and no frames, and verify_tape verifies a run. A step is verified by request: send its inputs to compute_step, or to verify_step, its earlier name, and compare the sha256_seal it answers with this one; the step is computed again under a physics permit.";
+
+/// The whole answer of a step: `sha256_seal`, with no `frames` and no
+/// `run_seal`.
+fn is_a_step_answer(object: &Map<String, Value>) -> bool {
+    object.contains_key("sha256_seal") && !object.contains_key("frames") && !object.contains_key("run_seal")
 }
 
 /// A tape that names a pair outside the view is read as a tape that names a
@@ -329,8 +840,11 @@ pub fn check_in(view: &View, body: &Value) -> Result<TapeReport, DoorError> {
     let object = body.as_object().ok_or_else(|| {
         DoorError::Unprocessable("Physical Violation: the request must be a JSON object.".into())
     })?;
-    if let Some(meant) = crate::check_by_request::meant_by_request(object, "run_seal", "frames") {
+    if let Some(meant) = crate::verify_by_request::meant_by_request(object, "run_seal", "frames") {
         return Err(meant);
+    }
+    if is_a_step_answer(object) {
+        return Err(DoorError::Unprocessable(STEP_ANSWER_TO_VERIFY_TAPE.to_string()));
     }
     let inputs = required(object, "inputs")?;
     let frames = required(object, "frames")?.as_array().ok_or_else(|| {
@@ -359,7 +873,7 @@ pub fn check_in(view: &View, body: &Value) -> Result<TapeReport, DoorError> {
         final_hex.as_deref(),
         max_hex.as_deref(),
     )?;
-    Ok(recompute(
+    let report = recompute(
         inputs,
         frames,
         &outcome,
@@ -370,7 +884,23 @@ pub fn check_in(view: &View, body: &Value) -> Result<TapeReport, DoorError> {
         final_hex.as_deref(),
         max_hex.as_deref(),
         state_digest.as_deref(),
-    ))
+    );
+    // A tape is verified in the order chain, load_signature, state,
+    // run_seal: every signed reading of its request after its chain.
+    if report.cause.as_deref() == Some(CAUSE_CHAIN) {
+        return Ok(report);
+    }
+    match genesis_seal::attest::verify_run(inputs) {
+        Err(fault) => Ok(TapeReport {
+            holds: false,
+            broken_link: None,
+            cause: Some(CAUSE_LOAD_SIGNATURE.to_string()),
+            broken_place: Some(fault.place().label()),
+            load_fault: Some(fault.to_string()),
+            signed_loads: 0,
+        }),
+        Ok(readings) => Ok(TapeReport { signed_loads: readings.len() as u64, ..report }),
+    }
 }
 
 pub(crate) fn prepare(request: Value) -> Result<Prepared, DoorError> {
@@ -395,7 +925,7 @@ fn unknown_key_first(view: &View, request: &Value) -> Result<(), String> {
         return Ok(());
     }
     if let Some(initial) = object.get("initial").and_then(Value::as_object) {
-        reject_unknown_keys(initial, descriptor::phase_names(domain, card))?;
+        reject_unknown_start_keys(initial, domain, card)?;
     }
     for segment in object
         .get("segments")
@@ -406,12 +936,20 @@ fn unknown_key_first(view: &View, request: &Value) -> Result<(), String> {
         let Some(segment) = segment.as_object() else {
             continue;
         };
-        reject_unknown_keys(segment, &["steps", "load"])?;
+        reject_unknown_keys(segment, SEGMENT_KEYS)?;
         if let Some(load) = segment.get("load").and_then(Value::as_object) {
             reject_unknown_keys(load, descriptor::load_names(domain, card))?;
         }
     }
     Ok(())
+}
+
+/// The card a run request names, when the view holds it: the card whose own
+/// name a refusal of one of its fields carries.
+fn known_card(view: &View, request: &Value) -> Option<&'static str> {
+    let domain = request.get("domain")?.as_str()?;
+    let card = request.get("card")?.as_str()?;
+    view.find(domain, card).map(|spec| spec.card)
 }
 
 pub(crate) fn prepare_in(view: &View, request: Value) -> Result<Prepared, DoorError> {
@@ -430,8 +968,47 @@ pub(crate) fn prepare_continued(
 }
 
 fn prepare_with(view: &View, request: Value, carried: &crate::fresh_start::Carried) -> Result<Prepared, DoorError> {
+    let prepared = prepare_open(view, request)?;
+    fresh_start_of(view, &prepared, carried)?;
+    Ok(prepared)
+}
+
+/// The fresh-start rule (rule 14) of a request that names its upstream in
+/// `from`, decided before any physics: before the upstream is computed again
+/// (REFERENCE.md, "A chain"; the breadth tests of 16 October 2026 found it
+/// decided after, 1.23 s into a 985,000-step upstream). A request turned
+/// away by a rule read before the fresh-start rule, the card's own start
+/// rules among them, is not answered here: it is named where it was, after
+/// the chain is checked.
+pub(crate) fn fresh_start_first(view: &View, request: &Value, carried: &crate::fresh_start::Carried) -> Result<(), DoorError> {
+    match prepare_open(view, request.clone()) {
+        Ok(prepared) => fresh_start_of(view, &prepared, carried),
+        Err(_) => Ok(()),
+    }
+}
+
+/// The fresh-start rule of a prepared request: a start field that carries a
+/// run on is a fresh start's unless `from` carries it, and an anchor is the
+/// card's own value at the start, read as the specimen opened.
+fn fresh_start_of(view: &View, prepared: &Prepared, carried: &crate::fresh_start::Carried) -> Result<(), DoorError> {
+    let request = &prepared.request;
+    let (domain, card) = (request["domain"].as_str().unwrap_or_default(), request["card"].as_str().unwrap_or_default());
+    let spec = view
+        .find(domain, card)
+        .ok_or_else(|| DoorError::NotFound(crate::CARD_NOT_RECOGNIZED.to_string()))?;
+    let empty = Map::new();
+    let initial = request["initial"].as_object().unwrap_or(&empty);
+    let first_load = request["segments"][0]["load"].as_object().cloned().unwrap_or_default();
+    crate::fresh_start::check(spec.card, initial, &first_load, "initial", "segments[0].load", carried)
+        .map_err(DoorError::Unprocessable)?;
+    crate::fresh_start::check_anchors(spec.card, &prepared.live, "initial", carried).map_err(DoorError::Unprocessable)
+}
+
+/// A request read and held to every rule but the fresh-start rule, its
+/// specimen opened at the first segment's load.
+fn prepare_open(view: &View, request: Value) -> Result<Prepared, DoorError> {
     unknown_key_first(view, &request).map_err(DoorError::Unprocessable)?;
-    crate::validate_physics(&request).map_err(DoorError::Unprocessable)?;
+    crate::validate_physics_of(known_card(view, &request), &request).map_err(DoorError::Unprocessable)?;
     let object = request.as_object().ok_or_else(|| {
         DoorError::Unprocessable("Physical Violation: the request must be a JSON object.".into())
     })?;
@@ -440,11 +1017,10 @@ fn prepare_with(view: &View, request: Value, carried: &crate::fresh_start::Carri
     let card = require_string(object, "card")?;
     let spec = view
         .find(&domain, &card)
-        .ok_or_else(|| DoorError::NotFound("Card not recognized".to_string()))?;
+        .ok_or_else(|| DoorError::NotFound(crate::CARD_NOT_RECOGNIZED.to_string()))?;
 
     let initial = required_object(object, "initial")?;
-    reject_unknown_keys(initial, descriptor::phase_names(&domain, &card))
-        .map_err(DoorError::Unprocessable)?;
+    reject_unknown_start_keys(initial, &domain, &card).map_err(DoorError::Unprocessable)?;
     let dt = required(object, "dt_s")?.clone();
     let record_every = require_count(object, "record_every").map_err(DoorError::Unprocessable)?;
     let segment_values = required(object, "segments")?.as_array().ok_or_else(|| {
@@ -464,7 +1040,7 @@ fn prepare_with(view: &View, request: Value, carried: &crate::fresh_start::Carri
                 "Physical Violation: each segment must be a JSON object.".to_string(),
             )
         })?;
-        reject_unknown_keys(segment, &["steps", "load"]).map_err(DoorError::Unprocessable)?;
+        reject_unknown_keys(segment, SEGMENT_KEYS).map_err(DoorError::Unprocessable)?;
         let steps = require_count(segment, "steps").map_err(DoorError::Unprocessable)?;
         steps_requested = steps_requested.checked_add(steps).ok_or_else(|| {
             DoorError::Unprocessable(
@@ -492,6 +1068,11 @@ fn prepare_with(view: &View, request: Value, carried: &crate::fresh_start::Carri
         ));
     }
 
+    // Every signed reading is verified before the specimen opens, and before
+    // a physics permit is taken: a reading that does not verify is refused
+    // by name and nothing is computed.
+    let readings = crate::signed_load::verify_run(&request)?;
+    let load_source = crate::signed_load::load_source(&request, &readings);
     let merged = merge_parameters(spec, initial, &segment_values[0]["load"], &dt);
     let mut live = Live::open(&domain, &card, &merged).map_err(DoorError::Unprocessable)?;
     for segment in segment_values.iter().skip(1) {
@@ -502,17 +1083,14 @@ fn prepare_with(view: &View, request: Value, carried: &crate::fresh_start::Carri
         .map_err(DoorError::Unprocessable)?;
     // A start that carries a run on arrives with `from`; the card's own
     // start rules, read as the specimen opened, are named first, and the
-    // fields `from` carries are the upstream's.
-    let first_load = segment_values[0]["load"].as_object().cloned().unwrap_or_default();
-    crate::fresh_start::check(spec.card, initial, &first_load, "initial", "segments[0].load", carried)
-        .map_err(DoorError::Unprocessable)?;
-    crate::fresh_start::check_anchors(spec.card, &live, "initial", carried).map_err(DoorError::Unprocessable)?;
+    // fields `from` carries are the upstream's (`fresh_start_of`).
     Ok(Prepared {
         request,
         steps_requested,
         record_every,
         segments,
         live,
+        load_source,
     })
 }
 
@@ -556,14 +1134,7 @@ fn execute_read(
 /// first the last landed step the run is sealed to, then the refused state,
 /// at the step after it.
 pub(crate) fn refused_detail(detail: &str, steps_landed: u64) -> String {
-    let named = if steps_landed == 0 {
-        "The run is sealed with no step landed. The state at step 1 was refused and is not sealed.".to_string()
-    } else {
-        format!(
-            "The run is sealed to step {steps_landed}. The state at step {} was refused and is not sealed.",
-            steps_landed + 1
-        )
-    };
+    let named = refused_tail(steps_landed);
     let body = match detail.strip_suffix(" state is not sealed.") {
         // Cut the card's own last sentence ("That state is not sealed.", "A
         // molten state is not sealed.") at its start.
@@ -574,6 +1145,19 @@ pub(crate) fn refused_detail(detail: &str, steps_landed: u64) -> String {
         None => detail,
     };
     format!("{body} {named}")
+}
+
+/// The last sentence of a run refused part way: the step it is sealed to,
+/// and the step whose state was refused.
+pub(crate) fn refused_tail(steps_landed: u64) -> String {
+    if steps_landed == 0 {
+        "The run is sealed with no step landed. The state at step 1 was refused and is not sealed.".to_string()
+    } else {
+        format!(
+            "The run is sealed to step {steps_landed}. The state at step {} was refused and is not sealed.",
+            steps_landed + 1
+        )
+    }
 }
 
 /// The run of `execute`, with the specimen shown to `observer` after each landed
@@ -640,7 +1224,18 @@ pub(crate) fn execute_observed(
 
     let card = prepared.request["card"].as_str().unwrap_or_default().to_string();
     let (outcome, reject, reject_detail) = match refusal {
-        None => ("completed", None, None),
+        // Every step asked for landed. Where the last one landed on the end
+        // its card declares, the run has reached that end (rule 13), as the
+        // same run asked for more steps has.
+        None => match prepared
+            .live
+            .landed_at_end()
+            .filter(|_| steps_landed > 0)
+            .and_then(|name| crate::ends::declared_end(&card, name, last_state.as_ref()))
+        {
+            Some(end) => ("ended", Some(end.reject.to_string()), Some(crate::ends::sentence(&card, end, steps_landed))),
+            None => ("completed", None, None),
+        },
         Some(failure) => {
             // The specimen stands at its last landed state, or at its start.
             let incoming = match &last_state {
@@ -698,6 +1293,7 @@ pub(crate) fn execute_observed(
         max_residual_conservation_error: max_residual,
         max_residual_conservation_error_hex: max_hex,
         state_digest,
+        load_source: prepared.load_source,
         readout: None,
         frames,
         run_seal,
@@ -874,33 +1470,21 @@ fn recompute(
     }
     let seal = seal_run(&link, outcome, steps_landed, reject, expected.as_deref());
     if seal != run_seal {
-        return TapeReport {
-            holds: false,
-            broken_link: Some(frames.len() as u64),
-            cause: Some(CAUSE_RUN_SEAL.to_string()),
-        };
+        return tape_report(false, Some(frames.len() as u64), Some(CAUSE_RUN_SEAL));
     }
-    TapeReport {
-        holds: true,
-        broken_link: None,
-        cause: None,
-    }
+    tape_report(true, None, None)
+}
+
+fn tape_report(holds: bool, broken_link: Option<u64>, cause: Option<&str>) -> TapeReport {
+    TapeReport { holds, broken_link, cause: cause.map(str::to_string), broken_place: None, load_fault: None, signed_loads: 0 }
 }
 
 fn broken(index: usize) -> TapeReport {
-    TapeReport {
-        holds: false,
-        broken_link: Some(index as u64),
-        cause: Some(CAUSE_CHAIN.to_string()),
-    }
+    tape_report(false, Some(index as u64), Some(CAUSE_CHAIN))
 }
 
 fn state_broken() -> TapeReport {
-    TapeReport {
-        holds: false,
-        broken_link: None,
-        cause: Some(CAUSE_STATE.to_string()),
-    }
+    tape_report(false, None, Some(CAUSE_STATE))
 }
 
 fn record(
@@ -1051,6 +1635,7 @@ struct TrajectoryDocument<'a> {
     max_residual_conservation_error: Option<f64>,
     max_residual_conservation_error_hex: &'a Option<String>,
     state_digest: &'a Option<String>,
+    load_source: &'a Value,
     #[serde(skip_serializing_if = "no_readout")]
     readout: &'a Option<crate::readout::Readout>,
     frames: &'a Vec<RecordedFrame>,
@@ -1114,6 +1699,7 @@ fn seal_trajectory(mut response: TrajectoryResponse) -> Result<TrajectoryRespons
         max_residual_conservation_error: response.max_residual_conservation_error,
         max_residual_conservation_error_hex: &response.max_residual_conservation_error_hex,
         state_digest: &response.state_digest,
+        load_source: &response.load_source,
         readout: &response.readout,
         frames: &response.frames,
         run_seal: &response.run_seal,
@@ -1203,7 +1789,7 @@ fn merge_parameters(
 fn required<'a>(object: &'a Map<String, Value>, key: &str) -> Result<&'a Value, DoorError> {
     object
         .get(key)
-        .ok_or_else(|| DoorError::Unprocessable(format!("Missing required parameter: '{key}'")))
+        .ok_or_else(|| DoorError::Unprocessable(format!("Missing required parameter: '{key}' (InputMissing).")))
 }
 
 fn required_object<'a>(
@@ -1220,11 +1806,11 @@ fn required_object<'a>(
 fn require_string(object: &Map<String, Value>, key: &str) -> Result<String, DoorError> {
     match object.get(key) {
         None => Err(DoorError::Unprocessable(format!(
-            "Missing required parameter: '{key}'"
+            "Missing required parameter: '{key}' (InputMissing)."
         ))),
         Some(Value::String(text)) if !text.is_empty() => Ok(text.clone()),
         Some(Value::String(_)) => Err(DoorError::Unprocessable(format!(
-            "Missing required parameter: '{key}'"
+            "Missing required parameter: '{key}' (InputMissing)."
         ))),
         Some(_) => Err(DoorError::Unprocessable(format!(
             "Physical Violation: '{key}' must be a string."
@@ -1234,7 +1820,7 @@ fn require_string(object: &Map<String, Value>, key: &str) -> Result<String, Door
 
 fn require_count(object: &Map<String, Value>, key: &str) -> Result<u64, String> {
     match object.get(key) {
-        None => Err(format!("Missing required parameter: '{key}'")),
+        None => Err(format!("Missing required parameter: '{key}' (InputMissing).")),
         Some(value) => match value.as_u64() {
             Some(count) if count >= 1 => Ok(count),
             _ => Err(format!(
@@ -1247,7 +1833,7 @@ fn require_count(object: &Map<String, Value>, key: &str) -> Result<u64, String> 
 fn require_landed(object: &Map<String, Value>) -> Result<u64, DoorError> {
     match object.get("steps_landed") {
         None => Err(DoorError::Unprocessable(
-            "Missing required parameter: 'steps_landed'".to_string(),
+            "Missing required parameter: 'steps_landed' (InputMissing).".to_string(),
         )),
         Some(value) => value.as_u64().ok_or_else(|| {
             DoorError::Unprocessable(
@@ -1263,7 +1849,7 @@ fn require_optional_string(
 ) -> Result<Option<String>, DoorError> {
     match object.get(key) {
         None => Err(DoorError::Unprocessable(format!(
-            "Missing required parameter: '{key}'"
+            "Missing required parameter: '{key}' (InputMissing)."
         ))),
         Some(Value::Null) => Ok(None),
         Some(Value::String(text)) => Ok(Some(text.clone())),
@@ -1276,7 +1862,7 @@ fn require_optional_string(
 fn require_reject(object: &Map<String, Value>) -> Result<Option<String>, DoorError> {
     match object.get("reject") {
         None => Err(DoorError::Unprocessable(
-            "Missing required parameter: 'reject'".to_string(),
+            "Missing required parameter: 'reject' (InputMissing).".to_string(),
         )),
         Some(Value::Null) => Ok(None),
         Some(Value::String(text)) => Ok(Some(text.clone())),
@@ -1284,6 +1870,22 @@ fn require_reject(object: &Map<String, Value>) -> Result<Option<String>, DoorErr
             "Physical Violation: 'reject' must be a string or null.".to_string(),
         )),
     }
+}
+
+/// The keys of a segment: its steps, its load, and the instrument's
+/// signature over the load.
+pub(crate) const SEGMENT_KEYS: &[&str] = &["steps", "load", crate::signed_load::SIGNED];
+
+/// The keys of a start: the card's phase fields, and the instrument's
+/// signature over them.
+fn reject_unknown_start_keys(initial: &Map<String, Value>, domain: &str, card: &str) -> Result<(), String> {
+    let phase = descriptor::phase_names(domain, card);
+    for key in initial.keys() {
+        if key != crate::signed_load::SIGNED && !phase.iter().any(|name| *name == key) {
+            return Err(crate::locked_or_unknown(key));
+        }
+    }
+    Ok(())
 }
 
 fn reject_unknown_keys(object: &Map<String, Value>, allowed: &[&str]) -> Result<(), String> {
@@ -1644,7 +2246,7 @@ mod tests {
     async fn the_neighbor_below_233_15_is_not_sealed() {
         let text = r#"{"domain":"energy","card":"thermal","parameters":{"temperature_k":233.14999999999998,"heat_power_w":0.0,"ambient_k":293.15,"dt_s":0.1}}"#;
         let value: Value = serde_json::from_str(text).unwrap();
-        let error = crate::verify_step(&crate::new_gateway_state(), value)
+        let error = crate::compute_step(&crate::new_gateway_state(), value)
             .await
             .unwrap_err();
         assert!(

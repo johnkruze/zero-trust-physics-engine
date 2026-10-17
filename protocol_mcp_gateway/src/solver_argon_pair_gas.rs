@@ -22,7 +22,7 @@ const fn number(name: &'static str, unit: &'static str, note: &'static str) -> O
 
 pub const ARGON_PAIR_GAS: Solver = Solver {
     name: "argon_pair_gas",
-    summary: "Argon gas at low density from one Lennard-Jones pair potential whose two constants are fitted to the measured speed of sound in argon: second virial coefficient, speed of sound and viscosity at zero density. Each property is answered where it was compared: the speed of sound from 250 K to 349.868 K at 30.5 kPa to 467.2 kPa, the viscosity from 291.09 K to 681.96 K at zero pressure; elsewhere the solver refuses by name.",
+    summary: "Argon gas at low density from one Lennard-Jones pair potential whose two constants are fitted to the measured speed of sound in argon: second virial coefficient, speed of sound and viscosity at zero density. Every property is answered from 250 K to 6000 K, where argon begins to ionize, at 0 to 500 kPa, where the pressure series cut after its first term is written. Compared with measurement, all five lines met: the speed of sound from 250 K to 349.868 K at 30.5 kPa to 467.2 kPa (held-back rms 0.0074 m/s), the viscosity from 291.09 K to 681.96 K at zero pressure (mean 1.47 percent high).",
     inputs: &[
         Input {
             name: "temperature_k",
@@ -32,7 +32,7 @@ pub const ARGON_PAIR_GAS: Solver = Solver {
                 unit: "K",
             },
             refusal: Some("TemperatureOutOfRange"),
-            bound: "Temperature of the gas. The range is the union of the spans of the measurements the solver was compared with: speed of sound from 250 K to 349.868 K, viscosity from 291.09 K to 681.96 K. Each property is answered only in its own span, as pressure_kpa says.",
+            bound: "Temperature of the gas, 250 K to 6000 K. Below 250 K, the lowest isotherm compared, the term the pressure series leaves out grows as the gas cools toward condensation, and its size is not known here; above 6000 K argon begins to ionize (an ionized fraction of 2e-5 at 6000 K and 100 kPa, 2 percent at 10,000 K), which a pair potential of neutral atoms does not hold. Both are TemperatureOutOfRange. The speed of sound was compared from 250 K to 349.868 K and the viscosity from 291.09 K to 681.96 K; there it was 3.0 percent high at 291 K falling to 0.3 percent at 682 K. Above 681.96 K and, for the viscosity, below 291.09 K nothing was compared.",
             only_when: None,
             asked_by_check: false,
         },
@@ -44,7 +44,7 @@ pub const ARGON_PAIR_GAS: Solver = Solver {
                 unit: "kPa",
             },
             refusal: Some("PressureOutOfRange"),
-            bound: "Pressure of the gas. It says which property a question asks. From 30.5 kPa to 467.2 kPa, the span of the measured speeds of sound the solver was compared with, it asks the speed of sound, which is answered from 250 K to 349.868 K and refused above as SoundSpeedNotCompared. Zero asks the gas at zero density, where the viscosity was compared: it is answered from 291.09 K to 681.96 K and refused below as ViscosityNotCompared, and the speed of sound returned there is the ideal gas's. Any other pressure from 0 kPa to 500 kPa, where neither property was compared, is refused as PressureNotCompared, and one below 0 kPa or above 500 kPa, where the pressure series is not written, as PressureOutOfRange. The viscosity and the second virial coefficient do not depend on the pressure: every pressure answered gives the same ones, and a question of the speed of sound below 291.09 K returns a viscosity that no measurement here has checked.",
+            bound: "Pressure of the gas, 0 kPa to 500 kPa, where the pressure series cut after its first term is written; below 0 kPa or above 500 kPa, where above 500 kPa the left-out term is larger than the measurement uncertainty, it is refused as PressureOutOfRange. Every property is returned at every pressure: at zero the speed of sound is the ideal gas's. The speed of sound was compared at 30.5 kPa to 467.2 kPa, and the viscosity at zero pressure, the limit of zero density. The viscosity and the second virial coefficient do not depend on the pressure: every pressure answered gives the same ones.",
             only_when: None,
             asked_by_check: true,
         },
@@ -52,7 +52,7 @@ pub const ARGON_PAIR_GAS: Solver = Solver {
     kept_inside: "The two constants of the pair potential, the molar mass, the quadrature rules and their tolerances stay inside the solver.",
     result: &[
         number("reduced_temperature", "1", "Temperature over the well depth of the pair potential."),
-        number("second_virial_cm3_per_mol", "cm3/mol", "B(T). Not compared with a measurement of B directly."),
+        number("second_virial_cm3_per_mol", "cm3/mol", "B(T). Compared with measurement through the speed of sound, which carries it in the acoustic virial coefficient, from 250 K to 349.868 K at 30.5 kPa to 467.2 kPa."),
         number("second_virial_first_derivative_cm3_per_mol", "cm3/mol", "T dB/dT."),
         number("second_virial_second_derivative_cm3_per_mol", "cm3/mol", "T² d²B/dT²."),
         number("acoustic_virial_cm3_per_mol", "cm3/mol", "2B + (4/3) T dB/dT + (4/15) T² d²B/dT²."),
@@ -61,7 +61,7 @@ pub const ARGON_PAIR_GAS: Solver = Solver {
         number("collision_integral_22", "1", "Reduced collision integral Ω(2,2)*."),
         number("collision_integral_23", "1", "Reduced collision integral Ω(2,3)*."),
         number("viscosity_second_approximation_factor", "1", "Kihara's factor, 1 + (3/196)(8 Ω(2,3)*/Ω(2,2)* − 7)²."),
-        number("viscosity_pa_s", "Pa s", "In the limit of zero density; it does not depend on the asked pressure. Compared with measurement from 291.09 K to 681.96 K, asked at zero pressure; below 291.09 K it is returned only with a question of the speed of sound and was never compared."),
+        number("viscosity_pa_s", "Pa s", "In the limit of zero density; it does not depend on the asked pressure. Compared with measurement from 291.09 K to 681.96 K, asked at zero pressure; below 291.09 K and above 681.96 K it was never compared."),
     ],
     invariants: &[
         number("virial_forms_residual_cm3_per_mol", "cm3/mol", ""),
@@ -72,6 +72,7 @@ pub const ARGON_PAIR_GAS: Solver = Solver {
     field: field_words,
     answer: "a settled gas",
     refusals: REFUSALS,
+    door_refusals: &[],
     sections,
     validation: Some(validation),
     example,
@@ -83,31 +84,16 @@ pub const ARGON_PAIR_GAS: Solver = Solver {
 
 /// Each `ArgonReject` variant with the sentence from its doc comment. The
 /// request itself shows a temperature or a pressure outside the range, so
-/// those five are not sealed.
+/// those two are not sealed.
 const REFUSALS: &[Refusal] = &[
     Refusal {
         name: "TemperatureOutOfRange",
-        meaning: "`temperature_k` is outside `TEMPERATURE_MIN_K`..=`TEMPERATURE_MAX_K`.",
+        meaning: "`temperature_k` is outside `TEMPERATURE_MIN_K` to `TEMPERATURE_MAX_K`: below it the pressure series' left-out term is not known, above it argon begins to ionize.",
         sealed: false,
     },
     Refusal {
         name: "PressureOutOfRange",
-        meaning: "`pressure_kpa` is outside `PRESSURE_MIN_KPA`..=`PRESSURE_MAX_KPA`.",
-        sealed: false,
-    },
-    Refusal {
-        name: "PressureNotCompared",
-        meaning: "`pressure_kpa` is above zero and outside `PRESSURE_COMPARED_MIN_KPA`..=`PRESSURE_COMPARED_MAX_KPA`, the pressures at which the speed of sound was compared with measurement; the viscosity was compared at zero pressure only.",
-        sealed: false,
-    },
-    Refusal {
-        name: "SoundSpeedNotCompared",
-        meaning: "`pressure_kpa` asks the speed of sound and `temperature_k` is above `SOUND_SPEED_COMPARED_MAX_K`, the highest temperature at which the speed of sound was compared with measurement.",
-        sealed: false,
-    },
-    Refusal {
-        name: "ViscosityNotCompared",
-        meaning: "`pressure_kpa` is zero, which asks the gas at zero density, and `temperature_k` is below `VISCOSITY_COMPARED_MIN_K`, the lowest temperature at which the viscosity was compared with measurement.",
+        meaning: "`pressure_kpa` is outside `PRESSURE_MIN_KPA` to `PRESSURE_MAX_KPA`, where the pressure series cut after its first term is written.",
         sealed: false,
     },
     Refusal {
@@ -152,9 +138,6 @@ pub fn reject_name(reject: &ArgonReject) -> &'static str {
     match reject {
         ArgonReject::TemperatureOutOfRange { .. } => "TemperatureOutOfRange",
         ArgonReject::PressureOutOfRange { .. } => "PressureOutOfRange",
-        ArgonReject::PressureNotCompared { .. } => "PressureNotCompared",
-        ArgonReject::SoundSpeedNotCompared { .. } => "SoundSpeedNotCompared",
-        ArgonReject::ViscosityNotCompared { .. } => "ViscosityNotCompared",
         ArgonReject::NonFiniteValue => "NonFiniteValue",
         ArgonReject::VirialNotSettled { .. } => "VirialNotSettled",
         ArgonReject::VirialFormsDisagree { .. } => "VirialFormsDisagree",
@@ -192,7 +175,7 @@ fn sections() -> Sections {
                 "rule": "The second virial coefficient from the Mayer integral and from the force integral, which are one another's integration by parts, are the same number.",
                 "tolerance": argon::VIRIAL_FORMS_TOLERANCE_CM3_PER_MOL,
                 "unit": "cm3/mol",
-                "checked": "at acceptance",
+                "compared": "at acceptance",
                 "refusal": "VirialFormsDisagree",
             },
             {
@@ -200,7 +183,7 @@ fn sections() -> Sections {
                 "rule": "Every collision is computed at the closest approach the two atoms reach first: the margin is positive for every deflection angle.",
                 "tolerance": 0.0,
                 "unit": "1",
-                "checked": "every deflection angle",
+                "compared": "every deflection angle",
                 "refusal": "TurningPointNotOutermost",
             },
             {
@@ -208,7 +191,7 @@ fn sections() -> Sections {
                 "rule": "Over the settled thermal average, the fifteen-point and the seven-point quadrature rules give each collision integral to the same fraction.",
                 "tolerance": argon::COLLISION_INTEGRAL_SETTLE_TOLERANCE,
                 "unit": "1",
-                "checked": "every panel of the thermal average",
+                "compared": "every panel of the thermal average",
                 "refusal": "CollisionIntegralNotSettled",
             },
         ]),
@@ -237,14 +220,14 @@ fn sections() -> Sections {
 fn validation() -> [String; 5] {
     let object = "Argon gas, 99.999 percent pure, at low density. Two atoms are given one Lennard-Jones 12-6 pair potential. Its two constants are fitted to this gas's own measured speed of sound. Everything else follows from the potential with no further constant: the second virial coefficient and the speed of sound by statistical mechanics, the viscosity by the kinetic theory of Chapman and Enskog.".to_string();
     let data = "Speed of sound: Goodwin and Hill, J. Chem. Eng. Data 54 (2009) 2758, two spherical resonators, 15 isotherms from 250 K to 349.868 K, stated expanded uncertainty under 0.03 m/s; the archive's compiler gives its own 95 percent uncertainty beside it, 0.50 to 0.59 m/s. Fitted on the 42 points at or below 500 kPa of the eleven isotherms up to 300.117 K. Held back: the 24 points at or below 500 kPa of the four isotherms at 310 K, 320 K, 325.046 K and 349.868 K; they are 17 distinct states, seven of them printed twice with different speeds. Viscosity, never fitted: Vogel, Int. J. Thermophys. 31 (2010) 447, oscillating-disk viscometer, 49 points from 291.09 K to 681.96 K, stated uncertainty 0.15 to 0.2 percent; the archive's compiler gives 0.30 to 0.31 percent at 95 percent. The viscosity is at a density of 1.1 kg/m3, not at zero density. Vogel's instrument is relative: what is measured is the ratio of the viscosity to its value at 298.15 K, and the absolute level of all 49 values rests on that one value, which was calculated from an ab initio potential, not measured. Both sets are from the NIST ThermoML Archive, doi 10.18434/mds2-2422. NIST's licence asks that the National Institute of Standards and Technology be acknowledged as the source of the data: it is the source of both sets, as read here from its archive.".to_string();
-    let pass_line = "Fixed on 2026-10-09, before any model was run on any measurement. Held-back speed of sound: root mean square error at most 0.030 m/s; largest error at most 0.060 m/s; root mean square error at most a quarter of the ideal gas's. Viscosity: mean error at most 2.0 percent; largest at most 4.0 percent. The viscosity lines are an allowance for a two-constant potential, about ten times the measurement's uncertainty. They were drawn knowing that textbook constants give about 2 percent, so meeting them is not evidence of agreement with the measurement. Rows of both data sets were seen before the split. The solver passes only if all five are met.".to_string();
+    let pass_line = "Fixed on 2026-10-09, before any model was run on any measurement. Held-back speed of sound: root mean square error at most 0.030 m/s; largest error at most 0.060 m/s; root mean square error at most a quarter of the ideal gas's. Viscosity: mean error at most 2.0 percent; largest at most 4.0 percent. The viscosity lines are an allowance for a two-constant potential, about ten times the measurement's uncertainty. They were drawn knowing that textbook constants give about 2 percent, so meeting them is not evidence of agreement with the measurement. The comparison is not blind: before the split was chosen and these lines were fixed, a sampled listing of both files was printed and read, 29 of the 163 speed-of-sound rows, from all 15 isotherms including the four held back, and 11 of the 49 viscosity rows, all of which are scored. The solver passes only if all five are met.".to_string();
     let result = RESULT.to_string();
-    let limits = "The held-back speed of sound tests extrapolation in temperature by up to 50 K, on the same property and instruments as the fit. The viscosity tests a different property from a different laboratory, up to 382 K above the highest fitted temperature. Not tested, and refused by name: a pressure above zero outside 30.5 to 467.2 kPa; temperatures below 250 K or above 681.96 K; the speed of sound above 349.868 K; the gas at zero pressure below 291.09 K. Not tested and returned: the viscosity below 291.09 K, which a question of the speed of sound returns beside it; the second virial coefficient itself, of which no measurement was used; the liquid; any mixture. The returned second virial coefficient is shifted: the fitted constants absorb the higher pressure term the series drops, so B is higher by roughly 0.1 to 0.4 cm3/mol at 300 K, -15.05 cm3/mol here against -15.18 from the reference equation of state. The 12-6 potential is not the true potential of argon: its constants are fitted and stand in for what the form leaves out. A proof shows that an answer was not changed, not that the model matches the gas.".to_string();
+    let limits = "The held-back speed of sound tests extrapolation in temperature by up to 50 K, on the same property and instruments as the fit. The viscosity tests a different property from a different laboratory, up to 382 K above the highest fitted temperature. Not tested, and answered: a pressure above zero outside 30.5 to 467.2 kPa; the speed of sound above 349.868 K; the viscosity below 291.09 K; every property above 681.96 K up to 6000 K; the second virial coefficient itself, of which no measurement was used. Through engine 0.8.0 the first four were refused by name. Not served: temperatures below 250 K, where the size of the series' left-out term is not known, and above 6000 K, where argon begins to ionize; pressures above 500 kPa; the liquid; any mixture. The returned second virial coefficient is shifted: the fitted constants absorb the higher pressure term the series drops, so B is higher by roughly 0.1 to 0.4 cm3/mol at 300 K, -15.05 cm3/mol here against -15.18 from the reference equation of state. The 12-6 potential is not the true potential of argon: its constants are fitted and stand in for what the form leaves out. A proof shows that an answer was not changed, not that the model matches the gas.".to_string();
     [object, data, pass_line, result, limits]
 }
 
 /// The outcome of the comparison with the held-back measurements.
-const RESULT: &str = "Compared once, on 2026-10-09, through the gateway. All five lines were met. Held-back speed of sound, 24 points: root mean square error 0.0074 m/s, largest 0.0146 m/s, 0.023 of the ideal gas's 0.327 m/s. Viscosity, 49 points: mean error 1.47 percent, largest 2.97 percent. The solver's viscosity is above the measurement at all 49 points, by 2.95 percent at 291 K falling to 0.28 percent at 682 K: 1.4 to 20 times the measurement's uncertainty, 9 on average, and no point is within it. The lines were an allowance, and the solver's viscosity does not change with temperature as argon's does. The 12-6 form can follow this viscosity with other constants: 143.84 K and 3.3379 angstrom fit all 49 points within 0.11 percent. What fails is one pair of constants for both properties: that pair misses the held-back speed of sound by 0.22 m/s. The held-back speed of sound does not distinguish the 12-6 form from a square well, van der Waals' second virial coefficient, a hard sphere with an r^-6 attraction, or Mie potentials from 9-6 to 30-6: each, fitted on the same opened points, meets the same lines, at 0.0073 to 0.0107 m/s. The floor is about 0.007 m/s: the reference equation of state scores 0.0076, and repeated states differ by up to 0.016 m/s. What the test shows is that the second acoustic virial coefficient fitted at 250 to 300 K extrapolates 50 K. The fit added nothing on the held-back data: the textbook constants of argon (119.8 K, 3.405 angstrom), fitted by no one here, give 0.0068 m/s and 0.0136 m/s on the same speed-of-sound points and 0.80 percent and 2.05 percent on the viscosity. On the 42 fitted points the solver gives 0.0042 m/s root mean square and 0.0122 m/s largest, the textbook constants 0.0061 and 0.0196, the ideal gas 0.149 and 0.377. The binary that made the scored run (SHA-256 90dfab953a94d199db146cfad89a4ce4bf750288c3b33b299fb2fed49e722066) was overwritten by a later build, which returned all 115 saved answers byte for byte; engine 0.7.0 answers all 115, the 49 viscosity answers asked at zero pressure among them, the same in every field but the engine version and the receipt. A second scoring of 2026-10-09, on the same machine, found the same numbers: evidence/checks/second_party/V-34/.";
+const RESULT: &str = "Compared once, on 2026-10-09, through the gateway. All five lines were met. Held-back speed of sound, 24 points: root mean square error 0.0074 m/s, largest 0.0146 m/s, 0.023 of the ideal gas's 0.327 m/s. Viscosity, 49 points: mean error 1.47 percent, largest 2.97 percent. The solver's viscosity is above the measurement at all 49 points, by 2.95 percent at 291 K falling to 0.28 percent at 682 K: 1.4 to 20 times the measurement's uncertainty, 9 on average, and no point is within it. The lines were an allowance, and the solver's viscosity does not change with temperature as argon's does. The 12-6 form can follow this viscosity with other constants: 143.84 K and 3.3379 angstrom fit all 49 points within 0.11 percent. What fails is one pair of constants for both properties: that pair misses the held-back speed of sound by 0.22 m/s. The held-back speed of sound does not distinguish the 12-6 form from a square well, van der Waals' second virial coefficient, a hard sphere with an r^-6 attraction, or Mie potentials from 9-6 to 30-6: each, fitted on the same opened points, meets the same lines, at 0.0073 to 0.0107 m/s. The floor is about 0.007 m/s: the reference equation of state scores 0.0076, and repeated states differ by up to 0.016 m/s. What the test shows is that the second acoustic virial coefficient fitted at 250 to 300 K extrapolates 50 K. The fit added nothing on the held-back data: the textbook constants of argon (119.8 K, 3.405 angstrom), fitted by no one here, give 0.0068 m/s and 0.0136 m/s on the same speed-of-sound points and 0.80 percent and 2.05 percent on the viscosity. On the 42 fitted points the solver gives 0.0042 m/s root mean square and 0.0122 m/s largest, the textbook constants 0.0061 and 0.0196, the ideal gas 0.149 and 0.377. The binary that made the scored run (SHA-256 90dfab953a94d199db146cfad89a4ce4bf750288c3b33b299fb2fed49e722066) was overwritten by a later build, which returned all 115 saved answers byte for byte; engine 0.7.0 answers all 115, the 49 viscosity answers asked at zero pressure among them, the same in every field but the engine version and the receipt. A second scoring of 2026-10-09, on the same machine, found the same numbers: evidence/verification/second_party/V-34/.";
 
 fn example() -> Value {
     json!({ "temperature_k": 300.0, "pressure_kpa": 101.325 })
@@ -380,13 +363,10 @@ mod tests {
         let body = describe_value(ARGON_PAIR_GAS.name).expect("described");
         let refusals = body["refusals"].as_array().expect("refusals");
         assert_eq!(refusals.len(), documented.len());
-        // Only the five refusals the request itself shows are answered with no seal.
+        // Only the two refusals the request itself shows are answered with no seal.
         for refusal in refusals {
             let at_the_door = refusal["name"] == "TemperatureOutOfRange"
-                || refusal["name"] == "PressureOutOfRange"
-                || refusal["name"] == "PressureNotCompared"
-                || refusal["name"] == "SoundSpeedNotCompared"
-                || refusal["name"] == "ViscosityNotCompared";
+                || refusal["name"] == "PressureOutOfRange";
             let reported = if at_the_door { "422, no seal" } else { "200, outcome refused, sealed" };
             assert_eq!(refusal["reported_as"], reported, "{}", refusal["name"]);
         }

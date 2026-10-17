@@ -2,6 +2,8 @@
 //! view of the engine per key. Every test starts the real binary and talks to
 //! it over a real TCP socket on 127.0.0.1.
 
+mod answer_text;
+
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
@@ -42,7 +44,7 @@ fn client(label: &str, key: &str, cards: Value, solvers: Value, max: u64) -> Val
 /// cards come from the engine, not from a number in this file.
 fn keys_file(all_cards: &Value) -> Value {
     json!([
-        client("all", KEY_ALL, all_cards.clone(), json!(["atom_dft", "ablator_slab", "journal_bearing_sheffield", "propeller_apc_10x7e", "modulus_bam_s355", "seawater_column", "argon_pair_gas", "fusion_pb11_lhd", "fusion_pb11_thermal", "step_flow_armaly", "culture_trichoderma_ambr250", "tokamak_dt_beam_target", "pipe_flow_superpipe"]), 8),
+        client("all", KEY_ALL, all_cards.clone(), json!(["atom_dft", "ablator_slab", "journal_bearing_sheffield", "propeller_apc_10x7e", "modulus_bam_s355", "seawater_column", "argon_pair_gas", "fusion_pb11_lhd", "fusion_pb11_thermal", "step_flow_armaly", "culture_trichoderma_ambr250", "tokamak_dt_beam_target", "pipe_flow_superpipe", "culture_trichoderma_atp", "junction_nist_b7_s2", "water_hammer_oil_line", "orifice_air_chamber", "pneumatic_hose_resonance", "blast_wave_tnt_air", "stress_plate_hole_s235", "stress_plate_hole_s235_elastic", "icf_hotspot_burn", "ln2_line_dlr_fttf", "plasma_sheath_ram_c2"]), 8),
         client("thermal", KEY_THERMAL, json!([["energy", "thermal"]]), json!([]), 8),
         client(
             "materials",
@@ -195,16 +197,18 @@ impl Hosted {
 }
 
 fn tool_line(id: u64, tool: &str, arguments: &Value) -> String {
-    json!({"jsonrpc":"2.0","id":id,"method":"tools/call","params":{"name":tool,"arguments":arguments}})
+    answer_text::tool_call(id, tool, arguments)
         .to_string()
 }
 
 fn result_text(answer: &str) -> String {
     let value: Value = serde_json::from_str(answer).unwrap();
-    value["result"]["content"][0]["text"]
+    let text = value["result"]["content"][0]["text"]
         .as_str()
         .unwrap_or_else(|| panic!("no text in {answer}"))
-        .to_string()
+        .to_string();
+    answer_text::remember(&text);
+    text
 }
 
 fn is_error(answer: &str) -> bool {
@@ -224,7 +228,7 @@ struct Specimen {
 
 impl Specimen {
     fn step(&self) -> Value {
-        self.description["example_verify_step"].clone()
+        self.description["example_compute_step"].clone()
     }
     fn run(&self) -> Value {
         self.description["example_run_trajectory"].clone()
@@ -251,7 +255,7 @@ impl Specimen {
     /// The same request with the pair renamed.
     fn renamed(&self, domain: &str, card: &str) -> Specimen {
         let mut description = self.description.clone();
-        for key in ["example_verify_step", "example_run_trajectory"] {
+        for key in ["example_compute_step", "example_run_trajectory"] {
             description[key]["domain"] = json!(domain);
             description[key]["card"] = json!(card);
         }
@@ -467,7 +471,7 @@ async fn a_hidden_card_answers_as_a_card_that_does_not_exist_on_every_tool() {
         // The tools as this key is shown them.
         let listed = hosted.ask(key, LIST_TOOLS).await;
         let tools: Value = serde_json::from_str(&listed).unwrap();
-        assert_eq!(tools["result"]["tools"].as_array().unwrap().len(), 16);
+        assert_eq!(tools["result"]["tools"].as_array().unwrap().len(), 18);
         session.push(listed.clone());
         let cards = hosted.tool(key, "list_cards", &json!({})).await;
         let named: Value = serde_json::from_str(&result_text(&cards)).unwrap();
@@ -540,11 +544,18 @@ async fn a_hidden_card_answers_as_a_card_that_does_not_exist_on_every_tool() {
                 .tool(key, "describe_card", &json!({"domain": item.domain, "card": item.card}))
                 .await;
             assert!(is_error(&plain));
-            assert_eq!(result_text(&plain), "Card not recognized");
+            assert_eq!(result_text(&plain), "Card not recognized (UnknownCard).");
         }
 
         // No hidden name, field or specimen word in anything the key was sent.
-        let neutral = hosted.ask(KEY_NONE, LIST_TOOLS).await;
+        // Every run answer and every comparison says where its loads and its
+        // measurements came from in the engine's own words, whichever card it is of.
+        let neutral = format!(
+            "{} {} {}",
+            hosted.ask(KEY_NONE, LIST_TOOLS).await,
+            genesis_seal::attest::CALLERS_NUMBER,
+            genesis_seal::attest::CALLERS_MEASUREMENTS
+        );
         let forbidden = forbidden_words(&visible, &hidden, &format!("{neutral}\n{}", visible_answers.join("\n")));
         assert!(forbidden.len() >= hidden.len(), "{forbidden:?}");
         let text = session.join("\n").to_lowercase();
@@ -577,7 +588,7 @@ async fn a_hidden_card_answers_as_a_card_that_does_not_exist_on_every_tool() {
     let hidden = hosted.tool(KEY_THERMAL, "describe_solver", &json!({"solver": "atom_dft"})).await;
     let unknown = hosted.tool(KEY_THERMAL, "describe_solver", &json!({"solver": "atom_dfx"})).await;
     assert_eq!(hidden, unknown);
-    assert_eq!(result_text(&hidden), "Solver not recognized");
+    assert_eq!(result_text(&hidden), "Solver not recognized (UnknownSolver).");
     let atom = json!({"solver": "atom_dft", "parameters": {"atomic_number": 3}});
     let other = json!({"solver": "atom_dfx", "parameters": {"atomic_number": 3}});
     assert_eq!(
@@ -602,7 +613,7 @@ async fn a_hidden_card_answers_as_a_card_that_does_not_exist_on_every_tool() {
     assert_eq!(on_hidden, on_unknown);
     // A key that sees the solver gets the verdict.
     let verdict = hosted.tool(KEY_ALL, "verify_solution", &solution).await;
-    assert_eq!(result_text(&verdict), format!(r#"{{"holds":true,"cause":null,"checked":{}}}"#, serde_json::json!(protocol_mcp_gateway::WHOLE_SOLUTION_CHECKED)));
+    assert_eq!(result_text(&verdict), format!(r#"{{"holds":true,"values_hold":true,"cause":null,"compared":{}}}"#, serde_json::json!(protocol_mcp_gateway::WHOLE_SOLUTION_COMPUTED)));
 }
 
 #[tokio::test]
@@ -619,11 +630,11 @@ async fn two_keys_see_their_own_cards_and_their_own_datasets() {
     let own = hosted.tool(KEY_THERMAL, "verify_step", &thermal.step()).await;
     assert!(!is_error(&own), "{own}");
     let other = hosted.tool(KEY_THERMAL, "verify_step", &titanium.step()).await;
-    assert_eq!(result_text(&other), "Card not recognized");
+    assert_eq!(result_text(&other), "Card not recognized (UnknownCard).");
     let own = hosted.tool(KEY_MATERIALS, "verify_step", &titanium.step()).await;
     assert!(!is_error(&own), "{own}");
     let other = hosted.tool(KEY_MATERIALS, "verify_step", &thermal.step()).await;
-    assert_eq!(result_text(&other), "Card not recognized");
+    assert_eq!(result_text(&other), "Card not recognized (UnknownCard).");
 
     // The same request gives the same seals under two keys, and on the stdio door.
     let a = hosted.tool(KEY_ALL, "verify_step", &thermal.step()).await;
@@ -653,7 +664,7 @@ async fn two_keys_see_their_own_cards_and_their_own_datasets() {
     assert!(is_error(&other));
     assert_eq!(
         result_text(&other),
-        "no dataset is stored under that seal. A dataset returned in the answer (return \"inline\") is not stored: check it by sending its run_dataset request as 'request' with its 'dataset_seal', which runs the plan again, or by sending back the head, rows and frames_hex of its full answer (answer \"full\")."
+        "no dataset is stored under that seal. A dataset returned in the answer (return \"inline\") is not stored: verify it by sending its run_dataset request as 'request' with its 'dataset_seal', which runs the plan again, or by sending back the head, rows and frames_hex of its full answer (answer \"full\")."
     );
     assert_eq!(other, missing);
 
@@ -1096,7 +1107,7 @@ async fn a_standard_mcp_client_initializes_lists_tools_and_calls_one() {
     assert_eq!(info.server_info.as_ref().unwrap().name, "Zero-Trust Physics");
 
     let listed = client.list_tools(None).await.expect("tools/list");
-    assert_eq!(listed.tools.len(), 16);
+    assert_eq!(listed.tools.len(), 18);
     let schemas = serde_json::to_string(&listed.tools).unwrap();
     assert!(schemas.contains("thermal"));
     assert!(!schemas.contains("ti64_lattice"));
@@ -1122,6 +1133,6 @@ async fn a_standard_mcp_client_initializes_lists_tools_and_calls_one() {
         .await
         .expect("describe_card");
     assert_eq!(refused.is_error, Some(true));
-    assert_eq!(refused.content[0].as_text().unwrap().text, "Card not recognized");
+    assert_eq!(refused.content[0].as_text().unwrap().text, "Card not recognized (UnknownCard).");
     client.cancel().await.expect("close");
 }

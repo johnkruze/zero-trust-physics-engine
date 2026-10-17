@@ -5,36 +5,49 @@
 //! Measured by Kollmeyer (2018), Mendeley Data, doi: 10.17632/wykht8y7tg.1,
 //! CC BY 4.0. The license requires that credit.
 //!
-//! The card is a held 1C discharge from full down to 3 percent state of
-//! charge or 2.5 V, whichever comes first. The card has no temperature and
-//! no memory.
+//! The card is a held discharge at one current, from a rested cell at any
+//! state of charge from 3 percent to full, down to 3 percent state of charge
+//! or 2.5 V, whichever comes first. The card has no temperature and no
+//! memory.
 //!
 //! Held means what the tester held. The card passed its comparison with
-//! measurement only on 1C discharges from full charge, and each run of that comparison
-//! fed the tester's own logged current, which moves between 2.899 and
-//! 2.89982 A over a run: 0.82 mA, one step of the 0.81 mA in which the tester
-//! logs its current. The dataset states no accuracy for the tester. The card
-//! takes a current from [`CURRENT_COMPARED_MIN_A`] to
-//! [`CURRENT_COMPARED_MAX_A`], the compared span widened on each side by
-//! [`HELD_CURRENT_BAND_A`], and refuses any other as
-//! [`StepReject::CurrentNotCompared`]. A run is one current: every step's
-//! current stays within 0.83 mA of the held current, the current of the
-//! run's first step, and a step outside it is
-//! [`StepReject::CurrentChangedDuringDischarge`]. A rest, a pulse and a
-//! drive cycle were never compared with a measurement of this cell: the card
-//! has no memory, and the real cell's voltage relaxes for minutes after a
-//! change of load. One other held current was compared and failed: the held
-//! 0.86888 to 0.86970 A discharge 04-27-17 3541_dis5_10p.mat, 56.7 mV rms
-//! during its holds against the line of 50 mV, and the card left its table
-//! instead of stopping at its own cutoff
-//! (evidence/research/panasonic_18650pf/held_0p87A_comparison). Those
-//! currents are refused as [`StepReject::CurrentNotCompared`].
+//! measurement on eleven held 1C discharges from full charge, each fed the
+//! tester's own logged current, which moves between 2.899 and 2.89982 A
+//! over a run: 0.82 mA, one step of the 0.81 mA in which the tester logs its
+//! current. All eleven met the line of 50 mV: 27.8 to 30.0 mV rms, largest
+//! single error 57 mV, capacity +0.04 % on the one run that reached cutoff.
+//! The dataset states no accuracy for the tester. One other held current was
+//! compared, on 2026-10-10, and missed: the held 0.86888 to 0.86970 A
+//! discharge 04-27-17 3541_dis5_10p.mat, 56.7 mV rms during its 14 holds
+//! against the line of 50 mV, 204 and 206 mV in the last two holds, and the
+//! card ran 71 s past the cell's 2.5 V and left its table at state of charge
+//! 0.03 and 2.66 V, 0.60 % long on charge
+//! (evidence/research/panasonic_18650pf/held_0p87A_comparison). The
+//! rest-voltage table was fitted at 0.145 A and the resistance on 0.87 A
+//! holds of the pulse test. No other current was compared.
 //!
-//! Every discharge that passed the comparison started at full charge. A state below full
-//! charge is taken only as the continuation of a 1C discharge, from
-//! [`CellState::try_continued`], which carries that discharge's held
-//! current; a state below full charge with no held current is
-//! [`StepReject::StartNotAtFullCharge`].
+//! The card takes any held discharge current above zero. The equations, the
+//! charge count and the ledger are the same at every current; through engine
+//! 0.9.0 a current outside the compared 1C span, [`CURRENT_COMPARED_MIN_A`]
+//! to [`CURRENT_COMPARED_MAX_A`], was refused, and now a step at such a
+//! current lands with [`FLAG_CURRENT_OUTSIDE_PASSED_SPAN`]. It stops at
+//! [`StepReject::UndervoltageCutoff`] from about 1.1 A up, or at the bottom
+//! of the table, [`StepReject::StateOfChargeOutsideCard`], below that. A
+//! current of zero or less, a rest or a charge, is
+//! [`StepReject::CurrentNotDischarging`]: the card has no charging limit at
+//! 4.2 V and no relaxation for a rest after a discharge. A run is one
+//! current: every step's current stays within 0.83 mA of the held current,
+//! the current of the run's first step, and a step outside it is
+//! [`StepReject::CurrentChangedDuringDischarge`]. A pulse and a drive cycle
+//! were never compared with a measurement of this cell: the card has no
+//! memory, and the real cell's voltage relaxes for minutes after a change of
+//! load.
+//!
+//! Every discharge that passed the comparison started at full charge; the
+//! 0.87 A comparison ran its holds as continuations from partial charge. A
+//! rested cell below full charge sits at the rest-voltage table's own value,
+//! and a run from it is the same held discharge; through engine 0.9.0 it
+//! was refused.
 //!
 //! `core` only: no heap and no standard prelude. The state is `Copy`. An
 //! accepted step writes time, terminal voltage, state of charge, current,
@@ -57,13 +70,16 @@
 //! ```
 //!
 //! `I > 0` discharges. [`Cell18650Pf::gate_dt_s`] is the time to cross one
-//! table interval at 3.0 A. The public step does not apply that clock.
+//! table interval at 3.0 A; [`Cell18650Pf::gate_dt_s_at`] is the time to
+//! cross one at the run's held current, if it is larger than 3.0 A, and the
+//! same 17.4 s at or below it. The public step does not apply that clock.
 
 extern crate core;
 
 use core::prelude::v1::*;
 
 use crate::frame::LastStateFrame64;
+use crate::normal::normal_or_zero;
 
 /// Fitted capacity. Not the C/20 counter.
 pub const CAPACITY_AH: f64 = 2.906;
@@ -81,11 +97,11 @@ pub const KNOT_LAST: usize = 200;
 pub const KNOTS: usize = (KNOT_LAST - KNOT_FIRST) + 1;
 /// Bottom of the card. `KNOT_FIRST / 200`.
 pub const SOC_MIN: f64 = (KNOT_FIRST as f64) / TABLE_INTERVALS_PER_UNIT;
-/// The current the step ceiling is set at, A: the cap the card was built
-/// with, above the 1C it was to be tested at. No table was fitted at it: the
-/// rest-voltage curve came from 0.145 A and the resistance from 0.87 A holds.
-/// The card does not take it; it takes only the compared span,
-/// [`CURRENT_COMPARED_MIN_A`] to [`CURRENT_COMPARED_MAX_A`].
+/// The current the step ceiling is set at, A, for every held current at or
+/// below it: the cap the card was built with, above the 1C it was to be
+/// tested at. No table was fitted at it: the rest-voltage curve came from
+/// 0.145 A and the resistance from 0.87 A holds. Above it the ceiling is
+/// one table interval at the run's own current.
 pub const CURRENT_MAX_A: f64 = 3.0;
 /// How far a step's current may lie from the held current, A. The dataset
 /// states no accuracy for the tester; it logs current in steps of 0.81 mA,
@@ -95,11 +111,11 @@ pub const CURRENT_MAX_A: f64 = 3.0;
 /// allowance of four units in the last place at the size of the currents, so
 /// that every pair of decimal currents exactly 0.83 mA apart is inside it.
 pub const HELD_CURRENT_BAND_A: f64 = 0.00083;
-/// Smallest current the card takes, A: 2.899 A, the lowest current fed to a
-/// compared discharge, less [`HELD_CURRENT_BAND_A`].
+/// Lower end of the 1C span that passed, A: 2.899 A, the lowest current fed
+/// to a compared discharge, less [`HELD_CURRENT_BAND_A`].
 pub const CURRENT_COMPARED_MIN_A: f64 = 2.89817;
-/// Largest current the card takes, A: 2.89982 A, the highest current fed to
-/// a compared discharge, plus [`HELD_CURRENT_BAND_A`].
+/// Upper end of the 1C span that passed, A: 2.89982 A, the highest current
+/// fed to a compared discharge, plus [`HELD_CURRENT_BAND_A`].
 pub const CURRENT_COMPARED_MAX_A: f64 = 2.90065;
 /// Largest allowance, in state of charge, by which a discharge that ends in
 /// decimal exactly on the bottom knot may land below it in 64-bit arithmetic
@@ -115,6 +131,9 @@ pub const GATE_OVER_FLOOR: f64 = 1_048_576.0;
 
 /// Terminal voltage is below [`WARN_V`] and above cutoff on this frame.
 pub const FLAG_SAG_WARNING: u64 = 1 << 0;
+/// The step's current is outside 2.89817 to 2.90065 A, the 1C span that
+/// passed its comparison with measurement. The step still lands.
+pub const FLAG_CURRENT_OUTSIDE_PASSED_SPAN: u64 = 1 << 1;
 
 /// Open-circuit voltage at knots 6 through 200, as decimal literals.
 pub const OPEN_CIRCUIT_V: [f64; KNOTS] = [
@@ -542,13 +561,10 @@ pub enum StepReject {
     NonPositiveDt,
     /// A recorded constant or table entry is not this cell.
     InvalidCell,
-    /// Current is outside 2.89817 to 2.90065 A, the 1C currents compared with measurement widened by 0.83 mA.
-    /// Any other current is refused by this name, the held 0.87 A among them, which was compared and failed.
-    CurrentNotCompared,
+    /// Current is zero or negative, a rest or a charge: the card is a held discharge, with no charging limit at 4.2 V and no relaxation after a change of load.
+    CurrentNotDischarging,
     /// The current is more than 0.83 mA from the held current, set by the run's first step or carried in from the discharge it continues: the card is of one held current.
     CurrentChangedDuringDischarge,
-    /// State of charge is below 1 with no held current: every compared discharge started at full charge.
-    StartNotAtFullCharge,
     /// State of charge, incoming or landing, is outside `[0.03, 1]`.
     StateOfChargeOutsideCard,
     /// Landing terminal voltage is at or below 2.5 V.
@@ -652,10 +668,19 @@ impl Cell18650Pf {
     /// Time to cross one table interval at [`CURRENT_MAX_A`]. Not applied by [`step`].
     #[must_use]
     pub fn gate_dt_s(&self) -> Option<f64> {
-        if !self.is_valid() {
+        self.gate_dt_s_at(CURRENT_MAX_A)
+    }
+
+    /// The step ceiling of a run at this held current: the time to cross
+    /// one table interval at the larger of it and [`CURRENT_MAX_A`]. `None`
+    /// for a current that is not above zero. Not applied by [`step`].
+    #[must_use]
+    pub fn gate_dt_s_at(&self, held_current_a: f64) -> Option<f64> {
+        if !self.is_valid() || !(held_current_a > 0.0) {
             return None;
         }
-        let gate = CAPACITY_C * 0.005 / CURRENT_MAX_A;
+        let current_a = if held_current_a > CURRENT_MAX_A { held_current_a } else { CURRENT_MAX_A };
+        let gate = CAPACITY_C * 0.005 / current_a;
         if gate.is_finite() && gate > 0.0 {
             Some(gate)
         } else {
@@ -707,12 +732,13 @@ impl CellState {
         Self::try_soc(cell, 1.0)
     }
 
-    /// The continuation of a held 1C discharge: the ledger anchored at this
-    /// state of charge, carrying the held current of the earlier run. `None`
-    /// when the held current is outside the compared span.
+    /// The continuation of a held discharge, or a rested cell at this state
+    /// of charge to be discharged at this current: the ledger anchored at
+    /// this state of charge, carrying the held current. `None` when the held
+    /// current is not above zero.
     #[must_use]
     pub fn try_continued(cell: &Cell18650Pf, soc: f64, held_current_a: f64) -> Option<Self> {
-        if !current_was_compared(held_current_a) {
+        if !(held_current_a > 0.0 && held_current_a.is_finite()) {
             return None;
         }
         let mut state = Self::try_soc(cell, soc)?;
@@ -721,8 +747,7 @@ impl CellState {
     }
 
     /// Anchor the ledger at this state of charge, open circuit, with no held
-    /// current. Below full charge the step refuses it as
-    /// [`StepReject::StartNotAtFullCharge`].
+    /// current: a rested cell. Its first step sets the held current.
     #[must_use]
     pub fn try_soc(cell: &Cell18650Pf, soc: f64) -> Option<Self> {
         if !cell.is_valid() || !soc.is_finite() || !(soc >= SOC_MIN && soc <= 1.0) {
@@ -758,8 +783,25 @@ impl CellState {
 /// Advance one split RK4 step and write the frame.
 ///
 /// A rejected step leaves `state` and `frame` as they were.
+///
+/// A value of the landed state below the normal range is written as zero
+/// with its sign ([`crate::normal`]).
 #[must_use]
 pub fn step(
+    cell: &Cell18650Pf,
+    state: &mut CellState,
+    frame: &mut LastStateFrame64,
+    load: CellLoad,
+    dt_s: f64,
+) -> Result<(), StepReject> {
+    step_as_computed(cell, state, frame, load, dt_s)?;
+    normal_or_zero_state(state);
+    Ok(())
+}
+
+/// The step as its equations compute it, before a value of the landed
+/// state below the normal range is written as zero.
+fn step_as_computed(
     cell: &Cell18650Pf,
     state: &mut CellState,
     frame: &mut LastStateFrame64,
@@ -773,6 +815,26 @@ pub fn step(
         Err(reject) => return Err(reject),
     };
     commit(cell, state, frame, load, dt_s, predicted)
+}
+
+/// Each value of a landed state below the normal range written as zero
+/// with its sign ([`crate::normal`]): the state carried to the next step
+/// and published holds no subnormal number.
+fn normal_or_zero_state(state: &mut CellState) {
+    state.t_s = normal_or_zero(state.t_s);
+    state.soc = normal_or_zero(state.soc);
+    state.current_a = normal_or_zero(state.current_a);
+    state.terminal_v = normal_or_zero(state.terminal_v);
+    state.open_circuit_v = normal_or_zero(state.open_circuit_v);
+    state.resistance_ohm = normal_or_zero(state.resistance_ohm);
+    state.chemical_energy_j = normal_or_zero(state.chemical_energy_j);
+    state.energy_anchor_j = normal_or_zero(state.energy_anchor_j);
+    state.electrical_work_j = normal_or_zero(state.electrical_work_j);
+    state.joule_j = normal_or_zero(state.joule_j);
+    state.energy_defect_j = normal_or_zero(state.energy_defect_j);
+    state.residual_conservation_error = normal_or_zero(state.residual_conservation_error);
+    state.cutoff_margin_v = normal_or_zero(state.cutoff_margin_v);
+    state.held_current_a = normal_or_zero(state.held_current_a);
 }
 
 fn validate(
@@ -796,20 +858,17 @@ fn validate(
     if !(state.soc >= SOC_MIN && state.soc <= 1.0) {
         return Err(StepReject::StateOfChargeOutsideCard);
     }
-    if !current_was_compared(load.current_a) {
-        return Err(StepReject::CurrentNotCompared);
+    if !(load.current_a > 0.0) {
+        return Err(StepReject::CurrentNotDischarging);
     }
     // A held current of zero is a run that has not taken a step and carries
-    // no earlier discharge: it must start at full charge, and its first step
-    // sets the held current. After that the current stays inside the band.
+    // no earlier discharge: a rested cell, whose first step sets the held
+    // current. After that the current stays inside the band.
     if state.held_current_a == 0.0 {
-        if state.soc != 1.0 {
-            return Err(StepReject::StartNotAtFullCharge);
-        }
         return Ok(());
     }
-    if !current_was_compared(state.held_current_a) {
-        return Err(StepReject::CurrentNotCompared);
+    if !(state.held_current_a > 0.0) {
+        return Err(StepReject::CurrentNotDischarging);
     }
     if !held_current_within_band(load.current_a, state.held_current_a) {
         return Err(StepReject::CurrentChangedDuringDischarge);
@@ -817,7 +876,8 @@ fn validate(
     Ok(())
 }
 
-/// The current is inside the compared span, 2.89817 to 2.90065 A.
+/// The current is inside the 1C span that passed its comparison, 2.89817 to
+/// 2.90065 A.
 #[must_use]
 pub fn current_was_compared(current_a: f64) -> bool {
     current_a >= CURRENT_COMPARED_MIN_A && current_a <= CURRENT_COMPARED_MAX_A
@@ -1028,11 +1088,9 @@ fn publish(state: &CellState, frame: &mut LastStateFrame64) {
     frame.vel[2] = state.joule_j as f32;
     frame.force_torque = state.cutoff_margin_v as f32;
     frame.residual = state.residual_conservation_error as f32;
-    frame.flags = if state.sag_warning {
-        FLAG_SAG_WARNING
-    } else {
-        0
-    };
+    let sag = if state.sag_warning { FLAG_SAG_WARNING } else { 0 };
+    let outside = if current_was_compared(state.current_a) { 0 } else { FLAG_CURRENT_OUTSIDE_PASSED_SPAN };
+    frame.flags = sag | outside;
 }
 
 /// State of charge of table index `index`. Knot number is `KNOT_FIRST + index`.
@@ -1237,7 +1295,7 @@ mod tests {
     use super::{
         CAPACITY_C, CELL_ENERGY_J, CURRENT_COMPARED_MAX_A, CURRENT_COMPARED_MIN_A, CUTOFF_V,
         Cell18650Pf, CellLoad, CellState, HELD_CURRENT_BAND_A,
-        ENERGY_AT_KNOT_J, FLAG_SAG_WARNING, HELD_RESISTANCE_OHM, KNOTS, OPEN_CIRCUIT_V,
+        ENERGY_AT_KNOT_J, FLAG_CURRENT_OUTSIDE_PASSED_SPAN, FLAG_SAG_WARNING, HELD_RESISTANCE_OHM, KNOTS, OPEN_CIRCUIT_V,
         RESIDUAL_CONSERVATION_LIMIT, SOC_MIN, SOC_SUM_ALLOWANCE_MAX, TABLE_INTERVALS_PER_UNIT,
         WARN_V, StepReject, abs_f64, axpy, commit, current_was_compared,
         held_current_within_band, integrate, interval_index, knot_soc, line_of, rates_on_line,
@@ -1290,8 +1348,8 @@ mod tests {
     /// A run is one current. The first step sets it; a later step inside
     /// 0.83 mA of it lands, as the tester's logged current of a 1C discharge
     /// does, 2.899 to 2.89982 A; a current 0.84 mA away is refused by name
-    /// and nothing moves. A current outside the compared span, a rest among
-    /// them, is refused as not compared.
+    /// and nothing moves. A current of zero or less, a rest or a charge, is
+    /// refused as not a discharge.
     #[test]
     fn a_current_changed_during_the_discharge_is_named() {
         let cell = Cell18650Pf::cell();
@@ -1322,21 +1380,20 @@ mod tests {
             assert_eq!(state_bits(&state), saved);
             assert_eq!(frame.to_bytes(), held);
         }
-        // 0.868_05 to 0.870_53 A: the held discharge 3541_dis5_10p.mat, compared and failed
-        for current_a in [0.0, -0.0, 3.0, 2.0, 1.0, 0.145, 0.868_05, 0.868_88, 0.87, 0.869_7, 0.870_53, 2.898_16, 2.900_66, 3.5, -0.1] {
+        for current_a in [0.0, -0.0, -0.1, -2.9] {
             assert_eq!(
                 step(&cell, &mut state, &mut frame, CellLoad { current_a }, 10.0),
-                Err(StepReject::CurrentNotCompared),
+                Err(StepReject::CurrentNotDischarging),
                 "{current_a}"
             );
             assert_eq!(state_bits(&state), saved);
             assert_eq!(frame.to_bytes(), held);
         }
-        // a rest from full is a current that was never compared
+        // a rest from full is not a discharge
         let mut rest = CellState::try_full(&cell).unwrap();
         assert_eq!(
             step(&cell, &mut rest, &mut frame, CellLoad { current_a: 0.0 }, 10.0),
-            Err(StepReject::CurrentNotCompared)
+            Err(StepReject::CurrentNotDischarging)
         );
         // a held current that is not a number is a state that is not finite
         let mut broken = state;
@@ -1345,12 +1402,12 @@ mod tests {
             step(&cell, &mut broken, &mut frame, CellLoad { current_a: 2.899 }, 10.0),
             Err(StepReject::NonFiniteState)
         );
-        // a held current outside the compared span is refused as that
+        // a held current that is not a discharge is refused as that
         let mut forged = state;
-        forged.held_current_a = 1.0;
+        forged.held_current_a = -1.0;
         assert_eq!(
             step(&cell, &mut forged, &mut frame, CellLoad { current_a: 2.899 }, 10.0),
-            Err(StepReject::CurrentNotCompared)
+            Err(StepReject::CurrentNotDischarging)
         );
     }
 
@@ -1389,30 +1446,52 @@ mod tests {
         }
     }
 
-    /// Every discharge that passed started at full charge. A state below full
-    /// charge with no held current is refused by name and nothing moves; the
-    /// same state carrying the held current of the discharge it continues
-    /// lands, matches the straight run bit for bit, and is held to that
-    /// current's band.
+    /// Every discharge that passed started at full charge. A rested cell
+    /// below full charge is a start of its own: its first step sets the held
+    /// current and the run lands, the ledger closing, down to the cutoff or
+    /// the bottom of the table. The same state carrying the held current of
+    /// the discharge it continues lands, matches the straight run bit for
+    /// bit, and is held to that current's band.
     #[test]
-    fn a_start_below_full_charge_needs_the_held_current_of_its_discharge() {
+    fn a_start_below_full_charge_is_a_rested_cell() {
         let cell = Cell18650Pf::cell();
         let mut frame = blank_frame();
-        for soc in [0.5, 0.7227957482602845, 0.999_999, SOC_MIN] {
+        // near the bottom of the table 2.9 A takes the cell under 2.5 V at once
+        let mut low = CellState::try_soc(&cell, SOC_MIN + 0.001).unwrap();
+        let before = state_bits(&low);
+        assert_eq!(
+            step(&cell, &mut low, &mut frame, CellLoad { current_a: 2.9 }, 1.0),
+            Err(StepReject::UndervoltageCutoff)
+        );
+        assert_eq!(state_bits(&low), before);
+        for soc in [0.5, 0.7227957482602845, 0.999_999, 0.2] {
             let mut state = CellState::try_soc(&cell, soc).unwrap();
-            let saved = state_bits(&state);
-            let held = frame.to_bytes();
-            assert_eq!(
-                step(&cell, &mut state, &mut frame, CellLoad { current_a: 2.9 }, 1.0),
-                Err(StepReject::StartNotAtFullCharge),
-                "{soc}"
+            let open = state.open_circuit_v;
+            step(&cell, &mut state, &mut frame, CellLoad { current_a: 2.9 }, 1.0).unwrap();
+            assert_eq!(state.held_current_a, 2.9);
+            assert!(state.terminal_v < open);
+            assert_eq!(frame.flags & FLAG_CURRENT_OUTSIDE_PASSED_SPAN, 0);
+            let mut worst = 0.0_f64;
+            let reject = loop {
+                let before = state_bits(&state);
+                match step(&cell, &mut state, &mut frame, CellLoad { current_a: 2.9 }, 10.0) {
+                    Ok(()) => worst = worst.max(state.residual_conservation_error),
+                    Err(reject) => {
+                        assert_eq!(state_bits(&state), before);
+                        break reject;
+                    }
+                }
+            };
+            assert!(worst <= RESIDUAL_CONSERVATION_LIMIT, "{soc} {worst:e}");
+            assert!(
+                reject == StepReject::UndervoltageCutoff || reject == StepReject::StateOfChargeOutsideCard,
+                "{soc} {reject:?}"
             );
-            assert_eq!(state_bits(&state), saved);
-            assert_eq!(frame.to_bytes(), held);
         }
-        assert!(CellState::try_continued(&cell, 0.5, 1.0).is_none());
+        assert!(CellState::try_continued(&cell, 0.5, 1.0).is_some());
         assert!(CellState::try_continued(&cell, 0.5, 0.0).is_none());
-        assert!(CellState::try_continued(&cell, 0.5, 2.900_66).is_none());
+        assert!(CellState::try_continued(&cell, 0.5, -1.0).is_none());
+        assert!(CellState::try_continued(&cell, 0.5, f64::INFINITY).is_none());
         assert!(CellState::try_continued(&cell, 1.0001, 2.9).is_none());
 
         let load = CellLoad { current_a: 2.9 };
@@ -1423,15 +1502,15 @@ mod tests {
         let mut continued = CellState::try_continued(&cell, straight.soc, 2.9).unwrap();
         assert_eq!(continued.held_current_a, 2.9);
         let saved = state_bits(&continued);
-        for current_a in [2.89, 1.0, 0.0] {
+        for current_a in [2.89, 1.0, 2.89817] {
             assert_eq!(
                 step(&cell, &mut continued, &mut frame, CellLoad { current_a }, 1.0),
-                Err(StepReject::CurrentNotCompared)
+                Err(StepReject::CurrentChangedDuringDischarge)
             );
         }
         assert_eq!(
-            step(&cell, &mut continued, &mut frame, CellLoad { current_a: 2.89817 }, 1.0),
-            Err(StepReject::CurrentChangedDuringDischarge)
+            step(&cell, &mut continued, &mut frame, CellLoad { current_a: 0.0 }, 1.0),
+            Err(StepReject::CurrentNotDischarging)
         );
         assert_eq!(state_bits(&continued), saved);
         for _ in 0..100 {
@@ -1441,6 +1520,69 @@ mod tests {
         assert_eq!(continued.soc.to_bits(), straight.soc.to_bits());
         assert_eq!(continued.terminal_v.to_bits(), straight.terminal_v.to_bits());
         assert_eq!(continued.held_current_a, 2.9);
+    }
+
+    /// Discharges at held currents the 1C comparison did not pass land with
+    /// the flag, the ledger closing every step, and stop by name: at 0.87 A,
+    /// the current compared on 2026-10-10 and missed, the card runs on to the
+    /// bottom of its table at state of charge 0.03 and about 2.66 V, as the
+    /// comparison found; at 0.145 A the same; from about 1.1 A up it stops at
+    /// 2.5 V; at 5 and 10 A it stops at 2.5 V sooner, with the step ceiling
+    /// one table interval at the run's current; and at 30 A the first step
+    /// lands under 2.5 V and is refused.
+    #[test]
+    fn a_held_discharge_at_any_current_lands_until_cutoff_or_the_table_bottom() {
+        let cell = Cell18650Pf::cell();
+        assert_eq!(cell.gate_dt_s_at(2.9), cell.gate_dt_s());
+        assert_eq!(cell.gate_dt_s_at(0.87), cell.gate_dt_s());
+        assert!((cell.gate_dt_s_at(10.0).unwrap() - CAPACITY_C * 0.005 / 10.0).abs() < 1.0e-12);
+        assert_eq!(cell.gate_dt_s_at(0.0), None);
+        for (current_a, want) in [
+            (0.868_88, StepReject::StateOfChargeOutsideCard),
+            (0.87, StepReject::StateOfChargeOutsideCard),
+            (0.145, StepReject::StateOfChargeOutsideCard),
+            (1.5, StepReject::UndervoltageCutoff),
+            (2.9, StepReject::UndervoltageCutoff),
+            (5.0, StepReject::UndervoltageCutoff),
+            (10.0, StepReject::UndervoltageCutoff),
+        ] {
+            let dt_s = cell.gate_dt_s_at(current_a).unwrap();
+            let mut state = CellState::try_full(&cell).unwrap();
+            let mut frame = blank_frame();
+            let mut worst = 0.0_f64;
+            let mut landed = 0u32;
+            let reject = loop {
+                let before = state_bits(&state);
+                let held = frame.to_bytes();
+                match step(&cell, &mut state, &mut frame, CellLoad { current_a }, dt_s) {
+                    Ok(()) => {
+                        landed += 1;
+                        worst = worst.max(state.residual_conservation_error);
+                        let outside = frame.flags & FLAG_CURRENT_OUTSIDE_PASSED_SPAN != 0;
+                        assert_eq!(outside, !current_was_compared(current_a), "{current_a}");
+                    }
+                    Err(reject) => {
+                        assert_eq!(state_bits(&state), before);
+                        assert_eq!(frame.to_bytes(), held);
+                        break reject;
+                    }
+                }
+            };
+            assert_eq!(reject, want, "{current_a}");
+            assert!(landed > 10, "{current_a} {landed}");
+            assert!(worst <= RESIDUAL_CONSERVATION_LIMIT, "{current_a} {worst:e}");
+            if current_a == 0.87 {
+                assert!(state.terminal_v > 2.6 && state.terminal_v < 2.75, "{}", state.terminal_v);
+            }
+        }
+        let mut state = CellState::try_full(&cell).unwrap();
+        let mut frame = blank_frame();
+        let before = state_bits(&state);
+        assert_eq!(
+            step(&cell, &mut state, &mut frame, CellLoad { current_a: 30.0 }, 1.0),
+            Err(StepReject::UndervoltageCutoff)
+        );
+        assert_eq!(state_bits(&state), before);
     }
 
     /// Integrate and commit with no check of the current: the fitted tables
@@ -2028,14 +2170,14 @@ mod tests {
         refuse(
             CellLoad { current_a: -0.1 },
             1.0,
-            StepReject::CurrentNotCompared,
+            StepReject::CurrentNotDischarging,
         );
         refuse(
-            CellLoad { current_a: 3.0001 },
+            CellLoad { current_a: 30.0 },
             1.0,
-            StepReject::CurrentNotCompared,
+            StepReject::UndervoltageCutoff,
         );
-        refuse(CellLoad::default(), 1.0, StepReject::CurrentNotCompared);
+        refuse(CellLoad::default(), 1.0, StepReject::CurrentNotDischarging);
         refuse(CellLoad::default(), 0.0, StepReject::NonPositiveDt);
         refuse(CellLoad::default(), -1.0, StepReject::NonPositiveDt);
         refuse(CellLoad::default(), f64::NAN, StepReject::NonFiniteInput);
@@ -2072,27 +2214,21 @@ mod tests {
             f64::from_bits(CURRENT_COMPARED_MAX_A.to_bits() + 1),
         ] {
             let mut past_limit = CellState::try_full(&cell).unwrap();
-            assert_eq!(
-                step(&cell, &mut past_limit, &mut frame, CellLoad { current_a }, 1.0),
-                Err(StepReject::CurrentNotCompared)
-            );
+            step(&cell, &mut past_limit, &mut frame, CellLoad { current_a }, 1.0).unwrap();
+            assert_eq!(frame.flags & FLAG_CURRENT_OUTSIDE_PASSED_SPAN, FLAG_CURRENT_OUTSIDE_PASSED_SPAN);
         }
     }
 
-    /// The card takes 1C only. The two endings of the fitted tables, the
-    /// bottom knot at low current and the cutoff at a higher one, are still
-    /// checked here through the arithmetic of the step, with no check of the
-    /// current.
+    /// The two endings of the fitted tables, the bottom knot at low current
+    /// and the cutoff at a higher one, through the arithmetic of the step.
     #[test]
     fn two_endings() {
         let cell = Cell18650Pf::cell();
         let mut frame = blank_frame();
         for current_a in [0.869, 1.45] {
             let mut state = CellState::try_full(&cell).unwrap();
-            assert_eq!(
-                step(&cell, &mut state, &mut frame, CellLoad { current_a }, 1.0),
-                Err(StepReject::CurrentNotCompared)
-            );
+            step(&cell, &mut state, &mut frame, CellLoad { current_a }, 1.0).unwrap();
+            assert_eq!(frame.flags & FLAG_CURRENT_OUTSIDE_PASSED_SPAN, FLAG_CURRENT_OUTSIDE_PASSED_SPAN);
         }
         let mut low = CellState::try_full(&cell).unwrap();
         let load = CellLoad { current_a: 0.869 };
@@ -2149,7 +2285,7 @@ mod tests {
     #[test]
     fn open_circuit_holds_and_the_warning_is_only_a_flag() {
         let cell = Cell18650Pf::cell();
-        // the step's arithmetic holds a rest exactly; the card refuses one
+        // the step's arithmetic holds a rest exactly; the card refuses one as not a discharge
         let mut state = CellState::try_full(&cell).unwrap();
         let mut frame = blank_frame();
         let mut index = 0;
@@ -2157,14 +2293,15 @@ mod tests {
         while index < lengths.len() {
             assert_eq!(
                 step(&cell, &mut state, &mut frame, CellLoad::default(), lengths[index]),
-                Err(StepReject::CurrentNotCompared)
+                Err(StepReject::CurrentNotDischarging)
             );
             step_any_current(&cell, &mut state, &mut frame, CellLoad::default(), lengths[index], 0.0)
                 .unwrap();
             assert_eq!(state.soc.to_bits(), 1.0_f64.to_bits());
             assert_eq!(state.terminal_v.to_bits(), 4.1827_f64.to_bits());
             assert!(!state.sag_warning);
-            assert_eq!(frame.flags, 0);
+            // a rest is outside the span that passed
+            assert_eq!(frame.flags, FLAG_CURRENT_OUTSIDE_PASSED_SPAN);
             proof_intact(&frame);
             index += 1;
         }
@@ -2209,7 +2346,7 @@ mod tests {
             CellLoad { current_a: -0.1 },
             1.0,
         );
-        assert_eq!(got, Err(StepReject::CurrentNotCompared));
+        assert_eq!(got, Err(StepReject::CurrentNotDischarging));
         proof_intact(&frame);
         let got = step(&cell, &mut state, &mut frame, load, 0.0);
         assert_eq!(got, Err(StepReject::NonPositiveDt));
@@ -2276,10 +2413,8 @@ mod tests {
         for current_a in [f64::MIN_POSITIVE, 1.0e-306, 1.0e-304, 1.0e-300, 1.0e-12] {
             let mut full = CellState::try_full(&card).unwrap();
             let mut frame = blank_frame();
-            assert_eq!(
-                step(&card, &mut full, &mut frame, CellLoad { current_a }, floor_s),
-                Err(StepReject::CurrentNotCompared)
-            );
+            step(&card, &mut full, &mut frame, CellLoad { current_a }, floor_s).unwrap();
+            assert_eq!(frame.flags & FLAG_CURRENT_OUTSIDE_PASSED_SPAN, FLAG_CURRENT_OUTSIDE_PASSED_SPAN);
             for soc in [1.0, 0.8, 0.5123, SOC_MIN + 0.001, SOC_MIN] {
                 let mut state = CellState::try_soc(&card, soc).unwrap();
                 let before = state;

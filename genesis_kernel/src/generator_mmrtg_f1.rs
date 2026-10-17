@@ -1,8 +1,8 @@
 #![no_implicit_prelude]
 
 //! One Multi-Mission Radioisotope Thermoelectric Generator, flight unit F1,
-//! on NASA's Curiosity rover, from its landing on 2012-08-06 to mission day
-//! 4,087, the last day of the published record.
+//! on NASA's Curiosity rover, from its landing on 2012-08-06. The published
+//! record runs to mission day 4,087; the card's exact map goes on past it.
 //!
 //! Measured by Whiting and Woerner, Historical RTG Performance Data - 2023
 //! Update, Dryad, doi: 10.5061/dryad.1zcrjdfw2, CC0 1.0. The authors ask that
@@ -12,9 +12,15 @@
 //! The card gives the daily-average electrical output. It has no seasons, no
 //! load and no events. Three constants are fitted to mission days 0 to 2,060
 //! of that record. Past day 2,060 the card carries them forward and the frame
-//! sets [`FLAG_PAST_FITTING_SPAN`]. A mission time before landing or after
-//! day 4,087 is [`StepReject::MissionTimeOutsideCard`]. Nothing is
-//! extrapolated past the record.
+//! sets [`FLAG_PAST_FITTING_SPAN`]. Past day 4,087, the last day of the
+//! published record, the card carries the same law forward and the frame
+//! also sets [`FLAG_PAST_RECORD`]: the generator did not stop that day, the
+//! record did. A mission time before landing is
+//! [`StepReject::MissionTimeBeforeLanding`]. The card stops where the decay
+//! heat the fuel still holds is under the ledger's resolution,
+//! [`StepReject::DecayHeatBelowLedgerResolution`], about 2,070 years after
+//! landing: past it a breach of the ledger the size of its own limit could
+//! not be seen.
 //!
 //! Days 2,061 to 2,808 were used to choose the card's structure and are not
 //! an independent test of it. Days 2,809 to 4,087, 1,279 days, were held
@@ -28,7 +34,9 @@
 //! difference on one day was +0.02251, 2.60 W, on day 3,546. The card serves
 //! days 2,809 to 4,087 as the model that was scored on them, with no
 //! constant changed since: a card that failed its comparison, served with
-//! the failure stated. The record is the sealed run of 2026-10-06, 4,087
+//! the failure stated. Past day 4,087 nothing was compared; since the card
+//! read high and the gap grew each year, later days are expected to read
+//! higher still. The record is the sealed run of 2026-10-06, 4,087
 //! daily steps from landing scored against the dataset above, and row V-11
 //! of the company's statement of results.
 //!
@@ -41,27 +49,26 @@
 //! card's law with that constant, and it is not a statement about any day
 //! after 4,087.
 //!
-//! The end of the card and rounding. The mission clock is a compensated
+//! The end of the record and rounding. The mission clock is a compensated
 //! sum: each step adds `dt` to `t_s` in 64-bit arithmetic, keeps what that
 //! addition rounded off in `clock_carry_s`, and folds the carry back in, so
 //! `t_s` stays within half a spacing of 64-bit numbers of the exact sum of
 //! the start and the steps however many steps a run takes. A start, and a
 //! restart from a returned `t_s`, begins with no carry. Every step,
 //! the first included, compares its landing with
-//! [`MISSION_TIME_MAX_S`] plus one fixed tolerance,
+//! [`MISSION_TIME_MAX_S`], the last day of the record, plus one fixed tolerance,
 //! [`MISSION_END_TOLERANCE_S`], 2^-22 s, about 2.38e-7 s: four spacings of
 //! 64-bit numbers between 2^28 s and 2^29 s, where the last day lies. That
 //! covers the rounding of a start and a step read from decimals and the
 //! clock's own rounding, whether a run starts after 2^28 s, mission day
 //! 3,106.9, or before it, where the spacing is finer, so a run or a single
 //! step whose end in decimal is exactly mission day 4,087 lands its last
-//! step, and so does a restart from any returned state of such a run. A step
-//! whose landing, as the clock reads it, is past mission day 4,087 by more
-//! than the tolerance is [`StepReject::MissionTimeOutsideCard`], at any
-//! length of run; a step whose end in decimal is past the day by more than
-//! twice the tolerance is refused by every route. The clock is stepped at
-//! its own value and nothing is pulled back: a landed clock can read up to
-//! the tolerance past the last day, where `range_margin_s` is zero.
+//! step without [`FLAG_PAST_RECORD`], and so does a restart from any
+//! returned state of such a run. A step whose landing, as the clock reads
+//! it, is past mission day 4,087 by more than the tolerance lands with
+//! [`FLAG_PAST_RECORD`] set, at any length of run. The clock is stepped at
+//! its own value and nothing is pulled back: `range_margin_s` is the time
+//! left to the last day of the record, and zero on and past it.
 //!
 //! `core` only: no heap and no standard prelude. The state is `Copy`. An
 //! accepted step writes time, electrical power, thermal power, the converter
@@ -89,8 +96,13 @@
 //!
 //! The ledger is energy: decay heat released is electrical energy delivered
 //! plus heat rejected. `card_heat_j` is the decay heat the fuel releases from
-//! landing to day 4,087. The ledger fixes the total that leaves the fuel. It
-//! does not fix how that total divides between electricity and rejected heat.
+//! landing to day 4,087, the ledger's fixed scale at every mission time. The
+//! ledger fixes the total that leaves the fuel. It does not fix how that
+//! total divides between electricity and rejected heat. Its resolution is
+//! [`RESIDUAL_CONSERVATION_LIMIT`] of that scale, about 6.6e5 J: when the
+//! decay heat still held falls under it, about 2,070 years after landing, a
+//! breach the size of the limit is larger than all the heat left to break,
+//! and the step is [`StepReject::DecayHeatBelowLedgerResolution`].
 //!
 //! The card also keeps one account of the fitted model. It is bookkeeping
 //! that follows from the model and not a conservation law:
@@ -123,6 +135,7 @@ extern crate core;
 use core::prelude::v1::*;
 
 use crate::frame::LastStateFrame64;
+use crate::normal::normal_or_zero;
 
 /// Half-life of plutonium-238. NNDC NuDat 3, ENSDF evaluation of Browne and
 /// Tuli, Nuclear Data Sheets 108, 681 (2007). Uncertainty 0.1.
@@ -147,12 +160,14 @@ pub const CONVERTER_STABLE_FRACTION: f64 = 0.690601;
 pub const CONVERTER_FADING_TIME_CONSTANT_YEARS: f64 = 7.06718;
 /// Mission day 2,060. Last day of the fitting data.
 pub const FITTING_SPAN_END_S: f64 = 2_060.0 * 86_400.0;
-/// Mission day 4,087, 353,116,800 s. Last day of the card and of the record.
-/// Past this the step is refused. The card failed its sealed comparison with
-/// days 2,809 to 4,087 and serves those days with the failure stated.
+/// Mission day 4,087, 353,116,800 s. Last day of the published record. Past
+/// this a step lands with [`FLAG_PAST_RECORD`]. The card failed its sealed
+/// comparison with days 2,809 to 4,087 and serves those days with the
+/// failure stated.
 pub const MISSION_TIME_MAX_S: f64 = 4_087.0 * 86_400.0;
 /// Four spacings of 64-bit numbers between 2^28 s and 2^29 s, 2^-22 s: how
-/// far past [`MISSION_TIME_MAX_S`] the landing of any step may read. The
+/// far past [`MISSION_TIME_MAX_S`] the landing of any step may read before
+/// the frame sets [`FLAG_PAST_RECORD`]. The
 /// last day lies between those two powers of two, where the spacing is
 /// 2^-24 s; 2^28 s is mission day 3,106.9, and before it the spacing is half
 /// that or less, so no rounding made earlier in a run is larger. A start
@@ -199,6 +214,10 @@ pub const GATE_OVER_FLOOR: f64 = 1_048_576.0;
 
 /// Mission time is past [`FITTING_SPAN_END_S`] on this frame. The step still lands.
 pub const FLAG_PAST_FITTING_SPAN: u64 = 1 << 0;
+/// Mission time is past mission day 4,087, the last day of the published
+/// record and of the days compared, by more than [`MISSION_END_TOLERANCE_S`].
+/// The step still lands.
+pub const FLAG_PAST_RECORD: u64 = 1 << 1;
 
 /// Why a step did not advance the generator or the frame.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -211,8 +230,10 @@ pub enum StepReject {
     NonPositiveDt,
     /// A recorded constant is not this generator's.
     InvalidGenerator,
-    /// Mission time, incoming or landing, is before landing or after mission day 4,087; the landing by more than the rounding tolerance of the clock, 2.38e-7 s, the same for every step.
-    MissionTimeOutsideCard,
+    /// Mission time, incoming or landing, is before landing on Mars, where the card's thermal power and converter are anchored.
+    MissionTimeBeforeLanding,
+    /// The decay heat the fuel still holds, incoming or landing, is under the ledger's resolution, 1e-6 of the decay heat released from landing to mission day 4,087 (about 6.6e5 J, some 2,070 years after landing): a breach of that size could no longer be seen.
+    DecayHeatBelowLedgerResolution,
     /// The trial step created energy from nothing.
     SpontaneousGeneration,
     /// The trial step destroyed energy.
@@ -380,33 +401,46 @@ impl GeneratorMmrtgF1 {
         }
     }
 
-    /// The latest mission time, in seconds, a step can start from: the
-    /// largest 64-bit number `t` from which a step of `floor_dt_s`, started
-    /// with no clock carry, lands by the comparison every step makes, on or
-    /// before [`MISSION_TIME_MAX_S`] plus [`MISSION_END_TOLERANCE_S`]. A
-    /// start later than this is refused at every step the card allows,
-    /// because the smallest step already lands past the end.
+    /// The latest mission time, in seconds, a start is held to: where the
+    /// decay heat still held, `Q / λ`, falls to the ledger's resolution,
+    /// [`RESIDUAL_CONSERVATION_LIMIT`] times `card_heat_j`, about 6.5e10 s,
+    /// some 2,070 years after landing, less whole floor steps until a step
+    /// of [`Self::floor_dt_s`] from it lands. A start is held to it.
     #[must_use]
-    pub fn last_start_mission_time_s(&self) -> Option<f64> {
+    pub fn ledger_end_mission_time_s(&self) -> Option<f64> {
+        let resolution_j = self.residual_conservation_limit * self.card_heat_j;
         let floor_dt_s = self.floor_dt_s()?;
-        let lands = |t_s: f64| -> bool {
-            let (landing_s, _) = advance_clock(t_s, 0.0, floor_dt_s);
-            landing_on_card(self, landing_s)
-        };
-        let mut t_s = MISSION_TIME_MAX_S - floor_dt_s;
-        if !on_card(t_s) {
+        if !(resolution_j > 0.0 && self.fuel_heat_at_landing_j > resolution_j) {
             return None;
         }
-        // Walk down until the landing is on the card, then up while it stays.
-        while !lands(t_s) {
-            t_s = f64::from_bits(t_s.to_bits() - 1);
+        let end_s = crate::math::log(self.fuel_heat_at_landing_j / resolution_j) / self.fuel_decay_per_s;
+        if !(end_s.is_finite() && end_s > floor_dt_s) {
+            return None;
         }
-        loop {
-            let above_s = f64::from_bits(t_s.to_bits() + 1);
-            if on_card(above_s) && lands(above_s) {
-                t_s = above_s;
-            } else {
-                break;
+        let lands = |t_s: f64| -> bool {
+            match GeneratorState::try_mission_time(self, t_s) {
+                Some(mut state) => {
+                    let mut frame = LastStateFrame64 {
+                        t: 0.0,
+                        pos: [0.0; 3],
+                        vel: [0.0; 3],
+                        force_torque: 0.0,
+                        residual: 0.0,
+                        flags: 0,
+                        proof: [0; 16],
+                    };
+                    step(self, &mut state, &mut frame, GeneratorLoad {}, floor_dt_s).is_ok()
+                }
+                None => false,
+            }
+        };
+        let mut t_s = end_s - floor_dt_s;
+        let mut guard = 0;
+        while !lands(t_s) {
+            t_s -= floor_dt_s;
+            guard += 1;
+            if guard > 64 {
+                return None;
             }
         }
         Some(t_s)
@@ -533,7 +567,7 @@ impl GeneratorState {
             past_fitting_span: false,
         };
         refresh(generator, &mut state);
-        if !state_is_finite(&state) {
+        if !state_is_finite(&state) || !heat_resolved(generator, state.fuel_heat_j) {
             return None;
         }
         state.energy_anchor_j = state.fuel_heat_j;
@@ -545,8 +579,25 @@ impl GeneratorState {
 /// Advance one exact step and write the frame.
 ///
 /// A rejected step leaves `state` and `frame` as they were.
+///
+/// A value of the landed state below the normal range is written as zero
+/// with its sign ([`crate::normal`]).
 #[must_use]
 pub fn step(
+    generator: &GeneratorMmrtgF1,
+    state: &mut GeneratorState,
+    frame: &mut LastStateFrame64,
+    load: GeneratorLoad,
+    dt_s: f64,
+) -> Result<(), StepReject> {
+    step_as_computed(generator, state, frame, load, dt_s)?;
+    normal_or_zero_state(state);
+    Ok(())
+}
+
+/// The step as its equations compute it, before a value of the landed
+/// state below the normal range is written as zero.
+fn step_as_computed(
     generator: &GeneratorMmrtgF1,
     state: &mut GeneratorState,
     frame: &mut LastStateFrame64,
@@ -566,17 +617,44 @@ pub fn step(
     commit(generator, state, frame, load, dt_s, advanced)
 }
 
-fn on_card(t_s: f64) -> bool {
-    t_s.is_finite() && t_s >= 0.0 && t_s <= MISSION_TIME_MAX_S
+/// Each value of a landed state below the normal range written as zero
+/// with its sign ([`crate::normal`]): the state carried to the next step
+/// and published holds no subnormal number.
+fn normal_or_zero_state(state: &mut GeneratorState) {
+    state.t_s = normal_or_zero(state.t_s);
+    state.clock_carry_s = normal_or_zero(state.clock_carry_s);
+    state.thermal_power_w = normal_or_zero(state.thermal_power_w);
+    state.converter_fading_fraction = normal_or_zero(state.converter_fading_fraction);
+    state.electrical_power_w = normal_or_zero(state.electrical_power_w);
+    state.conversion_efficiency = normal_or_zero(state.conversion_efficiency);
+    state.fuel_heat_j = normal_or_zero(state.fuel_heat_j);
+    state.energy_anchor_j = normal_or_zero(state.energy_anchor_j);
+    state.electrical_energy_j = normal_or_zero(state.electrical_energy_j);
+    state.heat_rejected_j = normal_or_zero(state.heat_rejected_j);
+    state.energy_defect_j = normal_or_zero(state.energy_defect_j);
+    state.residual_conservation_error = normal_or_zero(state.residual_conservation_error);
+    state.converter_fading_yield_j = normal_or_zero(state.converter_fading_yield_j);
+    state.converter_account_anchor_j = normal_or_zero(state.converter_account_anchor_j);
+    state.fading_electrical_energy_j = normal_or_zero(state.fading_electrical_energy_j);
+    state.converter_account_defect_j = normal_or_zero(state.converter_account_defect_j);
+    state.converter_account_error = normal_or_zero(state.converter_account_error);
+    state.range_margin_s = normal_or_zero(state.range_margin_s);
 }
 
-/// The landing of a step is on the card: at or after landing on Mars, and
-/// no later than the last day by more than [`MISSION_END_TOLERANCE_S`]. The
-/// same comparison for every step, the first included.
-fn landing_on_card(generator: &GeneratorMmrtgF1, t_s: f64) -> bool {
-    t_s.is_finite()
-        && t_s >= 0.0
-        && t_s <= generator.mission_time_max_s + generator.mission_end_tolerance_s
+fn on_card(t_s: f64) -> bool {
+    t_s.is_finite() && t_s >= 0.0
+}
+
+/// The landing of a step is past the last day of the record by more than
+/// [`MISSION_END_TOLERANCE_S`]. The same comparison for every step, the
+/// first included.
+fn past_record(generator: &GeneratorMmrtgF1, t_s: f64) -> bool {
+    t_s > generator.mission_time_max_s + generator.mission_end_tolerance_s
+}
+
+/// The decay heat still held is at or above the ledger's resolution.
+fn heat_resolved(generator: &GeneratorMmrtgF1, fuel_heat_j: f64) -> bool {
+    fuel_heat_j >= generator.residual_conservation_limit * generator.card_heat_j
 }
 
 /// The compensated mission clock: `t_s + carry_s` advanced by `dt_s`. The
@@ -615,11 +693,14 @@ fn validate(
         return Err(StepReject::InvalidGenerator);
     }
     if !on_card(state.t_s) {
-        return Err(StepReject::MissionTimeOutsideCard);
+        return Err(StepReject::MissionTimeBeforeLanding);
+    }
+    if !heat_resolved(generator, state.fuel_heat_j) {
+        return Err(StepReject::DecayHeatBelowLedgerResolution);
     }
     let (landing_s, _) = advance_clock(state.t_s, state.clock_carry_s, dt_s);
-    if !landing_on_card(generator, landing_s) {
-        return Err(StepReject::MissionTimeOutsideCard);
+    if !on_card(landing_s) {
+        return Err(StepReject::MissionTimeBeforeLanding);
     }
     Ok(())
 }
@@ -643,8 +724,8 @@ fn commit(
         return Err(StepReject::NonFiniteState);
     }
     let (landing_s, landing_carry_s) = advance_clock(state.t_s, state.clock_carry_s, dt_s);
-    if !landing_on_card(generator, landing_s) {
-        return Err(StepReject::MissionTimeOutsideCard);
+    if !on_card(landing_s) {
+        return Err(StepReject::MissionTimeBeforeLanding);
     }
     state.thermal_power_w = advanced.thermal_power_w;
     state.converter_fading_fraction = advanced.converter_fading_fraction;
@@ -674,6 +755,10 @@ fn commit(
         *state = saved;
         return Err(StepReject::NonFiniteState);
     }
+    if !heat_resolved(generator, state.fuel_heat_j) {
+        *state = saved;
+        return Err(StepReject::DecayHeatBelowLedgerResolution);
+    }
     let gate = RESIDUAL_CONSERVATION_LIMIT * scale;
     if state.energy_defect_j > gate {
         *state = saved;
@@ -687,7 +772,8 @@ fn commit(
         *state = saved;
         return Err(StepReject::ConverterAccountBreach);
     }
-    publish(state, frame);
+    let flags_past_record = past_record(generator, state.t_s);
+    publish(state, frame, flags_past_record);
     Ok(())
 }
 
@@ -698,8 +784,8 @@ fn refresh(generator: &GeneratorMmrtgF1, state: &mut GeneratorState) {
     state.fuel_heat_j = generator.fuel_heat_j(state.thermal_power_w);
     state.converter_fading_yield_j =
         generator.converter_fading_yield_j(state.thermal_power_w, state.converter_fading_fraction);
-    // Never below zero: a clock inside the rounding tolerance past the last
-    // day has no margin left.
+    // Never below zero: a clock on or past the last day of the record has
+    // no margin left.
     let margin_s = MISSION_TIME_MAX_S - state.t_s;
     state.range_margin_s = if margin_s > 0.0 { margin_s } else { 0.0 };
     state.past_fitting_span = state.t_s > FITTING_SPAN_END_S;
@@ -770,7 +856,7 @@ fn exact_map(
     }
 }
 
-fn publish(state: &GeneratorState, frame: &mut LastStateFrame64) {
+fn publish(state: &GeneratorState, frame: &mut LastStateFrame64, past_record: bool) {
     frame.t = state.t_s;
     frame.pos[0] = state.electrical_power_w as f32;
     frame.pos[1] = state.thermal_power_w as f32;
@@ -780,11 +866,9 @@ fn publish(state: &GeneratorState, frame: &mut LastStateFrame64) {
     frame.vel[2] = state.fuel_heat_j as f32;
     frame.force_torque = state.range_margin_s as f32;
     frame.residual = state.residual_conservation_error as f32;
-    frame.flags = if state.past_fitting_span {
-        FLAG_PAST_FITTING_SPAN
-    } else {
-        0
-    };
+    let fitting = if state.past_fitting_span { FLAG_PAST_FITTING_SPAN } else { 0 };
+    let record = if past_record { FLAG_PAST_RECORD } else { 0 };
+    frame.flags = fitting | record;
 }
 
 fn state_is_finite(state: &GeneratorState) -> bool {
@@ -821,7 +905,7 @@ mod tests {
     use super::{
         COMBINED_RATE_PER_S, CONVERTER_ACCOUNT_LIMIT, CONVERTER_FADING_RATE_PER_S,
         CONVERTER_STABLE_FRACTION, ELECTRICAL_POWER_AT_BEGINNING_OF_MISSION_W, ExactStep,
-        FADING_EFFICIENCY, FADING_YIELD_AT_LANDING_J, FITTING_SPAN_END_S, FLAG_PAST_FITTING_SPAN,
+        FADING_EFFICIENCY, FADING_YIELD_AT_LANDING_J, FITTING_SPAN_END_S, FLAG_PAST_FITTING_SPAN, FLAG_PAST_RECORD,
         FUEL_DECAY_PER_S, FUEL_HEAT_AT_LANDING_J, GATE_PHASE_STEP, GeneratorLoad, GeneratorMmrtgF1,
         GeneratorState, MISSION_END_TOLERANCE_S, MISSION_TIME_MAX_S, OUTPUT_AMPLITUDE, RESIDUAL_CONSERVATION_LIMIT,
         SECONDS_PER_YEAR, STABLE_EFFICIENCY, StepReject, advance_clock, commit, exact_map, step,
@@ -1512,6 +1596,17 @@ mod tests {
     }
 
     /// A decimal with three places, from thousandths.
+    /// One step, and whether its frame reports [`FLAG_PAST_RECORD`].
+    fn past_record_step(
+        generator: &GeneratorMmrtgF1,
+        state: &mut GeneratorState,
+        frame: &mut LastStateFrame64,
+        dt_s: f64,
+    ) -> Result<bool, StepReject> {
+        step(generator, state, frame, NO_LOAD, dt_s)?;
+        Ok(frame.flags & FLAG_PAST_RECORD != 0)
+    }
+
     fn milli(thousandths: u64) -> f64 {
         std::format!("{}.{:03}", thousandths / 1_000, thousandths % 1_000)
             .parse()
@@ -1616,14 +1711,13 @@ mod tests {
                 } else {
                     assert_eq!(state.range_margin_s, MISSION_TIME_MAX_S - state.t_s);
                 }
-                let before = state_bits(&state);
-                let held = frame.to_bytes();
-                assert_eq!(
-                    step(&generator, &mut state, &mut frame, NO_LOAD, dt_s),
-                    Err(StepReject::MissionTimeOutsideCard)
-                );
-                assert_eq!(state_bits(&state), before);
-                assert_eq!(frame.to_bytes(), held);
+                assert_eq!(frame.flags & FLAG_PAST_RECORD, 0);
+                // The step past the last day of the record lands, with the flag.
+                let at_end = state;
+                let mut past = state;
+                assert_eq!(past_record_step(&generator, &mut past, &mut frame, dt_s), Ok(true));
+                assert_eq!(past.range_margin_s, 0.0);
+                let state = at_end;
 
                 // A restart from the returned clock before the last step.
                 let mut restart =
@@ -1679,20 +1773,11 @@ mod tests {
         let floor_s = generator.floor_dt_s().unwrap();
         assert_eq!(floor_s, 4.028797086407726);
         let mut two = GeneratorState::try_mission_time(&generator, 353_116_792.832_405_8).unwrap();
-        step(&generator, &mut two, &mut frame, NO_LOAD, floor_s).unwrap();
-        let held = state_bits(&two);
-        assert_eq!(
-            step(&generator, &mut two, &mut frame, NO_LOAD, floor_s),
-            Err(StepReject::MissionTimeOutsideCard)
-        );
-        assert_eq!(state_bits(&two), held);
+        assert_eq!(past_record_step(&generator, &mut two, &mut frame, floor_s), Ok(false));
+        assert_eq!(past_record_step(&generator, &mut two, &mut frame, floor_s), Ok(true));
         let mut one = GeneratorState::try_mission_time(&generator, 353_116_796.861_202_9).unwrap();
-        let held = state_bits(&one);
-        assert_eq!(
-            step(&generator, &mut one, &mut frame, NO_LOAD, floor_s),
-            Err(StepReject::MissionTimeOutsideCard)
-        );
-        assert_eq!(state_bits(&one), held);
+        assert_eq!(past_record_step(&generator, &mut one, &mut frame, floor_s), Ok(true));
+        assert_eq!(one.t_s.to_bits(), two.t_s.to_bits());
     }
 
     /// Requests whose end in decimal is exactly the last day land whether
@@ -1727,22 +1812,21 @@ mod tests {
                 for taken in 0..count {
                     let mut restart =
                         GeneratorState::try_mission_time(&generator, straight.t_s).unwrap();
-                    let mut restart_result = Ok(());
+                    let mut restart_result = Ok(false);
                     for _ in taken..count {
-                        restart_result =
-                            step(&generator, &mut restart, &mut frame, NO_LOAD, dt_s);
+                        restart_result = past_record_step(&generator, &mut restart, &mut frame, dt_s);
                         if restart_result.is_err() {
                             break;
                         }
                     }
-                    let got = step(&generator, &mut straight, &mut frame, NO_LOAD, dt_s);
+                    let got = past_record_step(&generator, &mut straight, &mut frame, dt_s);
                     if taken + 1 < count {
-                        assert_eq!(got, Ok(()));
+                        assert_eq!(got, Ok(false));
                     } else {
-                        let expect = if lands { Ok(()) } else { Err(StepReject::MissionTimeOutsideCard) };
+                        let expect = Ok(!lands);
                         assert_eq!(got, expect, "{count} of {dt_s} from {start_s}");
                     }
-                    let expect = if lands { Ok(()) } else { Err(StepReject::MissionTimeOutsideCard) };
+                    let expect = Ok(!lands);
                     assert_eq!(
                         restart_result, expect,
                         "restart after {taken} of {count} of {dt_s} from {start_s}"
@@ -1754,12 +1838,12 @@ mod tests {
         assert_eq!(cases, 8_000);
     }
 
-    /// A step that would end later than the last day by more than the
-    /// tolerance is refused by name and nothing moves; every end inside it
-    /// lands at its own value. The same for a step of 4.2e6 s, a day, an
-    /// hour and the floor.
+    /// A step that would end later than the last day of the record by more
+    /// than the tolerance lands with [`FLAG_PAST_RECORD`]; every end inside it
+    /// lands at its own value without the flag. The same for a step of 4.2e6
+    /// s, a day, an hour and the floor.
     #[test]
-    fn a_step_beyond_the_mission_end_tolerance_is_refused_by_name() {
+    fn a_step_beyond_the_mission_end_tolerance_lands_past_the_record() {
         let generator = GeneratorMmrtgF1::curiosity();
         let spacing_s = spacing_at_the_end_s();
         let floor_s = generator.floor_dt_s().unwrap();
@@ -1780,34 +1864,29 @@ mod tests {
                     continue;
                 }
                 let mut state = GeneratorState::try_mission_time(&generator, t_s).unwrap();
-                let before = state_bits(&state);
                 let mut frame = blank_frame();
-                let result = step(&generator, &mut state, &mut frame, NO_LOAD, dt_s);
+                let result = past_record_step(&generator, &mut state, &mut frame, dt_s);
+                assert_eq!(state.t_s, end_s);
                 if spacings <= 4 {
-                    assert_eq!(result, Ok(()), "{spacings} spacings past by {dt_s}");
-                    assert_eq!(state.t_s, end_s);
+                    assert_eq!(result, Ok(false), "{spacings} spacings past by {dt_s}");
                     if spacings > 0 {
                         landed_past_the_end += 1;
                         assert_eq!(state.range_margin_s, 0.0);
                     }
                 } else {
-                    assert_eq!(result, Err(StepReject::MissionTimeOutsideCard));
-                    assert_eq!(state_bits(&state), before);
-                    assert_eq!(frame.to_bytes(), blank_frame().to_bytes());
+                    assert_eq!(result, Ok(true));
+                    assert_eq!(state.range_margin_s, 0.0);
                     refused += 1;
                 }
             }
             assert!(landed_past_the_end >= 1, "dt {dt_s}");
             assert!(refused >= 1, "dt {dt_s}");
             assert_eq!(MISSION_END_TOLERANCE_S, 4.0 * spacing_s);
-            // A tenth of a second past is refused at every step size.
+            // A tenth of a second past lands with the flag at every step size.
             let start_s = MISSION_TIME_MAX_S + 0.1 - dt_s;
             let mut state = GeneratorState::try_mission_time(&generator, start_s).unwrap();
             let mut frame = blank_frame();
-            assert_eq!(
-                step(&generator, &mut state, &mut frame, NO_LOAD, dt_s),
-                Err(StepReject::MissionTimeOutsideCard)
-            );
+            assert_eq!(past_record_step(&generator, &mut state, &mut frame, dt_s), Ok(true));
         }
     }
 
@@ -2069,18 +2148,9 @@ mod tests {
             assert_eq!(frame.to_bytes(), held);
             proof_intact(&frame);
         };
-        refuse(MISSION_TIME_MAX_S, 0.1, StepReject::MissionTimeOutsideCard);
-        refuse(
-            4_086.0 * DAY_S,
-            86_400.1,
-            StepReject::MissionTimeOutsideCard,
-        );
-        refuse(
-            0.0,
-            MISSION_TIME_MAX_S + 0.1,
-            StepReject::MissionTimeOutsideCard,
-        );
-        refuse(0.0, f64::MAX, StepReject::MissionTimeOutsideCard);
+        let ledger_end_s = generator.ledger_end_mission_time_s().unwrap();
+        refuse(0.0, 2.0 * ledger_end_s, StepReject::DecayHeatBelowLedgerResolution);
+        refuse(0.0, f64::MAX, StepReject::DecayHeatBelowLedgerResolution);
         refuse(0.0, 0.0, StepReject::NonPositiveDt);
         refuse(0.0, -1.0, StepReject::NonPositiveDt);
         refuse(0.0, f64::NAN, StepReject::NonFiniteInput);
@@ -2099,21 +2169,23 @@ mod tests {
         state.t_s = -1.0;
         let early_bits = state_bits(&state);
         let got = step(&generator, &mut state, &mut frame, NO_LOAD, DAY_S);
-        assert_eq!(got, Err(StepReject::MissionTimeOutsideCard));
+        assert_eq!(got, Err(StepReject::MissionTimeBeforeLanding));
         assert_eq!(state_bits(&state), early_bits);
         assert_eq!(frame.to_bytes(), held);
 
+        // An incoming state whose heat is under the ledger's resolution.
         let mut state = GeneratorState::try_mission_time(&generator, MISSION_TIME_MAX_S).unwrap();
-        state.t_s = MISSION_TIME_MAX_S + 1.0;
+        state.fuel_heat_j = 1.0;
         let late_bits = state_bits(&state);
         let got = step(&generator, &mut state, &mut frame, NO_LOAD, DAY_S);
-        assert_eq!(got, Err(StepReject::MissionTimeOutsideCard));
+        assert_eq!(got, Err(StepReject::DecayHeatBelowLedgerResolution));
         assert_eq!(state_bits(&state), late_bits);
         assert_eq!(frame.to_bytes(), held);
         proof_intact(&frame);
 
         assert!(GeneratorState::try_mission_time(&generator, -1.0).is_none());
-        assert!(GeneratorState::try_mission_time(&generator, 353_116_800.1).is_none());
+        assert!(GeneratorState::try_mission_time(&generator, 353_116_800.1).is_some());
+        assert!(GeneratorState::try_mission_time(&generator, 1.01 * ledger_end_s).is_none());
         assert!(GeneratorState::try_mission_time(&generator, f64::NAN).is_none());
         assert!(GeneratorState::try_mission_time(&generator, f64::INFINITY).is_none());
         assert!(GeneratorState::try_mission_time(&generator, MISSION_TIME_MAX_S).is_some());
@@ -2254,9 +2326,9 @@ mod tests {
             &mut state,
             &mut frame,
             NO_LOAD,
-            MISSION_TIME_MAX_S,
+            -MISSION_TIME_MAX_S,
         );
-        assert_eq!(got, Err(StepReject::MissionTimeOutsideCard));
+        assert_eq!(got, Err(StepReject::NonPositiveDt));
         proof_intact(&frame);
         let got = step_straight_line_fuel(&generator, &mut state, &mut frame, SECONDS_PER_YEAR);
         assert_eq!(got, Err(StepReject::FirstLawBreach));
@@ -2334,49 +2406,71 @@ mod tests {
         assert_eq!(still.thermal_power_w.to_bits(), landed.thermal_power_w.to_bits());
     }
 
+    /// Past the last day of the record the exact map goes on: a run of
+    /// 4,000 steps at the ceiling, from day 4,087 to about day 199,700, some
+    /// 546 years, lands every step with both flags, matches the closed form
+    /// and closes both ledgers. The attacks of the card are refused there by
+    /// name as they are inside the record.
     #[test]
-    fn the_last_start_is_the_latest_the_smallest_step_can_use() {
-        let card = GeneratorMmrtgF1::curiosity();
-        let floor_s = card.floor_dt_s().unwrap();
-        let last_s = card.last_start_mission_time_s().unwrap();
-        assert!(last_s < MISSION_TIME_MAX_S);
-        assert!(MISSION_TIME_MAX_S - last_s < 2.0 * floor_s);
+    fn past_the_record_every_step_lands_and_the_ledger_closes() {
+        let generator = GeneratorMmrtgF1::curiosity();
+        let ceiling_s = generator.gate_dt_s().unwrap();
+        let mut state = GeneratorState::try_mission_time(&generator, MISSION_TIME_MAX_S).unwrap();
         let mut frame = blank_frame();
-        // The published top lands at the smallest step, by the comparison every step makes.
-        let mut state = GeneratorState::try_mission_time(&card, last_s).unwrap();
-        step(&card, &mut state, &mut frame, NO_LOAD, floor_s).unwrap();
-        assert!(state.t_s <= MISSION_TIME_MAX_S + MISSION_END_TOLERANCE_S);
-        // To every digit: the latest start is 353,116,795.971203148365020751953125 s,
-        // and the floor step from it lands on the last day plus the tolerance.
-        assert_eq!(last_s.to_bits(), 353_116_795.971_203_15_f64.to_bits());
-        assert_eq!(
-            state.t_s.to_bits(),
-            (MISSION_TIME_MAX_S + MISSION_END_TOLERANCE_S).to_bits()
-        );
-        // The bound holds the tolerance: a start whose smallest step lands
-        // within it is a start the bound includes.
-        assert!(last_s >= 353_116_795.971_202_9);
-        // The next number above is refused at the smallest step, and nothing moves.
-        let above_s = f64::from_bits(last_s.to_bits() + 1);
-        let mut state = GeneratorState::try_mission_time(&card, above_s).unwrap();
-        let before = state;
-        assert_eq!(
-            step(&card, &mut state, &mut frame, NO_LOAD, floor_s),
-            Err(StepReject::MissionTimeOutsideCard)
-        );
-        assert_eq!(state, before);
-        // A start a second past the bound is refused at every step.
-        let beyond_s = last_s + 1.0;
-        for dt_s in [floor_s, 2.0 * floor_s, 100.0] {
-            let mut state = GeneratorState::try_mission_time(&card, beyond_s).unwrap();
-            let before = state;
-            assert_eq!(
-                step(&card, &mut state, &mut frame, NO_LOAD, dt_s),
-                Err(StepReject::MissionTimeOutsideCard)
-            );
-            assert_eq!(state, before);
+        let mut worst = 0.0_f64;
+        for _ in 0..4_000 {
+            assert_eq!(past_record_step(&generator, &mut state, &mut frame, ceiling_s), Ok(true));
+            assert_eq!(frame.flags, FLAG_PAST_FITTING_SPAN | FLAG_PAST_RECORD);
+            assert_eq!(state.range_margin_s, 0.0);
+            proof_intact(&frame);
+            if state.residual_conservation_error > worst {
+                worst = state.residual_conservation_error;
+            }
+            assert!(state.converter_account_error <= CONVERTER_ACCOUNT_LIMIT);
         }
-        // The card's last day itself is still a state it can hold.
-        assert!(GeneratorState::try_mission_time(&card, MISSION_TIME_MAX_S).is_some());
+        assert!(worst <= RESIDUAL_CONSERVATION_LIMIT, "{worst}");
+        assert!(state.t_s > 546.0 * SECONDS_PER_YEAR);
+        assert!(within(state.electrical_power_w, closed_form_electrical_power_w(state.t_s), 1.0e-9));
+        // Each attack is named past the record as inside it.
+        let start = GeneratorState::try_mission_time(&generator, 20_000.0 * DAY_S).unwrap();
+        let mut probe = start;
+        assert_eq!(
+            step_straight_line_fuel(&generator, &mut probe, &mut frame, 10.0 * SECONDS_PER_YEAR),
+            Err(StepReject::FirstLawBreach)
+        );
+        assert_eq!(state_bits(&probe), state_bits(&start));
+        let mut probe = start;
+        assert_eq!(
+            step_straight_line_fading(&generator, &mut probe, &mut frame, 10.0 * SECONDS_PER_YEAR),
+            Err(StepReject::ConverterAccountBreach)
+        );
+        assert_eq!(state_bits(&probe), state_bits(&start));
+    }
+
+    /// The card holds mission time up to where the decay heat still held is
+    /// the ledger's resolution, about 2,070 years after landing: a start just
+    /// inside lands a step at the floor, and a step that would land past it
+    /// is refused by name with nothing moved.
+    #[test]
+    fn the_ledger_end_is_where_the_heat_left_is_the_ledger_resolution() {
+        let card = GeneratorMmrtgF1::curiosity();
+        let end_s = card.ledger_end_mission_time_s().unwrap();
+        let years = end_s / SECONDS_PER_YEAR;
+        assert!(years > 2_060.0 && years < 2_080.0, "{years}");
+        let resolution_j = RESIDUAL_CONSERVATION_LIMIT * card.card_heat_j;
+        assert!(within(FUEL_HEAT_AT_LANDING_J * crate::math::exp(-FUEL_DECAY_PER_S * end_s), resolution_j, 1.0e-6));
+        let floor_s = card.floor_dt_s().unwrap();
+        let mut frame = blank_frame();
+        let mut state = GeneratorState::try_mission_time(&card, end_s - 10.0 * floor_s).unwrap();
+        step(&card, &mut state, &mut frame, NO_LOAD, floor_s).unwrap();
+        let before = state_bits(&state);
+        let held = frame.to_bytes();
+        assert_eq!(
+            step(&card, &mut state, &mut frame, NO_LOAD, 1_000.0 * floor_s),
+            Err(StepReject::DecayHeatBelowLedgerResolution)
+        );
+        assert_eq!(state_bits(&state), before);
+        assert_eq!(frame.to_bytes(), held);
+        assert!(GeneratorState::try_mission_time(&card, end_s + 1_000.0).is_none());
     }
 }

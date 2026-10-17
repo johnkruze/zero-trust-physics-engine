@@ -1,0 +1,21 @@
+{
+ "model": "creep_cmsx6",
+ "verdict": "met",
+ "protocol": {
+  "path": "evidence/research/materials_cmsx6_creep/analysis/prereg.json",
+  "sha256": "f20f99b0e3419d66201a3e124b5c216c4d138d41f976b19d6a536daf15316d87",
+  "committed": {
+   "crate": "protocol_mcp_gateway",
+   "commit": "921f21befd97d191947087934074e26343b05d6e",
+   "utc": "2026-10-09T20:42:35Z",
+   "how": "The diff of 'Serve the creep_cmsx6 card in the materials domain ...' adds the pass line 'Fixed before any curve was fitted (pre-registration SHA-256 f20f99b0...315d87, with two numbered amendments made before the held-back tests were read)' and a test holding the hash; author and committer time are the same."
+  }
+ },
+ "scored": {
+  "utc": "2026-10-09T20:45:39Z",
+  "evidence": "Birth time of the first files of evidence/research/materials_cmsx6_creep/analysis/out/09_sealed/ (describe_card.json, run_140MPa.json, 13:45:39 PDT); run.log shows the engine runs first and the sealed test records read after them. The comparison script was frozen at 20:42:35Z (analysis/09_engine_comparison_frozen_sha256.txt, 'before the sealed tests were read')."
+ },
+ "forecast_first": "held",
+ "registered_by": "backfill from the record, 2026-10-15",
+ "notes": "Committed 3 min 4 s before the first file of the sealed run, in the same second as the freeze of the comparison script; prereg.json on disk still has the committed hash. Outside Git: analysis/prereg_hash.txt at 2026-10-09T20:11:11Z. Amendments 1 (36b8a467..., 20:13:48Z: structures added after the registered ones missed on the opened tests) and 2 (99c6d243..., 20:18:21Z: a numerical correction) were made before the commit and the sealed read; their hashes are in no commit, though the committed pass line says they exist. The pass lines are those of prereg.json. Amendment 3 (99f461ff..., 2026-10-09T21:26:33Z) and amendment 4 (59b0f0bc..., 2026-10-10T01:46:08Z) were written after the scoring and say so; they correct the record and narrow the range. A second scoring (second_scoring/result.json, 20:46:49Z; evidence/verification/second_party/V-24/) and a rescoring with the range enforced (analysis/out/16_enforced/, 2026-10-10T01:55Z) followed. Commit times are the committer's clock. Public mark: GitHub-signed commit bfa3e9e52cac662bcdc3a8b1693ad7edb6741c98 at 2026-10-13T17:55:43Z."
+}

@@ -1,6 +1,8 @@
 //! `step_flow_armaly` through `POST /solve`, against a direct call to
 //! `genesis_solvers`, with its refusals at the door and its description.
 
+mod answer_text;
+
 use std::time::Duration;
 
 use genesis_solvers::step_flow_armaly::{self as step, StepQuestion};
@@ -23,7 +25,7 @@ async fn spawn_app() -> String {
 async fn post(base: &str, path: &str, body: &Value) -> (u16, String) {
     let client = Client::new();
     let url = format!("{base}{path}");
-    let text = serde_json::to_string(body).unwrap();
+    let text = answer_text::as_sent(body);
     let mut last_error = None;
     for _ in 0..20 {
         match client
@@ -35,7 +37,9 @@ async fn post(base: &str, path: &str, body: &Value) -> (u16, String) {
         {
             Ok(response) => {
                 let status = response.status().as_u16();
-                return (status, response.text().await.unwrap());
+                let text = response.text().await.unwrap();
+                answer_text::remember(&text);
+                return (status, text);
             }
             Err(error) => {
                 last_error = Some(error);
@@ -125,7 +129,7 @@ async fn the_opened_condition_matches_the_solver_bit_for_bit_and_its_proof_holds
     // The proof holds, and an edit of a number breaks it by name.
     let (status, text) = post(&base, "/verify_solution", &body).await;
     assert_eq!(status, 200, "{text}");
-    assert_eq!(serde_json::from_str::<Value>(&text).unwrap(), json!({ "holds": true, "cause": null, "checked": protocol_mcp_gateway::WHOLE_SOLUTION_CHECKED }));
+    assert_eq!(serde_json::from_str::<Value>(&text).unwrap(), json!({ "holds": true, "values_hold": true, "cause": null, "compared": protocol_mcp_gateway::WHOLE_SOLUTION_COMPUTED }));
     for (section, key) in [("result", "reattachment_x_over_s_hex"), ("result", "reattachment_mm_hex"), ("invariants", "largest_imbalance_hex"), ("invariants", "outlet_departure_hex")] {
         let mut edited = body.clone();
         edited[section][key] = json!(flip_hex(body[section][key].as_str().unwrap()));
@@ -157,25 +161,22 @@ fn text_of(value: &Value) -> String {
 async fn a_question_outside_the_range_is_422_with_its_name_and_no_seal() {
     let base = spawn_app().await;
     let cases = [
-        (flow(99.99999999999999, 1.0), "ReynoldsOutOfRange"),
-        (flow(389.00000000000006, 1.0), "ReynoldsOutOfRange"),
-        (flow(400.0, 1.0), "ReynoldsOutOfRange"),
-        (flow(-100.0, 1.0), "ReynoldsOutOfRange"),
+        (flow(0.0, 1.0), "ReynoldsNotPositive"),
+        (flow(-100.0, 1.0), "ReynoldsNotPositive"),
+        (flow(400.00000000000006, 1.0), "ReynoldsOutOfRange"),
+        (flow(401.0, 1.0), "ReynoldsOutOfRange"),
         (flow(1.0e9, 1.0), "ReynoldsOutOfRange"),
         (flow(100.0, -0.001), "StationOutOfRange"),
         (flow(100.0, 30.000000000000004), "StationOutOfRange"),
         (flow(389.0, 30.000000000000004), "StationOutOfRange"),
-        (flow(389.0, 30.0), "StationNotCompared"),
-        (flow(389.0, 13.570000000000002), "StationNotCompared"),
-        (flow(100.00000000000001, 30.0), "StationNotCompared"),
-        (flow(259.33, 20.0), "StationNotCompared"),
     ];
     for (request, name) in cases {
         let (status, text) = post(&base, "/solve", &request).await;
         assert_eq!(status, 422, "{request} {text}");
         assert!(text.starts_with("Physical Violation: "), "{text}");
-        assert!(text.contains(name), "{request}: {text}");
+        assert!(text.ends_with(&format!("({name}).")), "{request}: {text}");
         assert!(!text.contains("solution_seal"), "{text}");
+        assert!(!text.contains("..="), "{text}");
     }
     // The exact lower end of the Reynolds range and both exact ends of the
     // station range are answered, the two stations on one flow.
@@ -193,11 +194,11 @@ async fn a_question_outside_the_range_is_422_with_its_name_and_no_seal() {
     let others = [
         (
             json!({ "solver": "step_flow_armaly", "parameters": { "reynolds_number": 100.0 } }),
-            "Missing required parameter: 'station_x_over_s'".to_string(),
+            "Missing required parameter: 'station_x_over_s' (InputMissing).".to_string(),
         ),
         (
             json!({ "solver": "step_flow_armaly", "parameters": { "station_x_over_s": 1.0 } }),
-            "Missing required parameter: 'reynolds_number'".to_string(),
+            "Missing required parameter: 'reynolds_number' (InputMissing).".to_string(),
         ),
         (
             json!({ "solver": "step_flow_armaly", "parameters": { "reynolds_number": 100.0, "station_x_over_s": 1.0, "step_height_mm": 10.0 } }),
@@ -219,24 +220,35 @@ async fn a_question_outside_the_range_is_422_with_its_name_and_no_seal() {
     assert!(!text.contains("solution_seal"), "{text}");
 }
 
-/// Above Reynolds number 100 the last station compared is 13.57: it is
-/// answered and sealed, and the next number up is refused at the door with
-/// no seal. At 100 itself the stations out to 30 were compared and are
-/// answered.
+/// Above Reynolds number 100 the last station compared is 13.57, and below
+/// 100 nothing was compared. Where engine 0.8.0 refused by name, the flow is
+/// answered with a seal that holds: a station past 13.57 at 389, and
+/// Reynolds numbers below 100 down to creeping flow. Where the version before
+/// refused, from 389 to 400, the top of two-dimensional flow over this step,
+/// it is answered the same way.
 #[tokio::test]
-async fn the_station_limit_follows_what_was_compared_at_each_reynolds_number() {
+async fn past_the_compared_stations_and_below_reynolds_100_the_flow_is_answered() {
     let base = spawn_app().await;
     let (status, edge) = post(&base, "/solve", &flow(389.0, 13.57)).await;
     assert_eq!(status, 200, "{edge}");
     let edge: Value = serde_json::from_str(&edge).unwrap();
     assert_eq!(edge["outcome"], "converged");
     assert!(edge["solution_seal"].is_string());
-    let (status, text) = post(&base, "/solve", &flow(389.0, 13.570000000000002)).await;
-    assert_eq!(status, 422, "{text}");
-    assert_eq!(
-        text,
-        "Physical Violation: station 13.570000000000002 step heights at Reynolds number 389 is past 13.57, the last station compared with a measured profile at a Reynolds number above 100; only at 100 were profiles compared out to 30 (StationNotCompared)."
-    );
+    for request in [flow(389.0, 13.570000000000002), flow(389.0, 30.0), flow(99.99999999999999, 30.0), flow(10.0, 1.0), flow(0.01, 20.0), flow(400.0, 13.57)] {
+        let (status, text) = post(&base, "/solve", &request).await;
+        assert_eq!(status, 200, "{request} {text}");
+        let body: Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(body["outcome"], "converged", "{request} {text}");
+        let reynolds = request["parameters"]["reynolds_number"].as_f64().unwrap();
+        assert!(body["invariants"]["largest_imbalance"].as_f64().unwrap() <= step::IMBALANCE_TOLERANCE * step::viscous_scale(reynolds));
+        assert!(body["invariants"]["outlet_departure"].as_f64().unwrap() <= step::OUTLET_TOLERANCE);
+        let (status, checked) = post(&base, "/verify_solution", &body).await;
+        assert_eq!(status, 200, "{checked}");
+        assert_eq!(serde_json::from_str::<Value>(&checked).unwrap()["holds"], true, "{checked}");
+        if request["parameters"]["reynolds_number"] == 389.0 {
+            assert_eq!(body["field_sha256"], edge["field_sha256"]);
+        }
+    }
     for station in [12.04, 16.33, 20.92, 30.0] {
         let (status, text) = post(&base, "/solve", &flow(100.0, station)).await;
         assert_eq!(status, 200, "{station} {text}");
@@ -249,11 +261,11 @@ async fn the_description_carries_the_standing_and_its_example_runs_unchanged() {
     let listed = reqwest::get(format!("{base}/solvers")).await.unwrap();
     let listed: Value = serde_json::from_str(&listed.text().await.unwrap()).unwrap();
     let solvers = listed["solvers"].as_array().expect("solvers");
-    assert_eq!(solvers.len(), 13);
+    assert_eq!(solvers.len(), 24);
     assert_eq!(solvers[9]["solver"], "step_flow_armaly");
     let summary = solvers[9]["summary"].as_str().expect("a sentence");
     assert!(summary.contains("nothing fitted"), "{summary}");
-    assert!(summary.contains("Reynolds number 100 to 389"), "{summary}");
+    assert!(summary.contains("Reynolds number above 0 to 400"), "{summary}");
 
     let (status, text) = post(&base, "/describe_solver", &json!({ "solver": "step_flow_armaly" })).await;
     assert_eq!(status, 200, "{text}");
@@ -290,7 +302,7 @@ async fn the_description_carries_the_standing_and_its_example_runs_unchanged() {
         "at Reynolds number 100 at stations from 0 to 7.76",
         "from 12.04 to 30.31 (Armaly's Figure 15",
         "at Reynolds number 389 at stations from 0 to 13.57",
-        "Above 100 a station past 13.57 is refused by name (StationNotCompared)",
+        "Out to 30, where the grid ends, is answered at every Reynolds number",
     ] {
         assert!(station_bound.contains(words), "{words}: {station_bound}");
     }
@@ -310,7 +322,7 @@ async fn the_description_carries_the_standing_and_its_example_runs_unchanged() {
         "the solver's 0.043 is above the floor",
         "where Armaly's own plot has about 8.6",
         "3.01 step heights at Reynolds number 97, 4.00 at 149, 6.60 at 298 and 8.60 at 387",
-        "evidence/checks/second_party/V-38",
+        "evidence/verification/second_party/V-38",
         "No baseline met a line",
         "2.83 step heights against a quoted approximately 3.3, 14 percent low and outside the 10 percent mark, a miss",
         "SHA-256 042bb92d94119f5d684998d7d7ff9b88134188dda06baa6e2aea8be7884bd616",
@@ -323,14 +335,18 @@ async fn the_description_carries_the_standing_and_its_example_runs_unchanged() {
     assert_eq!(described["locked"]["step_height_mm"], step::STEP_HEIGHT_MM);
     assert_eq!(described["locked"]["inlet_height_mm"], step::INLET_HEIGHT_MM);
     assert!(described["reference"]["kind"].as_str().unwrap().contains("It is not a measurement"));
-    assert!(described["convergence"]["run_time"].as_str().unwrap().contains("2.7 s on one core"));
+    assert!(described["convergence"]["run_time"].as_str().unwrap().contains("Reynolds number 400, takes 2.2 s on one core"));
     let inputs = described["inputs"].as_array().expect("inputs");
     assert_eq!(inputs.len(), 2);
-    assert_eq!(inputs[0]["minimum"], step::REYNOLDS_MIN);
+    assert_eq!(inputs[0]["minimum"], step::REYNOLDS_ABOVE);
+    assert_eq!(inputs[0]["minimum_exclusive"], true);
     assert_eq!(inputs[0]["maximum"], step::REYNOLDS_MAX);
     assert_eq!(inputs[1]["minimum"], step::STATION_MIN_X_OVER_S);
     assert_eq!(inputs[1]["maximum"], step::STATION_MAX_X_OVER_S);
     assert_eq!(described["refusals"].as_array().expect("refusals").len(), 9);
+    for refusal in described["refusals"].as_array().unwrap() {
+        assert!(!refusal["meaning"].as_str().unwrap().contains("..="), "{refusal}");
+    }
 
     let example = described["example_solve"].clone();
     let (status, text) = post(&base, "/solve", &example).await;

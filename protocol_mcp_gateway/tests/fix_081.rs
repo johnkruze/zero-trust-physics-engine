@@ -120,7 +120,7 @@ fn a_fresh_start_states_its_own_anchors_or_is_refused_by_name() {
             "{card} {field}: {words}"
         );
         let run = described["example_run_trajectory"].clone();
-        let step = described["example_verify_step"].clone();
+        let step = described["example_compute_step"].clone();
         // Fresh: no from needed.
         let upstream = ok(&mut door, "run_trajectory", &run);
         ok(&mut door, "verify_step", &step);
@@ -200,7 +200,7 @@ fn a_chained_check_given_only_a_run_seal_returns_no_chain_seal() {
     let alone = ok(&mut door, "verify_tape", &json!({ "request": request, "run_seal": chained["run_seal"] }));
     assert_eq!(alone["holds"], json!(true), "{alone}");
     assert!(alone.get("recomputed_chain_seal").is_none(), "{alone}");
-    let words = alone["chain_checked"].as_str().unwrap();
+    let words = alone["chain_compared"].as_str().unwrap();
     assert!(words.contains("No chain_seal was given, so the chain seal was not compared and is not returned"), "{words}");
     // Given and matched, it is returned beside the comparison.
     let both = ok(
@@ -214,7 +214,8 @@ fn a_chained_check_given_only_a_run_seal_returns_no_chain_seal() {
 
 /// Each short check says what it did not compare in true words: a run's and
 /// a solution's send a copy to verify_receipt and to recomputed_receipt_sha256
-/// together; a dataset's says no tool compares the decimals in its rows.
+/// together; a dataset's says it compared no rows, that only the head has a
+/// receipt, and what the long form does with the decimals of a row.
 #[test]
 fn each_short_check_says_truly_what_it_did_not_compare() {
     let mut door = Stdio2::start(None);
@@ -223,7 +224,7 @@ fn each_short_check_says_truly_what_it_did_not_compare() {
     let report = ok(&mut door, "verify_tape", &json!({ "request": run, "run_seal": made["run_seal"] }));
     let words = report["text_not_compared"].as_str().unwrap();
     assert!(words.contains("compare that receipt_sha256 with recomputed_receipt_sha256"), "{words}");
-    assert!(words.contains("The check of a copy is complete only when the two are equal"), "{words}");
+    assert!(words.contains("A copy is verified in full only when the two are equal"), "{words}");
     assert!(!words.contains("compares every byte of an answer"), "{words}");
     let solve = json!({ "solver": "atom_dft", "parameters": { "atomic_number": 2 } });
     let solved = ok(&mut door, "solve", &solve);
@@ -236,11 +237,20 @@ fn each_short_check_says_truly_what_it_did_not_compare() {
     });
     let report = ok(&mut door, "verify_dataset", &json!({ "request": plan, "dataset_seal": "0".repeat(64) }));
     let dataset_words = report["text_not_compared"].as_str().unwrap();
-    assert!(dataset_words.contains("No tool compares the decimals in a dataset's rows: only the head carries a receipt"), "{dataset_words}");
+    // Until the long form held each decimal of a final state to the hex
+    // beside it, the sentence began "No tool compares the decimals in a
+    // dataset's rows: only the head carries a receipt".
+    assert!(dataset_words.starts_with("The plan was run again and the seals compared; no rows you hold were compared. Only the head carries a receipt"), "{dataset_words}");
+    // Since 0.12.0 the long form runs the plan again and compares the full
+    // answer byte for byte.
+    assert!(dataset_words.contains("then runs its plan again and compares the engine's full answer with the one sent, value by value and byte for byte, naming the first row or field that differs"), "{dataset_words}");
     assert!(!dataset_words.contains("verify_receipt compares every byte"), "{dataset_words}");
     // The tools say the same.
     let listed = serde_json::to_string(&protocol_mcp_gateway::mcp_server::tools_in(&protocol_mcp_gateway::view::View::full())).unwrap();
-    assert_eq!(listed.matches("the check is complete only when that receipt equals recomputed_receipt_sha256 here").count(), 2);
+    // Since 0.11.0 the long form of a run and of a solution compares the copy
+    // it is given, and their descriptions say so; since 0.12.0 it computes the
+    // copy's request again and compares it byte for byte.
+    assert_eq!(listed.matches("the engine's answer compared with it, value by value and byte for byte, receipt included").count(), 2);
     assert!(!listed.contains("verify_receipt covers both"));
 }
 
@@ -283,7 +293,7 @@ fn the_model3_card_does_not_explain_a_continuation_it_refuses() {
         .as_str()
         .unwrap()
         .to_string();
-    assert!(water.contains("it cannot check it"), "{water}");
+    assert!(water.contains("it cannot confirm it"), "{water}");
 }
 
 /// A solve request that names its solver and neither parameters nor example
@@ -294,6 +304,6 @@ fn a_solver_alone_is_answered_with_both_routes() {
     let text = refused(&mut door, "solve", &json!({ "solver": "atom_dft" }));
     assert_eq!(
         text,
-        "Missing required parameter: 'parameters' (or 'example', the name of a worked example describe_solver lists)"
+        "Missing required parameter: 'parameters' (or 'example', the name of a worked example describe_solver lists) (InputMissing)."
     );
 }

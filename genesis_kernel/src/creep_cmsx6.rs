@@ -43,40 +43,39 @@
 //! exponents 33.4 and −27.2 are fitted numbers of this law and are not
 //! physical constants of the alloy.
 //!
-//! The declared range, and what each end rests on. Every number here is from
-//! the measured curves of all twelve tests, read after the held-back six were
-//! scored (`analysis/15_declared_range.py` and `analysis/amendment_4.json` of
-//! the research record; an amendment made after the scoring, not a blind
-//! test). The quantity is the one the protocol registered, the logarithm of
-//! the law's time since the full load over the measured time to a level, and
-//! the line is the registered worst line, 0.30, looked at on 171 levels from
-//! 0.10 to 5.00 percent in place of the six registered.
+//! The range the card answers in, how the law did there, and what each end
+//! rests on. Every number here is from the measured curves of all twelve
+//! tests, read after the held-back six were scored
+//! (`analysis/15_declared_range.py` and `analysis/amendment_4.json` of the
+//! research record; an amendment made after the scoring, not a blind test).
+//! The quantity is the one the protocol registered, the logarithm of the
+//! law's time since the full load over the measured time to a level, and the
+//! line is the registered worst line, 0.30, looked at on 171 levels from 0.10
+//! to 5.00 percent in place of the six registered.
 //!
 //! - Initial stress 140 to 230 MPa, the span tested.
-//! - Creep extension from [`CREEP_EXTENSION_MIN_PERCENT`], 0.1 percent. Below
-//!   it the law is slow to start against every measured curve at every
-//!   stress. Hours to 0.05 percent, the law against the three test pieces:
-//!   38.9 against 15.4 to 26.7 at 140 MPa, 7.8 against 2.7 to 3.5 at 170 MPa,
-//!   1.69 against 0.61 to 0.66 at 200 MPa and 0.245 against 0.06 to 0.08 at
-//!   230 MPa. A state below 0.1 percent is refused as
-//!   [`StepReject::CreepExtensionBelowCard`], and no run passes through that
-//!   range.
-//! - Creep extension up to a limit that depends on the stress,
-//!   [`CreepCmsx6::creep_extension_max_percent`]. From 170 MPa up it is
+//! - Creep extension from zero, the moment the full load is applied, to
 //!   [`CREEP_EXTENSION_MAX_PERCENT`], 5 percent, the largest registered
-//!   level: at 170, 200 and 230 MPa all nine tests are inside the line at all
-//!   171 levels, the worst 0.289 (170 MPa, 0.33 percent). Below 170 MPa it is
-//!   [`CREEP_EXTENSION_MAX_BELOW_FULL_REACH_PERCENT`], 0.2 percent. At 140 MPa
-//!   the three tests are inside the line at every level from 0.10 to 0.25
-//!   percent, where the worst is 0.296; one test is outside it from 0.26
-//!   percent, a second from 0.31, all three from 0.66 to where the tests
-//!   stopped near 0.8 percent, and at the hour each test stopped the law
-//!   gives 1.70 to 1.78 percent against 0.79 to 0.83 measured. The limit is
-//!   the largest registered level under 0.25 percent, 0.2, where the worst
-//!   of the three is 0.196. No test lies between 140 and 170 MPa, so the
-//!   140 MPa limit is held over the whole of 140 MPa to under
-//!   [`FULL_REACH_STRESS_MIN_MPA`], and 5 percent is promised only from
-//!   170 MPa, the lowest stress at which it was measured and held.
+//!   level, at every stress. Where the law met the line and where it missed:
+//! - From 170 MPa up, from [`CREEP_EXTENSION_MIN_PERCENT`], 0.1 percent, to 5
+//!   percent, all nine tests are inside the line at all 171 levels, the worst
+//!   0.289 (170 MPa, 0.33 percent).
+//! - Below 0.1 percent, at every stress, the law was compared and missed: it
+//!   is slow to start against every measured curve. Hours to 0.05 percent,
+//!   the law against the three test pieces: 38.9 against 15.4 to 26.7 at
+//!   140 MPa, 7.8 against 2.7 to 3.5 at 170 MPa, 1.69 against 0.61 to 0.66 at
+//!   200 MPa and 0.245 against 0.06 to 0.08 at 230 MPa, a factor of 1.5 to 4.
+//! - Below [`FULL_REACH_STRESS_MIN_MPA`], 170 MPa, past
+//!   [`CREEP_EXTENSION_MAX_BELOW_FULL_REACH_PERCENT`], 0.2 percent, the law
+//!   was compared and missed. At 140 MPa the three tests are inside the line
+//!   at every level from 0.10 to 0.25 percent, where the worst is 0.296; one
+//!   test is outside it from 0.26 percent, a second from 0.31, all three from
+//!   0.66 to where the tests were stopped near 0.8 percent, and at the hour
+//!   each test was stopped, 1010 to 1030 h, the law gives 1.70 to 1.78
+//!   percent against 0.79 to 0.83 measured: about a factor of 2. No 140 MPa
+//!   test went past 0.83 percent, and no test lies between 140 and 170 MPa.
+//! - On every frame in those two regions the card sets
+//!   [`FLAG_OUTSIDE_MET_RANGE`]. Through engine 0.9 the card refused them.
 //! - The clock. `t_s` is the time since the full load was applied, as the law
 //!   gives it: a state made at a creep extension starts at the hour the law
 //!   itself reaches that extension from zero at the held stress,
@@ -95,26 +94,24 @@
 //!   [`StepReject::StressNotHeld`]. No test with a changed stress is in the
 //!   record.
 //!
-//! The card has no limit in time. While it stepped from zero extension it
-//! refused a step that would end after 1100 h, where the 140 MPa tests were
-//! stopped, and a run whose decimal end was exactly 1100 h could lose its
-//! last step to the rounding of the running sum of the clock. That limit is
-//! gone with the range it closed: the card now ends in extension at every
-//! stress, the latest hour it can reach is 434.84 h (170 MPa, 5 percent),
-//! and the clock starts at a time the law gives, which is no decimal, so no
-//! run ends on a time the caller wrote.
+//! The card has no limit in time: it ends in extension at every stress, the
+//! latest hour it can reach is 1477 h (140 MPa, 5 percent), and the clock
+//! starts at a time the law gives, which is no decimal, so no run ends on a
+//! time the caller wrote.
 //!
 //! No end of the range is a number the caller computes, so no allowance in
-//! the last place is carried. 0.1 percent, 0.2 percent, 5 percent, 140, 170
-//! and 230 MPa are accepted as written: each comparison is with the 64-bit
-//! number nearest that decimal, which is the number the caller's decimal
-//! becomes. The upper limit is met by the step: a step that lands exactly on
-//! it lands, one that would pass it by one spacing of 64-bit numbers is
-//! refused as [`StepReject::CreepExtensionBeyondCard`], and nothing is
-//! pulled back.
+//! the last place is carried. 0, 0.1 percent, 0.2 percent, 5 percent, 140,
+//! 170 and 230 MPa are accepted as written: each comparison is with the
+//! 64-bit number nearest that decimal, which is the number the caller's
+//! decimal becomes. The upper limit is met by the step: a step that lands
+//! exactly on it lands, one that would pass it by one spacing of 64-bit
+//! numbers is refused as [`StepReject::CreepExtensionBeyondCard`], and
+//! nothing is pulled back. A state below zero extension is
+//! [`StepReject::CreepExtensionBelowZero`]: a piece in tension does not
+//! shorten by creep.
 //!
 //! The card leaves out the elastic and the initial plastic extension of
-//! loading, the path of the extension below 0.1 percent, rupture, necking,
+//! loading, rupture, necking,
 //! any other temperature, a load that is changed, removed or reversed, any
 //! crystal direction other than within 8 degrees of [001], and any other
 //! cast.
@@ -163,22 +160,27 @@
 //! `ln(1 + C e)`, an integrand that is smooth in `u`, taken on
 //! [`START_CLOCK_PANELS`] equal panels of five-point Gauss–Legendre. Against
 //! integration at 60 digits it is right to 5 parts in 10^14 at 96 starts
-//! over the card (`evidence/checks/crosscheck/creep_cmsx6/check_enforced.py`).
+//! over the card (`evidence/verification/crosscheck/creep_cmsx6/check_enforced.py`).
 //!
 //! [`FLAG_CREEP_RATE_RISING`] is set when the law's rate at the end of a step
 //! is above its rate at the start. The law's rate falls from 0.1 percent to a
 //! minimum near 0.26 percent and rises from there, as a creep curve's rate
 //! does after its minimum. It says where on its own curve the law is, and it
-//! marks no failure of the law. Under 170 MPa the card ends at 0.2 percent
-//! and the flag is never set.
+//! marks no failure of the law.
 //!
 //! [`CreepCmsx6::gate_dt_s`] is the step ceiling: `GATE_PHASE_STEP` over the
 //! largest value `|d(de/dt)/de|` can take from zero to 5 percent, bounded by
-//! `A C0 x^(n+m) (1 + K) + A x^n K / e_p` at 230 MPa, about 50 s. The bound
-//! was taken from zero extension and is kept, so the ceiling is smaller than
-//! the range from 0.1 percent needs. [`CreepCmsx6::floor_dt_s`] is
-//! [`FLOOR_DT_S`], 1 s: the rate is at least `6e-7 e` percent per second, so
-//! a step of 1 s moves the extension by more than 1e9 spacings of 64-bit
+//! `A C0 x^(n+m) (1 + K) + A x^n K / e_p` at 230 MPa, about 50 s: a stability
+//! bound of the Runge–Kutta step taken from zero extension. Its accuracy is
+//! held by the ledger. From 0.1 percent up one honest step leaves at most
+//! 1.7e-10, a twelfth of the limit. Below 0.1 percent the primary multiplier
+//! falls over the first 0.04 percent and one step of the ceiling there
+//! leaves more than the limit: such a step is refused by the ledger, by name,
+//! with the state kept, and a shorter step lands (the largest that lands from
+//! zero extension is stated in the engine's description of the card).
+//! [`CreepCmsx6::floor_dt_s`] is [`FLOOR_DT_S`], 1 s: the rate is at least
+//! `6e-7 e` percent per second from 0.1 percent and `A x^n (1 + K)` at zero,
+//! so a step of 1 s moves the extension by more than 1e9 spacings of 64-bit
 //! numbers and the quadrature resolves `τ` to nine figures. The public step
 //! applies neither. The gateway refuses a step outside them.
 //!
@@ -190,6 +192,7 @@ extern crate core;
 use core::prelude::v1::*;
 
 use crate::frame::LastStateFrame64;
+use crate::normal::normal_or_zero;
 use crate::math::{exp, exp_m1, log};
 
 /// Test temperature, °C. Zenodo 20132712, every creep file, "Specified temperature".
@@ -212,20 +215,22 @@ pub const PRIMARY_DECAY_EXTENSION_PERCENT: f64 = 0.037091;
 pub const STRESS_MIN_MPA: f64 = 140.0;
 /// Highest initial stress tested, MPa. Zenodo 20132712, tests 78, 80, 89.
 pub const STRESS_MAX_MPA: f64 = 230.0;
-/// Creep extension below which the card refuses, percent: the lowest level
-/// of the protocol. Below it the law is slow to start against every measured
-/// curve.
+/// The lowest level of the protocol, percent. Below it the law is slow to
+/// start against every measured curve, and a frame carries
+/// [`FLAG_OUTSIDE_MET_RANGE`].
 pub const CREEP_EXTENSION_MIN_PERCENT: f64 = 0.1;
-/// Lowest initial stress at which the card answers to 5 percent, MPa: the
-/// lowest stress whose three tests reach 5 percent with the law inside the
-/// registered worst line at every level. Zenodo 20132712, tests 81, 91, 98.
+/// Lowest initial stress at which the law met the registered worst line to 5
+/// percent, MPa: the lowest stress whose three tests reach 5 percent with the
+/// law inside it at every level. Zenodo 20132712, tests 81, 91, 98.
 pub const FULL_REACH_STRESS_MIN_MPA: f64 = 170.0;
-/// Creep extension beyond which the card refuses from 170 MPa up, percent.
-/// The largest level of the protocol.
+/// Creep extension beyond which the card refuses, percent: the largest level
+/// of the protocol. The measured curves at 170 to 230 MPa go on to rupture,
+/// and the law, whose rate grows with the extension, has no rupture in it.
 pub const CREEP_EXTENSION_MAX_PERCENT: f64 = 5.0;
-/// Creep extension beyond which the card refuses below 170 MPa, percent: the
-/// largest level of the protocol at which the three 140 MPa tests are inside
-/// the registered worst line with every level under it.
+/// Creep extension past which, below 170 MPa, the law missed the three
+/// 140 MPa tests, percent: the largest level of the protocol at which they
+/// are inside the registered worst line with every level under it. Past it
+/// below 170 MPa a frame carries [`FLAG_OUTSIDE_MET_RANGE`].
 pub const CREEP_EXTENSION_MAX_BELOW_FULL_REACH_PERCENT: f64 = 0.2;
 /// `|work − heat| / work` must stay at or under this. The largest value one
 /// step leaves, over every stress and extension of the card and steps from
@@ -243,6 +248,11 @@ pub const START_CLOCK_PANELS: u32 = 128;
 
 /// The creep rate at the end of this step is above the rate at its start.
 pub const FLAG_CREEP_RATE_RISING: u64 = 1 << 0;
+/// The step covers creep extension where the law was compared with the
+/// measured curves and missed: below 0.1 percent at any stress, or past 0.2
+/// percent below 170 MPa. The same law and the same ledger; the miss is
+/// stated in the header and in the engine's description of the card.
+pub const FLAG_OUTSIDE_MET_RANGE: u64 = 1 << 1;
 
 const SECONDS_PER_HOUR: f64 = 3600.0;
 
@@ -261,11 +271,11 @@ pub enum StepReject {
     StressOutsideCard,
     /// The stress of the step is not the stress the state was made at.
     StressNotHeld,
-    /// The incoming creep extension is below 0.1 percent, where the law is slow to start against every measured curve.
-    CreepExtensionBelowCard,
-    /// The incoming creep extension is above the limit for the held stress: 0.2 percent below 170 MPa, 5 percent from 170 MPa.
+    /// The incoming creep extension is below zero: a test piece in tension does not shorten by creep.
+    CreepExtensionBelowZero,
+    /// The incoming creep extension is above 5 percent, the largest level of the protocol.
     CreepExtensionOutsideCard,
-    /// The trial step passed the limit of creep extension for the held stress: 0.2 percent below 170 MPa, 5 percent from 170 MPa.
+    /// The trial step passed 5 percent creep extension, the largest level of the protocol.
     CreepExtensionBeyondCard,
     /// The trial step did not move the creep extension in 64-bit arithmetic.
     StepTooSmallToResolve,
@@ -391,14 +401,21 @@ impl CreepCmsx6 {
     }
 
     /// The creep extension beyond which the card refuses at initial stress
-    /// `stress_mpa`, percent: 5 from 170 MPa up, 0.2 below it.
+    /// `stress_mpa`, percent: 5 at every stress of the card.
     #[must_use]
-    pub fn creep_extension_max_percent(&self, stress_mpa: f64) -> f64 {
-        if stress_mpa >= self.full_reach_stress_min_mpa {
-            self.creep_extension_max_percent
-        } else {
-            self.creep_extension_max_below_full_reach_percent
-        }
+    pub fn creep_extension_max_percent(&self, _stress_mpa: f64) -> f64 {
+        self.creep_extension_max_percent
+    }
+
+    /// A step at `stress_mpa` from `from_percent` to `to_percent` covers
+    /// creep extension where the law missed the measured curves: below 0.1
+    /// percent, or past 0.2 percent below 170 MPa. See
+    /// [`FLAG_OUTSIDE_MET_RANGE`].
+    #[must_use]
+    pub fn outside_met_range(&self, stress_mpa: f64, from_percent: f64, to_percent: f64) -> bool {
+        from_percent < self.creep_extension_min_percent
+            || (stress_mpa < self.full_reach_stress_min_mpa
+                && to_percent > self.creep_extension_max_below_full_reach_percent)
     }
 
     /// Creep rate in percent per hour at initial stress `stress_mpa` and
@@ -500,14 +517,17 @@ pub struct CreepState {
     pub residual_conservation_error: f64,
     /// The creep rate at the end of the last step was above the rate at its start.
     pub creep_rate_rising: bool,
+    /// The last step covered creep extension where the law missed the
+    /// measured curves: see [`FLAG_OUTSIDE_MET_RANGE`].
+    pub outside_met_range: bool,
 }
 
 impl CreepState {
     /// A test piece held at `stress_mpa` at the given creep extension, with
     /// empty books and the clock at the time the law takes to reach that
-    /// extension from zero at that stress. `None` unless the stress is finite
-    /// and within 140 to 230 MPa and the extension is finite, at or above
-    /// 0.1 percent and at or below the limit for the stress.
+    /// extension from zero at that stress, zero at zero extension. `None`
+    /// unless the stress is finite and within 140 to 230 MPa and the
+    /// extension is finite, at or above zero and at or below 5 percent.
     #[must_use]
     pub fn try_new(alloy: &CreepCmsx6, stress_mpa: f64, creep_extension_percent: f64) -> Option<Self> {
         if !alloy.is_valid()
@@ -515,7 +535,7 @@ impl CreepState {
             || !creep_extension_percent.is_finite()
             || stress_mpa < alloy.stress_min_mpa
             || stress_mpa > alloy.stress_max_mpa
-            || creep_extension_percent < alloy.creep_extension_min_percent
+            || !(creep_extension_percent >= 0.0)
             || creep_extension_percent > alloy.creep_extension_max_percent(stress_mpa)
         {
             return None;
@@ -523,7 +543,7 @@ impl CreepState {
         let t_s = alloy.law_time_since_load_s(stress_mpa, creep_extension_percent);
         let creep_rate_percent_per_h =
             alloy.creep_rate_percent_per_h(stress_mpa, creep_extension_percent);
-        if !(t_s.is_finite() && t_s > 0.0 && creep_rate_percent_per_h.is_finite()) {
+        if !(t_s.is_finite() && t_s >= 0.0 && creep_rate_percent_per_h.is_finite()) {
             return None;
         }
         Some(Self {
@@ -536,6 +556,7 @@ impl CreepState {
             work_defect_mj_per_m3: 0.0,
             residual_conservation_error: 0.0,
             creep_rate_rising: false,
+            outside_met_range: false,
         })
     }
 }
@@ -543,8 +564,25 @@ impl CreepState {
 /// Advance one Runge–Kutta step and write the frame.
 ///
 /// A rejected step leaves `state` and `frame` as they were.
+///
+/// A value of the landed state below the normal range is written as zero
+/// with its sign ([`crate::normal`]).
 #[must_use]
 pub fn step(
+    alloy: &CreepCmsx6,
+    state: &mut CreepState,
+    frame: &mut LastStateFrame64,
+    load: CreepLoad,
+    dt_s: f64,
+) -> Result<(), StepReject> {
+    step_as_computed(alloy, state, frame, load, dt_s)?;
+    normal_or_zero_state(state);
+    Ok(())
+}
+
+/// The step as its equations compute it, before a value of the landed
+/// state below the normal range is written as zero.
+fn step_as_computed(
     alloy: &CreepCmsx6,
     state: &mut CreepState,
     frame: &mut LastStateFrame64,
@@ -554,6 +592,20 @@ pub fn step(
     validate(alloy, state, load, dt_s)?;
     let advanced = rk4(alloy, load.stress_mpa, state.creep_extension_percent, dt_s);
     commit(alloy, state, frame, load, dt_s, advanced)
+}
+
+/// Each value of a landed state below the normal range written as zero
+/// with its sign ([`crate::normal`]): the state carried to the next step
+/// and published holds no subnormal number.
+fn normal_or_zero_state(state: &mut CreepState) {
+    state.t_s = normal_or_zero(state.t_s);
+    state.creep_extension_percent = normal_or_zero(state.creep_extension_percent);
+    state.creep_rate_percent_per_h = normal_or_zero(state.creep_rate_percent_per_h);
+    state.stress_mpa = normal_or_zero(state.stress_mpa);
+    state.work_by_load_mj_per_m3 = normal_or_zero(state.work_by_load_mj_per_m3);
+    state.heat_dissipated_mj_per_m3 = normal_or_zero(state.heat_dissipated_mj_per_m3);
+    state.work_defect_mj_per_m3 = normal_or_zero(state.work_defect_mj_per_m3);
+    state.residual_conservation_error = normal_or_zero(state.residual_conservation_error);
 }
 
 fn validate(
@@ -580,8 +632,8 @@ fn validate(
     if load.stress_mpa != state.stress_mpa {
         return Err(StepReject::StressNotHeld);
     }
-    if state.creep_extension_percent < alloy.creep_extension_min_percent {
-        return Err(StepReject::CreepExtensionBelowCard);
+    if !(state.creep_extension_percent >= 0.0) {
+        return Err(StepReject::CreepExtensionBelowZero);
     }
     if state.creep_extension_percent > alloy.creep_extension_max_percent(load.stress_mpa) {
         return Err(StepReject::CreepExtensionOutsideCard);
@@ -624,6 +676,8 @@ fn commit(
     state.heat_dissipated_mj_per_m3 += work_step * dt_s / law_time;
     state.work_defect_mj_per_m3 = state.work_by_load_mj_per_m3 - state.heat_dissipated_mj_per_m3;
     state.creep_rate_rising = state.creep_rate_percent_per_h > rate_at_start;
+    state.outside_met_range =
+        alloy.outside_met_range(stress, old_extension, advanced_extension_percent);
     if !state_is_finite(state) || !(state.work_by_load_mj_per_m3 > 0.0) {
         *state = saved;
         return Err(StepReject::NonFiniteState);
@@ -706,6 +760,9 @@ fn publish(state: &CreepState, frame: &mut LastStateFrame64) {
     if state.creep_rate_rising {
         flags |= FLAG_CREEP_RATE_RISING;
     }
+    if state.outside_met_range {
+        flags |= FLAG_OUTSIDE_MET_RANGE;
+    }
     frame.flags = flags;
 }
 
@@ -733,7 +790,8 @@ mod tests {
     use super::{
         BASE_RATE_PERCENT_PER_H, BASE_STRESS_EXPONENT, CREEP_EXTENSION_MAX_BELOW_FULL_REACH_PERCENT,
         CREEP_EXTENSION_MAX_PERCENT, CREEP_EXTENSION_MIN_PERCENT, CreepCmsx6, CreepLoad, CreepState,
-        FLAG_CREEP_RATE_RISING, FLOOR_DT_S, FULL_REACH_STRESS_MIN_MPA, GATE_PHASE_STEP,
+        FLAG_CREEP_RATE_RISING, FLAG_OUTSIDE_MET_RANGE, FLOOR_DT_S, FULL_REACH_STRESS_MIN_MPA,
+        GATE_PHASE_STEP,
         PRIMARY_DECAY_EXTENSION_PERCENT, PRIMARY_MULTIPLIER, REFERENCE_STRESS_MPA,
         RESIDUAL_CONSERVATION_LIMIT, SOFTENING_PER_PERCENT, SOFTENING_STRESS_EXPONENT,
         START_CLOCK_PANELS, STRESS_MAX_MPA, STRESS_MIN_MPA, StepReject, TEMPERATURE_C, commit,
@@ -760,7 +818,7 @@ mod tests {
     /// 50 digits (`mp.quad` of `3600 / rate` with break points at the powers
     /// of ten from 1e-12), at the 64-bit number nearest each extension.
     /// Columns: initial stress MPa, creep extension percent, seconds.
-    /// `evidence/checks/crosscheck/creep_cmsx6/`. No measured value is here.
+    /// `evidence/verification/crosscheck/creep_cmsx6/`. No measured value is here.
     const START_CLOCK_S: [(f64, f64, f64); 11] = [
         (140.0, 0.1, 182_843.346_857_141_67),
         (140.0, 0.2, 440_691.719_409_433_5),
@@ -1022,19 +1080,26 @@ mod tests {
     }
 
     #[test]
-    fn the_upper_limit_is_five_percent_from_170_mpa_and_a_fifth_of_a_percent_below_it() {
+    fn the_upper_limit_is_five_percent_at_every_stress_and_the_flag_marks_where_the_law_missed() {
         let alloy = CreepCmsx6::at_980_c();
-        for (stress, limit) in [
-            (140.0, 0.2),
-            (155.0, 0.2),
-            (169.99, 0.2),
-            (one_under(170.0), 0.2),
-            (170.0, 5.0),
-            (one_over(170.0), 5.0),
-            (200.0, 5.0),
-            (230.0, 5.0),
+        for stress in [140.0, 155.0, 169.99, one_under(170.0), 170.0, one_over(170.0), 200.0, 230.0] {
+            assert_eq!(alloy.creep_extension_max_percent(stress).to_bits(), 5.0_f64.to_bits(), "{stress}");
+        }
+        // The region where the law was compared and missed: below 0.1 percent
+        // at any stress, past 0.2 percent below 170 MPa.
+        for (stress, from, to, outside) in [
+            (230.0, 0.0, 0.05, true),
+            (230.0, one_under(0.1), 0.11, true),
+            (230.0, 0.1, 0.2, false),
+            (230.0, 0.3, 5.0, false),
+            (170.0, 0.1, 5.0, false),
+            (one_under(170.0), 0.15, 0.2, false),
+            (one_under(170.0), 0.15, one_over(0.2), true),
+            (140.0, 0.1, 0.2, false),
+            (140.0, 0.25, 0.8, true),
+            (140.0, 2.0, 5.0, true),
         ] {
-            assert_eq!(alloy.creep_extension_max_percent(stress).to_bits(), f64::to_bits(limit), "{stress}");
+            assert_eq!(alloy.outside_met_range(stress, from, to), outside, "{stress} {from} {to}");
         }
     }
 
@@ -1053,6 +1118,15 @@ mod tests {
             (200.0, 2.5),
             (230.0, 0.1),
             (230.0, 5.0),
+            (140.0, 0.0),
+            (140.0, 0.05),
+            (140.0, 0.5),
+            (140.0, 5.0),
+            (one_under(170.0), 0.25),
+            (169.999, 5.0),
+            (170.0, 0.0),
+            (230.0, 1.0e-9),
+            (230.0, one_under(0.1)),
         ] {
             let state = CreepState::try_new(&alloy, stress, inside).unwrap();
             assert_eq!(state.creep_extension_percent.to_bits(), inside.to_bits());
@@ -1062,7 +1136,7 @@ mod tests {
                 state.t_s.to_bits(),
                 alloy.law_time_since_load_s(stress, inside).to_bits()
             );
-            assert!(state.t_s > 0.0);
+            assert!(if inside == 0.0 { state.t_s == 0.0 } else { state.t_s > 0.0 });
             assert_eq!(
                 state.creep_rate_percent_per_h.to_bits(),
                 alloy.creep_rate_percent_per_h(stress, inside).to_bits()
@@ -1073,18 +1147,16 @@ mod tests {
             assert_eq!(state.residual_conservation_error, 0.0);
             assert!(!state.creep_rate_rising);
         }
-        // Below 0.1 percent at every stress, zero among them: no start.
+        // Below zero at every stress: no start.
         for stress in [140.0, 170.0, 200.0, 230.0] {
-            for below in [0.0, 1.0e-9, 0.05, 0.099_999, one_under(0.1), -1.0e-12, -0.1] {
+            for below in [-1.0e-300, -1.0e-12, -0.1] {
                 assert!(CreepState::try_new(&alloy, stress, below).is_none(), "{stress} {below}");
             }
         }
-        // Above the limit for the stress.
+        // Above 5 percent.
         for (stress, above) in [
-            (140.0, one_over(0.2)),
-            (140.0, 0.5),
-            (one_under(170.0), 0.25),
-            (169.999, 5.0),
+            (140.0, one_over(5.0)),
+            (one_under(170.0), 5.000_000_1),
             (170.0, one_over(5.0)),
             (230.0, 5.000_000_1),
         ] {
@@ -1248,9 +1320,10 @@ mod tests {
                 worst_residual = run.worst_residual;
             }
             assert!(run.worst_residual <= RESIDUAL_CONSERVATION_LIMIT / 10.0);
-            // Every run ends at the limit of extension for its stress.
+            // Every run ends at 5 percent, the limit of extension at every
+            // stress; through engine 0.9 the 140 MPa run ended at 0.2.
             assert_eq!(run.end, StepReject::CreepExtensionBeyondCard);
-            let limit = if stress >= 170.0 { 5.0 } else { 0.2 };
+            let limit = 5.0;
             assert!(run.last.creep_extension_percent <= limit);
             assert!(run.last.creep_extension_percent > 0.998 * limit);
             let mut index = 0;
@@ -1386,17 +1459,31 @@ mod tests {
             assert!(falling > 0 && rising > 0);
             assert!(minimum_at > 0.2 && minimum_at < 0.3, "{minimum_at}");
         }
-        // Below 170 MPa the card ends at 0.2 percent, before the law's minimum: never set.
+        // Below 170 MPa the run goes on past 0.2 percent, through the law's
+        // minimum, to 5 percent: the rising flag is set past the minimum, and
+        // every frame past 0.2 percent carries FLAG_OUTSIDE_MET_RANGE.
         for stress in [140.0, 155.0, 169.9] {
             let (alloy, mut state) = start(stress, 0.1);
             let mut frame = blank_frame();
             let mut steps = 0_u32;
+            let mut rising = 0_u32;
+            let mut outside = 0_u32;
             while step(&alloy, &mut state, &mut frame, load(stress), ceiling()).is_ok() {
-                assert!(!state.creep_rate_rising);
-                assert_eq!(frame.flags, 0);
+                assert_eq!(
+                    frame.flags & FLAG_OUTSIDE_MET_RANGE != 0,
+                    state.creep_extension_percent > 0.2
+                );
+                assert_eq!(frame.flags & !(FLAG_CREEP_RATE_RISING | FLAG_OUTSIDE_MET_RANGE), 0);
+                if state.creep_rate_rising {
+                    rising += 1;
+                }
+                if frame.flags & FLAG_OUTSIDE_MET_RANGE != 0 {
+                    outside += 1;
+                }
                 steps += 1;
             }
-            assert!(steps > 100);
+            assert!(state.creep_extension_percent > 4.99);
+            assert!(rising > 0 && outside > 0 && steps > outside, "{stress}");
         }
     }
 
@@ -1452,12 +1539,22 @@ mod tests {
         for other in [one_under(170.0), one_over(170.0), 140.0, 200.0, 230.0] {
             try_step(fresh, other, 10.0, StepReject::StressNotHeld);
         }
-        // An incoming extension below 0.1 percent: one spacing under it, zero, and less.
-        for below in [one_under(0.1), 0.099_999, 0.05, 1.0e-9, 0.0, -1.0e-9] {
+        // An incoming extension below zero.
+        for below in [-1.0e-300, -1.0e-9, -0.1] {
             for stress in [140.0, 170.0, 230.0] {
                 let mut state = CreepState::try_new(&alloy, stress, 0.15).unwrap();
                 state.creep_extension_percent = below;
-                try_step(state, stress, 10.0, StepReject::CreepExtensionBelowCard);
+                try_step(state, stress, 10.0, StepReject::CreepExtensionBelowZero);
+            }
+        }
+        // Under 0.1 percent, zero among them, a step lands with the flag set:
+        // through engine 0.9 each was refused as CreepExtensionBelowCard.
+        for below in [one_under(0.1), 0.05, 1.0e-9, 0.0] {
+            for stress in [140.0, 170.0, 230.0] {
+                let (alloy, mut state) = start(stress, below);
+                let mut frame = blank_frame();
+                assert_eq!(step(&alloy, &mut state, &mut frame, load(stress), 5.0), Ok(()), "{stress} {below}");
+                assert_eq!(frame.flags & FLAG_OUTSIDE_MET_RANGE, FLAG_OUTSIDE_MET_RANGE);
             }
         }
         // 0.1 percent itself lands, at each tested stress.
@@ -1466,11 +1563,10 @@ mod tests {
             let mut frame = blank_frame();
             assert_eq!(step(&alloy, &mut state, &mut frame, load(stress), 10.0), Ok(()));
         }
-        // An incoming extension above the limit for the stress.
+        // An incoming extension above 5 percent.
         for (stress, above) in [
-            (140.0, one_over(0.2)),
-            (140.0, 0.5),
-            (one_under(170.0), 0.200_001),
+            (140.0, one_over(5.0)),
+            (one_under(170.0), 5.000_001),
             (170.0, one_over(5.0)),
             (230.0, 5.000_001),
         ] {
@@ -1478,18 +1574,20 @@ mod tests {
             state.creep_extension_percent = above;
             try_step(state, stress, 10.0, StepReject::CreepExtensionOutsideCard);
         }
-        // A step that would pass the limit: 5 percent from 170 MPa, 0.2 percent below it.
-        let near = CreepState::try_new(&alloy, 230.0, 4.999).unwrap();
-        try_step(near, 230.0, 40.0, StepReject::CreepExtensionBeyondCard);
-        let near = CreepState::try_new(&alloy, 140.0, 0.199_999).unwrap();
-        try_step(near, 140.0, 40.0, StepReject::CreepExtensionBeyondCard);
-        let near = CreepState::try_new(&alloy, one_under(170.0), 0.199_999).unwrap();
-        try_step(near, one_under(170.0), 40.0, StepReject::CreepExtensionBeyondCard);
-        // The same extension at 170 MPa itself is far from its limit and lands.
-        let (alloy, mut state) = start(170.0, 0.199_999);
-        let mut frame = blank_frame();
-        assert_eq!(step(&alloy, &mut state, &mut frame, load(170.0), 40.0), Ok(()));
-        assert!(state.creep_extension_percent > 0.2);
+        // A step that would pass 5 percent, at every stress.
+        for stress in [140.0, one_under(170.0), 230.0] {
+            let near = CreepState::try_new(&alloy, stress, 4.999_99).unwrap();
+            try_step(near, stress, ceiling(), StepReject::CreepExtensionBeyondCard);
+        }
+        // Past 0.2 percent below 170 MPa a step lands, flagged; at 170 MPa
+        // itself it lands with no flag.
+        for (stress, flagged) in [(140.0, true), (one_under(170.0), true), (170.0, false)] {
+            let (alloy, mut state) = start(stress, 0.199_999);
+            let mut frame = blank_frame();
+            assert_eq!(step(&alloy, &mut state, &mut frame, load(stress), 40.0), Ok(()));
+            assert!(state.creep_extension_percent > 0.2);
+            assert_eq!(frame.flags & FLAG_OUTSIDE_MET_RANGE != 0, flagged, "{stress}");
+        }
         // A step too small to move the extension.
         let high = CreepState::try_new(&alloy, 170.0, 4.0).unwrap();
         try_step(high, 170.0, 1.0e-12, StepReject::StepTooSmallToResolve);
@@ -1498,7 +1596,7 @@ mod tests {
     #[test]
     fn nothing_is_pulled_back_at_the_edge_of_the_extension() {
         // The last landed sample of a run is under the limit and the refused step would have passed it.
-        for (stress, limit) in [(200.0, 5.0), (140.0, 0.2), (169.0, 0.2)] {
+        for (stress, limit) in [(200.0, 5.0), (140.0, 5.0), (169.0, 5.0)] {
             let run = run_to_refusal(stress, ceiling(), rk4);
             assert_eq!(run.end, StepReject::CreepExtensionBeyondCard);
             let alloy = CreepCmsx6::at_980_c();
@@ -1517,7 +1615,7 @@ mod tests {
     fn a_step_that_lands_exactly_on_the_limit_lands_and_one_spacing_past_it_does_not() {
         // The real validate and commit, with the landing extension chosen, and the
         // step the law takes to reach it, so the ledger balances.
-        for (stress, limit) in [(140.0, 0.2), (200.0, 5.0)] {
+        for (stress, limit) in [(140.0, 5.0), (200.0, 5.0)] {
             for (landing, lands) in [(one_under(limit), true), (limit, true), (one_over(limit), false)] {
                 let (alloy, mut state) = start(stress, 0.999 * limit);
                 let held = state;
@@ -1577,6 +1675,84 @@ mod tests {
         println!("largest residual of one honest step: {worst:e} at {worst_at:?}");
         assert!(worst <= RESIDUAL_CONSERVATION_LIMIT / 11.0, "{worst:e}");
         assert!(worst >= RESIDUAL_CONSERVATION_LIMIT / 13.0, "{worst:e}");
+    }
+
+    /// The wall at 0.1 percent lifted: from zero extension, the moment the
+    /// full load is applied, a run at 5 s reaches 5 percent at every stress
+    /// with the ledger closed, through the region where the law missed the
+    /// measured curves, flagged there. It reaches 0.1 percent at the hour the
+    /// starting clock gives. A step of the ceiling from zero leaves more than
+    /// the ledger's limit at 200 and 230 MPa and is refused by name, with the
+    /// state kept; at 140 and 170 MPa it lands. Explicit Euler from zero is
+    /// named.
+    #[test]
+    fn from_zero_extension_the_law_runs_to_five_percent_and_a_coarse_step_is_named() {
+        let alloy = CreepCmsx6::at_980_c();
+        for (stress, forecast) in FORECAST_H {
+            let (alloy, mut state) = start(stress, 0.0);
+            assert_eq!(state.t_s, 0.0);
+            let mut frame = blank_frame();
+            let mut worst = 0.0_f64;
+            let mut at_tenth_h = f64::NAN;
+            let mut steps = 0_u64;
+            let end = loop {
+                let before = state;
+                match step(&alloy, &mut state, &mut frame, load(stress), 5.0) {
+                    Ok(()) => {
+                        steps += 1;
+                        worst = worst.max(state.residual_conservation_error);
+                        assert_eq!(
+                            frame.flags & FLAG_OUTSIDE_MET_RANGE != 0,
+                            before.creep_extension_percent < 0.1
+                                || (stress < 170.0 && state.creep_extension_percent > 0.2)
+                        );
+                        if before.creep_extension_percent < 0.1 && state.creep_extension_percent >= 0.1 {
+                            let fraction = (0.1 - before.creep_extension_percent)
+                                / (state.creep_extension_percent - before.creep_extension_percent);
+                            at_tenth_h = (before.t_s + fraction * 5.0) / 3600.0;
+                        }
+                    }
+                    Err(end) => break end,
+                }
+            };
+            println!(
+                "{stress} MPa from zero at 5 s: {steps} steps, {end:?} at {:.4} percent, {:.3} h; 0.1 percent at {at_tenth_h:.4} h; worst residual {worst:e}",
+                state.creep_extension_percent,
+                state.t_s / 3600.0
+            );
+            assert_eq!(end, StepReject::CreepExtensionBeyondCard);
+            assert!(state.creep_extension_percent > 4.999);
+            assert!(worst < 0.1 * RESIDUAL_CONSERVATION_LIMIT, "{stress}: {worst:e}");
+            assert!((at_tenth_h - forecast[0]).abs() <= 1.0e-3 * forecast[0] + 6.0e-4, "{stress}");
+            assert!((state.t_s / 3600.0 - forecast[5]).abs() <= 1.0e-3 * forecast[5], "{stress}");
+        }
+        for (stress, lands) in [(140.0, true), (170.0, true), (200.0, false), (230.0, false)] {
+            let fresh = CreepState::try_new(&alloy, stress, 0.0).unwrap();
+            let mut state = fresh;
+            let mut frame = blank_frame();
+            let end = step(&alloy, &mut state, &mut frame, load(stress), ceiling());
+            if lands {
+                assert_eq!(end, Ok(()), "{stress}");
+            } else {
+                assert!(
+                    end == Err(StepReject::FirstLawBreach) || end == Err(StepReject::SpontaneousGeneration),
+                    "{stress}: {end:?}"
+                );
+                assert_eq!(state_bits(&state), state_bits(&fresh));
+                frame_untouched(&frame);
+            }
+        }
+        for stress in [140.0, 230.0] {
+            let fresh = CreepState::try_new(&alloy, stress, 0.0).unwrap();
+            let mut state = fresh;
+            let mut frame = blank_frame();
+            let end = step_with(&alloy, &mut state, &mut frame, 5.0, euler);
+            assert!(
+                end == Err(StepReject::FirstLawBreach) || end == Err(StepReject::SpontaneousGeneration),
+                "{stress}: {end:?}"
+            );
+            assert_eq!(state_bits(&state), state_bits(&fresh));
+        }
     }
 
     #[test]
@@ -1659,6 +1835,62 @@ mod tests {
             step_with(&alloy, &mut state, &mut frame, ceiling(), euler),
             Err(StepReject::SpontaneousGeneration)
         );
+    }
+
+    /// Rule 10 in the regions the card answers where the law missed the
+    /// measured curves: below 0.1 percent and past 0.2 percent below
+    /// 170 MPa. Euler, a wrong stage weight and an extension moved after the
+    /// step are each refused by the ledger, by name, and nothing moves; the
+    /// honest step from each state lands with FLAG_OUTSIDE_MET_RANGE.
+    #[test]
+    fn where_the_law_missed_a_wrong_step_and_a_moved_extension_are_named() {
+        let states = [
+            (140.0, 0.0, 5.0),
+            (140.0, 0.05, 20.0),
+            (230.0, 0.02, 5.0),
+            (140.0, 0.5, 40.0),
+            (140.0, 1.0, 40.0),
+            (140.0, 3.0, 40.0),
+            (155.0, 2.0, 40.0),
+            (169.9, 4.5, 40.0),
+        ];
+        for (stress, e, dt_s) in states {
+            for (name, method) in [
+                ("euler", euler as fn(&CreepCmsx6, f64, f64, f64) -> f64),
+                ("wrong stage weight", wrong_stage_weight),
+            ] {
+                let (alloy, mut state) = start(stress, e);
+                let held = state;
+                let mut frame = blank_frame();
+                let end = step_with(&alloy, &mut state, &mut frame, ceiling(), method);
+                assert!(
+                    end == Err(StepReject::SpontaneousGeneration) || end == Err(StepReject::FirstLawBreach),
+                    "{name} at {stress} MPa from {e} percent: {end:?}"
+                );
+                assert_eq!(state_bits(&state), state_bits(&held));
+                frame_untouched(&frame);
+            }
+            for (factor, expected) in [
+                (1.0 + 1.0e-4, StepReject::SpontaneousGeneration),
+                (1.0 - 1.0e-4, StepReject::FirstLawBreach),
+            ] {
+                let (alloy, mut state) = start(stress, e);
+                let held = state;
+                let mut frame = blank_frame();
+                let end = step_with(&alloy, &mut state, &mut frame, dt_s, |a, s, e, dt| {
+                    let honest = rk4(a, s, e, dt);
+                    e + (honest - e) * factor
+                });
+                assert_eq!(end, Err(expected), "{stress} MPa from {e} percent");
+                assert_eq!(state_bits(&state), state_bits(&held));
+                frame_untouched(&frame);
+            }
+            let (alloy, mut state) = start(stress, e);
+            let mut frame = blank_frame();
+            assert_eq!(step(&alloy, &mut state, &mut frame, load(stress), dt_s), Ok(()), "{stress} {e}");
+            assert_eq!(frame.flags & FLAG_OUTSIDE_MET_RANGE, FLAG_OUTSIDE_MET_RANGE, "{stress} {e}");
+            assert!(state.residual_conservation_error <= RESIDUAL_CONSERVATION_LIMIT);
+        }
     }
 
     #[test]
@@ -1749,4 +1981,5 @@ mod tests {
         }
         assert_eq!(ends[0], ends[1]);
     }
+
 }

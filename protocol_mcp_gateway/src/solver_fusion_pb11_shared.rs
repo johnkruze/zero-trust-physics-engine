@@ -14,7 +14,7 @@ use crate::solvers::{Output, Shape};
 pub const PASS_LINES_FIXED: &str = "2026-10-09T20:51:55Z, SHA-256 8bd91c5c1328f461a268ccca6dc0f31c61b11ab95051da1fe260fe5c2841db90 of validation_protocol.md";
 
 /// The second scoring of both solvers, and where its record is kept.
-pub const SECOND_SCORING: &str = "Second scoring of 2026-10-09, same machine, same verdicts: evidence/checks/second_party/V-26/.";
+pub const SECOND_SCORING: &str = "Second scoring of 2026-10-09, same machine, same verdicts: evidence/verification/second_party/V-26/.";
 
 /// How often the comparison runs were made.
 pub const RUN_TWICE: &str = "twice, both times after the pass lines were fixed: the second time after the results had been written into this description and the gateway rebuilt, and all 58 answers of the two solvers were identical";

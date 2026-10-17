@@ -1,0 +1,21 @@
+{
+ "model": "capsule_insight",
+ "verdict": "met in part",
+ "protocol": {
+  "path": "evidence/research/mars_entry_insight/analysis/prereg.json",
+  "sha256": "ddafbbe8299da589e95a674bb31150f869d0f85d21415036bdbedfc4d7fa0a54",
+  "committed": {
+   "crate": "protocol_mcp_gateway",
+   "commit": "8bfdb20db250b826c80f5b52ff05a6c16a96533c",
+   "utc": "2026-10-09T20:42:57Z",
+   "how": "The diff of 'Serve the capsule_insight card in the aerospace domain ...' adds the pass line 'Two sets, both fixed before the card was compared with any flight row (protocol SHA-256 ddafbbe8...fa0a54, Amendment 2 SHA-256 9bb5b953...137146)' with the result 'not yet compared with the held-back rows'."
+  }
+ },
+ "scored": {
+  "utc": "2026-10-09T20:47:00Z",
+  "evidence": "evidence/research/mars_entry_insight/analysis/out/sealed_rows_opened.json, opened_utc: 'rows of edl_complete.tab later than 150 s were first read at this time, by sealed_loader.py'; 14_score_the_engine_runs.log born the same second."
+ },
+ "forecast_first": "held",
+ "registered_by": "backfill from the record, 2026-10-15",
+ "notes": "Committed 4 min 3 s before the held-back rows were opened. prereg.json and prereg_amendment_2.json (9bb5b953..., which names amendment 1's hash 5d5100ff...) still have the committed hashes, so amendment 1 is fixed through amendment 2. Outside Git: analysis/prereg_hash.txt records prereg.json at 2026-10-09T06:05:14Z, amendment 1 at 06:09:17Z (a correction of the altitude datum after the first forecast run) and amendment 2 at 20:21:26Z. The second set of marks (amendment 2, new air and lift) was written the day after the forecast on the opened rows (up to 150 s), after a diagnosis on those rows and before any row after 150 s was read; the record says so. validation_protocol.md (53ae642a...) has no recorded hash. Commit times are the committer's clock. Second party: evidence/verification/second_party/V-23/. Public mark: GitHub-signed commit b5db66451a31538f3d868c7ed68270c471cd6a03 at 2026-10-13T17:54:21Z."
+}

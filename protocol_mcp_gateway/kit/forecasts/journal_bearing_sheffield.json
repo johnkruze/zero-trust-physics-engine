@@ -1,0 +1,21 @@
+{
+ "model": "journal_bearing_sheffield",
+ "verdict": "met",
+ "protocol": {
+  "path": "evidence/research/tribology_sheffield_journal_bearing/analysis/prereg.json",
+  "sha256": "5319a2f190dece027bd0f19cb339b9d950827a2e7dcde7241b251380a21de01a",
+  "committed": {
+   "crate": "protocol_mcp_gateway",
+   "commit": "223491d82cbad948d34370722af369bab58d734d",
+   "utc": "2026-10-09T20:29:49Z",
+   "how": "The diff of 'Serve journal_bearing_sheffield as the second solver ...' adds the validation record with pass_lines_fixed '2026-10-09T20:11:00Z, SHA-256 5319a2f1...e01a of analysis/prereg.json' and sealed_runs 'Sixteen runs held back by the protocol. Not yet scored.'; author and committer time are the same."
+  }
+ },
+ "scored": {
+  "utc": "2026-10-09T20:30:49Z",
+  "evidence": "Birth time of evidence/research/tribology_sheffield_journal_bearing/analysis/out/09_sealed.log (13:30:49 PDT), the sealed run on the sixteen held-back runs; the comparison script was frozen at 20:30:26Z 'before the sealed runs were opened' (analysis/09_engine_comparison_frozen_sha256.txt)."
+ },
+ "forecast_first": "held",
+ "registered_by": "backfill from the record, 2026-10-15",
+ "notes": "Committed 60 s before the sealed run; prereg.json on disk still has the committed hash. Outside Git: analysis/prereg_hash.txt at 2026-10-09T20:11:00Z ('before any measured film thickness was read'). The measured film thicknesses, held-back runs included, were in the spreadsheets downloaded into raw/ from 20:07:37Z, before the hash; the seal is procedural. The forecast outside the engine on the 34 opened runs ran at 20:12Z to 20:16Z. validation_protocol.md (1e9e662a...) has no recorded hash. Rescorings: analysis/out/09_sealed_v040, 09_sealed_v060; second party evidence/verification/second_party/V-22/. Commit times are the committer's clock. Public mark: GitHub-signed commit 24ab8127f70bb6fdfe2940e0f36fdc053f07de3a at 2026-10-13T17:55:39Z."
+}

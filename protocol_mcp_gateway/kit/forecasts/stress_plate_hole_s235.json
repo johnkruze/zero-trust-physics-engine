@@ -1,0 +1,27 @@
+{
+ "model": "stress_plate_hole_s235",
+ "verdict": "missed",
+ "protocol": {
+  "path": "evidence/research/stress_plate_s235/validation_protocol.md",
+  "sha256": "000657104b0a61e8c6f86935e73ac456315d3ec4fe94139f0bed258c62471880",
+  "committed": {
+   "crate": "genesis_solvers",
+   "commit": "27527480ad37dc67c8124ea1d67215f68cc14ade",
+   "utc": "2026-10-15T01:16:10Z",
+   "how": "The commit that adds the solver, 'stress_plate_hole_s235 ... settled before its held-back ring is opened', carries in its message 'Validation protocol fixed and fingerprinted first: evidence/research/stress_plate_s235/validation_protocol.md, SHA-256 00065710...471880'; it is the solver as scored."
+  }
+ },
+ "held_back": [
+  {
+   "path": "evidence/research/stress_plate_s235/raw/SHA256SUMS.txt",
+   "sha256": "29d96e90aaba77974d4bb6b9c2d9ef823411eac2759611e62805d47da841317d"
+  }
+ ],
+ "scored": {
+  "utc": "2026-10-15T01:16:19Z",
+  "evidence": "evidence/research/stress_plate_s235/RESULT.md: 'Scored once, 2026-10-15 01:16:19 UTC ... by analysis/03_score.py'; analysis/out/03_scored.json and 03_residuals_served.csv born then."
+ },
+ "forecast_first": "held",
+ "registered_by": "backfill from the record, 2026-10-15",
+ "notes": "Committed 9 s before the scoring; validation_protocol.md on disk still has the committed hash. FINGERPRINT.txt, 'taken before any held-back displacement was opened', gives the same time as the commit (01:16:10Z), names this commit as the solver scored, and fingerprints the protocol, the scripts, the held-back point positions and raw/SHA256SUMS.txt, which still matches (above). The commit message and FINGERPRINT.txt both say the solver's header is completed after the scoring with its numerics unchanged; analysis/at_fingerprint/ keeps the source as committed. The data were downloaded at 2026-10-15T00:26:14Z and the opened band used to fit E and nu; the held-back ring's displacements were the part not opened, except that the protocol says the builder had read in the scout's dossier a few local strain reads from inside the ring (1.3e-3 to 3.0e-3, 0.5 to 1 mm from the hole's edge), so the comparison is not blind there. Later commits carrying the hash: 9274677c1972225e71ae50aa556a37c18124b06e (solvers, 01:22:26Z) and protocol_mcp_gateway 01997ce206fc015a37328c2450d9a97d9f5afbe6 (01:38:49Z). Commit times are the committer's clock. No mark for it in the local copy of the public pass-marks repository (command-center/sales/github/pass-marks/, posted 2026-10-13)."
+}

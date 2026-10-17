@@ -1,4 +1,4 @@
-//! Converts a sealed dataset to Parquet, after its seal has been checked.
+//! Converts a sealed dataset to Parquet, after its seal has been verified.
 //!
 //! The sealing rules are the sealing crate's. This crate implements none.
 //! It calls `genesis_seal::dataset::check_dataset_stream`, which reads the
@@ -6,13 +6,13 @@
 //! a dataset that holds is
 //! converted.
 
-pub mod check;
+pub mod verify;
 pub mod convert;
 pub mod state;
 
 use std::path::Path;
 
-pub use check::{Checked, Failure, check};
+pub use verify::{Verified, Failure, verify};
 
 /// The exit codes, the same as the `genesis_seal` program gives.
 pub const HOLDS: u8 = 0;
@@ -23,7 +23,7 @@ pub const BYTES_DIFFER: u8 = 3;
 pub const USAGE: &str =
     "usage: genesis_seal_parquet <head file> <rows file> [frame file] <output directory>";
 
-/// Check the dataset, and convert it when it holds. The answer is the exit
+/// Verify the dataset, and convert it when it holds. The answer is the exit
 /// code. Text for the reader goes to standard output and standard error.
 pub fn run(arguments: &[&str]) -> u8 {
     let (head, rows, frames, out) = match arguments {
@@ -51,15 +51,15 @@ pub fn run(arguments: &[&str]) -> u8 {
             return REFUSED;
         }
     };
-    let checked = match check(&head_bytes, &rows_bytes, frames.map(Path::new)) {
-        Ok(checked) => checked,
+    let verified = match verify(&head_bytes, &rows_bytes, frames.map(Path::new)) {
+        Ok(verified) => verified,
         Err(failure) => {
             failure.print();
             return failure.code();
         }
     };
-    checked.print();
-    match convert::convert(&checked, &rows_bytes, frames.map(Path::new), Path::new(out)) {
+    verified.print();
+    match convert::convert(&verified, &rows_bytes, frames.map(Path::new), Path::new(out)) {
         Ok(written) => {
             println!("converted_rows: {}", written.rows_file);
             println!("converted_row_count: {}", written.row_records);

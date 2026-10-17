@@ -1,0 +1,2503 @@
+{
+ "model": "momentum_jwst_dihedral",
+ "protocol": {
+  "path": "evidence/research/momentum_jwst_srp/companion_dihedral/validation_protocol.md",
+  "sha256": "da7dfe4bcdc0649921aa48c0987d17f53dd2a99f8900295ff49412952dadb843",
+  "committed": null
+ },
+ "held_back": [
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST1_20230715T000000_20230716T000000.csv",
+   "sha256": "8ecd16d20890ffc381e9f13fe7ea3a4728dbfaa2e9b40d0b92bd1ce6c7bcf014"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST1_20230716T000000_20230717T000000.csv",
+   "sha256": "8a445819ebc9baaf30a4925ad9964194d26a5c2bafdda508ecfccceb3272f879"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST1_20230717T000000_20230718T000000.csv",
+   "sha256": "9c8645ca2c8a5e807313d65939bec05f39da5a0c5398dc4f2015dd9f146d194b"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST1_20230718T000000_20230719T000000.csv",
+   "sha256": "6c244414054e41149438393ca8331a14c1766fbc135710304e27b24db87e2ea6"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST1_20230719T000000_20230720T000000.csv",
+   "sha256": "b7e35ef74d46acc98ff1df5a04ae07d9dcaed7413f4c3b5bc9618e499e10af05"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST1_20230720T000000_20230721T000000.csv",
+   "sha256": "0c3ede5263c4c91d4c46e73e6f32c89194d3b2bdf059016b65e880b9c9d0c75e"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST1_20230721T000000_20230722T000000.csv",
+   "sha256": "7ed6a1045c2ea3568ec0e080836e5bec6dc056a6f096a1bf13bd7d071babfee1"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST1_20230722T000000_20230723T000000.csv",
+   "sha256": "aa499987e7696ac28a45b1b415c6f13310724adee19f7da34f51e274d4aa6dea"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST1_20230723T000000_20230724T000000.csv",
+   "sha256": "e9ebe4150c419b219972340a31580702ecfbb7ca5832a6738d18a2c6337e4391"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST1_20230724T000000_20230725T000000.csv",
+   "sha256": "79195a5d7b21e6dd683b4402ec28a36d108c57b1c22e5e703a9e5c787b4d7673"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST1_20230725T000000_20230726T000000.csv",
+   "sha256": "f972f1daccd8697615158921afb48c3b9c90df9d1ba7332745034412e15ddd56"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST1_20230726T000000_20230727T000000.csv",
+   "sha256": "abacae09c0bf958b7a54c70ceae3eaab0cac4e4f78664ff20d093a45d2857169"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST1_20230727T000000_20230728T000000.csv",
+   "sha256": "b3b62111f169365a8d2c2e3aa07446b865e3b225bc8bea305e6ac58ba7ce4eae"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST1_20230728T000000_20230729T000000.csv",
+   "sha256": "7a8a2fb16ebfd2085e15e538fbeb6d17ec2bdd2c6ccd410fb79e42ea886a0483"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST1_20230729T000000_20230730T000000.csv",
+   "sha256": "b239f923cff5a30a6eace3da8ca0cbc76de84514155823d9417e4758963d1df0"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST1_20230730T000000_20230731T000000.csv",
+   "sha256": "e1057efbf7a95ef0e05d98e0fef52573238b3ec64a54bb64fb8d5557aa501306"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST1_20230731T000000_20230801T000000.csv",
+   "sha256": "58119a34e0dc788fc4e41fd97abfcbc44e7a301125be2f4c47aa9b153b83c814"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST1_20230801T000000_20230802T000000.csv",
+   "sha256": "d76081e9bd02f671cd63252c6b633bbc04aff8cb463066a184654a7e742c0a48"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST1_20230802T000000_20230803T000000.csv",
+   "sha256": "7530174a0f1046263478d7d11a7dbb2f03acbe1c073677c6172fb1761569bd42"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST1_20230803T000000_20230804T000000.csv",
+   "sha256": "1b6423481962524e260dc6254902a165b2a2070ae53e2fdbf40c559e8c030d6c"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST1_20230804T000000_20230805T000000.csv",
+   "sha256": "e88f7d3458893b5ecbc83ca9b1d905685f4660a4472f1d1230f54808662724b9"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST1_20230805T000000_20230806T000000.csv",
+   "sha256": "ec22f3e63fd4715d8afa565de0e53ded222a168e1cbe52582f297ee9f515a90c"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST1_20230806T000000_20230807T000000.csv",
+   "sha256": "e46df3263646c76f87197f2b2394119f3f5d1f61aeaeff15aac0f87f996925f6"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST1_20230807T000000_20230808T000000.csv",
+   "sha256": "9b9c4588d17577e74bdd6517da8beda11b924126bd688f70098c9dc3c0bdabe1"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST1_20230808T000000_20230809T000000.csv",
+   "sha256": "c4a5b966882b24c8718684c0975a210ec1560c1a9c1a70aad3e2c010da1e4edd"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST1_20230809T000000_20230810T000000.csv",
+   "sha256": "1ac92ba209a86a37cb42f28cc9d0a52c30b3d03886a3649cc4255681a8498e51"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST1_20230810T000000_20230811T000000.csv",
+   "sha256": "efabcfc9da6801cbeee6cb5458015e8ab5b55fe96ff4acfa89563a838953962e"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST1_20230811T000000_20230812T000000.csv",
+   "sha256": "567c7cdf22c1fdad8af0e001dd4ebdf0303596a6d2694432b4625447f49af2bd"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST1_20230812T000000_20230813T000000.csv",
+   "sha256": "705435c54011245d805bbd487b8a252bed6e78a2a64390a5ee29dd9cdf91eecb"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST1_20230813T000000_20230814T000000.csv",
+   "sha256": "2630dcf78374cdc45e1a4e0ccc311085ac83ec9dfc1800ea93cc0ccb7b6197b6"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST1_20230814T000000_20230815T000000.csv",
+   "sha256": "62b18c7aeeb92eadf2189c8fcb9acdb446b46cdb4d315a352a32559e86eee2df"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST2_20230715T000000_20230716T000000.csv",
+   "sha256": "c346c98d686b3a19ee9c1c28d28f8094381e05668ccb6053b46a078b10391845"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST2_20230716T000000_20230717T000000.csv",
+   "sha256": "ba7cbfce57f586a04b9cd518ee3196da865c63aa4f1dcc654508eecdff83220d"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST2_20230717T000000_20230718T000000.csv",
+   "sha256": "46d402ddd403ce028e02f67b18616542165d0024a15c304cecc332c9b70f9c69"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST2_20230718T000000_20230719T000000.csv",
+   "sha256": "a7e7e43a81ecf7fa686ed02aa296061c0ea763c818dda87b5757fab329336f14"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST2_20230719T000000_20230720T000000.csv",
+   "sha256": "fce732d60c6db274ed12517fc228f90a0e8a47006441b6402f09aa9d3a585e7b"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST2_20230720T000000_20230721T000000.csv",
+   "sha256": "80427b276939183fb4417d079e2af2f82e90debd70e7ef7961c90505ef0f2852"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST2_20230721T000000_20230722T000000.csv",
+   "sha256": "02d6f361a0161088377e7c0b08c1125567bcbf750dbc109d4b1c996ced27cb5e"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST2_20230722T000000_20230723T000000.csv",
+   "sha256": "ec065c20be2970137c92f1ac30c5f20989d86c2395d569ecec5af5a7ffb15526"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST2_20230723T000000_20230724T000000.csv",
+   "sha256": "a072a75247e40259ecd34576fff342e28c7d827756dbefd7813f630e0ba2cbb7"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST2_20230724T000000_20230725T000000.csv",
+   "sha256": "c7efea5edaf95aad96bfcdeba63f84c8c7c3d58f29a99e3c35bb6cb57af5570f"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST2_20230725T000000_20230726T000000.csv",
+   "sha256": "8e7c8021bb043eaa5446dd4e43c9c299299403dede0caf277562c1c009a9f32d"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST2_20230726T000000_20230727T000000.csv",
+   "sha256": "7b641e4df43fd95961c1ef229077d08485322308c44101775671274ecb32e983"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST2_20230727T000000_20230728T000000.csv",
+   "sha256": "48cab8ff2b6161aded138c27a1e7ebaad23e79a6fa7aedb708105b02dfc8bb34"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST2_20230728T000000_20230729T000000.csv",
+   "sha256": "5f421c309b1cfe1833c617415d7189a4781b3271a29fb49dca1b2d21d34fb262"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST2_20230729T000000_20230730T000000.csv",
+   "sha256": "49f4a45bd326a4d4427b2344ab5ff1716b8d3d00428e56ab03b6303de44d88a5"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST2_20230730T000000_20230731T000000.csv",
+   "sha256": "3f7e57dda346bc8a66a0f32c2f905136eaa75ef7c91f6028d3b693cd736c8266"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST2_20230731T000000_20230801T000000.csv",
+   "sha256": "05ce32723ce03871845a1f042d96bf87bb67a7d0e7950fdc8ab64e0d0ecd7a20"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST2_20230801T000000_20230802T000000.csv",
+   "sha256": "1d45bf4be8bea625592e99d3659e10a73ae6964050dc51ff8d94f6bbad5101c1"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST2_20230802T000000_20230803T000000.csv",
+   "sha256": "c6ba9cad296d598cb54cd89ac0cd8f45fa9a405ec4faf67764b944f222a93492"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST2_20230803T000000_20230804T000000.csv",
+   "sha256": "4df042b444e79d5143d221156b130c6560fd0a5480c2126e954f589b9b2192a5"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST2_20230804T000000_20230805T000000.csv",
+   "sha256": "def2c93a2487067d997e6c606034febaf3c52f02f22b15d59197932fac6c42b4"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST2_20230805T000000_20230806T000000.csv",
+   "sha256": "a36b5b484edd3a6eac6d73c9e6b44ff13578768677d89cf74784c8d01988dd25"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST2_20230806T000000_20230807T000000.csv",
+   "sha256": "46983a12d09797155fc06bcd955b3fd14f216aefd529821caefdda73d4b5406b"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST2_20230807T000000_20230808T000000.csv",
+   "sha256": "ceb4d8a30ff0cb02326066b1dd7335773dd54c0d1f68d77f6aefdb86a1fe51de"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST2_20230808T000000_20230809T000000.csv",
+   "sha256": "92d8a4ecefe337a60b4deb1c71e3ed6e0ffce3eba8b826f6cc36af3eb6a4766f"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST2_20230809T000000_20230810T000000.csv",
+   "sha256": "40e8529ac2f05e79feecdaaef1bcb87e783adb81a95772b31191386627f8729d"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST2_20230810T000000_20230811T000000.csv",
+   "sha256": "4b7adc417448eedcc6c50496eb179d084d38828ad53c20335b0578f43a16bc20"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST2_20230811T000000_20230812T000000.csv",
+   "sha256": "e3569e3600013ee279d2fae572f2f2625a5860ac7de7742c40f5c73cca3a864e"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST2_20230812T000000_20230813T000000.csv",
+   "sha256": "3d569624c6cfe3d712a1968d08f98d57b2e442fd98115c6f5afd05ef4f91b390"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST2_20230813T000000_20230814T000000.csv",
+   "sha256": "8efb341826a9d50f4e69c9220401d5a6a85584ccf8e5f24dbe6d9a841754f52c"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST2_20230814T000000_20230815T000000.csv",
+   "sha256": "f28646aadba989e4dc69df40970df16302090dd36381696fca8a0da2ff485ab8"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST3_20230715T000000_20230716T000000.csv",
+   "sha256": "485e4b5279696f64986ad5e28a0f332c6a93e497447b5482276fb65a608cf3c6"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST3_20230716T000000_20230717T000000.csv",
+   "sha256": "e1789e0a97afdca172d8f0e39b9c7ad43b1b79b341249bbd741535e6484be131"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST3_20230717T000000_20230718T000000.csv",
+   "sha256": "74cf615b52beacbd13f85b5a58cc47a55695d2d5b430e0203ce763ae90bd3285"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST3_20230718T000000_20230719T000000.csv",
+   "sha256": "e05d0b9983505821750b560096153871b6c2d0441235237cbcca4191020f6fc3"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST3_20230719T000000_20230720T000000.csv",
+   "sha256": "7efb56dabb43f622777345a480db14ae52b23b33596468b0f0cece94d09a47a2"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST3_20230720T000000_20230721T000000.csv",
+   "sha256": "92f3869a6f554a1fa5089d97aab25528fdb9351089aa2119800418a025e69d4d"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST3_20230721T000000_20230722T000000.csv",
+   "sha256": "ecbf74452f24f97f198e46f394422029610d199bfb68c6c679e7b71684563d13"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST3_20230722T000000_20230723T000000.csv",
+   "sha256": "9d6388ddd5ae5c2a0359ba2700e7693f4d8d43e4d9cde4071d9d1426ed85a840"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST3_20230723T000000_20230724T000000.csv",
+   "sha256": "bb53b15f01e1f4e45596a9e16b5fb2696ebbfd5b17cba0da78e5fc932c528c4e"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST3_20230724T000000_20230725T000000.csv",
+   "sha256": "42e3c4be7535d3f1635cb295427deb3005d8349cf9cf50ece8bf44d197f44ace"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST3_20230725T000000_20230726T000000.csv",
+   "sha256": "865e4f2a05b38e5ff2a405944bf52c9af33314afa3acf310a63b99a5be1abe57"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST3_20230726T000000_20230727T000000.csv",
+   "sha256": "7f29d880e596bfcc22a8de14ab55bf582adaa9b151920494c1aebd8171ae236e"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST3_20230727T000000_20230728T000000.csv",
+   "sha256": "80da2e33805175db10cc263e7368f4201b283bfee8e789c9eaaf36b0286e6d1e"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST3_20230728T000000_20230729T000000.csv",
+   "sha256": "f8da7b7df6f09fbb6c337cd9364f2ec925b5abc0349d6c63b65a1b676ee246f5"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST3_20230729T000000_20230730T000000.csv",
+   "sha256": "35d34a12ec74044e455e76999fa906e8cc2dc2f1a18b64f175c4b3184601ed7f"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST3_20230730T000000_20230731T000000.csv",
+   "sha256": "d4e06437b20f38e9efcfc02271a53e12dffbf72ef02db0f061b3382fc15b85f0"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST3_20230731T000000_20230801T000000.csv",
+   "sha256": "0a615ce86b79faf2824c730dddb0f26ced69e66260d72c79e6a53de4108ddf79"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST3_20230801T000000_20230802T000000.csv",
+   "sha256": "d844f79d1fc09526a8ee0b353765cf38a86be21b2c3b7a3bb748a522bf299101"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST3_20230802T000000_20230803T000000.csv",
+   "sha256": "5a019dab867b33e7f76d84a2933afaeea8866dd33f269c3513599f7a3e370657"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST3_20230803T000000_20230804T000000.csv",
+   "sha256": "8c5da2e508ae95f875b211308a1f18c4c9370cb8128051cb71426f3a58ffc964"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST3_20230804T000000_20230805T000000.csv",
+   "sha256": "5d7f3b81488adec0e126aedf7277c08248d651157825a2b7413321b22196de69"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST3_20230805T000000_20230806T000000.csv",
+   "sha256": "3a6a428ebdc793e5fb63a7c3abe221adcae057cf41b5ff71a4df26e559629cad"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST3_20230806T000000_20230807T000000.csv",
+   "sha256": "b508e34aae2d8a18d9e9d26f71303ae2562720980128401592d03d75e0d9e0c3"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST3_20230807T000000_20230808T000000.csv",
+   "sha256": "4bd06ad3fe5b72995af91106994a182dd5a23baea8b85bce6d858e4704d755af"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST3_20230808T000000_20230809T000000.csv",
+   "sha256": "f622399cb844d3b7a99158f795c00123e3e3bd8241368c477453b945c33fcd0a"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST3_20230809T000000_20230810T000000.csv",
+   "sha256": "717c5d1d92eb73cee1027e02636fd145b4388581aeb4b7fd56ce26797e36082c"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST3_20230810T000000_20230811T000000.csv",
+   "sha256": "7dbb3acb5459b6ed2818b8a5a8eb4a387341e9c29b046b41f665d52b3ea51cbf"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST3_20230811T000000_20230812T000000.csv",
+   "sha256": "334d134014e9d37a3bf5336d9bf843bea743336e32f8df543e5461fd0844fca7"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST3_20230812T000000_20230813T000000.csv",
+   "sha256": "7219d14e88fafbfd7c2e07c94573cddeaf9eaa9394974c70c0a4d8a607364b90"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST3_20230813T000000_20230814T000000.csv",
+   "sha256": "266a95c4068782d549c52fd60c61b7a567705a2cddf2e91d0187e47d24e61041"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST3_20230814T000000_20230815T000000.csv",
+   "sha256": "27442f344c60f04af2b1b54c2e8c7b15ed27c19c5d87639cf7d81e1e1c6f6a9d"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST4_20230715T000000_20230716T000000.csv",
+   "sha256": "c78ec0bae631151ad4f31cc01c43ca84363f59f99ef77d3bed9841f523660cd9"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST4_20230716T000000_20230717T000000.csv",
+   "sha256": "e8551f9d750f4fdbf800be47d631e88eea4e62f5d2285a4120d579e918b38aa0"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST4_20230717T000000_20230718T000000.csv",
+   "sha256": "5632b40012defdaff69cfb6b7228fb36f6c61923d17d0f072b840e378ad79056"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST4_20230718T000000_20230719T000000.csv",
+   "sha256": "ffacfe82558453d19bd6974d5a4222e5f37bc459d7d80353159f1e9250a0148a"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST4_20230719T000000_20230720T000000.csv",
+   "sha256": "a735ee52ed82ec2ca3003c0769ba9249b65242db5839b790cf5d57e4826e888d"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST4_20230720T000000_20230721T000000.csv",
+   "sha256": "effb894c2e7b51a426ed992a25c398bbe5085ace6ecd1a000d9e1ef96f4395fe"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST4_20230721T000000_20230722T000000.csv",
+   "sha256": "2336de86a86dd1a245d3614c873881d77dfc1d592e21a5d931f4541730b14294"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST4_20230722T000000_20230723T000000.csv",
+   "sha256": "3ebd4ced07bfed52e81bcb021f4267a7e12ced409a9d5a2af5bd82c01117a1e8"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST4_20230723T000000_20230724T000000.csv",
+   "sha256": "a1320a0768cfb95d4fb0f3e143997991a1da819d622d02730dc373350eeaf8c0"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST4_20230724T000000_20230725T000000.csv",
+   "sha256": "ee2a23c7db73bdae61127ed46f4f00c72fb37ab2670d09e9b46e733c86f2900b"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST4_20230725T000000_20230726T000000.csv",
+   "sha256": "1a1a5c6f1bbd51ade0ffa5f089e6e83936a062fdecffe3d7a7336631f02c63de"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST4_20230726T000000_20230727T000000.csv",
+   "sha256": "8420ec6fb4397006b9bf79121c41b9dab3273a3a3c4be33e6b3c2db403abb552"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST4_20230727T000000_20230728T000000.csv",
+   "sha256": "17792f227842a4c4c805ffd174c5b4a7b6e7f410c2c34fbb1bfebc777e934abc"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST4_20230728T000000_20230729T000000.csv",
+   "sha256": "c282268e1e12f41fa2f5723df53f64c577710afac43e724870c2f37c47eec741"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST4_20230729T000000_20230730T000000.csv",
+   "sha256": "aeba3a9182528c20ba7a30ace38318c4e5277b54e9c21931bcfa03dc6132ea33"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST4_20230730T000000_20230731T000000.csv",
+   "sha256": "41d896d8a47ef2a98a315eaee1a2e913fbd4a12959d92c3d044e8cfe44f166f3"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST4_20230731T000000_20230801T000000.csv",
+   "sha256": "bbc23cde4f2e8265ca4fb83191dc6cecb8262177c0e3cfcc7de6b5a12a42f32f"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST4_20230801T000000_20230802T000000.csv",
+   "sha256": "43924832e02b045f37b48c0dbdb15f758d3ed912f72c4b798c3e4d4b82514177"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST4_20230802T000000_20230803T000000.csv",
+   "sha256": "2693e08a4f5e2a928360294b89d59fafaba5f332f24dad6f91f0fba26c49b845"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST4_20230803T000000_20230804T000000.csv",
+   "sha256": "56b638b49c387013bd3e042407d7c72461131035eb4ba4bb7df29cc13e88daf1"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST4_20230804T000000_20230805T000000.csv",
+   "sha256": "f934758cbf87a3b9255308b0a59f7c3f6d3ef36eb82d1761c33d003827f8b67f"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST4_20230805T000000_20230806T000000.csv",
+   "sha256": "30a6f30926769dfa605c3f9914e97487e77fa28a8866830cc99f52d8b6a96326"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST4_20230806T000000_20230807T000000.csv",
+   "sha256": "f9ac45b995babde706d9d6f0ecaf85abf470831f5d7c9af00b67dd22698064ef"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST4_20230807T000000_20230808T000000.csv",
+   "sha256": "e9a6ade937f661d7dd230465dd0efd6e647e26249fc1e8b8617ff9485c4e97d0"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST4_20230808T000000_20230809T000000.csv",
+   "sha256": "096d6e04c37db9f7d5d86ea8d74aa2192418ee00ad1446aa8696c4eb1433b587"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST4_20230809T000000_20230810T000000.csv",
+   "sha256": "faf6abe96408e2f5065b069a87dd5ab6bc18a646ff53903192969166bbcebc7c"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST4_20230810T000000_20230811T000000.csv",
+   "sha256": "00f118cc6fe9ca6776c3df11a7f25b0aa753dd778e02ccdc480b8b4d53e38de6"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST4_20230811T000000_20230812T000000.csv",
+   "sha256": "00d00d96cec8c073e668d7f5c353cee56be58072e411f1f46321151bd2cd5e39"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST4_20230812T000000_20230813T000000.csv",
+   "sha256": "c713666c84fff322b0ccda709125376235cb9d0efa54f6d086d8a077cb45e3d4"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST4_20230813T000000_20230814T000000.csv",
+   "sha256": "2f1b18dd9fdc40d8699b61d79686a548f829447267f93cb02b43b8d26d66a90e"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST4_20230814T000000_20230815T000000.csv",
+   "sha256": "ccb6c33ac47e37178e49a715990e0410a0278869cc6f795652f5ccc56d590486"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIX_20230715T000000_20230716T000000.csv",
+   "sha256": "536baef6ed7d1bd0fc782b5c843c9477ef220b959468380fbf10be0ccff852ff"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIX_20230716T000000_20230717T000000.csv",
+   "sha256": "b4ac494e9b9a6c2c04a792f2c1776324c288546943aa11aafb2e0f2dce9460cb"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIX_20230717T000000_20230718T000000.csv",
+   "sha256": "55ee8cea13329969160eb1d955dc119fa4cc81186074b06dc0bf3c59e9af0449"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIX_20230718T000000_20230719T000000.csv",
+   "sha256": "38d95fe8521592fc1f3c813e40e0ee018f6b73e704953497ff43da1476654709"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIX_20230719T000000_20230720T000000.csv",
+   "sha256": "bd55c3fa635ab4a829e9fb3bd14a85f4600e61af3a3bfade4b1d9079e311dbad"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIX_20230720T000000_20230721T000000.csv",
+   "sha256": "d7f0559f913a622e1fbcefa0fe2d125aa94ff6cf540fdc9a98abd5f5c3b1cdf3"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIX_20230721T000000_20230722T000000.csv",
+   "sha256": "ff0d6bb599559c4dc5a06236701ad7bc9d8c9fc2a8150438b8f61ded83720736"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIX_20230722T000000_20230723T000000.csv",
+   "sha256": "501b2e421982113e59aaa56b684e413b803869911f76515cefbf04c64c0b159b"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIX_20230723T000000_20230724T000000.csv",
+   "sha256": "74aa69cf1c3643c549c27fb8dcda48b9eaeb054decd25468d514d0edd99132cd"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIX_20230724T000000_20230725T000000.csv",
+   "sha256": "688fae9a6932139241f2d2e1677a8d2e6a59d3bdd005a63fb2e96469516e3522"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIX_20230725T000000_20230726T000000.csv",
+   "sha256": "28ac42d54572e9734a894c1e34f4de068aaec208dd952648b36abd55de36d165"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIX_20230726T000000_20230727T000000.csv",
+   "sha256": "d8ae6f47453700c96843e3f3cc6ab8913743892e4b036042ac45b54dd9d15b98"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIX_20230727T000000_20230728T000000.csv",
+   "sha256": "1bd2bd5e1fca45cbdf114136594287496290488cf095557629f12c1f4879e319"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIX_20230728T000000_20230729T000000.csv",
+   "sha256": "321371b2a12087c93a9cfb80beff2b481a71e2021dd39e24f5d339457161b373"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIX_20230729T000000_20230730T000000.csv",
+   "sha256": "09a9ea63c620e1bbe4908bc4dcbe9befa4c36b70b0d3061c1c92898342c91a59"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIX_20230730T000000_20230731T000000.csv",
+   "sha256": "e6df8e75e4bb0872f6ec05e93e3fbe46de0a011c133b119cdce68e904927067b"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIX_20230731T000000_20230801T000000.csv",
+   "sha256": "7044018ba318a0528757c7347723bd8d9f71c38c9407215155292e4a8d1f4f5d"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIX_20230801T000000_20230802T000000.csv",
+   "sha256": "752a9c178d7ade591313c786aa0b6987e6d72a7c6fb82c0690ecec10187d5365"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIX_20230802T000000_20230803T000000.csv",
+   "sha256": "4be7a837d5cce1952f95f7a12e8e33c62918da4cfddf3298532f7ffa69fed3bb"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIX_20230803T000000_20230804T000000.csv",
+   "sha256": "77dddbbe1b7ef1939c470fc863622da20afc9886b8c844ebecdda02e06be64a3"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIX_20230804T000000_20230805T000000.csv",
+   "sha256": "0acf6bd8a2d01a047790cda152a824965908da8e11cf3d0e856379d9e109446d"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIX_20230805T000000_20230806T000000.csv",
+   "sha256": "817adf8ea3d2c626cb2b7be56251f24e82768c175ba79a3cf6405414378ebeb9"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIX_20230806T000000_20230807T000000.csv",
+   "sha256": "7ca5f67f72530f0f1c0048f6d2280557243e784dfb2387db774a254dad5f6cc4"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIX_20230807T000000_20230808T000000.csv",
+   "sha256": "9f80f88247a29f729169951dc8a064ee1e24cca9cf3139168fb47a437662820b"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIX_20230808T000000_20230809T000000.csv",
+   "sha256": "b5665edceee9cb1f7a62cdf6ea8ecd3dd2df8e98e68e31844226ad0f3992c326"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIX_20230809T000000_20230810T000000.csv",
+   "sha256": "eac7558c2505cdbe64fb138ef5d21690d4bd86666ed4dc705d2ea72b05f19389"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIX_20230810T000000_20230811T000000.csv",
+   "sha256": "9e2e7b7db944e1ad5b78b9823dbcecf602038dde92c07b792f25fe9142248cc5"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIX_20230811T000000_20230812T000000.csv",
+   "sha256": "25ad6cbac9196bda3d63d441e497d9c10e66873819b07f361cbc63deab454cf7"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIX_20230812T000000_20230813T000000.csv",
+   "sha256": "400d0df016639ed080ef2889098704b096266fec0589df8269ced45cc40e0b4b"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIX_20230813T000000_20230814T000000.csv",
+   "sha256": "8738fda56f4d2b98fef57d631c8b444d618ed66fa634ca2a1b08b62dcd0f883a"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIX_20230814T000000_20230815T000000.csv",
+   "sha256": "f90f59c50122317ce7db396072d88f2fb6ad4d1308463294b9b05f852383777c"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIY_20230715T000000_20230716T000000.csv",
+   "sha256": "da6958df7640a0c6e995ba2b001c628a5358fc9197fbf9a7c00f178055177e44"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIY_20230716T000000_20230717T000000.csv",
+   "sha256": "eb5847ea7ecf89beb12a1b4c55617ca83ad01bc051b91f6b2d9c88d80c1ab99d"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIY_20230717T000000_20230718T000000.csv",
+   "sha256": "89d99af881beedb005377fad974846e33dc0634364e6ff7abc772e07e6e29d87"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIY_20230718T000000_20230719T000000.csv",
+   "sha256": "54ac7ad6bd14f8c1b253d2aa4254bf57d1d4f45de47609f709c9b3c21ca25be0"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIY_20230719T000000_20230720T000000.csv",
+   "sha256": "7eee9932808472219e36add3b06dc99b3b0cbcc1073ab42158f0314685afc0bf"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIY_20230720T000000_20230721T000000.csv",
+   "sha256": "d952c72bd46efd8c8d31ba61a63339899d58e1a9a0e2065a30f4af0ccb41f904"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIY_20230721T000000_20230722T000000.csv",
+   "sha256": "86aa679f3749a1edb0ca40c8dfd9cb7fc526f61dfb84ad85bc8a3662e17d37cc"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIY_20230722T000000_20230723T000000.csv",
+   "sha256": "d20e5b8ed892e76c3fc0206b763fe933b6f951be79c887b0e97d7f941a328a69"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIY_20230723T000000_20230724T000000.csv",
+   "sha256": "bd070244e1aad2c74e603ff40deb62c04ade7515a58043ad90c215738f970708"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIY_20230724T000000_20230725T000000.csv",
+   "sha256": "bee769f74b29fe4b8ed09dfa84ad6a2a7aa2b925c3e364ddd46e99df0e00eb30"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIY_20230725T000000_20230726T000000.csv",
+   "sha256": "8b7b145a20e5fe50dffbb3a6a95aed45a62e09a581f332101b4f2834c07af70d"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIY_20230726T000000_20230727T000000.csv",
+   "sha256": "231eb19f578b0b70489892f51e4fae86bb199f6d3886ea7640136517ec672479"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIY_20230727T000000_20230728T000000.csv",
+   "sha256": "abe766e60b68f1ee67ac3a8f219a9b5fa336bfdcc3eeabf5cd5b9d603ef17e19"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIY_20230728T000000_20230729T000000.csv",
+   "sha256": "86e8ddcba63410a32f8b3d3250600bc764658d2cb43ddcedbc92dd29080fdd92"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIY_20230729T000000_20230730T000000.csv",
+   "sha256": "d90e317ac73af18c4bf8a2a0550aaaa57db95d9033b1cb0417ce3e90e2a22c53"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIY_20230730T000000_20230731T000000.csv",
+   "sha256": "c78e0aa594e3b67156759d5ca2a34f9669b8d25efe5d8e9e75f19bb184c5719f"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIY_20230731T000000_20230801T000000.csv",
+   "sha256": "8a9962dbea497c55a20b380876604da03661d92f57f1831a6a0901edd74392c9"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIY_20230801T000000_20230802T000000.csv",
+   "sha256": "632c01203f1db0ebc14efac611c1f3eb2b3fe0b0aad6e1bffd77a98c5576ccb6"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIY_20230802T000000_20230803T000000.csv",
+   "sha256": "9b6f76c973b4a17f375ff48f1e301714f1ac01f766d1c07e6d19647161ef16f7"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIY_20230803T000000_20230804T000000.csv",
+   "sha256": "a1467f4baa31e77999169e8b32461f3edfb93a4e6ce95c9c7621ff1df4157610"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIY_20230804T000000_20230805T000000.csv",
+   "sha256": "836b0511f387557ceba06bad9e939b780703b42b7e26473d7b4e829099d7eba0"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIY_20230805T000000_20230806T000000.csv",
+   "sha256": "dd31d3d11e103c3b44534cf30556b214e9eba76a81c6e84f2794fd700a76a549"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIY_20230806T000000_20230807T000000.csv",
+   "sha256": "c46deef4c182c6c635992945049d492c3cd1552a9a4c7048a34bda001372ab91"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIY_20230807T000000_20230808T000000.csv",
+   "sha256": "eacedbc5a6dd72602710a2464360a4696a4ea64022cbc72d8c3ae21e7db9eba8"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIY_20230808T000000_20230809T000000.csv",
+   "sha256": "25afbb68af8a9c3bd74f69fc6e7175e14f19d2400eb73317a035550660590505"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIY_20230809T000000_20230810T000000.csv",
+   "sha256": "7c5176bb8570089d0e142fcf271085501f3d3e0ff59f5acccfdaa6c0422f7166"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIY_20230810T000000_20230811T000000.csv",
+   "sha256": "94695ac2614c333e7cbd7e83e6ab5c97e2a65c35e64196b738bcc69e9b844cc0"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIY_20230811T000000_20230812T000000.csv",
+   "sha256": "7fc352e5640f0d6392520ad0f9ef52922c885d8b7de37d0a5954f675a486dfa0"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIY_20230812T000000_20230813T000000.csv",
+   "sha256": "cb021b98a1fdd376bba24463f8f8839645734fb038a187d8bb17d086b1cb79bd"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIY_20230813T000000_20230814T000000.csv",
+   "sha256": "c9d319a98bf5cded1de8fcb51a707df174209591927b4ab3749a9cc5df05291c"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIY_20230814T000000_20230815T000000.csv",
+   "sha256": "df0522cbb364b26dba5c3ebbf2b3903b12ac95fbb44b81c28d1c87379c6a67f9"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIZ_20230715T000000_20230716T000000.csv",
+   "sha256": "78ba89574de8c7eb94b73f558fff8613231c6dfcf63ae9b0b6b1bec4ac10ee33"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIZ_20230716T000000_20230717T000000.csv",
+   "sha256": "2cc628f127cbe4d9a82f083d2c432e91c65e22b791f78a54dabb99ce2fce808b"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIZ_20230717T000000_20230718T000000.csv",
+   "sha256": "35ceaaf895fae1b8ce0387df9f616586eaa21e37286ccc1fffc004ba67680031"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIZ_20230718T000000_20230719T000000.csv",
+   "sha256": "b6605beda3bd273a1f848a2edfe0c195ac204d6771cd3c627de9cf5360476155"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIZ_20230719T000000_20230720T000000.csv",
+   "sha256": "a2ce6070a59b79ba9f2dafce799ba3b0c9405486f4cab999dcbfb1f1398eaaa3"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIZ_20230720T000000_20230721T000000.csv",
+   "sha256": "6c6febfc31b7bd59b840081213e0d37f95afffab22513cf82f90c5650e755aa9"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIZ_20230721T000000_20230722T000000.csv",
+   "sha256": "2bbc104d321d2562d00c2af62e1e4aa4631d339b5a0eaee2afebeb594c0ba5bd"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIZ_20230722T000000_20230723T000000.csv",
+   "sha256": "f9ffcf417fe1858412e6ed7185c4407b6bfb379bbeee874b32b47fdce8d66205"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIZ_20230723T000000_20230724T000000.csv",
+   "sha256": "5822401c3314f70d4b4850ad2ef3940a4300667409204f9a7cab1882c5c42198"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIZ_20230724T000000_20230725T000000.csv",
+   "sha256": "018e9b1f01307fbfa33786e570bac710fcbd908b754c67b9c20e82e49602783d"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIZ_20230725T000000_20230726T000000.csv",
+   "sha256": "f1ccf37ec144c57bcabcee8da4eae83d1e5bf91afd979e6ac89d2ce64334d00e"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIZ_20230726T000000_20230727T000000.csv",
+   "sha256": "ae0759d5cd41510027c0d404eabf92b056157b9c7c69f562d7f603dae5d47b62"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIZ_20230727T000000_20230728T000000.csv",
+   "sha256": "7a72d9726f43fa489b2da71fa4d15928d0257be937e77136f18bb05d3f670137"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIZ_20230728T000000_20230729T000000.csv",
+   "sha256": "1192f80609bbbb2b1c378b8b245237fa7cca794b0c7671cc1c3d0e6be6534cb4"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIZ_20230729T000000_20230730T000000.csv",
+   "sha256": "180df67a68da6b3da49ff85b60881834cceb6669472285814586f36490bb7a60"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIZ_20230730T000000_20230731T000000.csv",
+   "sha256": "aaab3592423120f60fc4fe42162c96519f10cc2caa12f08e6f498f3910775af4"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIZ_20230731T000000_20230801T000000.csv",
+   "sha256": "b1b1593aeb8331efe4fe4392a0eb8a506c3c02febb9a03c8ce48f045ec71a874"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIZ_20230801T000000_20230802T000000.csv",
+   "sha256": "5a71d48d1bf74f4030cda231e22615c6575cbd10f3a559465a3c478a33815ae6"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIZ_20230802T000000_20230803T000000.csv",
+   "sha256": "31b4414058a73749af88ff0153dc692cc67a0814532705123fd42318c7fc854f"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIZ_20230803T000000_20230804T000000.csv",
+   "sha256": "15fe4590ec180e8da4f06739bea97b9130e7a56300a3d7dd86e87c8facaf6152"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIZ_20230804T000000_20230805T000000.csv",
+   "sha256": "307ad1a8b03b7758599a2ef247e4fa5165fd6d01ade240342365ca41ed59626d"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIZ_20230805T000000_20230806T000000.csv",
+   "sha256": "15562781dad5e9f9312605ad9536e1abb0d85c9c92144ac5cbaa0a58ec731db2"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIZ_20230806T000000_20230807T000000.csv",
+   "sha256": "42e9c4f6ed07ee052fdb690eff5177eb01b405495212b6df6566f3ea1c4e27b8"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIZ_20230807T000000_20230808T000000.csv",
+   "sha256": "f65f281f0a33a8dbe8cea47d9c4ebc809d924e1fccf186bb0c1dd2671d0d40f2"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIZ_20230808T000000_20230809T000000.csv",
+   "sha256": "4b3afb261c33032b8c96ad59b8557f3f3f3790099b2832c551452f589734c3df"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIZ_20230809T000000_20230810T000000.csv",
+   "sha256": "8557fd2f052a75baf5bd5f89b7190595c32b1a3417515fea19d3a13164353f5f"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIZ_20230810T000000_20230811T000000.csv",
+   "sha256": "18bf5bab41b1885ef721d74fe510235e51636bc788c704e963cd27b359dc8057"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIZ_20230811T000000_20230812T000000.csv",
+   "sha256": "3d87e73e4896bcf63d4326846ddf4393cbeabcec60a2910f4d80001bcbd4770f"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIZ_20230812T000000_20230813T000000.csv",
+   "sha256": "cc4d8869fa3fdaacd72479808ad17dfe14171b8a0d79cf9f0b41b0a11fa591f1"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIZ_20230813T000000_20230814T000000.csv",
+   "sha256": "33e86ce06d1ec26877139b000cb63b82b5590f4e9b6ac20752e6d74c9ec463cc"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIZ_20230814T000000_20230815T000000.csv",
+   "sha256": "0babed99964cc319736d6be19519330991e1bbd2eca3c6f3113e40e437da7130"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMMAG_20230715T000000_20230716T000000.csv",
+   "sha256": "dadc83d570cd6fea02835f8237b88baf759a54063bd46ef1791977f90f745846"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMMAG_20230716T000000_20230717T000000.csv",
+   "sha256": "b0c55a0b44850057771bdc0c6a3b2b46b5225dc707b6db87b1b50dcd7bd84481"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMMAG_20230717T000000_20230718T000000.csv",
+   "sha256": "b7ad45dfcc62d9e382cda0c2845720fedc8f03a5700b537c148bd13d0f60848f"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMMAG_20230718T000000_20230719T000000.csv",
+   "sha256": "e275402af1fde7d151616d04c53325abcb3b2ff84d10b9193cfd16983eabd42f"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMMAG_20230719T000000_20230720T000000.csv",
+   "sha256": "b31ced4dc29904fd29d7aeb058ed753f82e30ee3581d4b99d0ace852cb5b4aa9"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMMAG_20230720T000000_20230721T000000.csv",
+   "sha256": "e00a4e87f43f144c861c86b891c8cd68b5bab495d1acedee591cebc565aa0083"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMMAG_20230721T000000_20230722T000000.csv",
+   "sha256": "d4671fda5e0f005a5e6d0a808e6568882394b0834b51f5f4e82ccdcfee2b0878"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMMAG_20230722T000000_20230723T000000.csv",
+   "sha256": "9246ba683d6a3cc7b09d2b9c420b1493f61c216bab61e7239bf9911bc16765c5"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMMAG_20230723T000000_20230724T000000.csv",
+   "sha256": "f61ad64eabc2d6f3a80605b7faae046917ed1f95bd0e99e0dbb27c1bb3d3f746"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMMAG_20230724T000000_20230725T000000.csv",
+   "sha256": "7deb8b19c636fc2784f37ef98bbf93495e051cc1d637cb80e2e28a5d5896d49d"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMMAG_20230725T000000_20230726T000000.csv",
+   "sha256": "22833594a7248cba00b587d084cb695a1c5f8b533a417307b9821d9a657847ee"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMMAG_20230726T000000_20230727T000000.csv",
+   "sha256": "7d272f4d0cd3f9ccb78c078a9fc672f51db1580c076e2ba6c442ceb46c7c273a"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMMAG_20230727T000000_20230728T000000.csv",
+   "sha256": "79671e6d0345ac2f1dd9306dffdc12b268d622cc605c7c2321b94e0532159bcc"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMMAG_20230728T000000_20230729T000000.csv",
+   "sha256": "13755a2b537564fd7227ff465cb70e4e00867d097e5d6574b8d7852998e62764"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMMAG_20230729T000000_20230730T000000.csv",
+   "sha256": "b2fde02951af35a94d7615d636d1e720a103776edfcd527d7e0f81915b3bc5e2"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMMAG_20230730T000000_20230731T000000.csv",
+   "sha256": "1b873f3ac699d2c22f7d86ed8ea4dab2097b2a26cc1df3e51a29743605de1d25"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMMAG_20230731T000000_20230801T000000.csv",
+   "sha256": "d45f6915de43cb8cd2984251f3bced65b4d48ad2d03da3f4268fc2e8f2592cea"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMMAG_20230801T000000_20230802T000000.csv",
+   "sha256": "9db2306e96dc26a527c906520444004340d01faeb70c3ca1682bad4a4c448af7"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMMAG_20230802T000000_20230803T000000.csv",
+   "sha256": "1cde2682307c8a07e2c77771e1fcfde3828c3d499fb99a75647508ef21b7b08f"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMMAG_20230803T000000_20230804T000000.csv",
+   "sha256": "1b594518f8e4c220a865ce9658e128f5fb291994931380ea372cf51008252067"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMMAG_20230804T000000_20230805T000000.csv",
+   "sha256": "cdda9fa979c8a65aa96bb0ca35a6e0f79f4a4af11a8eaf32f2607c79b24e9b53"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMMAG_20230805T000000_20230806T000000.csv",
+   "sha256": "813f6ab4ac3a6d83db4a1ac9eaa6ff727dc1ea13f3578499d71dca882b9eddcb"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMMAG_20230806T000000_20230807T000000.csv",
+   "sha256": "074e8cb85fabee12c8faae0e213f9b85e713dce35d783217d4ed0f49a60b6122"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMMAG_20230807T000000_20230808T000000.csv",
+   "sha256": "13ce8fef54d8bec03276ebf7602feca5f510e8e6e712e4c9a30823b1e43e26f3"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMMAG_20230808T000000_20230809T000000.csv",
+   "sha256": "fbf183afb42bf58802520ea8c8df39a5ad0b7e2b42f739d8ab43ac91c0d812c7"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMMAG_20230809T000000_20230810T000000.csv",
+   "sha256": "f9a2845292857be44cd0d9a8ebbbb3531cb56f346f5b2ad7fc4fdc4442c5a6b4"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMMAG_20230810T000000_20230811T000000.csv",
+   "sha256": "3d1b452609c5cbe94ebfa251015cd239d872270ff8595f9f4549dab99e51a93f"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMMAG_20230811T000000_20230812T000000.csv",
+   "sha256": "55370d3f3e4b16ddbee023e4ef92e0a82530e0c4f68ca617fa0dcf23cdc17a81"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMMAG_20230812T000000_20230813T000000.csv",
+   "sha256": "65bf6550676ac1a1ecb7dae4ad9bdc3ffc6e852c19b1b4c4d5468784407a6bb2"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMMAG_20230813T000000_20230814T000000.csv",
+   "sha256": "36ad687fa6124de8f2db091cccfc292a96208dc8c895f6818baa15db6723c8d6"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMMAG_20230814T000000_20230815T000000.csv",
+   "sha256": "f2aadd71453871e1dd5b933ab55750abf2e02b0a24e76d2aa64a6beb3e87dd45"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMUNLST_20230715T000000_20230716T000000.csv",
+   "sha256": "d9f9cc02ccfca1770bef535c79ab47c6e56753892c150e17f17a9368e98e89b3"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMUNLST_20230716T000000_20230717T000000.csv",
+   "sha256": "beccc75e60f289101253f76e974e0b13b65a5042d1827f50a2aabe7ee85fdbe6"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMUNLST_20230717T000000_20230718T000000.csv",
+   "sha256": "33acc6abe0594e87d8ea1f1eda4652260e604bad06e6b3d1debb1f013fcc2fa3"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMUNLST_20230718T000000_20230719T000000.csv",
+   "sha256": "8e456af8c963685dfead9813010f0e93e20da656ce94750e6c5bbb95b82fb873"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMUNLST_20230719T000000_20230720T000000.csv",
+   "sha256": "0f083fb9e7a579082f6bc0e0d0611e5e456bf64933869388c35a8be4edd407e9"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMUNLST_20230720T000000_20230721T000000.csv",
+   "sha256": "f56eae852bb60b2158cbb5a0b61602d661999d8ac49bab0f73950f9e9522cd93"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMUNLST_20230721T000000_20230722T000000.csv",
+   "sha256": "8bc4561770dda8d252f38f91753799a0252dfd98e6af8fa88f0991023eae4cda"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMUNLST_20230722T000000_20230723T000000.csv",
+   "sha256": "26483ba58b3712006f2d735f805552643e154492eea260e1cfd7979f0b190e96"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMUNLST_20230723T000000_20230724T000000.csv",
+   "sha256": "4297968b1d87f91cdf38836681bc3350352d315bded235126ffc047414405e00"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMUNLST_20230724T000000_20230725T000000.csv",
+   "sha256": "34593ed69aa7756241bd39fa2106884adbe7f21c37d177a272e4f44ca7dad5a3"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMUNLST_20230725T000000_20230726T000000.csv",
+   "sha256": "4e5fcdf99b7bfa2125a673e9e29eebc11fe18b39ba75bd8df2e8401a173763bd"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMUNLST_20230726T000000_20230727T000000.csv",
+   "sha256": "bd43940d67e81423bb4fd9ca1d8e22c953aabb94f5e9eb1a1bbf0440f382b888"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMUNLST_20230727T000000_20230728T000000.csv",
+   "sha256": "9ff0a52b18921f665b9b453d0598ddd34abec4de58cecaafdbaa2be43307e98c"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMUNLST_20230728T000000_20230729T000000.csv",
+   "sha256": "da2802b3bc04b6eba786d0b2962350312a0444d7dbde2d9545dde3afb785e710"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMUNLST_20230729T000000_20230730T000000.csv",
+   "sha256": "d6aae6de520bd311e6211c57057ead625ac226941df6ab2cd0ca15d559778454"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMUNLST_20230730T000000_20230731T000000.csv",
+   "sha256": "5c7b5dd402442b64243488a47c6547fa91d22b480b0fc8781be5439c9814792a"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMUNLST_20230731T000000_20230801T000000.csv",
+   "sha256": "46463366dc30b251b79ae51447cb53c8fae8ba18458b28cb63fc62897001494a"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMUNLST_20230801T000000_20230802T000000.csv",
+   "sha256": "f083b48fc3b8de55bc47d96c050da290ad86a165523d0557dfdc1b4f3919b156"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMUNLST_20230802T000000_20230803T000000.csv",
+   "sha256": "a6b27564b6de2a47af1a9e7c1694eafde84e2d99aaf4d48c0e9667abf1eb24eb"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMUNLST_20230803T000000_20230804T000000.csv",
+   "sha256": "c92fcb2568a2e9f1619394d852eefccf3cbb5dbd6a41f15e6bfaacdff9641f9f"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMUNLST_20230804T000000_20230805T000000.csv",
+   "sha256": "2b0e84cf9265f7a284707e5b4aa3fdb5e4f04c41a60a3a7a9a70e5706609fbdb"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMUNLST_20230805T000000_20230806T000000.csv",
+   "sha256": "041312494c3d3c491bda8dd3cd7bf46b72b560d9461eabb4f1e881247f227121"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMUNLST_20230806T000000_20230807T000000.csv",
+   "sha256": "1124dd6a1397a008215ff0e34fa690d58a7aa2eb4085fdad0a23c767bcd8611c"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMUNLST_20230807T000000_20230808T000000.csv",
+   "sha256": "6bd664bacc1ef0d16460f697a7421a44dc3d147968d0eeb485ee1b85cb004c68"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMUNLST_20230808T000000_20230809T000000.csv",
+   "sha256": "daf019aa56b42de416971fcd1f800e46f9663279b40a880d5c96dfb64a0ee339"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMUNLST_20230809T000000_20230810T000000.csv",
+   "sha256": "4899363c5742b04a03cfca17e3bd393b3ab3a51d6d72bfca71a51c882bb4af8e"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMUNLST_20230810T000000_20230811T000000.csv",
+   "sha256": "9ca1bbb2e5152599b7e616846fdd8c75337bef96c1f5c0cd04f82bad63136c20"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMUNLST_20230811T000000_20230812T000000.csv",
+   "sha256": "2fdb507f8029ac8ab0006880cda4db062279a99dc23fcbddd83be3d52557561a"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMUNLST_20230812T000000_20230813T000000.csv",
+   "sha256": "92da23b8ed575c9a8bde20f5af89f9983db028edda82e89e871e9aa7a84ba47d"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMUNLST_20230813T000000_20230814T000000.csv",
+   "sha256": "37cca3e770164aa26195862b9a62989d8f1c823e6ea7b4e6ca0e528ec76dc909"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMUNLST_20230814T000000_20230815T000000.csv",
+   "sha256": "4d3577f45fdff916710c58ae8d2a792078260a34932dd7ea0f67732eeb53b543"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZSLEWST_20230715T000000_20230716T000000.csv",
+   "sha256": "ffa652b5397755dc66e4a7d70d7bee5d78948e899bd86c8ba7bd1fec3069f6e8"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZSLEWST_20230716T000000_20230717T000000.csv",
+   "sha256": "646b5b06b618ca24c75c67e226759984969dbfff83daee0cad974414e74dbc63"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZSLEWST_20230717T000000_20230718T000000.csv",
+   "sha256": "f9b88ccb26a92b6ecc4e1263f0f9c0ee4ea8088a2971f41aa0a97df4ec2ef601"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZSLEWST_20230718T000000_20230719T000000.csv",
+   "sha256": "5d8632e955379f0c80d6d21e62234d4746487586680df688fa41352ef41e7fe3"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZSLEWST_20230719T000000_20230720T000000.csv",
+   "sha256": "b128355d31fd8e8830f803ee97fdce16635ca690c0f03be020e27433d1bcecd5"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZSLEWST_20230720T000000_20230721T000000.csv",
+   "sha256": "bffbf4fffe43d7377f0c8de34643e5c533eded68af94b9e64baa78ca8ec89559"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZSLEWST_20230721T000000_20230722T000000.csv",
+   "sha256": "1befe4d5ee0d60b80ac956658ba9725c361939aa8ae3aa16fd433e4e2301c238"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZSLEWST_20230722T000000_20230723T000000.csv",
+   "sha256": "cdcf2132fe716f6ea1efd4f8ff400f7bb409791e8b251020a540e15e245e9e81"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZSLEWST_20230723T000000_20230724T000000.csv",
+   "sha256": "38413827a6ec9e969589cb36a606fc17b009645b814d2cbe547fa2094dbf5e80"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZSLEWST_20230724T000000_20230725T000000.csv",
+   "sha256": "b1b95268ed3513c233cbb185d0958538d4631a3458f41f8d8db5b955b4351511"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZSLEWST_20230725T000000_20230726T000000.csv",
+   "sha256": "fa6afaa08eb5004a9564c86c15b5fc282582b95832f28bf20330cca5ce14904e"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZSLEWST_20230726T000000_20230727T000000.csv",
+   "sha256": "a3bd329b100a7fb29b54532c1b6f6000690c5c9e1ccc44132a8540494dc75e68"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZSLEWST_20230727T000000_20230728T000000.csv",
+   "sha256": "5de42e42f9e480be81527a48251b688959b8dba11cd6d64b513f089c3817b6b7"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZSLEWST_20230728T000000_20230729T000000.csv",
+   "sha256": "9317405ce50543357d3712d2c3d31dac75ba0e050b7ee609cff2523886c8d5d6"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZSLEWST_20230729T000000_20230730T000000.csv",
+   "sha256": "97c0567e2ab8ae0d7491bac3cacdb246e257030db2322267acbb49b326d836c0"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZSLEWST_20230730T000000_20230731T000000.csv",
+   "sha256": "5c3eb2b392ac0ce65f9eabd7a37dafd07f4bfa37af9ae1e2d30a7b6a5b58ccd3"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZSLEWST_20230731T000000_20230801T000000.csv",
+   "sha256": "e9b3cfe550f1a0291ba24a664dcef9321d2189623bae659b6ff398b986437314"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZSLEWST_20230801T000000_20230802T000000.csv",
+   "sha256": "21585a2add5391f0d4e3fdb1aaa605ecadf6abdce9998cb831f9348e8168f17a"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZSLEWST_20230802T000000_20230803T000000.csv",
+   "sha256": "9dae46b114921a4995e992bd041ae5c73e9e133658d82fff3cecc8f0b7da3a03"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZSLEWST_20230803T000000_20230804T000000.csv",
+   "sha256": "70ea25def7cd34c80c4b5cb82987905075b6db1f22462e46c6fffd84996af4e5"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZSLEWST_20230804T000000_20230805T000000.csv",
+   "sha256": "b6e5910ef2f05c744f6e904924e6c8678235e744cd9c30682b3df7912a4ed93c"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZSLEWST_20230805T000000_20230806T000000.csv",
+   "sha256": "c1be4df5045ac4f1777dabf77fbd6fd53af0ddb4ec511326ce0ff069ee928f56"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZSLEWST_20230806T000000_20230807T000000.csv",
+   "sha256": "63fee7c7a16ce3d3e9027d331848204f2a544e33fe19d714a54dbe9cf3795406"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZSLEWST_20230807T000000_20230808T000000.csv",
+   "sha256": "a0faba9bf746f46cc90ff5c04d44791a025e14c8529b296ee92fc8d8144f2b3d"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZSLEWST_20230808T000000_20230809T000000.csv",
+   "sha256": "969c572442f54c4bc42bbaa57050b2734c9a00388b7f63d1bb0e72351bef84b9"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZSLEWST_20230809T000000_20230810T000000.csv",
+   "sha256": "1e418c3630ec5f8cbdabbcb1c313fb871864f380d779161a6ab9e2a3194d190d"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZSLEWST_20230810T000000_20230811T000000.csv",
+   "sha256": "3c35fb37e99463bd5252fdfc6f8d8d8ed6e37fe707ca38046708fe721d9aed8a"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZSLEWST_20230811T000000_20230812T000000.csv",
+   "sha256": "b3f78c38a723e1d2668fdbe108d06acde01c17b0f99431f05b49571593267194"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZSLEWST_20230812T000000_20230813T000000.csv",
+   "sha256": "944cbc902b02f71553a3097687355cc9a4b141e83f8a78b0c607548fb71a2aab"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZSLEWST_20230813T000000_20230814T000000.csv",
+   "sha256": "108148ec2d062fd78a6be244ab559135b7ba2cf3798f4c6a1638cc2f0537c3a1"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZSLEWST_20230814T000000_20230815T000000.csv",
+   "sha256": "33cf8471cf3962b60c769255b5bf5d0815461292ba5163018dafb2d336d5d518"
+  }
+ ],
+ "registered": {
+  "utc": "2026-10-16T03:07:04Z"
+ },
+ "opened": [
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST1_20230715T000000_20230716T000000.csv",
+   "utc": "2026-10-16T03:07:18Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST1_20230716T000000_20230717T000000.csv",
+   "utc": "2026-10-16T03:07:19Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST1_20230717T000000_20230718T000000.csv",
+   "utc": "2026-10-16T03:07:20Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST1_20230718T000000_20230719T000000.csv",
+   "utc": "2026-10-16T03:07:21Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST1_20230719T000000_20230720T000000.csv",
+   "utc": "2026-10-16T03:07:22Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST1_20230720T000000_20230721T000000.csv",
+   "utc": "2026-10-16T03:07:23Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST1_20230721T000000_20230722T000000.csv",
+   "utc": "2026-10-16T03:07:24Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST1_20230722T000000_20230723T000000.csv",
+   "utc": "2026-10-16T03:07:25Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST1_20230723T000000_20230724T000000.csv",
+   "utc": "2026-10-16T03:07:26Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST1_20230724T000000_20230725T000000.csv",
+   "utc": "2026-10-16T03:07:27Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST1_20230725T000000_20230726T000000.csv",
+   "utc": "2026-10-16T03:07:28Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST1_20230726T000000_20230727T000000.csv",
+   "utc": "2026-10-16T03:07:29Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST1_20230727T000000_20230728T000000.csv",
+   "utc": "2026-10-16T03:07:30Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST1_20230728T000000_20230729T000000.csv",
+   "utc": "2026-10-16T03:07:31Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST1_20230729T000000_20230730T000000.csv",
+   "utc": "2026-10-16T03:07:32Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST1_20230730T000000_20230731T000000.csv",
+   "utc": "2026-10-16T03:07:33Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST1_20230731T000000_20230801T000000.csv",
+   "utc": "2026-10-16T03:07:34Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST1_20230801T000000_20230802T000000.csv",
+   "utc": "2026-10-16T03:07:35Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST1_20230802T000000_20230803T000000.csv",
+   "utc": "2026-10-16T03:07:36Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST1_20230803T000000_20230804T000000.csv",
+   "utc": "2026-10-16T03:07:37Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST1_20230804T000000_20230805T000000.csv",
+   "utc": "2026-10-16T03:07:38Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST1_20230805T000000_20230806T000000.csv",
+   "utc": "2026-10-16T03:07:39Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST1_20230806T000000_20230807T000000.csv",
+   "utc": "2026-10-16T03:07:40Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST1_20230807T000000_20230808T000000.csv",
+   "utc": "2026-10-16T03:07:41Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST1_20230808T000000_20230809T000000.csv",
+   "utc": "2026-10-16T03:07:42Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST1_20230809T000000_20230810T000000.csv",
+   "utc": "2026-10-16T03:07:43Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST1_20230810T000000_20230811T000000.csv",
+   "utc": "2026-10-16T03:07:44Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST1_20230811T000000_20230812T000000.csv",
+   "utc": "2026-10-16T03:07:45Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST1_20230812T000000_20230813T000000.csv",
+   "utc": "2026-10-16T03:07:46Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST1_20230813T000000_20230814T000000.csv",
+   "utc": "2026-10-16T03:07:47Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST1_20230814T000000_20230815T000000.csv",
+   "utc": "2026-10-16T03:07:48Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST2_20230715T000000_20230716T000000.csv",
+   "utc": "2026-10-16T03:07:49Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST2_20230716T000000_20230717T000000.csv",
+   "utc": "2026-10-16T03:07:50Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST2_20230717T000000_20230718T000000.csv",
+   "utc": "2026-10-16T03:07:51Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST2_20230718T000000_20230719T000000.csv",
+   "utc": "2026-10-16T03:07:52Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST2_20230719T000000_20230720T000000.csv",
+   "utc": "2026-10-16T03:07:53Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST2_20230720T000000_20230721T000000.csv",
+   "utc": "2026-10-16T03:07:54Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST2_20230721T000000_20230722T000000.csv",
+   "utc": "2026-10-16T03:07:55Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST2_20230722T000000_20230723T000000.csv",
+   "utc": "2026-10-16T03:07:56Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST2_20230723T000000_20230724T000000.csv",
+   "utc": "2026-10-16T03:07:57Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST2_20230724T000000_20230725T000000.csv",
+   "utc": "2026-10-16T03:07:58Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST2_20230725T000000_20230726T000000.csv",
+   "utc": "2026-10-16T03:07:59Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST2_20230726T000000_20230727T000000.csv",
+   "utc": "2026-10-16T03:08:00Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST2_20230727T000000_20230728T000000.csv",
+   "utc": "2026-10-16T03:08:01Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST2_20230728T000000_20230729T000000.csv",
+   "utc": "2026-10-16T03:08:02Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST2_20230729T000000_20230730T000000.csv",
+   "utc": "2026-10-16T03:08:03Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST2_20230730T000000_20230731T000000.csv",
+   "utc": "2026-10-16T03:08:04Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST2_20230731T000000_20230801T000000.csv",
+   "utc": "2026-10-16T03:08:05Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST2_20230801T000000_20230802T000000.csv",
+   "utc": "2026-10-16T03:08:06Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST2_20230802T000000_20230803T000000.csv",
+   "utc": "2026-10-16T03:08:07Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST2_20230803T000000_20230804T000000.csv",
+   "utc": "2026-10-16T03:08:08Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST2_20230804T000000_20230805T000000.csv",
+   "utc": "2026-10-16T03:08:09Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST2_20230805T000000_20230806T000000.csv",
+   "utc": "2026-10-16T03:08:10Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST2_20230806T000000_20230807T000000.csv",
+   "utc": "2026-10-16T03:08:11Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST2_20230807T000000_20230808T000000.csv",
+   "utc": "2026-10-16T03:08:12Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST2_20230808T000000_20230809T000000.csv",
+   "utc": "2026-10-16T03:08:13Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST2_20230809T000000_20230810T000000.csv",
+   "utc": "2026-10-16T03:08:14Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST2_20230810T000000_20230811T000000.csv",
+   "utc": "2026-10-16T03:08:15Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST2_20230811T000000_20230812T000000.csv",
+   "utc": "2026-10-16T03:08:16Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST2_20230812T000000_20230813T000000.csv",
+   "utc": "2026-10-16T03:08:17Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST2_20230813T000000_20230814T000000.csv",
+   "utc": "2026-10-16T03:08:18Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST2_20230814T000000_20230815T000000.csv",
+   "utc": "2026-10-16T03:08:19Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST3_20230715T000000_20230716T000000.csv",
+   "utc": "2026-10-16T03:08:20Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST3_20230716T000000_20230717T000000.csv",
+   "utc": "2026-10-16T03:08:21Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST3_20230717T000000_20230718T000000.csv",
+   "utc": "2026-10-16T03:08:22Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST3_20230718T000000_20230719T000000.csv",
+   "utc": "2026-10-16T03:08:23Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST3_20230719T000000_20230720T000000.csv",
+   "utc": "2026-10-16T03:08:24Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST3_20230720T000000_20230721T000000.csv",
+   "utc": "2026-10-16T03:08:25Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST3_20230721T000000_20230722T000000.csv",
+   "utc": "2026-10-16T03:08:26Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST3_20230722T000000_20230723T000000.csv",
+   "utc": "2026-10-16T03:08:27Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST3_20230723T000000_20230724T000000.csv",
+   "utc": "2026-10-16T03:08:28Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST3_20230724T000000_20230725T000000.csv",
+   "utc": "2026-10-16T03:08:29Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST3_20230725T000000_20230726T000000.csv",
+   "utc": "2026-10-16T03:08:30Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST3_20230726T000000_20230727T000000.csv",
+   "utc": "2026-10-16T03:08:31Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST3_20230727T000000_20230728T000000.csv",
+   "utc": "2026-10-16T03:08:32Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST3_20230728T000000_20230729T000000.csv",
+   "utc": "2026-10-16T03:08:33Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST3_20230729T000000_20230730T000000.csv",
+   "utc": "2026-10-16T03:08:34Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST3_20230730T000000_20230731T000000.csv",
+   "utc": "2026-10-16T03:08:35Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST3_20230731T000000_20230801T000000.csv",
+   "utc": "2026-10-16T03:08:36Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST3_20230801T000000_20230802T000000.csv",
+   "utc": "2026-10-16T03:08:37Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST3_20230802T000000_20230803T000000.csv",
+   "utc": "2026-10-16T03:08:38Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST3_20230803T000000_20230804T000000.csv",
+   "utc": "2026-10-16T03:08:39Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST3_20230804T000000_20230805T000000.csv",
+   "utc": "2026-10-16T03:08:40Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST3_20230805T000000_20230806T000000.csv",
+   "utc": "2026-10-16T03:08:41Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST3_20230806T000000_20230807T000000.csv",
+   "utc": "2026-10-16T03:08:42Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST3_20230807T000000_20230808T000000.csv",
+   "utc": "2026-10-16T03:08:43Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST3_20230808T000000_20230809T000000.csv",
+   "utc": "2026-10-16T03:08:44Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST3_20230809T000000_20230810T000000.csv",
+   "utc": "2026-10-16T03:08:45Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST3_20230810T000000_20230811T000000.csv",
+   "utc": "2026-10-16T03:08:46Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST3_20230811T000000_20230812T000000.csv",
+   "utc": "2026-10-16T03:08:47Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST3_20230812T000000_20230813T000000.csv",
+   "utc": "2026-10-16T03:08:48Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST3_20230813T000000_20230814T000000.csv",
+   "utc": "2026-10-16T03:08:49Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST3_20230814T000000_20230815T000000.csv",
+   "utc": "2026-10-16T03:08:50Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST4_20230715T000000_20230716T000000.csv",
+   "utc": "2026-10-16T03:08:51Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST4_20230716T000000_20230717T000000.csv",
+   "utc": "2026-10-16T03:08:52Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST4_20230717T000000_20230718T000000.csv",
+   "utc": "2026-10-16T03:08:53Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST4_20230718T000000_20230719T000000.csv",
+   "utc": "2026-10-16T03:08:54Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST4_20230719T000000_20230720T000000.csv",
+   "utc": "2026-10-16T03:08:55Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST4_20230720T000000_20230721T000000.csv",
+   "utc": "2026-10-16T03:08:56Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST4_20230721T000000_20230722T000000.csv",
+   "utc": "2026-10-16T03:08:57Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST4_20230722T000000_20230723T000000.csv",
+   "utc": "2026-10-16T03:08:58Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST4_20230723T000000_20230724T000000.csv",
+   "utc": "2026-10-16T03:08:59Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST4_20230724T000000_20230725T000000.csv",
+   "utc": "2026-10-16T03:09:00Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST4_20230725T000000_20230726T000000.csv",
+   "utc": "2026-10-16T03:09:01Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST4_20230726T000000_20230727T000000.csv",
+   "utc": "2026-10-16T03:09:02Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST4_20230727T000000_20230728T000000.csv",
+   "utc": "2026-10-16T03:09:03Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST4_20230728T000000_20230729T000000.csv",
+   "utc": "2026-10-16T03:09:04Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST4_20230729T000000_20230730T000000.csv",
+   "utc": "2026-10-16T03:09:05Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST4_20230730T000000_20230731T000000.csv",
+   "utc": "2026-10-16T03:09:06Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST4_20230731T000000_20230801T000000.csv",
+   "utc": "2026-10-16T03:09:07Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST4_20230801T000000_20230802T000000.csv",
+   "utc": "2026-10-16T03:09:08Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST4_20230802T000000_20230803T000000.csv",
+   "utc": "2026-10-16T03:09:09Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST4_20230803T000000_20230804T000000.csv",
+   "utc": "2026-10-16T03:09:10Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST4_20230804T000000_20230805T000000.csv",
+   "utc": "2026-10-16T03:09:11Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST4_20230805T000000_20230806T000000.csv",
+   "utc": "2026-10-16T03:09:12Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST4_20230806T000000_20230807T000000.csv",
+   "utc": "2026-10-16T03:09:13Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST4_20230807T000000_20230808T000000.csv",
+   "utc": "2026-10-16T03:09:14Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST4_20230808T000000_20230809T000000.csv",
+   "utc": "2026-10-16T03:09:15Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST4_20230809T000000_20230810T000000.csv",
+   "utc": "2026-10-16T03:09:16Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST4_20230810T000000_20230811T000000.csv",
+   "utc": "2026-10-16T03:09:17Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST4_20230811T000000_20230812T000000.csv",
+   "utc": "2026-10-16T03:09:18Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST4_20230812T000000_20230813T000000.csv",
+   "utc": "2026-10-16T03:09:19Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST4_20230813T000000_20230814T000000.csv",
+   "utc": "2026-10-16T03:09:20Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZATTEST4_20230814T000000_20230815T000000.csv",
+   "utc": "2026-10-16T03:09:21Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIX_20230715T000000_20230716T000000.csv",
+   "utc": "2026-10-16T03:09:22Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIX_20230716T000000_20230717T000000.csv",
+   "utc": "2026-10-16T03:09:23Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIX_20230717T000000_20230718T000000.csv",
+   "utc": "2026-10-16T03:09:24Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIX_20230718T000000_20230719T000000.csv",
+   "utc": "2026-10-16T03:09:25Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIX_20230719T000000_20230720T000000.csv",
+   "utc": "2026-10-16T03:09:26Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIX_20230720T000000_20230721T000000.csv",
+   "utc": "2026-10-16T03:09:27Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIX_20230721T000000_20230722T000000.csv",
+   "utc": "2026-10-16T03:09:28Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIX_20230722T000000_20230723T000000.csv",
+   "utc": "2026-10-16T03:09:29Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIX_20230723T000000_20230724T000000.csv",
+   "utc": "2026-10-16T03:09:30Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIX_20230724T000000_20230725T000000.csv",
+   "utc": "2026-10-16T03:09:31Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIX_20230725T000000_20230726T000000.csv",
+   "utc": "2026-10-16T03:09:32Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIX_20230726T000000_20230727T000000.csv",
+   "utc": "2026-10-16T03:09:33Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIX_20230727T000000_20230728T000000.csv",
+   "utc": "2026-10-16T03:09:34Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIX_20230728T000000_20230729T000000.csv",
+   "utc": "2026-10-16T03:09:35Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIX_20230729T000000_20230730T000000.csv",
+   "utc": "2026-10-16T03:09:36Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIX_20230730T000000_20230731T000000.csv",
+   "utc": "2026-10-16T03:09:37Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIX_20230731T000000_20230801T000000.csv",
+   "utc": "2026-10-16T03:09:38Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIX_20230801T000000_20230802T000000.csv",
+   "utc": "2026-10-16T03:09:39Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIX_20230802T000000_20230803T000000.csv",
+   "utc": "2026-10-16T03:09:40Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIX_20230803T000000_20230804T000000.csv",
+   "utc": "2026-10-16T03:09:41Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIX_20230804T000000_20230805T000000.csv",
+   "utc": "2026-10-16T03:09:42Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIX_20230805T000000_20230806T000000.csv",
+   "utc": "2026-10-16T03:09:43Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIX_20230806T000000_20230807T000000.csv",
+   "utc": "2026-10-16T03:09:44Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIX_20230807T000000_20230808T000000.csv",
+   "utc": "2026-10-16T03:09:45Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIX_20230808T000000_20230809T000000.csv",
+   "utc": "2026-10-16T03:09:46Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIX_20230809T000000_20230810T000000.csv",
+   "utc": "2026-10-16T03:09:47Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIX_20230810T000000_20230811T000000.csv",
+   "utc": "2026-10-16T03:09:48Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIX_20230811T000000_20230812T000000.csv",
+   "utc": "2026-10-16T03:09:49Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIX_20230812T000000_20230813T000000.csv",
+   "utc": "2026-10-16T03:09:50Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIX_20230813T000000_20230814T000000.csv",
+   "utc": "2026-10-16T03:09:51Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIX_20230814T000000_20230815T000000.csv",
+   "utc": "2026-10-16T03:09:52Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIY_20230715T000000_20230716T000000.csv",
+   "utc": "2026-10-16T03:09:53Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIY_20230716T000000_20230717T000000.csv",
+   "utc": "2026-10-16T03:09:54Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIY_20230717T000000_20230718T000000.csv",
+   "utc": "2026-10-16T03:09:55Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIY_20230718T000000_20230719T000000.csv",
+   "utc": "2026-10-16T03:09:56Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIY_20230719T000000_20230720T000000.csv",
+   "utc": "2026-10-16T03:09:57Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIY_20230720T000000_20230721T000000.csv",
+   "utc": "2026-10-16T03:09:58Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIY_20230721T000000_20230722T000000.csv",
+   "utc": "2026-10-16T03:09:59Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIY_20230722T000000_20230723T000000.csv",
+   "utc": "2026-10-16T03:10:00Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIY_20230723T000000_20230724T000000.csv",
+   "utc": "2026-10-16T03:10:01Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIY_20230724T000000_20230725T000000.csv",
+   "utc": "2026-10-16T03:10:02Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIY_20230725T000000_20230726T000000.csv",
+   "utc": "2026-10-16T03:10:03Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIY_20230726T000000_20230727T000000.csv",
+   "utc": "2026-10-16T03:10:04Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIY_20230727T000000_20230728T000000.csv",
+   "utc": "2026-10-16T03:10:05Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIY_20230728T000000_20230729T000000.csv",
+   "utc": "2026-10-16T03:10:06Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIY_20230729T000000_20230730T000000.csv",
+   "utc": "2026-10-16T03:10:07Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIY_20230730T000000_20230731T000000.csv",
+   "utc": "2026-10-16T03:10:08Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIY_20230731T000000_20230801T000000.csv",
+   "utc": "2026-10-16T03:10:09Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIY_20230801T000000_20230802T000000.csv",
+   "utc": "2026-10-16T03:10:10Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIY_20230802T000000_20230803T000000.csv",
+   "utc": "2026-10-16T03:10:11Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIY_20230803T000000_20230804T000000.csv",
+   "utc": "2026-10-16T03:10:12Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIY_20230804T000000_20230805T000000.csv",
+   "utc": "2026-10-16T03:10:13Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIY_20230805T000000_20230806T000000.csv",
+   "utc": "2026-10-16T03:10:14Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIY_20230806T000000_20230807T000000.csv",
+   "utc": "2026-10-16T03:10:15Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIY_20230807T000000_20230808T000000.csv",
+   "utc": "2026-10-16T03:10:16Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIY_20230808T000000_20230809T000000.csv",
+   "utc": "2026-10-16T03:10:17Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIY_20230809T000000_20230810T000000.csv",
+   "utc": "2026-10-16T03:10:18Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIY_20230810T000000_20230811T000000.csv",
+   "utc": "2026-10-16T03:10:19Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIY_20230811T000000_20230812T000000.csv",
+   "utc": "2026-10-16T03:10:20Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIY_20230812T000000_20230813T000000.csv",
+   "utc": "2026-10-16T03:10:21Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIY_20230813T000000_20230814T000000.csv",
+   "utc": "2026-10-16T03:10:22Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIY_20230814T000000_20230815T000000.csv",
+   "utc": "2026-10-16T03:10:23Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIZ_20230715T000000_20230716T000000.csv",
+   "utc": "2026-10-16T03:10:24Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIZ_20230716T000000_20230717T000000.csv",
+   "utc": "2026-10-16T03:10:25Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIZ_20230717T000000_20230718T000000.csv",
+   "utc": "2026-10-16T03:10:26Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIZ_20230718T000000_20230719T000000.csv",
+   "utc": "2026-10-16T03:10:27Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIZ_20230719T000000_20230720T000000.csv",
+   "utc": "2026-10-16T03:10:28Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIZ_20230720T000000_20230721T000000.csv",
+   "utc": "2026-10-16T03:10:29Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIZ_20230721T000000_20230722T000000.csv",
+   "utc": "2026-10-16T03:10:30Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIZ_20230722T000000_20230723T000000.csv",
+   "utc": "2026-10-16T03:10:31Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIZ_20230723T000000_20230724T000000.csv",
+   "utc": "2026-10-16T03:10:32Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIZ_20230724T000000_20230725T000000.csv",
+   "utc": "2026-10-16T03:10:33Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIZ_20230725T000000_20230726T000000.csv",
+   "utc": "2026-10-16T03:10:34Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIZ_20230726T000000_20230727T000000.csv",
+   "utc": "2026-10-16T03:10:35Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIZ_20230727T000000_20230728T000000.csv",
+   "utc": "2026-10-16T03:10:36Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIZ_20230728T000000_20230729T000000.csv",
+   "utc": "2026-10-16T03:10:37Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIZ_20230729T000000_20230730T000000.csv",
+   "utc": "2026-10-16T03:10:38Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIZ_20230730T000000_20230731T000000.csv",
+   "utc": "2026-10-16T03:10:39Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIZ_20230731T000000_20230801T000000.csv",
+   "utc": "2026-10-16T03:10:40Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIZ_20230801T000000_20230802T000000.csv",
+   "utc": "2026-10-16T03:10:41Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIZ_20230802T000000_20230803T000000.csv",
+   "utc": "2026-10-16T03:10:42Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIZ_20230803T000000_20230804T000000.csv",
+   "utc": "2026-10-16T03:10:43Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIZ_20230804T000000_20230805T000000.csv",
+   "utc": "2026-10-16T03:10:44Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIZ_20230805T000000_20230806T000000.csv",
+   "utc": "2026-10-16T03:10:45Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIZ_20230806T000000_20230807T000000.csv",
+   "utc": "2026-10-16T03:10:46Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIZ_20230807T000000_20230808T000000.csv",
+   "utc": "2026-10-16T03:10:47Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIZ_20230808T000000_20230809T000000.csv",
+   "utc": "2026-10-16T03:10:48Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIZ_20230809T000000_20230810T000000.csv",
+   "utc": "2026-10-16T03:10:49Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIZ_20230810T000000_20230811T000000.csv",
+   "utc": "2026-10-16T03:10:50Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIZ_20230811T000000_20230812T000000.csv",
+   "utc": "2026-10-16T03:10:51Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIZ_20230812T000000_20230813T000000.csv",
+   "utc": "2026-10-16T03:10:52Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIZ_20230813T000000_20230814T000000.csv",
+   "utc": "2026-10-16T03:10:53Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMECIZ_20230814T000000_20230815T000000.csv",
+   "utc": "2026-10-16T03:10:54Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMMAG_20230715T000000_20230716T000000.csv",
+   "utc": "2026-10-16T03:10:55Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMMAG_20230716T000000_20230717T000000.csv",
+   "utc": "2026-10-16T03:10:56Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMMAG_20230717T000000_20230718T000000.csv",
+   "utc": "2026-10-16T03:10:57Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMMAG_20230718T000000_20230719T000000.csv",
+   "utc": "2026-10-16T03:10:58Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMMAG_20230719T000000_20230720T000000.csv",
+   "utc": "2026-10-16T03:10:59Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMMAG_20230720T000000_20230721T000000.csv",
+   "utc": "2026-10-16T03:11:00Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMMAG_20230721T000000_20230722T000000.csv",
+   "utc": "2026-10-16T03:11:01Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMMAG_20230722T000000_20230723T000000.csv",
+   "utc": "2026-10-16T03:11:02Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMMAG_20230723T000000_20230724T000000.csv",
+   "utc": "2026-10-16T03:11:03Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMMAG_20230724T000000_20230725T000000.csv",
+   "utc": "2026-10-16T03:11:04Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMMAG_20230725T000000_20230726T000000.csv",
+   "utc": "2026-10-16T03:11:05Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMMAG_20230726T000000_20230727T000000.csv",
+   "utc": "2026-10-16T03:11:06Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMMAG_20230727T000000_20230728T000000.csv",
+   "utc": "2026-10-16T03:11:07Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMMAG_20230728T000000_20230729T000000.csv",
+   "utc": "2026-10-16T03:11:08Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMMAG_20230729T000000_20230730T000000.csv",
+   "utc": "2026-10-16T03:11:09Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMMAG_20230730T000000_20230731T000000.csv",
+   "utc": "2026-10-16T03:11:10Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMMAG_20230731T000000_20230801T000000.csv",
+   "utc": "2026-10-16T03:11:11Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMMAG_20230801T000000_20230802T000000.csv",
+   "utc": "2026-10-16T03:11:12Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMMAG_20230802T000000_20230803T000000.csv",
+   "utc": "2026-10-16T03:11:13Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMMAG_20230803T000000_20230804T000000.csv",
+   "utc": "2026-10-16T03:11:14Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMMAG_20230804T000000_20230805T000000.csv",
+   "utc": "2026-10-16T03:11:15Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMMAG_20230805T000000_20230806T000000.csv",
+   "utc": "2026-10-16T03:11:16Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMMAG_20230806T000000_20230807T000000.csv",
+   "utc": "2026-10-16T03:11:17Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMMAG_20230807T000000_20230808T000000.csv",
+   "utc": "2026-10-16T03:11:18Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMMAG_20230808T000000_20230809T000000.csv",
+   "utc": "2026-10-16T03:11:19Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMMAG_20230809T000000_20230810T000000.csv",
+   "utc": "2026-10-16T03:11:20Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMMAG_20230810T000000_20230811T000000.csv",
+   "utc": "2026-10-16T03:11:21Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMMAG_20230811T000000_20230812T000000.csv",
+   "utc": "2026-10-16T03:11:22Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMMAG_20230812T000000_20230813T000000.csv",
+   "utc": "2026-10-16T03:11:23Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMMAG_20230813T000000_20230814T000000.csv",
+   "utc": "2026-10-16T03:11:24Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMMAG_20230814T000000_20230815T000000.csv",
+   "utc": "2026-10-16T03:11:25Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMUNLST_20230715T000000_20230716T000000.csv",
+   "utc": "2026-10-16T03:11:26Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMUNLST_20230716T000000_20230717T000000.csv",
+   "utc": "2026-10-16T03:11:27Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMUNLST_20230717T000000_20230718T000000.csv",
+   "utc": "2026-10-16T03:11:28Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMUNLST_20230718T000000_20230719T000000.csv",
+   "utc": "2026-10-16T03:11:29Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMUNLST_20230719T000000_20230720T000000.csv",
+   "utc": "2026-10-16T03:11:30Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMUNLST_20230720T000000_20230721T000000.csv",
+   "utc": "2026-10-16T03:11:31Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMUNLST_20230721T000000_20230722T000000.csv",
+   "utc": "2026-10-16T03:11:32Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMUNLST_20230722T000000_20230723T000000.csv",
+   "utc": "2026-10-16T03:11:33Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMUNLST_20230723T000000_20230724T000000.csv",
+   "utc": "2026-10-16T03:11:34Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMUNLST_20230724T000000_20230725T000000.csv",
+   "utc": "2026-10-16T03:11:35Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMUNLST_20230725T000000_20230726T000000.csv",
+   "utc": "2026-10-16T03:11:36Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMUNLST_20230726T000000_20230727T000000.csv",
+   "utc": "2026-10-16T03:11:37Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMUNLST_20230727T000000_20230728T000000.csv",
+   "utc": "2026-10-16T03:11:38Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMUNLST_20230728T000000_20230729T000000.csv",
+   "utc": "2026-10-16T03:11:39Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMUNLST_20230729T000000_20230730T000000.csv",
+   "utc": "2026-10-16T03:11:40Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMUNLST_20230730T000000_20230731T000000.csv",
+   "utc": "2026-10-16T03:11:41Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMUNLST_20230731T000000_20230801T000000.csv",
+   "utc": "2026-10-16T03:11:42Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMUNLST_20230801T000000_20230802T000000.csv",
+   "utc": "2026-10-16T03:11:43Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMUNLST_20230802T000000_20230803T000000.csv",
+   "utc": "2026-10-16T03:11:44Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMUNLST_20230803T000000_20230804T000000.csv",
+   "utc": "2026-10-16T03:11:45Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMUNLST_20230804T000000_20230805T000000.csv",
+   "utc": "2026-10-16T03:11:46Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMUNLST_20230805T000000_20230806T000000.csv",
+   "utc": "2026-10-16T03:11:47Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMUNLST_20230806T000000_20230807T000000.csv",
+   "utc": "2026-10-16T03:11:48Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMUNLST_20230807T000000_20230808T000000.csv",
+   "utc": "2026-10-16T03:11:49Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMUNLST_20230808T000000_20230809T000000.csv",
+   "utc": "2026-10-16T03:11:50Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMUNLST_20230809T000000_20230810T000000.csv",
+   "utc": "2026-10-16T03:11:51Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMUNLST_20230810T000000_20230811T000000.csv",
+   "utc": "2026-10-16T03:11:52Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMUNLST_20230811T000000_20230812T000000.csv",
+   "utc": "2026-10-16T03:11:53Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMUNLST_20230812T000000_20230813T000000.csv",
+   "utc": "2026-10-16T03:11:54Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMUNLST_20230813T000000_20230814T000000.csv",
+   "utc": "2026-10-16T03:11:55Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZMOMUNLST_20230814T000000_20230815T000000.csv",
+   "utc": "2026-10-16T03:11:56Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZSLEWST_20230715T000000_20230716T000000.csv",
+   "utc": "2026-10-16T03:11:57Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZSLEWST_20230716T000000_20230717T000000.csv",
+   "utc": "2026-10-16T03:11:58Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZSLEWST_20230717T000000_20230718T000000.csv",
+   "utc": "2026-10-16T03:11:59Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZSLEWST_20230718T000000_20230719T000000.csv",
+   "utc": "2026-10-16T03:12:00Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZSLEWST_20230719T000000_20230720T000000.csv",
+   "utc": "2026-10-16T03:12:01Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZSLEWST_20230720T000000_20230721T000000.csv",
+   "utc": "2026-10-16T03:12:02Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZSLEWST_20230721T000000_20230722T000000.csv",
+   "utc": "2026-10-16T03:12:03Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZSLEWST_20230722T000000_20230723T000000.csv",
+   "utc": "2026-10-16T03:12:04Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZSLEWST_20230723T000000_20230724T000000.csv",
+   "utc": "2026-10-16T03:12:05Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZSLEWST_20230724T000000_20230725T000000.csv",
+   "utc": "2026-10-16T03:12:06Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZSLEWST_20230725T000000_20230726T000000.csv",
+   "utc": "2026-10-16T03:12:07Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZSLEWST_20230726T000000_20230727T000000.csv",
+   "utc": "2026-10-16T03:12:08Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZSLEWST_20230727T000000_20230728T000000.csv",
+   "utc": "2026-10-16T03:12:09Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZSLEWST_20230728T000000_20230729T000000.csv",
+   "utc": "2026-10-16T03:12:10Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZSLEWST_20230729T000000_20230730T000000.csv",
+   "utc": "2026-10-16T03:12:11Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZSLEWST_20230730T000000_20230731T000000.csv",
+   "utc": "2026-10-16T03:12:12Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZSLEWST_20230731T000000_20230801T000000.csv",
+   "utc": "2026-10-16T03:12:13Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZSLEWST_20230801T000000_20230802T000000.csv",
+   "utc": "2026-10-16T03:12:14Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZSLEWST_20230802T000000_20230803T000000.csv",
+   "utc": "2026-10-16T03:12:15Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZSLEWST_20230803T000000_20230804T000000.csv",
+   "utc": "2026-10-16T03:12:16Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZSLEWST_20230804T000000_20230805T000000.csv",
+   "utc": "2026-10-16T03:12:17Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZSLEWST_20230805T000000_20230806T000000.csv",
+   "utc": "2026-10-16T03:12:18Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZSLEWST_20230806T000000_20230807T000000.csv",
+   "utc": "2026-10-16T03:12:19Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZSLEWST_20230807T000000_20230808T000000.csv",
+   "utc": "2026-10-16T03:12:20Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZSLEWST_20230808T000000_20230809T000000.csv",
+   "utc": "2026-10-16T03:12:21Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZSLEWST_20230809T000000_20230810T000000.csv",
+   "utc": "2026-10-16T03:12:22Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZSLEWST_20230810T000000_20230811T000000.csv",
+   "utc": "2026-10-16T03:12:23Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZSLEWST_20230811T000000_20230812T000000.csv",
+   "utc": "2026-10-16T03:12:24Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZSLEWST_20230812T000000_20230813T000000.csv",
+   "utc": "2026-10-16T03:12:25Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZSLEWST_20230813T000000_20230814T000000.csv",
+   "utc": "2026-10-16T03:12:26Z"
+  },
+  {
+   "path": "evidence/research/momentum_jwst_srp/companion_dihedral/raw/fresh_20230715_20230814/jwst_edb_SA_ZSLEWST_20230814T000000_20230815T000000.csv",
+   "utc": "2026-10-16T03:12:27Z"
+  }
+ ],
+ "scored": {
+  "utc": "2026-10-16T03:13:49Z",
+  "output": "evidence/research/momentum_jwst_srp/companion_dihedral/analysis/out/fresh/score_fresh.json",
+  "output_sha256": "6eed64c203bc40374326000414860def2b7bed57ad3e45006df8876784972426",
+  "program": "evidence/research/momentum_jwst_srp/companion_dihedral/analysis/14_score_fresh.py",
+  "program_sha256": "e01cc7887f5902c2cf2dd0adfd77b26e332cb730e52a7d4e96d1e36aee344019"
+ },
+ "registered_by": "forecast.py register"
+}

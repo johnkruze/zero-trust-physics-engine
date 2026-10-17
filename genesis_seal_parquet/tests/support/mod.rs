@@ -299,6 +299,13 @@ pub fn contents(dir: &Path) -> Option<Vec<String>> {
     Some(names)
 }
 
+/// The writer a Parquet file names in its metadata, `created_by`.
+pub fn created_by(path: &Path) -> Option<String> {
+    let file = File::open(path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+    let builder = ParquetRecordBatchReaderBuilder::try_new(file).unwrap();
+    builder.metadata().file_metadata().created_by().map(str::to_string)
+}
+
 pub fn read_parquet(path: &Path) -> (Vec<RecordBatch>, Vec<(String, String)>) {
     let file = File::open(path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
     let builder = ParquetRecordBatchReaderBuilder::try_new(file).unwrap();

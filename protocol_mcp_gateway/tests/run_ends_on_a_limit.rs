@@ -54,14 +54,28 @@ async fn lands_whole_and_one_more_is_named(base: &str, body: &Value, steps: u64,
     longer["segments"][0]["steps"] = json!(steps + 1);
     longer["record_every"] = json!(steps + 1);
     let refused = run(base, &longer).await;
-    // The track's end, the last day and the 60 s are ends their cards
-    // declare: the run is ended there. Every other limit refuses.
-    let declared_end = matches!(name, "TravelBeyondTrack" | "MissionTimeOutsideCard" | "TimeBeyondCard")
-        && matches!(body["card"].as_str(), Some("tire_eve_r19_ice" | "generator_mmrtg_f1" | "grid_gb"));
+    // No card in this file declares an end at the limit named here: the
+    // run is refused there.
+    let declared_end = false;
     assert_eq!(refused["outcome"], if declared_end { "ended" } else { "refused" }, "{longer}: {refused}");
     assert_eq!(refused["reject"], name, "{longer}");
     assert_eq!(refused["steps_landed"], steps, "{longer}");
     assert_eq!(refused["final_state"], whole["final_state"], "{longer}");
+}
+
+/// The run lands every one of its `steps`, and so does the same run with one
+/// step more: the end of a compared range or of a record is no end.
+async fn lands_whole_and_one_more_lands(base: &str, body: &Value, steps: u64) {
+    let whole = run(base, body).await;
+    assert_eq!(whole["outcome"], "completed", "{body}: {whole}");
+    assert_eq!(whole["steps_landed"], steps, "{body}");
+    assert!(whole["run_seal"].is_string());
+    let mut longer = body.clone();
+    longer["segments"][0]["steps"] = json!(steps + 1);
+    longer["record_every"] = json!(steps + 1);
+    let past = run(base, &longer).await;
+    assert_eq!(past["outcome"], "completed", "{longer}: {past}");
+    assert_eq!(past["steps_landed"], steps + 1, "{longer}");
 }
 
 /// A decimal with `digits` places from a whole number of its last place.
@@ -70,13 +84,16 @@ fn decimal(units: u64, digits: u32) -> f64 {
     format!("{}.{:0width$}", units / scale, units % scale, width = digits as usize).parse().unwrap()
 }
 
-/// The tyre: the track ends at 6 m and the hold at one slip at 21 s. A run
-/// is at most 16 s, so each run here ends exactly on one limit. Sixteen step
-/// sizes at three carriage speeds, each from the decimal start that ends on
-/// 6 m before the hold runs out; the same sizes from 5 s to exactly 21 s;
-/// and two runs to the end of the track that once came back short by a step.
+/// The tyre: through engine 0.9 its track ended at 6 m and its hold at one
+/// slip at 21 s, and these runs ended exactly on one of those limits. Neither
+/// is an end of the tyre. Sixteen step sizes at three carriage speeds, each
+/// from the decimal start that ends on 6 m, the same sizes from 5 s to
+/// exactly 21 s, and two runs to the end of the track that once came back
+/// short by a step: each lands every step, and the same run with one step
+/// more lands that step too, past 6 m or past 21 s, the frame past 21 s held
+/// flagged beyond the compared hold.
 #[tokio::test]
-async fn a_tyre_run_that_ends_on_the_track_end_lands_every_step() {
+async fn a_tyre_run_that_reaches_the_old_track_end_or_hold_end_lands_and_goes_on() {
     let base = spawn_app().await;
     let tyre = |start_m: f64, held_s: f64, dt_s: f64, steps: u64, speed_m_s: f64| {
         json!({
@@ -88,6 +105,22 @@ async fn a_tyre_run_that_ends_on_the_track_end_lands_every_step() {
             "record_every": steps
         })
     };
+    let lands_and_one_more_lands = |body: Value, steps: u64, past_hold: bool| {
+        let base = base.clone();
+        async move {
+            let whole = run(&base, &body).await;
+            assert_eq!(whole["outcome"], "completed", "{body}: {whole}");
+            assert_eq!(whole["steps_landed"], steps, "{body}");
+            assert_eq!(whole["final_state"]["beyond_compared"], false, "{body}");
+            let mut longer = body.clone();
+            longer["segments"][0]["steps"] = json!(steps + 1);
+            longer["record_every"] = json!(steps + 1);
+            let more = run(&base, &longer).await;
+            assert_eq!(more["outcome"], "completed", "{longer}: {more}");
+            assert_eq!(more["steps_landed"], steps + 1, "{longer}");
+            assert_eq!(more["final_state"]["beyond_compared"], past_hold, "{longer}");
+        }
+    };
     // step sizes in units of 0.0001 s; each divides 8 s
     let sizes_e4: [u64; 16] = [
         80_000, 40_000, 20_000, 16_000, 10_000, 5_000, 4_000, 2_500, 2_000, 1_250, 1_000, 500,
@@ -95,40 +128,37 @@ async fn a_tyre_run_that_ends_on_the_track_end_lands_every_step() {
     ];
     for speed_e2 in [5_u64, 6, 7] {
         for dt_e4 in sizes_e4 {
-            // 8 s of steps ending on 6 m, from 5 s held: the hold has 8 s to spare
+            // 8 s of steps ending on 6 m, from 5 s held: one step more rolls past it
             let steps = 80_000 / dt_e4;
             let start_e6 = 6_000_000 - steps * speed_e2 * dt_e4;
             let body = tyre(decimal(start_e6, 6), 5.0, decimal(dt_e4, 4), steps, decimal(speed_e2, 2));
-            lands_whole_and_one_more_is_named(&base, &body, steps, "TravelBeyondTrack").await;
+            lands_and_one_more_lands(body, steps, false).await;
         }
     }
     for dt_e4 in sizes_e4 {
-        // 16 s of steps from 5 s held, ending on 21 s
+        // 16 s of steps from 5 s held, ending on 21 s: one step more holds past it
         let steps = 160_000 / dt_e4;
         let body = tyre(0.0, 5.0, decimal(dt_e4, 4), steps, 0.06);
-        lands_whole_and_one_more_is_named(&base, &body, steps, "HoldBeyondMeasured").await;
+        lands_and_one_more_lands(body, steps, true).await;
     }
-    lands_whole_and_one_more_is_named(&base, &tyre(0.0, 5.0, 16.0, 1, 0.06), 1, "HoldBeyondMeasured")
-        .await;
+    lands_and_one_more_lands(tyre(0.0, 5.0, 16.0, 1, 0.06), 1, true).await;
     // the last of the runs of 0.1 s along the track, from where 900 steps left it
     let mut start_m = 0.0_f64;
     for _ in 0..900 {
         start_m += 0.06 * 0.1;
     }
-    lands_whole_and_one_more_is_named(&base, &tyre(start_m, 5.0, 0.1, 100, 0.06), 100, "TravelBeyondTrack")
-        .await;
-    lands_whole_and_one_more_is_named(&base, &tyre(5.44, 5.0, 8.0, 1, 0.07), 1, "TravelBeyondTrack")
-        .await;
-    // a start one millimetre nearer the end: the last step is past the allowance
-    // (the end of the track is the end the card declares, so the run is ended there)
-    let short = run(&base, &tyre(start_m + 0.001, 5.0, 0.1, 100, 0.06)).await;
-    assert_eq!(short["outcome"], "ended");
-    assert_eq!(short["reject"], "TravelBeyondTrack");
-    assert_eq!(short["steps_landed"], 99);
+    lands_and_one_more_lands(tyre(start_m, 5.0, 0.1, 100, 0.06), 100, false).await;
+    lands_and_one_more_lands(tyre(5.44, 5.0, 8.0, 1, 0.07), 1, false).await;
+    // a start one millimetre nearer the end: through engine 0.9 its last step
+    // ended the run; it lands.
+    let past = run(&base, &tyre(start_m + 0.001, 5.0, 0.1, 100, 0.06)).await;
+    assert_eq!(past["outcome"], "completed");
+    assert_eq!(past["steps_landed"], 100);
 }
 
-/// The Great Britain grid: the card ends at 60 s. Twenty step sizes, five
-/// that once came back short by a step among them.
+/// The Great Britain grid: the card was compared over 60 s, and a run goes
+/// on past it. Twenty step sizes, five that once came back short by a step
+/// among them.
 #[tokio::test]
 async fn a_grid_run_of_sixty_seconds_lands_every_step() {
     let base = spawn_app().await;
@@ -150,10 +180,10 @@ async fn a_grid_run_of_sixty_seconds_lands_every_step() {
         let steps = 60_000_000 / dt_e6;
         assert_eq!(steps * dt_e6, 60_000_000);
         let body = grid(decimal(dt_e6, 6), steps);
-        lands_whole_and_one_more_is_named(&base, &body, steps, "TimeBeyondCard").await;
+        lands_whole_and_one_more_lands(&base, &body, steps).await;
     }
     // the deepest corner of the spans falls under the lowest compared
-    // frequency, 49.55 Hz: refused by name and sealed to the step before
+    // frequency, 49.55 Hz: answered, flagged
     let deepest = run(&base, &json!({
         "domain": "energy", "card": "grid_gb",
         "initial": { "frequency_hz": 49.85, "inertia_mw_s": 111000.0, "demand_mw": 18163.0 },
@@ -162,19 +192,18 @@ async fn a_grid_run_of_sixty_seconds_lands_every_step() {
         "record_every": 3840
     }))
     .await;
-    assert_eq!(deepest["outcome"], "refused");
-    assert_eq!(deepest["reject"], "FrequencyBelowCompared");
-    assert!(deepest["final_state"]["lowest_frequency_hz"].as_f64().unwrap() >= 49.55);
+    assert_eq!(deepest["outcome"], "completed");
+    assert!(deepest["final_state"]["lowest_frequency_hz"].as_f64().unwrap() < 49.55);
     assert!(deepest["final_state"].get("below_statutory_limit").is_none());
 }
 
-/// The tokamak: the card ends 5.475 s after the start of the heated window,
-/// the longest compared window. Twelve step sizes from the start. A start at
-/// 5 s on the caller's clock carries a pulse on: the card takes it, and
+/// The tokamak: 5.475 s, the longest compared heated window, is not an end.
+/// Twelve step sizes from the start land every step to 5.475 s and one step
+/// more lands too. A start at 5 s on the caller's clock carries a pulse on:
 /// without from the door refuses it by name; continued from the sealed run
-/// that reached it, the run lands every step to the end of the window.
+/// that reached it, the run lands every step past the window.
 #[tokio::test]
-async fn a_tokamak_run_to_the_end_of_the_window_lands_every_step() {
+async fn a_tokamak_run_past_the_longest_compared_window_lands_every_step() {
     let base = spawn_app().await;
     let body = |start_s: f64, dt_s: f64, steps: u64| json!({
         "domain": "energy", "card": "tokamak_jet_dte1",
@@ -195,7 +224,14 @@ async fn a_tokamak_run_to_the_end_of_the_window_lands_every_step() {
             }
             let request = body(decimal(start_e6, 6), decimal(dt_e6, 6), steps);
             if start_e6 == 0 {
-                lands_whole_and_one_more_is_named(&base, &request, steps, "TimeBeyondCard").await;
+                for more in [0, 1] {
+                    let mut longer = request.clone();
+                    longer["segments"][0]["steps"] = json!(steps + more);
+                    longer["record_every"] = json!(steps + more);
+                    let answer = run(&base, &longer).await;
+                    assert_eq!(answer["outcome"], "completed", "{longer}: {answer}");
+                    assert_eq!(answer["steps_landed"], steps + more, "{longer}");
+                }
             } else {
                 let refused = run(&base, &request).await;
                 let text = refused["door"].as_str().unwrap_or_default();
@@ -203,22 +239,26 @@ async fn a_tokamak_run_to_the_end_of_the_window_lands_every_step() {
             }
         }
     }
-    // Continued from 5000 steps of 1 ms, sealed: 475 more land, one more ends.
+    // Continued from 5000 steps of 1 ms, sealed: 1000 more land, to 6 s.
     let upstream = body(0.0, 0.001, 5_000);
     let up = run(&base, &upstream).await;
     assert_eq!(up["outcome"], "completed", "{up}");
     let state = &up["final_state"];
-    let mut carried_on = body(0.0, 0.001, 475);
+    let mut carried_on = body(0.0, 0.001, 1_000);
     carried_on["initial"] = json!({
         "thermal_energy_j": state["thermal_energy_j"],
         "fast_ion_energy_j": state["fast_ion_energy_j"],
         "elapsed_time_s": state["t_s"]
     });
     carried_on["from"] = json!({ "request": upstream, "run_seal": up["run_seal"] });
-    lands_whole_and_one_more_is_named(&base, &carried_on, 475, "TimeBeyondCard").await;
+    let on = run(&base, &carried_on).await;
+    assert_eq!(on["outcome"], "completed", "{on}");
+    assert_eq!(on["steps_landed"], 1_000);
+    assert!(on["final_state"]["t_s"].as_f64().unwrap() > 5.999);
 }
 
-/// The generator: the card ends on mission day 4,087, 353,116,800 s. Twelve
+/// The generator: the record ends on mission day 4,087, 353,116,800 s, and
+/// a run goes on past it. Twelve
 /// step sizes at two lengths, each from the decimal start that leaves a
 /// whole number of steps. The last day lies past 2^28 s, where the spacing
 /// of 64-bit numbers doubles; the two runs of a thousand steps of a day
@@ -243,13 +283,14 @@ async fn a_generator_run_that_ends_on_the_last_day_lands_every_step() {
                 "segments": [{ "steps": steps, "load": {} }],
                 "record_every": steps
             });
-            lands_whole_and_one_more_is_named(&base, &body, steps, "MissionTimeOutsideCard").await;
+            lands_whole_and_one_more_lands(&base, &body, steps).await;
         }
     }
     assert_eq!(crossed, 2, "runs that start before 2^28 s");
 }
 
-/// The satellite: the card ends on 2026-09-20 00:00, 843,134,400 s. Twelve step
+/// The satellite: the card ends on 2027-06-28 00:00, 867,412,800 s, when the
+/// IERS leap-second file expires. Twelve step
 /// sizes over a thousand steps, and four runs of half a million and a
 /// million steps, the lengths at which the running sum of the clock is late
 /// by more than the spacing of 64-bit numbers at the date.
@@ -265,7 +306,7 @@ async fn a_satellite_run_that_ends_on_the_last_date_lands_every_step() {
         let body = json!({
             "domain": "aerospace", "card": "satellite_lageos1",
             "initial": {
-                "epoch_utc_s": decimal(84_313_440_000 - steps * dt_e2, 2),
+                "epoch_utc_s": decimal(86_741_280_000 - steps * dt_e2, 2),
                 "forecast_elapsed_s": 0.0,
                 "position_m": [3767126.6844992605, 8956617.400906362, 7564717.856833777],
                 "velocity_m_s": [4119.825668508274, 1676.7840658085788, -4053.2216929389388]
@@ -280,7 +321,7 @@ async fn a_satellite_run_that_ends_on_the_last_date_lands_every_step() {
             assert_eq!(whole["outcome"], "completed", "{body}: {whole}");
             assert_eq!(whole["steps_landed"], steps);
         } else {
-            lands_whole_and_one_more_is_named(&base, &body, steps, "EpochOutsideCard").await;
+            lands_whole_and_one_more_is_named(&base, &body, steps, "EpochOutsideLeapSecondSpan").await;
         }
     }
 }

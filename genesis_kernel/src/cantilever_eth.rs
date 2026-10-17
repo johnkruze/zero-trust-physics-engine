@@ -10,9 +10,12 @@
 //!
 //! The card's deflection is the deflection at the laser-1 station, 268 mm from
 //! the clamp, in metres. The card describes a free decay of the first bending
-//! mode with its envelope between 0.058 mm and 15.79 mm at that station, the
-//! span over which a run of the card was compared with a ring-down it was not
-//! fitted to. There is no load: the beam was never driven in the data.
+//! mode from an envelope of 18.75 mm at that station, the largest amplitude
+//! its constants were fitted on, down to rest. A run of the card was compared
+//! with a ring-down it was not fitted to from 15.786 mm down to 0.0587 mm;
+//! above 15.79 mm a frame carries [`FLAG_ENVELOPE_ABOVE_COMPARED`] and below
+//! 0.058 mm [`FLAG_ENVELOPE_BELOW_COMPARED`]. There is no load: the beam was
+//! never driven in the data.
 //!
 //! Where the numbers come from, and what they rest on:
 //!
@@ -48,18 +51,37 @@
 //! it. Over the run the card's envelope went from 15.786 mm at its start, the
 //! largest it held, through 14.404 mm at the first turning point after the
 //! start crossing, to 0.0587 mm at the end of the last scored block.
-//! [`AMPLITUDE_CEILING_M`] is the first rounded up to 15.79 mm and
+//! [`COMPARED_CEILING_M`] is the first rounded up to 15.79 mm and
 //! [`AMPLITUDE_FLOOR_M`] the last rounded down to 0.058 mm; the measured swing
 //! of the last scored block reached smaller amplitudes than the card's. The
 //! envelopes from 14.41 to 15.79 mm are the ones the compared run passed
-//! through before its readings were scored: the ceiling keeps the compared
-//! run's own start. Outside the range the card refuses a start and a step by
-//! name, as `DeflectionAboveCard` and `DeflectionBelowCard`. The run that was
-//! compared is accepted from its own start and lands 94,731 steps before it is
-//! refused below the floor; from the state it reached after 595 steps,
-//! 0.14875 s, the card's map gives the same deflections and speeds bit for
-//! bit, and that run lands 94,136 steps, to 23.534 s. A free decay from any
-//! start ends in that refusal; rest at zero is below the floor.
+//! through before its readings were scored. [`AMPLITUDE_CEILING_M`], the
+//! largest envelope the card takes, is 18.75 mm: 3.119 V, the largest
+//! amplitude of the fitted recording, times 0.006012 m per volt is 18.7514 mm,
+//! rounded down. The softening and the damping are power laws fitted on
+//! amplitudes up to it; above it those laws were not fitted, and the strip's
+//! own limit, its yield at the clamp, needs its alloy, which the dataset does
+//! not state. Above 18.75 mm the card refuses a start and a step by name, as
+//! `EnvelopeAboveCard`: the envelope is a size, so a deflection or a speed of
+//! either sign past it is refused under that one name. From 15.79 mm to
+//! 18.75 mm the card answers with the same equations and the same ledger, and
+//! each frame there carries [`FLAG_ENVELOPE_ABOVE_COMPARED`]: the fitted laws,
+//! inside the amplitudes they were fitted on and above the largest envelope
+//! the compared run held. Through engine 0.11 a start or a step there was
+//! refused as `EnvelopeAboveCard`. Below the
+//! floor the card goes on with the same equations and the same ledger down to
+//! rest, and each frame there carries [`FLAG_ENVELOPE_BELOW_COMPARED`]. Every
+//! force term is a power of the deflection or of the speed, and the power of
+//! zero, or of anything under the smallest normal 64-bit number, is exactly
+//! zero, so the map stays finite all the way to rest; rest at zero is a state
+//! that does not move. Below 0.0587 mm the fitted damping and the 8.29235 Hz
+//! frequency at vanishing amplitude are carried on past where they were
+//! compared: the lowest frequency read on the beam was 8.22 Hz. The run that
+//! was compared is accepted from its own start; from the state it reached
+//! after 595 steps, 0.14875 s, the card's map gives the same deflections and
+//! speeds bit for bit, and that run lands its 94,136 steps to 23.534 s inside
+//! the compared envelope and goes on landing below it. A free decay from any
+//! start ends only when the caller stops it.
 //!
 //! The card leaves out a drive, every other mode (a line near 50.7 Hz reaches
 //! 1 percent in the lasers), every other clamp and every other strip, the
@@ -111,8 +133,12 @@
 //! start at zero deflection with the envelope within 1 percent of the ceiling
 //! is therefore accepted by `try_phase` and refused, by name, a little under a
 //! quarter of a period later, when the envelope passes the ceiling. Measured:
-//! at 0.99 of the ceiling the step is refused after 104 steps of 0.25 ms; at
-//! 0.98 the beam rings through and the envelope tops at 0.992 of the ceiling.
+//! at 0.99 of the ceiling the step is refused after 107 steps of 0.25 ms; at
+//! 0.98 the beam rings through and the envelope tops at 0.991 of the ceiling.
+//! For the same reason, as a ring-down from above 15.79 mm passes it, frames
+//! with [`FLAG_ENVELOPE_ABOVE_COMPARED`] and frames without it alternate
+//! within a period: from rest at 18.75 mm, 1,149 frames carry it, the last
+//! at 0.317 s.
 //! The ledger is checked before the ceiling, so a step that creates energy is
 //! named as that.
 //!
@@ -145,8 +171,12 @@
 //! scale is 7.0e-7 at 0.5 ms, 2.0e-7 at 0.384 ms, 5.6e-8 at 0.25 ms and
 //! 1.9e-8 at 0.125 ms, against a limit of 1e-6. At 0.25 ms the ledger stands
 //! at an eighteenth of its limit; through the card's own step from the start
-//! of the scored ring-down to the floor it reaches 7.4e-8, and from rest at
-//! the ceiling to the floor 7.9e-8. Ten
+//! of the scored ring-down to the compared floor, 0.058 mm, it reaches 7.4e-8;
+//! over 100 s from rest at 15.79 mm, 7.9e-8, and from rest at the ceiling,
+//! 18.75 mm, 1.04e-7, 6.3e-8 of it above 15.79 mm. Below it the scale of
+//! the ledger is the same energy, so the gate is too: a ring-down from 0.1 mm
+//! over 200 s to 4.6e-13 m leaves 4.6e-12, and explicit Euler from 0.05 mm is
+//! named as created energy after 781 steps. Ten
 //! steps make one frame at 400 per second, the rate at which the reading
 //! procedure of the validation protocol was checked. After 1 s the state is
 //! 7.2e-8 m from a tight-tolerance reference in the plane of deflection and
@@ -155,27 +185,29 @@
 //! and 0.000004 Hz from that reference.
 //! [`CantileverEth::floor_dt_s`] is the ceiling divided by 2^18,
 //! 9.536743e-10 s. It is set where the deflection moves least, at a turning
-//! point at the amplitude ceiling: from rest at ±15.79 mm one step at the
-//! floor moves the deflection by five units in the last place, toward rest,
-//! and no step from one to four floors, four steps each, is refused there.
+//! point at the amplitude ceiling: from rest at ±18.75 mm one step at the
+//! floor moves the deflection by six units in the last place, toward rest
+//! (five at ±15.79 mm), and no step from one to four floors, four steps each,
+//! is refused there.
 //! At a quarter of this floor the deflection moves by less than a unit in the
 //! last place while the speed grows, and 153 of 2,000 steps of one to four of
-//! that quarter were refused as `DeflectionAboveCard` by rounding alone. At
+//! that quarter were refused as `EnvelopeAboveCard` by rounding alone. At
 //! 24.2 s the floor still moves the clock. The public step applies neither.
 //! The gateway refuses a step outside them.
 //!
 //! `core` only: no heap and no standard prelude. The card, the state and the
 //! load are `Copy`. An accepted step writes time, deflection, speed, the
 //! envelope, the kinetic energy, the spring energy, the heat so far, the
-//! margin to the amplitude ceiling and the conservation residual into
-//! [`LastStateFrame64`], and zero flags. The 16-byte frame proof is not
-//! touched.
+//! margin to the largest envelope compared, 15.79 mm, below zero above it,
+//! and the conservation residual into [`LastStateFrame64`], and the two
+//! flags. The 16-byte frame proof is not touched.
 
 extern crate core;
 
 use core::prelude::v1::*;
 
 use crate::frame::LastStateFrame64;
+use crate::normal::normal_or_zero;
 
 /// Frequency of the first bending mode at vanishing amplitude, Hz. Fitted to
 /// recording `test1a`. An extrapolation: the lowest frequency read was 8.22 Hz.
@@ -191,22 +223,32 @@ pub const DAMPING_C: f64 = 0.673442;
 pub const DAMPING_POWER: f64 = 0.0600771;
 /// Air drag `d`: deceleration per speed squared, 1/m. Fitted to `test1a`.
 pub const DRAG_PER_M: f64 = 0.793247;
-/// Largest deflection envelope the card accepts, m: the largest envelope
-/// the card held on the compared run, 15.786 mm at its start, rounded up to
-/// 15.79 mm. The readings were scored from 14.404 mm, at the first turning
-/// point after the start crossing; the envelopes above it are the ones the
-/// compared run passed through before that. Above the ceiling the card was
-/// never run in the comparison. See the header.
-pub const AMPLITUDE_CEILING_M: f64 = 0.01579;
-/// Smallest deflection envelope the card accepts, m: the smallest envelope the
-/// card held on the compared run up to the end of the last scored block,
-/// 0.0587 mm, rounded down to 0.058 mm. Below it the card was never compared
-/// with the beam. See the header.
+/// Largest deflection envelope the card accepts, m: 3.119 V, the largest
+/// amplitude of the fitted recording, times 0.006012 m per volt, 18.7514 mm,
+/// rounded down to 18.75 mm. The softening and the damping are power laws
+/// fitted on amplitudes up to it; above it they were not fitted, and the
+/// strip's own limit, its yield at the clamp, needs its alloy, which the
+/// dataset does not state. Above it a start and a step are refused as
+/// [`StepReject::EnvelopeAboveCard`]. See the header.
+pub const AMPLITUDE_CEILING_M: f64 = 0.01875;
+/// Largest deflection envelope the card was compared at, m: the largest
+/// envelope the card held on the compared run, 15.786 mm at its start,
+/// rounded up to 15.79 mm. The readings were scored from 14.404 mm, at the
+/// first turning point after the start crossing; the envelopes above it are
+/// the ones the compared run passed through before that. Above it, up to
+/// [`AMPLITUDE_CEILING_M`], a frame carries [`FLAG_ENVELOPE_ABOVE_COMPARED`].
+/// Through engine 0.11 it was the card's ceiling. See the header.
+pub const COMPARED_CEILING_M: f64 = 0.01579;
+/// Smallest deflection envelope the card was compared at, m: the smallest
+/// envelope the card held on the compared run up to the end of the last
+/// scored block, 0.0587 mm, rounded down to 0.058 mm. Below it a frame
+/// carries [`FLAG_ENVELOPE_BELOW_COMPARED`]. See the header.
 pub const AMPLITUDE_FLOOR_M: f64 = 5.8e-5;
 /// The amplitude whose stored energy at rest is the ledger's scale, m:
 /// 3.119 V × 0.006012 m/V = 18.75 mm, the largest amplitude the constants
 /// were fitted on, taken up to 18.8 mm. It sets the scale only; the card
-/// accepts no envelope above [`AMPLITUDE_CEILING_M`].
+/// accepts no envelope above [`AMPLITUDE_CEILING_M`], the same amplitude
+/// rounded down to 18.75 mm.
 pub const LEDGER_SCALE_AMPLITUDE_M: f64 = 0.0188;
 /// Step ceiling, s: 0.25 ms, about 482 steps per period. Set by measurement;
 /// see the header.
@@ -215,6 +257,21 @@ pub const GATE_DT_S: f64 = 2.5e-4;
 pub const GATE_OVER_FLOOR: f64 = 262_144.0;
 /// `|E − E_anchor + H| / E_scale` must stay at or under this.
 pub const RESIDUAL_CONSERVATION_LIMIT: f64 = 1.0e-6;
+
+/// The envelope on this frame is below 0.058 mm, the smallest the card was
+/// compared at on the held-back ring-down: the same equations and the same
+/// ledger, with the fitted damping and the small-amplitude frequency carried
+/// on below where they were compared.
+pub const FLAG_ENVELOPE_BELOW_COMPARED: u64 = 1 << 0;
+/// The envelope on this frame is above 15.79 mm, the largest the card held on
+/// the run compared with the held-back ring-down, and at or below 18.75 mm,
+/// the largest amplitude the constants were fitted on: the same equations and
+/// the same ledger, with the fitted laws inside the amplitudes they were
+/// fitted on and above the largest envelope compared. The state holds no
+/// boolean of its own for it; the frame's flags alone carry it. Through
+/// engine 0.11 such a start or step was refused as
+/// [`StepReject::EnvelopeAboveCard`].
+pub const FLAG_ENVELOPE_ABOVE_COMPARED: u64 = 1 << 1;
 
 /// Why a step did not advance the beam or the frame.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -227,12 +284,8 @@ pub enum StepReject {
     NonPositiveDt,
     /// A recorded constant is not this beam's.
     InvalidBeam,
-    /// The deflection envelope is above 15.79 mm, the largest the compared
-    /// run held, at the start of the step or where the trial step lands.
-    DeflectionAboveCard,
-    /// The deflection envelope is below 0.058 mm, the smallest the card was
-    /// compared at, at the start of the step or where the trial step lands.
-    DeflectionBelowCard,
+    /// The deflection envelope, a size, is above 18.75 mm at the start of the step or where the trial step lands: a deflection or a speed of either sign larger than the card takes. 18.75 mm is 3.119 V × 0.006012 m/V, the largest amplitude the softening and the damping were fitted on; above it those laws were not fitted, and the strip's own limit, its yield at the clamp, needs its alloy, which the dataset does not state.
+    EnvelopeAboveCard,
     /// The trial step created mechanical energy: the stored energy plus the
     /// heat rose above the energy the run started with.
     SpontaneousGeneration,
@@ -263,6 +316,8 @@ pub struct CantileverEth {
     pub drag_per_m: f64,
     /// Recorded copy of [`AMPLITUDE_CEILING_M`].
     pub amplitude_ceiling_m: f64,
+    /// Recorded copy of [`COMPARED_CEILING_M`].
+    pub compared_ceiling_m: f64,
     /// Recorded copy of [`AMPLITUDE_FLOOR_M`].
     pub amplitude_floor_m: f64,
     /// Recorded copy of [`GATE_DT_S`].
@@ -286,6 +341,7 @@ impl CantileverEth {
             damping_power: DAMPING_POWER,
             drag_per_m: DRAG_PER_M,
             amplitude_ceiling_m: AMPLITUDE_CEILING_M,
+            compared_ceiling_m: COMPARED_CEILING_M,
             amplitude_floor_m: AMPLITUDE_FLOOR_M,
             gate_dt_s: GATE_DT_S,
             gate_over_floor: GATE_OVER_FLOOR,
@@ -299,7 +355,8 @@ impl CantileverEth {
     }
 
     /// Every recorded copy equals its crate constant bit for bit, the two
-    /// powers are in their ranges (`1 < p < 3`, `0 ≤ s < 1`), the spring
+    /// powers are in their ranges (`1 < p < 3`, `0 ≤ s < 1`), the floor, the
+    /// compared ceiling and the ceiling are in that order, the spring
     /// softens, and it still restores at the amplitude ceiling.
     #[must_use]
     pub fn is_valid(&self) -> bool {
@@ -310,6 +367,7 @@ impl CantileverEth {
             && self.damping_power.to_bits() == DAMPING_POWER.to_bits()
             && self.drag_per_m.to_bits() == DRAG_PER_M.to_bits()
             && self.amplitude_ceiling_m.to_bits() == AMPLITUDE_CEILING_M.to_bits()
+            && self.compared_ceiling_m.to_bits() == COMPARED_CEILING_M.to_bits()
             && self.amplitude_floor_m.to_bits() == AMPLITUDE_FLOOR_M.to_bits()
             && self.gate_dt_s.to_bits() == GATE_DT_S.to_bits()
             && self.gate_over_floor.to_bits() == GATE_OVER_FLOOR.to_bits()
@@ -323,7 +381,8 @@ impl CantileverEth {
             && self.damping_power < 1.0
             && self.drag_per_m > 0.0
             && self.amplitude_floor_m > 0.0
-            && self.amplitude_ceiling_m > self.amplitude_floor_m
+            && self.amplitude_ceiling_m > self.compared_ceiling_m
+            && self.compared_ceiling_m > self.amplitude_floor_m
             && self.gate_dt_s > 0.0
             && self.gate_over_floor > 1.0
             && self.residual_conservation_limit > 0.0
@@ -339,7 +398,7 @@ impl CantileverEth {
     }
 
     /// `1 + κ A^(p−1)` at the amplitude ceiling `A`: the softened spring force
-    /// as a share of the plain spring force there. 0.941 for this beam.
+    /// as a share of the plain spring force there. 0.936 for this beam.
     #[must_use]
     pub fn spring_share_at_ceiling(&self) -> f64 {
         1.0 + self.spring_kappa * raised(self.amplitude_ceiling_m, self.spring_power - 1.0)
@@ -437,12 +496,16 @@ pub struct CantileverState {
     pub energy_defect_j_per_kg: f64,
     /// `|energy_defect_j_per_kg| / E_scale`.
     pub residual_conservation_error: f64,
+    /// The envelope is below 0.058 mm, the smallest the card was compared
+    /// at: see [`FLAG_ENVELOPE_BELOW_COMPARED`].
+    pub envelope_below_compared: bool,
 }
 
 impl CantileverState {
     /// Anchor the ledger at this deflection and speed, time 0. `None` for a
-    /// value that is not finite, an envelope above [`AMPLITUDE_CEILING_M`] or
-    /// an envelope below [`AMPLITUDE_FLOOR_M`]. Rest at zero is below it.
+    /// value that is not finite or an envelope above [`AMPLITUDE_CEILING_M`],
+    /// 18.75 mm.
+    /// Rest at zero is a state.
     #[must_use]
     pub fn try_phase(beam: &CantileverEth, deflection_m: f64, velocity_m_s: f64) -> Option<Self> {
         if !beam.is_valid() || !deflection_m.is_finite() || !velocity_m_s.is_finite() {
@@ -460,13 +523,11 @@ impl CantileverState {
             heat_j_per_kg: 0.0,
             energy_defect_j_per_kg: 0.0,
             residual_conservation_error: 0.0,
+            envelope_below_compared: false,
         };
         refresh(beam, &mut state);
         state.energy_anchor_j_per_kg = state.stored_j_per_kg;
-        if !state_is_finite(&state)
-            || !(state.envelope_m <= beam.amplitude_ceiling_m)
-            || !(state.envelope_m >= beam.amplitude_floor_m)
-        {
+        if !state_is_finite(&state) || !(state.envelope_m <= beam.amplitude_ceiling_m) {
             return None;
         }
         Some(state)
@@ -477,8 +538,25 @@ impl CantileverState {
 ///
 /// A rejected step leaves `state` and `frame` as they were. A stage of the
 /// step that is not finite is [`StepReject::NonFiniteState`].
+///
+/// A value of the landed state below the normal range is written as zero
+/// with its sign ([`crate::normal`]).
 #[must_use]
 pub fn step(
+    beam: &CantileverEth,
+    state: &mut CantileverState,
+    frame: &mut LastStateFrame64,
+    load: CantileverLoad,
+    dt_s: f64,
+) -> Result<(), StepReject> {
+    step_as_computed(beam, state, frame, load, dt_s)?;
+    normal_or_zero_state(state);
+    Ok(())
+}
+
+/// The step as its equations compute it, before a value of the landed
+/// state below the normal range is written as zero.
+fn step_as_computed(
     beam: &CantileverEth,
     state: &mut CantileverState,
     frame: &mut LastStateFrame64,
@@ -491,6 +569,23 @@ pub fn step(
         None => return Err(StepReject::NonFiniteState),
     };
     commit(beam, state, frame, dt_s, advanced)
+}
+
+/// Each value of a landed state below the normal range written as zero
+/// with its sign ([`crate::normal`]): the state carried to the next step
+/// and published holds no subnormal number.
+fn normal_or_zero_state(state: &mut CantileverState) {
+    state.t_s = normal_or_zero(state.t_s);
+    state.deflection_m = normal_or_zero(state.deflection_m);
+    state.velocity_m_s = normal_or_zero(state.velocity_m_s);
+    state.envelope_m = normal_or_zero(state.envelope_m);
+    state.kinetic_j_per_kg = normal_or_zero(state.kinetic_j_per_kg);
+    state.potential_j_per_kg = normal_or_zero(state.potential_j_per_kg);
+    state.stored_j_per_kg = normal_or_zero(state.stored_j_per_kg);
+    state.energy_anchor_j_per_kg = normal_or_zero(state.energy_anchor_j_per_kg);
+    state.heat_j_per_kg = normal_or_zero(state.heat_j_per_kg);
+    state.energy_defect_j_per_kg = normal_or_zero(state.energy_defect_j_per_kg);
+    state.residual_conservation_error = normal_or_zero(state.residual_conservation_error);
 }
 
 fn validate(
@@ -515,10 +610,7 @@ fn validate(
     // recorded copy in the state is not trusted.
     let envelope_m = beam.envelope_m(state.deflection_m, state.velocity_m_s);
     if !(envelope_m <= beam.amplitude_ceiling_m) {
-        return Err(StepReject::DeflectionAboveCard);
-    }
-    if !(envelope_m >= beam.amplitude_floor_m) {
-        return Err(StepReject::DeflectionBelowCard);
+        return Err(StepReject::EnvelopeAboveCard);
     }
     Ok(())
 }
@@ -562,11 +654,7 @@ fn commit(
     }
     if !(state.envelope_m <= beam.amplitude_ceiling_m) {
         *state = saved;
-        return Err(StepReject::DeflectionAboveCard);
-    }
-    if !(state.envelope_m >= beam.amplitude_floor_m) {
-        *state = saved;
-        return Err(StepReject::DeflectionBelowCard);
+        return Err(StepReject::EnvelopeAboveCard);
     }
     publish(beam, state, frame);
     Ok(())
@@ -579,6 +667,7 @@ fn refresh(beam: &CantileverEth, state: &mut CantileverState) {
     state.potential_j_per_kg = beam.potential_j_per_kg(state.deflection_m);
     state.stored_j_per_kg = state.kinetic_j_per_kg + state.potential_j_per_kg;
     state.envelope_m = beam.envelope_m(state.deflection_m, state.velocity_m_s);
+    state.envelope_below_compared = state.envelope_m < beam.amplitude_floor_m;
 }
 
 fn publish(beam: &CantileverEth, state: &CantileverState, frame: &mut LastStateFrame64) {
@@ -589,9 +678,18 @@ fn publish(beam: &CantileverEth, state: &CantileverState, frame: &mut LastStateF
     frame.vel[0] = state.kinetic_j_per_kg as f32;
     frame.vel[1] = state.potential_j_per_kg as f32;
     frame.vel[2] = state.heat_j_per_kg as f32;
-    frame.force_torque = (beam.amplitude_ceiling_m - state.envelope_m) as f32;
+    // The margin to the largest envelope compared, 15.79 mm, as through
+    // engine 0.11, when it was the ceiling: below zero above it.
+    frame.force_torque = (beam.compared_ceiling_m - state.envelope_m) as f32;
     frame.residual = state.residual_conservation_error as f32;
-    frame.flags = 0;
+    let mut flags = 0;
+    if state.envelope_below_compared {
+        flags |= FLAG_ENVELOPE_BELOW_COMPARED;
+    }
+    if state.envelope_m > beam.compared_ceiling_m {
+        flags |= FLAG_ENVELOPE_ABOVE_COMPARED;
+    }
+    frame.flags = flags;
 }
 
 /// The three variables in the order of the Runge–Kutta step: deflection,
@@ -678,8 +776,9 @@ mod tests {
     use std::vec::Vec;
 
     use super::{
-        AMPLITUDE_CEILING_M, AMPLITUDE_FLOOR_M, CantileverEth, CantileverLoad, CantileverState,
-        DAMPING_C, DAMPING_POWER, DRAG_PER_M, GATE_DT_S, GATE_OVER_FLOOR,
+        AMPLITUDE_CEILING_M, AMPLITUDE_FLOOR_M, COMPARED_CEILING_M, CantileverEth, CantileverLoad,
+        CantileverState, DAMPING_C, DAMPING_POWER, DRAG_PER_M, FLAG_ENVELOPE_ABOVE_COMPARED,
+        FLAG_ENVELOPE_BELOW_COMPARED, GATE_DT_S, GATE_OVER_FLOOR,
         LEDGER_SCALE_AMPLITUDE_M, RESIDUAL_CONSERVATION_LIMIT, SMALL_AMPLITUDE_FREQUENCY_HZ,
         SPRING_KAPPA, SPRING_POWER, StepReject, advance, commit, raised, rates, rk4, state_vector,
         step, validate,
@@ -1112,7 +1211,14 @@ mod tests {
         assert_eq!(DAMPING_C.to_bits(), 0.673442_f64.to_bits());
         assert_eq!(DAMPING_POWER.to_bits(), 0.0600771_f64.to_bits());
         assert_eq!(DRAG_PER_M.to_bits(), 0.793247_f64.to_bits());
-        assert_eq!(AMPLITUDE_CEILING_M.to_bits(), 0.01579_f64.to_bits());
+        assert_eq!(AMPLITUDE_CEILING_M.to_bits(), 0.01875_f64.to_bits());
+        assert_eq!(COMPARED_CEILING_M.to_bits(), 0.01579_f64.to_bits());
+        // 3.119 V, the largest amplitude of the fitted recording, times the
+        // metres per volt, rounded down to the ceiling.
+        assert!(3.119 * 0.006012 > AMPLITUDE_CEILING_M && 3.119 * 0.006012 < AMPLITUDE_CEILING_M + 2.0e-6);
+        assert!(AMPLITUDE_CEILING_M < LEDGER_SCALE_AMPLITUDE_M);
+        assert_eq!(FLAG_ENVELOPE_BELOW_COMPARED, 1);
+        assert_eq!(FLAG_ENVELOPE_ABOVE_COMPARED, 2);
         assert_eq!(AMPLITUDE_FLOOR_M.to_bits(), 5.8e-5_f64.to_bits());
         assert_eq!(LEDGER_SCALE_AMPLITUDE_M.to_bits(), 0.0188_f64.to_bits());
         assert_eq!(GATE_DT_S.to_bits(), 2.5e-4_f64.to_bits());
@@ -1131,6 +1237,7 @@ mod tests {
         assert_eq!(beam.damping_power.to_bits(), DAMPING_POWER.to_bits());
         assert_eq!(beam.drag_per_m.to_bits(), DRAG_PER_M.to_bits());
         assert_eq!(beam.amplitude_ceiling_m.to_bits(), AMPLITUDE_CEILING_M.to_bits());
+        assert_eq!(beam.compared_ceiling_m.to_bits(), COMPARED_CEILING_M.to_bits());
         assert_eq!(beam.amplitude_floor_m.to_bits(), AMPLITUDE_FLOOR_M.to_bits());
         assert_eq!(beam.gate_dt_s.to_bits(), GATE_DT_S.to_bits());
         assert_eq!(beam.gate_over_floor.to_bits(), GATE_OVER_FLOOR.to_bits());
@@ -1146,16 +1253,16 @@ mod tests {
             "{}",
             beam.ledger_scale_j_per_kg()
         );
-        // The spring still restores at the ceiling: 0.9393 of the plain spring.
+        // The spring still restores at the ceiling: 0.9364 of the plain spring.
         assert!(
-            (beam.spring_share_at_ceiling() - 0.9393).abs() < 5.0e-4,
+            (beam.spring_share_at_ceiling() - 0.9364).abs() < 5.0e-4,
             "{}",
             beam.spring_share_at_ceiling()
         );
 
         // Every recorded copy, changed by one bit, is invalid; a state cannot
         // be made on it and a step on it is refused with nothing changed.
-        let mut tampered = [beam; 11];
+        let mut tampered = [beam; 12];
         tampered[0].small_amplitude_frequency_hz =
             f64::from_bits(beam.small_amplitude_frequency_hz.to_bits() + 1);
         tampered[1].spring_kappa = f64::from_bits(beam.spring_kappa.to_bits() + 1);
@@ -1169,6 +1276,7 @@ mod tests {
         tampered[9].gate_over_floor = f64::from_bits(beam.gate_over_floor.to_bits() + 1);
         tampered[10].residual_conservation_limit =
             f64::from_bits(beam.residual_conservation_limit.to_bits() + 1);
+        tampered[11].compared_ceiling_m = f64::from_bits(beam.compared_ceiling_m.to_bits() + 1);
         let (_, fresh) = scored_start();
         let mut frame = blank_frame();
         let held = frame.to_bytes();
@@ -1188,6 +1296,13 @@ mod tests {
             assert_eq!(state_bits(&state), state_bits(&fresh));
             assert_eq!(frame.to_bytes(), held);
         }
+
+        // The compared ceiling above the ceiling, or under the floor, is invalid.
+        let mut wrong = beam;
+        wrong.compared_ceiling_m = 0.019;
+        assert!(!wrong.is_valid());
+        wrong.compared_ceiling_m = 5.0e-5;
+        assert!(!wrong.is_valid());
 
         // A hardening spring, no softening, or a power outside its range is invalid.
         let mut wrong = beam;
@@ -1242,7 +1357,7 @@ mod tests {
         // held, under the ceiling: the card makes that start.
         let start_envelope_m = beam.envelope_m(START_DEFLECTION_M, START_VELOCITY_M_S);
         assert!((start_envelope_m - 15.786e-3).abs() < 5.0e-8, "{start_envelope_m}");
-        assert!(start_envelope_m <= AMPLITUDE_CEILING_M);
+        assert!(start_envelope_m <= COMPARED_CEILING_M);
         assert!(CantileverState::try_phase(&beam, START_DEFLECTION_M, START_VELOCITY_M_S).is_some());
         // The card's map takes it in 595 steps to the start of the scored
         // ring-down, bit for bit.
@@ -1294,45 +1409,46 @@ mod tests {
 
     // Spec test 2, second part, and the ledger over the scored ring-down.
     #[test]
-    fn the_scored_ring_down_lands_through_its_last_block_and_is_refused_below_the_floor() {
+    fn the_scored_ring_down_lands_through_its_last_block_and_goes_on_below_it() {
         let (beam, mut state) = scored_start();
         let mut frame = blank_frame();
         let mut worst = 0.0_f64;
         let mut landed = 0_u64;
-        let end = loop {
-            let saved = state_bits(&state);
-            let held = frame.to_bytes();
-            match step(&beam, &mut state, &mut frame, NO_LOAD, GATE_DT_S) {
-                Ok(()) => {
-                    landed += 1;
-                    if state.residual_conservation_error > worst {
-                        worst = state.residual_conservation_error;
-                    }
-                    assert_eq!(frame.flags, 0);
-                    if landed % 10 == 0 {
-                        proof_intact(&frame);
-                        assert_eq!(frame.pos[0], state.deflection_m as f32);
-                    }
-                }
-                Err(end) => {
-                    assert_eq!(state_bits(&state), saved);
-                    assert_eq!(frame.to_bytes(), held);
-                    break end;
-                }
-            }
-        };
-        println!(
-            "from the start of the scored ring-down: {landed} steps, then {end:?} at envelope {:e} m; largest ledger residual {worst:e}",
-            state.envelope_m
-        );
-        assert_eq!(end, StepReject::DeflectionBelowCard);
+        let mut first_below = None;
         // The last scored block ends 23.469 s after the start crossing, 93,876
-        // steps after this start: every step of it lands.
-        assert_eq!(landed, 94_136);
-        assert!(landed > 93_876);
-        assert!((state.t_s - 23.534).abs() < 1.0e-9, "{}", state.t_s);
-        assert!(state.envelope_m >= AMPLITUDE_FLOOR_M);
-        assert!(within(state.envelope_m, 5.8004e-5, 1.0e-4), "{}", state.envelope_m);
+        // steps after this start: every step of it lands inside the compared
+        // envelope, and the decay goes on below it to 60 s.
+        while landed < 240_000 {
+            let before = state.envelope_m;
+            step(&beam, &mut state, &mut frame, NO_LOAD, GATE_DT_S).unwrap();
+            landed += 1;
+            if state.residual_conservation_error > worst {
+                worst = state.residual_conservation_error;
+            }
+            assert!(state.envelope_m <= COMPARED_CEILING_M);
+            if state.envelope_m < AMPLITUDE_FLOOR_M {
+                assert_eq!(frame.flags, FLAG_ENVELOPE_BELOW_COMPARED);
+                if first_below.is_none() {
+                    first_below = Some((landed, before));
+                }
+            } else {
+                assert_eq!(frame.flags, 0);
+            }
+            if landed % 10 == 0 {
+                proof_intact(&frame);
+                assert_eq!(frame.pos[0], state.deflection_m as f32);
+            }
+        }
+        let (first_flagged, envelope_before) = first_below.unwrap();
+        println!(
+            "from the start of the scored ring-down: first frame below the compared envelope at step {first_flagged}; after {landed} steps, at {} s, envelope {:e} m; largest ledger residual {worst:e}",
+            state.t_s, state.envelope_m
+        );
+        // Through engine 0.9 the card refused the step after 94,136, at
+        // 23.534 s, as the envelope fell below the floor.
+        assert_eq!(first_flagged, 94_137);
+        assert!(within(envelope_before, 5.8004e-5, 1.0e-4), "{envelope_before}");
+        assert!(state.envelope_m < 1.0e-6, "{}", state.envelope_m);
         assert!(worst < RESIDUAL_CONSERVATION_LIMIT);
         assert!(within(worst, 7.368e-8, 1.0e-3), "{worst:e}");
         assert!(RESIDUAL_CONSERVATION_LIMIT > 13.0 * worst);
@@ -1365,27 +1481,33 @@ mod tests {
         assert!(within(worst, 5.624e-8, 1.0e-3), "{worst:e}");
         assert!(RESIDUAL_CONSERVATION_LIMIT > 17.0 * worst);
 
-        // From rest at the amplitude ceiling: the largest start the card
-        // accepts rings down until it is refused below the floor.
-        let mut state = CantileverState::try_phase(&beam, AMPLITUDE_CEILING_M, 0.0).unwrap();
+        // From rest at the largest envelope compared, 15.79 mm, the card's
+        // ceiling through engine 0.11: it rings down through the compared
+        // envelope and on toward rest, 100 s, with its books closed at every
+        // step and no frame above the compared envelope.
+        let mut state = CantileverState::try_phase(&beam, COMPARED_CEILING_M, 0.0).unwrap();
         let mut worst = 0.0_f64;
         let mut landed = 0_u64;
-        let end = loop {
-            match step(&beam, &mut state, &mut frame, NO_LOAD, GATE_DT_S) {
-                Ok(()) => {
-                    landed += 1;
-                    if state.residual_conservation_error > worst {
-                        worst = state.residual_conservation_error;
-                    }
-                }
-                Err(end) => break end,
+        let mut inside = 0_u64;
+        while landed < 400_000 {
+            step(&beam, &mut state, &mut frame, NO_LOAD, GATE_DT_S).unwrap();
+            landed += 1;
+            assert_eq!(frame.flags & FLAG_ENVELOPE_ABOVE_COMPARED, 0);
+            if inside == 0 && state.envelope_m < AMPLITUDE_FLOOR_M {
+                inside = landed - 1;
             }
-        };
-        println!("from rest at the amplitude ceiling: {landed} steps, then {end:?}; largest residual {worst:e}");
-        assert_eq!(end, StepReject::DeflectionBelowCard);
-        assert_eq!(landed, 94_742);
+            if state.residual_conservation_error > worst {
+                worst = state.residual_conservation_error;
+            }
+        }
+        println!(
+            "from rest at the compared ceiling: {inside} steps before the first below the compared envelope, {landed} in all, envelope {:e} m; largest residual {worst:e}",
+            state.envelope_m
+        );
+        assert_eq!(inside, 94_742);
         assert!(within(worst, 7.863e-8, 1.0e-3), "{worst:e}");
         assert!(RESIDUAL_CONSERVATION_LIMIT > 5.0 * worst);
+        assert!(state.envelope_m < 1.0e-7 && state.envelope_m > 0.0);
         proof_intact(&frame);
     }
 
@@ -1393,7 +1515,8 @@ mod tests {
     #[test]
     fn explicit_euler_is_refused_and_the_cards_own_step_lands() {
         let beam = CantileverEth::first_bending_mode();
-        let mut state = CantileverState::try_phase(&beam, AMPLITUDE_CEILING_M, 0.0).unwrap();
+        // From rest at the largest envelope compared, 15.79 mm.
+        let mut state = CantileverState::try_phase(&beam, COMPARED_CEILING_M, 0.0).unwrap();
         let fresh = state;
         let mut frame = blank_frame();
         let held = frame.to_bytes();
@@ -1401,7 +1524,7 @@ mod tests {
 
         // Where one Euler step of 0.25 ms lands, and what it does to the books.
         let landed = euler(&beam, state_vector(&state), GATE_DT_S).unwrap();
-        assert_eq!(landed[0].to_bits(), AMPLITUDE_CEILING_M.to_bits());
+        assert_eq!(landed[0].to_bits(), COMPARED_CEILING_M.to_bits());
         let defect =
             beam.stored_j_per_kg(landed[0], landed[1]) - fresh.stored_j_per_kg + landed[2];
         assert!(within(landed[1], -1.006543233973e-2, 1.0e-9), "{:e}", landed[1]);
@@ -1640,24 +1763,19 @@ mod tests {
         );
         assert!(worst < RESIDUAL_CONSERVATION_LIMIT);
         // And through the card's own step from the start of the scored
-        // ring-down, until a bound of the card is met.
+        // ring-down, through the compared envelope and below it.
         let (_, mut state) = scored_start();
         let mut frame = blank_frame();
         let mut landed = 0;
-        let end = loop {
-            match step_with(&beam, &mut state, &mut frame, GATE_DT_S, |_, y, dt_s| {
+        while landed < 120_000 {
+            step_with(&beam, &mut state, &mut frame, GATE_DT_S, |_, y, dt_s| {
                 rk4(&no_drag, y, dt_s)
-            }) {
-                Ok(()) => {
-                    landed += 1;
-                    assert!(state.residual_conservation_error < RESIDUAL_CONSERVATION_LIMIT);
-                }
-                Err(end) => break end,
-            }
-        };
-        println!("the card's step with the drag dropped: {landed} steps, then {end:?}");
-        assert!(end == StepReject::DeflectionAboveCard || end == StepReject::DeflectionBelowCard);
-        assert!(landed > 0);
+            })
+            .unwrap();
+            landed += 1;
+            assert!(state.residual_conservation_error < RESIDUAL_CONSERVATION_LIMIT);
+        }
+        println!("the card's step with the drag dropped: {landed} steps landed");
         proof_intact(&frame);
     }
 
@@ -1700,23 +1818,8 @@ mod tests {
                     assert_eq!(y, [0.0, 0.0, 0.0]);
                 }
 
-                if beam.envelope_m(deflection_m, velocity_m_s) < AMPLITUDE_FLOOR_M {
-                    // Under the floor, rest included, the card makes no start,
-                    // and a state put together by hand is refused by name.
-                    assert!(CantileverState::try_phase(&beam, deflection_m, velocity_m_s).is_none());
-                    let mut low = CantileverState::try_phase(&beam, 0.0, 0.5).unwrap();
-                    low.deflection_m = deflection_m;
-                    low.velocity_m_s = velocity_m_s;
-                    let saved = state_bits(&low);
-                    let held = frame.to_bytes();
-                    assert_eq!(
-                        step(&beam, &mut low, &mut frame, NO_LOAD, GATE_DT_S),
-                        Err(StepReject::DeflectionBelowCard)
-                    );
-                    assert_eq!(state_bits(&low), saved);
-                    assert_eq!(frame.to_bytes(), held);
-                    continue;
-                }
+                // Under the compared envelope, rest included, the card makes a
+                // start and steps it, with the flag set.
                 let mut state =
                     CantileverState::try_phase(&beam, deflection_m, velocity_m_s).unwrap();
                 assert_eq!(state.potential_j_per_kg, 0.0);
@@ -1728,6 +1831,16 @@ mod tests {
                 assert!(state.envelope_m.is_finite());
                 assert!(state.residual_conservation_error <= RESIDUAL_CONSERVATION_LIMIT);
                 assert_eq!(frame.t.to_bits(), GATE_DT_S.to_bits());
+                if beam.envelope_m(deflection_m, velocity_m_s) < AMPLITUDE_FLOOR_M {
+                    assert_eq!(frame.flags, FLAG_ENVELOPE_BELOW_COMPARED);
+                }
+                if velocity_m_s == 0.0 {
+                    // Rest at zero is a state that does not move.
+                    assert_eq!(state.deflection_m, 0.0);
+                    assert_eq!(state.velocity_m_s, 0.0);
+                    assert_eq!(state.heat_j_per_kg, 0.0);
+                    assert_eq!(state.residual_conservation_error, 0.0);
+                }
             }
         }
         proof_intact(&frame);
@@ -1739,17 +1852,24 @@ mod tests {
         let (beam, fresh) = scored_start();
         let ok = GATE_DT_S;
 
-        // A start above the ceiling or below the floor is not made.
+        // A start above the ceiling is not made, on either side of zero.
         assert!(CantileverState::try_phase(&beam, 0.0189, 0.0).is_none());
         assert!(CantileverState::try_phase(&beam, -0.0189, 0.0).is_none());
-        assert!(CantileverState::try_phase(&beam, 0.0158, 0.0).is_none());
-        assert!(CantileverState::try_phase(&beam, -0.0158, 0.0).is_none());
+        assert!(CantileverState::try_phase(&beam, 0.01876, 0.0).is_none());
+        assert!(CantileverState::try_phase(&beam, -0.01876, 0.0).is_none());
         assert!(CantileverState::try_phase(&beam, 0.0, 0.9893).is_none());
         assert!(CantileverState::try_phase(&beam, 0.0, -0.9893).is_none());
-        assert!(CantileverState::try_phase(&beam, 0.0, 0.823).is_none());
-        assert!(CantileverState::try_phase(&beam, 0.0, 0.0).is_none());
-        assert!(CantileverState::try_phase(&beam, 5.7e-5, 0.0).is_none());
-        assert!(CantileverState::try_phase(&beam, 0.0, -3.0e-3).is_none());
+        assert!(CantileverState::try_phase(&beam, 0.0, 0.977).is_none());
+        // Above the compared envelope and under the ceiling a start is made:
+        // through engine 0.11 these were refused.
+        assert!(CantileverState::try_phase(&beam, 0.0158, 0.0).is_some());
+        assert!(CantileverState::try_phase(&beam, -0.0158, 0.0).is_some());
+        assert!(CantileverState::try_phase(&beam, 0.0, 0.823).is_some());
+        assert!(CantileverState::try_phase(&beam, 0.0, -0.976).is_some());
+        // Below the compared envelope a start is made, rest at zero included.
+        assert!(CantileverState::try_phase(&beam, 0.0, 0.0).is_some());
+        assert!(CantileverState::try_phase(&beam, 5.7e-5, 0.0).is_some());
+        assert!(CantileverState::try_phase(&beam, 0.0, -3.0e-3).is_some());
         assert!(CantileverState::try_phase(&beam, f64::NAN, 0.0).is_none());
         assert!(CantileverState::try_phase(&beam, 0.0, f64::NAN).is_none());
         assert!(CantileverState::try_phase(&beam, f64::INFINITY, 0.0).is_none());
@@ -1814,25 +1934,33 @@ mod tests {
         let mut high = fresh;
         high.deflection_m = 0.0189;
         high.velocity_m_s = 0.0;
-        refuse(high, ok, &beam, StepReject::DeflectionAboveCard);
+        refuse(high, ok, &beam, StepReject::EnvelopeAboveCard);
         high.deflection_m = 0.0;
         high.velocity_m_s = 0.9893;
-        refuse(high, ok, &beam, StepReject::DeflectionAboveCard);
+        refuse(high, ok, &beam, StepReject::EnvelopeAboveCard);
         high.deflection_m = 1.0;
-        refuse(high, ok, &beam, StepReject::DeflectionAboveCard);
-        // A state below the floor, put together by hand, rest included.
+        refuse(high, ok, &beam, StepReject::EnvelopeAboveCard);
+        // A state below the compared envelope lands, rest included: the
+        // bound that stood there through engine 0.9 is gone.
         let mut low = fresh;
         low.deflection_m = 1.0e-5;
         low.velocity_m_s = 0.0;
-        refuse(low, ok, &beam, StepReject::DeflectionBelowCard);
-        low.deflection_m = 0.0;
-        refuse(low, ok, &beam, StepReject::DeflectionBelowCard);
-        low.velocity_m_s = 1.0e-3;
-        refuse(low, ok, &beam, StepReject::DeflectionBelowCard);
-        // A step that lands below the floor: from rest at the floor the
-        // envelope falls toward the rest position.
-        let at_floor = CantileverState::try_phase(&beam, AMPLITUDE_FLOOR_M, 0.0).unwrap();
-        refuse(at_floor, ok, &beam, StepReject::DeflectionBelowCard);
+        low.energy_anchor_j_per_kg = beam.stored_j_per_kg(1.0e-5, 0.0);
+        low.heat_j_per_kg = 0.0;
+        let mut landed = low;
+        step(&beam, &mut landed, &mut frame, NO_LOAD, ok).unwrap();
+        assert_eq!(frame.flags, FLAG_ENVELOPE_BELOW_COMPARED);
+        let mut frame = blank_frame();
+        let held = frame.to_bytes();
+        let mut refuse =
+            |mut state: CantileverState, dt_s: f64, card: &CantileverEth, expect: StepReject| {
+                let saved = state_bits(&state);
+                let got = step(card, &mut state, &mut frame, NO_LOAD, dt_s);
+                assert_eq!(got, Err(expect), "dt {dt_s}");
+                assert_eq!(state_bits(&state), saved);
+                assert_eq!(frame.to_bytes(), held);
+                proof_intact(&frame);
+            };
 
         // The ledger, through the public step: a step twenty times the ceiling.
         refuse(fresh, 20.0 * ok, &beam, StepReject::FirstLawBreach);
@@ -1845,7 +1973,7 @@ mod tests {
         refuse(cold, ok, &beam, StepReject::FirstLawBreach);
 
         // The order of the checks: the step size, the state, the sign of the
-        // step, the card, the ceiling, the floor.
+        // step, the card, the ceiling.
         broken = fresh;
         broken.deflection_m = f64::NAN;
         refuse(broken, f64::NAN, &tampered, StepReject::NonFiniteInput);
@@ -1888,16 +2016,18 @@ mod tests {
             "start at zero deflection, envelope 0.99 of the ceiling: {landed} steps, then {end:?} at deflection {:e} m",
             state.deflection_m
         );
-        assert_eq!(end, StepReject::DeflectionAboveCard);
-        // Found: 104 steps, a little under a quarter of a period (120 steps).
-        assert_eq!(landed, 104);
+        assert_eq!(end, StepReject::EnvelopeAboveCard);
+        // Found: 107 steps, a little under a quarter of a period (120 steps).
+        assert_eq!(landed, 107);
         assert!(state.envelope_m <= AMPLITUDE_CEILING_M);
         assert!(state.deflection_m > 0.0138 && state.deflection_m < AMPLITUDE_CEILING_M);
-        // The last landed frame carries a margin to the ceiling that is not negative.
-        assert!(frame.force_torque >= 0.0);
+        // The last landed frame is above the compared envelope: it carries the
+        // flag and a margin to the largest envelope compared below zero.
+        assert_eq!(frame.flags, FLAG_ENVELOPE_ABOVE_COMPARED);
+        assert!(frame.force_torque < 0.0);
         proof_intact(&frame);
 
-        // At 0.98 of the ceiling the beam rings through: the envelope tops at 0.992 of it.
+        // At 0.98 of the ceiling the beam rings through.
         let mut state = CantileverState::try_phase(&beam, 0.0, 0.98 * speed_at_ceiling_m_s).unwrap();
         let mut top_m = 0.0_f64;
         let mut count = 0;
@@ -1908,54 +2038,251 @@ mod tests {
             }
             count += 1;
         }
+        println!("start at zero deflection, envelope 0.98 of the ceiling: rings through, the envelope tops at {} of the ceiling", top_m / AMPLITUDE_CEILING_M);
+        // The envelope tops at 0.991 of it.
         assert!(top_m > 0.991 * AMPLITUDE_CEILING_M && top_m < 0.992 * AMPLITUDE_CEILING_M, "{top_m}");
     }
 
-    // Spec test 8, now a bound: the card refuses by name below the smallest
-    // envelope it was compared at, and its frame carries no flag.
+    // The wall at the largest envelope compared, lifted: from 15.79 mm to
+    // 18.75 mm, the largest amplitude the constants were fitted on, the card
+    // answers with the same equations and the same ledger, and each frame
+    // there carries FLAG_ENVELOPE_ABOVE_COMPARED; above 18.75 mm it refuses
+    // by name, as EnvelopeAboveCard.
     #[test]
-    fn a_ring_down_is_refused_by_name_once_its_envelope_falls_below_the_floor() {
+    fn above_the_compared_envelope_a_step_lands_flagged_with_its_books_closed_up_to_the_ceiling() {
+        let beam = CantileverEth::first_bending_mode();
+        let mut frame = blank_frame();
+        let limit = RESIDUAL_CONSERVATION_LIMIT;
+
+        // Starts between the two are made, and their first step lands flagged,
+        // with the margin to the largest envelope compared below zero.
+        for (deflection_m, velocity_m_s) in [
+            (0.0158, 0.0),
+            (-0.0170, 0.0),
+            (0.0185, 0.0),
+            (AMPLITUDE_CEILING_M, 0.0),
+            (-AMPLITUDE_CEILING_M, 0.0),
+            (0.012, 0.6),
+            (0.0, -0.95),
+        ] {
+            let envelope_m = beam.envelope_m(deflection_m, velocity_m_s);
+            assert!(envelope_m > COMPARED_CEILING_M && envelope_m <= AMPLITUDE_CEILING_M, "{envelope_m}");
+            let mut state = CantileverState::try_phase(&beam, deflection_m, velocity_m_s).unwrap();
+            step(&beam, &mut state, &mut frame, NO_LOAD, GATE_DT_S).unwrap();
+            assert_eq!(frame.flags, FLAG_ENVELOPE_ABOVE_COMPARED, "{deflection_m} {velocity_m_s}");
+            assert!(frame.force_torque < 0.0);
+            assert_eq!(frame.force_torque, (COMPARED_CEILING_M - state.envelope_m) as f32);
+            assert!(state.residual_conservation_error <= limit);
+            proof_intact(&frame);
+        }
+
+        // From rest at the ceiling, 18.75 mm: the ring-down lands through the
+        // flagged envelopes, through the compared envelope with every frame
+        // unflagged, and below it toward rest, 100 s, its books closed at
+        // every step. The flag is on exactly the frames above 15.79 mm; the
+        // envelope rises within each period toward the turning point, so
+        // near 15.79 mm flagged and unflagged frames alternate within a
+        // period before the decay takes the envelope under it for good.
+        let mut state = CantileverState::try_phase(&beam, AMPLITUDE_CEILING_M, 0.0).unwrap();
+        let mut worst = 0.0_f64;
+        let mut worst_above = 0.0_f64;
+        let mut landed = 0_u64;
+        let mut above = 0_u64;
+        let mut first_unflagged = 0_u64;
+        let mut last_flagged = 0_u64;
+        let mut first_below = 0_u64;
+        let mut heat = 0.0_f64;
+        while landed < 400_000 {
+            step(&beam, &mut state, &mut frame, NO_LOAD, GATE_DT_S).unwrap();
+            landed += 1;
+            assert!(state.envelope_m <= AMPLITUDE_CEILING_M);
+            assert!(state.heat_j_per_kg >= heat);
+            heat = state.heat_j_per_kg;
+            if state.envelope_m > COMPARED_CEILING_M {
+                assert_eq!(frame.flags, FLAG_ENVELOPE_ABOVE_COMPARED);
+                above += 1;
+                last_flagged = landed;
+                if state.residual_conservation_error > worst_above {
+                    worst_above = state.residual_conservation_error;
+                }
+            } else if state.envelope_m < AMPLITUDE_FLOOR_M {
+                assert_eq!(frame.flags, FLAG_ENVELOPE_BELOW_COMPARED);
+                if first_below == 0 {
+                    first_below = landed;
+                }
+            } else {
+                assert_eq!(frame.flags, 0);
+                if first_unflagged == 0 {
+                    first_unflagged = landed;
+                }
+            }
+            if state.residual_conservation_error > worst {
+                worst = state.residual_conservation_error;
+            }
+        }
+        println!(
+            "from rest at the ceiling, 18.75 mm: {above} frames above the compared envelope, the first inside it at step {first_unflagged}, the last above it at step {last_flagged} ({} s), the first below it at step {first_below}; {landed} in all, envelope {:e} m; largest residual {worst:e}, {worst_above:e} above the compared envelope",
+            last_flagged as f64 * GATE_DT_S,
+            state.envelope_m
+        );
+        // Found: 1,149 frames above 15.79 mm, the last at step 1,269,
+        // 0.317 s; the first below 0.058 mm at step 96,004; the largest
+        // residual 1.044e-7, a tenth of the limit, and 6.33e-8 above the
+        // compared envelope.
+        assert_eq!((above, last_flagged, first_below), (1_149, 1_269, 96_004));
+        assert!(first_unflagged > 0 && first_unflagged < last_flagged);
+        assert!(within(worst, 1.044e-7, 1.0e-3), "{worst:e}");
+        assert!(within(worst_above, 6.329e-8, 1.0e-3), "{worst_above:e}");
+        assert!(worst < limit);
+        assert!(state.envelope_m < 1.0e-7 && state.envelope_m > 0.0);
+        proof_intact(&frame);
+
+        // The ledger above the compared envelope is the ledger: a heat altered
+        // there, a wrong step and a force that is not the derivative of the
+        // stored energy are named, with the state and the frame as they were.
+        let high = CantileverState::try_phase(&beam, 0.0185, 0.0).unwrap();
+        let gate = limit * beam.ledger_scale_j_per_kg();
+        let held = frame.to_bytes();
+        for (bias, expect) in [
+            (2.0 * gate, StepReject::SpontaneousGeneration),
+            (-2.0 * gate, StepReject::FirstLawBreach),
+        ] {
+            let mut altered = high;
+            altered.heat_j_per_kg += bias;
+            let saved = state_bits(&altered);
+            assert_eq!(step(&beam, &mut altered, &mut frame, NO_LOAD, GATE_DT_S), Err(expect));
+            assert_eq!(state_bits(&altered), saved);
+            assert_eq!(frame.to_bytes(), held);
+        }
+        let mut state = high;
+        assert_eq!(step_with(&beam, &mut state, &mut frame, GATE_DT_S, euler), Err(StepReject::SpontaneousGeneration));
+        assert_eq!(state_bits(&state), state_bits(&high));
+        let mut no_softening = beam;
+        no_softening.spring_kappa = 0.0;
+        assert_eq!(
+            step_with(&beam, &mut state, &mut frame, GATE_DT_S, |_, y, dt_s| rk4(&no_softening, y, dt_s)),
+            Err(StepReject::SpontaneousGeneration)
+        );
+        assert_eq!(state_bits(&state), state_bits(&high));
+        assert_eq!(frame.to_bytes(), held);
+        proof_intact(&frame);
+
+        // Above the ceiling a start is not made, and a state put together by
+        // hand there is refused by name, with the state and the frame as they
+        // were; the next 64-bit number above the ceiling is refused, the
+        // ceiling itself is made.
+        let next = f64::from_bits(AMPLITUDE_CEILING_M.to_bits() + 1);
+        assert!(CantileverState::try_phase(&beam, next, 0.0).is_none());
+        assert!(CantileverState::try_phase(&beam, -next, 0.0).is_none());
+        assert!(CantileverState::try_phase(&beam, AMPLITUDE_CEILING_M, 0.0).is_some());
+        for (deflection_m, velocity_m_s) in [(next, 0.0), (0.0188, 0.0), (-0.0190, 0.0), (0.0, 0.98), (0.015, 0.6)] {
+            assert!(beam.envelope_m(deflection_m, velocity_m_s) > AMPLITUDE_CEILING_M);
+            let mut state = high;
+            state.deflection_m = deflection_m;
+            state.velocity_m_s = velocity_m_s;
+            let saved = state_bits(&state);
+            assert_eq!(step(&beam, &mut state, &mut frame, NO_LOAD, GATE_DT_S), Err(StepReject::EnvelopeAboveCard));
+            assert_eq!(state_bits(&state), saved);
+            assert_eq!(frame.to_bytes(), held);
+        }
+        proof_intact(&frame);
+    }
+
+    // Spec test 8, the wall lifted: below the smallest envelope the card was
+    // compared at it goes on with the same equations and ledger, and each
+    // frame there carries FLAG_ENVELOPE_BELOW_COMPARED.
+    #[test]
+    fn a_ring_down_goes_on_below_the_compared_envelope_to_rest_with_its_books_closed() {
         let beam = CantileverEth::first_bending_mode();
         let mut frame = blank_frame();
         assert_eq!(frame.flags, 9);
 
-        // Under 0.058 mm no start is made, rest at zero included.
+        // Under 0.058 mm a start is made, rest at zero included, and its step
+        // carries the flag.
         for (deflection_m, velocity_m_s) in [(5.7e-5, 0.0), (-5.0e-5, 0.0), (0.0, 3.0e-3), (0.0, 0.0)] {
             assert!(beam.envelope_m(deflection_m, velocity_m_s) < AMPLITUDE_FLOOR_M);
-            assert!(CantileverState::try_phase(&beam, deflection_m, velocity_m_s).is_none());
+            let mut state = CantileverState::try_phase(&beam, deflection_m, velocity_m_s).unwrap();
+            step(&beam, &mut state, &mut frame, NO_LOAD, GATE_DT_S).unwrap();
+            assert_eq!(frame.flags, FLAG_ENVELOPE_BELOW_COMPARED);
         }
         // At and above it a step lands and the frame's flags are zero.
-        for (deflection_m, velocity_m_s) in [(6.5e-5, 0.0), (1.0e-3, 0.0), (0.0, 0.5), (AMPLITUDE_CEILING_M, 0.0)] {
+        for (deflection_m, velocity_m_s) in [(6.5e-5, 0.0), (1.0e-3, 0.0), (0.0, 0.5), (COMPARED_CEILING_M, 0.0)] {
             let mut state = CantileverState::try_phase(&beam, deflection_m, velocity_m_s).unwrap();
             step(&beam, &mut state, &mut frame, NO_LOAD, GATE_DT_S).unwrap();
             assert!(state.envelope_m >= AMPLITUDE_FLOOR_M);
             assert_eq!(frame.flags, 0);
         }
-        // A ring-down from 0.1 mm lands until its envelope would pass under the
-        // floor; that step is refused by name with the state and the frame as
-        // they were, and the last landed state is at or above the floor.
+        // A ring-down from 0.1 mm passes under the old floor and decays on for
+        // 200 s, 800,000 steps: the envelope never rises by more than the
+        // softened spring's rise within one period, the heat never falls, the
+        // ledger closes at every step, and every value stays finite and normal
+        // or exactly zero.
         let mut state = CantileverState::try_phase(&beam, 1.0e-4, 0.0).unwrap();
-        let mut landed = 0;
-        let end = loop {
-            let saved = state_bits(&state);
+        let mut landed = 0_u64;
+        let mut flagged = 0_u64;
+        let mut worst = 0.0_f64;
+        let mut heat = 0.0_f64;
+        while landed < 800_000 {
+            step(&beam, &mut state, &mut frame, NO_LOAD, GATE_DT_S).unwrap();
+            landed += 1;
+            if frame.flags == FLAG_ENVELOPE_BELOW_COMPARED {
+                flagged += 1;
+                assert!(state.envelope_m < AMPLITUDE_FLOOR_M);
+            } else {
+                assert_eq!(frame.flags, 0);
+                assert!(state.envelope_m >= AMPLITUDE_FLOOR_M);
+            }
+            assert!(state.heat_j_per_kg >= heat);
+            heat = state.heat_j_per_kg;
+            assert!(state.envelope_m.is_finite() && state.envelope_m >= 0.0);
+            if state.residual_conservation_error > worst {
+                worst = state.residual_conservation_error;
+            }
+        }
+        println!(
+            "ring-down from 0.1 mm: {landed} steps, {flagged} below the compared envelope, envelope {:e} m, largest residual {worst:e}",
+            state.envelope_m
+        );
+        assert!(flagged > 780_000);
+        assert!(worst < 1.0e-3 * RESIDUAL_CONSERVATION_LIMIT, "{worst:e}");
+        assert!(state.envelope_m < 1.0e-8, "{:e}", state.envelope_m);
+        proof_intact(&frame);
+
+        // The ledger past the old floor is the ledger: a heat altered there is
+        // named, both ways, with the state and the frame as they were.
+        let gate = RESIDUAL_CONSERVATION_LIMIT * beam.ledger_scale_j_per_kg();
+        for (bias, expect) in [
+            (2.0 * gate, StepReject::SpontaneousGeneration),
+            (-2.0 * gate, StepReject::FirstLawBreach),
+        ] {
+            let mut altered = state;
+            altered.heat_j_per_kg += bias;
+            let saved = state_bits(&altered);
             let held = frame.to_bytes();
-            match step(&beam, &mut state, &mut frame, NO_LOAD, GATE_DT_S) {
-                Ok(()) => {
-                    landed += 1;
-                    assert_eq!(frame.flags, 0);
-                }
+            assert_eq!(step(&beam, &mut altered, &mut frame, NO_LOAD, GATE_DT_S), Err(expect));
+            assert_eq!(state_bits(&altered), saved);
+            assert_eq!(frame.to_bytes(), held);
+        }
+        // And explicit Euler from just under the old floor creates energy,
+        // which the ledger names.
+        let small = CantileverState::try_phase(&beam, 5.0e-5, 0.0).unwrap();
+        let mut euler_state = small;
+        let mut named = None;
+        let mut count = 0;
+        while count < 100_000 {
+            match step_with(&beam, &mut euler_state, &mut frame, GATE_DT_S, |card, y, dt_s| {
+                euler(card, y, dt_s)
+            }) {
+                Ok(()) => count += 1,
                 Err(end) => {
-                    assert_eq!(state_bits(&state), saved);
-                    assert_eq!(frame.to_bytes(), held);
-                    break end;
+                    named = Some(end);
+                    break;
                 }
             }
-        };
-        println!("ring-down from 0.1 mm: {landed} steps, then {end:?} at envelope {:e} m", state.envelope_m);
-        assert_eq!(end, StepReject::DeflectionBelowCard);
-        assert!(landed > 1_000);
-        assert!(state.envelope_m >= AMPLITUDE_FLOOR_M && state.envelope_m < 1.01 * AMPLITUDE_FLOOR_M);
-        proof_intact(&frame);
+        }
+        println!("explicit Euler from 0.05 mm: {count} steps, then {named:?}");
+        assert_eq!(named, Some(StepReject::SpontaneousGeneration));
+        assert_eq!(count, 781);
     }
 
     // Spec test 9.
@@ -1992,7 +2319,7 @@ mod tests {
         assert_eq!(frame.vel[0], state.kinetic_j_per_kg as f32);
         assert_eq!(frame.vel[1], state.potential_j_per_kg as f32);
         assert_eq!(frame.vel[2], state.heat_j_per_kg as f32);
-        assert_eq!(frame.force_torque, (AMPLITUDE_CEILING_M - state.envelope_m) as f32);
+        assert_eq!(frame.force_torque, (COMPARED_CEILING_M - state.envelope_m) as f32);
         assert_eq!(frame.residual, state.residual_conservation_error as f32);
         assert_eq!(frame.flags, 0);
         proof_intact(&frame);
@@ -2085,7 +2412,7 @@ mod tests {
         assert!(within(10.0 * ceiling_s, 1.0 / 400.0, 1.0e-15));
         // The measured ground of the ceiling, the ledger at an eighteenth of
         // its limit over the compared run, is the test
-        // `the_scored_ring_down_lands_through_its_last_block_and_is_refused_below_the_floor`;
+        // `the_scored_ring_down_lands_through_its_last_block_and_goes_on_below_it`;
         // the table of the header is the test
         // `halving_the_step_shows_the_slow_convergence_of_the_table`.
 
@@ -2103,7 +2430,8 @@ mod tests {
 
         // The floor: from rest at the amplitude ceiling, a turning point,
         // where the deflection moves least, one step at the floor moves the
-        // deflection by five units in the last place, toward rest.
+        // deflection by six units in the last place, toward rest (five from
+        // rest at 15.79 mm, the ceiling through engine 0.11).
         let phase_at_floor_rad = beam.omega0_rad_s() * floor_s;
         assert!(phase_at_floor_rad > 4.9e-8 && phase_at_floor_rad < 5.0e-8);
         for sign in [1.0, -1.0] {
@@ -2111,11 +2439,11 @@ mod tests {
             let mut state = at_rest;
             let mut frame = blank_frame();
             step(&beam, &mut state, &mut frame, NO_LOAD, floor_s).unwrap();
-            assert_eq!(at_rest.deflection_m.abs().to_bits() - state.deflection_m.abs().to_bits(), 5);
+            assert_eq!(at_rest.deflection_m.abs().to_bits() - state.deflection_m.abs().to_bits(), 6);
             assert!(state.envelope_m <= AMPLITUDE_CEILING_M);
             // No step from one to four floors is refused there, over four
             // steps each; at the earlier floor, a quarter of this one, steps
-            // of one to four of it were refused as DeflectionAboveCard by
+            // of one to four of it were refused as EnvelopeAboveCard by
             // rounding, the deflection standing still while the speed grew.
             let mut refused_now = 0;
             let mut refused_before = 0;
@@ -2132,7 +2460,7 @@ mod tests {
                         match step(&beam, &mut state, &mut frame, NO_LOAD, dt_s) {
                             Ok(()) => steps += 1,
                             Err(end) => {
-                                assert_eq!(end, StepReject::DeflectionAboveCard);
+                                assert_eq!(end, StepReject::EnvelopeAboveCard);
                                 *count += 1;
                                 break;
                             }

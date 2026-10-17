@@ -1,0 +1,27 @@
+{
+ "model": "fingerpad_p02_glass",
+ "verdict": "missed",
+ "protocol": {
+  "path": "evidence/research/tactile_slip_fingerpad_p02_glass/validation_protocol.md",
+  "sha256": "49a4788d1eb6e5d5881d4f3b2195ad248a2a543c2da45fb1c8ffb7dc27672081",
+  "committed": {
+   "crate": "protocol_mcp_gateway",
+   "commit": "c80e2ce4967468a9cc8f5245ee2e5bc8cd4f1a8b",
+   "utc": "2026-10-10T01:24:05Z",
+   "how": "The diff of 'Serve the fingerpad_p02_glass card ... it has not yet been compared with its held-back trials: this is the build the comparison is run on' adds the pass line 'Fixed before any held-back trial was opened (pre-registration SHA-256 49a4788d...672081)' and the result 'Not yet compared'."
+  }
+ },
+ "held_back": [
+  {
+   "path": "evidence/research/tactile_slip_fingerpad_p02_glass/analysis/opened_after_hash.sha256",
+   "sha256": "d246df82edf368f25018581adf8bd3e63ea95c65e0aee4b6a938cc4b5a9bca69"
+  }
+ ],
+ "scored": {
+  "utc": "2026-10-10T01:25:12Z",
+  "evidence": "Birth time of evidence/research/tactile_slip_fingerpad_p02_glass/engine_runs/ (18:25:12 PDT), the engine run at the held-back conditions' nominal force and rate; the held-back P02 trial files themselves were first written to raw/PublicData/P02/video_out/ at 01:25:28Z (protocolrot_sdb_P02_103.csv) and the results at 01:27:53Z (RESULTS.md)."
+ },
+ "forecast_first": "held",
+ "registered_by": "backfill from the record, 2026-10-15",
+ "notes": "Committed 67 s before the engine run and 83 s before the first held-back trial file was fetched; validation_protocol.md on disk still has the committed hash. Outside Git: analysis/prereg_hash.txt (no time in it; born 2026-10-10T00:30:58Z) gives validation_protocol.md and analysis/prereg.json (7f109c16..., unchanged on disk). The protocol lists every file opened before the hash in analysis/opened_before_hash.sha256 (195 files) and names the held-back trials as not opened and not fetched; the held_back file above lists, with their SHA-256, the files opened after the hash (589 lines, born 01:25:50Z). validation_protocol_note_after_second_scoring.md (ce83b377..., hash in analysis/protocol_note_hash.txt) was written after the scoring and the second scoring and changes no mark. Rescorings: engine_runs_final_build, engine_runs_range_enforced, engine_runs_range_enforced_v060; second party evidence/verification/second_party/V-40/. Commit times are the committer's clock. Public mark: GitHub-signed commit ffebaa1c1b3acda446e0d1b8e67c64bd35cb0628 at 2026-10-13T17:55:46Z."
+}

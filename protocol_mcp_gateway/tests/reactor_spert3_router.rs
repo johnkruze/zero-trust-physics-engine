@@ -11,6 +11,8 @@
 //! The reactivities and coolant temperatures of the runs are those of opened
 //! tests only (22, 51 and 43 here). No sealed test is run.
 
+mod answer_text;
+
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::time::Duration;
@@ -53,7 +55,9 @@ async fn post_text(base: &str, path: &str, body: &str) -> (u16, String) {
         {
             Ok(response) => {
                 let status = response.status().as_u16();
-                return (status, response.text().await.unwrap());
+                let text = response.text().await.unwrap();
+                answer_text::remember(&text);
+                return (status, text);
             }
             Err(error) => {
                 last_error = Some(error);
@@ -65,7 +69,7 @@ async fn post_text(base: &str, path: &str, body: &str) -> (u16, String) {
 }
 
 async fn post(base: &str, path: &str, body: &Value) -> (u16, String) {
-    post_text(base, path, &serde_json::to_string(body).unwrap()).await
+    post_text(base, path, &answer_text::as_sent(body)).await
 }
 
 fn sha256_hex(bytes: &[u8]) -> String {
@@ -190,7 +194,7 @@ fn state_numbers(state: &ReactorState) -> Vec<(&'static str, f64)> {
         peak_power_mw,
         peak_energy_mws,
         peak_time_s,
-        burst_reactivity_dollar: _,
+        reactivity_held_dollar: _,
         past_first_maximum: _,
         prompt_supercritical: _,
     } = *state;
@@ -390,11 +394,11 @@ async fn a_run_in_segments_under_one_reactivity_is_the_run_alone_and_a_changed_t
     let (state, landed, reject) = direct_loop(kelvin(82.0), 0.95, ceiling(), 400);
     assert_eq!((landed, reject), (400, None));
     assert_state_is(&tape["final_state"], &state, "two segments");
-    // The state holds the reactivity of the burst, and it is the request's.
-    assert_eq!(state.burst_reactivity_dollar.to_bits(), 0.95_f64.to_bits());
+    // The state holds the reactivity of its last step, and it is the request's.
+    assert_eq!(state.reactivity_held_dollar.to_bits(), 0.95_f64.to_bits());
     assert_eq!(
         tape["inputs"]["segments"][1]["load"]["reactivity_inserted_dollar"].as_f64().unwrap().to_bits(),
-        state.burst_reactivity_dollar.to_bits()
+        state.reactivity_held_dollar.to_bits()
     );
     // The same 400 steps asked as one segment: the same final state, the same
     // state digest and the same 48 written bytes in every frame. The request
@@ -429,15 +433,34 @@ async fn a_run_in_segments_under_one_reactivity_is_the_run_alone_and_a_changed_t
     assert_eq!(report["holds"], false, "{report}");
 }
 
-/// The two requests the door at 0.4.0 answered with a sealed run: 100 steps at
-/// the ceiling at 1.1 dollars and then one step at 1.2 (completed, the net
-/// reactivity jumping to 1.19999 in one step), and the same 100 steps and
-/// then 0.9 (a sealed first maximum of 0.0172 MW at 0.0714 s). Each is refused
-/// by name before its first step, and nothing of it is sealed.
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn a_reactivity_changed_in_a_later_segment_refuses_the_whole_run_by_name_with_no_proof() {
-    let base = spawn_app().await;
+/// The kernel loop with a reactivity per segment: `(steps, reactivity)` in turn, from cold
+/// start, until the kernel refuses or the segments are done.
+fn direct_segments(coolant_k: f64, segments: &[(u64, f64)], dt_s: f64) -> (ReactorState, u64, Option<StepReject>) {
     let reactor = reactor();
+    let mut state = ReactorState::try_cold_start(&reactor, coolant_k).unwrap();
+    let mut frame = blank_frame([0; 16]);
+    let mut landed = 0;
+    for (steps, rho) in segments {
+        for _ in 0..*steps {
+            match reactor_spert3::step(&reactor, &mut state, &mut frame, ReactorLoad { reactivity_inserted_dollar: *rho }, dt_s) {
+                Ok(()) => landed += 1,
+                Err(reject) => return (state, landed, Some(reject)),
+            }
+        }
+    }
+    (state, landed, None)
+}
+
+/// The two requests the door at 0.4.0 answered with a sealed run, and from 0.8.0 to 0.10.1
+/// refused as ReactivityChangedDuringBurst: 100 steps at the ceiling at 1.1 dollars and then one
+/// step at 1.2, and the same 100 steps and then 0.9. Each step is now held at its own
+/// reactivity: the run is answered with a proof, and every number is the kernel loop's that
+/// changes its load at the same step. A later segment at zero or below turns the power down and
+/// the run ends there at the first maximum; one at 1.3 dollars is past the state ceiling at the
+/// static step and the run is refused there by name, sealed to the step before.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_reactivity_changed_in_a_later_segment_is_computed_at_each_segments_reactivity() {
+    let base = spawn_app().await;
     let coolant_k = kelvin(70.0);
     let dt_s = ceiling();
     let at = |rho: f64| json!({ "reactivity_inserted_dollar": rho });
@@ -451,69 +474,61 @@ async fn a_reactivity_changed_in_a_later_segment_refuses_the_whole_run_by_name_w
             "record_every": 100000
         })
     };
-    let nothing_sealed = |text: &str| {
-        for word in ["run_seal", "state_digest", "receipt_sha256", "frame_hex", "final_state", "sha256_seal"] {
-            assert!(!text.contains(word), "{word}: {text}");
-        }
-    };
-    let changed = |to: &str, from: &str| {
-        format!(
-            "Physical Failure: 'reactivity_inserted_dollar' {to} dollar is not the {from} dollar of the first segment: a run of the reactor_spert3 card is one burst with one reactivity, stepped in at time zero and then held (ReactivityChangedDuringBurst). That state is not sealed."
-        )
-    };
-    // 100 steps at 1.1 dollars, then one step at 1.2.
-    let jump = run(json!([{ "steps": 100, "load": at(1.1) }, { "steps": 1, "load": at(1.2) }]));
-    let (status, text) = post(&base, "/run_trajectory", &jump).await;
-    assert_eq!(status, 422, "{text}");
-    assert_eq!(text, changed("1.2", "1.1"));
-    nothing_sealed(&text);
-    // 100 steps at 1.1 dollars, then 0.9 to the end.
-    let fall = run(json!([{ "steps": 100, "load": at(1.1) }, { "steps": 30000, "load": at(0.9) }]));
-    let (status, text) = post(&base, "/run_trajectory", &fall).await;
-    assert_eq!(status, 422, "{text}");
-    assert_eq!(text, changed("0.9", "1.1"));
-    nothing_sealed(&text);
-    // On the second step, between the edges of the span, and by one bit: the same.
-    for (steps, first, later) in [
-        (1, 1.1, 1.2),
-        (50, reactor_spert3::REACTIVITY_MIN_DOLLAR, reactor_spert3::REACTIVITY_MAX_DOLLAR),
-        (100, 1.1, above(1.1)),
-        (100, 1.1, below(1.1)),
+    for (segments, outcome, reject) in [
+        (vec![(100, 1.1), (1, 1.2)], "completed", None),
+        (vec![(100, 1.1), (30000, 1.2)], "ended", Some("PastFirstMaximum")),
+        (vec![(100, 1.1), (30000, 0.9)], "ended", Some("PastFirstMaximum")),
+        (vec![(100, 1.1), (30000, 0.0)], "refused", Some("DtAboveStateCeiling")),
+        (vec![(50, 1.2), (1, 1.19), (30000, 1.2)], "ended", Some("PastFirstMaximum")),
+        (vec![(50, reactor_spert3::REACTIVITY_MIN_DOLLAR), (30000, reactor_spert3::REACTIVITY_MAX_DOLLAR)], "ended", Some("PastFirstMaximum")),
+        (vec![(100, 1.1), (10, 1.3)], "refused", Some("DtAboveStateCeiling")),
     ] {
-        let early = run(json!([{ "steps": steps, "load": at(first) }, { "steps": 10, "load": at(later) }]));
-        let (status, text) = post(&base, "/run_trajectory", &early).await;
-        assert_eq!(status, 422, "{text}");
-        assert!(text.ends_with("(ReactivityChangedDuringBurst). That state is not sealed."), "{text}");
-        nothing_sealed(&text);
+        let request = run(Value::Array(segments.iter().map(|(steps, rho)| json!({ "steps": steps, "load": at(*rho) })).collect()));
+        let (status, text) = post(&base, "/run_trajectory", &request).await;
+        assert_eq!(status, 200, "{segments:?}: {text}");
+        let tape: Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(tape["outcome"], outcome, "{segments:?}: {text}");
+        let (state, landed, kernel_reject) = direct_segments(coolant_k, &segments, dt_s);
+        assert_eq!(tape["steps_landed"], landed, "{segments:?}");
+        assert_eq!(kernel_reject.map(|r| format!("{r:?}")).as_deref(), reject, "{segments:?}");
+        if let Some(name) = reject {
+            assert_eq!(tape["reject"], name, "{segments:?}");
+        }
+        assert_state_is(&tape["final_state"], &state, &format!("{segments:?}"));
+        assert!(state.residual_conservation_error < reactor_spert3::RESIDUAL_CONSERVATION_LIMIT);
+        let (_, report) = post(&base, "/verify_tape", &tape).await;
+        let report: Value = serde_json::from_str(&report).unwrap();
+        assert_eq!(report["holds"], true, "{segments:?}: {report}");
+        // The withdrawal ends at the step it is made.
+        if segments[1].1 == 0.9 && segments.len() == 2 {
+            assert_eq!(landed, 101, "{segments:?}");
+        }
     }
-    // A change and a return is a change.
-    let saw = run(json!([{ "steps": 50, "load": at(1.2) }, { "steps": 1, "load": at(1.19) }, { "steps": 50, "load": at(1.2) }]));
-    let (status, text) = post(&base, "/run_trajectory", &saw).await;
-    assert_eq!(status, 422, "{text}");
-    assert_eq!(text, changed("1.19", "1.2"));
-    // A later reactivity outside the span is named as that, as it was before.
-    let outside = run(json!([{ "steps": 100, "load": at(1.1) }, { "steps": 1, "load": at(1.3) }]));
-    let (status, text) = post(&base, "/run_trajectory", &outside).await;
-    assert_eq!(status, 422, "{text}");
-    assert!(text.ends_with("(ReactivityOutsideCard). That state is not sealed."), "{text}");
-    // A dataset row that changes its reactivity is not admitted: the same
-    // sentence, no run seal. A path of a grid that sets a later segment's
-    // reactivity to another value is the same request, and is not admitted.
+    // The state ceiling is named in the run's sentence, with the step it was refused at.
+    let past = run(json!([{ "steps": 100, "load": at(1.1) }, { "steps": 10, "load": at(1.3) }]));
+    let (_, text) = post(&base, "/run_trajectory", &past).await;
+    let tape: Value = serde_json::from_str(&text).unwrap();
+    let detail = tape["reject_detail"].as_str().unwrap();
+    assert!(detail.contains("(DtAboveStateCeiling)"), "{detail}");
+    assert!(detail.ends_with("The run is sealed to step 100. The state at step 101 was refused and is not sealed."), "{detail}");
+    // A dataset row and a grid row that change a later segment's reactivity are answered, each
+    // with the seal of the run alone.
     let row = |from: &Value| json!({ "initial": from["initial"], "dt_s": from["dt_s"], "segments": from["segments"], "record_every": from["record_every"] });
+    let jump = run(json!([{ "steps": 100, "load": at(1.1) }, { "steps": 1, "load": at(1.2) }]));
+    let (_, alone) = post(&base, "/run_trajectory", &jump).await;
+    let alone: Value = serde_json::from_str(&alone).unwrap();
     let plan = json!({
         "domain": "energy",
         "card": "reactor_spert3",
-        "plan": { "kind": "list", "runs": [row(&jump), row(&run(json!([{ "steps": 100, "load": at(1.1) }, { "steps": 1, "load": at(1.1) }])))] },
+        "plan": { "kind": "list", "runs": [row(&jump)] },
         "store": "none",
         "return": "inline", "answer": "full"
     });
     let (status, plan_text) = post(&base, "/run_dataset", &plan).await;
     assert_eq!(status, 200, "{plan_text}");
     let answer: Value = serde_json::from_str(&plan_text).unwrap();
-    assert_eq!(answer["rows"][0]["outcome"], "unadmitted", "{plan_text}");
-    assert!(answer["rows"][0]["run_seal"].is_null(), "{plan_text}");
-    assert_eq!(answer["rows"][0]["reject_detail"], changed("1.2", "1.1"), "{plan_text}");
-    assert_eq!(answer["rows"][1]["outcome"], "completed", "{plan_text}");
+    assert_eq!(answer["rows"][0]["outcome"], "completed", "{plan_text}");
+    assert_eq!(answer["rows"][0]["run_seal"], alone["run_seal"], "{plan_text}");
     let grid = json!({
         "domain": "energy",
         "card": "reactor_spert3",
@@ -534,36 +549,17 @@ async fn a_reactivity_changed_in_a_later_segment_refuses_the_whole_run_by_name_w
     assert_eq!(status, 200, "{grid_text}");
     let answer: Value = serde_json::from_str(&grid_text).unwrap();
     assert_eq!(answer["rows"][0]["outcome"], "completed", "{grid_text}");
-    for (index, to) in [(1, "1.2"), (2, "0.9")] {
-        assert_eq!(answer["rows"][index]["outcome"], "unadmitted", "{grid_text}");
-        assert!(answer["rows"][index]["run_seal"].is_null(), "{grid_text}");
-        assert_eq!(answer["rows"][index]["reject_detail"], changed(to, "1.1"), "{grid_text}");
-    }
-    // A comparison of a series runs the same run, and is refused the same way.
+    assert_eq!(answer["rows"][1]["outcome"], "completed", "{grid_text}");
+    assert_eq!(answer["rows"][1]["run_seal"], alone["run_seal"], "{grid_text}");
+    // The withdrawal to 0.9 lands its one step with the power turned down: the run completes
+    // with the first maximum passed, and a step after it would end the run.
+    assert_eq!(answer["rows"][2]["outcome"], "completed", "{grid_text}");
+    assert!(answer["rows"][2]["run_seal"].is_string(), "{grid_text}");
+    // A comparison of a series runs the same run.
     let series = json!({ "run": jump, "quantity": "power_mw", "measurements": [{ "step": 101, "value": 1.0 }] });
     let (status, text) = post(&base, "/validate_series", &series).await;
-    assert_eq!(status, 422, "{text}");
-    assert_eq!(text, changed("1.2", "1.1"));
-    nothing_sealed(&text);
-    // The kernel's step refuses the same change, and keeps the state: the door's
-    // refusal is the card's, read from the request before the first step.
-    let mut state = ReactorState::try_cold_start(&reactor, coolant_k).unwrap();
-    let mut frame = blank_frame([0; 16]);
-    let load = |rho: f64| ReactorLoad { reactivity_inserted_dollar: rho };
-    for _ in 0..100 {
-        reactor_spert3::step(&reactor, &mut state, &mut frame, load(1.1), dt_s).unwrap();
-    }
-    let (before, frame_before) = (state, frame.to_bytes());
-    for rho in [1.2, 0.9] {
-        assert_eq!(
-            reactor_spert3::step(&reactor, &mut state, &mut frame, load(rho), dt_s),
-            Err(StepReject::ReactivityChangedDuringBurst)
-        );
-        assert_eq!(state, before);
-        assert_eq!(frame.to_bytes(), frame_before);
-    }
-    // Under the one reactivity the run goes on to its first maximum, and it is
-    // the kernel loop's, to the bit.
+    assert_eq!(status, 200, "{text}");
+    // Under one reactivity the run is the kernel loop's, to the bit, as before.
     let whole = run(json!([{ "steps": 100, "load": at(1.1) }, { "steps": 30000, "load": at(1.1) }]));
     let (status, answer) = post(&base, "/run_trajectory", &whole).await;
     assert_eq!(status, 200, "{answer}");
@@ -573,6 +569,53 @@ async fn a_reactivity_changed_in_a_later_segment_refuses_the_whole_run_by_name_w
     assert_eq!(reject, Some(StepReject::PastFirstMaximum));
     assert_eq!(tape["steps_landed"], landed);
     assert_state_is(&tape["final_state"], &direct, "the whole burst");
+}
+
+/// Past every old wall of the card the door answers: a reactivity below and far above the
+/// compared span, a coolant of liquid water far from the tested one, a burst past 20 s, past
+/// 10 MW s and past 1000 MW. Each run ends at the first maximum, with the kernel loop's numbers.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn past_every_old_wall_the_door_answers_with_the_first_maximum() {
+    let base = spawn_app().await;
+    let quarter = 0.999 * 0.2 * 0.00215;
+    for (coolant_k, rho, dt_s, steps) in [
+        (kelvin(70.0), 0.3, quarter, 400_000_u64),
+        (kelvin(70.0), 0.768, ceiling(), 30_000),
+        (kelvin(70.0), 1.2103, ceiling(), 30_000),
+        (kelvin(70.0), 3.0, 7.5e-5, 30_000),
+        (kelvin(70.0), 10.0, 1.6e-5, 30_000),
+        (reactor_spert3::WATER_FREEZING_K, 1.0, ceiling(), 30_000),
+        (kelvin(500.0), 1.0, ceiling(), 30_000),
+        (reactor_spert3::WATER_CRITICAL_K, 1.0, ceiling(), 30_000),
+    ] {
+        let request = run_body(coolant_k, rho, dt_s, steps, steps);
+        let (status, text) = post(&base, "/run_trajectory", &request).await;
+        assert_eq!(status, 200, "{coolant_k} {rho}: {text}");
+        let tape: Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(tape["outcome"], "ended", "{coolant_k} {rho}: {text}");
+        assert_eq!(tape["reject"], "PastFirstMaximum");
+        let (state, landed, reject) = direct_loop(coolant_k, rho, dt_s, steps);
+        assert_eq!(reject, Some(StepReject::PastFirstMaximum));
+        assert_eq!(tape["steps_landed"], landed);
+        assert_state_is(&tape["final_state"], &state, &format!("{coolant_k} {rho}"));
+        if rho == 0.3 {
+            assert!(state.peak_time_s > 100.0, "{}", state.peak_time_s);
+        }
+        if rho == 3.0 {
+            assert!(state.peak_power_mw > 20_000.0 && state.peak_energy_mws > 50.0, "{} {}", state.peak_power_mw, state.peak_energy_mws);
+        }
+        if rho == 10.0 {
+            assert!(state.peak_power_mw > 500_000.0, "{}", state.peak_power_mw);
+        }
+    }
+    // At the static ceiling a reactivity past 1.2104 dollars is past the state ceiling at the
+    // first step: refused by name in the run, nothing landed.
+    let (status, text) = post(&base, "/run_trajectory", &run_body(kelvin(70.0), 1.211, ceiling(), 100, 100)).await;
+    assert_eq!(status, 200, "{text}");
+    let tape: Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(tape["outcome"], "refused", "{text}");
+    assert_eq!(tape["reject"], "DtAboveStateCeiling", "{text}");
+    assert_eq!(tape["steps_landed"], 0);
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -587,8 +630,8 @@ async fn the_slowest_reactivity_fits_in_the_step_limit_and_a_run_of_floor_steps_
     );
     assert_eq!(reject, Some(StepReject::PastFirstMaximum));
     assert!(landed < 1_000_000 / 20, "{landed} steps");
-    assert!(state.t_s < reactor_spert3::TIME_MAX_S);
-    println!("slowest allowed reactivity at the ceiling: {landed} steps, peak at {} s", state.peak_time_s);
+    assert!(state.t_s < 12.3);
+    println!("slowest compared reactivity at the ceiling: {landed} steps, peak at {} s", state.peak_time_s);
     // A run that asks for the most the door allows, at the floor, lands every
     // step and ends before the maximum: completed, not refused.
     let request = run_body(
@@ -617,11 +660,11 @@ async fn the_slowest_reactivity_fits_in_the_step_limit_and_a_run_of_floor_steps_
     assert!(text.contains("more than 1000000 steps"), "{text}");
 }
 
-/// Over the whole published span, at the ceiling and at half of it, every run
-/// the door can start ends in the refusal at the first maximum, before 20 s,
-/// 10 MW s and 1000 MW. The other refusals of the kernel are not reached.
+/// Over the whole compared span, at the ceiling and at half of it, every run
+/// ends at the first maximum, before 12.3 s, 7.3 MW s and 296 MW. The other
+/// refusals of the kernel, the state ceiling among them, are not reached.
 #[test]
-fn over_the_published_span_every_run_ends_in_the_first_maximum_and_no_other_refusal_is_reached() {
+fn over_the_compared_span_every_run_ends_in_the_first_maximum_and_no_other_refusal_is_reached() {
     let mut worst_steps = 0;
     for coolant_k in [
         reactor_spert3::COOLANT_TEMPERATURE_MIN_K,
@@ -636,9 +679,9 @@ fn over_the_published_span_every_run_ends_in_the_first_maximum_and_no_other_refu
             for dt in [ceiling(), 0.5 * ceiling()] {
                 let (state, landed, reject) = direct_loop(coolant_k, rho, dt, 1_000_000);
                 assert_eq!(reject, Some(StepReject::PastFirstMaximum), "{coolant_k} {rho} {dt}");
-                assert!(state.t_s < reactor_spert3::TIME_MAX_S);
-                assert!(state.energy_mws < reactor_spert3::ENERGY_MAX_MWS);
-                assert!(state.peak_power_mw < reactor_spert3::POWER_MAX_MW);
+                assert!(state.t_s < 12.3);
+                assert!(state.energy_mws < 7.3);
+                assert!(state.peak_power_mw < 296.0);
                 assert!(state.residual_conservation_error < reactor_spert3::RESIDUAL_CONSERVATION_LIMIT);
                 worst_steps = worst_steps.max(landed);
             }
@@ -649,25 +692,24 @@ fn over_the_published_span_every_run_ends_in_the_first_maximum_and_no_other_refu
 }
 
 /// Two requests at the old outward-rounded ends, 0.768 and 1.211 dollars, were answered by
-/// 0.6.0 with a proof though no test reached them. The span is now the inhour value
-/// of test 22 and of test 43, and those requests are refused by name with nothing sealed;
-/// tests 22 and 43 themselves run to the first maximum.
+/// 0.6.0 with a proof, and refused from 0.7.0 to 0.10.1 as ReactivityOutsideCard. The card now
+/// computes there: 0.768 and 0.7686 run to the first maximum at the ceiling, and 1.211 and
+/// 1.2103 do at a step under the state ceiling; tests 22 and 43 themselves run as before.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn the_untested_slivers_outside_tests_22_and_43_are_refused_by_name() {
+async fn the_slivers_outside_tests_22_and_43_are_answered() {
     let base = spawn_app().await;
     assert_eq!(reactor_spert3::REACTIVITY_MIN_DOLLAR.to_bits(), 0.7686211839115998_f64.to_bits());
     assert_eq!(reactor_spert3::REACTIVITY_MAX_DOLLAR.to_bits(), 1.2102315121058187_f64.to_bits());
     for rho in [0.768, 1.211, 0.7686, 1.2103] {
-        // At the old ceiling, and the same at today's ceiling.
-        for dt in [0.0007144471176212568, ceiling()] {
-            let (status, text) = post(&base, "/run_trajectory", &run_body(296.4833333333333, rho, dt, 20_000, 20_000)).await;
-            assert_eq!(status, 422, "{rho}: {text}");
-            assert!(text.contains("(ReactivityOutsideCard). That state is not sealed."), "{rho}: {text}");
-            assert!(!text.contains("run_seal") && !text.contains("sha256_seal"), "{rho}: {text}");
-        }
-        let (status, text) = post(&base, "/verify_physics", &step_body(296.4833333333333, rho, ceiling())).await;
-        assert_eq!(status, 422, "{rho}: {text}");
-        assert!(text.contains("ReactivityOutsideCard"), "{rho}: {text}");
+        // At the old ceiling, which is under today's, and under the state ceiling.
+        let dt = if rho > 1.0 { 0.999 * 0.07 * 0.00215 / (rho - 1.0) } else { ceiling() };
+        let dt = dt.min(0.0007144471176212568);
+        let (status, text) = post(&base, "/run_trajectory", &run_body(296.4833333333333, rho, dt, 20_000, 20_000)).await;
+        assert_eq!(status, 200, "{rho}: {text}");
+        let tape: Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(tape["reject"], "PastFirstMaximum", "{rho}: {text}");
+        let (status, text) = post(&base, "/verify_physics", &step_body(296.4833333333333, rho, dt)).await;
+        assert_eq!(status, 200, "{rho}: {text}");
     }
     for (_, fahrenheit, rho) in [OPENED[0], OPENED[2]] {
         let (status, text) = post(&base, "/run_trajectory", &run_body(kelvin(fahrenheit), rho, ceiling(), 20_000, 20_000)).await;
@@ -691,13 +733,25 @@ async fn the_description_says_what_was_compared_and_where_the_card_runs_early() 
         "held-back tests on 2026-10-08",
         "evidence/research/reactor_spert3/analysis/10_peak_timing_cause.md",
         "energy/reactor_spert3_fuel carries the ramp.",
-        "1010 ms (test 22) and 10 ms (test 43), not rounded",
-        "At the ceiling the slowest reactivity takes 17,098 steps to the first maximum",
+        "1010 ms (test 22) and 10 ms (test 43), IDO-17281 Table III, not rounded",
+        "At the ceiling the slowest compared reactivity takes 17,098 steps to the first maximum",
+        "Compared on reactivity 0.769 to 1.210 dollars ([0.7686211839115998, 1.2102315121058187]",
+        "on the ten held-back tests, 0.890 to 1.128 dollars, it met five of eight lines; peak power and energy to peak were within the report's standard deviations and the peaks came about 21 percent early. Outside that span the card computes the same equations and nothing was compared",
+        "The latest first maximum the card reaches inside its compared span is at 12.2 s; the longest in Table III is 13.7 s.",
+        "The largest energy to peak in Table III is 6.9 MW s, and the card reaches 7.2 MW s at the bottom of its compared span.",
+        "The largest peak power in Table III is 280 MW, and the card reaches about 296 MW at the top of its compared span.",
+        "Every tested burst was one step in reactivity, held to the first maximum; a burst whose reactivity changes was not compared.",
+        "Tested at a primary coolant of 56 to 92 degF",
+        "the report's hot-startup tests at 260 and 500 degF are in reactor_spert3_fuel",
+        "Past the compared span the step ceiling follows the state",
     ] {
         assert!(described.contains(sentence), "missing: {sentence}");
     }
     assert!(!described.contains("17,187"));
     assert!(!described.contains("0.768 dollar or above 1.211"));
+    for gone in ["are named for the kernel and were not reached", "TimeBeyondCard", "EnergyBeyondCard", "PowerBeyondCard", "ReactivityOutsideCard", "CoolantTemperatureOutsideCard", "ReactivityChangedDuringBurst"] {
+        assert!(!described.contains(gone), "still said: {gone}");
+    }
 }
 
 // ------------------------------------------------------------- the bounds
@@ -705,44 +759,41 @@ async fn the_description_says_what_was_compared_and_where_the_card_runs_early() 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn each_bound_lands_at_the_last_number_inside_and_is_refused_by_name_at_the_next_outside() {
     let base = spawn_app().await;
-    let (cold_min, cold_max) = (
-        reactor_spert3::COOLANT_TEMPERATURE_MIN_K,
-        reactor_spert3::COOLANT_TEMPERATURE_MAX_K,
-    );
-    let (rho_min, rho_max) = (reactor_spert3::REACTIVITY_MIN_DOLLAR, reactor_spert3::REACTIVITY_MAX_DOLLAR);
-    // The description publishes exactly these numbers.
+    let (cold_min, cold_max) = (reactor_spert3::WATER_FREEZING_K, reactor_spert3::WATER_CRITICAL_K);
+    // The description publishes exactly these numbers, and no bound on the reactivity.
     let (_, described) = post(&base, "/describe_card", &json!({"domain": "energy", "card": "reactor_spert3"})).await;
     let described: Value = serde_json::from_str(&described).unwrap();
     let published = |list: &str, key: &str| described[list][0][key].as_f64().unwrap();
     assert_eq!(published("phase_fields", "minimum").to_bits(), cold_min.to_bits());
     assert_eq!(published("phase_fields", "maximum").to_bits(), cold_max.to_bits());
-    assert_eq!(published("load_fields", "minimum").to_bits(), rho_min.to_bits());
-    assert_eq!(published("load_fields", "maximum").to_bits(), rho_max.to_bits());
+    assert!(described["load_fields"][0]["minimum"].is_null());
+    assert!(described["load_fields"][0]["maximum"].is_null());
     assert_eq!(described["phase_fields"][0]["unit"], "K");
     assert_eq!(described["load_fields"][0]["unit"], "dollar");
 
     let names = |text: &str, name: &str| {
         text.contains(&format!("({name}). That state is not sealed.")) && !text.contains("sha256_seal")
     };
-    let cases: [(f64, f64, bool, bool); 8] = [
-        (cold_min, 1.0, true, true),
-        (below(cold_min), 1.0, false, true),
-        (cold_max, 1.0, true, true),
-        (above(cold_max), 1.0, false, true),
-        (kelvin(74.0), rho_min, true, true),
-        (kelvin(74.0), below(rho_min), true, false),
-        (kelvin(74.0), rho_max, true, true),
-        (kelvin(74.0), above(rho_max), true, false),
+    let cases: [(f64, f64, Option<&str>); 8] = [
+        (cold_min, 1.0, None),
+        (below(cold_min), 1.0, Some("CoolantTemperatureNotLiquidWater")),
+        (cold_max, 1.0, None),
+        (above(cold_max), 1.0, Some("CoolantTemperatureNotLiquidWater")),
+        (kelvin(74.0), f64::MIN_POSITIVE, None),
+        (kelvin(74.0), 0.0, Some("ReactivityNotPositive")),
+        (kelvin(74.0), -0.0, Some("ReactivityNotPositive")),
+        (kelvin(74.0), -1.0, Some("ReactivityNotPositive")),
     ];
-    for (coolant_k, rho, coolant_ok, rho_ok) in cases {
-        let step = step_body(coolant_k, rho, ceiling());
-        let run = run_body(coolant_k, rho, ceiling(), 5, 1);
+    for (coolant_k, rho, refused) in cases {
+        let dt = 0.999 * 0.2 * 0.00215;
+        let step = step_body(coolant_k, rho, dt);
+        let run = run_body(coolant_k, rho, dt, 5, 1);
         let plan = json!({
             "domain": "energy",
             "card": "reactor_spert3",
             "plan": { "kind": "list", "runs": [{
                 "initial": { "coolant_temperature_k": coolant_k },
-                "dt_s": ceiling(),
+                "dt_s": dt,
                 "segments": [{ "steps": 5, "load": { "reactivity_inserted_dollar": rho } }],
                 "record_every": 1
             }] },
@@ -752,45 +803,25 @@ async fn each_bound_lands_at_the_last_number_inside_and_is_refused_by_name_at_th
         let (step_status, step_text) = post(&base, "/verify_physics", &step).await;
         let (run_status, run_text) = post(&base, "/run_trajectory", &run).await;
         let (plan_status, plan_text) = post(&base, "/run_dataset", &plan).await;
-        if coolant_ok && rho_ok {
-            assert_eq!(step_status, 200, "{coolant_k} {rho}: {step_text}");
-            assert_eq!(run_status, 200, "{coolant_k} {rho}: {run_text}");
-            assert_eq!(plan_status, 200, "{coolant_k} {rho}: {plan_text}");
-        } else {
-            let name = if coolant_ok { "ReactivityOutsideCard" } else { "CoolantTemperatureOutsideCard" };
-            for (status, text) in [(step_status, &step_text), (run_status, &run_text)] {
-                assert_eq!(status, 422, "{coolant_k} {rho}: {text}");
-                assert!(names(text, name), "{coolant_k} {rho}: {text}");
+        match refused {
+            None => {
+                assert_eq!(step_status, 200, "{coolant_k} {rho}: {step_text}");
+                assert_eq!(run_status, 200, "{coolant_k} {rho}: {run_text}");
+                assert_eq!(plan_status, 200, "{coolant_k} {rho}: {plan_text}");
             }
-            // A dataset row outside the published bounds is not admitted: it
-            // carries the same sentence and no run seal, and nothing runs.
-            assert_eq!(plan_status, 200, "{coolant_k} {rho}: {plan_text}");
-            let answer: Value = serde_json::from_str(&plan_text).unwrap();
-            assert_eq!(answer["rows"][0]["outcome"], "unadmitted", "{plan_text}");
-            assert!(answer["rows"][0]["run_seal"].is_null(), "{plan_text}");
-            assert!(names(answer["rows"][0]["reject_detail"].as_str().unwrap(), name), "{plan_text}");
-            // A grid axis that carries the value makes its row unadmitted, by name.
-            let (grid_status, grid_text) = post(
-                &base,
-                "/run_dataset",
-                &json!({
-                    "domain": "energy", "card": "reactor_spert3",
-                    "plan": { "kind": "grid",
-                        "base": { "initial": if coolant_ok { json!({ "coolant_temperature_k": kelvin(74.0) }) } else { json!({}) }, "dt_s": ceiling(),
-                                  "segments": [{ "steps": 5, "load": if coolant_ok { json!({}) } else { json!({ "reactivity_inserted_dollar": 1.0 }) } }], "record_every": 1 },
-                        "axes": [{ "path": if coolant_ok { "segments[0].load.reactivity_inserted_dollar" } else { "initial.coolant_temperature_k" },
-                                  "values": [if coolant_ok { rho } else { coolant_k }] }] },
-                    "store": "none", "return": "inline", "answer": "full"
-                }),
-            ).await;
-            // A grid is admitted row by row: the row past the bound is unadmitted
-            // with the door's sentence and carries no run seal.
-            assert_eq!(grid_status, 200, "{grid_text}");
-            let grid_answer: Value = serde_json::from_str(&grid_text).unwrap();
-            let last = grid_answer["rows"].as_array().unwrap().last().unwrap().clone();
-            assert_eq!(last["outcome"], "unadmitted", "{grid_text}");
-            assert_eq!(last["run_seal"], Value::Null, "{grid_text}");
-            assert!(names(last["reject_detail"].as_str().unwrap(), name), "{grid_text}");
+            Some(name) => {
+                for (status, text) in [(step_status, &step_text), (run_status, &run_text)] {
+                    assert_eq!(status, 422, "{coolant_k} {rho}: {text}");
+                    assert!(names(text, name), "{coolant_k} {rho}: {text}");
+                }
+                // A dataset row outside the published bounds is not admitted: it
+                // carries the same sentence and no run seal, and nothing runs.
+                assert_eq!(plan_status, 200, "{coolant_k} {rho}: {plan_text}");
+                let answer: Value = serde_json::from_str(&plan_text).unwrap();
+                assert_eq!(answer["rows"][0]["outcome"], "unadmitted", "{plan_text}");
+                assert!(answer["rows"][0]["run_seal"].is_null(), "{plan_text}");
+                assert!(names(answer["rows"][0]["reject_detail"].as_str().unwrap(), name), "{plan_text}");
+            }
         }
     }
     // A clock under the floor or over the ceiling is named as well.
@@ -817,7 +848,7 @@ async fn each_bound_lands_at_the_last_number_inside_and_is_refused_by_name_at_th
     )
     .await;
     assert_eq!(status, 422);
-    assert!(text.contains("Missing required parameter: 'reactivity_inserted_dollar'"), "{text}");
+    assert!(text.contains("Missing required parameter: 'reactivity_inserted_dollar' (InputMissing)."), "{text}");
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -830,7 +861,8 @@ async fn a_card_constant_sent_as_a_field_is_refused() {
         "group_fraction",
         "group_decay_per_s",
         "reactivity_max_dollar",
-        "time_max_s",
+        "ceiling_energy_mws",
+        "water_critical_k",
         "residual_conservation_limit",
     ] {
         let mut step = step_body(kelvin(74.0), 1.0, ceiling());
@@ -1038,7 +1070,7 @@ impl Hosted {
     }
 
     async fn tool(&self, key: &str, tool: &str, arguments: &Value) -> String {
-        let body = json!({"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":tool,"arguments":arguments}});
+        let body = answer_text::tool_call(7, tool, arguments);
         let response = reqwest::Client::new()
             .post(format!("{}/mcp", self.base))
             .header("Content-Type", "application/json")
@@ -1056,7 +1088,9 @@ impl Hosted {
 
 fn result_text(answer: &str) -> String {
     let value: Value = serde_json::from_str(answer).unwrap();
-    value["result"]["content"][0]["text"].as_str().unwrap_or_else(|| panic!("no text in {answer}")).to_string()
+    let text = value["result"]["content"][0]["text"].as_str().unwrap_or_else(|| panic!("no text in {answer}")).to_string();
+    answer_text::remember(&text);
+    text
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -1065,7 +1099,7 @@ async fn the_hosted_door_hides_the_reactor_from_a_key_without_it_and_shows_it_to
     let listed = result_text(&stdio.raw(r#"{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"list_cards","arguments":{}}}"#).await);
     let listed: Value = serde_json::from_str(&listed).unwrap();
     let all_pairs: Vec<Value> = listed["cards"].as_array().unwrap().iter().map(|c| json!([c["domain"], c["card"]])).collect();
-    assert_eq!(all_pairs.len(), 31);
+    assert_eq!(all_pairs.len(), 37);
     let keys = json!([
         client_entry("all", KEY_ALL, Value::Array(all_pairs)),
         client_entry("reactor", KEY_REACTOR, json!([["energy", "reactor_spert3"]])),
@@ -1076,7 +1110,7 @@ async fn the_hosted_door_hides_the_reactor_from_a_key_without_it_and_shows_it_to
     let pair = json!({"domain": "energy", "card": "reactor_spert3"});
     let described = result_text(&stdio.raw(&json!({"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"describe_card","arguments":pair}}).to_string()).await);
     let description: Value = serde_json::from_str(&described).unwrap();
-    let step = description["example_verify_step"].clone();
+    let step = description["example_compute_step"].clone();
     let run = description["example_run_trajectory"].clone();
 
     // The full view and the key that lists it get the bytes of the stdio door.
@@ -1090,35 +1124,33 @@ async fn the_hosted_door_hides_the_reactor_from_a_key_without_it_and_shows_it_to
         };
         assert_eq!(result_text(&hosted.tool(key, "describe_card", &pair).await), expected);
         for (tool, arguments) in [("verify_step", &step), ("run_trajectory", &run)] {
-            let on_stdio = stdio.raw(&json!({"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":tool,"arguments":arguments}}).to_string()).await;
+            let on_stdio = stdio.raw(&answer_text::tool_call(7, tool, arguments).to_string()).await;
             assert_eq!(hosted.tool(key, tool, arguments).await, on_stdio, "{tool}");
         }
     }
-    // A run that changes its reactivity in a later segment is refused in the
-    // same words on the tool and on the hosted door, with no proof.
+    // A run that changes its reactivity in a later segment is answered with the
+    // same bytes on the tool and on the hosted door.
     let mut changed = run.clone();
     changed["segments"] = json!([
         { "steps": 100, "load": { "reactivity_inserted_dollar": 1.1 } },
         { "steps": 1, "load": { "reactivity_inserted_dollar": 1.2 } }
     ]);
     let on_stdio = stdio.raw(&json!({"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"run_trajectory","arguments":changed}}).to_string()).await;
-    assert_eq!(
-        result_text(&on_stdio),
-        "Physical Failure: 'reactivity_inserted_dollar' 1.2 dollar is not the 1.1 dollar of the first segment: a run of the reactor_spert3 card is one burst with one reactivity, stepped in at time zero and then held (ReactivityChangedDuringBurst). That state is not sealed."
-    );
-    assert!(!on_stdio.contains("run_seal") && !on_stdio.contains("frame_hex"), "{on_stdio}");
+    assert!(on_stdio.contains("run_seal"), "{on_stdio}");
     for key in [KEY_ALL, KEY_REACTOR] {
         assert_eq!(hosted.tool(key, "run_trajectory", &changed).await, on_stdio);
     }
-    // The description names the refusal and says a run carries one reactivity.
+    // The description says each segment is held at its own reactivity.
     for words in [
-        "A run is one burst, with one reactivity: every segment carries the reactivity of the first",
-        "ReactivityChangedDuringBurst",
+        "A later segment may carry another reactivity: each step is computed at the reactivity its segment holds",
+        "ReactivityNotPositive",
+        "DtAboveStateCeiling",
     ] {
         assert!(described.contains(words), "{words}");
     }
-    assert!(!described.contains("a later segment may change"));
-    assert_eq!(description["rejects"].as_array().unwrap().len(), 15);
+    assert!(!described.contains("ReactivityChangedDuringBurst"));
+    // After the kernel's 13 names the list holds the gateway's own three for this card, DtBelowFloor and DtAboveCeiling and ContinuationNotOnCard.
+    assert_eq!(description["rejects"].as_array().unwrap().len(), 16);
     let seen = result_text(&hosted.tool(KEY_REACTOR, "list_cards", &json!({})).await);
     let seen: Value = serde_json::from_str(&seen).unwrap();
     assert_eq!(seen["cards"].as_array().unwrap().len(), 1);
@@ -1160,7 +1192,7 @@ async fn the_hosted_door_hides_the_reactor_from_a_key_without_it_and_shows_it_to
     let on_fake = hosted.tool(KEY_THERMAL, "validate_series", &validation_fake).await;
     assert_eq!(on_hidden, on_fake);
     session.push(on_hidden);
-    assert_eq!(result_text(&hosted.tool(KEY_THERMAL, "describe_card", &pair).await), "Card not recognized");
+    assert_eq!(result_text(&hosted.tool(KEY_THERMAL, "describe_card", &pair).await), "Card not recognized (UnknownCard).");
 
     // Nothing the thermal key was sent names the reactor or its fields.
     let text = session.join("\n").to_lowercase();

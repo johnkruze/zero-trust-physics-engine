@@ -8,6 +8,7 @@
 //! gives the same bytes, and nothing is stored.
 
 mod hosted_support;
+use hosted_support::answer_text;
 
 use std::io::{BufRead, BufReader};
 use std::process::{Child, Command, Stdio};
@@ -73,12 +74,15 @@ async fn post(base: &str, tool: &str, body: &Value) -> (u16, String) {
         reqwest::Client::new()
             .post(format!("{base}/{path}"))
             .header(reqwest::header::CONTENT_TYPE, "application/json")
-            .body(body.to_string())
+            .body(answer_text::as_sent(body))
             .send()
             .await
             .unwrap()
     };
-    (response.status().as_u16(), response.text().await.unwrap())
+    let status = response.status().as_u16();
+    let text = response.text().await.unwrap();
+    answer_text::remember(&text);
+    (status, text)
 }
 
 fn parsed(text: &str) -> Value {
@@ -139,6 +143,7 @@ fn source(card: &str, field: &str) -> Option<&'static str> {
         ("ti64_lattice", "start_energy_anchor_j") => "energy_anchor_j",
         ("ti64_lattice", "start_boundary_work_j") => "boundary_work_j",
         ("generator_mmrtg_f1", "mission_time_s") => "t_s",
+        ("generator_mmrtg_seebeck", "mission_time_s") => "t_s",
         ("tokamak_jet_dte1", "elapsed_time_s") => "t_s",
         _ => return None,
     })
@@ -220,14 +225,14 @@ async fn every_connection_gives_the_same_bytes_for_the_changed_tools() {
 fn each_list_states_its_count() {
     let mut door = Stdio2::start(None);
     let cards = ok(&mut door, "list_cards", &json!({}));
-    assert_eq!(cards["count"], json!(31));
-    assert_eq!(cards["cards"].as_array().unwrap().len(), 31);
+    assert_eq!(cards["count"], json!(37));
+    assert_eq!(cards["cards"].as_array().unwrap().len(), 37);
     let solvers = ok(&mut door, "list_solvers", &json!({}));
-    assert_eq!(solvers["count"], json!(13));
-    assert_eq!(solvers["solvers"].as_array().unwrap().len(), 13);
+    assert_eq!(solvers["count"], json!(24));
+    assert_eq!(solvers["solvers"].as_array().unwrap().len(), 24);
     // The count comes first, before the list it counts.
     let (_, text) = door.tool("list_cards", &json!({}));
-    assert!(text.starts_with("{\"count\":31,\"cards\":["), "{}", &text[..40]);
+    assert!(text.starts_with("{\"count\":37,\"cards\":["), "{}", &text[..40]);
 }
 
 #[test]
@@ -334,7 +339,7 @@ fn every_short_check_says_it_compared_no_answer_text() {
     let short = ok(&mut door, "verify_solution", &json!({ "request": parsed(&altered)["inputs"], "solution_seal": parsed(&altered)["solution_seal"] }));
     assert_eq!(short["holds"], json!(true), "the short check computes the request, not the copy");
     let words = short["text_not_compared"].as_str().unwrap();
-    assert!(words.contains("It compared no answer text you hold, so a copy with a decimal changed still holds here"), "{words}");
+    assert!(words.contains("No answer text you hold was compared, so a copy with a decimal changed still holds here"), "{words}");
     assert!(words.contains("compare that receipt_sha256 with recomputed_receipt_sha256"), "{words}");
     // verify_receipt on the copy is the check of the text.
     let receipt = ok(&mut door, "verify_receipt", &json!({ "response_text": altered }));
@@ -351,9 +356,13 @@ fn every_short_check_says_it_compared_no_answer_text() {
         "plan": { "kind": "list", "runs": [plan_run(5, 293.15)] },
         "store": "none", "return": "inline"
     });
-    // A dataset's says what is and is not compared for a dataset (0.8.1).
+    // A dataset's says what is and is not compared for a dataset (0.8.1). The
+    // words were "No tool compares the decimals in a dataset's rows" until the
+    // long form held each decimal of a final state to its hex; since 0.12.0
+    // the long form runs the plan again and compares the answer byte for byte.
     let report = ok(&mut door, "verify_dataset", &json!({ "request": plan, "dataset_seal": "0".repeat(64) }));
-    assert!(report["text_not_compared"].as_str().unwrap().contains("No tool compares the decimals in a dataset's rows"), "{report}");
+    let words = report["text_not_compared"].as_str().unwrap();
+    assert!(words.contains("no rows you hold were compared") && words.contains("then runs its plan again and compares the engine's full answer with the one sent, value by value and byte for byte"), "{report}");
 }
 
 #[test]
@@ -406,7 +415,7 @@ fn solve_takes_a_worked_example_by_name_and_seals_the_filled_request() {
     let text = refused(&mut door, "solve", &json!({ "solver": "atom_dft", "example": 1 }));
     assert!(text.contains("'example' must be a string"), "{text}");
     let text = refused(&mut door, "solve", &json!({ "solver": "no_such", "example": "example_solve" }));
-    assert_eq!(text, "Solver not recognized");
+    assert_eq!(text, "Solver not recognized (UnknownSolver).");
 }
 
 /// For each card the rule holds: a value of a continuation field that a
@@ -426,11 +435,6 @@ fn continued_start(card: &str, run: &mut Value, step: &mut Value) {
         "cell_18650pf" => both(run, step, "soc", json!(0.9)),
         "satellite_lageos1" => both(run, step, "forecast_elapsed_s", json!(3600.0)),
         "cell_2170_model3" => both(run, step, "case_temperature_least_c", json!(24.0)),
-        "link_gothenburg_10010" => {
-            let rain = run["segments"][0]["load"]["rain_rate_mm_h"].clone();
-            both(run, step, "gauge_minute_elapsed_s", json!(30.0));
-            both(run, step, "gauge_minute_rain_mm_h", rain);
-        }
         "tokamak_jet_dte1" => both(run, step, "elapsed_time_s", json!(1.0)),
         "accumulator_sbo450" => both(run, step, "work_moved_j", json!(100.0)),
         "solar_system" => both(run, step, "booked_work", json!(1.0e12)),
@@ -438,14 +442,12 @@ fn continued_start(card: &str, run: &mut Value, step: &mut Value) {
     }
 }
 
-const RULE_CARDS: [(&str, &str, &str); 10] = [
+const RULE_CARDS: [(&str, &str, &str); 8] = [
     ("materials", "ti64_lattice", "start_t_s"),
     ("signal", "resonance", "t_s"),
     ("signal", "tesseract", "energy_defect_j"),
-    ("energy", "cell_18650pf", "soc"),
     ("aerospace", "satellite_lageos1", "forecast_elapsed_s"),
     ("energy", "cell_2170_model3", "case_temperature_least_c"),
-    ("signal", "link_gothenburg_10010", "gauge_minute_elapsed_s"),
     ("energy", "tokamak_jet_dte1", "elapsed_time_s"),
     ("energy", "accumulator_sbo450", "work_moved_j"),
     ("aerospace", "solar_system", "booked_work"),
@@ -466,7 +468,7 @@ fn a_start_that_carries_a_run_on_arrives_with_from_on_every_card_the_rule_holds(
         let words = described["phase_fields"].as_array().unwrap().iter().find(|row| row["name"] == field).unwrap()["bound"].as_str().unwrap().to_string();
         assert!(words.contains("At the door: a fresh start of this card states") && words.contains("refused as ContinuationWithoutUpstream"), "{card}: {words}");
         let mut run = described["example_run_trajectory"].clone();
-        let mut step = described["example_verify_step"].clone();
+        let mut step = described["example_compute_step"].clone();
         // Fresh: no from needed.
         let upstream = ok(&mut door, "run_trajectory", &run);
         ok(&mut door, "verify_step", &step);

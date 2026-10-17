@@ -1,0 +1,21 @@
+{
+ "model": "grid_gb",
+ "verdict": "met",
+ "protocol": {
+  "path": "evidence/research/grid_gb_interconnector_loss/analysis/prereg.json",
+  "sha256": "35c91fa9fe440ad852390b77bcd6ecddd8e7029630e620a660b11aad1f481ea9",
+  "committed": {
+   "crate": "protocol_mcp_gateway",
+   "commit": "dc0a1fa8d75dd5bcadca71949ad7a147fdae132d",
+   "utc": "2026-10-09T22:01:24Z",
+   "how": "The diff of 'Serve the grid_gb card in the energy domain ...' adds the pass line 'Fixed before any model was run (protocol SHA-256 35c91fa9...1481ea9, amended once before the structure of this card was fitted, SHA-256 0fd449fc...9732ba)' with the result 'not yet compared with the held-back trips'; author and committer time are the same."
+  }
+ },
+ "scored": {
+  "utc": "2026-10-09T22:02:06Z",
+  "evidence": "Birth time of evidence/research/grid_gb_interconnector_loss/analysis/out/07_engine_runs_held_back.log (15:02:06 PDT), the held-back run through the engine; runs/held_back/RESULTS_held_back.json born 22:02:07Z."
+ },
+ "forecast_first": "held",
+ "registered_by": "backfill from the record, 2026-10-15",
+ "notes": "Committed 42 s before the held-back run; prereg.json and analysis/amendment_1.json (0fd449fc..., unchanged on disk) both have the committed hashes. Outside Git: analysis/prereg_hash.txt at 2026-10-09T20:51:54Z and analysis/amendment_1_hash.txt at 20:54:48Z ('before structures F, G, H were fitted and before any held-back event was opened'). The month files, held-back events included, were on disk from 20:50:58Z with their SHA-256 in raw/month_sha256.json; the seal is procedural. prereg.json says the event scan printed the lowest frequency of the 13 held-back events once and one held-back trace (rank 18) was seen; nothing from them entered a fit. validation_protocol.md (4e879696...) has no recorded hash. Commit times are the committer's clock. Second party: evidence/verification/second_party/V-32/. Public mark: GitHub-signed commit 3c08090df00677601c0d800cc548507640c9ae99 at 2026-10-13T17:55:07Z."
+}

@@ -211,11 +211,15 @@ pub enum Cause {
     Plan,
     /// A row's frames do not lead from its request to its last link.
     Chain,
+    /// A signed reading of a row's request does not verify, or is not well
+    /// formed (`crate::attest`).
+    LoadSignature,
     /// A row's state digest is not the one its final state gives.
     State,
     /// A row's run seal is not the one its last link and outcome give.
     RunSeal,
-    /// A row's stored leaf is not the leaf the row gives.
+    /// A row's stored leaf is not the leaf the row gives: its number, its
+    /// request, its outcome, its run seal and its refusal sentence.
     Leaf,
     /// The root over the leaves is not the stored root.
     Root,
@@ -228,6 +232,7 @@ impl Cause {
         match self {
             Cause::Plan => "plan",
             Cause::Chain => "chain",
+            Cause::LoadSignature => "load_signature",
             Cause::State => "state",
             Cause::RunSeal => "run_seal",
             Cause::Leaf => "leaf",
@@ -441,6 +446,11 @@ fn check_row(
                 }
             }
         }
+        // A row's request is an ordinary run request: its signed readings
+        // are verified as a run's are, after its chain.
+        if crate::attest::verify_run(&row.request).is_err() {
+            return Err((Cause::LoadSignature, None));
+        }
         let Some(expected) = expected_state_digest(
             steps_landed,
             row.final_state.as_ref(),
@@ -480,6 +490,7 @@ fn check_row(
         &hex::encode(link_0),
         row.outcome.as_str(),
         row.run_seal.as_deref(),
+        row.reject_detail.as_deref(),
     );
     let stored = serde_json::to_string(&row.leaf).unwrap_or_default();
     if row.row != index || stored != leaf {

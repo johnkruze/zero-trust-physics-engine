@@ -19,8 +19,22 @@
 //! - [`FLIP_MAX_STEPS`] steps in all its runs together, the engine's limit
 //!   for one run;
 //! - [`FLIP_MAX_SOLVES`] solves in one search, the two ends included;
-//! - [`FLIP_MAX_SECONDS`] of computing, after which no new run or solve is
-//!   started: what bounds a search over a slow solver.
+//! - [`FLIP_MAX_SECONDS`] of solving, counted and not timed: each solve at
+//!   its solver's measured time, the time the open connection counts a plan
+//!   of solves at ([`crate::open_plan::OPEN_SOLVE_SECONDS`]), so no new solve
+//!   is started once the solves made come to it, and never fewer than
+//!   [`FLIP_LEAST_SOLVES`], the two ends and one value between them, so a
+//!   pair sent back as the span narrows again. What bounds a search over a
+//!   slow solver.
+//!
+//! Every cap is a count, so the same request stops at the same place on any
+//! machine and under any load, and gives the same bytes (engine invariant 5).
+//! Until 0.14.0 rc2 `FLIP_MAX_SECONDS` was read on a clock, and a search it
+//! stopped gave another pair on a slower or busier machine, or on the same
+//! one: 28, 28 and 29 solves of one request (the red team of 0.14.0 rc1,
+//! `evidence/verification/redteam_0.14.0_rc1/rt3/RT3.md`, D1). The time an
+//! answer is waited for on the open connection (`OPEN_REQUEST_SECONDS`)
+//! stays the outer bound.
 //!
 //! Two things shorten a search without changing what it finds. `low` and
 //! `high` are taken in either order. And where the number varied is the
@@ -45,10 +59,30 @@ pub const FLIP_MAX_SOLVES: u64 = 64;
 /// [`FLIP_SCAN_SOLVES`]).
 pub const FLIP_SCAN_RUNS: u64 = 7;
 pub const FLIP_SCAN_SOLVES: u64 = 3;
-/// A search starts no further run or solve once it has computed this long.
-/// It is the one cap that depends on the machine: when it stops a search the
-/// answer names it, and the pair is the pair found so far.
+/// A search of solves starts no further solve once the solves it has made
+/// come to this many seconds, each counted at its solver's measured time at
+/// the slowest input of its range ([`crate::open_plan::OPEN_SOLVE_SECONDS`],
+/// which `describe_solver` states under `open_connection`): the fewest solves
+/// whose count reaches it, and never fewer than three, the two ends and the
+/// first value between them, so that a search sent back with the pair it
+/// gave as its span narrows it again, whatever the solver. It is a count,
+/// not a clock, so it stops a search at the same solve on every machine; a
+/// search of runs is held by its steps instead ([`FLIP_MAX_STEPS`]). When it
+/// stops a search the answer names it, and the pair is the pair found so far.
 pub const FLIP_MAX_SECONDS: u64 = 20;
+
+/// The most solves of `solver` one search makes under [`FLIP_MAX_SECONDS`]:
+/// the fewest whose counted seconds reach it, and at least three, the two
+/// ends and one value between them.
+pub(crate) fn solves_in_time(solver: &str) -> u64 {
+    let each = crate::open_plan::solve_seconds(solver);
+    ((FLIP_MAX_SECONDS as f64 / each).ceil() as u64).max(FLIP_LEAST_SOLVES)
+}
+
+/// The fewest solves a search makes when FLIP_MAX_SECONDS stops it: the two
+/// ends and one value between them, so that every search halves its span at
+/// least once and the pair, sent back as the span, narrows it further.
+pub const FLIP_LEAST_SOLVES: u64 = 3;
 
 const KEYS: &[&str] = &["request", "vary", "low", "high", "level"];
 
@@ -74,7 +108,7 @@ fn name_in(sentence: &str) -> Option<&str> {
 
 pub fn description() -> String {
     format!(
-        "Find where an outcome changes. Send request (a run_trajectory or solve request written out, its domain and card or its solver by the name find_model or the lists give; no from, readout or example), vary (the place of the one number to change: \"segments[0].load.current_a\", \"segments[*].load.current_a\" for every segment, \"initial.soc\", \"dt_s\", \"segments[0].steps\", \"parameters.load_n\"; a count is varied in whole numbers), and low and high, the two ends of the span, in either order: the smaller is taken as low. The span is halved to the place where the outcome or the stop name changes or, with level {{\"quantity\": <a published quantity>, \"value\": <number>}}, where that quantity of the final state (of a solve: of result) crosses the value, or, with level {{\"quantity\": <a flag>}}, where a true-or-false value of it turns. When both ends give the same, {FLIP_SCAN_RUNS} values between them ({FLIP_SCAN_SOLVES} for solves) are run to find a band, and the answer says so. The answer gives the run on each side as a request ready to send again, with its outcome, its stop name and sentence and the run_seal or solution_seal that request has when sent alone, the two values in decimals and exact hex, and the width between them. The same request gives the same pair. Bounded, and named when one stops the search: {FLIP_MAX_RUNS} runs (FLIP_MAX_RUNS), {FLIP_MAX_STEPS} steps in all (FLIP_MAX_STEPS), or {FLIP_MAX_SOLVES} solves (FLIP_MAX_SOLVES), the ends included, and no new run after {FLIP_MAX_SECONDS} seconds of computing (FLIP_MAX_SECONDS); send the pair back as the span to narrow it. A side that stops before computing has no proof. Same bytes as POST /find_flip."
+        "Finds where an outcome changes, and gives the run on each side. request is a run_trajectory or solve request written out, its domain and card or its solver by the name find_model or the lists give, with no from, readout or example; vary is the place of the one number to change, such as \"segments[0].load.current_a\", \"initial.soc\", \"dt_s\" or \"parameters.load_n\"; low and high are the two ends of the span, in either order: the smaller is taken as low. The span is halved to the place where the outcome or the stop name changes or, with level, where a published quantity of the final state (of a solve: of result) crosses a value or a flag turns. When both ends give the same, {FLIP_SCAN_RUNS} values between them ({FLIP_SCAN_SOLVES} for solves) are run to find a band, and the answer says so. The answer gives the run on each side as a request ready to send again, with its outcome, its stop name and sentence and the run_seal or solution_seal that request has when sent alone, the two values in decimals and exact hex, and the width between them. A side that stops before computing has no proof. The same request gives the same pair. A search is bounded, and names the bound that stops it: {FLIP_MAX_RUNS} runs (FLIP_MAX_RUNS), {FLIP_MAX_STEPS} steps in all (FLIP_MAX_STEPS), or {FLIP_MAX_SOLVES} solves (FLIP_MAX_SOLVES), the ends included, and no new solve once those made are counted at {FLIP_MAX_SECONDS} s (FLIP_MAX_SECONDS); the pair it gives, sent back as the span, narrows it further."
     )
 }
 
@@ -82,15 +116,16 @@ pub fn schema() -> Map<String, Value> {
     match json!({
         "type": "object",
         "properties": {
-            "request": { "type": "object", "description": "A run_trajectory or solve request as that tool takes it." },
-            "vary": { "type": "string", "description": "The place of the one number to vary." },
+            "request": { "type": "object", "description": format!("A run_trajectory or solve request as that tool takes it. A search of solves makes no new solve once those made are counted at {FLIP_MAX_SECONDS} s (FLIP_MAX_SECONDS), each at the time describe_solver states for one solve of its solver (open_connection), and always makes at least {FLIP_LEAST_SOLVES}, both ends and one value between them: a count, not a clock, so the same request stops at the same solve on any machine. A search of runs is held by its steps (FLIP_MAX_STEPS).") },
+            "vary": { "type": "string", "description": "The place of the one number to vary: \"segments[0].load.current_a\", \"segments[*].load.current_a\" for every segment, \"initial.soc\", \"dt_s\", \"segments[0].steps\", \"parameters.load_n\". A count is varied in whole numbers." },
             "low": { "type": "number", "description": "One end of the span. low and high may come in either order; the smaller is taken as low." },
             "high": { "type": "number", "description": "The other end." },
             "level": {
                 "type": "object",
                 "properties": { "quantity": { "type": "string" }, "value": { "type": ["number", "boolean"] } },
                 "required": ["quantity"],
-                "additionalProperties": false
+                "additionalProperties": false,
+                "description": "Optional. {\"quantity\": <a published quantity>, \"value\": <number>}: the span is halved to where that quantity of the final state (of a solve: of result) crosses the value. {\"quantity\": <a flag>}: to where a true-or-false value of it turns."
             }
         },
         "required": ["request", "vary", "low", "high"],
@@ -227,7 +262,7 @@ struct Plan {
 
 fn number_of(object: &Map<String, Value>, key: &str) -> Result<f64, DoorError> {
     match object.get(key) {
-        None => Err(violation(format!("Missing required parameter: '{key}'"))),
+        None => Err(violation(format!("Missing required parameter: '{key}' (InputMissing)."))),
         Some(value) => value
             .as_f64()
             .filter(|number| number.is_finite())
@@ -247,7 +282,7 @@ fn read(view: &View, body: &Value) -> Result<Plan, DoorError> {
         }
     }
     let request = match object.get("request") {
-        None => return Err(violation("Missing required parameter: 'request'")),
+        None => return Err(violation("Missing required parameter: 'request' (InputMissing).")),
         Some(Value::Object(request)) => request,
         Some(_) => return Err(violation("Physical Violation: 'request' must be a JSON object, a run_trajectory or solve request.")),
     };
@@ -261,7 +296,7 @@ fn read(view: &View, body: &Value) -> Result<Plan, DoorError> {
     let tool = if request.contains_key("solver") {
         let name = request.get("solver").and_then(Value::as_str).unwrap_or("");
         if !view.sees_solver(name) || !crate::solvers::is_known(name) {
-            return Err(DoorError::NotFound("Solver not recognized".to_string()));
+            return Err(DoorError::NotFound(crate::SOLVER_NOT_RECOGNIZED.to_string()));
         }
         Tool::Solve
     } else {
@@ -270,7 +305,7 @@ fn read(view: &View, body: &Value) -> Result<Plan, DoorError> {
         match (domain, card) {
             (Some(domain), Some(card)) => {
                 if view.find(domain, card).is_none() {
-                    return Err(DoorError::NotFound("Card not recognized".to_string()));
+                    return Err(DoorError::NotFound(crate::CARD_NOT_RECOGNIZED.to_string()));
                 }
             }
             _ => {
@@ -287,12 +322,15 @@ fn read(view: &View, body: &Value) -> Result<Plan, DoorError> {
         Tool::Run
     };
     let vary = match object.get("vary") {
-        None => return Err(violation("Missing required parameter: 'vary'")),
+        None => return Err(violation("Missing required parameter: 'vary' (InputMissing).")),
         Some(Value::String(text)) => text.clone(),
         Some(_) => return Err(violation("Physical Violation: 'vary' must be a string.")),
     };
     let place = read_place(&vary)?;
     let request = Value::Object(request.clone());
+    // A search that would set a value of a signed reading is refused: every
+    // run of it would carry a value its instrument did not sign.
+    crate::signed_load::refuse_replaced_in_search(&request, &vary)?;
     // The place holds a number in the request as sent: nothing is filled in.
     let mut probe = request.clone();
     let mut found = Vec::new();
@@ -358,7 +396,11 @@ fn read(view: &View, body: &Value) -> Result<Plan, DoorError> {
         )));
     }
     let (most, steps_each, cap) = match tool {
-        Tool::Solve => (FLIP_MAX_SOLVES, 0, "FLIP_MAX_SOLVES"),
+        Tool::Solve => {
+            // The solves the counted time leaves, the two ends among them.
+            let by_time = solves_in_time(request.get("solver").and_then(Value::as_str).unwrap_or(""));
+            if by_time < FLIP_MAX_SOLVES { (by_time, 0, "FLIP_MAX_SECONDS") } else { (FLIP_MAX_SOLVES, 0, "FLIP_MAX_SOLVES") }
+        }
         Tool::Run => {
             // The steps of the longest run the search can make: with the
             // steps themselves varied, the run at 'high'.
@@ -546,7 +588,6 @@ fn evaluate(view: &View, plan: &Plan, value: f64) -> Result<Side, String> {
 const ABOUT: &str = "Each side is an ordinary request: send it to the tool named for its whole answer, or with its seal to verify_tape or verify_solution, and the proof is the same. The pair is the first change the halving met; a span can hold more than one. The width is high minus low in 64-bit arithmetic; of a count, neighbours are one apart.";
 
 fn search(view: &View, plan: &Plan) -> Result<Value, String> {
-    let began = std::time::Instant::now();
     let mut low = evaluate(view, plan, plan.low)?;
     let mut high = evaluate(view, plan, plan.high)?;
     let mut runs = 2_u64;
@@ -564,7 +605,6 @@ fn search(view: &View, plan: &Plan) -> Result<Value, String> {
     );
     let mut stopped_by = Value::Null;
     let mut neighbours = false;
-    let out_of_time = || began.elapsed().as_secs() >= FLIP_MAX_SECONDS;
     let middle_of = |low: f64, high: f64| -> Option<f64> {
         let middle = if plan.whole { low + ((high - low) / 2.0).floor() } else { low + (high - low) / 2.0 };
         (middle > low && middle < high).then_some(middle)
@@ -624,10 +664,6 @@ fn search(view: &View, plan: &Plan) -> Result<Value, String> {
                 stopped_by = json!(plan.cap);
                 break;
             }
-            if out_of_time() {
-                stopped_by = json!("FLIP_MAX_SECONDS");
-                break;
-            }
             last_tried = value;
             let side = evaluate(view, plan, value)?;
             runs += 1;
@@ -673,10 +709,6 @@ fn search(view: &View, plan: &Plan) -> Result<Value, String> {
             let middle = if hints.is_empty() { halfway } else { hints.remove(0) };
             if runs >= plan.most {
                 stopped_by = json!(plan.cap);
-                break;
-            }
-            if out_of_time() {
-                stopped_by = json!("FLIP_MAX_SECONDS");
                 break;
             }
             let side = evaluate(view, plan, middle)?;
@@ -825,31 +857,38 @@ mod tests {
 
     #[test]
     fn a_count_is_varied_in_whole_numbers() {
-        // The generator ends at mission day 4,087: by counting steps of one day, the last run that completes and the first that ends.
-        let run = json!({ "domain": "energy", "card": "generator_mmrtg_f1", "initial": { "mission_time_s": 0.0 }, "dt_s": 86400.0, "segments": [{ "steps": 100, "load": {} }], "record_every": 5000 });
+        // The NCR18650PF cell held at 2.9 A in steps of 10 s reaches 2.5 V:
+        // by counting steps, the last run that completes and the first that is refused.
+        let cell = genesis_kernel::cell_18650pf::Cell18650Pf::cell();
+        let mut state = genesis_kernel::cell_18650pf::CellState::try_full(&cell).unwrap();
+        let mut frame = genesis_kernel::frame::LastStateFrame64 { t: 0.0, pos: [0.0; 3], vel: [0.0; 3], force_torque: 0.0, residual: 0.0, flags: 0, proof: [0; 16] };
+        let mut last = 0u64;
+        while genesis_kernel::cell_18650pf::step(&cell, &mut state, &mut frame, genesis_kernel::cell_18650pf::CellLoad { current_a: 2.9 }, 10.0).is_ok() {
+            last += 1;
+        }
+        let run = json!({ "domain": "energy", "card": "cell_18650pf", "initial": { "soc": 1.0, "held_current_a": 2.9 }, "dt_s": 10.0, "segments": [{ "steps": 100, "load": { "current_a": 2.9 } }], "record_every": 5000 });
         let answer = found(json!({ "request": run, "vary": "segments[0].steps", "low": 100, "high": 5000 }));
-        assert_eq!((answer["low_is"].as_str(), answer["high_is"].as_str()), (Some("completed"), Some("ended (MissionTimeOutsideCard)")));
-        assert_eq!((answer["low"]["value"].as_f64(), answer["high"]["value"].as_f64()), (Some(4087.0), Some(4088.0)));
-        assert_eq!(answer["low"]["request"]["segments"][0]["steps"], json!(4087));
+        assert_eq!((answer["low_is"].as_str(), answer["high_is"].as_str()), (Some("completed"), Some("refused (UndervoltageCutoff)")), "{answer}");
+        assert_eq!((answer["low"]["value"].as_u64(), answer["high"]["value"].as_u64()), (Some(last), Some(last + 1)));
+        assert_eq!(answer["low"]["request"]["segments"][0]["steps"], json!(last));
         assert!(answer["low"]["request"]["segments"][0]["steps"].is_u64());
         assert_eq!((answer["neighbours"].as_bool(), answer["width"].as_f64()), (Some(true), Some(1.0)));
         // A count is written as a whole number, as the request holds it.
         assert!(answer["low"]["value"].is_u64() && answer["high"]["value"].is_u64() && answer["width"].is_u64(), "{answer}");
-        // The run at the high end says where it ended, so the search goes
-        // there: the two ends, 4,087 steps and 4,088.
-        assert_eq!(answer["runs"], 4);
+        assert!(answer["runs"].as_u64().unwrap() <= 6, "{answer}");
         // A long run leaves few runs under FLIP_MAX_STEPS; the steps that
         // landed still find the last step in one search. LAGEOS-1's card
-        // ends its forecast at seven days: 60,480 steps of 10 s.
+        // ends at the end of its leap-second span: from seven days before
+        // it, 60,480 steps of 10 s.
         let described = crate::descriptor::describe_value_in(&View::full(), "aerospace", "satellite_lageos1").unwrap();
-        let orbit = described["example_run_trajectory"].clone();
+        let mut orbit = described["example_run_trajectory"].clone();
+        orbit["initial"]["epoch_utc_s"] = json!(genesis_kernel::satellite_lageos1::EPOCH_MAX_S - 7.0 * 86400.0);
         let dt = orbit["dt_s"].as_f64().unwrap();
         let last = (7.0 * 86400.0 / dt).round() as u64;
         let answer = found(json!({ "request": orbit, "vary": "segments[0].steps", "low": 1356, "high": 100000 }));
         assert_eq!((answer["low"]["value"].as_u64(), answer["high"]["value"].as_u64()), (Some(last), Some(last + 1)), "{answer}");
         assert_eq!((answer["neighbours"].as_bool(), answer["stopped_by"].is_null(), answer["runs"].as_u64()), (Some(true), true, Some(4)));
         // The ends in either order give the same pair.
-        let run = json!({ "domain": "energy", "card": "generator_mmrtg_f1", "initial": { "mission_time_s": 0.0 }, "dt_s": 86400.0, "segments": [{ "steps": 100, "load": {} }], "record_every": 5000 });
         let forward = found(json!({ "request": run, "vary": "segments[0].steps", "low": 100, "high": 5000 }));
         let backward = found(json!({ "request": run, "vary": "segments[0].steps", "low": 5000, "high": 100 }));
         assert_eq!(forward, backward);
@@ -864,41 +903,41 @@ mod tests {
 
     #[test]
     fn a_band_between_two_ends_that_stop_alike_is_found_by_the_scan() {
-        // The grid card answers losses of 693 to 1402 MW; 100 and 3000 MW both stop before computing, by the same name.
+        // The 2170 table card answers case temperatures of -21.898 to 45.535 degC, where its
+        // tables end; -30 and 60 degC both stop before computing, by the same name.
         let run = json!({
-            "domain": "energy", "card": "grid_gb",
-            "initial": { "frequency_hz": 49.942, "inertia_mw_s": 241000.0, "demand_mw": 27132.0 },
-            "dt_s": 0.02, "segments": [{ "steps": 100, "load": { "loss_mw": 996.0 } }], "record_every": 100
+            "domain": "energy", "card": "cell_2170_m80",
+            "initial": { "block_chamber_c": 25.0, "charge_removed_ah": 1.0 },
+            "dt_s": 1.0, "segments": [{ "steps": 10, "load": { "current_a": -1.0, "case_temperature_c": 25.0 } }], "record_every": 10
         });
-        let answer = found(json!({ "request": run, "vary": "segments[0].load.loss_mw", "low": 100.0, "high": 3000.0 }));
+        let answer = found(json!({ "request": run, "vary": "segments[0].load.case_temperature_c", "low": -30.0, "high": 60.0 }));
         assert_eq!(answer["flips"], true, "{answer}");
         assert!(answer["scanned"].as_str().unwrap().contains("until one differed"));
-        assert_eq!((answer["low_is"].as_str(), answer["high_is"].as_str()), (Some("stopped before computing (LossOutsideCard)"), Some("completed")));
-        assert_eq!(answer["high"]["value"], 693.0);
+        assert_eq!((answer["low_is"].as_str(), answer["high_is"].as_str()), (Some("stopped before computing (CaseTemperatureOutsideCard)"), Some("completed")));
+        assert_eq!(answer["high"]["value"], -21.898);
         assert_eq!(answer["neighbours"], true);
     }
 
     #[test]
     fn a_band_behind_a_change_of_stop_name_is_found() {
-        // The accumulator's worked charge answers from 55 to 67 bar. Below
-        // 37 bar and above 86 bar it stops as PressureOutsideCard, and
-        // between those and the band as PressureOutsideChargeBands. Asked 30
-        // to 90 bar, the search passes over the change of name and gives the
-        // edge where the model starts to answer.
+        // The accumulator's worked charge answers from its precharge, about
+        // 40 bar, where the oil side empties (OilSideEmpty), to the vessel's
+        // rated 330 bar (PressureAboveRated). Asked 10 to 300 bar, the search
+        // passes over the change of name and gives the edge where the model
+        // starts to answer.
         let described = crate::descriptor::describe_value_in(&View::full(), "energy", "accumulator_sbo450").unwrap();
         let run = described["example_run_trajectory"].clone();
-        let answer = found(json!({ "request": run, "vary": "initial.gas_pressure_pa", "low": 3.0e6, "high": 9.0e6 }));
+        let answer = found(json!({ "request": run, "vary": "initial.gas_pressure_pa", "low": 1.0e6, "high": 3.0e7 }));
         assert_eq!(answer["flips"], true, "{answer}");
-        assert_eq!(answer["low_is"], "stopped before computing (PressureOutsideChargeBands)");
+        assert_eq!(answer["low_is"], "stopped before computing (OilSideEmpty)");
         assert!(!answer["high_is"].as_str().unwrap().contains("stopped before computing"), "{answer}");
         let (low, high) = (answer["low"]["value"].as_f64().unwrap(), answer["high"]["value"].as_f64().unwrap());
-        assert!(5.0e6 < low && high < 6.0e6 && low.next_up() == high, "{low} {high}");
+        assert!(3.9e6 < low && high < 4.1e6 && low.next_up() == high, "{low} {high}");
         assert!(answer["high"]["run_seal"].as_str().is_some_and(|seal| seal.len() == 64));
-        assert!(answer["scanned"].as_str().unwrap().contains("until one computed") && answer["scanned"].as_str().unwrap().contains("one stop name gives way to another"));
-        // Where no value between computes, the change of name is the pair, as before.
-        let answer = found(json!({ "request": run, "vary": "initial.gas_pressure_pa", "low": 3.0e6, "high": 3.9e6 }));
-        assert_eq!((answer["low_is"].as_str(), answer["high_is"].as_str()), (Some("stopped before computing (PressureOutsideCard)"), Some("stopped before computing (PressureOutsideChargeBands)")), "{answer}");
-        assert_eq!(answer["high"]["value"], 3.7e6);
+        // From 200 to 300 bar the edge is the vessel's rating.
+        let answer = found(json!({ "request": run, "vary": "initial.gas_pressure_pa", "low": 2.0e7, "high": 3.0e7 }));
+        assert_eq!(answer["flips"], true, "{answer}");
+        assert_eq!(answer["high_is"], "refused (PressureAboveRated)", "{answer}");
     }
 
     #[test]
@@ -939,16 +978,23 @@ mod tests {
         assert!(error.message().contains("FLIP_MAX_STEPS"), "{}", error.message());
         // A solve is held to its own cap. With the cap the first build had,
         // eight, a search over a solver took eight or nine calls; with 64,
-        // and FLIP_MAX_SECONDS over a slow solver, the bearing's edge is one call.
+        // and FLIP_MAX_SECONDS counted over a slow solver, the bearing's edge
+        // is one call: counted at 0.15 s a solve, it is held by FLIP_MAX_SOLVES.
+        // The bearing's edge is where its film stops being laminar, about
+        // 143,000 rpm, at a load that keeps the shaft inside its range.
         let body = json!({
-            "request": { "solver": "journal_bearing_sheffield", "parameters": { "load_n": 10000, "speed_rpm": 400 } },
-            "vary": "parameters.load_n", "low": 10000, "high": 30000
+            "request": { "solver": "journal_bearing_sheffield", "parameters": { "load_n": 2.0e6, "speed_rpm": 100000 } },
+            "vary": "parameters.speed_rpm", "low": 100000, "high": 200000
         });
         let plan = read(&view, &body).unwrap();
         assert_eq!((plan.most, plan.cap), (FLIP_MAX_SOLVES, "FLIP_MAX_SOLVES"));
+        assert_eq!(solves_in_time("journal_bearing_sheffield"), 134);
         let whole = search(&view, &plan).unwrap();
         assert_eq!((whole["neighbours"].as_bool(), whole["stopped_by"].is_null()), (Some(true), true), "{whole}");
-        assert_eq!((whole["low"]["value"].as_f64(), whole["high"]["value"].as_f64()), (Some(20000.0), Some(20000.000000000004)));
+        let (edge_low, edge_high) = (whole["low"]["value"].as_f64().unwrap(), whole["high"]["value"].as_f64().unwrap());
+        assert_eq!(edge_low.next_up(), edge_high);
+        assert_eq!(genesis_solvers::journal_bearing_sheffield::admit(2.0e6, edge_low), Ok(()));
+        assert!(genesis_solvers::journal_bearing_sheffield::admit(2.0e6, edge_high).is_err());
         assert!(whole["solves"].as_u64().unwrap() <= FLIP_MAX_SOLVES);
         let mut plan = read(&view, &body).unwrap();
         plan.most = 8;
@@ -956,13 +1002,68 @@ mod tests {
         assert_eq!(answer["solves"], 8);
         assert_eq!(answer["stopped_by"], "FLIP_MAX_SOLVES");
         assert_eq!(answer["low_is"], "converged");
-        assert_eq!(answer["high_is"], "stopped before computing (LoadOutOfRange)");
+        assert_eq!(answer["high_is"], "stopped before computing (FilmNotLaminar)");
         assert_eq!(answer["high"]["solution_seal"], Value::Null);
         assert!(answer["high"]["no_proof"].is_string());
         assert!(answer["low"]["solution_seal"].as_str().unwrap().len() == 64);
         let low = answer["low"]["value"].as_f64().unwrap();
         let high = answer["high"]["value"].as_f64().unwrap();
-        assert!(low <= 20000.0 && 20000.0 < high && high - low == 20000.0 / 64.0, "{low} {high}");
+        assert!(low <= edge_low && edge_low < high && high - low == 100000.0 / 64.0, "{low} {high}");
+    }
+
+    /// FLIP_MAX_SECONDS is counted, not timed: each solve at its solver's
+    /// measured time, so a search it stops makes the same solves and gives
+    /// the same pair every time. The request is the red team's
+    /// (`evidence/verification/redteam_0.14.0_rc1/rt3/reproducers/D1_request.json`),
+    /// which on rc1's clock gave 28, 28 and 29 solves and two pairs.
+    #[test]
+    fn a_search_of_a_slow_solver_is_counted_and_gives_the_same_pair_every_time() {
+        let view = View::full();
+        let body = json!({
+            "request": { "solver": "stress_plate_hole_s235", "parameters": { "traction_mpa": 106.26, "points_x_mm": [0.0, 0.0, 4.5, -20.0], "points_y_mm": [4.0, 10.025, 0.0, 5.0] } },
+            "vary": "parameters.traction_mpa", "low": 103.0722, "high": 109.44780000000002,
+            "level": { "quantity": "axial_force_n", "value": 6498.064650000001 }
+        });
+        // Counted at 1.7 s a solve: twelve solves come to 20.4 s, eleven to 18.7 s.
+        assert_eq!(crate::open_plan::solve_seconds("stress_plate_hole_s235"), 1.7);
+        let plan = read(&view, &body).unwrap();
+        assert_eq!((plan.most, plan.cap), (12, "FLIP_MAX_SECONDS"));
+        let answer = search(&view, &plan).unwrap();
+        assert_eq!((answer["solves"].as_u64(), answer["stopped_by"].as_str()), (Some(12), Some("FLIP_MAX_SECONDS")), "{answer}");
+        assert_eq!(answer["neighbours"], false);
+        let again = search(&view, &read(&view, &body).unwrap()).unwrap();
+        assert_eq!(answer, again);
+        // Every solver: at least three solves, the ends and one between them, so
+        // a pair sent back narrows again; at most FLIP_MAX_SOLVES; and
+        // FLIP_MAX_SECONDS named only where the counted time stops first.
+        for (solver, seconds) in crate::open_plan::OPEN_SOLVE_SECONDS {
+            let most = solves_in_time(solver);
+            assert!(most >= FLIP_LEAST_SOLVES, "{solver}");
+            assert!(most == FLIP_LEAST_SOLVES || (most - 1) as f64 * seconds < FLIP_MAX_SECONDS as f64, "{solver} {most}");
+            assert!(most as f64 * seconds >= FLIP_MAX_SECONDS as f64, "{solver} {most}");
+        }
+        assert_eq!(solves_in_time("tokamak_dt_beam_target"), 3);
+        assert_eq!(solves_in_time("icf_hotspot_burn"), 3);
+        assert_eq!(solves_in_time("modulus_bam_s355"), 2000);
+        // A solver counted at 450 s: three solves, the ends and their middle,
+        // and the pair sent back as the span is halved again (the red team's
+        // sweep of every solver, RT3 p2_datasets.py: its worked solve, the
+        // first number +/- 3 %, a published number at its worked value).
+        let slab = crate::solvers::example_solve(crate::solvers::find("ablator_slab").unwrap());
+        let thickness = slab["parameters"]["thickness_m"].as_f64().unwrap();
+        let body = json!({
+            "request": slab, "vary": "parameters.thickness_m", "low": thickness * 0.97, "high": thickness * 1.03,
+            "level": { "quantity": "material_compared_with_measurement", "value": 0.0 }
+        });
+        let plan = read(&view, &body).unwrap_or_else(|error| panic!("{}", error.message()));
+        let first = search(&view, &plan).unwrap();
+        assert_eq!((first["solves"].as_u64(), first["stopped_by"].as_str(), first["flips"].as_bool()), (Some(3), Some("FLIP_MAX_SECONDS"), Some(true)), "{first}");
+        let mut again = body.clone();
+        again["low"] = first["low"]["value"].clone();
+        again["high"] = first["high"]["value"].clone();
+        let second = search(&view, &read(&view, &again).unwrap()).unwrap();
+        assert_eq!(second["solves"].as_u64(), Some(3), "{second}");
+        assert_eq!(second["width"].as_f64().unwrap(), first["width"].as_f64().unwrap() / 2.0, "{second}");
     }
 
     #[test]
@@ -979,7 +1080,7 @@ mod tests {
         let mut chained = pack(1.0);
         chained["from"] = json!({});
         assert!(message(json!({ "request": chained, "vary": "dt_s", "low": 1, "high": 2 })).contains("no 'from'"));
-        assert_eq!(message(json!({ "request": { "solver": "none", "parameters": {} }, "vary": "parameters.x", "low": 1, "high": 2 })), "Solver not recognized");
-        assert_eq!(message(json!({ "request": { "domain": "energy", "card": "none", "segments": [] }, "vary": "dt_s", "low": 1, "high": 2 })), "Card not recognized");
+        assert_eq!(message(json!({ "request": { "solver": "none", "parameters": {} }, "vary": "parameters.x", "low": 1, "high": 2 })), "Solver not recognized (UnknownSolver).");
+        assert_eq!(message(json!({ "request": { "domain": "energy", "card": "none", "segments": [] }, "vary": "dt_s", "low": 1, "high": 2 })), "Card not recognized (UnknownCard).");
     }
 }

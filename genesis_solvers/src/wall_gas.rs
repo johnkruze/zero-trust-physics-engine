@@ -44,6 +44,7 @@
 //! published TACOT table. Where carbon vapour alone reaches 0.999 of the
 //! wall pressure the wall boils and there is no finite `B'c`.
 
+use genesis_kernel::math;
 use crate::wall_gas_species::{Species, GASES, GRAPHITE};
 
 /// Gas constant, J/mol/K.
@@ -80,12 +81,12 @@ fn h_over_rt(species: &Species, t: f64) -> f64 {
     let i = interval(species, t);
     let a = &i.a;
     -a[0] / (t * t)
-        + a[1] * t.ln() / t
+        + a[1] * math::log(t) / t
         + a[2]
         + a[3] * t / 2.0
         + a[4] * (t * t) / 3.0
-        + a[5] * t.powi(3) / 4.0
-        + a[6] * t.powi(4) / 5.0
+        + a[5] * math::powi(t, 3) / 4.0
+        + a[6] * math::powi(t, 4) / 5.0
         + i.b1 / t
 }
 
@@ -93,11 +94,11 @@ fn s_over_r(species: &Species, t: f64) -> f64 {
     let i = interval(species, t);
     let a = &i.a;
     -a[0] / (2.0 * (t * t)) - a[1] / t
-        + a[2] * t.ln()
+        + a[2] * math::log(t)
         + a[3] * t
         + a[4] * (t * t) / 2.0
-        + a[5] * t.powi(3) / 3.0
-        + a[6] * t.powi(4) / 4.0
+        + a[5] * math::powi(t, 3) / 3.0
+        + a[6] * math::powi(t, 4) / 4.0
         + i.b2
 }
 
@@ -200,7 +201,7 @@ impl Mixture {
         let mut sum = 0.0;
         for (j, s) in self.species.iter().enumerate() {
             if self.carbon_only[j] {
-                sum += (-at.g_over_rt[j] + s.atoms[CARBON] * at.graphite_g_over_rt).exp();
+                sum += math::exp(-at.g_over_rt[j] + s.atoms[CARBON] * at.graphite_g_over_rt);
             }
         }
         STANDARD_PRESSURE_PA * sum
@@ -241,7 +242,7 @@ impl Mixture {
         // Atoms of each free element in each active species, row by row.
         let mut atoms = vec![0.0; na * nf];
         let mut base = vec![0.0; na];
-        let log_pressure = (pressure_pa / STANDARD_PRESSURE_PA).ln();
+        let log_pressure = math::log(pressure_pa / STANDARD_PRESSURE_PA);
         for (row, &j) in active.iter().enumerate() {
             for (column, &k) in free.iter().enumerate() {
                 atoms[row * nf + column] = self.species[j].atoms[k];
@@ -265,7 +266,7 @@ impl Mixture {
                 for column in 0..nf {
                     log_x += atoms[row * nf + column] * y[column];
                 }
-                let value = log_x.min(700.0).exp();
+                let value = math::exp(log_x.min(700.0));
                 x[row] = value;
                 sum += value;
                 for column in 0..nf {
@@ -273,9 +274,9 @@ impl Mixture {
                 }
             }
             for column in 0..nf {
-                f[column] = y[nf] + el[column].max(1.0e-300).ln() - amount[column].ln();
+                f[column] = y[nf] + math::log(el[column].max(1.0e-300)) - math::log(amount[column]);
             }
-            f[nf] = sum.max(1.0e-300).ln();
+            f[nf] = math::log(sum.max(1.0e-300));
             sum
         };
         let largest = |f: &[f64]| f.iter().fold(0.0f64, |a, v| a.max(v.abs()));
@@ -351,7 +352,7 @@ impl Mixture {
         }
         Equilibrium {
             mole_fraction,
-            total_mol: y[nf].exp(),
+            total_mol: math::exp(y[nf]),
             unknowns: y,
             converged,
         }
@@ -385,7 +386,7 @@ impl Mixture {
 /// mole fractions sum to less than one.
 fn first_guess(atoms: &[f64], base: &[f64], amount: &[f64], na: usize, nf: usize) -> Vec<f64> {
     let mut y = vec![0.0; nf + 1];
-    let third = 0.3f64.ln();
+    let third = math::log(0.3f64);
     let row_sum = |row: usize| (0..nf).map(|c| atoms[row * nf + c]).sum::<f64>();
     for k in 0..nf {
         let alone: Vec<usize> = (0..na)
@@ -411,7 +412,7 @@ fn first_guess(atoms: &[f64], base: &[f64], amount: &[f64], na: usize, nf: usize
         v
     };
     for _ in 0..60 {
-        let sum: f64 = (0..na).map(|row| log_x(&y, row).min(700.0).exp()).sum();
+        let sum: f64 = (0..na).map(|row| math::exp(log_x(&y, row).min(700.0))).sum();
         if sum < 1.0 {
             break;
         }
@@ -421,9 +422,9 @@ fn first_guess(atoms: &[f64], base: &[f64], amount: &[f64], na: usize, nf: usize
     }
     let mut elements = 0.0;
     for row in 0..na {
-        elements += row_sum(row) * log_x(&y, row).exp();
+        elements += row_sum(row) * math::exp(log_x(&y, row));
     }
-    y[nf] = (amount.iter().sum::<f64>() / elements.max(1.0e-300)).ln();
+    y[nf] = math::log(amount.iter().sum::<f64>() / elements.max(1.0e-300));
     y
 }
 
@@ -719,7 +720,14 @@ fn atomic_oxygen_share(stream: &[f64; ELEMENTS]) -> Result<(Vec<f64>, Vec<f64>),
             }
             let (mass, heat) = rest.mass_and_enthalpy(&e, &at);
             h.push(heat / mass);
-            share.push(e.total_mol * e.mole_fraction[atom] / mol[OXYGEN]);
+            // A stream with no oxygen (nitrogen, argon or the two) has no
+            // oxygen to be atomic: its share is none, where the quotient
+            // would be zero over zero.
+            share.push(if mol[OXYGEN] > 0.0 {
+                e.total_mol * e.mole_fraction[atom] / mol[OXYGEN]
+            } else {
+                0.0
+            });
             guess = Some(e.unknowns);
         }
         for &at in &enthalpies {

@@ -1,5 +1,7 @@
 //! The stdio server calls the same functions as the HTTP routes.
 
+mod answer_text;
+
 use std::time::Duration;
 
 use rmcp::ServiceExt;
@@ -23,7 +25,7 @@ async fn spawn_app() -> String {
 async fn post(base: &str, path: &str, body: &Value) -> (u16, String) {
     let client = reqwest::Client::new();
     let url = format!("{base}{path}");
-    let text = serde_json::to_string(body).unwrap();
+    let text = answer_text::as_sent(body);
     let mut last_error = None;
     for _ in 0..20 {
         match client
@@ -36,6 +38,7 @@ async fn post(base: &str, path: &str, body: &Value) -> (u16, String) {
             Ok(response) => {
                 let status = response.status().as_u16();
                 let response_text = response.text().await.unwrap();
+                answer_text::remember(&response_text);
                 return (status, response_text);
             }
             Err(error) => {
@@ -83,7 +86,7 @@ async fn mcp_matches_http_for_a_step_a_run_and_a_violation() {
         vec![
             "list_cards",
             "describe_card",
-            "verify_step",
+            "compute_step",
             "run_trajectory",
             "verify_tape",
             "list_solvers",
@@ -97,9 +100,11 @@ async fn mcp_matches_http_for_a_step_a_run_and_a_violation() {
             "cite",
             "find_model",
             "find_flip",
+            "design_run",
+            "verify_step",
         ]
     );
-    assert_eq!(listed.tools.len(), 16);
+    assert_eq!(listed.tools.len(), 18);
 
     let base = spawn_app().await;
     let step = json!({
@@ -223,7 +228,7 @@ async fn mcp_matches_http_for_a_step_a_run_and_a_violation() {
 
     let (status, http_verdict) = post(&base, "/verify_solution", &http_json).await;
     assert_eq!(status, 200, "{http_verdict}");
-    assert_eq!(http_verdict, format!(r#"{{"holds":true,"cause":null,"checked":{}}}"#, serde_json::json!(protocol_mcp_gateway::WHOLE_SOLUTION_CHECKED)));
+    assert_eq!(http_verdict, format!(r#"{{"holds":true,"values_hold":true,"cause":null,"compared":{}}}"#, serde_json::json!(protocol_mcp_gateway::WHOLE_SOLUTION_COMPUTED)));
     let mcp_verdict = client
         .call_tool(
             CallToolRequestParams::new("verify_solution").with_arguments(arguments(&mcp_json)),
@@ -231,17 +236,35 @@ async fn mcp_matches_http_for_a_step_a_run_and_a_violation() {
         .await
         .expect("verify_solution");
     assert_eq!(mcp_verdict.is_error, Some(false));
-    assert_eq!(
-        mcp_verdict.content[0].as_text().expect("text").text,
-        http_verdict
-    );
+    // The MCP library writes the arguments again from their values, so the
+    // copy it sends spells each number as serde_json does: every value is the
+    // engine's and its text is not, and the long form names where the
+    // spelling first differs. The web connection given that same text says
+    // the same, byte for byte.
+    let mcp_verdict_text = mcp_verdict.content[0].as_text().expect("text").text.clone();
+    let report: Value = serde_json::from_str(&mcp_verdict_text).unwrap();
+    assert_eq!((report["holds"].clone(), report["cause"].clone()), (json!(false), json!("answer_text")), "{report}");
+    assert!(report["difference"].as_str().unwrap().contains("the same value spelled another way. Every value of the answer sent is the engine's answer to its request, computed again"), "{report}");
+    let written = serde_json::to_string(&mcp_json).unwrap();
+    let http_written = reqwest::Client::new()
+        .post(format!("{base}/verify_solution"))
+        .header(reqwest::header::CONTENT_TYPE, "application/json")
+        .body(written)
+        .send()
+        .await
+        .unwrap()
+        .text()
+        .await
+        .unwrap();
+    assert_eq!(mcp_verdict_text, http_written);
 
     let potassium = json!({ "solver": "atom_dft", "parameters": { "atomic_number": 19 } });
     let (status, http_range) = post(&base, "/solve", &potassium).await;
     assert_eq!(status, 422, "{http_range}");
     assert_eq!(
         http_range,
-        "Physical Violation: atomic number 19 is outside 1..=18."
+        // Re-pinned for 0.10.1: an atomic number outside the range carries the name AtomicNumberOutOfRange, and the entry writes the range in words.
+        "Physical Violation: atomic number 19 is outside 1 to 18 (AtomicNumberOutOfRange)."
     );
     let mcp_range = client
         .call_tool(CallToolRequestParams::new("solve").with_arguments(arguments(&potassium)))
@@ -325,7 +348,7 @@ async fn a_repeated_key_on_the_agent_door_is_refused_and_not_sealed() {
     let body: Value =
         serde_json::from_str(listed["result"]["content"][0]["text"].as_str().unwrap()).unwrap();
     let pairs = body["cards"].as_array().expect("pairs");
-    assert_eq!(pairs.len(), 31, "{body}");
+    assert_eq!(pairs.len(), 37, "{body}");
 }
 
 #[tokio::test]
@@ -452,7 +475,7 @@ async fn an_unreadable_line_on_the_agent_door_is_answered() {
     assert_eq!(listed["id"], 3, "{listed}");
     let body: Value =
         serde_json::from_str(listed["result"]["content"][0]["text"].as_str().unwrap()).unwrap();
-    assert_eq!(body["cards"].as_array().expect("pairs").len(), 31);
+    assert_eq!(body["cards"].as_array().expect("pairs").len(), 37);
 }
 
 fn tool_text(result: &rmcp::model::CallToolResult) -> String {
@@ -561,7 +584,7 @@ async fn list_cards_and_describe_card_serve_the_thirty_one_pairs() {
     assert_eq!(listed.is_error, Some(false));
     let listed: Value = serde_json::from_str(&tool_text(&listed)).unwrap();
     assert_eq!(listed.as_object().unwrap().len(), 2, "{listed}");
-    assert_eq!(listed["count"], json!(31), "{listed}");
+    assert_eq!(listed["count"], json!(37), "{listed}");
     let cards = listed["cards"].as_array().expect("cards");
     let pairs: Vec<(&str, &str)> = cards
         .iter()
@@ -599,6 +622,9 @@ async fn list_cards_and_describe_card_serve_the_thirty_one_pairs() {
             ("aerospace", "capsule_insight"),
             ("energy", "reactor_spert3_fuel"),
             ("aerospace", "crater_ryugu_sci"),
+            ("energy", "generator_mmrtg_seebeck"),
+            ("aerospace", "momentum_jwst_dihedral"),
+            ("aerospace", "momentum_jwst_srp"),
             ("signal", "link_gothenburg_10010"),
             ("energy", "grid_gb"),
             ("aerospace", "solar_system"),
@@ -609,16 +635,19 @@ async fn list_cards_and_describe_card_serve_the_thirty_one_pairs() {
             ("energy", "accumulator_sbo450"),
             ("energy", "reactor_triga_jsi"),
             ("energy", "reactor_spert3_ccore"),
+            ("energy", "runaway_18650_lco"),
+            ("materials", "grasp_lift_glass_4tu"),
+            ("energy", "tokamak_vde_mast"),
         ]
     );
     // The one line of the C-core reactor says its comparison failed.
-    assert!(cards[30]["specimen"].as_str().unwrap().contains("failed on all three lines"));
+    assert!(cards[33]["specimen"].as_str().unwrap().contains("failed on all three lines"));
     // The one line of the JSI TRIGA reactor carries its standing.
     for words in [
         "Ten constants are fitted to 36 pulses of this reactor",
         "one thermocouple of one element",
     ] {
-        assert!(cards[29]["specimen"].as_str().unwrap().contains(words), "{words}");
+        assert!(cards[32]["specimen"].as_str().unwrap().contains(words), "{words}");
     }
     assert_eq!(
         cards[19]["specimen"],
@@ -626,27 +655,27 @@ async fn list_cards_and_describe_card_serve_the_thirty_one_pairs() {
     );
     assert_eq!(
         cards[20]["specimen"],
-        "The crater made on asteroid Ryugu by the 2 kg copper impactor of Hayabusa2 on 5 April 2019: its radius growing from 1.75 m until it stops, by the law of crater size for dry sand held by gravity alone, fitted in the laboratory on Earth and not to Ryugu, with no load; its predicted radius is 18 percent above the measured crater, a miss of its own line, and its clock is not compared with Ryugu."
-    );
-    assert_eq!(
-        cards[21]["specimen"],
-        "One 32.445 GHz microwave link across 1.26 km of Gothenburg in rain, OpenMRG link 10010 sublink 587: its path loss from the rain rate at the gauge beside it. The rain term is Recommendation ITU-R P.838-3 with nothing fitted; the three constants of the water on the antennas are fitted to this link's own readings of June and July 2015."
+        "The crater made on asteroid Ryugu by the 2 kg copper impactor of Hayabusa2 on 5 April 2019: its radius growing from 0.1622 m until it stops, by the law of crater size for dry sand held by gravity alone, fitted in the laboratory on Earth and not to Ryugu, with no load; its predicted radius is 18 percent above the measured crater, a miss of its own line, and its clock is not compared with Ryugu."
     );
     assert_eq!(
         cards[24]["specimen"],
+        "One 32.445 GHz microwave link across 1.26 km of Gothenburg in rain, OpenMRG link 10010 sublink 587: its path loss from the rain rate at the gauge beside it. The rain term is Recommendation ITU-R P.838-3 with nothing fitted; the three constants of the water on the antennas are fitted to this link's own readings of June and July 2015. Compared with the nine rain events of August 2015, whose rain reached 54 mm/h, it met all three lines: RMS error 0.581 dB against 0.90."
+    );
+    assert_eq!(
+        cards[27]["specimen"],
         "One 235/55 R19 all-season tyre rolling on ice at a held slip on the Terramechanics Rig at Virginia Tech, at the rig's creep of 0.06 m/s: the longitudinal force and the work, from a friction ratio fitted to this tyre's own measurements."
     );
     assert_eq!(
         cards[16]["specimen"],
-        "One Tesla Model 3 2170 lithium-ion cell, any of the three cells m80, m1000 and m448-N of its dataset, as a physical model with memory, from -10 to 40 degC, under a terminal current and a measured case temperature."
+        "One Tesla Model 3 2170 lithium-ion cell, any of the three cells m80, m1000 and m448-N of its dataset, as a physical model with memory, under a terminal current and a measured case temperature. Compared from -10 to 40 degC on runs of two cells no model had seen: m448-N 51 of 60, m1000 31 of 45; on m80, whose runs it was built on and not a blind test, 62 of 65, and at -20 degC none of m80's 13. The table card cell_2170_m80 reads 17.4 mV higher on one 1.5 A discharge at 12 degC."
     );
     assert_eq!(
         cards[17]["specimen"],
-        "One cast of the single-crystal nickel alloy CMSX-6, loaded along [001] at 980 degrees Celsius, creeping in tension under a held load: the percentage creep extension of a round test piece 6 mm in diameter against the time since the full load, from 0.1 percent to 5 percent at 170 to 230 MPa and from 0.1 to 0.2 percent at 140 to under 170 MPa. Six constants fitted to six creep tests of this cast; the time to a level met its three lines on six held-back tests. Below 0.1 percent, and past 0.2 percent under 170 MPa, the law misses the measured curves, and there the card refuses."
+        "One cast of the single-crystal nickel alloy CMSX-6, loaded along [001] at 980 degrees Celsius, creeping in tension under a held load: the percentage creep extension of a round test piece 6 mm in diameter against the time since the full load, from zero to 5 percent at 140 to 230 MPa. Six constants fitted to six creep tests of this cast; the time to a level met its three lines on six held-back tests, at the registered levels from 0.1 to 5 percent; the range compared at 140 MPa, 0.1 to 0.2 percent, was drawn after the scoring with every test read. Below 0.1 percent the law starts later than every measured curve, by a factor of 1.5 to 4 in the hours to 0.05 percent, and at 140 MPa past 0.2 percent it runs ahead of the three tests, by about a factor of 2 in extension at the hour they were stopped (1.70 to 1.78 percent against 0.79 to 0.83): the card answers there with those misses stated, and a frame there says so."
     );
     assert_eq!(
         cards[18]["specimen"],
-        "The InSight entry capsule on its entry at Mars of 26 November 2018, from the top of the atmosphere to just past the flight's parachute deployment, down to 5700 m or Mach 1.46: no wind, the air of orbiter soundings set on the lander's barometer, and the capsule's lift as the load. Only runs from the locked entry state were compared with the flight, and only states on the corridor they flew are answered. It does not forecast an entry whose lift is not known."
+        "The InSight entry capsule on its entry at Mars of 26 November 2018, from the top of the atmosphere to the flown parachute deployment, under 6164.62 m and under 352.1169 m/s at once: no wind, the air of orbiter soundings set on the lander's barometer, and the capsule's lift as the load. Compared with the flight from the locked entry state: with the lift measured on the first 150 s all four of NASA's first lines were met, the radius at deployment 114 m low against a line of 3.5 km and Mach 1.501 against 1.522. Other starts are computed down to the landing site and were not compared. It does not forecast an entry whose lift is not known."
     );
     assert_eq!(
         cards[15]["specimen"],
@@ -654,20 +683,20 @@ async fn list_cards_and_describe_card_serve_the_thirty_one_pairs() {
     );
     assert_eq!(
         cards[14]["specimen"],
-        "One Tesla Model 3 2170 lithium-ion cell, cell m80 alone, from 0 to 40 degC, under a terminal current and a measured case temperature."
+        "One Tesla Model 3 2170 lithium-ion cell, cell m80 alone, in six blocks of tests from -20 to 40 degC, under a terminal current and a measured case temperature. Compared on 60 held-back tests it failed, 27 met: C/3 met from 0 to 40 degC, 1C missed at each, and the -10 and -20 degC blocks met no mark (55.6 to 425 mV). The physical model cell_2170_model3 reads 17.4 mV lower on one 1.5 A discharge at 12 degC."
     );
     assert_eq!(
         cards[12]["specimen"],
-        "The laser-ranging satellite LAGEOS-1 in free flight, in a frame turning with the Earth: the Earth's field to degree and order 12, the Sun and the Moon, the solid tide, sunlight pressure and relativity, with no load."
+        "The laser-ranging satellite LAGEOS-1 in free flight, in a frame turning with the Earth: the Earth's field to degree and order 12, the Sun and the Moon, the solid tide, sunlight pressure and relativity, with no load. Compared with the published orbits of LAGEOS-1 and LAGEOS-2 on 28 days of 2026 for up to seven days, it met every line on 42 held-back runs: worst 0.65 m after one revolution, 3.8 m after one day, 32 m after seven days."
     );
     assert_eq!(
         cards[11]["specimen"],
-        "The Stardust sample return capsule on its entry of 15 January 2006, from entry interface down to the drogue-deployment condition the radar recorded, under 31030 m and under Mach 1.23 at once, past which a state is refused: no lift, no wind, a yearly standard atmosphere, and no load. One entry was compared with the flight, the locked entry from entry interface; off that path the card holds the limits each field states."
+        "The Stardust sample return capsule on its entry of 15 January 2006, from entry interface down to the drogue-deployment condition the radar recorded, under 31030 m and under Mach 1.23 at once, past which a state is refused: no lift, no wind, a yearly standard atmosphere, and no load. One entry was compared with the flight, the locked entry from entry interface, and it met all three lines: peak load 32.17 g against 32.89 g, and the drogue altitude and Mach number reached at 138.909 s and 136.953 s against 137.9 s recorded. Other paths are computed inside the tables, down to sea level, and were not compared."
     );
     let generator = &cards[10]["specimen"];
     assert_eq!(
         generator,
-        "One radioisotope generator, flight unit F1, on the Curiosity rover: its daily-average electrical output from landing to mission day 4,087, with no load; on the 1,279 held-back days, 2,809 to 4,087, it was inside its line of 0.010 of 115.4 W by root mean square (0.008129, about 0.94 W) and outside it in its mean over the final 365 days (+0.010094, about 1.16 W high), so it failed its comparison by the rule fixed beforehand and is served with that stated. Its worst day read 2.60 W high."
+        "One radioisotope generator, flight unit F1, on the Curiosity rover: its daily-average electrical output from landing on, with no load. Compared on the 1,279 held-back days 2,809 to 4,087, the end of the published record: inside its line of 0.010 of 115.4 W by root mean square (0.008129, about 0.94 W) and outside it in its mean over the final 365 days (+0.010094, about 1.16 W high), so it failed by the rule fixed beforehand. It reads high and the gap grew each year; past day 4,087 nothing was compared and the frame sets FLAG_PAST_RECORD."
     );
 
     for (domain, card) in pairs {
@@ -682,7 +711,7 @@ async fn list_cards_and_describe_card_serve_the_thirty_one_pairs() {
         assert_eq!(described["card"], card);
 
         // The worked examples run as they are returned, on both doors.
-        let step = &described["example_verify_step"];
+        let step = &described["example_compute_step"];
         assert_eq!(step["domain"], domain);
         assert_eq!(step["card"], card);
         let (status, http_step) = post(&base, "/verify_physics", step).await;
@@ -741,7 +770,7 @@ async fn an_old_domain_pair_is_not_recognized() {
             .await
             .expect("tool result");
         assert_eq!(described.is_error, Some(true), "{domain}/{card}");
-        assert_eq!(tool_text(&described), "Card not recognized", "{domain}/{card}");
+        assert_eq!(tool_text(&described), "Card not recognized (UnknownCard).", "{domain}/{card}");
     }
     for retired in ["list_orchestrators", "describe_orchestrator"] {
         let called = client

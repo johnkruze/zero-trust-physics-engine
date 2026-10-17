@@ -25,7 +25,7 @@ use parquet::file::properties::{EnabledStatistics, WriterProperties};
 
 use sha2::{Digest, Sha256};
 
-use crate::check::Checked;
+use crate::verify::Verified;
 use crate::state::{Cell, Decoded, Kind, StateSchema};
 
 /// Rows in a row group of `rows.parquet`.
@@ -33,9 +33,10 @@ pub const ROW_GROUP_ROWS: usize = 8192;
 /// Frames in a row group of `frames.parquet`: 32 Ki frames, about 3 MiB of bytes. A row group of 128 Ki frames was measured to hold the converter at 600 MB, so this stays small.
 pub const ROW_GROUP_FRAMES: usize = 32_768;
 
-pub const CREATED_BY: &str = "genesis_seal_parquet 0.2.0 (Protocol Company)";
+/// The writer named in each file's metadata: this crate and its own version, read from its manifest.
+pub const CREATED_BY: &str = concat!("genesis_seal_parquet ", env!("CARGO_PKG_VERSION"), " (Protocol Company)");
 
-pub const NOTE: &str = "This Parquet file is a conversion of a dataset whose seals were checked, and held, before the conversion. The sealed record is the three source files: the manifest head, rows.jsonl and frames.bin. This file is not sealed itself. A float column holds the value decoded from the row's hex, never from its decimal.";
+pub const NOTE: &str = "This Parquet file is a conversion of a dataset whose seals were verified, and held, before the conversion. The sealed record is the three source files: the manifest head, rows.jsonl and frames.bin. This file is not sealed itself. A float column holds the value decoded from the row's hex, never from its decimal.";
 
 /// What was written.
 #[derive(Debug)]
@@ -66,15 +67,15 @@ impl Drop for Cleanup {
     }
 }
 
-fn metadata(checked: &Checked, table: &str) -> Vec<KeyValue> {
-    let counts = &checked.head.counts;
+fn metadata(verified: &Verified, table: &str) -> Vec<KeyValue> {
+    let counts = &verified.head.counts;
     let pair = |key: &str, value: String| KeyValue::new(key.to_string(), value);
     vec![
         pair("table", table.into()),
         pair("note", NOTE.into()),
-        pair("dataset_seal", checked.head.dataset_seal.clone()),
-        pair("merkle_root", checked.head.merkle_root.clone()),
-        pair("plan_sha256", checked.head.plan_sha256.clone()),
+        pair("dataset_seal", verified.head.dataset_seal.clone()),
+        pair("merkle_root", verified.head.merkle_root.clone()),
+        pair("plan_sha256", verified.head.plan_sha256.clone()),
         pair("engine_version", counts.engine_version.clone()),
         pair("rows", counts.rows.to_string()),
         pair("completed", counts.completed.to_string()),
@@ -82,22 +83,22 @@ fn metadata(checked: &Checked, table: &str) -> Vec<KeyValue> {
         pair("refused", counts.refused.to_string()),
         pair("unadmitted", counts.unadmitted.to_string()),
         pair("frames", counts.frames.to_string()),
-        pair("source_head_sha256", checked.head_sha256.clone()),
-        pair("source_rows_sha256", checked.rows_sha256.clone()),
+        pair("source_head_sha256", verified.head_sha256.clone()),
+        pair("source_rows_sha256", verified.rows_sha256.clone()),
         pair(
             "source_frames_sha256",
-            checked.frames_sha256.clone().unwrap_or_else(|| "not given".into()),
+            verified.frames_sha256.clone().unwrap_or_else(|| "not given".into()),
         ),
     ]
 }
 
-fn properties(checked: &Checked, table: &str, group: usize) -> WriterProperties {
+fn properties(verified: &Verified, table: &str, group: usize) -> WriterProperties {
     WriterProperties::builder()
         .set_created_by(CREATED_BY.to_string())
         .set_compression(Compression::UNCOMPRESSED)
         .set_statistics_enabled(EnabledStatistics::Chunk)
         .set_max_row_group_row_count(Some(group))
-        .set_key_value_metadata(Some(metadata(checked, table)))
+        .set_key_value_metadata(Some(metadata(verified, table)))
         .build()
 }
 
@@ -312,7 +313,7 @@ impl<'a> RowsBatch<'a> {
 }
 
 fn write_rows(
-    checked: &Checked,
+    verified: &Verified,
     rows_bytes: &[u8],
     schema: &StateSchema,
     path: &Path,
@@ -322,7 +323,7 @@ fn write_rows(
     let mut writer = ArrowWriter::try_new(
         BufWriter::new(file),
         arrow.clone(),
-        Some(properties(checked, "rows", ROW_GROUP_ROWS)),
+        Some(properties(verified, "rows", ROW_GROUP_ROWS)),
     )
     .map_err(|e| e.to_string())?;
     let mut batch = RowsBatch::new(schema, arrow);
@@ -358,7 +359,7 @@ fn write_rows(
     if batch.count > 0 {
         writer.write(&batch.finish()?).map_err(|e| e.to_string())?;
     }
-    agree_with_head(checked, records, outcomes)?;
+    agree_with_head(verified, records, outcomes)?;
     close(writer)?;
     Ok(records)
 }
@@ -366,8 +367,8 @@ fn write_rows(
 /// The rows written, and each outcome among them (completed, ended, refused,
 /// unadmitted), must be the counts the head carries, which the dataset seal
 /// covers. A difference is refused and nothing is written.
-fn agree_with_head(checked: &Checked, records: u64, outcomes: [u64; 4]) -> Result<(), String> {
-    let counts = &checked.head.counts;
+fn agree_with_head(verified: &Verified, records: u64, outcomes: [u64; 4]) -> Result<(), String> {
+    let counts = &verified.head.counts;
     let head = [
         ("rows", counts.rows, records),
         ("completed", counts.completed, outcomes[0]),
@@ -406,7 +407,7 @@ impl<R: Read> Read for Hashing<R> {
 }
 
 fn write_frames(
-    checked: &Checked,
+    verified: &Verified,
     rows_bytes: &[u8],
     frames: &Path,
     path: &Path,
@@ -416,11 +417,11 @@ fn write_frames(
     let mut writer = ArrowWriter::try_new(
         BufWriter::new(file),
         arrow.clone(),
-        Some(properties(checked, "frames", ROW_GROUP_FRAMES)),
+        Some(properties(verified, "frames", ROW_GROUP_FRAMES)),
     )
     .map_err(|e| e.to_string())?;
     let mut input = Hashing {
-        // The same rule as the check: a regular file, no link, read for its size at open.
+        // The same rule as the verification: a regular file, no link, read for its size at open.
         inner: BufReader::with_capacity(
             1 << 20,
             genesis_seal::stored_file::open_regular(frames)
@@ -476,13 +477,13 @@ fn write_frames(
         flush(&mut writer, &mut row_ids, &mut frame_ids, &mut bytes, &mut proofs)?;
     }
     // The frame file is read a second time here. What was converted must be
-    // the bytes the check hashed: every byte is read to the end and hashed,
-    // and nothing is kept unless the hash is the one the check computed.
+    // the bytes the verification hashed: every byte is read to the end and hashed,
+    // and nothing is kept unless the hash is the one the verification computed.
     io::copy(&mut input, &mut io::sink()).map_err(|e| e.to_string())?;
     let converted = hex::encode(input.hasher.finalize());
-    if checked.frames_sha256.as_deref() != Some(converted.as_str()) {
+    if verified.frames_sha256.as_deref() != Some(converted.as_str()) {
         return Err(
-            "the frame file is not the file that was checked: it changed between the check and the conversion."
+            "the frame file is not the file that was verified: it changed between the verification and the conversion."
                 .into(),
         );
     }
@@ -506,9 +507,9 @@ pub fn remove_stale_partials(out: &Path) {
     }
 }
 
-/// Convert a dataset that `check` passed. Nothing is left behind on failure.
+/// Convert a dataset that `verify` passed. Nothing is left behind on failure.
 pub fn convert(
-    checked: &Checked,
+    verified: &Verified,
     rows_bytes: &[u8],
     frames: Option<&Path>,
     out: &Path,
@@ -528,9 +529,9 @@ pub fn convert(
         created_directory: created,
         armed: true,
     };
-    let row_records = write_rows(checked, rows_bytes, &schema, &rows_temp)?;
+    let row_records = write_rows(verified, rows_bytes, &schema, &rows_temp)?;
     let frame_records = match frames {
-        Some(frames) => Some(write_frames(checked, rows_bytes, frames, &frames_temp)?),
+        Some(frames) => Some(write_frames(verified, rows_bytes, frames, &frames_temp)?),
         None => None,
     };
     fs::rename(&rows_temp, &rows_final).map_err(|e| e.to_string())?;

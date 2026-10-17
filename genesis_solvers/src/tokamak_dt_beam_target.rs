@@ -49,21 +49,29 @@
 //! total, so a channel counted in one place and not the other shows. Both
 //! ledgers are accounts of the arithmetic: they hold for any slowing-down
 //! rate and any cross-section, and say nothing of whether those are right.
+//! A refinement whose ledgers miss is no answer: it is refined again, an
+//! answer comes only from a refinement whose ledgers close, and a ledger
+//! still broken at the refinement cap refuses the slice by its name.
 //! Beam-beam reactions are counted outside the ledgers: the share of beam
 //! ions they take is returned, and above [`BEAM_BEAM_SHARE_MAX`] the answer
 //! is refused.
 //!
 //! Nothing is fitted. Source of each number: the cross-sections and
 //! reactivities, `bosch_hale`; the slowing-down rates, the Coulomb logarithms
-//! and the relativistic factor, `pb11_reaction`. The ranges of the physics
-//! are the span of the 166 slices compared and answered on engine 0.6.0
-//! (90 saved TFTR slices, the 23 held-back TFTR slices answered and 53 of
-//! JET), rounded outward in the third figure: electron and ion temperature,
-//! their ratio, electron density, the tritium share of the fuel, the
-//! impurity, the beam energy, the fast-ion share and the charge balance with
-//! the fast ions counted. The shell count, the shell volume, the component
-//! count and the whole beam power are capacities: each shell is solved
-//! alone.
+//! and the relativistic factor, `pb11_reaction`. The declared range is where
+//! these hold, each end with its physical reason at its constant: ion
+//! temperature 0.2 to 100 keV (Bosch and Hale's reactivity fits), electron
+//! temperature 0.05 to 100 keV, electron density 1e18 to 1e21 per cubic
+//! metre, any mix of deuterium and tritium, a fully stripped impurity of
+//! charge 1 to 8 and mass 1 to 20, beam components above 0 to 1000 keV, any
+//! beam power above zero. The shell count, the shell volume and the
+//! component count are capacities: each shell is solved alone. From engine
+//! 0.7.0 to this version the ranges were the span of the 166 slices
+//! compared and answered on engine 0.6.0 (90 saved TFTR slices, the 23
+//! held-back TFTR slices answered and 53 of JET), rounded outward in the
+//! third figure; that span is stated at each constant. The fast-ion share
+//! and the charge balance with the fast ions counted are still held at the
+//! extremes those slices reached.
 //!
 //! Left out: any motion of a beam ion across shells while it slows, its
 //! loss by charge exchange or on an unconfined orbit (the caller gives the
@@ -79,29 +87,40 @@
 //!
 //! **Limits written after the held-back comparison**, on data that
 //! was by then spent (`evidence/research/tokamak_dt_beam_target/protocol_amendment_2.md`;
-//! second scoring `evidence/checks/second_party/V-42/`). None is a result
+//! second scoring `evidence/verification/second_party/V-42/`). None is a result
 //! of a blind test.
 //!
 //! *Steady state.* The model is the settled slowing-down spectrum of a
-//! constant source. The caller states how long the beam power has been
-//! steady, `time_since_beam_change_s`, and the solve finds the fast ions'
-//! energy time, their kinetic energy over the deposited beam power. A
-//! slice less than [`SETTLED_AFTER_ENERGY_TIMES`] energy times after a
-//! change is refused, [`SliceReject::BeamChangeTooRecent`]. The solver
-//! cannot check the caller's statement.
+//! constant source. In the classical slowing-down the solver integrates, an
+//! ion born at a given energy reaches each lower energy after a fixed time,
+//! `∫ dE / Σ L`, the same for every ion born; so after a change of the
+//! source the spectrum at an energy is the settled one once every ion there
+//! was born after the change, and the whole spectrum is settled exactly
+//! when the longest of those times, from birth to the stopping energy of
+//! the slowest shell, has passed. The solve finds that time,
+//! `slowing_down_time_max_s`. The caller states how long the beam power has
+//! been steady, `time_since_beam_change_s`; a slice stated as less than that
+//! time after a change is refused, [`SliceReject::BeamChangeTooRecent`]. The
+//! limit is the model's own; the time it is held against is the caller's
+//! statement, which the solver cannot confirm. (From engine 0.7.0 to this
+//! version the end was five fast-ion energy times, set on spent data.)
 //!
 //! *Fast ions as a share of the plasma.* A beam ion is slowed on electrons
-//! and on thermal ions; the other fast ions are not there for it. Where the
-//! fast ions the solve finds are more than [`FAST_ION_SHARE_MAX`] of the
-//! electrons of a shell the answer is refused,
-//! [`SliceReject::FastIonShareTooLarge`].
+//! and on thermal ions; the other fast ions, which its slowing-down leaves
+//! out, grow with their share into a large part of the ions it would meet.
+//! Where the fast ions the solve finds are more than [`FAST_ION_SHARE_MAX`]
+//! of the electrons of a shell the answer is refused,
+//! [`SliceReject::FastIonShareTooLarge`]. Where that share stands is not
+//! derived from the neglected drag: it is the largest share on a slice
+//! compared and answered (the constant says which).
 //!
 //! *Quasi-neutrality.* At the door the thermal ions may carry more charge
 //! than the electrons of a shell by [`QUASI_NEUTRALITY_ALLOWANCE`], the
 //! closure error of analysed profiles, and no more,
 //! [`SliceReject::ThermalChargeExceedsElectrons`]. After the solve (engine
 //! 0.7.0) the thermal ions and the fast ions this solve finds are held from
-//! both sides, at the extremes the slices compared and answered reach:
+//! both sides, each with the allowance the model takes for what it leaves
+//! out, set at the extremes the slices compared and answered reach:
 //! within [`QUASI_NEUTRALITY_FAST_ION_ALLOWANCE`] over the electrons,
 //! [`SliceReject::IonChargeExceedsElectrons`], and within
 //! [`QUASI_NEUTRALITY_DEFICIT_ALLOWANCE`] under them,
@@ -119,14 +138,16 @@
 //! answered. The upper end after the solve needs none: the thermal ions
 //! alone stop at the door's end, far below it.
 //!
-//! *Fuel.* The tritium share of the fuel, n_T / (n_D + n_T), is held in
-//! every shell to [`TRITIUM_SHARE_MIN`]..=[`TRITIUM_SHARE_MAX`], the span
-//! compared, [`SliceReject::TritiumShareOutOfRange`]: no slice compared is
-//! free of tritium or of deuterium.
+//! *Fuel.* Any mix of deuterium and tritium, either alone included: a target
+//! of zero density is skipped. No slice compared is free of either: the
+//! tritium share of the fuel compared ran from 0.004675 (TFTR 105324) to
+//! 0.9974 (JET 43002).
 //!
 //! How the solver compared with the fusion power of the database's pulses is
 //! in the research record, `evidence/research/tokamak_dt_beam_target/`.
 
+use genesis_kernel::math;
+use crate::normal::NormalOrZero;
 use std::fmt;
 
 use crate::bosch_hale::{self, DEUTERON_MASS_KG, Reaction, TRITON_MASS_KG};
@@ -139,64 +160,65 @@ pub const SHELLS_MAX: usize = 128;
 /// Most beam components in one question. A capacity, as the shell count is:
 /// a component split in two gives the same answer.
 pub const BEAM_COMPONENTS_MAX: usize = 12;
-/// Volume of one shell, cubic metres. A capacity bound, as the shell count
-/// is: the solve is local to each shell, and what the physics sees is the
-/// densities and the deposited power over the volume, which the fast-ion
-/// share and the charge balance hold. JET's plasma is about 85 cubic metres.
-pub const SHELL_VOLUME_MAX_M3: f64 = 200.0;
+/// The top of every open-ended input of the question (the shell volume, the
+/// whole beam power and the time since the beam changed): a capacity and no
+/// physics, a stated number past every physical scale, so each input has a
+/// top a request can be told.
+pub const INPUT_CAPACITY: f64 = 1.0e300;
+/// Volume of one shell, cubic metres: any volume to [`INPUT_CAPACITY`]. The
+/// solve is local to each shell, and what the physics sees is the densities
+/// and the deposited power over the volume, which the fast-ion share and the
+/// charge balance hold. JET's plasma is about 85 cubic metres; the shells
+/// compared were 0.0070 to 7.0 cubic metres, 20 to 80 to a slice.
+pub const SHELL_VOLUME_MAX_M3: f64 = INPUT_CAPACITY;
 /// The smallest shell volume answered, cubic metres. Below it the deposited
 /// power over the volume may not be finite; the smallest shell compared is
 /// 0.0070 cubic metres.
 pub const SHELL_VOLUME_MIN_M3: f64 = 1.0e-6;
-/// Electron temperature of a shell, keV: the span of the slices compared and
-/// answered on engine 0.6.0, 0.1991 to 13.095 keV, rounded outward in the
-/// third figure. The Formulary's electron logarithm holds from 0.05 keV,
-/// below the floor.
-pub const ELECTRON_TEMPERATURE_MIN_KEV: f64 = 0.199;
-pub const ELECTRON_TEMPERATURE_MAX_KEV: f64 = 13.1;
-/// Ion temperature of a shell, keV: the span of the slices compared and
-/// answered on engine 0.6.0, 0.2241 to 41.76 keV, rounded outward in the
-/// third figure. The reactivity fit holds from 0.2 keV, below the floor.
-pub const ION_TEMPERATURE_MIN_KEV: f64 = 0.224;
-pub const ION_TEMPERATURE_MAX_KEV: f64 = 41.8;
-/// Electron over ion temperature of a shell: the span of the shells of the
-/// slices compared and answered on engine 0.6.0, 0.07308 (the edge of TFTR
-/// 79099 at 4.22 s) to 1.9945 (JET 42794 at 21.10 s), rounded outward in the
-/// third figure. Outside it the electron drag and the ion drag on a beam ion
-/// stand in a ratio no comparison has met.
-pub const TEMPERATURE_RATIO_MIN: f64 = 0.0730;
-pub const TEMPERATURE_RATIO_MAX: f64 = 2.0;
-/// Electron density of a shell, per cubic metre: the span of the slices
-/// compared and answered on engine 0.6.0, 4.195e18 to 1.2015e20, rounded
-/// outward in the third figure.
-pub const ELECTRON_DENSITY_MIN_PER_M3: f64 = 4.19e18;
-pub const ELECTRON_DENSITY_MAX_PER_M3: f64 = 1.21e20;
-/// Tritium over deuterium plus tritium of a shell: the span of the shells of
-/// the slices compared and answered on engine 0.6.0, 0.004675 (TFTR 105324
-/// at 3.41 s) to 0.9974 (JET 43002 at 18.05 s), rounded outward in the third
-/// figure. No slice compared is free of tritium or of deuterium.
-pub const TRITIUM_SHARE_MIN: f64 = 0.00467;
-pub const TRITIUM_SHARE_MAX: f64 = 0.998;
-/// Charge number of the impurity: the span of the slices compared. No other
-/// impurity is in the data on disk.
-pub const IMPURITY_CHARGE_MIN: f64 = 5.0;
-pub const IMPURITY_CHARGE_MAX: f64 = 6.5;
-/// Mass number of the impurity: the span of the slices compared.
-pub const IMPURITY_MASS_MIN_U: f64 = 10.0;
-pub const IMPURITY_MASS_MAX_U: f64 = 13.0;
-/// Energy of a beam component, keV: the span of the slices compared. No
-/// saved question holds a component outside it.
-pub const BEAM_ENERGY_MIN_KEV: f64 = 26.0;
-pub const BEAM_ENERGY_MAX_KEV: f64 = 152.0;
-/// Beam power deposited in the whole plasma, watts. A property of the two
-/// machines: the most any pulse of the profile database injects is 39.6 MW
-/// (TFTR 80539), and in steady state the power deposited is below the power
-/// injected (0.87 of it in the median of the database's beam heating
-/// profiles while the beams are on). The database's heating profile sums to
-/// more than this at eleven profile times of one pulse, TFTR 80539 from
-/// 3.81 to 3.91 s, 46 to 57 MW against 39.5 MW injected: the fast ions are
-/// giving up stored energy in a collapse, which is no steady state.
-pub const BEAM_POWER_MAX_W: f64 = 4.5e7;
+/// Electron temperature of a shell, keV. Low end: the drag of the electrons
+/// on a singly charged beam ion takes the Formulary's electron logarithm,
+/// `24 − ln(√n_e / T_e)`, the branch for electrons above 10 eV; at 0.05 keV
+/// and 1e21 per cubic metre it is still 10.6. High end: 100 keV, the top of
+/// the ions' range; the drag on the electrons carries Putvinski's
+/// relativistic factor and holds well past it. Compared on shells of 0.1991
+/// to 13.095 keV.
+pub const ELECTRON_TEMPERATURE_MIN_KEV: f64 = 0.05;
+pub const ELECTRON_TEMPERATURE_MAX_KEV: f64 = 100.0;
+/// Ion temperature of a shell, keV: 0.2 to 100 keV, the span Bosch and Hale
+/// state their reactivity fits for. Compared on shells of 0.2241 to 41.76
+/// keV, which holds TFTR's supershots.
+pub const ION_TEMPERATURE_MIN_KEV: f64 = bosch_hale::REACTIVITY_TEMPERATURE_MIN_KEV;
+pub const ION_TEMPERATURE_MAX_KEV: f64 = bosch_hale::REACTIVITY_TEMPERATURE_MAX_KEV;
+/// Electron density of a shell, per cubic metre. Up to 1e21 the Coulomb
+/// logarithms of the drag stay above 10 at every temperature of the range
+/// (the electron logarithm is 10.6 at 1e21 and 0.05 keV). Down to 1e18, the
+/// thinnest plasma a neutral beam is put into: below it the beam passes
+/// through, and where a beam's fast ions outweigh the plasma the fast-ion
+/// share and the charge balance stop the slice by name. Compared on shells
+/// of 4.195e18 to 1.2015e20.
+pub const ELECTRON_DENSITY_MIN_PER_M3: f64 = 1.0e18;
+pub const ELECTRON_DENSITY_MAX_PER_M3: f64 = 1.0e21;
+/// Charge number of the impurity: 1 to 8, hydrogen to oxygen. The drag takes
+/// the impurity as a bare nucleus of charge `Z`; a heavier nucleus keeps
+/// bound electrons in the cooler shells of these plasmas (neon's last is
+/// bound by 1.36 keV), and the bare-charge drag does not hold for it. A mean
+/// over several impurities may be given. Compared with 5 to 6.5, carbon and
+/// mixtures, the only impurity in the data on disk.
+pub const IMPURITY_CHARGE_MIN: f64 = 1.0;
+pub const IMPURITY_CHARGE_MAX: f64 = 8.0;
+/// Mass number of the impurity: 1 to 20, hydrogen to the heaviest nucleus of
+/// charge 8 or less, and never below its charge
+/// ([`SliceReject::ImpurityMassBelowCharge`]). Compared with 10 to 13.
+pub const IMPURITY_MASS_MIN_U: f64 = 1.0;
+pub const IMPURITY_MASS_MAX_U: f64 = 20.0;
+/// Energy of a beam component, keV: above zero to 1000 keV, the energy of the
+/// most energetic neutral beam built for a tokamak (ITER's). It is a capacity
+/// of the table of the beam-beam integral, [`BEAM_BEAM_SPEED_MAX_M_PER_S`],
+/// which holds two such beams; the cross-section fits reach further (a 1000
+/// keV deuteron on tritium is 600 keV in the centre of mass, against the D-T
+/// fit's 4700). Compared with components of 26 to 152 keV, the beams of JET
+/// and TFTR.
+pub const BEAM_ENERGY_MAX_KEV: f64 = 1000.0;
 /// The shares of the beam power over the components must add to one within
 /// this, and so must nothing else: a caller's decimal shares need not add
 /// to one in the last place.
@@ -266,11 +288,6 @@ pub const ION_CHARGE_OVER_ELECTRONS_HIGHEST_ANSWERED: f64 = 1.0 + QUASI_NEUTRALI
 pub const ION_CHARGE_OVER_ELECTRONS_LOWEST_ANSWERED: f64 = f64::from_bits(
     (1.0 - QUASI_NEUTRALITY_DEFICIT_ALLOWANCE).to_bits() - QUASI_NEUTRALITY_DEFICIT_END_ALLOWANCE_ULP as u64,
 );
-/// Seconds since the beam power last changed, the caller's statement. The
-/// ceiling is a bound on the input and no limit of the physics: no pulse of
-/// either machine held its beams a tenth as long, and every value above a
-/// few seconds says the same thing, steady.
-pub const TIME_SINCE_BEAM_CHANGE_MAX_S: f64 = 100.0;
 /// What counts as a change of the beam power, for the caller who states
 /// `time_since_beam_change_s`: the injected power differing from its
 /// present value by more than this fraction of it. The solver cannot see
@@ -281,16 +298,6 @@ pub const TIME_SINCE_BEAM_CHANGE_MAX_S: f64 = 100.0;
 /// to 20 percent inside five energy times left 17 of 17 TFTR rows inside
 /// 0.75 to 1.25 of the reference and a change of 20 to 50 percent 31 of 39.
 pub const BEAM_CHANGE_FRACTION: f64 = 0.2;
-/// A slice is answered only if the beam power has been steady for at least
-/// this many fast-ion energy times (fast-ion kinetic energy over deposited
-/// beam power, both of this solve). Origin, on spent data: of the 34 scored
-/// TFTR slices the 27 at five energy times or later after the first beam
-/// power are all inside 0.75 to 1.25 of the reference (pulse 73268 against
-/// five times its database value) and two of the seven earlier ones are
-/// outside, at 3.8 and 2.3 (second scoring V-42, section 6d). Within five
-/// energy times of a beam change the solver was 0.6 to 1.55 of the
-/// reference.
-pub const SETTLED_AFTER_ENERGY_TIMES: f64 = 5.0;
 /// The fast ions the solve finds may be this share of the electrons of a
 /// shell and no more: the largest share on a slice compared and answered on
 /// engine 0.6.0, 0.4383 (TFTR 80539 at 3.74 s), rounded up in the third
@@ -321,10 +328,13 @@ pub const ENERGY_LEDGER_TOLERANCE: f64 = 2.0e-5;
 pub const POWER_LEDGER_TOLERANCE: f64 = 2.0e-5;
 /// Beam-beam reactions may take this share of the beam ions and no more.
 pub const BEAM_BEAM_SHARE_MAX: f64 = 2.0e-3;
-/// Cells of the table of `G(u)`.
-pub const BEAM_BEAM_CELLS: usize = 4096;
-/// Top of the table of `G(u)`, m/s: above the summed speeds of a 160 keV deuteron and a 160 keV triton.
-pub const BEAM_BEAM_SPEED_MAX_M_PER_S: f64 = 8.0e6;
+/// Cells of the table of `G(u)`. Each is 1953.125 m/s wide, as the 4096
+/// cells to 8e6 m/s of engine 0.8.0 were, so every value of the table below
+/// that speed is the same number.
+pub const BEAM_BEAM_CELLS: usize = 10_240;
+/// Top of the table of `G(u)`, m/s: above the summed speeds of a deuteron
+/// and a triton at [`BEAM_ENERGY_MAX_KEV`], 1.78e7 m/s.
+pub const BEAM_BEAM_SPEED_MAX_M_PER_S: f64 = 2.0e7;
 
 /// The published record this solver is checked against.
 pub const REFERENCE_NAME: &str = "The International Multi-Tokamak Confinement Profile Database, 2008 public release (Nucl. Fusion 40 (2000) 1955): JET pulse 42976 of 1997, analysed with TRANSP by R. V. Budny, at 13.35 s: D-T fusion power 13.2 MW";
@@ -363,7 +373,7 @@ pub struct SliceQuestion {
     pub beam_power_share: Vec<f64>,
     /// Seconds since the injected beam power last differed from its present
     /// value by more than [`BEAM_CHANGE_FRACTION`] of it. The caller's
-    /// statement: the solver cannot check it.
+    /// statement: the solver cannot confirm it.
     pub time_since_beam_change_s: f64,
 }
 
@@ -376,35 +386,33 @@ pub enum SliceReject {
     ProfileLengthsDiffer { name: &'static str, length: usize, shells: usize },
     /// There is no beam component, or more than [`BEAM_COMPONENTS_MAX`], or the three beam lists differ in length.
     BeamComponentCountOutOfRange { components: usize },
-    /// A shell volume is outside [`SHELL_VOLUME_MIN_M3`]..=[`SHELL_VOLUME_MAX_M3`].
+    /// A shell volume is below [`SHELL_VOLUME_MIN_M3`], where the deposited power over the volume may not be finite, or above [`INPUT_CAPACITY`].
     ShellVolumeOutOfRange { shell: usize, value: f64 },
-    /// An electron temperature is outside [`ELECTRON_TEMPERATURE_MIN_KEV`]..=[`ELECTRON_TEMPERATURE_MAX_KEV`], the span of the slices compared.
+    /// An electron temperature is outside 0.05 to 100 keV: below it the electron logarithm of the drag leaves its branch, above it is past the ions' range.
     ElectronTemperatureOutOfRange { shell: usize, value: f64 },
-    /// An ion temperature is outside [`ION_TEMPERATURE_MIN_KEV`]..=[`ION_TEMPERATURE_MAX_KEV`], the span of the slices compared.
+    /// An ion temperature is outside 0.2 to 100 keV, the span of Bosch and Hale's reactivity fits.
     IonTemperatureOutOfRange { shell: usize, value: f64 },
-    /// The electron temperature of a shell over its ion temperature is outside [`TEMPERATURE_RATIO_MIN`]..=[`TEMPERATURE_RATIO_MAX`], the span of the slices compared.
-    TemperatureRatioOutOfRange { shell: usize, value: f64 },
-    /// An electron density is outside [`ELECTRON_DENSITY_MIN_PER_M3`]..=[`ELECTRON_DENSITY_MAX_PER_M3`], the span of the slices compared.
+    /// An electron density is outside 1e18 to 1e21 per cubic metre: above it the Coulomb logarithms of the drag fall below 10, below it a neutral beam passes through the plasma.
     ElectronDensityOutOfRange { shell: usize, value: f64 },
     /// A deuterium, tritium or impurity density is below zero.
     IonDensityNegative { shell: usize, value: f64 },
-    /// The tritium share of the fuel of a shell, n_T / (n_D + n_T), is outside [`TRITIUM_SHARE_MIN`]..=[`TRITIUM_SHARE_MAX`], the span of the slices compared: no slice compared is free of tritium or of deuterium.
-    TritiumShareOutOfRange { shell: usize, value: f64 },
-    /// `impurity_charge` is outside [`IMPURITY_CHARGE_MIN`]..=[`IMPURITY_CHARGE_MAX`], the span of the slices compared.
+    /// `impurity_charge` is outside 1 to 8, hydrogen to oxygen: a heavier nucleus is not bare in these plasmas, and the drag takes it as bare.
     ImpurityChargeOutOfRange { value: f64 },
-    /// `impurity_mass_u` is outside [`IMPURITY_MASS_MIN_U`]..=[`IMPURITY_MASS_MAX_U`], the span of the slices compared.
+    /// `impurity_mass_u` is outside 1 to 20 u, hydrogen to the heaviest nucleus of charge 8 or less.
     ImpurityMassOutOfRange { value: f64 },
+    /// `impurity_mass_u` is below `impurity_charge`: no nucleus has fewer nucleons than protons.
+    ImpurityMassBelowCharge { mass_u: f64, charge: f64 },
     /// Quasi-neutrality, at the door: in one shell the thermal ions alone carry more charge than the electrons there by more than [`QUASI_NEUTRALITY_ALLOWANCE`] of the electron density, with [`QUASI_NEUTRALITY_END_ALLOWANCE_ULP`] units in the last place for rounding. Fast ions only add to that charge.
     ThermalChargeExceedsElectrons { shell: usize, excess: f64 },
-    /// A shell's deposited beam power is below zero, or the whole is not above zero or is above [`BEAM_POWER_MAX_W`].
+    /// A shell's deposited beam power is below zero, or the whole is not above zero, which is no beam, or is above [`INPUT_CAPACITY`].
     BeamPowerOutOfRange { value: f64 },
     /// A beam mass number is neither 2 nor 3.
     BeamSpeciesUnknown { component: usize, value: f64 },
-    /// A beam energy is outside [`BEAM_ENERGY_MIN_KEV`]..=[`BEAM_ENERGY_MAX_KEV`], the span of the slices compared.
+    /// A beam energy is not above zero or is above [`BEAM_ENERGY_MAX_KEV`], the most energetic tokamak beam built and the top of the table of the beam-beam integral.
     BeamEnergyOutOfRange { component: usize, value: f64 },
     /// A beam power share is not above zero, or the shares do not add to one within [`SHARE_SUM_ALLOWANCE`].
     BeamPowerShareOutOfRange { value: f64 },
-    /// `time_since_beam_change_s` is outside 0..=[`TIME_SINCE_BEAM_CHANGE_MAX_S`].
+    /// `time_since_beam_change_s` is below zero, a change that has not happened, or above [`INPUT_CAPACITY`].
     TimeSinceBeamChangeOutOfRange { value: f64 },
     /// An intermediate value was NaN or infinite, or an input was when the solver is called directly: through the gateway no input can be, since a number that is not finite is not JSON.
     NonFiniteValue,
@@ -420,61 +428,57 @@ pub enum SliceReject {
     PowerLedgerBroken { residual: f64 },
     /// Beam-beam reactions take more than [`BEAM_BEAM_SHARE_MAX`] of the beam ions, and the ledgers do not count them.
     BeamBeamShareTooLarge { share: f64 },
-    /// In one shell the fast ions this solve finds are more than [`FAST_ION_SHARE_MAX`] of the electrons, the largest share on a slice compared: a beam ion is slowed on thermal ions only, and other fast ions are not there for it.
+    /// In one shell the fast ions this solve finds are more than [`FAST_ION_SHARE_MAX`] of the electrons: a beam ion is slowed here on electrons and thermal ions alone, and the other fast ions, which its slowing-down leaves out, grow with this share into a large part of the ions it would meet.
     FastIonShareTooLarge { shell: usize, share: f64 },
-    /// The beam power changed less than [`SETTLED_AFTER_ENERGY_TIMES`] fast-ion energy times before this slice, by the caller's `time_since_beam_change_s` and the energy time this solve finds: the fast ions have not settled, and the model is steady state.
-    BeamChangeTooRecent { time_since_beam_change_s: f64, fast_ion_energy_time_s: f64 },
-    /// Quasi-neutrality, after the solve: in one shell the thermal ions and the fast ions this solve finds carry more charge than the electrons there by more than [`QUASI_NEUTRALITY_FAST_ION_ALLOWANCE`] of the electron density, the largest excess on a slice compared: the fast ions the model finds cannot be there beside the measured electrons and the given thermal ions.
+    /// The caller's `time_since_beam_change_s` is shorter than the longest time a beam ion of this slice takes to slow from its birth to the stopping energy, which this solve finds: ions born before the change are still slowing, and the model is the settled spectrum of a steady source. The time is the caller's statement, which the solver cannot confirm.
+    BeamChangeTooRecent { time_since_beam_change_s: f64, slowing_down_time_s: f64 },
+    /// Quasi-neutrality, after the solve: in one shell the thermal ions and the fast ions this solve finds carry more charge than the electrons there by more than [`QUASI_NEUTRALITY_FAST_ION_ALLOWANCE`] of the electron density, the allowance this model takes for its fast ions, each held in the shell where it is born with no orbit spread: past it the fast ions the model finds cannot be there beside the electrons and the given thermal ions.
     IonChargeExceedsElectrons { shell: usize, excess: f64 },
-    /// Quasi-neutrality, after the solve: in one shell the thermal ions and the fast ions this solve finds carry less charge than the electrons there by more than [`QUASI_NEUTRALITY_DEFICIT_ALLOWANCE`] of the electron density, the largest shortfall on a slice compared: the question leaves out ions, such as hydrogen, that would slow and meet the beam.
+    /// Quasi-neutrality, after the solve: in one shell the thermal ions and the fast ions this solve finds carry less charge than the electrons there by more than [`QUASI_NEUTRALITY_DEFICIT_ALLOWANCE`] of the electron density, the allowance this model takes for the thermal hydrogen a question cannot carry: past it the ions the question leaves out, which would slow and meet the beam, are too many to leave out.
     IonChargeBelowElectrons { shell: usize, deficit: f64 },
 }
 
 impl fmt::Display for SliceReject {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::ShellCountOutOfRange { shells } => write!(f, "{shells} shells is outside 1..={SHELLS_MAX}"),
+            Self::ShellCountOutOfRange { shells } => write!(f, "{shells} shells is outside 1 to {SHELLS_MAX}"),
             Self::ProfileLengthsDiffer { name, length, shells } => {
                 write!(f, "{name} holds {length} values for {shells} shells")
             }
             Self::BeamComponentCountOutOfRange { components } => write!(
                 f,
-                "{components} beam components is outside 1..={BEAM_COMPONENTS_MAX}, or the three beam lists differ in length"
+                "{components} beam components is outside 1 to {BEAM_COMPONENTS_MAX}, or the three beam lists differ in length"
             ),
             Self::ShellVolumeOutOfRange { shell, value } => write!(
                 f,
-                "the volume of shell {shell}, {value} m^3, is outside {SHELL_VOLUME_MIN_M3}..={SHELL_VOLUME_MAX_M3}"
+                "the volume of shell {shell}, {value} m^3, is below {SHELL_VOLUME_MIN_M3} m^3 or above {INPUT_CAPACITY:e} m^3, the capacity of the input"
             ),
             Self::ElectronTemperatureOutOfRange { shell, value } => write!(
                 f,
-                "the electron temperature of shell {shell}, {value} keV, is outside {ELECTRON_TEMPERATURE_MIN_KEV}..={ELECTRON_TEMPERATURE_MAX_KEV}"
+                "the electron temperature of shell {shell}, {value} keV, is outside {ELECTRON_TEMPERATURE_MIN_KEV} to {ELECTRON_TEMPERATURE_MAX_KEV} keV"
             ),
             Self::IonTemperatureOutOfRange { shell, value } => write!(
                 f,
-                "the ion temperature of shell {shell}, {value} keV, is outside {ION_TEMPERATURE_MIN_KEV}..={ION_TEMPERATURE_MAX_KEV}"
-            ),
-            Self::TemperatureRatioOutOfRange { shell, value } => write!(
-                f,
-                "the electron over ion temperature of shell {shell}, {value}, is outside {TEMPERATURE_RATIO_MIN}..={TEMPERATURE_RATIO_MAX}, the span of the slices compared"
+                "the ion temperature of shell {shell}, {value} keV, is outside {ION_TEMPERATURE_MIN_KEV} to {ION_TEMPERATURE_MAX_KEV} keV, the span of Bosch and Hale's reactivity fits"
             ),
             Self::ElectronDensityOutOfRange { shell, value } => write!(
                 f,
-                "the electron density of shell {shell}, {value} m^-3, is outside {ELECTRON_DENSITY_MIN_PER_M3}..={ELECTRON_DENSITY_MAX_PER_M3}"
+                "the electron density of shell {shell}, {value} m^-3, is outside 1e18 to 1e21 m^-3"
             ),
             Self::IonDensityNegative { shell, value } => {
                 write!(f, "an ion density of shell {shell}, {value} m^-3, is below zero")
             }
-            Self::TritiumShareOutOfRange { shell, value } => write!(
-                f,
-                "the tritium share of the fuel of shell {shell}, {value}, is outside {TRITIUM_SHARE_MIN}..={TRITIUM_SHARE_MAX}, the span of the slices compared"
-            ),
             Self::ImpurityChargeOutOfRange { value } => write!(
                 f,
-                "impurity charge {value} is outside {IMPURITY_CHARGE_MIN}..={IMPURITY_CHARGE_MAX}"
+                "impurity charge {value} is outside {IMPURITY_CHARGE_MIN} to {IMPURITY_CHARGE_MAX}, hydrogen to oxygen"
             ),
             Self::ImpurityMassOutOfRange { value } => write!(
                 f,
-                "impurity mass number {value} is outside {IMPURITY_MASS_MIN_U}..={IMPURITY_MASS_MAX_U}"
+                "impurity mass number {value} is outside {IMPURITY_MASS_MIN_U} to {IMPURITY_MASS_MAX_U}"
+            ),
+            Self::ImpurityMassBelowCharge { mass_u, charge } => write!(
+                f,
+                "impurity mass number {mass_u} is below its charge {charge}: no nucleus has fewer nucleons than protons"
             ),
             Self::ThermalChargeExceedsElectrons { shell, excess } => write!(
                 f,
@@ -482,7 +486,7 @@ impl fmt::Display for SliceReject {
             ),
             Self::BeamPowerOutOfRange { value } => write!(
                 f,
-                "beam power {value} W: a shell's is below 0, or the whole is not above 0 and at most {BEAM_POWER_MAX_W}"
+                "beam power {value} W: a shell's is below 0, or the whole is not above 0 or is above {INPUT_CAPACITY:e} W, the capacity of the input"
             ),
             Self::BeamSpeciesUnknown { component, value } => write!(
                 f,
@@ -490,7 +494,7 @@ impl fmt::Display for SliceReject {
             ),
             Self::BeamEnergyOutOfRange { component, value } => write!(
                 f,
-                "the energy of beam component {component}, {value} keV, is outside {BEAM_ENERGY_MIN_KEV}..={BEAM_ENERGY_MAX_KEV}"
+                "the energy of beam component {component}, {value} keV, is not above 0 or is above {BEAM_ENERGY_MAX_KEV} keV"
             ),
             Self::BeamPowerShareOutOfRange { value } => write!(
                 f,
@@ -498,7 +502,7 @@ impl fmt::Display for SliceReject {
             ),
             Self::TimeSinceBeamChangeOutOfRange { value } => write!(
                 f,
-                "time since the beam power last changed, {value} s, is outside 0..={TIME_SINCE_BEAM_CHANGE_MAX_S}"
+                "time since the beam power last changed, {value} s, is below 0 s or above {INPUT_CAPACITY:e} s, the capacity of the input"
             ),
             Self::NonFiniteValue => write!(f, "an input or an intermediate value was not finite"),
             Self::SlowingRateNotPositive { shell } => write!(
@@ -522,19 +526,19 @@ impl fmt::Display for SliceReject {
             ),
             Self::FastIonShareTooLarge { shell, share } => write!(
                 f,
-                "in shell {shell} the fast ions this solve finds are {share} of the electrons, above {FAST_ION_SHARE_MAX} (FAST_ION_SHARE_MAX), the largest share on a slice compared: a beam ion is slowed on thermal ions only, and other fast ions are not there for it"
+                "in shell {shell} the fast ions this solve finds are {share} of the electrons, above {FAST_ION_SHARE_MAX} (FAST_ION_SHARE_MAX): a beam ion is slowed here on electrons and thermal ions alone, and the other fast ions, which its slowing-down leaves out, grow with this share into a large part of the ions it would meet"
             ),
-            Self::BeamChangeTooRecent { time_since_beam_change_s, fast_ion_energy_time_s } => write!(
+            Self::BeamChangeTooRecent { time_since_beam_change_s, slowing_down_time_s } => write!(
                 f,
-                "the beam power changed {time_since_beam_change_s} s before this slice, less than {SETTLED_AFTER_ENERGY_TIMES} (SETTLED_AFTER_ENERGY_TIMES) times the fast-ion energy time of {fast_ion_energy_time_s} s this solve finds: the fast ions have not settled, and the model is steady state"
+                "the beam power changed {time_since_beam_change_s} s before this slice, as the request states, less than the {slowing_down_time_s} s the slowest beam ion of this slice takes from birth to the stopping energy: ions born before the change are still slowing, and the model is the settled spectrum of a steady source"
             ),
             Self::IonChargeExceedsElectrons { shell, excess } => write!(
                 f,
-                "in shell {shell} the thermal ions and the fast ions this solve finds carry {excess} of the electron density more charge than the electrons, above the allowance of {QUASI_NEUTRALITY_FAST_ION_ALLOWANCE} (QUASI_NEUTRALITY_FAST_ION_ALLOWANCE), the largest excess on a slice compared: quasi-neutrality cannot hold"
+                "in shell {shell} the thermal ions and the fast ions this solve finds carry {excess} of the electron density more charge than the electrons, above the allowance of {QUASI_NEUTRALITY_FAST_ION_ALLOWANCE} (QUASI_NEUTRALITY_FAST_ION_ALLOWANCE) this model takes for its fast ions, each held in the shell where it is born with no orbit spread: quasi-neutrality cannot hold"
             ),
             Self::IonChargeBelowElectrons { shell, deficit } => write!(
                 f,
-                "in shell {shell} the thermal ions and the fast ions this solve finds carry {deficit} of the electron density less charge than the electrons, above the allowance of {QUASI_NEUTRALITY_DEFICIT_ALLOWANCE} (QUASI_NEUTRALITY_DEFICIT_ALLOWANCE), the largest shortfall on a slice compared: quasi-neutrality cannot hold, and the ions the question leaves out would slow and meet the beam"
+                "in shell {shell} the thermal ions and the fast ions this solve finds carry {deficit} of the electron density less charge than the electrons, above the allowance of {QUASI_NEUTRALITY_DEFICIT_ALLOWANCE} (QUASI_NEUTRALITY_DEFICIT_ALLOWANCE) this model takes for the thermal hydrogen a question cannot carry: quasi-neutrality cannot hold, and the ions the question leaves out would slow and meet the beam"
             ),
         }
     }
@@ -567,6 +571,10 @@ pub struct SliceFusion {
     pub fast_ion_energy_j: f64,
     /// The fast ions' energy time, seconds: their kinetic energy over the deposited beam power.
     pub fast_ion_energy_time_s: f64,
+    /// The longest time a beam ion of this slice takes from its birth to the
+    /// stopping energy, over shells and components, seconds: after a change
+    /// of the beam power, the time until the spectrum is settled again.
+    pub slowing_down_time_max_s: f64,
     /// Beam power given to electrons, watts.
     pub beam_power_to_electrons_w: f64,
     /// Beam power given to thermal ions by drag, watts.
@@ -628,6 +636,9 @@ struct Slowed {
     /// Energy the ion still holds at the stopping energy, times the share that reaches it.
     thermalised_kev: f64,
     slowing_time_s: f64,
+    /// `∫ dE / L` from birth to the stopping energy: the time every ion born
+    /// takes to get there, seconds.
+    transit_time_s: f64,
     /// `∫ E S / L dE`: energy held while slowing, keV seconds.
     energy_time_kev_s: f64,
     particle_residual: f64,
@@ -710,6 +721,9 @@ pub fn admit(question: &SliceQuestion) -> Result<(), SliceReject> {
     if !(IMPURITY_MASS_MIN_U..=IMPURITY_MASS_MAX_U).contains(&question.impurity_mass_u) {
         return Err(SliceReject::ImpurityMassOutOfRange { value: question.impurity_mass_u });
     }
+    if !(question.impurity_mass_u >= question.impurity_charge) {
+        return Err(SliceReject::ImpurityMassBelowCharge { mass_u: question.impurity_mass_u, charge: question.impurity_charge });
+    }
     let mut power = 0.0;
     for shell in 0..shells {
         let value = question.shell_volume_m3[shell];
@@ -723,10 +737,6 @@ pub fn admit(question: &SliceQuestion) -> Result<(), SliceReject> {
         let value = question.ion_temperature_kev[shell];
         if !(ION_TEMPERATURE_MIN_KEV..=ION_TEMPERATURE_MAX_KEV).contains(&value) {
             return Err(SliceReject::IonTemperatureOutOfRange { shell, value });
-        }
-        let value = question.electron_temperature_kev[shell] / question.ion_temperature_kev[shell];
-        if !(TEMPERATURE_RATIO_MIN..=TEMPERATURE_RATIO_MAX).contains(&value) {
-            return Err(SliceReject::TemperatureRatioOutOfRange { shell, value });
         }
         let electrons = question.electron_density_per_m3[shell];
         if !(ELECTRON_DENSITY_MIN_PER_M3..=ELECTRON_DENSITY_MAX_PER_M3).contains(&electrons) {
@@ -742,10 +752,6 @@ pub fn admit(question: &SliceQuestion) -> Result<(), SliceReject> {
                 return Err(SliceReject::IonDensityNegative { shell, value });
             }
         }
-        let value = tritium / (deuterium + tritium);
-        if !(TRITIUM_SHARE_MIN..=TRITIUM_SHARE_MAX).contains(&value) {
-            return Err(SliceReject::TritiumShareOutOfRange { shell, value });
-        }
         let thermal_charge_over_electrons = thermal_charge(question, shell) / electrons;
         if !(thermal_charge_over_electrons <= THERMAL_CHARGE_OVER_ELECTRONS_HIGHEST_ANSWERED) {
             return Err(SliceReject::ThermalChargeExceedsElectrons { shell, excess: thermal_charge_over_electrons - 1.0 });
@@ -756,7 +762,7 @@ pub fn admit(question: &SliceQuestion) -> Result<(), SliceReject> {
         }
         power += value;
     }
-    if !(power > 0.0 && power <= BEAM_POWER_MAX_W) {
+    if !(power > 0.0 && power <= INPUT_CAPACITY) {
         return Err(SliceReject::BeamPowerOutOfRange { value: power });
     }
     let mut shares = 0.0;
@@ -766,7 +772,7 @@ pub fn admit(question: &SliceQuestion) -> Result<(), SliceReject> {
             return Err(SliceReject::BeamSpeciesUnknown { component, value });
         }
         let value = question.beam_energy_kev[component];
-        if !(BEAM_ENERGY_MIN_KEV..=BEAM_ENERGY_MAX_KEV).contains(&value) {
+        if !(value > 0.0 && value <= BEAM_ENERGY_MAX_KEV) {
             return Err(SliceReject::BeamEnergyOutOfRange { component, value });
         }
         let value = question.beam_power_share[component];
@@ -779,7 +785,7 @@ pub fn admit(question: &SliceQuestion) -> Result<(), SliceReject> {
         return Err(SliceReject::BeamPowerShareOutOfRange { value: shares });
     }
     let value = question.time_since_beam_change_s;
-    if !(0.0..=TIME_SINCE_BEAM_CHANGE_MAX_S).contains(&value) {
+    if !(0.0..=INPUT_CAPACITY).contains(&value) {
         return Err(SliceReject::TimeSinceBeamChangeOutOfRange { value });
     }
     Ok(())
@@ -823,6 +829,7 @@ fn slow_and_fuse(
             fused_energy_kev: 0.0,
             thermalised_kev: birth_energy_kev,
             slowing_time_s: 0.0,
+            transit_time_s: 0.0,
             energy_time_kev_s: 0.0,
             particle_residual: 0.0,
             energy_residual: 0.0,
@@ -844,6 +851,7 @@ fn slow_and_fuse(
     let mut to_electrons_kev = 0.0;
     let mut to_ions_kev = 0.0;
     let mut slowing_time_s = 0.0;
+    let mut transit_time_s = 0.0;
     let mut energy_time_kev_s = 0.0;
     let mut spectrum = Vec::with_capacity(8 * panels);
     for panel in (0..panels).rev() {
@@ -886,13 +894,14 @@ fn slow_and_fuse(
             let ions_rate = if fault == Fault::ImpurityDragNotCredited { fuel_rate } else { fuel_rate + impurity_rate };
             *slot = (energy, weight, electrons_rate / total, ions_rate / total, 1.0 / total, per_kev);
         }
-        let fused_here = -surviving * (-chance).exp_m1();
+        let fused_here = -surviving * math::exp_m1(-chance);
         let mut fusing = 0.0;
         let mut fusing_energy = 0.0;
         let mut fusing_each = [0.0; 3];
         for (energy, weight, electrons_share, ions_share, time, per_kev) in nodes {
+            transit_time_s += weight * time;
             // The panel's chance is spread evenly over its width.
-            let here = surviving * (-chance * (top - energy) / width).exp();
+            let here = surviving * math::exp(-chance * (top - energy) / width);
             let weight = weight * here;
             let all = per_kev[0] + per_kev[1] + per_kev[2];
             fusing += weight * all;
@@ -926,13 +935,13 @@ fn slow_and_fuse(
         fused_energy_kev,
         thermalised_kev: surviving * stopping,
         slowing_time_s,
+        transit_time_s,
         energy_time_kev_s,
         particle_residual: 1.0 - surviving - (fused[0] + fused[1] + fused[2]),
         energy_residual: (birth_energy_kev - to_electrons_kev - to_ions_kev - fused_energy_kev - surviving * stopping)
             / birth_energy_kev,
         spectrum,
     };
-    hold(&answer)?;
     Ok(answer)
 }
 
@@ -946,6 +955,7 @@ fn hold(answer: &Slowed) -> Result<(), SliceReject> {
         answer.to_ions_kev,
         answer.thermalised_kev,
         answer.slowing_time_s,
+        answer.transit_time_s,
         answer.energy_time_kev_s,
         answer.particle_residual,
         answer.energy_residual,
@@ -1060,6 +1070,10 @@ fn shell_once(
 }
 
 /// One shell refined until every fused share and the beam-beam rate settle.
+/// Every refinement is held to both ledgers. A refinement whose ledgers miss
+/// is no answer: it is refined again, and the shell is refused by the ledger
+/// it broke only if the refinement cap is reached with it still broken. An
+/// answer is accepted only from a refinement whose ledgers close.
 fn settle_shell(
     question: &SliceQuestion,
     shell_index: usize,
@@ -1072,6 +1086,24 @@ fn settle_shell(
     let mut previous: Option<(Vec<Slowed>, f64)> = None;
     for refinement in 1..=refinement_cap {
         let current = shell_once(question, shell_index, births_per_s, table, panel_kev, fault)?;
+        // Each component's ledgers at this refinement.
+        let mut broken = None;
+        for answer in &current.0 {
+            if let Err(reject) = hold(answer) {
+                if matches!(reject, SliceReject::NonFiniteValue) {
+                    return Err(reject);
+                }
+                broken.get_or_insert(reject);
+            }
+        }
+        if let Some(reject) = broken {
+            if refinement == refinement_cap {
+                return Err(reject);
+            }
+            previous = Some(current);
+            panel_kev *= 0.5;
+            continue;
+        }
         if let Some(previous) = &previous {
             let moved = |now: f64, before: f64| (now - before).abs() > SETTLE_TOLERANCE * now.abs();
             let mut settled = !moved(current.1, previous.1);
@@ -1121,7 +1153,7 @@ pub fn fused_shares_in_uniform_plasma(
         beam_mass_number: vec![beam_mass_number],
         beam_energy_kev: vec![beam_energy_kev],
         beam_power_share: vec![1.0],
-        time_since_beam_change_s: TIME_SINCE_BEAM_CHANGE_MAX_S,
+        time_since_beam_change_s: INPUT_CAPACITY,
     };
     let table = BeamBeamTable::new();
     let (answers, _, _) = settle_shell(&question, 0, &[1.0], &table, MAX_REFINEMENTS, Fault::None)?;
@@ -1129,8 +1161,46 @@ pub fn fused_shares_in_uniform_plasma(
 }
 
 /// The D-T fusion rate of one time slice.
+///
+/// Each value of the answer below the normal range is written as zero
+/// with its sign ([`crate::normal`]).
 pub fn solve(question: &SliceQuestion) -> Result<SliceFusion, SliceReject> {
+    crate::normal::held(solve_as_computed(question))
+}
+
+/// The answer as the equations compute it, before a value below the
+/// normal range is written as zero.
+fn solve_as_computed(question: &SliceQuestion) -> Result<SliceFusion, SliceReject> {
     solve_with(question, MAX_REFINEMENTS, Fault::None)
+}
+
+impl NormalOrZero for SliceFusion {
+    fn normal_or_zero(&mut self) {
+        self.thermal_dt_rate_per_s.normal_or_zero();
+        self.beam_target_dt_rate_per_s.normal_or_zero();
+        self.beam_beam_dt_rate_per_s.normal_or_zero();
+        self.dt_rate_per_s.normal_or_zero();
+        self.dt_fusion_power_w.normal_or_zero();
+        self.dd_neutron_rate_per_s.normal_or_zero();
+        self.dd_fusion_power_w.normal_or_zero();
+        self.neutron_rate_per_s.normal_or_zero();
+        self.fast_ion_count.normal_or_zero();
+        self.fast_ion_energy_j.normal_or_zero();
+        self.fast_ion_energy_time_s.normal_or_zero();
+        self.slowing_down_time_max_s.normal_or_zero();
+        self.beam_power_to_electrons_w.normal_or_zero();
+        self.beam_power_to_ions_w.normal_or_zero();
+        self.beam_power_thermalised_w.normal_or_zero();
+        self.beam_target_fused_fraction.normal_or_zero();
+        self.beam_beam_fused_fraction.normal_or_zero();
+        self.fast_ion_fraction_max.normal_or_zero();
+        self.charge_excess_max.normal_or_zero();
+        self.charge_excess_min.normal_or_zero();
+        self.particle_ledger_residual.normal_or_zero();
+        self.energy_ledger_residual.normal_or_zero();
+        self.power_ledger_residual.normal_or_zero();
+        self.dt_rate_density_per_m3_s.normal_or_zero();
+    }
 }
 
 fn solve_with(question: &SliceQuestion, refinement_cap: u32, fault: Fault) -> Result<SliceFusion, SliceReject> {
@@ -1155,6 +1225,7 @@ fn settle(question: &SliceQuestion, refinement_cap: u32, fault: Fault) -> Result
     let mut born_per_s = 0.0;
     let mut fast_count = 0.0;
     let mut fast_energy_kev = 0.0;
+    let mut slowing_down_time_max_s: f64 = 0.0;
     let mut to_electrons_kev_per_s = 0.0;
     let mut to_ions_kev_per_s = 0.0;
     let mut thermalised_kev_per_s = 0.0;
@@ -1175,7 +1246,7 @@ fn settle(question: &SliceQuestion, refinement_cap: u32, fault: Fault) -> Result
         let ion_temperature = question.ion_temperature_kev[shell];
         let deuterium = question.deuterium_density_per_m3[shell];
         let tritium = question.tritium_density_per_m3[shell];
-        let fit = |kind| bosch_hale::reactivity_m3_per_s(kind, ion_temperature).ok_or(SliceReject::NonFiniteValue);
+        let fit = |kind| bosch_hale::reactivity_m3_per_s(kind, ion_temperature).ok_or(SliceReject::IonTemperatureOutOfRange { shell, value: ion_temperature });
         let thermal_here = deuterium * tritium * fit(Reaction::DeuteriumTritium)? * volume;
         thermal_dt += thermal_here;
         thermal_ddn += 0.5 * deuterium * deuterium * fit(Reaction::DeuteriumDeuteriumNeutron)? * volume;
@@ -1201,6 +1272,7 @@ fn settle(question: &SliceQuestion, refinement_cap: u32, fault: Fault) -> Result
                 here += born * answer.fused[0];
                 fast_here += born * answer.slowing_time_s;
                 fast_energy_kev += born * answer.energy_time_kev_s;
+                slowing_down_time_max_s = slowing_down_time_max_s.max(answer.transit_time_s);
                 to_electrons_kev_per_s += born * answer.to_electrons_kev;
                 to_ions_kev_per_s += born * answer.to_ions_kev;
                 thermalised_kev_per_s += born * answer.thermalised_kev;
@@ -1252,6 +1324,7 @@ fn settle(question: &SliceQuestion, refinement_cap: u32, fault: Fault) -> Result
         fast_ion_count: fast_count,
         fast_ion_energy_j: fast_energy_kev * JOULE_PER_KEV,
         fast_ion_energy_time_s: fast_energy_kev * JOULE_PER_KEV / beam_power_w,
+        slowing_down_time_max_s,
         beam_power_to_electrons_w: to_electrons_kev_per_s * JOULE_PER_KEV,
         beam_power_to_ions_w: to_ions_kev_per_s * JOULE_PER_KEV,
         beam_power_thermalised_w: thermalised_kev_per_s * JOULE_PER_KEV,
@@ -1272,6 +1345,7 @@ fn settle(question: &SliceQuestion, refinement_cap: u32, fault: Fault) -> Result
         result.neutron_rate_per_s,
         result.fast_ion_energy_j,
         result.fast_ion_energy_time_s,
+        result.slowing_down_time_max_s,
         result.fast_ion_fraction_max,
         result.beam_target_fused_fraction,
         result.beam_beam_fused_fraction,
@@ -1292,13 +1366,12 @@ fn settle(question: &SliceQuestion, refinement_cap: u32, fault: Fault) -> Result
     if !(result.fast_ion_fraction_max <= FAST_ION_SHARE_MAX) {
         return Err(SliceReject::FastIonShareTooLarge { shell: fast_fraction_shell, share: result.fast_ion_fraction_max });
     }
-    // The caller's time against the product formed here, as computed: a
-    // caller who multiplies the returned energy time by the same constant
-    // forms the same 64-bit number, so the end needs no allowance.
-    if !(question.time_since_beam_change_s >= SETTLED_AFTER_ENERGY_TIMES * result.fast_ion_energy_time_s) {
+    // The caller's time against the longest slowing-down time, the number
+    // returned: a caller who compares with it meets the same end.
+    if !(question.time_since_beam_change_s >= result.slowing_down_time_max_s) {
         return Err(SliceReject::BeamChangeTooRecent {
             time_since_beam_change_s: question.time_since_beam_change_s,
-            fast_ion_energy_time_s: result.fast_ion_energy_time_s,
+            slowing_down_time_s: result.slowing_down_time_max_s,
         });
     }
     // Quasi-neutrality with the fast ions counted, both ways.
@@ -1444,20 +1517,18 @@ mod tests {
                 *tritium = 0.0;
             }
         };
-        // A tritium-free plasma was never compared: it is refused by name, and its physics is held here without the door.
+        // A tritium-free plasma, never compared, is answered (0.7.0 to this version refused it by name).
         let mut deuterium = small();
         as_deuterium(&mut deuterium);
         deuterium.beam_mass_number = vec![2.0, 2.0];
-        assert!(matches!(solve(&deuterium), Err(SliceReject::TritiumShareOutOfRange { shell: 0, value: 0.0 })));
-        let deuterium = settle(&deuterium, MAX_REFINEMENTS, Fault::None).expect("solves");
+        let deuterium = solve(&deuterium).expect("solves");
         assert_eq!(deuterium.dt_rate_per_s, 0.0);
         assert!(deuterium.dd_neutron_rate_per_s > 1.0e15);
         // A tritium beam alone into deuterium: beam-target only from tritons, no beam-beam.
         let mut tritium = small();
         as_deuterium(&mut tritium);
         tritium.beam_mass_number = vec![3.0, 3.0];
-        assert!(matches!(solve(&tritium), Err(SliceReject::TritiumShareOutOfRange { .. })));
-        let tritium = settle(&tritium, MAX_REFINEMENTS, Fault::None).expect("solves");
+        let tritium = solve(&tritium).expect("solves");
         assert_eq!(tritium.thermal_dt_rate_per_s, 0.0);
         assert_eq!(tritium.beam_beam_dt_rate_per_s, 0.0);
         assert!(tritium.beam_target_dt_rate_per_s > 1.0e16);
@@ -1465,7 +1536,8 @@ mod tests {
 
     /// The four shells of [`small`] at an ion temperature of 20 keV and an
     /// electron temperature of 11 keV, with one deuterium component at the
-    /// lowest beam energy, 26 keV: under 1.5 ion temperatures in every shell.
+    /// lowest beam energy compared, 26 keV: under 1.5 ion temperatures in
+    /// every shell.
     /// Its thermal ions balance the electrons, since there are no fast ions.
     fn cold_beam() -> SliceQuestion {
         let mut question = small();
@@ -1475,7 +1547,7 @@ mod tests {
         question.ion_temperature_kev = vec![20.0; 4];
         question.electron_temperature_kev = vec![11.0; 4];
         question.beam_mass_number = vec![2.0];
-        question.beam_energy_kev = vec![BEAM_ENERGY_MIN_KEV];
+        question.beam_energy_kev = vec![26.0];
         question.beam_power_share = vec![1.0];
         question
     }
@@ -1517,70 +1589,40 @@ mod tests {
             with(|q| q.shell_volume_m3[1] = 0.99e-6),
             Err(SliceReject::ShellVolumeOutOfRange { shell: 1, .. })
         ));
-        assert!(matches!(with(|q| q.shell_volume_m3[1] = 200.1), Err(SliceReject::ShellVolumeOutOfRange { shell: 1, .. })));
         assert!(matches!(
-            with(|q| q.electron_temperature_kev[0] = 13.11),
+            with(|q| q.electron_temperature_kev[0] = 100.01),
             Err(SliceReject::ElectronTemperatureOutOfRange { shell: 0, .. })
         ));
         assert!(matches!(
-            with(|q| q.electron_temperature_kev[3] = 0.1989),
+            with(|q| q.electron_temperature_kev[3] = 0.0499),
             Err(SliceReject::ElectronTemperatureOutOfRange { shell: 3, .. })
         ));
         assert!(matches!(
-            with(|q| q.ion_temperature_kev[3] = 0.2239),
+            with(|q| q.ion_temperature_kev[3] = 0.1999),
             Err(SliceReject::IonTemperatureOutOfRange { shell: 3, .. })
         ));
         assert!(matches!(
-            with(|q| q.ion_temperature_kev[0] = 41.81),
+            with(|q| q.ion_temperature_kev[0] = 100.01),
             Err(SliceReject::IonTemperatureOutOfRange { shell: 0, .. })
         ));
         assert!(matches!(
-            with(|q| q.electron_density_per_m3[2] = 4.18e18),
+            with(|q| q.electron_density_per_m3[2] = 0.99e18),
             Err(SliceReject::ElectronDensityOutOfRange { shell: 2, .. })
         ));
-        assert!(matches!(with(|q| q.impurity_charge = 6.51), Err(SliceReject::ImpurityChargeOutOfRange { .. })));
-        assert!(matches!(with(|q| q.impurity_mass_u = 9.99), Err(SliceReject::ImpurityMassOutOfRange { .. })));
-        // Each temperature inside its range, the two together outside the span compared.
         assert!(matches!(
-            with(|q| {
-                q.electron_temperature_kev[1] = 12.0;
-                q.ion_temperature_kev[1] = 5.99;
-            }),
-            Err(SliceReject::TemperatureRatioOutOfRange { shell: 1, .. })
-        ));
-        assert!(matches!(
-            with(|q| {
-                q.electron_temperature_kev[2] = 1.0;
-                q.ion_temperature_kev[2] = 14.0;
-            }),
-            Err(SliceReject::TemperatureRatioOutOfRange { shell: 2, .. })
-        ));
-        assert!(matches!(
-            with(|q| q.electron_density_per_m3[2] = 1.211e20),
+            with(|q| q.electron_density_per_m3[2] = 1.01e21),
             Err(SliceReject::ElectronDensityOutOfRange { shell: 2, .. })
         ));
+        assert!(matches!(with(|q| q.impurity_charge = 8.01), Err(SliceReject::ImpurityChargeOutOfRange { .. })));
+        assert!(matches!(with(|q| q.impurity_charge = 0.99), Err(SliceReject::ImpurityChargeOutOfRange { .. })));
+        assert!(matches!(with(|q| q.impurity_mass_u = 20.01), Err(SliceReject::ImpurityMassOutOfRange { .. })));
+        assert!(matches!(with(|q| q.impurity_mass_u = 0.99), Err(SliceReject::ImpurityMassOutOfRange { .. })));
+        // Carbon of mass 5: fewer nucleons than protons.
+        assert_eq!(with(|q| q.impurity_mass_u = 5.0), Err(SliceReject::ImpurityMassBelowCharge { mass_u: 5.0, charge: 6.0 }));
         assert!(matches!(
             with(|q| q.tritium_density_per_m3[2] = -1.0),
             Err(SliceReject::IonDensityNegative { shell: 2, .. })
         ));
-        // No tritium, or no deuterium, in one shell: outside the fuel mix compared.
-        assert!(matches!(
-            with(|q| q.tritium_density_per_m3[2] = 0.0),
-            Err(SliceReject::TritiumShareOutOfRange { shell: 2, value: 0.0 })
-        ));
-        assert!(matches!(
-            with(|q| q.deuterium_density_per_m3[1] = 0.0),
-            Err(SliceReject::TritiumShareOutOfRange { shell: 1, value: 1.0 })
-        ));
-        assert!(matches!(
-            with(|q| {
-                q.deuterium_density_per_m3[1] = 0.0;
-                q.tritium_density_per_m3[1] = 0.0;
-            }),
-            Err(SliceReject::TritiumShareOutOfRange { shell: 1, .. })
-        ));
-        assert!(matches!(with(|q| q.impurity_charge = 4.99), Err(SliceReject::ImpurityChargeOutOfRange { .. })));
-        assert!(matches!(with(|q| q.impurity_mass_u = 13.01), Err(SliceReject::ImpurityMassOutOfRange { .. })));
         assert!(matches!(
             with(|q| q.deuterium_density_per_m3[1] = 1.0e20),
             Err(SliceReject::ThermalChargeExceedsElectrons { shell: 1, .. })
@@ -1589,24 +1631,21 @@ mod tests {
             with(|q| q.time_since_beam_change_s = -1.0e-9),
             Err(SliceReject::TimeSinceBeamChangeOutOfRange { .. })
         ));
-        assert!(matches!(
-            with(|q| q.time_since_beam_change_s = 100.00000000000001),
-            Err(SliceReject::TimeSinceBeamChangeOutOfRange { .. })
-        ));
         assert_eq!(with(|q| q.time_since_beam_change_s = f64::NAN), Err(SliceReject::NonFiniteValue));
         assert!(matches!(with(|q| q.beam_power_w[0] = -1.0), Err(SliceReject::BeamPowerOutOfRange { .. })));
         assert!(matches!(with(|q| q.beam_power_w = vec![0.0; 4]), Err(SliceReject::BeamPowerOutOfRange { .. })));
-        assert!(matches!(with(|q| q.beam_power_w[0] = 4.6e7), Err(SliceReject::BeamPowerOutOfRange { .. })));
+        // Powers whose sum is not a finite number.
+        assert!(matches!(with(|q| q.beam_power_w = vec![f64::MAX; 4]), Err(SliceReject::BeamPowerOutOfRange { .. })));
         assert!(matches!(
             with(|q| q.beam_mass_number[1] = 1.0),
             Err(SliceReject::BeamSpeciesUnknown { component: 1, .. })
         ));
         assert!(matches!(
-            with(|q| q.beam_energy_kev[1] = 152.1),
+            with(|q| q.beam_energy_kev[1] = 1000.01),
             Err(SliceReject::BeamEnergyOutOfRange { component: 1, .. })
         ));
         assert!(matches!(
-            with(|q| q.beam_energy_kev[0] = 25.9),
+            with(|q| q.beam_energy_kev[0] = 0.0),
             Err(SliceReject::BeamEnergyOutOfRange { component: 0, .. })
         ));
         assert!(matches!(with(|q| q.beam_power_share[0] = 0.0), Err(SliceReject::BeamPowerShareOutOfRange { .. })));
@@ -1615,73 +1654,82 @@ mod tests {
         assert_eq!(with(|q| q.impurity_charge = f64::INFINITY), Err(SliceReject::NonFiniteValue));
     }
 
-    /// The exact decimal ends of every range are inside it, and shares
-    /// written as decimals that miss one in the last place are accepted.
+    /// The exact ends of every range are inside it, and shares written as
+    /// decimals that miss one in the last place are accepted.
     #[test]
     fn the_exact_ends_of_the_ranges_are_accepted() {
         let mut question = small();
-        question.shell_volume_m3 = vec![SHELL_VOLUME_MAX_M3, SHELL_VOLUME_MIN_M3, 10.0, 10.0];
-        question.electron_temperature_kev = vec![13.1, 0.199, 10.0, 0.73];
-        question.ion_temperature_kev = vec![41.8, 0.224, 5.0, 10.0];
-        // Electron over ion temperature: 0.313, 0.888, exactly 2.0 and exactly 0.073.
-        assert_eq!(question.electron_temperature_kev[2] / question.ion_temperature_kev[2], TEMPERATURE_RATIO_MAX);
-        assert_eq!(question.electron_temperature_kev[3] / question.ion_temperature_kev[3], TEMPERATURE_RATIO_MIN);
-        question.electron_density_per_m3 = vec![1.21e20, 4.19e18, 5.0e19, 5.0e19];
+        question.shell_volume_m3 = vec![1.0e6, SHELL_VOLUME_MIN_M3, 10.0, 10.0];
+        question.electron_temperature_kev = vec![ELECTRON_TEMPERATURE_MAX_KEV, ELECTRON_TEMPERATURE_MIN_KEV, 10.0, 0.73];
+        question.ion_temperature_kev = vec![ION_TEMPERATURE_MAX_KEV, ION_TEMPERATURE_MIN_KEV, 5.0, 10.0];
+        question.electron_density_per_m3 = vec![ELECTRON_DENSITY_MAX_PER_M3, ELECTRON_DENSITY_MIN_PER_M3, 5.0e19, 5.0e19];
         // Thermal ions at 0.97 of the electrons leave room for the fast ions on either side.
         question.deuterium_density_per_m3 = question.electron_density_per_m3.iter().map(|n| 0.485 * n).collect();
         question.tritium_density_per_m3 = question.deuterium_density_per_m3.clone();
         question.impurity_density_per_m3 = vec![0.0; 4];
-        question.impurity_charge = 5.0;
-        question.impurity_mass_u = 10.0;
+        question.impurity_charge = IMPURITY_CHARGE_MIN;
+        question.impurity_mass_u = IMPURITY_MASS_MIN_U;
         question.beam_mass_number = vec![3.0, 2.0, 2.0];
-        question.beam_energy_kev = vec![152.0, 152.0, 26.0];
+        question.beam_energy_kev = vec![BEAM_ENERGY_MAX_KEV, 152.0, 26.0];
         question.beam_power_share = vec![0.6, 0.3, 0.1];
-        // The whole is exactly the ceiling; none of it goes into the smallest shell.
         question.beam_power_w = vec![4.4e7, 0.0, 9.0e5, 1.0e5];
-        question.time_since_beam_change_s = TIME_SINCE_BEAM_CHANGE_MAX_S;
-        assert_eq!(question.beam_power_w.iter().sum::<f64>(), BEAM_POWER_MAX_W);
+        question.time_since_beam_change_s = INPUT_CAPACITY;
         assert_ne!(0.6 + 0.3 + 0.1, 1.0);
         assert_eq!(admit(&question), Ok(()));
         let answer = solve(&question).expect("solves");
         assert!(answer.dt_fusion_power_w > 0.0);
         assert!(answer.charge_excess_max <= QUASI_NEUTRALITY_FAST_ION_ALLOWANCE && answer.charge_excess_min >= -QUASI_NEUTRALITY_DEFICIT_ALLOWANCE);
-        question.impurity_charge = 6.5;
-        question.impurity_mass_u = 13.0;
+        question.impurity_charge = IMPURITY_CHARGE_MAX;
+        question.impurity_mass_u = IMPURITY_MASS_MAX_U;
         assert_eq!(admit(&question), Ok(()));
-        // The two ends of the fuel mix compared, in shells 0 and 1.
-        // 2^60 fuel ions per cubic metre in each shell, split at each end; the share the door forms is that end.
-        for (shell, share) in [(0, TRITIUM_SHARE_MIN), (1, TRITIUM_SHARE_MAX)] {
-            question.tritium_density_per_m3[shell] = share * 2.0_f64.powi(60);
-            question.deuterium_density_per_m3[shell] = 2.0_f64.powi(60) - question.tritium_density_per_m3[shell];
-            let formed = question.tritium_density_per_m3[shell]
-                / (question.deuterium_density_per_m3[shell] + question.tritium_density_per_m3[shell]);
-            assert_eq!(formed, share);
-        }
+        // Pure tritium in shell 0, pure deuterium in shell 1.
+        question.tritium_density_per_m3[0] += question.deuterium_density_per_m3[0];
+        question.deuterium_density_per_m3[0] = 0.0;
+        question.deuterium_density_per_m3[1] += question.tritium_density_per_m3[1];
+        question.tritium_density_per_m3[1] = 0.0;
         assert_eq!(admit(&question), Ok(()));
         // No time at all since the beam changed is inside the input's range;
-        // whether it is answered is for the solve, which finds the energy time.
+        // whether it is answered is for the solve, which finds the slowing-down time.
         question.time_since_beam_change_s = 0.0;
         assert_eq!(admit(&question), Ok(()));
         assert!(matches!(solve(&question), Err(SliceReject::BeamChangeTooRecent { .. })));
-        // A beam born below the stopping energy holds no fast ions: its energy time is zero, and zero seconds is enough.
+        // A beam born below the stopping energy holds no fast ions: its slowing-down time is zero, and zero seconds is enough.
         let mut cold = cold_beam();
         cold.time_since_beam_change_s = 0.0;
         let cold = solve(&cold).expect("solves");
         assert_eq!(cold.fast_ion_energy_time_s, 0.0);
+        assert_eq!(cold.slowing_down_time_max_s, 0.0);
     }
 
     /// The steady-state limit: the caller's time since the beam power
-    /// changed against five energy times of this solve, at the exact end,
-    /// one step inside it, and far inside.
+    /// changed against the longest time a beam ion of the slice takes from
+    /// birth to the stopping energy, at the exact end, one step inside it,
+    /// and far inside. That time is the model's own: the integral of one over
+    /// the slowing rate, recomputed here for the slowest shell, and longer
+    /// than the fast-ion energy time (the 0.7.0 end was five of those).
     #[test]
     fn a_slice_too_soon_after_a_beam_change_is_named() {
         let settled = solve(&small()).expect("solves");
         let energy_time = settled.fast_ion_energy_time_s;
         let deposited: f64 = small().beam_power_w.iter().sum();
         assert_eq!(energy_time.to_bits(), (settled.fast_ion_energy_j / deposited).to_bits());
-        assert!(energy_time > 0.05 && energy_time < 0.2, "{energy_time}");
-        let end = SETTLED_AFTER_ENERGY_TIMES * energy_time;
-        // Exactly five energy times is answered, with the same bits as the settled slice.
+        let end = settled.slowing_down_time_max_s;
+        println!("energy time {energy_time} s, longest slowing-down time {end} s");
+        assert!(end > energy_time && end < 5.0 * energy_time, "{end} {energy_time}");
+        // The longest time is the transit of the slowest shell and component, settled.
+        let table = BeamBeamTable::new();
+        let mut longest: f64 = 0.0;
+        let question = small();
+        for shell in 0..4 {
+            let births: Vec<f64> = (0..2).map(|c| question.beam_power_w[shell] * question.beam_power_share[c] / (question.beam_energy_kev[c] * JOULE_PER_KEV)).collect();
+            let (answers, _, _) = settle_shell(&question, shell, &births, &table, MAX_REFINEMENTS, Fault::None).expect("settles");
+            for answer in answers {
+                assert!(answer.transit_time_s >= answer.slowing_time_s);
+                longest = longest.max(answer.transit_time_s);
+            }
+        }
+        assert_eq!(longest.to_bits(), end.to_bits());
+        // Exactly that time is answered, with the same bits as the settled slice.
         let mut question = small();
         question.time_since_beam_change_s = end;
         let at_the_end = solve(&question).expect("the exact end is answered");
@@ -1691,20 +1739,20 @@ mod tests {
         question.time_since_beam_change_s = sooner;
         assert_eq!(
             solve(&question),
-            Err(SliceReject::BeamChangeTooRecent { time_since_beam_change_s: sooner, fast_ion_energy_time_s: energy_time })
+            Err(SliceReject::BeamChangeTooRecent { time_since_beam_change_s: sooner, slowing_down_time_s: end })
         );
         question.time_since_beam_change_s = 0.0;
         assert!(matches!(solve(&question), Err(SliceReject::BeamChangeTooRecent { .. })));
-        // The time changes nothing else: any settled time gives the same answer.
-        question.time_since_beam_change_s = TIME_SINCE_BEAM_CHANGE_MAX_S;
+        // The time changes nothing else: any settled time gives the same answer, to the top of the input.
+        question.time_since_beam_change_s = INPUT_CAPACITY;
         assert_eq!(solve(&question).expect("solves"), settled);
-        // The energy time does not depend on how much power the beams carry.
+        // The slowing-down time does not depend on how much power the beams carry.
         let mut halved = small();
         for power in &mut halved.beam_power_w {
             *power *= 0.5;
         }
         let halved = solve(&halved).expect("solves");
-        assert!((halved.fast_ion_energy_time_s / energy_time - 1.0).abs() < 1.0e-12);
+        assert_eq!(halved.slowing_down_time_max_s.to_bits(), end.to_bits());
     }
 
     /// One shell of [`small`], with deuterium beams only so that beam-beam
@@ -1806,10 +1854,14 @@ mod tests {
         assert!(matches!(solve(&one_shell(0.97, 0.16 / unit)), Err(SliceReject::IonChargeExceedsElectrons { .. })));
     }
 
-    /// Questions that 0.6.0 answered outside anything compared are refused
-    /// by name.
+    /// Questions 0.6.0 answered outside anything compared, refused by name
+    /// from 0.7.0 to this version, are answered where the physics holds: a
+    /// plasma of 1e18 electrons per cubic metre, oxygen and helium as the
+    /// impurity, electrons twelve and a hundred times hotter than the ions,
+    /// ions at 50 and 100 keV, 2e20 electrons, a 5 keV beam, a plasma with no
+    /// tritium. What is still refused is refused for its physics.
     #[test]
-    fn questions_outside_anything_compared_are_refused_by_name() {
+    fn questions_outside_anything_compared_are_answered_where_the_physics_holds() {
         let base = || SliceQuestion {
             shell_volume_m3: vec![10.0],
             electron_temperature_kev: vec![5.0],
@@ -1826,57 +1878,171 @@ mod tests {
             beam_power_share: vec![1.0],
             time_since_beam_change_s: 100.0,
         };
-        // A plasma of 1e18 electrons per cubic metre.
+        let closes = |question: &SliceQuestion| {
+            let answer = solve(question).unwrap_or_else(|reject| panic!("{question:?}: {reject}"));
+            assert!(answer.particle_ledger_residual <= PARTICLE_LEDGER_TOLERANCE);
+            assert!(answer.energy_ledger_residual <= ENERGY_LEDGER_TOLERANCE);
+            assert!(answer.power_ledger_residual.abs() <= POWER_LEDGER_TOLERANCE);
+            answer
+        };
+        closes(&base());
+        // A plasma of 1e18 electrons per cubic metre with a tenth of the beam.
         let mut thin = base();
         thin.electron_density_per_m3 = vec![1.0e18];
         thin.deuterium_density_per_m3 = vec![5.0e17];
         thin.tritium_density_per_m3 = vec![5.0e17];
         thin.impurity_density_per_m3 = vec![0.0];
-        assert!(matches!(solve(&thin), Err(SliceReject::ElectronDensityOutOfRange { .. })));
-        // Neon, and an impurity of mass 6 or 22.
+        thin.beam_power_w = vec![1.0e3];
+        closes(&thin);
+        // The same plasma under the whole megawatt: more fast ions than the share compared.
+        thin.beam_power_w = vec![1.0e6];
+        assert!(matches!(solve(&thin), Err(SliceReject::FastIonShareTooLarge { .. })));
+        // Oxygen, and helium of mass 4.
+        let mut oxygen = base();
+        oxygen.impurity_charge = 8.0;
+        oxygen.impurity_mass_u = 16.0;
+        oxygen.impurity_density_per_m3 = vec![7.5e17];
+        closes(&oxygen);
+        let mut helium = base();
+        helium.impurity_charge = 2.0;
+        helium.impurity_mass_u = 4.0;
+        helium.impurity_density_per_m3 = vec![3.0e18];
+        closes(&helium);
+        // Neon is still refused: it is not bare in these plasmas.
         let mut neon = base();
         neon.impurity_charge = 10.0;
-        neon.impurity_density_per_m3 = vec![6.0e17];
         assert!(matches!(solve(&neon), Err(SliceReject::ImpurityChargeOutOfRange { .. })));
-        for mass in [6.0, 22.0] {
-            let mut odd = base();
-            odd.impurity_mass_u = mass;
-            assert!(matches!(solve(&odd), Err(SliceReject::ImpurityMassOutOfRange { .. })));
-        }
-        // Te/Ti of 100, Te of 20 keV, Ti of 50 keV.
-        let mut hot = base();
-        hot.electron_temperature_kev = vec![20.0];
-        hot.ion_temperature_kev = vec![0.2];
-        assert!(matches!(solve(&hot), Err(SliceReject::ElectronTemperatureOutOfRange { .. })));
+        // Electrons twelve times the ions; ions at 50 and at 100 keV.
         let mut ratio = base();
         ratio.electron_temperature_kev = vec![12.0];
         ratio.ion_temperature_kev = vec![1.0];
-        assert!(matches!(solve(&ratio), Err(SliceReject::TemperatureRatioOutOfRange { .. })));
-        let mut ions = base();
-        ions.ion_temperature_kev = vec![50.0];
-        assert!(matches!(solve(&ions), Err(SliceReject::IonTemperatureOutOfRange { .. })));
-        // 2e20 electrons, a 5 keV beam.
+        closes(&ratio);
+        for ion_temperature in [50.0, ION_TEMPERATURE_MAX_KEV] {
+            let mut ions = base();
+            ions.ion_temperature_kev = vec![ion_temperature];
+            ions.electron_temperature_kev = vec![20.0];
+            let answer = closes(&ions);
+            assert!(answer.thermal_dt_rate_per_s > 0.0);
+        }
+        // Electrons at 20 keV over ions at 0.2 keV, a hundred times hotter.
+        let mut hot = base();
+        hot.electron_temperature_kev = vec![20.0];
+        hot.ion_temperature_kev = vec![0.2];
+        closes(&hot);
+        // 2e20 electrons, a 5 keV beam, no tritium.
         let mut dense = base();
         dense.electron_density_per_m3 = vec![2.0e20];
         dense.deuterium_density_per_m3 = vec![9.0e19];
         dense.tritium_density_per_m3 = vec![9.0e19];
         dense.impurity_density_per_m3 = vec![2.0e18];
-        assert!(matches!(solve(&dense), Err(SliceReject::ElectronDensityOutOfRange { .. })));
+        closes(&dense);
         let mut slow = base();
         slow.beam_energy_kev = vec![5.0];
-        assert!(matches!(solve(&slow), Err(SliceReject::BeamEnergyOutOfRange { .. })));
-        // A tritium-free plasma, never compared.
+        closes(&slow);
         let mut free = base();
         free.deuterium_density_per_m3 = vec![4.0e19];
         free.tritium_density_per_m3 = vec![0.0];
-        assert!(matches!(solve(&free), Err(SliceReject::TritiumShareOutOfRange { shell: 0, value: 0.0 })));
-        // The smallest volume above zero.
+        let free = closes(&free);
+        assert_eq!(free.thermal_dt_rate_per_s, 0.0);
+        assert_eq!(free.beam_target_dt_rate_per_s, 0.0);
+        assert!(free.dd_neutron_rate_per_s > 0.0);
+        // The smallest volume above zero is still below the floor.
         let mut tiny = base();
         tiny.shell_volume_m3 = vec![5e-324];
         assert!(matches!(solve(&tiny), Err(SliceReject::ShellVolumeOutOfRange { shell: 0, .. })));
-        // The base itself is answered: thermal ions at 0.92 of the electrons and the fast ions above.
-        let answer = solve(&base()).expect("solves");
-        assert!(answer.charge_excess_min >= -QUASI_NEUTRALITY_DEFICIT_ALLOWANCE, "{}", answer.charge_excess_min);
+    }
+
+    /// Beams to 1000 keV, the energy of ITER's: a deuterium and a tritium
+    /// beam at the top of the range into a hot plasma settle with every
+    /// ledger closed, and their beam-beam rate is taken inside the table,
+    /// whose top holds the summed speeds of the two. The table below 8e6 m/s
+    /// is the table of engine 0.8.0 to the bit, so the beams of JET and TFTR
+    /// give the same beam-beam rates they gave.
+    #[test]
+    fn beams_to_1000_kev_close_their_ledgers_inside_the_table() {
+        let speed = |mass: f64| (2.0 * BEAM_ENERGY_MAX_KEV * JOULE_PER_KEV / mass).sqrt();
+        let summed = speed(DEUTERON_MASS_KG) + speed(TRITON_MASS_KG);
+        assert!(summed < BEAM_BEAM_SPEED_MAX_M_PER_S && summed > 1.77e7, "{summed}");
+        let table = BeamBeamTable::new();
+        assert_eq!(table.step.to_bits(), (8.0e6_f64 / 4096.0).to_bits());
+        let question = SliceQuestion {
+            shell_volume_m3: vec![10.0, 20.0],
+            electron_temperature_kev: vec![25.0, 15.0],
+            ion_temperature_kev: vec![25.0, 15.0],
+            electron_density_per_m3: vec![1.0e20, 8.0e19],
+            deuterium_density_per_m3: vec![4.5e19, 3.6e19],
+            tritium_density_per_m3: vec![4.5e19, 3.6e19],
+            impurity_density_per_m3: vec![1.0e18, 8.0e17],
+            impurity_charge: 8.0,
+            impurity_mass_u: 16.0,
+            beam_power_w: vec![1.0e7, 5.0e6],
+            beam_mass_number: vec![2.0, 3.0],
+            beam_energy_kev: vec![BEAM_ENERGY_MAX_KEV, BEAM_ENERGY_MAX_KEV],
+            beam_power_share: vec![0.5, 0.5],
+            time_since_beam_change_s: 100.0,
+        };
+        let answer = solve(&question).expect("settles");
+        assert!(answer.particle_ledger_residual <= PARTICLE_LEDGER_TOLERANCE);
+        assert!(answer.energy_ledger_residual <= ENERGY_LEDGER_TOLERANCE);
+        assert!(answer.power_ledger_residual.abs() <= POWER_LEDGER_TOLERANCE);
+        assert!(answer.beam_target_dt_rate_per_s > 0.0 && answer.beam_beam_dt_rate_per_s > 0.0);
+        println!(
+            "1 MeV beams: beam-target {:e}, beam-beam {:e} per second, slowing-down {} s, fast ions {} of the electrons",
+            answer.beam_target_dt_rate_per_s, answer.beam_beam_dt_rate_per_s, answer.slowing_down_time_max_s, answer.fast_ion_fraction_max
+        );
+    }
+
+    /// Attack on the reopened range: every corner of it (electrons at 0.05
+    /// and 100 keV, ions at 0.2 and 100 keV, 1e18 and 1e21 electrons per
+    /// cubic metre, pure deuterium and pure tritium, hydrogen and oxygen as
+    /// the impurity, components at 1 and 1000 keV, a watt and 10 MW) closes
+    /// every ledger or is stopped by a physical limit by name. When written:
+    /// 104 of the 128 corners answered.
+    #[test]
+    fn every_corner_of_the_reopened_range_closes_or_stops_by_name() {
+        let mut answered = 0;
+        for corner in 0..128_u32 {
+            let pick = |bit: u32, low: f64, high: f64| if corner & (1 << bit) == 0 { low } else { high };
+            let electrons = pick(2, ELECTRON_DENSITY_MIN_PER_M3, ELECTRON_DENSITY_MAX_PER_M3);
+            let tritium_share = pick(3, 0.0, 1.0);
+            let (charge, mass) = if corner & (1 << 4) == 0 { (1.0, 1.0) } else { (8.0, 16.0) };
+            let impurity = 0.01 * electrons;
+            let fuel = electrons - charge * impurity;
+            let question = SliceQuestion {
+                shell_volume_m3: vec![10.0],
+                electron_temperature_kev: vec![pick(0, ELECTRON_TEMPERATURE_MIN_KEV, ELECTRON_TEMPERATURE_MAX_KEV)],
+                ion_temperature_kev: vec![pick(1, ION_TEMPERATURE_MIN_KEV, ION_TEMPERATURE_MAX_KEV)],
+                electron_density_per_m3: vec![electrons],
+                deuterium_density_per_m3: vec![(1.0 - tritium_share) * fuel],
+                tritium_density_per_m3: vec![tritium_share * fuel],
+                impurity_density_per_m3: vec![impurity],
+                impurity_charge: charge,
+                impurity_mass_u: mass,
+                beam_power_w: vec![pick(6, 1.0, 1.0e7)],
+                beam_mass_number: vec![2.0, 3.0],
+                beam_energy_kev: vec![pick(5, 1.0, BEAM_ENERGY_MAX_KEV); 2],
+                beam_power_share: vec![0.5, 0.5],
+                time_since_beam_change_s: INPUT_CAPACITY,
+            };
+            match solve(&question) {
+                Ok(answer) => {
+                    answered += 1;
+                    assert!(answer.particle_ledger_residual <= PARTICLE_LEDGER_TOLERANCE, "{corner}");
+                    assert!(answer.energy_ledger_residual <= ENERGY_LEDGER_TOLERANCE, "{corner}");
+                    assert!(answer.power_ledger_residual.abs() <= POWER_LEDGER_TOLERANCE, "{corner}");
+                }
+                Err(
+                    SliceReject::SlowingRateNotPositive { .. }
+                    | SliceReject::FastIonShareTooLarge { .. }
+                    | SliceReject::BeamBeamShareTooLarge { .. }
+                    | SliceReject::IonChargeExceedsElectrons { .. }
+                    | SliceReject::IonChargeBelowElectrons { .. },
+                ) => {}
+                Err(other) => panic!("{corner}: {question:?}: {other:?}"),
+            }
+        }
+        println!("{answered} of 128 corners answered");
+        assert_eq!(answered, 104);
     }
 
     /// Quasi-neutrality at its end. Densities a caller writes as decimals
@@ -2060,6 +2226,42 @@ mod tests {
         let mut broken = good;
         broken.fused[0] = f64::NAN;
         assert_eq!(hold(&broken).err(), Some(SliceReject::NonFiniteValue));
+    }
+
+    /// Electrons at 100 keV over ions at 0.2 keV: a 200 keV deuteron slows
+    /// mostly on the cold tritium and 3 percent of the deuterons fuse. At the
+    /// first refinement, 16 keV panels, the energy ledger misses by 2.03e-5,
+    /// over its tolerance; that refinement is no answer and is refined, and
+    /// the answer comes from a refinement whose ledgers close. At the cap a
+    /// ledger still broken is refused by its name.
+    #[test]
+    fn a_refinement_whose_ledger_misses_is_refined_and_never_answered() {
+        let question = SliceQuestion {
+            shell_volume_m3: vec![10.0],
+            electron_temperature_kev: vec![100.0],
+            ion_temperature_kev: vec![0.2],
+            electron_density_per_m3: vec![1.0e18],
+            deuterium_density_per_m3: vec![0.0],
+            tritium_density_per_m3: vec![0.99e18],
+            impurity_density_per_m3: vec![1.0e16],
+            impurity_charge: 1.0,
+            impurity_mass_u: 1.0,
+            beam_power_w: vec![1.0],
+            beam_mass_number: vec![2.0],
+            beam_energy_kev: vec![200.0],
+            beam_power_share: vec![1.0],
+            time_since_beam_change_s: INPUT_CAPACITY,
+        };
+        let shell = shell_at(&question, 0);
+        let coarse = slow_and_fuse(DEUTERON_MASS_KG, 200.0, &shell, 0, FIRST_PANEL_KEV, Fault::None).expect("integrates");
+        assert!(matches!(hold(&coarse), Err(SliceReject::EnergyLedgerBroken { .. })));
+        assert!((coarse.energy_residual + 2.03e-5).abs() < 1.0e-7, "{}", coarse.energy_residual);
+        let answer = solve(&question).expect("answered from a refinement whose ledgers close");
+        assert!(answer.energy_ledger_residual <= ENERGY_LEDGER_TOLERANCE);
+        assert!(answer.refinements >= 2);
+        assert!((answer.beam_target_fused_fraction - 0.0299).abs() < 1.0e-3, "{}", answer.beam_target_fused_fraction);
+        // With one refinement allowed the broken ledger is the answer's name.
+        assert!(matches!(solve_with(&question, 1, Fault::None), Err(SliceReject::EnergyLedgerBroken { .. })));
     }
 
     /// Attack: beams so strong in so thin a plasma that beam-beam reactions,

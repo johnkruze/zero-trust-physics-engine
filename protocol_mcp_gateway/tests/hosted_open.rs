@@ -119,7 +119,7 @@ fn the_door_starts_open_or_keyed_and_never_both() {
     // Nothing is stored without a key.
     refused_at_start(&["--open", "--port", "0", "--dataset-dir", dir.to_str().unwrap()], "--dataset-dir cannot be given with --open");
     // The open door's arguments belong to the open door.
-    for flag in ["--client-address-header", "--requests-per-minute", "--max-in-flight", "--max-in-flight-per-address", "--physics-permits"] {
+    for flag in ["--client-address-header", "--requests-per-minute", "--max-in-flight", "--max-in-flight-per-address", "--physics-permits", "--permits-per-address", "--request-seconds"] {
         let value = if flag == "--client-address-header" { "X-Client" } else { "2" };
         refused_at_start(&["--keys", keys, "--port", "0", flag, value], "is an argument of the open door and needs --open");
     }
@@ -128,6 +128,9 @@ fn the_door_starts_open_or_keyed_and_never_both() {
     refused_at_start(&["--open", "--port", "0", "--client-address-header", "not a header"], "needs the name of an HTTP header");
     refused_at_start(&["--open", "--port", "0", "--physics-permits", "1"], "--physics-permits is 1, fewer than 2");
     refused_at_start(&["--open", "--port", "0", "--max-in-flight", "2", "--max-in-flight-per-address", "3"], "more than the 2 of --max-in-flight");
+    // How many permits one address holds is an argument too: a whole number, and no more than the pool.
+    refused_at_start(&["--open", "--port", "0", "--permits-per-address", "0"], "--permits-per-address needs a whole number from 1 to 32");
+    refused_at_start(&["--open", "--port", "0", "--physics-permits", "2", "--permits-per-address", "3"], "--permits-per-address is 3, more than the 2 of --physics-permits");
 
     // Started open, it says so plainly, with its limits and where it reads an address.
     let door = Open::start(&[]);
@@ -137,6 +140,85 @@ fn the_door_starts_open_or_keyed_and_never_both() {
     assert!(door.banner.contains("A caller's address is the address of the socket."), "{}", door.banner);
     let named = Open::start(&["--client-address-header", "CF-Connecting-IP"]);
     assert!(named.banner.contains("read from the 'cf-connecting-ip' header, which the front in front of this door must overwrite"), "{}", named.banner);
+}
+
+/// How many physics permits one address holds is read at start, and an agent
+/// is told the value in force wherever it reads the other limits: in the
+/// instructions and in the description of each tool that computes.
+#[test]
+fn the_permits_one_address_holds_are_read_at_start_and_stated_from_the_value() {
+    let hello = json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"t","version":"1"}}}).to_string();
+    for (arguments, held, of_pool) in [
+        (&["--physics-permits", "4"][..], "1 physics permit", "at most 1 of the 4 physics permits"),
+        (&["--physics-permits", "4", "--permits-per-address", "3"][..], "3 physics permits", "at most 3 of the 4 physics permits"),
+    ] {
+        let door = Open::start(arguments);
+        let at_most = of_pool.split(' ').nth(2).unwrap();
+        assert!(door.banner.contains(&format!("The physics pool has 4 permits and one address holds at most {at_most} at a time (permits-per-address).")), "{}", door.banner);
+        let opened: Value = serde_json::from_str(&door.post(&hello).body).unwrap();
+        let instructions = opened["result"]["instructions"].as_str().unwrap();
+        assert!(instructions.contains(&format!("One address holds {of_pool}:")), "{instructions}");
+        let listed: Value = serde_json::from_str(&door.post(LIST).body).unwrap();
+        for name in ["verify_step", "run_trajectory", "solve", "validate_series", "verify_tape", "verify_solution", "run_dataset", "verify_dataset", "find_flip", "design_run"] {
+            let tool = listed["result"]["tools"].as_array().unwrap().iter().find(|tool| tool["name"] == name).unwrap();
+            let said = tool["description"].as_str().unwrap();
+            assert!(said.contains(&format!("ne address holds at most {held} at a time")), "{name}: {said}");
+            assert!(said.len() <= 2_000, "{name}: {}", said.len());
+        }
+    }
+}
+
+/// A door whose starter has closed its output before the banner is written
+/// goes on serving: the banner is written in one piece, and a write nobody
+/// reads is let go.
+#[test]
+fn the_door_serves_when_its_starter_has_closed_its_output() {
+    for _ in 0..5 {
+        // A port that is free now; another process may take it before the door does, and then the next is tried.
+        let port = std::net::TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port();
+        let mut child = Command::new(env!("CARGO_BIN_EXE_hosted_door"))
+            .args(["--open", "--port", &port.to_string()])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        // Closed before the door has bound its port and has anything to write.
+        drop(child.stdout.take());
+        let mut healthy = false;
+        let mut exited = None;
+        for _ in 0..200 {
+            exited = child.try_wait().unwrap();
+            if exited.is_some() {
+                break;
+            }
+            if let Ok(mut stream) = TcpStream::connect(("127.0.0.1", port)) {
+                stream.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+                let _ = stream.write_all(b"GET /health HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n");
+                let mut answer = String::new();
+                let _ = stream.read_to_string(&mut answer);
+                if answer.starts_with("HTTP/1.1 200") {
+                    healthy = true;
+                    break;
+                }
+            }
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        let mut said = String::new();
+        if exited.is_some() {
+            let _ = child.stderr.take().unwrap().read_to_string(&mut said);
+            if said.contains("it cannot listen on") {
+                continue;
+            }
+        }
+        // It still answers a tool call after the write nobody read.
+        let stepped = healthy.then(|| parse_reply(&raw(port, &request_bytes(None, &tool_body(1, "verify_step", &thermal_step())), 60)));
+        let _ = child.kill();
+        let _ = child.wait();
+        assert!(healthy, "the door stopped ({exited:?}): {said}");
+        assert!(tool_result(&stepped.unwrap()).1.contains("sha256_seal"));
+        return;
+    }
+    panic!("no free port was found for the door in five tries");
 }
 
 // ------------------------------------------- everything, and the same bytes
@@ -214,12 +296,12 @@ fn every_card_and_solver_is_served_with_the_bytes_of_the_local_connection() {
     }
     assert!(sealed >= 5 + solver_names.len(), "{sealed} answers carried a receipt");
 
-    // The list of tools: the engine's sixteen. The catalogue is left to
+    // The list of tools: the engine's seventeen. The catalogue is left to
     // list_cards and list_solvers, which name every card and solver.
     let reply = door.post(LIST);
     let listed: Value = serde_json::from_str(&reply.body).unwrap();
     let tools = listed["result"]["tools"].as_array().unwrap();
-    assert_eq!(tools.len(), 16);
+    assert_eq!(tools.len(), 18);
     let catalogue = format!("{}{}", door.tool("list_cards", &json!({})).1, door.tool("list_solvers", &json!({})).1);
     for (_, card) in &pairs {
         assert!(catalogue.contains(&format!("\"{card}\"")), "{card} is not listed");
@@ -227,7 +309,8 @@ fn every_card_and_solver_is_served_with_the_bytes_of_the_local_connection() {
     for name in &solver_names {
         assert!(catalogue.contains(&format!("\"{name}\"")), "{name} is not listed");
     }
-    // Without the open door's own words and hints, the list is the local connection's, byte for byte.
+    // Without the open connection's own words and hints, the list is the local connection's, byte for byte,
+    // but for what this connection does not serve and so does not describe: a dataset stored as files.
     let local_list = Command::new(env!("CARGO_BIN_EXE_mcp_stdio"))
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -250,16 +333,44 @@ fn every_card_and_solver_is_served_with_the_bytes_of_the_local_connection() {
         })
         .unwrap();
     let mut stripped = listed.clone();
-    for tool in stripped["result"]["tools"].as_array_mut().unwrap() {
+    let mut local_list = local_list;
+    let there = local_list["result"]["tools"].as_array_mut().unwrap();
+    for (tool, there) in stripped["result"]["tools"].as_array_mut().unwrap().iter_mut().zip(there.iter_mut()) {
         let object = tool.as_object_mut().unwrap();
         assert_eq!(object["annotations"]["readOnlyHint"], json!(true));
+        // Each tool carries its title twice: at the top, as revision 2025-06-18 has it, and among the hints.
+        assert!(object["title"].is_string() && object["title"] == object["annotations"]["title"], "{object:?}");
         object.shift_remove("annotations");
         let description = object["description"].as_str().unwrap().to_string();
-        if let Some(at) = description.find(" On this open connection") {
-            object.insert("description".to_string(), json!(description[..at]));
+        assert!(!description.contains("\"file\"") && !description.contains("stored as files"), "{description}");
+        let own = match description.find(" On this open connection") {
+            Some(at) => {
+                object.insert("description".to_string(), json!(description[..at]));
+                description[..at].to_string()
+            }
+            None => description,
+        };
+        if ["run_dataset", "verify_dataset"].contains(&object["name"].as_str().unwrap()) {
+            let local_said = there["description"].as_str().unwrap().to_string();
+            let files = local_said.strip_prefix(own.as_str()).unwrap_or_else(|| panic!("{local_said}"));
+            assert!(files.contains("return \"file\"") && files.matches(". ").count() == 0, "{files}");
+            there["description"] = json!(own);
         }
     }
     assert_eq!(serde_json::to_string(&stripped).unwrap(), serde_json::to_string(&local_list).unwrap());
+    // What this connection holds a tool to is inside that tool's description, with what a call that finds no permit is answered.
+    let said = |name: &str| tools.iter().find(|tool| tool["name"] == name).unwrap()["description"].as_str().unwrap().to_string();
+    for name in ["verify_step", "run_trajectory", "solve", "validate_series", "verify_tape", "verify_solution", "run_dataset", "verify_dataset", "find_flip", "design_run"] {
+        let text = said(name);
+        assert!(text.contains("ne address holds at most 1 physics permit at a time"), "{name}: {text}");
+        assert!(text.contains("is answered \"Too many concurrent physics tasks.\" and nothing waits: the same call sent later is answered once one is free. An answer is waited for 60 seconds, and long work is stopped there."), "{name}: {text}");
+    }
+    for name in ["run_dataset", "verify_dataset"] {
+        assert!(said(name).contains("On this open connection a dataset is returned inline and holds at most 300 runs (OPEN_MAX_DATASET_ROWS), 1000000 steps in all (OPEN_MAX_DATASET_STEPS), 10000 frames and an answer counted from the plan at 4194304 bytes (OPEN_MAX_DATASET_ANSWER_BYTES) and 40000 characters, up to about 140 summary rows;"), "{name}");
+    }
+    for name in ["list_cards", "describe_card", "list_solvers", "describe_solver", "verify_receipt", "cite", "find_model"] {
+        assert!(!said(name).contains("On this open connection"), "{name}");
+    }
 }
 
 // ------------------------------------------------------- no key, no sign-in
@@ -342,8 +453,8 @@ fn what_a_remote_client_sends_is_answered_as_the_protocol_says() {
         assert_eq!(body["result"]["serverInfo"]["name"], "Zero-Trust Physics");
         assert!(body["result"]["capabilities"]["tools"].is_object());
         let instructions = body["result"]["instructions"].as_str().unwrap();
-        assert!(instructions.contains("This is the open connection: no key is asked"), "{instructions}");
-        assert!(instructions.contains("at most 300 a minute from one address"), "{instructions}");
+        assert!(instructions.contains("This open connection asks no key"), "{instructions}");
+        assert!(instructions.contains("From one address at most 300 requests a minute"), "{instructions}");
     }
     // An initialize settles its version in its body: one that asks for the revision with no
     // initialize, or for one the door does not speak, is offered the newest that has one.
@@ -384,7 +495,7 @@ fn what_a_remote_client_sends_is_answered_as_the_protocol_says() {
     assert_eq!(reply.status, 200, "{reply:?}");
     let found: Value = serde_json::from_str(&reply.body).unwrap();
     assert_eq!(found["result"]["supportedVersions"], json!(hosted::SUPPORTED_VERSIONS));
-    assert!(found["result"]["instructions"].as_str().unwrap().contains("at most 300 a minute from one address"), "{found}");
+    assert!(found["result"]["instructions"].as_str().unwrap().contains("From one address at most 300 requests a minute"), "{found}");
     // A request of a revision the door does not speak is a 400 with the list of those it does.
     let reply = door.send("POST", "/mcp", &[json, accept, ("MCP-Protocol-Version", "2031-01-01"), ("Mcp-Method", "tools/list")], LIST);
     assert_eq!(reply.status, 400, "{reply:?}");
@@ -432,9 +543,9 @@ async fn a_standard_mcp_client_with_no_key_connects_lists_and_calls() {
     let client = ().serve(StreamableHttpClientTransport::from_config(config)).await.expect("connect");
     let info = client.peer_info().expect("what the server said of itself");
     assert_eq!(info.server_info.as_ref().unwrap().name, "Zero-Trust Physics");
-    assert!(info.instructions.as_deref().unwrap_or("").contains("This is the open connection"));
+    assert!(info.instructions.as_deref().unwrap_or("").contains("This open connection asks no key"));
     let listed = client.list_tools(None).await.expect("tools/list");
-    assert_eq!(listed.tools.len(), 16);
+    assert_eq!(listed.tools.len(), 18);
     let schemas = serde_json::to_string(&listed.tools).unwrap();
     assert!(schemas.contains("list_cards") && schemas.contains("list_solvers") && !schemas.contains("ti64_lattice"));
     let called = client
@@ -473,7 +584,7 @@ fn requests_from_one_address_are_limited_by_the_minute_and_answered_by_name() {
     for bad in ["203.0.113.9, 198.51.100.1", "unknown", "198.51.100.1:443", ""] {
         let reply = door.post_as(Some(bad), PING);
         assert_eq!(reply.status, 400, "{bad:?}");
-        assert_eq!(reply.body, "Bad Request: the 'x-client' header must hold one address, written by the front in front of this door (client-address-header).");
+        assert_eq!(reply.body, "Bad Request: the 'x-client' header must hold one address, written by the front that serves this connection (client-address-header).");
     }
     let twice = door.send("POST", "/mcp", &[("Content-Type", "application/json"), ("X-Client", "203.0.113.9"), ("X-Client", "198.51.100.1")], PING);
     assert_eq!(twice.status, 400);
@@ -624,9 +735,22 @@ fn the_pages_state_the_limits_of_the_open_door_that_are_in_force() {
     for page in pages(&["HOSTING.md"]) {
         assert!(page.contains("`OPEN_DATASET_ROW_BYTES` = 4000 bytes for each run"));
     }
-    // What a client is told is written from the same values.
+    // What the door prints at start, and what an agent reads when the connection opens, are written from the same values.
     let statement = rules.statement();
-    for part in ["at most 300 a minute", "at most 16 in flight at once and 4 from one address", "a body of at most 4194304 bytes", "at most 1000000 steps and 10000 recorded states", "at most 300 runs", "1000000 steps in total", "waited for 60 seconds"] {
+    for part in ["at most 300 a minute", "at most 16 in flight at once and 4 from one address", "a body of at most 4194304 bytes", "at most 1000000 steps and 10000 recorded states", "at most 300 runs", "1000000 steps in total", "one address holds at most 1 at a time (permits-per-address)", "waited for 60 seconds"] {
         assert!(statement.contains(part), "{part}: {statement}");
+    }
+    for part in ["and a call of a tool other than run_trajectory, verify_tape, run_dataset, verify_dataset, verify_receipt, validate_series at most 2097152 bytes, then HTTP 413 as well (NARROW_LIMIT, as on every connection)", "at most 40000 characters, as on every connection: a plan reaches that first, a grid on one axis at about 140 summary rows and a list sooner, its head repeating each run's request, so a plan of 300 runs is refused by it"] {
+        assert!(statement.contains(part), "{part}: {statement}");
+    }
+    let opening = rules.said_at_opening();
+    for part in ["at most 300 requests a minute and 4 in flight, 16 in flight in all, then HTTP 429 with Retry-After", "a body of at most 4194304 bytes to run_trajectory, verify_tape, run_dataset, verify_dataset, verify_receipt or validate_series and 2097152 to any other tool, then HTTP 413", "One address holds at most 1 of the", "waited for 60 seconds"] {
+        assert!(opening.contains(part), "{part}: {opening}");
+    }
+    // The operator's page names the argument for each limit that has one.
+    for page in pages(&["HOSTING.md"]) {
+        for flag in ["`--requests-per-minute`", "`--max-in-flight`", "`--max-in-flight-per-address`", "`--physics-permits`", "`--permits-per-address`", "`--request-seconds`"] {
+            assert!(page.contains(flag), "HOSTING.md does not name {flag}");
+        }
     }
 }

@@ -1,6 +1,8 @@
 //! `POST /solve` against a direct call to `genesis_solvers`, and
 //! `POST /verify_solution` against edits of a sealed solution.
 
+mod answer_text;
+
 use std::time::{Duration, Instant};
 
 use genesis_solvers::atom_dft;
@@ -23,7 +25,7 @@ async fn spawn_app() -> String {
 async fn post(base: &str, path: &str, body: &Value) -> (u16, String) {
     let client = Client::new();
     let url = format!("{base}{path}");
-    let text = serde_json::to_string(body).unwrap();
+    let text = answer_text::as_sent(body);
     let mut last_error = None;
     for _ in 0..20 {
         match client
@@ -35,7 +37,9 @@ async fn post(base: &str, path: &str, body: &Value) -> (u16, String) {
         {
             Ok(response) => {
                 let status = response.status().as_u16();
-                return (status, response.text().await.unwrap());
+                let text = response.text().await.unwrap();
+                answer_text::remember(&text);
+                return (status, text);
             }
             Err(error) => {
                 last_error = Some(error);
@@ -115,7 +119,7 @@ async fn hydrogen_neon_and_argon_match_the_solver_bit_for_bit() {
         let direct = atom_dft::solve(atomic_number).expect("the solver converges");
 
         assert_eq!(body["inputs"], request);
-        assert_eq!(body["engine_version"], "genesis_solvers_v0.8.0");
+        assert_eq!(body["engine_version"], "genesis_solvers_v0.12.0");
         assert_eq!(body["outcome"], "converged");
         assert!(body["reject"].is_null());
         assert!(body["reject_detail"].is_null());
@@ -166,7 +170,7 @@ async fn hydrogen_neon_and_argon_match_the_solver_bit_for_bit() {
         assert_eq!(body["solution_seal"].as_str().unwrap().len(), 64);
         assert_receipt(&text, &body);
         let report = verdict(&base, &body).await;
-        assert_eq!(report, json!({ "holds": true, "cause": null, "checked": protocol_mcp_gateway::WHOLE_SOLUTION_CHECKED }));
+        assert_eq!(report, json!({ "holds": true, "values_hold": true, "cause": null, "compared": protocol_mcp_gateway::WHOLE_SOLUTION_COMPUTED }));
     }
 }
 
@@ -231,7 +235,7 @@ async fn verify_solution_names_the_edited_part() {
     let (_, body) = solved(&base, &atom(3)).await;
     assert_eq!(
         verdict(&base, &body).await,
-        json!({ "holds": true, "cause": null, "checked": protocol_mcp_gateway::WHOLE_SOLUTION_CHECKED })
+        json!({ "holds": true, "values_hold": true, "cause": null, "compared": protocol_mcp_gateway::WHOLE_SOLUTION_COMPUTED })
     );
 
     let mut edits = 0_u32;
@@ -288,7 +292,7 @@ async fn verify_solution_names_the_edited_part() {
     missing.as_object_mut().unwrap().remove("field_sha256");
     let (status, text) = post(&base, "/verify_solution", &missing).await;
     assert_eq!(status, 422, "{text}");
-    assert_eq!(text, "Missing required parameter: 'field_sha256'");
+    assert_eq!(text, "Missing required parameter: 'field_sha256' (InputMissing).");
 }
 
 #[tokio::test]
@@ -297,15 +301,18 @@ async fn a_request_outside_the_solver_is_422_with_no_seal() {
     let cases = [
         (
             atom(0),
-            "Physical Violation: atomic number 0 is outside 1..=18.",
+            // Re-pinned for 0.10.1: an atomic number outside the range carries the name AtomicNumberOutOfRange, and the entry writes the range in words.
+            "Physical Violation: atomic number 0 is outside 1 to 18 (AtomicNumberOutOfRange).",
         ),
         (
             atom(19),
-            "Physical Violation: atomic number 19 is outside 1..=18.",
+            // Re-pinned for 0.10.1: an atomic number outside the range carries the name AtomicNumberOutOfRange, and the entry writes the range in words.
+            "Physical Violation: atomic number 19 is outside 1 to 18 (AtomicNumberOutOfRange).",
         ),
         (
             atom(4_294_967_297),
-            "Physical Violation: atomic number 4294967297 is outside 1..=18.",
+            // Re-pinned for 0.10.1: an atomic number outside the range carries the name AtomicNumberOutOfRange, and the entry writes the range in words.
+            "Physical Violation: atomic number 4294967297 is outside 1 to 18 (AtomicNumberOutOfRange).",
         ),
         (
             json!({ "solver": "atom_dft", "parameters": { "atomic_number": "10" } }),
@@ -317,15 +324,15 @@ async fn a_request_outside_the_solver_is_422_with_no_seal() {
         ),
         (
             json!({ "solver": "atom_dft", "parameters": { "atomic_number": -1 } }),
-            "Physical Violation: atomic number -1 is outside 1..=18.",
+            "Physical Violation: atomic number -1 is outside 1 to 18 (AtomicNumberOutOfRange).",
         ),
         (
             json!({ "solver": "atom_dft", "parameters": {} }),
-            "Missing required parameter: 'atomic_number'",
+            "Missing required parameter: 'atomic_number' (InputMissing).",
         ),
         (
             json!({ "solver": "atom_dft" }),
-            "Missing required parameter: 'parameters' (or 'example', the name of a worked example describe_solver lists)",
+            "Missing required parameter: 'parameters' (or 'example', the name of a worked example describe_solver lists) (InputMissing).",
         ),
         (
             json!({ "solver": "atom_dft", "parameters": { "atomic_number": 10, "grid_points": 101 } }),
@@ -349,7 +356,7 @@ async fn a_request_outside_the_solver_is_422_with_no_seal() {
     )
     .await;
     assert_eq!(status, 404, "{text}");
-    assert_eq!(text, "Solver not recognized");
+    assert_eq!(text, "Solver not recognized (UnknownSolver).");
 }
 
 #[tokio::test]
@@ -359,7 +366,7 @@ async fn the_described_example_runs_unchanged_and_converges() {
     assert_eq!(listed.status().as_u16(), 200);
     let listed: Value = serde_json::from_str(&listed.text().await.unwrap()).unwrap();
     let solvers = listed["solvers"].as_array().expect("solvers");
-    assert_eq!(solvers.len(), 13);
+    assert_eq!(solvers.len(), 24);
     assert_eq!(solvers[0]["solver"], "atom_dft");
     assert_eq!(solvers[1]["solver"], "ablator_slab");
     assert_eq!(solvers[3]["solver"], "propeller_apc_10x7e");
@@ -402,12 +409,12 @@ async fn the_described_example_runs_unchanged_and_converges() {
     );
     assert_eq!(
         verdict(&base, &body).await,
-        json!({ "holds": true, "cause": null, "checked": protocol_mcp_gateway::WHOLE_SOLUTION_CHECKED })
+        json!({ "holds": true, "values_hold": true, "cause": null, "compared": protocol_mcp_gateway::WHOLE_SOLUTION_COMPUTED })
     );
 
     let (status, text) = post(&base, "/describe_solver", &json!({ "solver": "atom_hf" })).await;
     assert_eq!(status, 404, "{text}");
-    assert_eq!(text, "Solver not recognized");
+    assert_eq!(text, "Solver not recognized (UnknownSolver).");
 }
 
 #[tokio::test]
@@ -441,7 +448,7 @@ async fn a_solution_survives_a_respelling_of_its_numbers() {
     assert!(text.starts_with(&format!("{{\"inputs\":{request},")), "{text}");
     assert_eq!(
         verdict(&base, &body).await,
-        json!({ "holds": true, "cause": null, "checked": protocol_mcp_gateway::WHOLE_SOLUTION_CHECKED })
+        json!({ "holds": true, "values_hold": true, "cause": null, "compared": protocol_mcp_gateway::WHOLE_SOLUTION_COMPUTED })
     );
 
     let client = Client::new();
@@ -458,11 +465,13 @@ async fn a_solution_survives_a_respelling_of_its_numbers() {
             .await
             .unwrap();
         assert_eq!(response.status().as_u16(), 200, "{spelling}");
-        assert_eq!(
-            response.text().await.unwrap(),
-            format!(r#"{{"holds":true,"cause":null,"checked":{}}}"#, serde_json::json!(protocol_mcp_gateway::WHOLE_SOLUTION_CHECKED)),
-            "{spelling}"
-        );
+        // The seal is over the value and still holds. Since 0.11.0 the long
+        // form also writes the answer again, and the engine answers no
+        // request whose count is written with a decimal point or an
+        // exponent: the inputs are the first place it names.
+        let report: Value = serde_json::from_str(&response.text().await.unwrap()).unwrap();
+        assert_eq!((report["holds"].clone(), report["cause"].clone(), report["differs_at"].clone()), (json!(false), json!("answer_text"), json!("inputs")), "{spelling}: {report}");
+        assert!(report["difference"].as_str().unwrap().contains("must be an integer written as digits"), "{spelling}: {report}");
 
         // The solver still takes a JSON integer and nothing else.
         let response = client
@@ -525,7 +534,8 @@ async fn a_number_never_seals_the_same_as_a_string() {
 async fn an_integer_held_as_a_float_is_refused_by_the_range() {
     let base = spawn_app().await;
     let client = Client::new();
-    let range = |read: &str| format!("Physical Violation: atomic number read as {read} is outside 1..=18.");
+    // Re-pinned for 0.10.1: an atomic number outside the range carries the name AtomicNumberOutOfRange, and the entry writes the range in words.
+    let range = |read: &str| format!("Physical Violation: atomic number read as {read} is outside 1 to 18 (AtomicNumberOutOfRange).");
     let not_integer = |read: &str| {
         format!(
             "Physical Violation: 'atomic_number' must be an integer written as digits, with no decimal point and no exponent; this request has {read}."
@@ -538,9 +548,10 @@ async fn an_integer_held_as_a_float_is_refused_by_the_range() {
         ("18446744073709551626", range("1.8446744073709552e+19")),
         ("-9223372036854775809", range("-9.223372036854776e+18")),
         ("1e20", range("1e+20")),
-        ("18446744073709551615", "Physical Violation: atomic number 18446744073709551615 is outside 1..=18.".to_string()),
-        ("-9223372036854775808", "Physical Violation: atomic number -9223372036854775808 is outside 1..=18.".to_string()),
-        ("0", "Physical Violation: atomic number 0 is outside 1..=18.".to_string()),
+        // Re-pinned for 0.10.1: an atomic number outside the range carries the name AtomicNumberOutOfRange, and the entry writes the range in words.
+        ("18446744073709551615", "Physical Violation: atomic number 18446744073709551615 is outside 1 to 18 (AtomicNumberOutOfRange).".to_string()),
+        ("-9223372036854775808", "Physical Violation: atomic number -9223372036854775808 is outside 1 to 18 (AtomicNumberOutOfRange).".to_string()),
+        ("0", "Physical Violation: atomic number 0 is outside 1 to 18 (AtomicNumberOutOfRange).".to_string()),
         ("0.0", not_integer("0.0")),
         ("10.0", not_integer("10.0")),
         ("1e1", not_integer("10.0")),
