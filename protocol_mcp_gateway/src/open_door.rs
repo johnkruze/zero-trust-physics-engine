@@ -181,10 +181,16 @@ impl OpenRules {
     /// `NARROW_LIMIT`, 2 MiB (WORDS_014, proposal 1; the red team of rc1, RT3
     /// W5). The room for it was made by saying the other limits in fewer
     /// words, none of them left out: every 429 carries Retry-After, so it is
-    /// said once for the three.
+    /// said once for the three. Since 0.14.1 the first sentence says the
+    /// connection asks no key and stores nothing, where it also said it
+    /// serves every model and names each limit: list_cards and list_solvers
+    /// name every model served, and the sentences after it name each limit
+    /// and its answer. With "long work then stops", that made the room for
+    /// John Kruze's sentence in the verifier's own words (`identity.rs`), so
+    /// the instructions keep their length on every connection.
     pub fn said_at_opening(&self) -> String {
         format!(
-            "This open connection asks no key, serves every model, stores nothing and names each limit. From one address at most {rpm} requests a minute and {per} in flight, {flight} in flight in all, then HTTP 429 with Retry-After; a body of at most {body} bytes to {wide} and {narrow} to any other tool, then HTTP 413. One address holds at most {share} of the {pool} physics permits: a call that finds none is answered \"Too many concurrent physics tasks.\" at once. An answer is waited for {seconds} seconds{stopped}.",
+            "This open connection asks no key and stores nothing. From one address at most {rpm} requests a minute and {per} in flight, {flight} in flight in all, then HTTP 429 with Retry-After; a body of at most {body} bytes to {wide} and {narrow} to any other tool, then HTTP 413. One address holds at most {share} of the {pool} physics permits: a call that finds none is answered \"Too many concurrent physics tasks.\" at once. An answer is waited for {seconds} seconds{stopped}.",
             rpm = self.requests_per_minute,
             flight = self.max_in_flight,
             per = self.max_in_flight_per_address,
@@ -194,7 +200,7 @@ impl OpenRules {
             pool = self.physics_permits,
             share = self.permits_per_address,
             seconds = self.request.as_secs(),
-            stopped = if self.worker.is_some() { "; long work is stopped then and frees its permit and place" } else { "" },
+            stopped = if self.worker.is_some() { "; long work then stops and frees its permit and place" } else { "" },
         )
     }
 

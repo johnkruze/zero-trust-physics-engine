@@ -12,7 +12,7 @@ That address is open to any agent, and nothing here is needed to use it. This re
 
 ## What 0.14.0 is
 
-This is engine 0.14.0, the version the open address has served since 17 October 2026: 37 models, 24 field solvers and 18 tools.
+This is engine 0.14.1, the version the open address has served since 18 October 2026: 37 models, 24 field solvers and 18 tools. It answers every question with the same bytes and the same proof as 0.14.0, which it replaced; only one sentence of the instructions an agent reads on connecting changed.
 
 - **The same bytes on every machine tested.** Every exponential, logarithm, power and trigonometric function an answer depends on is computed by the engine's own code, never by the machine's math library. Built from this source on a Mac (Apple M4 Pro), on Linux arm64, and on Linux amd64 with and without FMA, it gave the same answer, byte for byte, to all 380 worked questions, and the same 13 printed proofs. The open address answers byte for byte as a local build does.
 - **Anyone can recompute a proof.** A proof is a SHA-256 hash that binds the question to the answer, byte for byte. `genesis_seal`, in this repository, confirms one with no engine, and so do the Python programs at https://github.com/johnkruze/zero-trust-physics .
