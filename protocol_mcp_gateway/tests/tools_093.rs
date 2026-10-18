@@ -523,14 +523,13 @@ fn the_tools_say_what_the_word_is_and_that_the_short_form_exists() {
         assert_eq!((form["type"].as_str(), &form["enum"]), (Some("string"), &json!(["short", "full"])), "{name}");
         assert!(!Value::Object(tool(name).input_schema.as_ref().clone())["required"].as_array().unwrap().contains(&json!("form")));
     }
-    // The instructions say it in one sentence, a statement since 0.10.1, and
-    // since 0.11.0 end with what each form of a verification shows: since
-    // 0.12.0 the long form computes the answer's request again and holds it
-    // to the engine's answer byte for byte.
+    // The instructions said it in one sentence from 0.10.1 to 0.14.1; since
+    // 0.14.2 they say only that the short form comes before a first request,
+    // and which three tools check the proof of a run, a solution or a dataset.
     let instructions = protocol_mcp_gateway::identity::instructions();
     assert!(
-        instructions.contains("describe_card and describe_solver give a model's inputs and limits: form \"short\" is a page enough for a first request, and the full form, the default, explains a refusal and is the one a result rests on.")
-            && instructions.ends_with("verify_tape, verify_solution and verify_dataset verify a seal: the short form, request and seal, shows it was computed as sealed; the long form, the whole answer, recomputes it: every byte is the engine's."),
+        instructions.contains("read describe_card or describe_solver (form \"short\") before a first request.")
+            && instructions.ends_with("verify_tape, verify_solution and verify_dataset check the proof of a run, a solution or a dataset; cite gives sources."),
         "{instructions}"
     );
     // Tool texts are read by agents: an agent, never a caller.

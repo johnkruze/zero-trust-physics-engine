@@ -65,7 +65,7 @@ async fn mcp_matches_http_for_a_step_a_run_and_a_violation() {
         info.instructions
             .as_deref()
             .unwrap_or("")
-            .contains("trajectory")
+            .contains("find_model")
     );
     let server = info.server_info.as_ref().expect("initialize server info");
     assert_eq!(server.name, "Zero-Trust Physics");
