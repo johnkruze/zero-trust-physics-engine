@@ -113,14 +113,16 @@ fn long_work_is_stopped_at_the_limit_and_its_permit_and_place_come_back() {
     let (error, text) = open.call("run_trajectory", &a_short_long_run(), 30);
     assert!(!error, "{text}");
     assert!(text.contains("\"outcome\":\"completed\""), "{text}");
-    // The words an agent reads when the connection opens say so.
+    // The words an agent reads say so: since 0.14.2 in the description of each tool that computes,
+    // which the instructions name, and no longer in the instructions themselves.
     let hello = json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"t","version":"1"}}}).to_string();
     let said: Value = serde_json::from_str(&parse_reply(&raw(open.port, &request_bytes(None, &hello), 30)).body).unwrap();
     let said = said["result"]["instructions"].as_str().unwrap();
-    // Since 0.10.1 the instructions stay inside the length a client shows:
-    // the constant's name is in the refusal above, and not here.
-    assert!(said.contains("An answer is waited for 2 seconds; long work then stops and frees its permit and place."), "{said}");
-    assert!(!said.contains("send it again"), "{said}");
+    assert!(said.ends_with(" Each tool that computes states its own limits in its description.") && !said.contains("waited for"), "{said}");
+    let listed: Value = serde_json::from_str(&parse_reply(&raw(open.port, &request_bytes(None, &json!({"jsonrpc":"2.0","id":2,"method":"tools/list"}).to_string()), 30)).body).unwrap();
+    let described = listed["result"]["tools"].as_array().unwrap().iter().find(|tool| tool["name"] == "run_trajectory").unwrap()["description"].as_str().unwrap();
+    assert!(described.contains("An answer is waited for 2 seconds, and long work is stopped there."), "{described}");
+    assert!(!described.contains("send it again"), "{described}");
 }
 
 #[test]

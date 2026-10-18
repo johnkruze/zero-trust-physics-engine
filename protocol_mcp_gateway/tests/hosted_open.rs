@@ -157,7 +157,8 @@ fn the_permits_one_address_holds_are_read_at_start_and_stated_from_the_value() {
         assert!(door.banner.contains(&format!("The physics pool has 4 permits and one address holds at most {at_most} at a time (permits-per-address).")), "{}", door.banner);
         let opened: Value = serde_json::from_str(&door.post(&hello).body).unwrap();
         let instructions = opened["result"]["instructions"].as_str().unwrap();
-        assert!(instructions.contains(&format!("One address holds {of_pool}:")), "{instructions}");
+        let tasks = if at_most == "1" { "1 physics task".to_string() } else { format!("{at_most} physics tasks") };
+        assert!(instructions.contains(&format!("; {tasks} at a time;")) && !instructions.contains(of_pool), "{instructions}");
         let listed: Value = serde_json::from_str(&door.post(LIST).body).unwrap();
         for name in ["verify_step", "run_trajectory", "solve", "validate_series", "verify_tape", "verify_solution", "run_dataset", "verify_dataset", "find_flip", "design_run"] {
             let tool = listed["result"]["tools"].as_array().unwrap().iter().find(|tool| tool["name"] == name).unwrap();
@@ -454,7 +455,7 @@ fn what_a_remote_client_sends_is_answered_as_the_protocol_says() {
         assert!(body["result"]["capabilities"]["tools"].is_object());
         let instructions = body["result"]["instructions"].as_str().unwrap();
         assert!(instructions.contains("This open connection asks no key"), "{instructions}");
-        assert!(instructions.contains("From one address at most 300 requests a minute"), "{instructions}");
+        assert!(instructions.contains("From one address: at most 300 requests a minute"), "{instructions}");
     }
     // An initialize settles its version in its body: one that asks for the revision with no
     // initialize, or for one the door does not speak, is offered the newest that has one.
@@ -495,7 +496,7 @@ fn what_a_remote_client_sends_is_answered_as_the_protocol_says() {
     assert_eq!(reply.status, 200, "{reply:?}");
     let found: Value = serde_json::from_str(&reply.body).unwrap();
     assert_eq!(found["result"]["supportedVersions"], json!(hosted::SUPPORTED_VERSIONS));
-    assert!(found["result"]["instructions"].as_str().unwrap().contains("From one address at most 300 requests a minute"), "{found}");
+    assert!(found["result"]["instructions"].as_str().unwrap().contains("From one address: at most 300 requests a minute"), "{found}");
     // A request of a revision the door does not speak is a 400 with the list of those it does.
     let reply = door.send("POST", "/mcp", &[json, accept, ("MCP-Protocol-Version", "2031-01-01"), ("Mcp-Method", "tools/list")], LIST);
     assert_eq!(reply.status, 400, "{reply:?}");
@@ -735,7 +736,8 @@ fn the_pages_state_the_limits_of_the_open_door_that_are_in_force() {
     for page in pages(&["HOSTING.md"]) {
         assert!(page.contains("`OPEN_DATASET_ROW_BYTES` = 4000 bytes for each run"));
     }
-    // What the door prints at start, and what an agent reads when the connection opens, are written from the same values.
+    // What the door prints at start, and what an agent reads when the connection opens, are written from the same values;
+    // since 0.14.2 the opening leaves the busy answer and the wait to each tool that computes.
     let statement = rules.statement();
     for part in ["at most 300 a minute", "at most 16 in flight at once and 4 from one address", "a body of at most 4194304 bytes", "at most 1000000 steps and 10000 recorded states", "at most 300 runs", "1000000 steps in total", "one address holds at most 1 at a time (permits-per-address)", "waited for 60 seconds"] {
         assert!(statement.contains(part), "{part}: {statement}");
@@ -744,9 +746,10 @@ fn the_pages_state_the_limits_of_the_open_door_that_are_in_force() {
         assert!(statement.contains(part), "{part}: {statement}");
     }
     let opening = rules.said_at_opening();
-    for part in ["at most 300 requests a minute and 4 in flight, 16 in flight in all, then HTTP 429 with Retry-After", "a body of at most 4194304 bytes to run_trajectory, verify_tape, run_dataset, verify_dataset, verify_receipt or validate_series and 2097152 to any other tool, then HTTP 413", "One address holds at most 1 of the", "waited for 60 seconds"] {
+    for part in ["This open connection asks no key and stores nothing. ", "From one address: at most 300 requests a minute and 4 in flight (16 in all), then HTTP 429 with Retry-After; 1 physics task at a time; a body of at most 4194304 bytes to run_trajectory, verify_tape, run_dataset, verify_dataset, verify_receipt or validate_series and 2097152 to any other tool, then HTTP 413."] {
         assert!(opening.contains(part), "{part}: {opening}");
     }
+    assert!(opening.ends_with(" Each tool that computes states its own limits in its description.") && !opening.contains("waited for"), "{opening}");
     // The operator's page names the argument for each limit that has one.
     for page in pages(&["HOSTING.md"]) {
         for flag in ["`--requests-per-minute`", "`--max-in-flight`", "`--max-in-flight-per-address`", "`--physics-permits`", "`--permits-per-address`", "`--request-seconds`"] {

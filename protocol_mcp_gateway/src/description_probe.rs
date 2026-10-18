@@ -775,9 +775,13 @@ fn what_every_connection_says_fits_what_a_client_shows_and_states_what_is_so() {
             let mut info = json!({ "instructions": instructions });
             rules.state_in_instructions(&mut info);
             instructions = info["instructions"].as_str().unwrap().to_string();
-            assert!(instructions.contains(&format!("One address holds at most {} of the {} physics permits:", rules.permits_per_address, rules.physics_permits)), "{label}: {instructions}");
-            // Both limits on a body, with the six tools that take the larger (since 0.14.0 rc2; RT3 W5).
+            // The limits no description states: requests and in flight (429), the permits, and both limits on a
+            // body with the six tools that take the larger (since 0.14.0 rc2; RT3 W5). Since 0.14.2 the busy answer
+            // and the wait are left to each tool that computes, which the last sentence names.
+            let tasks = if rules.permits_per_address == 1 { "1 physics task".to_string() } else { format!("{} physics tasks", rules.permits_per_address) };
+            assert!(instructions.contains(&format!("From one address: at most {} requests a minute and {} in flight ({} in all), then HTTP 429 with Retry-After; {tasks} at a time;", rules.requests_per_minute, rules.max_in_flight_per_address, rules.max_in_flight)), "{label}: {instructions}");
             assert!(instructions.contains(&format!("a body of at most {} bytes to {} or {} and {} to any other tool, then HTTP 413", rules.max_body_bytes, crate::guard::WIDE_TOOLS[..5].join(", "), crate::guard::WIDE_TOOLS[5], crate::guard::NARROW_LIMIT)), "{label}: {instructions}");
+            assert!(instructions.ends_with(" Each tool that computes states its own limits in its description."), "{label}: {instructions}");
         }
         said_wrong(&label, "the instructions", &instructions);
         longest = longest.max(instructions.len());

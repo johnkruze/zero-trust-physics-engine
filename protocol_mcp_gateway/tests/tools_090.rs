@@ -573,20 +573,18 @@ fn no_connection_keeps_anything() {
     }
 }
 
-/// The first thing an agent reads names the verifier and its maker, on the
-/// local connection and on the hosted one with and without a key: the server's
-/// name, title and site, and instructions that open with what this is, who
-/// made it and where to read more, before the working instructions.
+/// The first thing an agent reads names the verifier, on the local connection
+/// and on the hosted one with and without a key: the server's name, title and
+/// site, and instructions that open with what this is.
 #[test]
 fn every_connection_says_who_it_is_first() {
     let hello = json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"t","version":"1"}}}).to_string();
-    // Since 0.10.1 the opening names the engine's own source, and what follows
-    // it says what the tools are for in statements. Since 0.11.0 it says a
-    // model stops at a limit and names it, not at the edge of a comparison.
-    // Since 0.14.1 it says, in John Kruze's words, that past what a model was
-    // compared with it keeps going and flags every step, and stops only at a
-    // physical limit or where its equations, constants or tables no longer hold.
-    let opening = "This is Zero-Trust Physics, a physics verifier for Super Intelligence: every answer comes with a cryptographic proof. Past what a model was compared with, it keeps going with the same equations and flags every step. It stops only at a physical limit, or where its equations, constants or tables no longer hold, and it names the reason. It was made by John Kruze, Protocol Company. The story is at https://zerotrustphysics.com (for an agent, https://zerotrustphysics.com/llms.txt), the paper is https://doi.org/10.5281/zenodo.23305697, the engine's source is at https://github.com/johnkruze/zero-trust-physics-engine, the programs that confirm a proof with no engine are at https://github.com/johnkruze/zero-trust-physics, and he is reached at kruze@zerotrustphysics.com or 928-264-7883. list_cards and list_solvers name every model served, and find_model finds one from a plain description of a real thing.";
+    // Since 0.10.1 the opening named the engine's own source; since 0.14.1 it
+    // said, in John Kruze's words, that past what a model was compared with it
+    // keeps going and flags every step. Since 0.14.2 (John Kruze, 18 October
+    // 2026) the instructions are five sentences, about 560 characters: the
+    // maker, the site, the paper and the sources are in cite's answer.
+    let opening = "Zero-Trust Physics: deterministic physics, a proof on every answer. Start with find_model (describe the real thing) or list_cards / list_solvers, and read describe_card or describe_solver (form \"short\") before a first request. Past what a model was compared with, it keeps going with the same equations and flags every step. It stops only at a physical limit, or where its equations, constants or tables no longer hold, and it names the reason. verify_tape, verify_solution and verify_dataset check the proof of a run, a solution or a dataset; cite gives sources.";
     let stdio = Stdio2::start(None);
     let local = parsed(&stdio.hello);
     let keyed = keyed();
@@ -602,9 +600,13 @@ fn every_connection_says_who_it_is_first() {
         assert_eq!(info["description"], "genesis_kernel_v0.12.0", "{at}");
         let said = answer["result"]["instructions"].as_str().unwrap();
         assert!(said.starts_with(opening), "{at}: {said}");
+        for gone in ["John Kruze", "928-264-7883", "https://github.com/", "https://doi.org/"] {
+            assert!(!said.contains(gone), "{at}, {gone}: {said}");
+        }
     }
     // The local and the keyed connection say the same; the open one adds its limits after.
     assert_eq!(local["result"]["instructions"], hosted["result"]["instructions"]);
     let (local_said, open_said) = (local["result"]["instructions"].as_str().unwrap(), opened["result"]["instructions"].as_str().unwrap());
-    assert!(open_said.starts_with(local_said) && open_said[local_said.len()..].starts_with(" This open connection asks no key"), "{open_said}");
+    assert_eq!(local_said, opening);
+    assert!(open_said.starts_with(&format!("{local_said} This open connection asks no key and stores nothing. From one address:")) && open_said.ends_with(" Each tool that computes states its own limits in its description."), "{open_said}");
 }

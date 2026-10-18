@@ -171,36 +171,27 @@ impl OpenRules {
         )
     }
 
-    /// The limits every call meets, in a few sentences, written from the
-    /// values in force: what `initialize` and `server/discover` carry in
-    /// `instructions` after the verifier's own words. The limits of one tool
-    /// are in that tool's description ([`OpenRules::says_of`]), so the whole
-    /// of the instructions stays inside what a client shows. Both limits on
-    /// a body are said: until 0.14.0 rc2 only the 4 MiB was, and a call of
-    /// any of the twelve tools outside `WIDE_TOOLS` is refused past
-    /// `NARROW_LIMIT`, 2 MiB (WORDS_014, proposal 1; the red team of rc1, RT3
-    /// W5). The room for it was made by saying the other limits in fewer
-    /// words, none of them left out: every 429 carries Retry-After, so it is
-    /// said once for the three. Since 0.14.1 the first sentence says the
-    /// connection asks no key and stores nothing, where it also said it
-    /// serves every model and names each limit: list_cards and list_solvers
-    /// name every model served, and the sentences after it name each limit
-    /// and its answer. With "long work then stops", that made the room for
-    /// John Kruze's sentence in the verifier's own words (`identity.rs`), so
-    /// the instructions keep their length on every connection.
+    /// The limits every call meets that no tool's description states, written
+    /// from the values in force: what `initialize` and `server/discover` carry
+    /// in `instructions` after the verifier's own words. The requests a
+    /// minute and in flight (HTTP 429) and both limits on a body (HTTP 413)
+    /// are said here alone; the physics permits an address holds are said
+    /// here and in each tool that computes, with the rest of that tool's
+    /// limits ([`OpenRules::says_of`]: long work, the answer of a call that
+    /// finds no permit, how long an answer is waited for). Until 0.14.2 the
+    /// permits sentence also said that busy answer, and a last sentence how
+    /// long an answer is waited for and when long work stops; each tool that
+    /// computes says both (John Kruze, 18 October 2026).
     pub fn said_at_opening(&self) -> String {
         format!(
-            "This open connection asks no key and stores nothing. From one address at most {rpm} requests a minute and {per} in flight, {flight} in flight in all, then HTTP 429 with Retry-After; a body of at most {body} bytes to {wide} and {narrow} to any other tool, then HTTP 413. One address holds at most {share} of the {pool} physics permits: a call that finds none is answered \"Too many concurrent physics tasks.\" at once. An answer is waited for {seconds} seconds{stopped}.",
+            "This open connection asks no key and stores nothing. From one address: at most {rpm} requests a minute and {per} in flight ({flight} in all), then HTTP 429 with Retry-After; {share} at a time; a body of at most {body} bytes to {wide} and {narrow} to any other tool, then HTTP 413. Each tool that computes states its own limits in its description.",
             rpm = self.requests_per_minute,
-            flight = self.max_in_flight,
             per = self.max_in_flight_per_address,
+            flight = self.max_in_flight,
+            share = counted(self.permits_per_address, "physics task"),
             body = self.max_body_bytes,
             wide = crate::guard::WIDE_TOOLS[..5].join(", ") + " or " + crate::guard::WIDE_TOOLS[5],
             narrow = crate::guard::NARROW_LIMIT,
-            pool = self.physics_permits,
-            share = self.permits_per_address,
-            seconds = self.request.as_secs(),
-            stopped = if self.worker.is_some() { "; long work then stops and frees its permit and place" } else { "" },
         )
     }
 
@@ -258,7 +249,7 @@ impl OpenRules {
         format!(" On this open connection {own}")
     }
 
-    /// `initialize` and `server/discover` carry the limits in `instructions`.
+    /// `initialize` and `server/discover` carry [`OpenRules::said_at_opening`] in `instructions`.
     pub(crate) fn state_in_instructions(&self, info: &mut Value) {
         let Some(object) = info.as_object_mut() else { return };
         let before = object.get("instructions").and_then(Value::as_str).unwrap_or("").to_string();
