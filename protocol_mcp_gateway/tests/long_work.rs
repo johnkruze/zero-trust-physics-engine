@@ -119,7 +119,7 @@ fn long_work_is_stopped_at_the_limit_and_its_permit_and_place_come_back() {
     let said = said["result"]["instructions"].as_str().unwrap();
     // Since 0.10.1 the instructions stay inside the length a client shows:
     // the constant's name is in the refusal above, and not here.
-    assert!(said.contains("An answer is waited for 2 seconds; long work is stopped then and frees its permit and place."), "{said}");
+    assert!(said.contains("An answer is waited for 2 seconds; long work then stops and frees its permit and place."), "{said}");
     assert!(!said.contains("send it again"), "{said}");
 }
 

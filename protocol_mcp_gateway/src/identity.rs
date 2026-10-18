@@ -36,13 +36,16 @@ pub const MOST_CHARS_SAID: usize = 2_000;
 
 /// What the tools are for, each sentence a statement of what is so: which
 /// tools name what is served, which describe a model and in which form,
-/// which compute with a proof, and which check one.
-pub const WORKING_INSTRUCTIONS: &str = "list_cards and list_solvers name every model served, and find_model finds one from a plain description of a real thing. describe_card and describe_solver give a model's inputs and limits: form \"short\" is a page enough for a first request, and the full form, the default, explains a refusal and is the one a result rests on. compute_step computes a step, run_trajectory a run, solve a solution and run_dataset a plan of them, each with its proof. verify_tape, verify_solution and verify_dataset verify a seal: the short form, request and seal, shows it was computed as sealed; the long form, the whole answer, recomputes it: every byte is the engine's.";
+/// which compute with a proof, and which check one. Since 0.14.1 the
+/// sentence of the four that compute no longer ends "each with its proof":
+/// the introduction says every answer comes with one.
+pub const WORKING_INSTRUCTIONS: &str = "list_cards and list_solvers name every model served, and find_model finds one from a plain description of a real thing. describe_card and describe_solver give a model's inputs and limits: form \"short\" is a page enough for a first request, and the full form, the default, explains a refusal and is the one a result rests on. compute_step computes a step, run_trajectory a run, solve a solution and run_dataset a plan of them. verify_tape, verify_solution and verify_dataset verify a seal: the short form, request and seal, shows it was computed as sealed; the long form, the whole answer, recomputes it: every byte is the engine's.";
 
-/// What this is, who made it and where to read more: three sentences.
+/// What this is, what a model does past what it was compared with and where
+/// it stops, who made it and where to read more: five sentences.
 pub fn introduction() -> String {
     format!(
-        "This is {NAME}, a physics verifier for Super Intelligence: every answer comes with a cryptographic proof, and a model stops at a mathematical or physical limit and names it; the range it was compared on, and how it did there, is in its description. It was made by {MAKER}, {COMPANY}. The story is at {SITE} (for an agent, {SITE_FOR_AGENTS}), the paper is {PAPER}, the engine's source is at {ENGINE_SOURCE}, the programs that confirm a proof with no engine are at {CONFIRMING_PROGRAMS}, and {MAKER} is reached at {EMAIL} or {PHONE}."
+        "This is {NAME}, a physics verifier for Super Intelligence: every answer comes with a cryptographic proof. Past what a model was compared with, it keeps going with the same equations and flags every step. It stops only at a physical limit, or where its equations, constants or tables no longer hold, and it names the reason. It was made by {MAKER}, {COMPANY}. The story is at {SITE} (for an agent, {SITE_FOR_AGENTS}), the paper is {PAPER}, the engine's source is at {ENGINE_SOURCE}, the programs that confirm a proof with no engine are at {CONFIRMING_PROGRAMS}, and he is reached at {EMAIL} or {PHONE}."
     )
 }
 
@@ -60,22 +63,26 @@ mod tests {
         let said = introduction();
         assert!(said.starts_with("This is Zero-Trust Physics, a physics verifier for Super Intelligence:"), "{said}");
         for held in [
-            "every answer comes with a cryptographic proof",
-            "a model stops at a mathematical or physical limit and names it; the range it was compared on, and how it did there, is in its description.",
+            "every answer comes with a cryptographic proof. Past what a model was compared with, it keeps going with the same equations and flags every step. It stops only at a physical limit, or where its equations, constants or tables no longer hold, and it names the reason. It was made by",
             "John Kruze, Protocol Company",
             "https://zerotrustphysics.com",
             "https://zerotrustphysics.com/llms.txt",
             "https://doi.org/10.5281/zenodo.23305697",
             "the engine's source is at https://github.com/johnkruze/zero-trust-physics-engine,",
             "the programs that confirm a proof with no engine are at https://github.com/johnkruze/zero-trust-physics,",
-            "kruze@zerotrustphysics.com",
+            "and he is reached at kruze@zerotrustphysics.com",
             "928-264-7883",
         ] {
             assert!(said.contains(held), "{held}: {said}");
         }
-        // Three plain sentences, and the words the company does not use of
-        // itself are not in them.
-        assert_eq!(said.matches(". ").count() + 1, 3, "{said}");
+        // Five plain sentences, and the words the company does not use of
+        // itself are not in them. Since 0.14.1 the second and third are John
+        // Kruze's own, as the site, Hugging Face and GitHub say them: a model
+        // keeps going past what it was compared with, flagging every step, and
+        // stops where its physics, equations, constants or tables end, where
+        // until 0.14.1 it was said to stop at a mathematical or physical limit.
+        assert_eq!(said.matches(". ").count() + 1, 5, "{said}");
+        assert!(!said.contains("mathematical or physical limit"), "{said}");
         for word in ["caller", "AI ", "gateway", "genesis"] {
             assert!(!said.contains(word), "{word}: {said}");
         }
