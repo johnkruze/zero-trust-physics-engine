@@ -239,7 +239,7 @@ pub fn reject_name(reject: &LhdReject) -> &'static str {
 
 fn field_words() -> String {
     format!(
-        "SHA-256 of the shell count ({}) as 8 little-endian bytes, then the alpha emissivity of each shell from the axis outward, per cubic metre per second, as little-endian f64 bytes.",
+        "SHA-384 of the shell count ({}) as 8 little-endian bytes, then the alpha emissivity of each shell from the axis outward, per cubic metre per second, as little-endian f64 bytes.",
         lhd::SHELLS
     )
 }

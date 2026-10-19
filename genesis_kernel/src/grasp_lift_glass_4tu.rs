@@ -161,6 +161,7 @@ extern crate core;
 
 use core::prelude::v1::*;
 
+use crate::exceedance::{Exceedance, ExceedanceKind, Side};
 use crate::frame::LastStateFrame64;
 use crate::normal::{normal_or_zero, normal_or_zero_each};
 
@@ -771,6 +772,26 @@ pub fn step(
     load: GraspLiftGlass4tuLoad,
     dt_s: f64,
 ) -> Result<(), StepReject> {
+    #[cfg(any(test, debug_assertions, feature = "check_exceedances"))]
+    let before = *state;
+    let stepped = step_landed(card, state, frame, load, dt_s);
+    #[cfg(any(test, debug_assertions, feature = "check_exceedances"))]
+    if stepped.is_ok() {
+        crate::exceedance::debug_check("grasp_lift_glass_4tu", exceedances(card, &before, state, load, dt_s), frame.flags);
+    }
+    stepped
+}
+
+/// The step itself; [`step`] is it with, in a build that checks
+/// (`crate::exceedance::CHECKED`), the check that [`exceedances`] stands for
+/// the flags it wrote.
+fn step_landed(
+    card: &GraspLiftGlass4tu,
+    state: &mut GraspLiftGlass4tuState,
+    frame: &mut LastStateFrame64,
+    load: GraspLiftGlass4tuLoad,
+    dt_s: f64,
+) -> Result<(), StepReject> {
     step_as_computed(card, state, frame, load, dt_s)?;
     normal_or_zero_state(state);
     Ok(())
@@ -1143,6 +1164,73 @@ fn step_euler(
     honest.object_velocity_m_s = state.object_velocity_m_s + dt_s * force / card.object_mass_kg;
     honest.object_height_m = state.object_height_m + dt_s * state.object_velocity_m_s;
     commit(card, state, frame, load, dt_s, honest)
+}
+
+/// Every limit a flag of this card can mark: what [`exceedances`] reports
+/// beside a flag's bit (`crate::exceedance`).
+pub const EXCEEDANCE_KINDS: &[crate::exceedance::ExceedanceKind] = &[
+    INCIPIENT_SOME_SLID,
+    INCIPIENT_SOME_HELD,
+    GROSS_KIND,
+    TABLE_KIND,
+];
+
+const INCIPIENT_WORDS: &str = "some of a pad's contact slid and some held: a stuck fraction above 0 and below 1";
+const INCIPIENT_SOME_SLID: ExceedanceKind = ExceedanceKind::fixed(
+    "FLAG_INCIPIENT_SLIP",
+    FLAG_INCIPIENT_SLIP,
+    "stuck_fraction",
+    "1",
+    Side::Below,
+    1.0,
+    INCIPIENT_WORDS,
+);
+const INCIPIENT_SOME_HELD: ExceedanceKind = ExceedanceKind::fixed(
+    "FLAG_INCIPIENT_SLIP",
+    FLAG_INCIPIENT_SLIP,
+    "stuck_fraction",
+    "1",
+    Side::Above,
+    0.0,
+    INCIPIENT_WORDS,
+);
+const GROSS_KIND: ExceedanceKind = ExceedanceKind::fixed(
+    "FLAG_GROSS_SLIP",
+    FLAG_GROSS_SLIP,
+    "stuck_fraction",
+    "1",
+    Side::AtOrBelow,
+    0.0,
+    "no element of the pads held: the whole contact slid along the faces; the extent is zero",
+);
+const TABLE_KIND: ExceedanceKind = ExceedanceKind::fixed(
+    "FLAG_ON_TABLE",
+    FLAG_ON_TABLE,
+    "object_height_m",
+    "m",
+    Side::AtOrBelow,
+    0.0,
+    "the table, the object at rest on it and not yet lifted; the extent is zero",
+);
+
+/// The limits the step from `before` to `after` under `load` over `dt_s`
+/// is past: one record for each limit a flag set on its frame marks.
+pub fn exceedances(
+    card: &GraspLiftGlass4tu,
+    before: &GraspLiftGlass4tuState,
+    after: &GraspLiftGlass4tuState,
+    load: GraspLiftGlass4tuLoad,
+    dt_s: f64,
+) -> crate::exceedance::Exceedances {
+    let _ = (card, before, load, dt_s);
+    let mut records = crate::exceedance::Exceedances::new();
+    if after.incipient_slip {
+        records.push(Exceedance::fixed(INCIPIENT_SOME_SLID, after.stuck_fraction));
+        records.push(Exceedance::fixed(INCIPIENT_SOME_HELD, after.stuck_fraction));
+    }
+    records.push_if(after.gross_slip, Exceedance::fixed(GROSS_KIND, after.stuck_fraction));
+    records.push_if(after.on_table, Exceedance::fixed(TABLE_KIND, after.object_height_m));
+    records
 }
 
 #[cfg(test)]

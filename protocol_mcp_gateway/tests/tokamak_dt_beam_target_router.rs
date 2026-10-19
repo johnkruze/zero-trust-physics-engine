@@ -11,7 +11,7 @@ use genesis_solvers::tokamak_dt_beam_target::{self as slice, SliceQuestion};
 use protocol_mcp_gateway::app;
 use reqwest::Client;
 use serde_json::{Value, json};
-use sha2::{Digest, Sha256};
+use sha2::{Digest, Sha384};
 use tokio::net::TcpListener;
 
 async fn spawn_app() -> String {
@@ -82,16 +82,16 @@ fn assert_number(section: &Value, key: &str, expected: f64) {
     assert_eq!(decimal.to_bits(), expected.to_bits(), "{key}");
 }
 
-fn sha256_hex(bytes: &[u8]) -> String {
-    hex::encode(Sha256::digest(bytes))
+fn sha384_hex(bytes: &[u8]) -> String {
+    hex::encode(Sha384::digest(bytes))
 }
 
 /// The receipt covers the wire bytes before it.
 fn assert_receipt(text: &str, body: &Value) {
-    let receipt = body["receipt_sha256"].as_str().expect("receipt");
-    let tail = format!(",\"receipt_sha256\":\"{receipt}\"}}");
+    let receipt = body["receipt_sha384"].as_str().expect("receipt");
+    let tail = format!(",\"receipt_sha384\":\"{receipt}\"}}");
     let document = text.strip_suffix(&tail).expect("the receipt is last");
-    assert_eq!(sha256_hex(format!("{document}}}").as_bytes()), receipt);
+    assert_eq!(sha384_hex(format!("{document}}}").as_bytes()), receipt);
 }
 
 fn field_hash(samples: &[f64]) -> String {
@@ -100,7 +100,7 @@ fn field_hash(samples: &[f64]) -> String {
     for sample in samples {
         field.extend_from_slice(&sample.to_le_bytes());
     }
-    sha256_hex(&field)
+    sha384_hex(&field)
 }
 
 
@@ -152,7 +152,7 @@ async fn a_slice_matches_the_solver_bit_for_bit() {
     let direct = slice::solve(&question).expect("the solver settles");
 
     assert_eq!(body["inputs"], asked);
-    assert_eq!(body["engine_version"], "genesis_solvers_v0.12.0");
+    assert_eq!(body["engine_version"], "genesis_solvers_v0.13.0");
     assert_eq!(body["outcome"], "converged");
     assert!(body["reject"].is_null());
     assert_eq!(body["iterations"], direct.refinements);
@@ -191,8 +191,8 @@ async fn a_slice_matches_the_solver_bit_for_bit() {
     assert_number(invariants, "power_ledger_residual", direct.power_ledger_residual);
     assert_eq!(invariants.as_object().unwrap().len(), 6);
 
-    assert_eq!(body["field_sha256"], field_hash(&direct.dt_rate_density_per_m3_s));
-    assert_eq!(body["solution_seal"].as_str().unwrap().len(), 64);
+    assert_eq!(body["field_sha384"], field_hash(&direct.dt_rate_density_per_m3_s));
+    assert_eq!(body["solution_seal"].as_str().unwrap().len(), 96);
     assert_receipt(&text, &body);
     assert_eq!(verdict(&base, &body).await, json!({ "holds": true, "values_hold": true, "cause": null, "compared": protocol_mcp_gateway::WHOLE_SOLUTION_COMPUTED }));
 
@@ -371,7 +371,7 @@ async fn a_slice_too_soon_after_a_beam_change_is_a_sealed_refusal() {
     let (_, at_the_end) = solved(&base, &request(&question)).await;
     assert_eq!(at_the_end["outcome"], "converged");
     assert_eq!(at_the_end["result"], settled["result"]);
-    assert_eq!(at_the_end["field_sha256"], settled["field_sha256"]);
+    assert_eq!(at_the_end["field_sha384"], settled["field_sha384"]);
     assert_ne!(at_the_end["solution_seal"], settled["solution_seal"], "the input is sealed");
 
     question.time_since_beam_change_s = f64::from_bits(end.to_bits() - 1);
@@ -379,7 +379,7 @@ async fn a_slice_too_soon_after_a_beam_change_is_a_sealed_refusal() {
     assert_eq!(body["outcome"], "refused");
     assert_eq!(body["reject"], "BeamChangeTooRecent");
     assert!(body["result"].is_null());
-    assert!(body["field_sha256"].is_null());
+    assert!(body["field_sha384"].is_null());
     let detail = body["reject_detail"].as_str().expect("the sentence");
     assert!(detail.contains(&format!("{end}")), "{detail}");
     assert!(detail.contains("as the request states"), "{detail}");
@@ -447,7 +447,7 @@ async fn beam_beam_reactions_beyond_their_bound_are_a_sealed_refusal() {
     assert_eq!(body["outcome"], "refused");
     assert_eq!(body["reject"], "BeamBeamShareTooLarge");
     assert!(body["result"].is_null());
-    assert!(body["field_sha256"].is_null());
+    assert!(body["field_sha384"].is_null());
     assert_receipt(&text, &body);
     assert_eq!(verdict(&base, &body).await, json!({ "holds": true, "values_hold": true, "cause": null, "compared": protocol_mcp_gateway::WHOLE_SOLUTION_COMPUTED }));
     let mut promoted = body.clone();
@@ -461,7 +461,7 @@ async fn it_is_listed_and_described_and_its_example_runs_unchanged() {
     let listed = reqwest::get(format!("{base}/solvers")).await.unwrap();
     let listed: Value = serde_json::from_str(&listed.text().await.unwrap()).unwrap();
     let solvers = listed["solvers"].as_array().expect("solvers");
-    assert_eq!(solvers.len(), 25);
+    assert_eq!(solvers.len(), protocol_mcp_gateway::SOLVERS);
     assert_eq!(solvers[11]["solver"], "tokamak_dt_beam_target");
     let summary = solvers[11]["summary"].as_str().unwrap();
     assert!(summary.contains("Nothing fitted"), "{summary}");
@@ -513,6 +513,6 @@ async fn an_edited_answer_is_named_by_its_part() {
     hotter["inputs"]["parameters"]["ion_temperature_kev"][0] = json!(25.0);
     assert_fails(&base, &hotter, "inputs", "hotter ions").await;
     let mut other_field = body.clone();
-    other_field["field_sha256"] = json!("0".repeat(64));
-    assert_fails(&base, &other_field, "field_sha256", "another profile").await;
+    other_field["field_sha384"] = json!("0".repeat(96));
+    assert_fails(&base, &other_field, "field_sha384", "another profile").await;
 }

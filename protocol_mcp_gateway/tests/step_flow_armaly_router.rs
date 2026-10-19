@@ -9,7 +9,7 @@ use genesis_solvers::step_flow_armaly::{self as step, StepQuestion};
 use protocol_mcp_gateway::app;
 use reqwest::Client;
 use serde_json::{Value, json};
-use sha2::{Digest, Sha256};
+use sha2::{Digest, Sha384};
 use tokio::net::TcpListener;
 
 async fn spawn_app() -> String {
@@ -117,13 +117,13 @@ async fn the_opened_condition_matches_the_solver_bit_for_bit_and_its_proof_holds
     assert!(direct.largest_imbalance <= step::IMBALANCE_TOLERANCE);
 
     // The field hash is the count of numbers, the stream function and the vorticity.
-    let mut hasher = Sha256::new();
+    let mut hasher = Sha384::new();
     hasher.update((direct.stream_function.len() as u64 * 2).to_le_bytes());
     for value in direct.stream_function.iter().chain(&direct.vorticity) {
         hasher.update(value.to_le_bytes());
     }
     let own = hex::encode(hasher.finalize());
-    let served = body["field_sha256"].as_str().expect("field hash");
+    let served = body["field_sha384"].as_str().expect("field hash");
     assert_eq!(served, own);
 
     // The proof holds, and an edit of a number breaks it by name.
@@ -144,7 +144,7 @@ async fn the_opened_condition_matches_the_solver_bit_for_bit_and_its_proof_holds
     let (_, text) = post(&base, "/verify_solution", &edited).await;
     assert_eq!(serde_json::from_str::<Value>(&text).unwrap()["holds"], false);
     let mut field = body.clone();
-    field["field_sha256"] = json!(flip_hex(served));
+    field["field_sha384"] = json!(flip_hex(served));
     let (_, text) = post(&base, "/verify_solution", &field).await;
     assert_eq!(serde_json::from_str::<Value>(&text).unwrap()["holds"], false);
 
@@ -188,7 +188,7 @@ async fn a_question_outside_the_range_is_422_with_its_name_and_no_seal() {
     let last: Value = serde_json::from_str(&last).unwrap();
     assert_eq!(first["outcome"], "converged");
     assert_eq!(last["outcome"], "converged");
-    assert_eq!(first["field_sha256"], last["field_sha256"]);
+    assert_eq!(first["field_sha384"], last["field_sha384"]);
     assert_eq!(first["result"]["reattachment_x_over_s_hex"], last["result"]["reattachment_x_over_s_hex"]);
     assert_ne!(first["result"]["profile_u_over_umax_hex"], last["result"]["profile_u_over_umax_hex"]);
     let others = [
@@ -246,7 +246,7 @@ async fn past_the_compared_stations_and_below_reynolds_100_the_flow_is_answered(
         assert_eq!(status, 200, "{checked}");
         assert_eq!(serde_json::from_str::<Value>(&checked).unwrap()["holds"], true, "{checked}");
         if request["parameters"]["reynolds_number"] == 389.0 {
-            assert_eq!(body["field_sha256"], edge["field_sha256"]);
+            assert_eq!(body["field_sha384"], edge["field_sha384"]);
         }
     }
     for station in [12.04, 16.33, 20.92, 30.0] {
@@ -261,9 +261,17 @@ async fn the_description_carries_the_standing_and_its_example_runs_unchanged() {
     let listed = reqwest::get(format!("{base}/solvers")).await.unwrap();
     let listed: Value = serde_json::from_str(&listed.text().await.unwrap()).unwrap();
     let solvers = listed["solvers"].as_array().expect("solvers");
-    assert_eq!(solvers.len(), 25);
+    assert_eq!(solvers.len(), protocol_mcp_gateway::SOLVERS);
     assert_eq!(solvers[9]["solver"], "step_flow_armaly");
-    let summary = solvers[9]["summary"].as_str().expect("a sentence");
+    // Since 0.14.4 a row gives what the model computes, the comparison and
+    // the gap; the whole spec sheet is the description's.
+    let row_summary = solvers[9]["summary"].as_str().expect("a sentence");
+    assert!(!row_summary.contains("Range: "), "{row_summary}");
+    let (_, full) = post(&base, "/describe_solver", &json!({ "solver": "step_flow_armaly" })).await;
+    let full: Value = serde_json::from_str(&full).unwrap();
+    let summary = full["summary"].as_str().unwrap().to_string();
+    let summary = summary.as_str();
+    assert!(summary.starts_with(row_summary.split_once(" Compared with ").map_or(row_summary, |parts| parts.0)), "{summary}");
     assert!(summary.contains("Nothing fitted"), "{summary}");
     assert!(summary.contains("Reynolds number above 0 to 400"), "{summary}");
 

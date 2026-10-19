@@ -24,7 +24,7 @@ use genesis_kernel::frame::LastStateFrame64;
 use protocol_mcp_gateway::{VerifyPhysicsResponse, app, commit_request_proof};
 use reqwest::Client;
 use serde_json::{Value, json};
-use sha2::{Digest, Sha256};
+use sha2::{Digest, Sha384};
 use tokio::net::TcpListener;
 
 // ------------------------------------------------------------------ helpers
@@ -70,8 +70,8 @@ async fn post(base: &str, path: &str, body: &Value) -> (u16, String) {
     post_text(base, path, &answer_text::as_sent(body)).await
 }
 
-fn sha256_hex(bytes: &[u8]) -> String {
-    hex::encode(Sha256::digest(bytes))
+fn sha384_hex(bytes: &[u8]) -> String {
+    hex::encode(Sha384::digest(bytes))
 }
 
 fn below(x: f64) -> f64 {
@@ -196,7 +196,7 @@ fn assert_state_is(published_state: &Value, state: &CreepState, label: &str) {
 }
 
 fn split_receipt(text: &str) -> (String, String) {
-    const MARKER: &str = ",\"receipt_sha256\":\"";
+    const MARKER: &str = ",\"receipt_sha384\":\"";
     let at = text.rfind(MARKER).expect("a receipt");
     (format!("{}}}", &text[..at]), text[at + MARKER.len()..text.len() - 2].to_string())
 }
@@ -257,15 +257,15 @@ async fn a_step_of_the_creep_card_matches_the_compiled_step_with_the_same_proof_
             response.residual_conservation_error.to_bits(),
             state.residual_conservation_error.to_bits()
         );
-        assert_eq!(response.sha256_seal, sha256_hex(&frame.to_bytes()));
+        assert_eq!(response.sha384_seal, sha384_hex(&frame.to_bytes()));
         // The seal covers the proof: the same frame with a zero proof seals apart.
         let mut naked = frame;
         naked.proof = [0; 16];
-        assert_ne!(response.sha256_seal, sha256_hex(&naked.to_bytes()));
+        assert_ne!(response.sha384_seal, sha384_hex(&naked.to_bytes()));
         let (document, receipt) = split_receipt(&answer);
-        assert_eq!(receipt, response.receipt_sha256);
-        assert_eq!(sha256_hex(document.as_bytes()), receipt);
-        seals.push(response.sha256_seal);
+        assert_eq!(receipt, response.receipt_sha384);
+        assert_eq!(sha384_hex(document.as_bytes()), receipt);
+        seals.push(response.sha384_seal);
     }
     seals.sort();
     seals.dedup();
@@ -336,7 +336,7 @@ async fn a_run_under_a_held_stress_ends_in_the_sealed_refusal_at_the_limit_for_i
         assert_state_is(last, &state, &format!("{stress} MPa"));
         assert!(state.creep_extension_percent < limit && state.creep_extension_percent > 0.997 * limit, "{stress}");
         // Rule 6: the run passed a limit part way and keeps its proof up to the last landed step.
-        assert!(tape["run_seal"].as_str().is_some_and(|seal| seal.len() == 64));
+        assert!(tape["run_seal"].as_str().is_some_and(|seal| seal.len() == 96));
         assert!(!tape["frames"].as_array().unwrap().is_empty());
         // The law's rate has passed its minimum by 5 percent; below 170 MPa the
         // frame past 0.2 percent is where the law missed the measured curves.
@@ -364,7 +364,7 @@ async fn a_run_under_a_held_stress_ends_in_the_sealed_refusal_at_the_limit_for_i
         assert_eq!(status, 200, "{receipt}");
         let receipt: Value = serde_json::from_str(&receipt).unwrap();
         assert_eq!(receipt["matches"], true, "{stress}: {receipt}");
-        assert_eq!(receipt["receipt_sha256"], tape["receipt_sha256"]);
+        assert_eq!(receipt["receipt_sha384"], tape["receipt_sha384"]);
 
         // The same request seals the same.
         let (_, again) = post(&base, "/run_trajectory", &request).await;
@@ -422,7 +422,7 @@ async fn a_start_below_a_tenth_of_a_percent_lands_flagged_and_one_below_zero_is_
     // limit: it is refused by the ledger, by name, and carries no proof.
     let (status, text) = post(&base, "/verify_physics", &step_body(0.0, 230.0, ceiling())).await;
     assert_eq!(status, 422, "{text}");
-    assert!((text.contains("(FirstLawBreach)") || text.contains("(SpontaneousGeneration)")) && !text.contains("sha256_seal"), "{text}");
+    assert!((text.contains("(FirstLawBreach)") || text.contains("(SpontaneousGeneration)")) && !text.contains("sha384_seal"), "{text}");
     let (status, text) = post(&base, "/verify_physics", &step_body(-1.0e-9, 200.0, ceiling())).await;
     assert_eq!(status, 422);
     assert_eq!(
@@ -551,7 +551,7 @@ async fn each_bound_lands_at_the_last_number_inside_and_is_refused_by_name_at_th
     assert_eq!(described["specimen"].as_str().unwrap().contains("CMSX-6"), true);
 
     let names = |text: &str, name: &str| {
-        text.contains(&format!("({name}). That state is not sealed.")) && !text.contains("sha256_seal")
+        text.contains(&format!("({name}). That state is not sealed.")) && !text.contains("sha384_seal")
     };
     // (extension, stress, the refusal, or none when the start is inside the card)
     let cases: [(f64, f64, Option<&str>); 18] = [
@@ -821,8 +821,9 @@ async fn the_creep_card_is_listed_in_the_materials_domain_as_the_eighteenth_card
     let client = Client::new();
     let listed: Value = client.get(format!("{base}/cards")).send().await.unwrap().json().await.unwrap();
     let all_pairs = listed["cards"].as_array().unwrap();
-    assert_eq!(all_pairs.len(), 40);
-    let listed = &all_pairs[17];
+    assert_eq!(all_pairs.len(), protocol_mcp_gateway::CARDS);
+    // The seventeenth since the fold of 0.15.0 (the eighteenth until 0.14.3).
+    let listed = &all_pairs[16];
     assert_eq!(listed["domain"], "materials");
     assert_eq!(listed["card"], "creep_cmsx6");
 }

@@ -26,7 +26,7 @@ struct Open {
 
 impl Open {
     fn start() -> Open {
-        let mut child = Command::new(env!("CARGO_BIN_EXE_hosted_door"))
+        let mut child = Command::new(env!("CARGO_BIN_EXE_hosted_door")).arg("--unsigned")
             .args(["--open", "--port", "0"])
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -101,12 +101,14 @@ fn refused(door: &mut Stdio2, tool: &str, arguments: &Value) -> String {
     text
 }
 
+/// The C-core card's worked transient, asked for longer than it lasts (from
+/// 0.15.0; the point-kinetics E-core card it replaces is retired).
 fn reactor_burst(record_every: u64) -> Value {
     json!({
-        "domain": "energy", "card": "reactor_spert3",
-        "initial": { "coolant_temperature_k": 300.92777777777775 },
-        "dt_s": 0.0007144471176212568,
-        "segments": [{ "steps": 3000, "load": { "reactivity_inserted_dollar": 0.9982818460448638 } }],
+        "domain": "energy", "card": "reactor_spert3_ccore",
+        "initial": { "initial_temperature_k": 298.15, "system_pressure_psig": 2500.0 },
+        "dt_s": 0.0001,
+        "segments": [{ "steps": 3000, "load": { "reactivity_inserted_dollar": 1.25, "coolant_flow_m_per_s": 0.0 } }],
         "record_every": record_every
     })
 }
@@ -174,7 +176,7 @@ async fn every_connection_gives_the_same_bytes_for_the_changed_tools() {
     let keyed = Hosted::start(
         vec![json!({
             "client": "all", "key_sha256": sha(KEY),
-            "cards": [["energy", "thermal"], ["energy", "reactor_spert3"], ["signal", "resonance"]],
+            "cards": [["energy", "thermal"], ["energy", "reactor_spert3_ccore"], ["signal", "resonance"]],
             "solvers": ["atom_dft"], "max_in_flight": 4, "max_permits": 2
         })],
         None,
@@ -183,7 +185,7 @@ async fn every_connection_gives_the_same_bytes_for_the_changed_tools() {
     let readout = json!({ "quantities": ["power_mw", "energy_mws"], "first_past": { "quantity": "power_mw", "above": 5.0 } });
     let (_, plate) = stdio.tool("run_trajectory", &thermal_run(10, 293.15));
     let plate = parsed(&plate);
-    let wrong = "0".repeat(64);
+    let wrong = "0".repeat(96);
     let resonance_step = json!({
         "domain": "signal", "card": "resonance",
         "parameters": { "displacement_m": 0.0, "velocity_m_s": 0.0, "t_s": 0.5, "energy_anchor_j": 0.0, "boundary_work_j": 0.0, "accel_m_s2": 1.0, "dt_s": 0.0003 }
@@ -225,14 +227,14 @@ async fn every_connection_gives_the_same_bytes_for_the_changed_tools() {
 fn each_list_states_its_count() {
     let mut door = Stdio2::start(None);
     let cards = ok(&mut door, "list_cards", &json!({}));
-    assert_eq!(cards["count"], json!(40));
-    assert_eq!(cards["cards"].as_array().unwrap().len(), 40);
+    assert_eq!(cards["count"], json!(protocol_mcp_gateway::CARDS));
+    assert_eq!(cards["cards"].as_array().unwrap().len(), protocol_mcp_gateway::CARDS);
     let solvers = ok(&mut door, "list_solvers", &json!({}));
-    assert_eq!(solvers["count"], json!(25));
-    assert_eq!(solvers["solvers"].as_array().unwrap().len(), 25);
+    assert_eq!(solvers["count"], json!(protocol_mcp_gateway::SOLVERS));
+    assert_eq!(solvers["solvers"].as_array().unwrap().len(), protocol_mcp_gateway::SOLVERS);
     // The count comes first, before the list it counts.
     let (_, text) = door.tool("list_cards", &json!({}));
-    assert!(text.starts_with("{\"count\":40,\"cards\":["), "{}", &text[..40]);
+    assert!(text.starts_with(&format!("{{\"count\":{},\"cards\":[", protocol_mcp_gateway::CARDS)), "{}", &text[..40]);
 }
 
 #[test]
@@ -286,12 +288,12 @@ fn a_short_check_that_does_not_hold_hands_back_no_seal() {
     let mut door = Stdio2::start(None);
     let run = thermal_run(10, 293.15);
     let answer = ok(&mut door, "run_trajectory", &run);
-    let typed = "2be9b0f1d5a5c1c7e8d1d5f3f0a1b2c3d4e5f60718293a4b5c6d7e8f9a0b1c2d";
+    let typed = "2be9b0f1d5a5c1c7e8d1d5f3f0a1b2c3d4e5f60718293a4b5c6d7e8f9a0b1c2d00112233445566778899aabbccddeeff";
     let (_, text) = door.tool("verify_tape", &json!({ "request": run, "run_seal": typed }));
     let report = parsed(&text);
     assert_eq!(report["holds"], json!(false));
     assert_eq!(report["cause"], json!("run_seal"));
-    assert!(report.get("recomputed_run_seal").is_none() && report.get("recomputed_receipt_sha256").is_none(), "{text}");
+    assert!(report.get("recomputed_run_seal").is_none() && report.get("recomputed_receipt_sha384").is_none(), "{text}");
     assert!(!text.contains(answer["run_seal"].as_str().unwrap()), "the true seal was handed back: {text}");
     assert!(report["not_held"].as_str().unwrap().contains("the true run_seal of this request is in the answer run_trajectory gives to it"), "{text}");
     // Held: the seal computed again is given.
@@ -340,14 +342,14 @@ fn every_short_check_says_it_compared_no_answer_text() {
     assert_eq!(short["holds"], json!(true), "the short check computes the request, not the copy");
     let words = short["text_not_compared"].as_str().unwrap();
     assert!(words.contains("No answer text you hold was compared, so a copy with a decimal changed still holds here"), "{words}");
-    assert!(words.contains("compare that receipt_sha256 with recomputed_receipt_sha256"), "{words}");
+    assert!(words.contains("compare that receipt_sha384 with recomputed_receipt_sha384"), "{words}");
     // verify_receipt on the copy is the check of the text.
     let receipt = ok(&mut door, "verify_receipt", &json!({ "response_text": altered }));
     assert_eq!(receipt["matches"], json!(false));
     // The same sentence on a run's and a dataset's short check, held or not.
     let run = thermal_run(10, 293.15);
     let made = ok(&mut door, "run_trajectory", &run);
-    for seal in [made["run_seal"].clone(), json!("0".repeat(64))] {
+    for seal in [made["run_seal"].clone(), json!("0".repeat(96))] {
         let report = ok(&mut door, "verify_tape", &json!({ "request": run, "run_seal": seal }));
         assert_eq!(report["text_not_compared"].as_str(), Some(words));
     }
@@ -360,7 +362,7 @@ fn every_short_check_says_it_compared_no_answer_text() {
     // words were "No tool compares the decimals in a dataset's rows" until the
     // long form held each decimal of a final state to its hex; since 0.12.0
     // the long form runs the plan again and compares the answer byte for byte.
-    let report = ok(&mut door, "verify_dataset", &json!({ "request": plan, "dataset_seal": "0".repeat(64) }));
+    let report = ok(&mut door, "verify_dataset", &json!({ "request": plan, "dataset_seal": "0".repeat(96) }));
     let words = report["text_not_compared"].as_str().unwrap();
     assert!(words.contains("no rows you hold were compared") && words.contains("then runs its plan again and compares the engine's full answer with the one sent, value by value and byte for byte"), "{report}");
 }
@@ -434,7 +436,8 @@ fn continued_start(card: &str, run: &mut Value, step: &mut Value) {
         "tesseract" => both(run, step, "energy_defect_j", json!(1.0e-13)),
         "cell_18650pf" => both(run, step, "soc", json!(0.9)),
         "satellite_lageos1" => both(run, step, "forecast_elapsed_s", json!(3600.0)),
-        "cell_2170_model3" => both(run, step, "case_temperature_least_c", json!(24.0)),
+        // Under the worked example's -20 degC, the most it carries.
+        "cell_2170_model3" => both(run, step, "case_temperature_least_c", json!(-25.0)),
         "tokamak_jet_dte1" => both(run, step, "elapsed_time_s", json!(1.0)),
         "accumulator_sbo450" => both(run, step, "work_moved_j", json!(100.0)),
         "solar_system" => both(run, step, "booked_work", json!(1.0e12)),
@@ -478,7 +481,7 @@ fn a_start_that_carries_a_run_on_arrives_with_from_on_every_card_the_rule_holds(
             let text = refused(&mut door, tool, request);
             assert!(text.ends_with("(ContinuationWithoutUpstream)."), "{card} {tool}: {text}");
             assert!(text.contains(&format!("'{section}.{field}' is ")), "{card} {tool}: {text}");
-            assert!(!text.contains("run_seal") && !text.contains("sha256_seal"), "{card} {tool}: {text}");
+            assert!(!text.contains("run_seal") && !text.contains("sha384_seal"), "{card} {tool}: {text}");
         }
         // Continued from the worked run's sealed answer, with from: taken; a
         // card that serves no continuation through from takes only a fresh

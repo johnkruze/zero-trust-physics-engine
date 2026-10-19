@@ -122,7 +122,7 @@ async fn a_start_without_energy_defect_j_is_refused() {
     let (status, text) = post(&base, "/verify_physics", &step).await;
     assert_eq!(status, 422, "{text}");
     assert!(text.contains("'energy_defect_j'"), "{text}");
-    assert!(!text.contains("sha256_seal"), "{text}");
+    assert!(!text.contains("sha384_seal"), "{text}");
 
     let mut trajectory = card["example_run_trajectory"].clone();
     trajectory["initial"]

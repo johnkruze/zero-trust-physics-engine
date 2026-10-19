@@ -12,7 +12,7 @@ use std::process::{Child, Command, Stdio};
 
 use hosted_support::*;
 use serde_json::{Value, json};
-use sha2::{Digest, Sha256};
+use sha2::{Digest, Sha384};
 use tokio::net::TcpListener;
 
 const KEY: &str = "design-run-key";
@@ -24,7 +24,7 @@ struct Open {
 
 impl Open {
     fn start() -> Open {
-        let mut child = Command::new(env!("CARGO_BIN_EXE_hosted_door"))
+        let mut child = Command::new(env!("CARGO_BIN_EXE_hosted_door")).arg("--unsigned")
             .args(["--open", "--port", "0"])
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -194,7 +194,7 @@ fn the_timeline_found_is_an_ordinary_run_and_the_candidates_one_plan_each_recomp
     // The answer carries a receipt over every byte before it.
     let receipt = ok(&mut door, "verify_receipt", &json!({ "response_text": text }));
     assert_eq!(receipt["matches"], true);
-    assert!(designed["design_seal"].as_str().is_some_and(|seal| seal.len() == 64));
+    assert!(designed["design_seal"].as_str().is_some_and(|seal| seal.len() == 96));
 }
 
 /// The design seal by its rule: the text of the request, then the tail.
@@ -238,7 +238,7 @@ fn design_seal_of(answer: &Value) -> String {
     });
     // serde_json keeps the order written above (preserve_order).
     text.push_str(&serde_json::to_string(&tail).unwrap());
-    hex::encode(Sha256::digest(text.as_bytes()))
+    hex::encode(Sha384::digest(text.as_bytes()))
 }
 
 #[test]

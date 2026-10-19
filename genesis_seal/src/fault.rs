@@ -250,14 +250,14 @@ pub fn fault_of(head: &[u8], rows: &[u8], report: &DatasetReport, most_rows: u64
         let sealed_plan = Head::read(head).ok()?;
         let plan = DatasetRequest::from_value(sealed_plan.request.clone()).ok()?;
         let search_most = search_most(head.len(), most_rows);
-        Some((RowsRead { plan, lines: crate::rows::lines(rows)?, search_most }, sealed_plan.plan_sha256))
+        Some((RowsRead { plan, lines: crate::rows::lines(rows)?, search_most }, sealed_plan.plan_sha384))
     };
     match (report.cause?, report.row) {
         (Cause::Plan, None) => {
             let (read, sealed_plan) = rows_read()?;
-            if read.plan.plan_sha256() != sealed_plan {
+            if read.plan.plan_sha384() != sealed_plan {
                 return Some(unnamed(
-                    "The plan was changed: the request in the head does not hash to the plan_sha256 in the head. No row is named: the rows were not compared with a plan that is not the sealed one.",
+                    "The plan was changed: the request in the head does not hash to the plan_sha384 in the head. No row is named: the rows were not compared with a plan that is not the sealed one.",
                 ));
             }
             // The rows read are not as many as the plan has. The first place

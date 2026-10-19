@@ -101,7 +101,6 @@ pub const OPEN_SOLVE_SECONDS: &[(&str, f64)] = &[
     ("culture_trichoderma_ambr250", 1.5), // a 1000 h record with every halving: 0.68 s, 1.8 s under load
     ("culture_trichoderma_atp", 1.5), // a 1000 h record: 0.19 s at six halvings, about 0.75 s with all eight
     ("ablator_slab", 450.0), // an hour of stream on 1 m, 256 rows each a corner: 379 s; the held face, an hour and an hour after: 74 to 76 s
-    ("blast_wave_tnt_air", 0.6), // at the near-field limit: 0.52 s, 0.54 s with canonical math
     ("atom_dft", 0.5),
     ("water_hammer_oil_line", 0.42), // 1 s of transient with air and every history: 0.26 s, 0.39 s with canonical math
     ("fusion_pb11_thermal", 0.4),
@@ -112,6 +111,7 @@ pub const OPEN_SOLVE_SECONDS: &[(&str, f64)] = &[
     ("pneumatic_hose_resonance", 0.065), // 64 frequencies to the cut-on at the tube's rating: 0.039 s, 0.057 s with canonical math
     ("seawater_column", 0.06),
     ("pipe_flow_superpipe", 0.01),
+    ("blast_wave_tnt_air", 45.0), // at the fireball's edge, Z 0.8402: 44.8 s on a machine at load average 100 (2026-10-18), the slowest input measured
     ("propeller_apc_10x7e", 0.01),
     ("modulus_bam_s355", 0.01),
 ];
@@ -147,27 +147,30 @@ pub const OPEN_SOLVE_SECONDS_UNLISTED: f64 = 10_000.0;
 /// water_hammer_oil_line 31, where its 32 come to 40058 characters (41146
 /// for 33 before); the test
 /// `an_inline_answer_holds_the_worked_solves_its_solver_says` holds each
-/// number to the engine.
+/// number to the engine. Under seal rule v2 (engine 0.15.0) each row's seal
+/// is 32 characters longer and the cap is 42,500: measured on the squad
+/// seal_v2's build on 2026-10-19 (.logs/inline_counts.txt), every count is
+/// one more but plasma_sheath_ram_c2's, 17 (40,437 characters).
 pub const INLINE_WORKED_SOLVES: &[(&str, u64)] = &[
-    ("modulus_bam_s355", 55),
-    ("seawater_column", 60),
-    ("argon_pair_gas", 52),
-    ("fusion_pb11_lhd", 53),
-    ("water_hammer_oil_line", 31),
-    ("ablator_slab", 24),
-    ("fusion_pb11_thermal", 37),
-    ("tokamak_dt_beam_target", 22),
-    ("orifice_air_chamber", 57),
+    ("modulus_bam_s355", 56),
+    ("seawater_column", 61),
+    ("argon_pair_gas", 53),
+    ("fusion_pb11_lhd", 54),
+    ("water_hammer_oil_line", 32),
+    ("ablator_slab", 25),
+    ("fusion_pb11_thermal", 38),
+    ("tokamak_dt_beam_target", 23),
+    ("orifice_air_chamber", 58),
     ("blast_wave_tnt_air", 42),
-    ("stress_plate_hole_s235", 38),
-    ("stress_plate_hole_s235_elastic", 51),
-    ("icf_hotspot_burn", 16),
-    ("ln2_line_dlr_fttf", 25),
+    ("stress_plate_hole_s235", 39),
+    ("stress_plate_hole_s235_elastic", 52),
+    ("icf_hotspot_burn", 17),
+    ("ln2_line_dlr_fttf", 26),
     ("plasma_sheath_ram_c2", 17),
     // Its worked solve answers the thermocouple and the fuel at each of the
     // history's 300 times: one inline answer holds 10 (37,145 characters), and 11
-    // are refused (2026-10-18).
-    ("fuel_rod_triga_jsi", 10),
+    // are refused (2026-10-18); under seal rule v2 and the 42,500 cap, 11.
+    ("fuel_rod_triga_jsi", 11),
 ];
 
 pub(crate) fn solve_seconds(solver: &str) -> f64 {
@@ -339,7 +342,7 @@ mod tests {
             "Physical Violation: the plan asks for 6 solves of step_flow_armaly, more than the 5 one plan of it may have on the open connection (OPEN_PLAN_SECONDS): a solve of step_flow_armaly is counted at 3 s, its measured time at the slowest input of its range, and a plan at no more than 15 s, so that it ends inside the time for an answer. Send it as plans of 5 or fewer: each solve's proof is the same either way, and a dataset proof is the proof of the plan sent. Nothing was computed and no proof is issued."
         );
         // The same plan checked by request, and compared with measurements.
-        assert_eq!(fault("verify_dataset", &object(json!({ "request": plan(6), "dataset_seal": "ab".repeat(32) }))), Some(sentence.clone()));
+        assert_eq!(fault("verify_dataset", &object(json!({ "request": plan(6), "dataset_seal": "ab".repeat(48) }))), Some(sentence.clone()));
         assert_eq!(fault("validate_series", &object(json!({ "solves": plan(6), "quantity": "reattachment_length_step_heights", "measurements": [] }))), Some(sentence));
         // A fast solver keeps the engine's own limit, and a plan of runs on a card is not counted here.
         let bar = crate::solvers::example_solve(crate::solvers::find("propeller_apc_10x7e").unwrap());
@@ -356,7 +359,7 @@ mod tests {
         assert_eq!(
             said_of_solver("water_hammer_oil_line"),
             format!(
-                "On the open connection a plan of solves is counted before it starts and holds no more than 15 s of solving (OPEN_PLAN_SECONDS), or one solve of a solver counted at more: a solve of water_hammer_oil_line is counted at {} s, its measured time at the slowest input of its range, so the count admits at most {} of it in one plan there; the local connection and a connection with a key admit the engine's own 64; an answer returned inline is at most 40000 characters and holds 31 of its worked solve (example_solve) in summary, on every connection: a plan is refused before solving only where the least its summary can come to is more, and is otherwise counted once solved, so a plan of a few more of it is solved and then refused.",
+                "On the open connection a plan of solves is counted before it starts and holds no more than 15 s of solving (OPEN_PLAN_SECONDS), or one solve of a solver counted at more: a solve of water_hammer_oil_line is counted at {} s, its measured time at the slowest input of its range, so the count admits at most {} of it in one plan there; the local connection and a connection with a key admit the engine's own 64; an answer returned inline is at most 42500 characters and holds 32 of its worked solve (example_solve) in summary, on every connection: a plan is refused before solving only where the least its summary can come to is more, and is otherwise counted once solved, so a plan of a few more of it is solved and then refused.",
                 solve_seconds("water_hammer_oil_line"),
                 open_plan_solves("water_hammer_oil_line")
             )
@@ -373,7 +376,7 @@ mod tests {
         }
         assert_eq!(
             said_of_solver("stress_plate_hole_s235"),
-            "On the open connection a plan of solves is counted before it starts and holds no more than 15 s of solving (OPEN_PLAN_SECONDS), or one solve of a solver counted at more: a solve of stress_plate_hole_s235 is counted at 1.7 s, its measured time at the slowest input of its range, so the count admits at most 8 of it in one plan there; the local connection and a connection with a key admit the engine's own 64, and there an answer returned inline is at most 40000 characters and holds 38 of its worked solve (example_solve) in summary: a plan is refused before solving only where the least its summary can come to is more, and is otherwise counted once solved, so a plan of a few more of it is solved and then refused."
+            "On the open connection a plan of solves is counted before it starts and holds no more than 15 s of solving (OPEN_PLAN_SECONDS), or one solve of a solver counted at more: a solve of stress_plate_hole_s235 is counted at 1.7 s, its measured time at the slowest input of its range, so the count admits at most 8 of it in one plan there; the local connection and a connection with a key admit the engine's own 64, and there an answer returned inline is at most 42500 characters and holds 39 of its worked solve (example_solve) in summary: a plan is refused before solving only where the least its summary can come to is more, and is otherwise counted once solved, so a plan of a few more of it is solved and then refused."
         );
     }
 
@@ -397,7 +400,8 @@ mod tests {
         // The new solvers of this version hold the counts their times give.
         assert_eq!(
             ["junction_nist_b7_s2", "icf_hotspot_burn", "stress_plate_hole_s235", "blast_wave_tnt_air", "water_hammer_oil_line", "orifice_air_chamber", "pneumatic_hose_resonance", "ln2_line_dlr_fttf", "plasma_sheath_ram_c2", "culture_trichoderma_ambr250"].map(open_plan_solves),
-            [1, 1, 8, 25, 35, 50, 64, 7, 9, 10]
+            // 0.15.0: blast_wave_tnt_air is the TNT twin's physics, counted at its own time: 1, from 25.
+            [1, 1, 8, 1, 35, 50, 64, 7, 9, 10]
         );
     }
 
@@ -413,7 +417,7 @@ mod tests {
             (&history, "parameters.history_time_s[1]", 1.0e-9, 5.0),
         ] {
             assert_eq!(fault("solve", &object(request.clone())), None, "{request}");
-            assert_eq!(fault("verify_solution", &object(json!({ "request": request, "solution_seal": "ab".repeat(32) }))), None, "{request}");
+            assert_eq!(fault("verify_solution", &object(json!({ "request": request, "solution_seal": "ab".repeat(48) }))), None, "{request}");
             let flip = json!({ "request": request, "vary": vary, "low": low, "high": high });
             assert_eq!(fault("find_flip", &object(flip)), None, "{request}");
         }

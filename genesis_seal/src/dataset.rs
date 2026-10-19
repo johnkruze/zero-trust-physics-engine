@@ -1,7 +1,7 @@
 //! A dataset: its seal, its manifest head, its check, and the proof of one row.
 //!
-//! The dataset seal is SHA-256 of three texts with nothing between them: the
-//! plan hash as 64 hex characters, the root of the row tree as 64 hex
+//! The dataset seal is SHA-384 of three texts with nothing between them: the
+//! plan hash as 96 hex characters, the root of the row tree as 96 hex
 //! characters, and the compact JSON of the counts.
 //!
 //! A check names the first break in this order: `plan`, then for each row
@@ -14,7 +14,7 @@ use std::fmt;
 use std::io::{self, Read, Seek, SeekFrom, Write};
 
 use serde_json::{Map, Value};
-use sha2::{Digest, Sha256};
+use sha2::{Digest, Sha384};
 
 use crate::frames::{FramesFile, FramesHeader, FramesRefusal, HEADER_LEN, write_frames};
 use crate::plan::{DatasetRequest, PlanRefusal, Return, Store};
@@ -37,19 +37,20 @@ const HEAD_KEYS: &[&str] = &[
     "refused",
     "unadmitted",
     "frames",
-    "plan_sha256",
+    "plan_sha384",
     "merkle_root",
     "dataset_seal",
-    "rows_sha256",
-    "frames_sha256",
-    "receipt_sha256",
+    "rows_sha384",
+    "frames_sha384",
+    "seal_rule",
+    "receipt_sha384",
 ];
 
 const PROOF_KEYS: &[&str] = &[
     "row",
     "frames_hex",
     "audit_path",
-    "plan_sha256",
+    "plan_sha384",
     "merkle_root",
     "engine_version",
     "rows",
@@ -115,10 +116,10 @@ impl Counts {
     }
 }
 
-/// SHA-256 of `plan_sha256`, `merkle_root` and the counts text, as hex.
-pub fn dataset_seal(plan_sha256: &str, merkle_root: &str, counts: &Counts) -> String {
+/// SHA-384 of `plan_sha384`, `merkle_root` and the counts text, as hex.
+pub fn dataset_seal(plan_sha384: &str, merkle_root: &str, counts: &Counts) -> String {
     let mut bytes = Vec::new();
-    bytes.extend_from_slice(plan_sha256.as_bytes());
+    bytes.extend_from_slice(plan_sha384.as_bytes());
     bytes.extend_from_slice(merkle_root.as_bytes());
     bytes.extend_from_slice(counts.text().as_bytes());
     digest_hex(&bytes)
@@ -134,13 +135,13 @@ pub struct Head {
     /// The whole `run_dataset` request, in the order received.
     pub request: Value,
     pub counts: Counts,
-    pub plan_sha256: String,
+    pub plan_sha384: String,
     pub merkle_root: String,
     pub dataset_seal: String,
-    /// SHA-256 of the rows file, or null when the dataset came back inline.
-    pub rows_sha256: Option<String>,
-    /// SHA-256 of the frame file, or null when there is none.
-    pub frames_sha256: Option<String>,
+    /// SHA-384 of the rows file, or null when the dataset came back inline.
+    pub rows_sha384: Option<String>,
+    /// SHA-384 of the frame file, or null when there is none.
+    pub frames_sha384: Option<String>,
 }
 
 impl Head {
@@ -153,11 +154,12 @@ impl Head {
         let mut object = Map::new();
         object.insert("request".into(), self.request.clone());
         self.counts.write(&mut object);
-        object.insert("plan_sha256".into(), Value::from(self.plan_sha256.as_str()));
+        object.insert("plan_sha384".into(), Value::from(self.plan_sha384.as_str()));
         object.insert("merkle_root".into(), Value::from(self.merkle_root.as_str()));
         object.insert("dataset_seal".into(), Value::from(self.dataset_seal.as_str()));
-        object.insert("rows_sha256".into(), hash(&self.rows_sha256));
-        object.insert("frames_sha256".into(), hash(&self.frames_sha256));
+        object.insert("rows_sha384".into(), hash(&self.rows_sha384));
+        object.insert("frames_sha384".into(), hash(&self.frames_sha384));
+        object.insert(crate::SEAL_RULE_KEY.into(), Value::from(crate::SEAL_RULE));
         serde_json::to_string(&Value::Object(object)).expect("a head encodes as JSON")
     }
 
@@ -173,11 +175,11 @@ impl Head {
     /// it was written, so it follows the request's spelling.
     pub fn is_same_dataset_as(&self, other: &Head) -> bool {
         self.counts == other.counts
-            && self.plan_sha256 == other.plan_sha256
+            && self.plan_sha384 == other.plan_sha384
             && self.merkle_root == other.merkle_root
             && self.dataset_seal == other.dataset_seal
-            && self.rows_sha256 == other.rows_sha256
-            && self.frames_sha256 == other.frames_sha256
+            && self.rows_sha384 == other.rows_sha384
+            && self.frames_sha384 == other.frames_sha384
             && sealed_form(&self.request) == sealed_form(&other.request)
     }
 
@@ -185,20 +187,28 @@ impl Head {
     pub fn read(bytes: &[u8]) -> Result<Head, Refusal> {
         let value = crate::json_text::read(bytes)?;
         let object = value.as_object().ok_or(Refusal::NotAnObject)?;
+        crate::refusal::refuse_other_rule(object)?;
+        // The engine's signature, when the head carries one, follows its
+        // receipt; it is checked by `answer_signature`, not here.
+        let mut unsigned = object.clone();
+        if unsigned.get(crate::answer_signature::SIGNATURE_KEY).is_some_and(Value::is_object) {
+            unsigned.shift_remove(crate::answer_signature::SIGNATURE_KEY);
+        }
+        let object = &unsigned;
         require_exact_keys(object, HEAD_KEYS)?;
         let request = required(object, "request")?;
         if !request.is_object() {
             return Err(wrong("request", "a JSON object"));
         }
-        require_hash(object, "receipt_sha256")?;
+        require_hash(object, "receipt_sha384")?;
         Ok(Head {
             request: request.clone(),
             counts: Counts::read(object)?,
-            plan_sha256: require_hash(object, "plan_sha256")?,
+            plan_sha384: require_hash(object, "plan_sha384")?,
             merkle_root: require_hash(object, "merkle_root")?,
             dataset_seal: require_hash(object, "dataset_seal")?,
-            rows_sha256: optional_hash(object, "rows_sha256")?,
-            frames_sha256: optional_hash(object, "frames_sha256")?,
+            rows_sha384: optional_hash(object, "rows_sha384")?,
+            frames_sha384: optional_hash(object, "frames_sha384")?,
         })
     }
 }
@@ -522,7 +532,7 @@ fn named_check(sha256: &str, named: &Option<String>) -> FileCheck {
 /// comes first. A read error is kept, not lost.
 struct FrameStream<R> {
     input: R,
-    hasher: Sha256,
+    hasher: Sha384,
     /// Frames the header states that have not been given out.
     left: u64,
     /// Bytes read after the header, whole frames or not.
@@ -609,7 +619,7 @@ fn frames_not_read(error: io::Error) -> DatasetRefusal {
 /// when one was read.
 struct Streamed {
     examined: Examined,
-    frames_sha256: Option<String>,
+    frames_sha384: Option<String>,
 }
 
 /// The check, with the frame file as a stream. Refusals come in the order
@@ -637,7 +647,7 @@ fn examine<F: Read>(
             let have = FrameStream::fill(&mut input, &mut first).map_err(frames_not_read)?;
             let header =
                 FramesHeader::from_bytes(&first[..have]).map_err(DatasetRefusal::Frames)?;
-            let mut hasher = Sha256::new();
+            let mut hasher = Sha384::new();
             hasher.update(first);
             Some((
                 header,
@@ -664,7 +674,7 @@ fn examine<F: Read>(
     let Some((header, mut stream)) = stream else {
         return outcome.map(|examined| Streamed {
             examined,
-            frames_sha256: None,
+            frames_sha384: None,
         });
     };
     stream.drain();
@@ -679,10 +689,10 @@ fn examine<F: Read>(
     }
     let mut examined = outcome?;
     let sha256 = hex::encode(stream.hasher.finalize());
-    examined.report.frames_file = named_check(&sha256, &head.frames_sha256);
+    examined.report.frames_file = named_check(&sha256, &head.frames_sha384);
     Ok(Streamed {
         examined,
-        frames_sha256: Some(sha256),
+        frames_sha384: Some(sha256),
     })
 }
 
@@ -709,7 +719,7 @@ fn examine_rows<R: Read>(
         merkle_root: None,
         dataset_seal: None,
         receipt: check_receipt(head_bytes),
-        rows_file: named_check(&digest_hex(rows_bytes), &head.rows_sha256),
+        rows_file: named_check(&digest_hex(rows_bytes), &head.rows_sha384),
         // Set from the stream's hash once the whole stream is read.
         frames_file: if header.is_some() {
             FileCheck::NotNamed
@@ -723,9 +733,9 @@ fn examine_rows<R: Read>(
         leaves,
         first_frames,
     };
-    let plan_sha256 = request.plan_sha256();
+    let plan_sha384 = request.plan_sha384();
     let rows = lines.len() as u64;
-    if plan_sha256 != head.plan_sha256 || rows != request.totals().rows {
+    if plan_sha384 != head.plan_sha384 || rows != request.totals().rows {
         report.cause = Some(Cause::Plan);
         return Ok(examined(report, Vec::new(), Vec::new()));
     }
@@ -798,7 +808,7 @@ fn examine_rows<R: Read>(
         report.cause = Some(Cause::Root);
         return Ok(examined(report, leaves, first_frames));
     }
-    let seal = dataset_seal(&plan_sha256, &root, &counts);
+    let seal = dataset_seal(&plan_sha384, &root, &counts);
     report.dataset_seal = Some(seal.clone());
     let frame_file_agrees = header.is_none_or(|header| {
         header.rows == counts.rows
@@ -828,15 +838,15 @@ pub fn check_dataset(
     check_dataset_stream(head, rows, frames).map(|checked| checked.report)
 }
 
-/// The answer of `check_dataset_stream`: the report, and the SHA-256 of the
+/// The answer of `check_dataset_stream`: the report, and the SHA-384 of the
 /// two files as they were read.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StreamChecked {
     pub report: DatasetReport,
-    /// SHA-256 of the rows file, in hex.
-    pub rows_sha256: String,
-    /// SHA-256 of every byte read from the frame file, in hex, when one was given.
-    pub frames_sha256: Option<String>,
+    /// SHA-384 of the rows file, in hex.
+    pub rows_sha384: String,
+    /// SHA-384 of every byte read from the frame file, in hex, when one was given.
+    pub frames_sha384: Option<String>,
 }
 
 /// `check_dataset` with the frame file as a reader. It gives the report
@@ -857,8 +867,8 @@ pub fn check_dataset_stream<F: Read>(
     let streamed = examine(head, rows, frames)?;
     Ok(StreamChecked {
         report: streamed.examined.report,
-        rows_sha256: digest_hex(rows),
-        frames_sha256: streamed.frames_sha256,
+        rows_sha384: digest_hex(rows),
+        frames_sha384: streamed.frames_sha384,
     })
 }
 
@@ -870,7 +880,7 @@ pub struct RowProof {
     pub frames: Option<Vec<[u8; FRAME_LEN]>>,
     /// The sibling hashes, lowest first, as hex.
     pub audit_path: Vec<String>,
-    pub plan_sha256: String,
+    pub plan_sha384: String,
     pub merkle_root: String,
     pub counts: Counts,
     pub dataset_seal: String,
@@ -902,7 +912,7 @@ impl RowProof {
                     .collect::<Vec<Value>>(),
             ),
         );
-        object.insert("plan_sha256".into(), Value::from(self.plan_sha256.as_str()));
+        object.insert("plan_sha384".into(), Value::from(self.plan_sha384.as_str()));
         object.insert("merkle_root".into(), Value::from(self.merkle_root.as_str()));
         self.counts.write(&mut object);
         object.insert("dataset_seal".into(), Value::from(self.dataset_seal.as_str()));
@@ -913,6 +923,7 @@ impl RowProof {
     pub fn read(bytes: &[u8]) -> Result<RowProof, Refusal> {
         let value = crate::json_text::read(bytes)?;
         let object = value.as_object().ok_or(Refusal::NotAnObject)?;
+        crate::refusal::refuse_other_rule(object)?;
         require_exact_keys(object, PROOF_KEYS)?;
         let row = Row::read(required(object, "row")?)?;
         let frames = match required(object, "frames_hex")? {
@@ -943,10 +954,10 @@ impl RowProof {
         for item in path {
             let text = item
                 .as_str()
-                .filter(|text| crate::json_text::is_lower_hex(text, 64))
+                .filter(|text| crate::json_text::is_lower_hex(text, 96))
                 .ok_or(Refusal::NotExactHex {
                     field: "audit_path".to_string(),
-                    digits: 64,
+                    digits: 96,
                 })?;
             audit_path.push(text.to_string());
         }
@@ -954,7 +965,7 @@ impl RowProof {
             row,
             frames,
             audit_path,
-            plan_sha256: require_hash(object, "plan_sha256")?,
+            plan_sha384: require_hash(object, "plan_sha384")?,
             merkle_root: require_hash(object, "merkle_root")?,
             counts: Counts::read(object)?,
             dataset_seal: require_hash(object, "dataset_seal")?,
@@ -1001,7 +1012,7 @@ pub fn row_proof(
         row: the_row,
         frames: own_frames,
         audit_path: path.iter().map(hex::encode).collect(),
-        plan_sha256: examined.head.plan_sha256,
+        plan_sha384: examined.head.plan_sha384,
         merkle_root: examined.head.merkle_root,
         counts: examined.head.counts,
         dataset_seal: examined.head.dataset_seal,
@@ -1065,7 +1076,7 @@ pub fn check_row_proof(bytes: &[u8]) -> Result<ProofReport, DatasetRefusal> {
         report.cause = Some(Cause::Root);
         return Ok(report);
     }
-    if dataset_seal(&proof.plan_sha256, &proof.merkle_root, &proof.counts) != proof.dataset_seal {
+    if dataset_seal(&proof.plan_sha384, &proof.merkle_root, &proof.counts) != proof.dataset_seal {
         report.cause = Some(Cause::DatasetSeal);
         return Ok(report);
     }
@@ -1242,18 +1253,18 @@ impl Tally {
 
     /// The root, the dataset seal and the head, with no file hashes.
     fn finish(self, request: &DatasetRequest) -> Head {
-        let plan_sha256 = request.plan_sha256();
+        let plan_sha384 = request.plan_sha384();
         let merkle_root =
             hex::encode(tree::root(&self.leaves).expect("a plan has at least one row"));
-        let seal = dataset_seal(&plan_sha256, &merkle_root, &self.counts);
+        let seal = dataset_seal(&plan_sha384, &merkle_root, &self.counts);
         Head {
             request: request.value().clone(),
             counts: self.counts,
-            plan_sha256,
+            plan_sha384,
             merkle_root,
             dataset_seal: seal,
-            rows_sha256: None,
-            frames_sha256: None,
+            rows_sha384: None,
+            frames_sha384: None,
         }
     }
 }
@@ -1294,8 +1305,8 @@ pub fn assemble(
         },
     };
     if request.returns() == Return::File {
-        assembled.head.rows_sha256 = Some(digest_hex(&assembled.rows_text()));
-        assembled.head.frames_sha256 = assembled.frames_bytes().map(|bytes| digest_hex(&bytes));
+        assembled.head.rows_sha384 = Some(digest_hex(&assembled.rows_text()));
+        assembled.head.frames_sha384 = assembled.frames_bytes().map(|bytes| digest_hex(&bytes));
     }
     Ok(assembled)
 }
@@ -1316,7 +1327,7 @@ pub struct Written<R, F> {
 /// once, and the row is dropped: what stays is the leaf hashes, the counts
 /// and the running hash of the rows file. The 64-byte header of the frame
 /// file carries the dataset seal, which is known only at the end, so 64
-/// bytes are reserved first and written at offset 0 on `finish`. SHA-256 of
+/// bytes are reserved first and written at offset 0 on `finish`. SHA-384 of
 /// the frame file covers its header, so `finish` reads the file once more
 /// from its start to hash the final bytes.
 ///
@@ -1328,7 +1339,7 @@ pub struct DatasetWriter<R, F> {
     tally: Tally,
     next: u64,
     rows_out: R,
-    rows_hash: Sha256,
+    rows_hash: Sha384,
     frames_out: Option<F>,
     stored_frames: u64,
 }
@@ -1357,7 +1368,7 @@ impl<R: Write, F: Read + Write + Seek> DatasetWriter<R, F> {
             tally: Tally::new(engine_version, request.totals().rows),
             next: 0,
             rows_out,
-            rows_hash: Sha256::new(),
+            rows_hash: Sha384::new(),
             frames_out,
             stored_frames: 0,
         })
@@ -1425,18 +1436,18 @@ impl<R: Write, F: Read + Write + Seek> DatasetWriter<R, F> {
         }
         self.rows_out.flush().map_err(write_failed)?;
         let mut head = self.tally.finish(&self.request);
-        head.rows_sha256 = Some(hex::encode(self.rows_hash.finalize()));
+        head.rows_sha384 = Some(hex::encode(self.rows_hash.finalize()));
         if let Some(sink) = self.frames_out.as_mut() {
             let header = FramesHeader {
                 rows: head.counts.rows,
                 frames: self.stored_frames,
-                dataset_seal: hash_from_hex(&head.dataset_seal).expect("a seal is 64 hex digits"),
+                dataset_seal: hash_from_hex(&head.dataset_seal).expect("a seal is 96 hex digits"),
             };
             sink.seek(SeekFrom::Start(0)).map_err(write_failed)?;
             sink.write_all(&header.to_bytes()).map_err(write_failed)?;
             sink.flush().map_err(write_failed)?;
             sink.seek(SeekFrom::Start(0)).map_err(write_failed)?;
-            let mut hash = Sha256::new();
+            let mut hash = Sha384::new();
             let mut block = vec![0_u8; 1 << 20];
             loop {
                 let read = sink.read(&mut block).map_err(write_failed)?;
@@ -1445,7 +1456,7 @@ impl<R: Write, F: Read + Write + Seek> DatasetWriter<R, F> {
                 }
                 hash.update(&block[..read]);
             }
-            head.frames_sha256 = Some(hex::encode(hash.finalize()));
+            head.frames_sha384 = Some(hex::encode(hash.finalize()));
         }
         Ok(Written {
             head,
@@ -1474,8 +1485,8 @@ mod tests {
             counts.text(),
             r#"{"engine_version":"genesis_kernel_v0.1.0","rows":8,"completed":6,"ended":2,"refused":1,"unadmitted":1,"frames":904}"#
         );
-        let plan = "11".repeat(32);
-        let root = "22".repeat(32);
+        let plan = "11".repeat(48);
+        let root = "22".repeat(48);
         let mut bytes = format!("{plan}{root}").into_bytes();
         bytes.extend_from_slice(counts.text().as_bytes());
         assert_eq!(dataset_seal(&plan, &root, &counts), digest_hex(&bytes));
@@ -1492,11 +1503,11 @@ mod tests {
             unadmitted: 1,
             frames: 904,
         };
-        let plan = "11".repeat(32);
-        let root = "22".repeat(32);
+        let plan = "11".repeat(48);
+        let root = "22".repeat(48);
         let seal = dataset_seal(&plan, &root, &counts);
         assert_ne!(dataset_seal(&root, &plan, &counts), seal);
-        assert_ne!(dataset_seal(&plan, &"23".repeat(32), &counts), seal);
+        assert_ne!(dataset_seal(&plan, &"23".repeat(48), &counts), seal);
         for edit in 0..7 {
             let mut other = counts.clone();
             match edit {

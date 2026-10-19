@@ -44,7 +44,7 @@ fn client(label: &str, key: &str, cards: Value, solvers: Value, max: u64) -> Val
 /// cards come from the engine, not from a number in this file.
 fn keys_file(all_cards: &Value) -> Value {
     json!([
-        client("all", KEY_ALL, all_cards.clone(), json!(["atom_dft", "ablator_slab", "journal_bearing_sheffield", "propeller_apc_10x7e", "modulus_bam_s355", "seawater_column", "argon_pair_gas", "fusion_pb11_lhd", "fusion_pb11_thermal", "step_flow_armaly", "culture_trichoderma_ambr250", "tokamak_dt_beam_target", "pipe_flow_superpipe", "fuel_rod_triga_jsi", "culture_trichoderma_atp", "junction_nist_b7_s2", "water_hammer_oil_line", "orifice_air_chamber", "pneumatic_hose_resonance", "blast_wave_tnt_air", "stress_plate_hole_s235", "stress_plate_hole_s235_elastic", "icf_hotspot_burn", "ln2_line_dlr_fttf", "plasma_sheath_ram_c2"]), 8),
+        client("all", KEY_ALL, all_cards.clone(), json!(["atom_dft", "ablator_slab", "journal_bearing_sheffield", "propeller_apc_10x7e", "modulus_bam_s355", "seawater_column", "argon_pair_gas", "fusion_pb11_lhd", "fusion_pb11_thermal", "step_flow_armaly", "culture_trichoderma_ambr250", "tokamak_dt_beam_target", "pipe_flow_superpipe", "blast_wave_tnt_air", "fuel_rod_triga_jsi", "culture_trichoderma_atp", "junction_nist_b7_s2", "water_hammer_oil_line", "orifice_air_chamber", "pneumatic_hose_resonance", "stress_plate_hole_s235", "stress_plate_hole_s235_elastic", "icf_hotspot_burn", "ln2_line_dlr_fttf", "plasma_sheath_ram_c2"]), 8),
         client("thermal", KEY_THERMAL, json!([["energy", "thermal"]]), json!([]), 8),
         client(
             "materials",
@@ -134,6 +134,8 @@ impl Hosted {
 
     async fn start_file(file: &Path, dataset_dir: Option<&Path>, origins: &[&str]) -> Hosted {
         let mut command = Command::new(env!("CARGO_BIN_EXE_hosted_door"));
+        // A door with no answer key serves unsigned answers only when told so.
+        command.arg("--unsigned");
         command.arg("--port").arg("0").arg("--keys").arg(file);
         if let Some(dir) = dataset_dir {
             command.arg("--dataset-dir").arg(dir);
@@ -300,7 +302,7 @@ async fn a_key_that_sees_everything_gets_the_bytes_of_the_stdio_door() {
         tool_line(9, "solve", &json!({"solver": "atom_dft", "parameters": {"atomic_number": 3}})),
         tool_line(10, "solve", &json!({"solver": "atom_dft", "parameters": {"atomic_number": 99}})),
         tool_line(11, "verify_receipt", &json!({"response_text": "no receipt"})),
-        tool_line(12, "verify_dataset", &json!({"dataset_seal": "ab".repeat(32)})),
+        tool_line(12, "verify_dataset", &json!({"dataset_seal": "ab".repeat(48)})),
         tool_line(13, "verify_step", &json!({"domain": "energy", "card": "nope", "parameters": {}})),
     ];
     for specimen in &all {
@@ -659,7 +661,7 @@ async fn two_keys_see_their_own_cards_and_their_own_datasets() {
     assert_eq!(serde_json::from_str::<Value>(&result_text(&found)).unwrap()["holds"], true);
     let other = hosted.tool(KEY_THERMAL, "verify_dataset", &json!({"dataset_seal": seal})).await;
     let missing = hosted
-        .tool(KEY_THERMAL, "verify_dataset", &json!({"dataset_seal": "ab".repeat(32)}))
+        .tool(KEY_THERMAL, "verify_dataset", &json!({"dataset_seal": "ab".repeat(48)}))
         .await;
     assert!(is_error(&other));
     assert_eq!(
@@ -908,7 +910,7 @@ fn refused_at_start(contents: &str, needle: &str) {
     let dir = scratch("refused");
     let file = dir.join("keys.json");
     std::fs::write(&file, contents).unwrap();
-    let output = std::process::Command::new(env!("CARGO_BIN_EXE_hosted_door"))
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_hosted_door")).arg("--unsigned")
         .args(["--port", "0", "--keys"])
         .arg(&file)
         .output()
@@ -992,7 +994,7 @@ fn a_keys_file_with_a_fault_is_refused_at_start_by_name() {
         "client",
     );
     // The file is not there.
-    let output = std::process::Command::new(env!("CARGO_BIN_EXE_hosted_door"))
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_hosted_door")).arg("--unsigned")
         .args(["--port", "0", "--keys", "/nonexistent/keys.json"])
         .output()
         .unwrap();
@@ -1005,7 +1007,7 @@ fn a_keys_file_with_a_fault_is_refused_at_start_by_name() {
         vec!["--port", "0", "--keys", "x", "--bogus", "1"],
         vec!["--port", "no", "--keys", "x"],
     ] {
-        let output = std::process::Command::new(env!("CARGO_BIN_EXE_hosted_door"))
+        let output = std::process::Command::new(env!("CARGO_BIN_EXE_hosted_door")).arg("--unsigned")
             .args(arguments)
             .output()
             .unwrap();
@@ -1125,7 +1127,7 @@ async fn a_standard_mcp_client_initializes_lists_tools_and_calls_one() {
     let text = called.content[0].as_text().unwrap().text.clone();
     let direct = result_text(&stdio.raw(&tool_line(1, "verify_step", &step)).await);
     assert_eq!(text, direct);
-    assert!(text.contains("sha256_seal"));
+    assert!(text.contains("sha384_seal"));
 
     let hidden = json!({"domain": "materials", "card": "ti64_lattice"});
     let refused = client

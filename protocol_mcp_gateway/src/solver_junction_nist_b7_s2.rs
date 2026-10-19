@@ -207,7 +207,7 @@ pub fn reject_name(reject: &JunctionReject) -> &'static str {
 }
 
 fn field_words() -> String {
-    "SHA-256 of the count of the numbers that follow as 8 little-endian bytes, which is twice the number of points, then the phase each point ended at, in radians, then the voltage each point ended at, in volts, each in the order asked, all as little-endian f64 bytes.".to_string()
+    "SHA-384 of the count of the numbers that follow as 8 little-endian bytes, which is twice the number of points, then the phase each point ended at, in radians, then the voltage each point ended at, in volts, each in the order asked, all as little-endian f64 bytes.".to_string()
 }
 
 fn sections() -> Sections {

@@ -10,7 +10,7 @@ use genesis_solvers::propeller_apc_10x7e::{self as propeller, PropellerQuestion}
 use protocol_mcp_gateway::app;
 use reqwest::Client;
 use serde_json::{Value, json};
-use sha2::{Digest, Sha256};
+use sha2::{Digest, Sha384};
 use tokio::net::TcpListener;
 
 async fn spawn_app() -> String {
@@ -109,12 +109,12 @@ async fn a_moving_and_a_resting_propeller_match_the_solver_bit_for_bit() {
         assert_eq!(body["invariants"]["thrust_balance_gap_hex"], bits(direct.thrust_balance_gap));
 
         // The field hash is the count, then the three ring arrays.
-        let mut hasher = Sha256::new();
+        let mut hasher = Sha384::new();
         hasher.update((3 * propeller::ANNULI as u64).to_le_bytes());
         for value in direct.inflow_angle_rad.iter().chain(&direct.ring_thrust_n).chain(&direct.ring_torque_n_m) {
             hasher.update(value.to_le_bytes());
         }
-        assert_eq!(body["field_sha256"], hex::encode(hasher.finalize()));
+        assert_eq!(body["field_sha384"], hex::encode(hasher.finalize()));
 
         // The same request again is the same bytes.
         let (_, again) = post(&base, "/solve", &request).await;

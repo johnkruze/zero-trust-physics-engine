@@ -12,7 +12,7 @@ use genesis_solvers::fusion_pb11_thermal::{self as thermal, ThermalQuestion};
 use protocol_mcp_gateway::app;
 use reqwest::Client;
 use serde_json::{Value, json};
-use sha2::{Digest, Sha256};
+use sha2::{Digest, Sha384};
 use tokio::net::TcpListener;
 
 async fn spawn_app() -> String {
@@ -83,16 +83,16 @@ fn assert_number(section: &Value, key: &str, expected: f64) {
     assert_eq!(decimal.to_bits(), expected.to_bits(), "{key}");
 }
 
-fn sha256_hex(bytes: &[u8]) -> String {
-    hex::encode(Sha256::digest(bytes))
+fn sha384_hex(bytes: &[u8]) -> String {
+    hex::encode(Sha384::digest(bytes))
 }
 
 /// The receipt covers the wire bytes before it.
 fn assert_receipt(text: &str, body: &Value) {
-    let receipt = body["receipt_sha256"].as_str().expect("receipt");
-    let tail = format!(",\"receipt_sha256\":\"{receipt}\"}}");
+    let receipt = body["receipt_sha384"].as_str().expect("receipt");
+    let tail = format!(",\"receipt_sha384\":\"{receipt}\"}}");
     let document = text.strip_suffix(&tail).expect("the receipt is last");
-    assert_eq!(sha256_hex(format!("{document}}}").as_bytes()), receipt);
+    assert_eq!(sha384_hex(format!("{document}}}").as_bytes()), receipt);
 }
 
 fn beam(question: &LhdQuestion) -> Value {
@@ -145,7 +145,7 @@ fn field_hash(samples: &[f64]) -> String {
     for sample in samples {
         field.extend_from_slice(&sample.to_le_bytes());
     }
-    sha256_hex(&field)
+    sha384_hex(&field)
 }
 
 #[tokio::test]
@@ -160,7 +160,7 @@ async fn two_beams_match_the_solver_bit_for_bit() {
         let direct = lhd::solve(&question).expect("the solver settles");
 
         assert_eq!(body["inputs"], request);
-        assert_eq!(body["engine_version"], "genesis_solvers_v0.12.0");
+        assert_eq!(body["engine_version"], "genesis_solvers_v0.13.0");
         assert_eq!(body["outcome"], "converged");
         assert!(body["reject"].is_null());
         assert_eq!(body["iterations"], direct.refinements);
@@ -190,8 +190,8 @@ async fn two_beams_match_the_solver_bit_for_bit() {
         assert!(direct.energy_ledger_residual <= lhd::ENERGY_LEDGER_TOLERANCE);
 
         assert_eq!(direct.alpha_emissivity_per_m3_s.len(), lhd::SHELLS);
-        assert_eq!(body["field_sha256"], field_hash(&direct.alpha_emissivity_per_m3_s));
-        assert_eq!(body["solution_seal"].as_str().unwrap().len(), 64);
+        assert_eq!(body["field_sha384"], field_hash(&direct.alpha_emissivity_per_m3_s));
+        assert_eq!(body["solution_seal"].as_str().unwrap().len(), 96);
         assert_receipt(&text, &body);
         assert_eq!(verdict(&base, &body).await, json!({ "holds": true, "values_hold": true, "cause": null, "compared": protocol_mcp_gateway::WHOLE_SOLUTION_COMPUTED }));
     }
@@ -238,7 +238,7 @@ async fn two_plasmas_match_the_solver_bit_for_bit() {
         assert_number(invariants, "charge_residual", direct.charge_residual);
         assert_eq!(invariants.as_object().unwrap().len(), 6);
         assert_eq!(direct.balance_terms_w_per_m3.len(), 9);
-        assert_eq!(body["field_sha256"], field_hash(&direct.balance_terms_w_per_m3));
+        assert_eq!(body["field_sha384"], field_hash(&direct.balance_terms_w_per_m3));
         assert_receipt(&text, &body);
         assert_eq!(verdict(&base, &body).await, json!({ "holds": true, "values_hold": true, "cause": null, "compared": protocol_mcp_gateway::WHOLE_SOLUTION_COMPUTED }));
     }
@@ -446,7 +446,7 @@ async fn a_plasma_the_field_cannot_hold_is_a_sealed_refusal() {
     let (text, body) = solved(&base, &plasma(&question)).await;
     assert_eq!(body["outcome"], "refused", "{text}");
     assert_eq!(body["reject"], "PressureExceedsField");
-    assert_eq!(body["solution_seal"].as_str().unwrap().len(), 64);
+    assert_eq!(body["solution_seal"].as_str().unwrap().len(), 96);
     assert!(matches!(thermal::solve(&question), Err(thermal::ThermalReject::PressureExceedsField { .. })));
     assert_eq!(verdict(&base, &body).await["holds"], true);
 }
@@ -506,14 +506,17 @@ async fn both_are_listed_and_described_and_each_example_runs_unchanged() {
     let listed = reqwest::get(format!("{base}/solvers")).await.unwrap();
     let listed: Value = serde_json::from_str(&listed.text().await.unwrap()).unwrap();
     let solvers = listed["solvers"].as_array().expect("solvers");
-    assert_eq!(solvers.len(), 25);
+    assert_eq!(solvers.len(), protocol_mcp_gateway::SOLVERS);
     assert_eq!(solvers[7]["solver"], "fusion_pb11_lhd");
     assert_eq!(solvers[8]["solver"], "fusion_pb11_thermal");
     for listed in &solvers[7..9] {
         let summary = listed["summary"].as_str().unwrap();
         assert!(summary.ends_with('.'));
-        assert!(summary.contains("Nothing fitted"), "{summary}");
     }
+    // Since 0.14.4 the compared solver's row gives what it computes, the
+    // comparison and the gap; what was fitted is in its description.
+    assert!(!solvers[7]["summary"].as_str().unwrap().contains("Nothing fitted"));
+    assert!(solvers[8]["summary"].as_str().unwrap().contains("Nothing fitted"));
     assert!(solvers[8]["summary"].as_str().unwrap().contains("Held to the published calculations of Ochs et al. 2022"));
     assert!(solvers[7]["summary"].as_str().unwrap().contains("the six beam-energy points in the measured order (Spearman 0.943), worst factor 2.94"));
     for place in [7, 8] {
@@ -526,6 +529,7 @@ async fn both_are_listed_and_described_and_each_example_runs_unchanged() {
         let (status, text) = post(&base, "/describe_solver", &json!({ "solver": solver })).await;
         assert_eq!(status, 200, "{text}");
         let described: Value = serde_json::from_str(&text).unwrap();
+        assert!(described["summary"].as_str().unwrap().contains("Nothing fitted"), "{solver}");
         assert_eq!(described["inputs"].as_array().unwrap().len(), inputs);
         assert_eq!(described["refusals"].as_array().unwrap().len(), refusals);
         for refusal in described["refusals"].as_array().unwrap() {
@@ -722,8 +726,8 @@ async fn an_edited_answer_is_named_by_its_part() {
     assert_fails(&base, &more_boron, "inputs", "more boron").await;
 
     let mut other_field = body.clone();
-    other_field["field_sha256"] = json!("0".repeat(64));
-    assert_fails(&base, &other_field, "field_sha256", "another profile").await;
+    other_field["field_sha384"] = json!("0".repeat(96));
+    assert_fails(&base, &other_field, "field_sha384", "another profile").await;
 
     let mut fewer = body.clone();
     fewer["iterations"] = json!(1);

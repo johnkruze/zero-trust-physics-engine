@@ -30,7 +30,12 @@ fn answer(door: &mut Door, tool: &str, arguments: &Value) -> Value {
 fn a_receipt_names_the_answers_engine_version_and_whether_it_is_this_engines() {
     let mut door = Door::start();
     for saved in served_0120_answers() {
-        let report = answer(&mut door, "verify_receipt", &json!({ "response_text": saved["answer"] }));
+        // A 0.12.0 answer, seal rule v1, with its receipt taken again by rule
+        // v2: the version it names is what is read here.
+        let v1 = saved["answer"].as_str().unwrap();
+        let at = v1.rfind(",\"receipt_sha256\":").unwrap();
+        let text = genesis_seal::receipt::with_receipt(&format!("{}}}", &v1[..at]));
+        let report = answer(&mut door, "verify_receipt", &json!({ "response_text": text }));
         assert_eq!(report["matches"], json!(true), "{report}");
         assert_eq!(report["engine_version"], "genesis_kernel_v0.11.0", "{report}");
         assert_eq!(report["engine_version_is_this_engines"], json!(false), "{report}");
@@ -46,7 +51,7 @@ fn a_receipt_names_the_answers_engine_version_and_whether_it_is_this_engines() {
         assert_eq!(report["engine_version_is_this_engines"], json!(true), "{report}");
     }
     // A text that names no version says nothing of one.
-    let report = answer(&mut door, "verify_receipt", &json!({ "response_text": "{\"a\":1,\"receipt_sha256\":\"0000000000000000000000000000000000000000000000000000000000000000\"}" }));
+    let report = answer(&mut door, "verify_receipt", &json!({ "response_text": "{\"a\":1,\"receipt_sha384\":\"000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000\"}" }));
     assert!(report.get("engine_version").is_none() && report.get("engine_version_is_this_engines").is_none(), "{report}");
 }
 
@@ -60,10 +65,15 @@ fn the_short_form_of_a_dataset_another_version_made_names_both_versions() {
     // the version (genesis_solvers 0.12.0 computes with genesis_kernel::math):
     // its seal is not this plan's under another version's name, and the
     // short form names this engine's versions alone.
-    let report = answer(&mut door, "verify_dataset", &json!({ "request": solves, "dataset_seal": answered["dataset_seal"] }));
+    // Under seal rule v2 the 0.12.0 seal, 64 hex digits of SHA-256, is not
+    // read: it is refused by its form before anything is solved.
+    let (error, text) = door.call("verify_dataset", &json!({ "request": solves, "dataset_seal": answered["dataset_seal"] }));
+    assert!(error && text.contains("'dataset_seal' must be 96 lowercase hex digits"), "{text}");
+    // The same plan with a seal of this rule that is not its own names this engine's versions alone.
+    let report = answer(&mut door, "verify_dataset", &json!({ "request": solves, "dataset_seal": "0".repeat(96) }));
     assert_eq!(report["holds"], json!(false));
     let said = report["not_held"].as_str().unwrap();
-    assert!(said.ends_with("The dataset_seal covers engine_version, through its counts (genesis_kernel_v0.12.0 on this engine) and each row's solution_seal (genesis_solvers_v0.12.0): the seal of a plan another engine version solved does not hold here."), "{said}");
+    assert!(said.ends_with("The dataset_seal covers engine_version, through its counts (genesis_solvers_v0.13.0 on this engine) and each row's solution_seal (genesis_solvers_v0.13.0): the seal of a plan another engine version solved does not hold here."), "{said}");
     // This engine's plan sealed under 0.12.0's names, genesis_kernel_v0.11.0
     // in its counts and genesis_solvers_v0.10.0 in its row's solution seal
     // (`genesis_seal::dataset::dataset_seal`), is named with both versions.
@@ -86,16 +96,16 @@ fn the_short_form_of_a_dataset_another_version_made_names_both_versions() {
         unadmitted: head["unadmitted"].as_u64().unwrap(),
         frames: 0,
     };
-    let theirs = genesis_seal::dataset::dataset_seal(head["plan_sha256"].as_str().unwrap(), &root, &counts);
+    let theirs = genesis_seal::dataset::dataset_seal(head["plan_sha384"].as_str().unwrap(), &root, &counts);
     let report = answer(&mut door, "verify_dataset", &json!({ "request": solves, "dataset_seal": theirs }));
     assert_eq!(report["holds"], json!(false));
     let said = report["not_held"].as_str().unwrap();
-    assert!(said.contains("The dataset_seal covers engine_version, through its counts and each row's solution_seal: the seal given is this plan's dataset seal with engine_version genesis_kernel_v0.11.0 in its counts and genesis_solvers_v0.10.0 in its solution seals, another engine version's, and this engine writes genesis_kernel_v0.12.0 and genesis_solvers_v0.12.0, so it does not hold here."), "{said}");
+    assert!(said.contains("The dataset_seal covers engine_version, through its counts and each row's solution_seal: the seal given is this plan's dataset seal with engine_version genesis_kernel_v0.11.0 in its counts and genesis_solvers_v0.10.0 in its solution seals, another engine version's, and this engine writes genesis_solvers_v0.13.0 in its counts and genesis_solvers_v0.13.0 in its solution seals, so it does not hold here."), "{said}");
     assert!(said.len() < 2_000, "{}", said.len());
     // A seal of no version names only this engine's.
-    let report = answer(&mut door, "verify_dataset", &json!({ "request": solves, "dataset_seal": "0".repeat(64) }));
+    let report = answer(&mut door, "verify_dataset", &json!({ "request": solves, "dataset_seal": "0".repeat(96) }));
     let said = report["not_held"].as_str().unwrap();
-    assert!(said.ends_with("The dataset_seal covers engine_version, through its counts (genesis_kernel_v0.12.0 on this engine) and each row's solution_seal (genesis_solvers_v0.12.0): the seal of a plan another engine version solved does not hold here."), "{said}");
+    assert!(said.ends_with("The dataset_seal covers engine_version, through its counts (genesis_solvers_v0.13.0 on this engine) and each row's solution_seal (genesis_solvers_v0.13.0): the seal of a plan another engine version solved does not hold here."), "{said}");
     // The engine's own seal holds, as before.
     let (_, made) = door.call("run_dataset", &solves);
     let made: Value = serde_json::from_str(&made).unwrap();
@@ -116,7 +126,7 @@ fn hex_line(value: &Value) -> String {
 /// The solution seal of a solve's answer at `version`, by the rule of
 /// REFERENCE.md, "A solution".
 fn solution_seal_at(answer: &Value, version: &str) -> String {
-    use sha2::{Digest, Sha256};
+    use sha2::{Digest, Sha384};
     let mut text = genesis_seal::sealed_form::sealed_form(&answer["inputs"]);
     text.push_str(&format!("engine_version:{version}\n"));
     for section in ["invariants", "result"] {
@@ -128,9 +138,9 @@ fn solution_seal_at(answer: &Value, version: &str) -> String {
             }
         }
     }
-    text.push_str(answer["field_sha256"].as_str().unwrap_or("null"));
+    text.push_str(answer["field_sha384"].as_str().unwrap_or("null"));
     text.push_str(&format!("{{\"outcome\":{},\"iterations\":{},\"reject\":{}}}", answer["outcome"], answer["iterations"], answer["reject"]));
-    hex::encode(Sha256::digest(text.as_bytes()))
+    hex::encode(Sha384::digest(text.as_bytes()))
 }
 
 /// A plan of runs: its dataset seal covers the version through its counts
@@ -138,7 +148,7 @@ fn solution_seal_at(answer: &Value, version: &str) -> String {
 /// counts under that version's name (`genesis_seal::dataset::dataset_seal`).
 #[test]
 fn the_short_form_of_a_plan_of_runs_another_version_made_names_both_versions() {
-    use sha2::{Digest, Sha256};
+    use sha2::{Digest, Sha384};
     let mut door = Door::start();
     let plan = json!({
         "domain": "energy", "card": "thermal",
@@ -154,15 +164,15 @@ fn the_short_form_of_a_plan_of_runs_another_version_made_names_both_versions() {
         )
     };
     let seal = |version: &str| {
-        let mut hasher = Sha256::new();
-        hasher.update(head["plan_sha256"].as_str().unwrap());
+        let mut hasher = Sha384::new();
+        hasher.update(head["plan_sha384"].as_str().unwrap());
         hasher.update(head["merkle_root"].as_str().unwrap());
         hasher.update(counts(version));
         format!("{:x}", hasher.finalize())
     };
-    assert_eq!(seal("genesis_kernel_v0.12.0"), head["dataset_seal"].as_str().unwrap());
+    assert_eq!(seal("genesis_kernel_v0.13.0"), head["dataset_seal"].as_str().unwrap());
     let report = answer(&mut door, "verify_dataset", &json!({ "request": plan, "dataset_seal": seal("genesis_kernel_v0.11.0") }));
     assert_eq!(report["holds"], json!(false));
     let said = report["not_held"].as_str().unwrap();
-    assert!(said.ends_with("The dataset_seal covers engine_version through its counts: the seal given is this plan's dataset seal with engine_version genesis_kernel_v0.11.0, another engine version's, and this engine writes genesis_kernel_v0.12.0, so it does not hold here."), "{said}");
+    assert!(said.ends_with("The dataset_seal covers engine_version through its counts: the seal given is this plan's dataset seal with engine_version genesis_kernel_v0.11.0, another engine version's, and this engine writes genesis_kernel_v0.13.0, so it does not hold here."), "{said}");
 }

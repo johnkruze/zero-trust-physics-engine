@@ -43,9 +43,36 @@
 //! and it uses a yearly standard atmosphere, not the air of that morning.
 //!
 //! `core` only: no heap and no standard prelude. The state is `Copy`. An
-//! accepted step writes time, altitude, ground distance, Mach number, air
-//! speed, radial speed, heat flux, load, and the conservation residual into
-//! [`LastStateFrame64`]. The 16-byte frame proof is not touched.
+//! accepted step writes time, altitude, stagnation pressure, Mach number,
+//! recovery enthalpy, heat-transfer coefficient, heat flux, load, and the
+//! conservation residual into [`LastStateFrame64`]: the stagnation-point
+//! environment along the entry, what a heat-shield model takes. Through
+//! engine 0.14.3 the frame held ground distance, air speed and radial speed
+//! in those three places; the state still publishes them. The 16-byte frame
+//! proof is not touched.
+//!
+//! The stagnation-point environment, from the card's own air and speed, at
+//! the nose:
+//!
+//! ```text
+//! p∞  = ρ c² / γ                 static pressure of the 1976 air, γ = 1.4
+//! p_s = p∞ (1 + (γ−1)/2 M²)^(γ/(γ−1))                         M < 1
+//! p_s = p∞ ((γ+1)² M² / (4γM² − 2(γ−1)))^(γ/(γ−1)) (1 − γ + 2γM²)/(γ+1)
+//!                                Rayleigh's pitot formula, M ≥ 1
+//! H   = u²/2                     recovery enthalpy above the free stream's
+//! C   = 2 k sqrt(ρ / R_n) u      ρ_e u_e C_H, so that C H = q
+//! ```
+//!
+//! `q = k sqrt(ρ/R_n) u³` is the Sutton–Graves stagnation-point heat flux to
+//! a cold wall the card reported before; `C` is the heat-transfer coefficient
+//! it is made of, `q / (u²/2)`, and `H` the recovery enthalpy it takes. The
+//! exponent 3.5 is `x³ sqrt(x)`. Above 86 km the speed of sound is held at
+//! its 86 km value, so `p∞` there is not the real air's; `p_s` there is
+//! within 0.1 percent of its hypersonic limit `0.92 ρ u²`, which does not
+//! depend on it. `γ` is the perfect gas's: in the real shock layer at 12 km/s
+//! the stagnation pressure is about 5 percent higher. `H` leaves out the free
+//! stream's own enthalpy, under 0.1 MJ/kg from 0 to 134.7 km against 0.1 to
+//! 79 MJ/kg of `H` on the compared entry.
 //!
 //! Air density and speed of sound are locked tables against geometric
 //! altitude: 551 knots, one every 200 m from 30 km to 140 km, and below them
@@ -171,6 +198,7 @@ extern crate core;
 
 use core::prelude::v1::*;
 
+use crate::exceedance::{Exceedance, ExceedanceKind, Side};
 use crate::frame::LastStateFrame64;
 use crate::normal::normal_or_zero;
 
@@ -1514,6 +1542,10 @@ pub const FLIGHT_DROGUE_MACH: f64 = 1.23;
 pub const HEAT_FLUX_CONSTANT: f64 = 1.7415e-4;
 /// Nose radius used by the reported heat flux. Three radii are in print.
 pub const NOSE_RADIUS_M: f64 = 0.23;
+/// Ratio of specific heats of the air, the 1976 standard's, from which its
+/// speed of sound is made: the static pressure `ρ c² / γ` and the
+/// stagnation pressure.
+pub const RATIO_OF_SPECIFIC_HEATS: f64 = 1.4;
 
 /// Half the square of 12 900 m/s. Scale of the residual.
 pub const ENERGY_SCALE_J_KG: f64 = 83_205_000.0;
@@ -1827,6 +1859,13 @@ pub struct CapsuleState {
     pub load_g: f64,
     /// Reported only.
     pub heat_flux_w_m2: f64,
+    /// Pressure at the stagnation point, Pa. Reported only.
+    pub stagnation_pressure_pa: f64,
+    /// Recovery enthalpy at the stagnation point, `u²/2`, J/kg. Reported only.
+    pub recovery_enthalpy_j_kg: f64,
+    /// Heat-transfer coefficient `ρ_e u_e C_H` of the reported heat flux,
+    /// kg/m²/s: the heat flux over the recovery enthalpy. Reported only.
+    pub heat_transfer_coefficient_kg_m2_s: f64,
     pub drogue_mach_window: bool,
 }
 
@@ -1897,6 +1936,9 @@ impl CapsuleState {
             mach: 0.0,
             load_g: 0.0,
             heat_flux_w_m2: 0.0,
+            stagnation_pressure_pa: 0.0,
+            recovery_enthalpy_j_kg: 0.0,
+            heat_transfer_coefficient_kg_m2_s: 0.0,
             drogue_mach_window: false,
         };
         refresh(capsule, &mut state, &air);
@@ -1917,6 +1959,26 @@ impl CapsuleState {
 /// with its sign ([`crate::normal`]).
 #[must_use]
 pub fn step(
+    capsule: &CapsuleStardust,
+    state: &mut CapsuleState,
+    frame: &mut LastStateFrame64,
+    load: CapsuleLoad,
+    dt_s: f64,
+) -> Result<(), StepReject> {
+    #[cfg(any(test, debug_assertions, feature = "check_exceedances"))]
+    let before = *state;
+    let stepped = step_landed(capsule, state, frame, load, dt_s);
+    #[cfg(any(test, debug_assertions, feature = "check_exceedances"))]
+    if stepped.is_ok() {
+        crate::exceedance::debug_check("capsule_stardust", exceedances(capsule, &before, state, load, dt_s), frame.flags);
+    }
+    stepped
+}
+
+/// The step itself; [`step`] is it with, in a build that checks
+/// (`crate::exceedance::CHECKED`), the check that [`exceedances`] stands for
+/// the flags it wrote.
+fn step_landed(
     capsule: &CapsuleStardust,
     state: &mut CapsuleState,
     frame: &mut LastStateFrame64,
@@ -1961,6 +2023,9 @@ fn normal_or_zero_state(state: &mut CapsuleState) {
     state.mach = normal_or_zero(state.mach);
     state.load_g = normal_or_zero(state.load_g);
     state.heat_flux_w_m2 = normal_or_zero(state.heat_flux_w_m2);
+    state.stagnation_pressure_pa = normal_or_zero(state.stagnation_pressure_pa);
+    state.recovery_enthalpy_j_kg = normal_or_zero(state.recovery_enthalpy_j_kg);
+    state.heat_transfer_coefficient_kg_m2_s = normal_or_zero(state.heat_transfer_coefficient_kg_m2_s);
 }
 
 fn validate(
@@ -2077,6 +2142,10 @@ fn refresh(capsule: &CapsuleStardust, state: &mut CapsuleState, air: &Air) {
     state.load_g = air.drag_acceleration_m_s2 / capsule.standard_gravity_m_s2;
     state.heat_flux_w_m2 =
         capsule.heat_flux_constant * (air.density_kg_m3 / capsule.nose_radius_m).sqrt() * u * u * u;
+    state.stagnation_pressure_pa = stagnation_pressure_pa(air);
+    state.recovery_enthalpy_j_kg = 0.5 * u * u;
+    state.heat_transfer_coefficient_kg_m2_s =
+        2.0 * capsule.heat_flux_constant * (air.density_kg_m3 / capsule.nose_radius_m).sqrt() * u;
     state.drogue_mach_window = air.mach >= capsule.drogue_mach_required_min
         && air.mach <= capsule.drogue_mach_required_max;
 }
@@ -2088,14 +2157,35 @@ fn publish(state: &CapsuleState, frame: &mut LastStateFrame64) {
     }
     frame.t = state.t_s;
     frame.pos[0] = state.altitude_m as f32;
-    frame.pos[1] = state.ground_distance_m as f32;
+    frame.pos[1] = state.stagnation_pressure_pa as f32;
     frame.pos[2] = state.mach as f32;
-    frame.vel[0] = state.air_speed_m_s as f32;
-    frame.vel[1] = state.radial_speed_m_s as f32;
+    frame.vel[0] = state.recovery_enthalpy_j_kg as f32;
+    frame.vel[1] = state.heat_transfer_coefficient_kg_m2_s as f32;
     frame.vel[2] = state.heat_flux_w_m2 as f32;
     frame.force_torque = state.load_g as f32;
     frame.residual = state.residual_conservation_error as f32;
     frame.flags = flags;
+}
+
+/// `x^(γ/(γ−1))` for `γ = 1.4`: `x³ sqrt(x)`.
+fn power_three_and_a_half(x: f64) -> f64 {
+    x * x * x * x.sqrt()
+}
+
+/// Pressure at the stagnation point in the card's air: the air brought to
+/// rest isentropically below Mach 1, and behind a normal shock and then
+/// isentropically at and above it (Rayleigh's pitot formula), for a perfect
+/// gas of `γ = 1.4` at the static pressure `ρ c² / γ`. The two meet at Mach 1.
+fn stagnation_pressure_pa(air: &Air) -> f64 {
+    let gamma = RATIO_OF_SPECIFIC_HEATS;
+    let static_pa = air.density_kg_m3 * air.sound_speed_m_s * air.sound_speed_m_s / gamma;
+    let m2 = air.mach * air.mach;
+    if air.mach < 1.0 {
+        static_pa * power_three_and_a_half(1.0 + 0.5 * (gamma - 1.0) * m2)
+    } else {
+        let shock = (gamma + 1.0) * (gamma + 1.0) * m2 / (4.0 * gamma * m2 - 2.0 * (gamma - 1.0));
+        static_pa * power_three_and_a_half(shock) * (1.0 - gamma + 2.0 * gamma * m2) / (gamma + 1.0)
+    }
 }
 
 /// The air at one phase.
@@ -2105,6 +2195,7 @@ struct Air {
     transverse_m_s: f64,
     air_speed_m_s: f64,
     density_kg_m3: f64,
+    sound_speed_m_s: f64,
     mach: f64,
     drag_acceleration_m_s2: f64,
 }
@@ -2197,6 +2288,7 @@ fn air_at(
         transverse_m_s,
         air_speed_m_s,
         density_kg_m3,
+        sound_speed_m_s,
         mach,
         drag_acceleration_m_s2,
     })
@@ -2350,6 +2442,56 @@ fn state_is_finite(state: &CapsuleState) -> bool {
         && state.mach.is_finite()
         && state.load_g.is_finite()
         && state.heat_flux_w_m2.is_finite()
+        && state.stagnation_pressure_pa.is_finite()
+        && state.recovery_enthalpy_j_kg.is_finite()
+        && state.heat_transfer_coefficient_kg_m2_s.is_finite()
+}
+
+/// Every limit a flag of this card can mark: what [`exceedances`] reports
+/// beside a flag's bit (`crate::exceedance`).
+pub const EXCEEDANCE_KINDS: &[crate::exceedance::ExceedanceKind] = &[
+    WINDOW_LOW_KIND,
+    WINDOW_HIGH_KIND,
+];
+
+const WINDOW_WORDS: &str = "the Mach window the drogue had to open in, 1.2 to 1.6: the flag is set inside it";
+const WINDOW_LOW_KIND: ExceedanceKind = ExceedanceKind::fixed(
+    "FLAG_DROGUE_MACH_WINDOW",
+    FLAG_DROGUE_MACH_WINDOW,
+    "mach",
+    "1",
+    Side::AtOrAbove,
+    DROGUE_MACH_REQUIRED_MIN,
+    WINDOW_WORDS,
+);
+const WINDOW_HIGH_KIND: ExceedanceKind = ExceedanceKind::fixed(
+    "FLAG_DROGUE_MACH_WINDOW",
+    FLAG_DROGUE_MACH_WINDOW,
+    "mach",
+    "1",
+    Side::AtOrBelow,
+    DROGUE_MACH_REQUIRED_MAX,
+    WINDOW_WORDS,
+);
+
+/// The limits the step from `before` to `after` under `load` over `dt_s`
+/// is past: one record for each limit a flag set on its frame marks.
+/// The window flag is set inside its two edges, so a flagged step has one
+/// record for each: how far above the lower edge and below the upper.
+pub fn exceedances(
+    capsule: &CapsuleStardust,
+    before: &CapsuleState,
+    after: &CapsuleState,
+    load: CapsuleLoad,
+    dt_s: f64,
+) -> crate::exceedance::Exceedances {
+    let _ = (before, load, dt_s);
+    let mut records = crate::exceedance::Exceedances::new();
+    if after.drogue_mach_window {
+        records.push(Exceedance::at(WINDOW_LOW_KIND, capsule.drogue_mach_required_min, after.mach));
+        records.push(Exceedance::at(WINDOW_HIGH_KIND, capsule.drogue_mach_required_max, after.mach));
+    }
+    records
 }
 
 #[cfg(test)]
@@ -4175,40 +4317,15 @@ mod tests {
             step(&capsule, &mut running, &mut frame, NO_LOAD, DT).unwrap();
             n += 1;
         }
-        let altitude_m = f64::from(frame.pos[0]);
-        let air_speed_m_s = f64::from(frame.vel[0]);
-        let radial_speed_m_s = f64::from(frame.vel[1]);
-        let radius_m = altitude_m + LOCAL_EARTH_RADIUS_M;
-        let transverse_speed_m_s =
-            (air_speed_m_s * air_speed_m_s - radial_speed_m_s * radial_speed_m_s).sqrt()
-                + capsule.air_rotation_rate_rad_s * radius_m;
-        assert_eq!(radius_m.to_bits(), 6424305.300540954_f64.to_bits());
+        // The frame holds the altitude and the recovery enthalpy in 32 bits:
+        // neither the radius nor the air speed comes back exactly, and the
+        // radial speed, the angle and the drag loss are not in it at all.
+        let radius_m = f64::from(frame.pos[0]) + LOCAL_EARTH_RADIUS_M;
+        let air_speed_m_s = (2.0 * f64::from(frame.vel[0])).sqrt();
         assert!(radius_m != running.radius_m);
-
-        let mut from_state = CapsuleState::try_state(
-            &capsule,
-            running.radius_m,
-            running.radial_speed_m_s,
-            running.transverse_speed_m_s,
-        )
-        .unwrap();
-        let mut from_frame =
-            CapsuleState::try_state(&capsule, radius_m, radial_speed_m_s, transverse_speed_m_s)
-                .unwrap();
-        step(&capsule, &mut from_state, &mut frame, NO_LOAD, DT).unwrap();
-        step(&capsule, &mut from_frame, &mut frame, NO_LOAD, DT).unwrap();
-        assert_eq!(
-            from_state.radius_m.to_bits(),
-            6424272.808018058_f64.to_bits()
-        );
-        assert_eq!(
-            from_frame.radius_m.to_bits(),
-            6424272.807971302_f64.to_bits()
-        );
-        let apart_m = abs_f64(from_frame.radius_m - from_state.radius_m);
-        assert!(apart_m > 1.0e-6 && apart_m < 1.0e-2, "{apart_m} m apart");
-        assert!(from_frame.transverse_speed_m_s != from_state.transverse_speed_m_s);
-        // The drag loss is not in the frame at all.
+        assert!(air_speed_m_s != running.air_speed_m_s);
+        let apart_m_s = abs_f64(air_speed_m_s - running.air_speed_m_s);
+        assert!(apart_m_s > 1.0e-6 && apart_m_s < 1.0e-2, "{apart_m_s} m/s apart");
         assert!(running.drag_loss_j_kg > 4.6e7);
         proof_intact(&frame);
     }
@@ -4226,10 +4343,10 @@ mod tests {
         let expect = reference(1_000);
         assert_eq!(frame.t.to_bits(), expect[TIME].to_bits());
         assert_eq!(frame.pos[0], expect[ALTITUDE] as f32);
-        assert_eq!(frame.pos[1], (expect[ANGLE] * LOCAL_EARTH_RADIUS_M) as f32);
+        assert_eq!(frame.pos[1], state.stagnation_pressure_pa as f32);
         assert_eq!(frame.pos[2], expect[MACH] as f32);
-        assert_eq!(frame.vel[0], expect[AIR_SPEED] as f32);
-        assert_eq!(frame.vel[1], expect[RADIAL] as f32);
+        assert_eq!(frame.vel[0], (0.5 * expect[AIR_SPEED] * expect[AIR_SPEED]) as f32);
+        assert_eq!(frame.vel[1], state.heat_transfer_coefficient_kg_m2_s as f32);
         assert_eq!(frame.vel[2], expect[HEAT_FLUX] as f32);
         assert_eq!(frame.force_torque, expect[LOAD] as f32);
         assert_eq!(
@@ -4238,11 +4355,48 @@ mod tests {
         );
         assert_eq!(frame.flags, 0);
         assert_eq!(state.drag_loss_j_kg.to_bits(), expect[DRAG_LOSS].to_bits());
-        assert_eq!(state.ground_distance_m as f32, frame.pos[1]);
+        assert_eq!(state.recovery_enthalpy_j_kg.to_bits(), (0.5 * expect[AIR_SPEED] * expect[AIR_SPEED]).to_bits());
+        // The coefficient times the recovery enthalpy is the heat flux.
+        let product = state.heat_transfer_coefficient_kg_m2_s * state.recovery_enthalpy_j_kg;
+        assert!(abs_f64(product - state.heat_flux_w_m2) < 1.0e-14 * state.heat_flux_w_m2);
+        // At Mach 34 the stagnation pressure is near its hypersonic limit,
+        // 0.92 of rho u^2 for gamma 1.4.
+        let rho = state.heat_transfer_coefficient_kg_m2_s / (2.0 * capsule.heat_flux_constant * state.air_speed_m_s);
+        let rho = rho * rho * capsule.nose_radius_m;
+        let ratio = state.stagnation_pressure_pa / (rho * state.air_speed_m_s * state.air_speed_m_s);
+        assert!(ratio > 0.919 && ratio < 0.921, "{ratio}");
         // 32 bits hold the altitude to a few millimetres and the load to a few millionths of a g.
         assert!(abs_f64(f64::from(frame.pos[0]) - state.altitude_m) < 0.005);
         assert!(abs_f64(f64::from(frame.force_torque) - state.load_g) < 2.0e-6);
         proof_intact(&frame);
+    }
+
+    /// The stagnation pressure over the static pressure, against the
+    /// isentropic and normal-shock tables for gamma 1.4 (NACA Report 1135):
+    /// 1.0283 at Mach 0.2, 1.8929 at Mach 1 from both sides, 5.6404 at Mach
+    /// 2, 129.22 at Mach 10.
+    #[test]
+    fn the_stagnation_pressure_is_the_isentropic_and_pitot_pressure() {
+        let at = |mach: f64| {
+            let air = super::Air {
+                altitude_m: 40_000.0,
+                radial_m_s: 0.0,
+                transverse_m_s: 0.0,
+                air_speed_m_s: mach * 300.0,
+                density_kg_m3: 1.4,
+                sound_speed_m_s: 1.0,
+                mach,
+                drag_acceleration_m_s2: 0.0,
+            };
+            super::stagnation_pressure_pa(&air)
+        };
+        for (mach, table, within) in [(0.2, 1.0283, 1.0e-4), (2.0, 5.6404, 1.0e-4), (10.0, 129.22, 1.0e-2)] {
+            assert!(abs_f64(at(mach) - table) < within, "Mach {mach}: {}", at(mach));
+        }
+        let below = at(1.0 - 1.0e-12);
+        let above = at(1.0);
+        assert!(abs_f64(below - 1.892929158737854) < 1.0e-9, "{below}");
+        assert!(abs_f64(above - below) < 1.0e-9, "{above} {below}");
     }
 
     #[test]

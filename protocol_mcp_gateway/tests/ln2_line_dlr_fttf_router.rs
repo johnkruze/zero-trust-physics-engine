@@ -10,7 +10,7 @@ use genesis_solvers::ln2_line_dlr_fttf::{self as ln2, LineQuestion};
 use protocol_mcp_gateway::app;
 use reqwest::Client;
 use serde_json::{Value, json};
-use sha2::{Digest, Sha256};
+use sha2::{Digest, Sha384};
 use tokio::net::TcpListener;
 
 async fn spawn_app() -> String {
@@ -138,12 +138,12 @@ async fn a_transient_matches_the_solver_bit_for_bit_and_its_proof_holds() {
     assert_number(invariants, "largest_volume_ledger_residual", direct.largest_volume_ledger_residual);
     assert!(direct.largest_energy_ledger_residual < 1e-12 && direct.largest_volume_ledger_residual < 1e-12);
 
-    let mut hasher = Sha256::new();
+    let mut hasher = Sha384::new();
     hasher.update((direct.field.len() as u64).to_le_bytes());
     for value in &direct.field {
         hasher.update(value.to_le_bytes());
     }
-    assert_eq!(body["field_sha256"].as_str().expect("field hash"), hex::encode(hasher.finalize()));
+    assert_eq!(body["field_sha384"].as_str().expect("field hash"), hex::encode(hasher.finalize()));
 
     let (status, text) = post(&base, "/verify_solution", &body).await;
     assert_eq!(status, 200, "{text}");
@@ -175,7 +175,7 @@ async fn a_transient_matches_the_solver_bit_for_bit_and_its_proof_holds() {
     let short: Value = serde_json::from_str(&text).unwrap();
     assert!(short["result"].get("s1_history_pa").is_none());
     assert_eq!(short["result"]["s1_max_pa_hex"], body["result"]["s1_max_pa_hex"]);
-    assert_eq!(short["field_sha256"], body["field_sha256"]);
+    assert_eq!(short["field_sha384"], body["field_sha384"]);
 }
 
 #[tokio::test]
@@ -241,7 +241,7 @@ async fn a_rise_to_the_tubes_yield_is_a_sealed_refusal() {
     assert_eq!(body["reject"], "WallYield");
     let direct = ln2::solve(&q).unwrap_err();
     assert_eq!(body["reject_detail"], format!("Solver Refusal: ln2_line_dlr_fttf did not return a transient (WallYield). {direct}."));
-    assert!(body["result"].is_null() && body["invariants"].is_null() && body["field_sha256"].is_null());
+    assert!(body["result"].is_null() && body["invariants"].is_null() && body["field_sha384"].is_null());
     let (_, text) = post(&base, "/verify_solution", &body).await;
     assert_eq!(serde_json::from_str::<Value>(&text).unwrap()["holds"], true);
 }
@@ -253,7 +253,15 @@ async fn the_description_carries_the_comparison_and_its_examples_run_unchanged()
     let listed: Value = serde_json::from_str(&listed.text().await.unwrap()).unwrap();
     let row = listed["solvers"].as_array().unwrap().iter().find(|row| row["solver"] == "ln2_line_dlr_fttf").expect("listed").clone();
     assert_eq!(row["against_measurement"], "compared with measurement");
-    let summary = row["summary"].as_str().unwrap();
+    // Since 0.14.4 a row gives what the model computes, the comparison and
+    // the gap; the whole spec sheet is the description's.
+    let row_summary = row["summary"].as_str().expect("a sentence");
+    assert!(!row_summary.contains("Range: "), "{row_summary}");
+    let (_, full) = post(&base, "/describe_solver", &json!({ "solver": "ln2_line_dlr_fttf" })).await;
+    let full: Value = serde_json::from_str(&full).unwrap();
+    let summary = full["summary"].as_str().unwrap().to_string();
+    let summary = summary.as_str();
+    assert!(summary.starts_with(row_summary.split_once(" Compared with ").map_or(row_summary, |parts| parts.0)), "{summary}");
     assert!(summary.contains("DLR's Fluid Transient Test Facility"), "{summary}");
     assert!(summary.contains("82.7 to 86.4 K") && summary.contains("(StrokeFasterThanGrid)"), "{summary}");
 

@@ -903,18 +903,21 @@ mod tests {
 
     #[test]
     fn a_band_between_two_ends_that_stop_alike_is_found_by_the_scan() {
-        // The 2170 table card answers case temperatures of -21.898 to 45.535 degC, where its
-        // tables end; -30 and 60 degC both stop before computing, by the same name.
+        // The 2170 cell answers states of charge of -0.05 to 1.05, the ends of
+        // its measured rest-voltage curves; -0.5 and 1.5 both stop before
+        // computing, by the same name. (0.15.0: rewritten on the served 2170
+        // cell; the table card of cell m80 is retired.)
         let run = json!({
-            "domain": "energy", "card": "cell_2170_m80",
-            "initial": { "block_chamber_c": 25.0, "charge_removed_ah": 1.0 },
+            "domain": "energy", "card": "cell_2170_model3",
+            "initial": { "cell_number": 80.0, "state_of_charge": 0.5, "capacity_ah": 4.2, "case_temperature_least_c": 25.0, "case_temperature_most_c": 25.0 },
             "dt_s": 1.0, "segments": [{ "steps": 10, "load": { "current_a": -1.0, "case_temperature_c": 25.0 } }], "record_every": 10
         });
-        let answer = found(json!({ "request": run, "vary": "segments[0].load.case_temperature_c", "low": -30.0, "high": 60.0 }));
+        let answer = found(json!({ "request": run, "vary": "initial.state_of_charge", "low": -0.5, "high": 1.5 }));
         assert_eq!(answer["flips"], true, "{answer}");
         assert!(answer["scanned"].as_str().unwrap().contains("until one differed"));
-        assert_eq!((answer["low_is"].as_str(), answer["high_is"].as_str()), (Some("stopped before computing (CaseTemperatureOutsideCard)"), Some("completed")));
-        assert_eq!(answer["high"]["value"], -21.898);
+        assert_eq!(answer["low_is"], "stopped before computing (StateOfChargeOutsideCard)");
+        assert!(!answer["high_is"].as_str().unwrap().contains("stopped before computing"), "{answer}");
+        assert_eq!(answer["high"]["value"], -0.05);
         assert_eq!(answer["neighbours"], true);
     }
 
@@ -933,7 +936,7 @@ mod tests {
         assert!(!answer["high_is"].as_str().unwrap().contains("stopped before computing"), "{answer}");
         let (low, high) = (answer["low"]["value"].as_f64().unwrap(), answer["high"]["value"].as_f64().unwrap());
         assert!(3.9e6 < low && high < 4.1e6 && low.next_up() == high, "{low} {high}");
-        assert!(answer["high"]["run_seal"].as_str().is_some_and(|seal| seal.len() == 64));
+        assert!(answer["high"]["run_seal"].as_str().is_some_and(|seal| seal.len() == 96));
         // From 200 to 300 bar the edge is the vessel's rating.
         let answer = found(json!({ "request": run, "vary": "initial.gas_pressure_pa", "low": 2.0e7, "high": 3.0e7 }));
         assert_eq!(answer["flips"], true, "{answer}");
@@ -1005,7 +1008,7 @@ mod tests {
         assert_eq!(answer["high_is"], "stopped before computing (FilmNotLaminar)");
         assert_eq!(answer["high"]["solution_seal"], Value::Null);
         assert!(answer["high"]["no_proof"].is_string());
-        assert!(answer["low"]["solution_seal"].as_str().unwrap().len() == 64);
+        assert!(answer["low"]["solution_seal"].as_str().unwrap().len() == 96);
         let low = answer["low"]["value"].as_f64().unwrap();
         let high = answer["high"]["value"].as_f64().unwrap();
         assert!(low <= edge_low && edge_low < high && high - low == 100000.0 / 64.0, "{low} {high}");

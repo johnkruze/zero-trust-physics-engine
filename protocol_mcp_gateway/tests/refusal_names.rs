@@ -95,15 +95,15 @@ fn worked(description: &Value) -> (Value, Value) {
 
 /// A step one 64-bit number under a card's floor is refused as
 /// `DtBelowFloor` and one over its ceiling as `DtAboveCeiling`, by a run and
-/// by a single step, on every card; the 2170 cell, whose one step is 1 s,
-/// names both `StepNotOneSecond`, as its description says. A zero step is
+/// by a single step, on every card (from 0.15.0 no served card names both
+/// `StepNotOneSecond`, the retired cell_2170_m80's names). A zero step is
 /// `NonPositiveDt`. Each name is listed by the card with its meaning, in the
 /// full form and among the stops of the short form.
 #[test]
 fn a_step_outside_a_cards_floor_or_ceiling_is_refused_by_a_name_the_card_lists() {
     let mut door = Stdio2::start(None);
     let pairs = cards(&mut door);
-    assert_eq!(pairs.len(), 40);
+    assert_eq!(pairs.len(), protocol_mcp_gateway::CARDS);
     for (domain, card) in &pairs {
         let named = json!({ "domain": domain, "card": card });
         let description = described(&mut door, "describe_card", &named);
@@ -112,15 +112,9 @@ fn a_step_outside_a_cards_floor_or_ceiling_is_refused_by_a_name_the_card_lists()
         let stops: BTreeSet<String> = short["stops"].as_array().unwrap().iter().map(|name| name.as_str().unwrap().to_string()).collect();
         assert_eq!(stops, names, "{card}: the short form's stops are the full form's names");
         let (floor, ceiling) = (description["dt_s"]["floor_s"].as_f64().unwrap(), description["dt_s"]["ceiling_s"].as_f64().unwrap());
-        let (under, over) = if card == "cell_2170_m80" {
-            ("StepNotOneSecond", "StepNotOneSecond")
-        } else {
-            ("DtBelowFloor", "DtAboveCeiling")
-        };
-        // The card lists the names it gives, and not the pair it cannot give.
+        let (under, over) = ("DtBelowFloor", "DtAboveCeiling");
+        // The card lists the names it gives.
         assert!(names.contains(under) && names.contains(over), "{card}: {names:?}");
-        assert_eq!(names.contains("DtBelowFloor"), card != "cell_2170_m80", "{card}");
-        assert_eq!(names.contains("DtAboveCeiling"), card != "cell_2170_m80", "{card}");
         // No served card's ceiling lies above pi over its frequency, so none gives or lists that name.
         assert!(!names.contains("DtAboveNyquist"), "{card}");
         assert!(description["dt_s"]["nyquist_s"].as_f64().is_none_or(|nyquist| nyquist >= ceiling), "{card}");
@@ -179,19 +173,6 @@ fn the_step_sentences_read_as_written() {
     assert_eq!(meaning(&creep, "DtBelowFloor"), "`dt_s` is below the card's step floor, `floor_s` under `dt_s`. Refused before anything is computed.");
     assert_eq!(meaning(&creep, "DtAboveCeiling"), "`dt_s` is above the card's step ceiling, `ceiling_s` under `dt_s`. Refused before anything is computed.");
 
-    // The 2170 cell: the name its description promises for any step but 1 s.
-    let cell = described(&mut door, "describe_card", &json!({ "domain": "energy", "card": "cell_2170_m80" }));
-    assert!(cell["dt_s"]["ceiling_from"].as_str().unwrap().contains("the card refuses any other as StepNotOneSecond"));
-    let (mut run, mut step) = worked(&cell);
-    for (dt_s, sentence) in [
-        (0.5, "Physical Violation: 'dt_s' 0.5 is below 1 s, the step floor of the cell_2170_m80 card (StepNotOneSecond)."),
-        (2.0, "Physical Violation: 'dt_s' 2 is above 1 s, the step ceiling of the cell_2170_m80 card (StepNotOneSecond)."),
-    ] {
-        run["dt_s"] = json!(dt_s);
-        step["parameters"]["dt_s"] = json!(dt_s);
-        assert_eq!(stopped(&mut door, "run_trajectory", &run), sentence);
-        assert_eq!(stopped(&mut door, "verify_step", &step), sentence);
-    }
 }
 
 /// Every field of every card, sent past each end of its published range and
@@ -601,19 +582,6 @@ fn a_request_that_is_not_well_formed_carries_no_name_and_a_missing_or_unchosen_k
 #[test]
 fn the_corrected_facts_are_as_the_models_compute() {
     let mut door = Stdio2::start(None);
-
-    // reactor_spert3_fuel: the middle band is 251 to 259 degF, and 260 degF itself stops.
-    let fuel = described(&mut door, "describe_card", &json!({ "domain": "energy", "card": "reactor_spert3_fuel" }));
-    let text = fuel.to_string();
-    assert!(!text.contains("260 degF band") && !text.contains("the 500 degF band"), "the bands are named by their spans");
-    assert!(fuel["validation"]["object"].as_str().unwrap().contains("2.4 to 22 ft/s in the 251 to 259 degF band and 4.8 to 24 ft/s in the 498 to 501 degF band"));
-    assert!(fuel["phase_fields"][0]["bound"].as_str().unwrap().contains("260 degF itself, 399.8167 K, the report's round name for the middle series, is above that band and is refused"));
-    let at_260 = (260.0 - 32.0) / 1.8 + 273.15;
-    assert_eq!(format!("{at_260:.4}"), "399.8167");
-    let mut step = fuel["example_compute_step"].clone();
-    step["parameters"]["inlet_temperature_k"] = json!(at_260);
-    let sentence = stopped(&mut door, "verify_step", &step);
-    assert!(sentence.contains("is in none of the three tested bands") && sentence.ends_with("(InletTemperatureOutsideCard). That state is not sealed."), "{sentence}");
 
     // culture_trichoderma_ambr250: the broth the vessel holds, in both places, and segments counted from 1.
     let culture = described(&mut door, "describe_solver", &json!({ "solver": "culture_trichoderma_ambr250" }));

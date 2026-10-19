@@ -104,7 +104,7 @@ pub(crate) fn from_schema(full: bool) -> Value {
         "description": description,
         "properties": {
             "request": { "type": "object" },
-            "run_seal": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+            "run_seal": { "type": "string", "pattern": "^[0-9a-f]{96}$" },
             "coupling": { "type": "string" }
         },
         "required": ["request", "run_seal"],
@@ -125,7 +125,7 @@ pub(crate) fn solve_from_schema(full: bool) -> Value {
         "description": description,
         "properties": {
             "request": { "type": "object" },
-            "run_seal": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+            "run_seal": { "type": "string", "pattern": "^[0-9a-f]{96}$" },
             "coupling": { "type": "string" }
         },
         "required": ["request", "run_seal", "coupling"],
@@ -138,15 +138,11 @@ pub(crate) fn solve_from_schema(full: bool) -> Value {
 /// "continuation" would be another run and not the same run cut in two.
 pub(crate) static NOT_CONTINUED: &[(&str, &str)] = &[
     ("reactor_triga_jsi", "its start fields are the start temperature and the rod table, which its final state carries unchanged, so a run sent from a returned state is the same pulse again from its start; the power, the precursors and the fuel temperature a pulse reaches are not start fields"),
-    ("reactor_spert3", "its one start field is the coolant temperature, which a burst does not change, so a run sent from a returned state is the same burst again from the step in reactivity; the power and the precursors are not start fields. The coupling spert3_burst_to_fuel_card hands the burst to the other SPERT III card"),
-    ("reactor_spert3_fuel", "its one start field is the inlet temperature, which a burst does not change, so a run sent from a returned state is the same burst again from the start of the rod's motion; the power, the precursors and the fuel and water temperature rises are not start fields. The coupling spert3_fuel_burst_to_point_card hands the burst to the other SPERT III card"),
-    ("reactor_spert3_twin", "its start fields are the inlet temperature, the system pressure, the flow and the initial power, from which it starts the steady reactor, so a run sent from a returned state is the same ejection again from the steady start; the power, the precursors, the ring, clad and water temperatures and the rod's travel are not start fields"),
-    ("reactor_spert3_ccore", "its start fields are the initial temperature and the system pressure, which a transient does not change, so a run sent from a returned state is the same transient again from the step in reactivity; the power, the precursors and the plate and water temperature rises are not start fields"),
-    ("reactor_spert3_ccore_twin", "its start fields are the initial temperature and the system pressure, which a transient does not change, so a run sent from a returned state is the same transient again from the step in reactivity; the power, the precursors, the plate, film and water temperature rises and the vapour are not start fields"),
+    ("reactor_spert3", "its start fields are the inlet temperature, the system pressure, the flow and the initial power, from which it starts the steady reactor, so a run sent from a returned state is the same ejection again from the steady start; the power, the precursors, the ring, clad and water temperatures and the rod's travel are not start fields"),
+    ("reactor_spert3_ccore", "its start fields are the initial temperature and the system pressure, which a transient does not change, so a run sent from a returned state is the same transient again from the step in reactivity; the power, the precursors, the plate, film and water temperature rises and the vapour are not start fields"),
     ("los_jwst_fine_guide", "its start fields are the lock point and the quiet time; the pointing filter's estimates, covariances and disturbance modes are not start fields, so a run cut in two is not the uncut run"),
-    ("cell_2170_model3", "its start fields are the cell, the state of charge and the capacity; the surface state of charge, the diffusion lags, the hysteresis and the electrolyte voltage are not start fields, so a run cut in two is not the uncut run"),
-    ("cell_2170_m80", "its start fields are the block's chamber temperature and the charge removed; the voltage of its RC branch is not a start field, so a run cut in two is not the uncut run"),
-    ("grid_gb", "the card takes only the start of its event: a returned state is refused as a start by the card itself"),
+    ("cell_2170_model3", "its start fields are the cell, the state of charge, the capacity and the span of case temperature; the core temperature, the surface state of charge, the diffusion lags, the hysteresis and the salt's concentration difference are not start fields, so a run cut in two is not the uncut run"),
+    ("grid_gb", "the card takes only the start of its event: its responses delivered and its ledger are not start fields, so a returned state is no start of it"),
     ("fingerpad_p02_glass", "the card takes only a twist from zero: a returned state is refused as a start by the card itself"),
     ("reactor_msre_pump", "its one start field is the pump speed of the starting equilibrium; the precursor content of the 252 parcels of salt, the fuel flow behind the pump and the ledger are not start fields, so a run sent from a returned state starts again from an equilibrium"),
     ("grasp_lift_glass_4tu", "its one start field is the hand's velocity at the grip; the object's height and velocity, the force of each of the 32 elements of a pad's contact and the ledgers are not start fields, so a run sent from a returned state is a new grip on an object at rest on the table"),
@@ -217,6 +213,12 @@ pub(crate) static CONTINUED: &[Continued] = &[
     Continued { card: "hydraulic_fluid", differ: &["t_s"], within_one_ulp: &[] },
     Continued { card: "cable_stretch", differ: &["t_s"], within_one_ulp: &[] },
     Continued { card: "crater_ryugu_sci", differ: &["t_s"], within_one_ulp: &[] },
+    Continued { card: "tokamak_jet_dte1", differ: &["energy_anchor_j", "energy_defect_j", "energy_lost_j", "energy_supplied_j", "fusion_energy_j", LEDGER], within_one_ulp: &[] },
+    Continued {
+        card: "runaway_18650_lco",
+        differ: &["energy_defect_j", "heat_anode_j", "heat_cathode_j", "heat_electrolyte_j", "heat_lost_j", "heat_released_j", "heat_sei_j", "heat_separator_j", "heat_stored_j", LEDGER, "start_temperature_k", "t_s"],
+        within_one_ulp: &[],
+    },
     Continued {
         card: "generator_mmrtg_seebeck",
         differ: &["converter_account_anchor_j", "converter_account_defect_j", "converter_account_error", "electrical_energy_j", "energy_anchor_j", "energy_defect_j", "fading_electrical_energy_j", "heat_rejected_j", LEDGER],
@@ -441,10 +443,10 @@ pub(crate) fn read(
             )));
         }
         let given_seal = match object.get("run_seal") {
-            Some(Value::String(text)) if crate::json_text::is_lower_hex(text, 64) => text.clone(),
+            Some(Value::String(text)) if crate::json_text::is_lower_hex(text, 96) => text.clone(),
             Some(_) => {
                 return Err(DoorError::Unprocessable(format!(
-                    "Physical Violation: 'run_seal' in {at} must be 64 lowercase hex digits."
+                    "Physical Violation: 'run_seal' in {at} must be 96 lowercase hex digits."
                 )));
             }
             None => return Err(DoorError::Unprocessable(format!("Missing required parameter: 'run_seal' in {at} (InputMissing)."))),
@@ -844,6 +846,8 @@ fn coupled(
 ) -> Result<Vec<Handed>, String> {
     let mut so_far: Vec<(&'static str, f64)> = Vec::new();
     let mut handed = Vec::new();
+    // The first place of a downstream array after the values handed to it.
+    let mut after_handed: Option<usize> = None;
     for mapping in coupling.mappings {
         let value_hex = if let Some(name) = mapping.from.strip_prefix("final_state.") {
             state.get(&format!("{name}_hex")).cloned()
@@ -887,9 +891,22 @@ fn coupled(
             ));
         }
         let to = target_path(mapping.to, target);
-        let received = values_at(down, &to).map_err(|error| refused(error, "CouplingLedgerBreach"))?;
+        // `parameters.<name>[k..]`: the handed array stands at places k to
+        // k + n - 1 of the request's array.
+        let (path, first) = rows_from(&to);
+        let received = values_at(down, path).map_err(|error| refused(error, "CouplingLedgerBreach"))?;
+        let received: Vec<Option<Value>> = match first {
+            None => received.into_iter().map(|given| given.cloned()).collect(),
+            Some(first) => {
+                let count = values.len();
+                after_handed = Some(after_handed.map_or(first + count, |at: usize| at.max(first + count)));
+                vec![received.first().copied().flatten().and_then(Value::as_array).map(|array| {
+                    Value::Array(array.iter().skip(first).take(count).cloned().collect())
+                })]
+            }
+        };
         for (at, given) in received.iter().enumerate() {
-            let bits = given.and_then(request_value_hex);
+            let bits = given.as_ref().and_then(request_value_hex);
             if bits.as_ref() != Some(&value_hex) {
                 let place = if received.len() > 1 { format!(" in segment {at}") } else { String::new() };
                 if values.len() > 1 || value_hex.is_array() {
@@ -929,7 +946,25 @@ fn coupled(
             value_hex,
         });
     }
+    // The places no frame was handed to, held to the coupling's row conditions.
+    if let (Some(after), Some(parameters)) = (after_handed, down.get("parameters")) {
+        if let Some(sentence) = coupling.rows_unmet(parameters, after) {
+            return Err(refused(sentence, "CouplingConditionNotMet"));
+        }
+    }
     Ok(handed)
+}
+
+/// A downstream path and, for `<path>[k..]`, the first place k of the
+/// handed values in the request's array.
+fn rows_from(to: &str) -> (&str, Option<usize>) {
+    if let Some(open) = to.strip_suffix("..]").and_then(|head| head.rfind('[').map(|at| (at, head))) {
+        let (at, head) = open;
+        if let Ok(first) = head[at + 1..].parse::<usize>() {
+            return (&to[..at], Some(first));
+        }
+    }
+    (to, None)
 }
 
 /// The exact values of one slot of every recorded frame of the upstream run,

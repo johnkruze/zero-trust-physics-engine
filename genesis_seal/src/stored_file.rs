@@ -113,12 +113,12 @@ impl RegularFile {
         self.file.take(self.size)
     }
 
-    /// SHA-256 of the file, in lowercase hex, read as a stream for no more
+    /// SHA-384 of the file, in lowercase hex, read as a stream for no more
     /// than the size taken at open.
     pub fn sha256_hex(self) -> io::Result<String> {
-        use sha2::{Digest, Sha256};
+        use sha2::{Digest, Sha384};
         let mut reader = self.reader();
-        let mut hasher = Sha256::new();
+        let mut hasher = Sha384::new();
         let mut block = vec![0_u8; 1 << 20];
         loop {
             match reader.read(&mut block) {

@@ -1,6 +1,6 @@
 [package]
 name = "protocol_mcp_gateway"
-version = "0.14.3"
+version = "0.15.0"
 edition = "2024"
 license = "Apache-2.0"
 
@@ -13,7 +13,7 @@ sha2 = "0.10.9"
 hex = "0.4.3"
 genesis_kernel = { path = "../genesis_kernel" }
 genesis_solvers = { path = "../genesis_solvers" }
-genesis_seal = { path = "../genesis_seal" }
+genesis_seal = { path = "../genesis_seal", features = ["sign"] }
 rmcp = { version = "3.5.1", default-features = false, features = ["server", "transport-io"] }
 hyper = { version = "1", default-features = false, features = ["http1", "server"] }
 hyper-util = { version = "0.1", default-features = false, features = ["tokio", "service"] }
@@ -25,7 +25,8 @@ axum = "0.7"
 serde_json = { version = "1.0", features = ["float_roundtrip"] }
 sha2 = "0.10.9"
 hex = "0.4.3"
-genesis_kernel = { path = "../genesis_kernel" }
+# With the tests' check of every landed step's exceedances against its flags.
+genesis_kernel = { path = "../genesis_kernel", features = ["check_exceedances"] }
 genesis_solvers = { path = "../genesis_solvers" }
 rmcp = { version = "3.5.1", default-features = false, features = ["client", "transport-child-process", "server", "transport-io", "transport-streamable-http-client-reqwest"] }
 # The tests play the instrument: they sign readings with the bench's test keys.

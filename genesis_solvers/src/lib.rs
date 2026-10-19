@@ -17,6 +17,7 @@ pub mod modulus_bam_s355;
 pub mod pb11_reaction;
 pub mod step_flow_armaly;
 pub mod pipe_flow_superpipe;
+pub mod blast_wave_tnt_air_twin;
 pub mod fuel_rod_triga_jsi;
 pub mod culture_trichoderma_atp;
 pub mod normal;

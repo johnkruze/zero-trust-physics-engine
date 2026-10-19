@@ -1,6 +1,6 @@
 //! The frame file of a dataset, `frames.bin`.
 //!
-//! A 64-byte header, then the 64-byte frames of every row in row order. Each
+//! An 80-byte header, then the 64-byte frames of every row in row order. Each
 //! row's frames are chained from that row's own `link_0`. The file does not
 //! say where one row ends: the count of frames of each row is in the rows
 //! file.
@@ -14,18 +14,18 @@ use std::io::{self, Read, Write};
 use crate::run::FRAME_LEN;
 
 /// The first four bytes of a frame file.
-pub const MAGIC: [u8; 4] = *b"GKF2";
+pub const MAGIC: [u8; 4] = *b"GKF3";
 /// The version of the layout this crate reads and writes.
-pub const VERSION: u32 = 1;
+pub const VERSION: u32 = 2;
 /// The length of the header, in bytes.
-pub const HEADER_LEN: usize = 64;
+pub const HEADER_LEN: usize = 80;
 
 /// The header of a frame file.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FramesHeader {
     pub rows: u64,
     pub frames: u64,
-    pub dataset_seal: [u8; 32],
+    pub dataset_seal: [u8; 48],
 }
 
 /// Why a frame file was not read.
@@ -33,8 +33,10 @@ pub struct FramesHeader {
 pub enum FramesRefusal {
     /// The file is shorter than its header.
     NoHeader,
-    /// The file does not start with `GKF2`.
+    /// The file does not start with `GKF3`.
     NotAFrameFile,
+    /// The file starts with `GKF2`: a frame file of seal rule v1.
+    SealRuleV1,
     /// The file states a version this crate does not read.
     UnknownVersion(u32),
     /// The unused bytes of the header are not zero.
@@ -49,10 +51,16 @@ impl fmt::Display for FramesRefusal {
     fn fmt(&self, out: &mut fmt::Formatter) -> fmt::Result {
         match self {
             FramesRefusal::NoHeader => {
-                write!(out, "The frame file is shorter than its 64-byte header.")
+                write!(out, "The frame file is shorter than its 80-byte header.")
             }
+            FramesRefusal::SealRuleV1 => write!(
+                out,
+                "The frame file starts with GKF2. {} ({})",
+                crate::refusal::SEAL_RULE_V1_SENTENCE,
+                crate::refusal::SEAL_RULE_NOT_SERVED
+            ),
             FramesRefusal::NotAFrameFile => {
-                write!(out, "The frame file does not start with GKF2.")
+                write!(out, "The frame file does not start with GKF3: a frame file of seal rule v1 starts with GKF2.")
             }
             FramesRefusal::UnknownVersion(version) => write!(
                 out,
@@ -60,7 +68,7 @@ impl fmt::Display for FramesRefusal {
             ),
             FramesRefusal::UnusedBytesSet => write!(
                 out,
-                "Bytes 56 to 63 of the frame file's header are not zero."
+                "Bytes 72 to 79 of the frame file's header are not zero."
             ),
             FramesRefusal::WrongLength {
                 stated_frames,
@@ -83,13 +91,16 @@ impl FramesHeader {
         bytes[4..8].copy_from_slice(&VERSION.to_le_bytes());
         bytes[8..16].copy_from_slice(&self.rows.to_le_bytes());
         bytes[16..24].copy_from_slice(&self.frames.to_le_bytes());
-        bytes[24..56].copy_from_slice(&self.dataset_seal);
+        bytes[24..72].copy_from_slice(&self.dataset_seal);
         bytes
     }
 
     pub fn from_bytes(bytes: &[u8]) -> Result<FramesHeader, FramesRefusal> {
         if bytes.len() < HEADER_LEN {
             return Err(FramesRefusal::NoHeader);
+        }
+        if &bytes[0..4] == b"GKF2" {
+            return Err(FramesRefusal::SealRuleV1);
         }
         if bytes[0..4] != MAGIC {
             return Err(FramesRefusal::NotAFrameFile);
@@ -98,11 +109,11 @@ impl FramesHeader {
         if version != VERSION {
             return Err(FramesRefusal::UnknownVersion(version));
         }
-        if bytes[56..64].iter().any(|byte| *byte != 0) {
+        if bytes[72..80].iter().any(|byte| *byte != 0) {
             return Err(FramesRefusal::UnusedBytesSet);
         }
-        let mut dataset_seal = [0_u8; 32];
-        dataset_seal.copy_from_slice(&bytes[24..56]);
+        let mut dataset_seal = [0_u8; 48];
+        dataset_seal.copy_from_slice(&bytes[24..72]);
         Ok(FramesHeader {
             rows: u64::from_le_bytes(eight(&bytes[8..16])),
             frames: u64::from_le_bytes(eight(&bytes[16..24])),
@@ -194,24 +205,24 @@ mod tests {
         FramesHeader {
             rows: 3,
             frames: 2,
-            dataset_seal: [0xab; 32],
+            dataset_seal: [0xab; 48],
         }
     }
 
     #[test]
-    fn the_header_is_64_bytes_laid_out_as_stated() {
+    fn the_header_is_80_bytes_laid_out_as_stated() {
         let bytes = header().to_bytes();
-        assert_eq!(&bytes[0..4], b"GKF2");
-        assert_eq!(bytes[4..8], [1, 0, 0, 0]);
+        assert_eq!(&bytes[0..4], b"GKF3");
+        assert_eq!(bytes[4..8], [2, 0, 0, 0]);
         assert_eq!(bytes[8..16], [3, 0, 0, 0, 0, 0, 0, 0]);
         assert_eq!(bytes[16..24], [2, 0, 0, 0, 0, 0, 0, 0]);
-        assert_eq!(bytes[24..56], [0xab; 32]);
-        assert_eq!(bytes[56..64], [0; 8]);
+        assert_eq!(bytes[24..72], [0xab; 48]);
+        assert_eq!(bytes[72..80], [0; 8]);
         assert_eq!(FramesHeader::from_bytes(&bytes), Ok(header()));
         let large = FramesHeader {
             rows: 0x0102_0304_0506_0708,
             frames: 16_777_216,
-            dataset_seal: [0; 32],
+            dataset_seal: [0; 48],
         };
         assert_eq!(large.to_bytes()[8..16], [8, 7, 6, 5, 4, 3, 2, 1]);
         assert_eq!(large.to_bytes()[16..24], [0, 0, 0, 1, 0, 0, 0, 0]);
@@ -222,7 +233,7 @@ mod tests {
         let frames = [[1_u8; FRAME_LEN], [2_u8; FRAME_LEN]];
         let mut bytes = Vec::new();
         write_frames(&mut bytes, &header(), &frames).unwrap();
-        assert_eq!(bytes.len(), 64 + 128);
+        assert_eq!(bytes.len(), 80 + 128);
         let file = FramesFile::read(&bytes).unwrap();
         assert_eq!(file.header, header());
         assert_eq!(file.frame(0), Some(&frames[0][..]));
@@ -239,15 +250,19 @@ mod tests {
         let mut good = Vec::new();
         write_frames(&mut good, &header(), &frames).unwrap();
 
-        assert_eq!(FramesFile::read(&good[..63]).unwrap_err(), FramesRefusal::NoHeader);
+        assert_eq!(FramesFile::read(&good[..79]).unwrap_err(), FramesRefusal::NoHeader);
         let mut bytes = good.clone();
         bytes[3] = b'1';
         assert_eq!(FramesFile::read(&bytes).unwrap_err(), FramesRefusal::NotAFrameFile);
         let mut bytes = good.clone();
-        bytes[4] = 2;
-        assert_eq!(FramesFile::read(&bytes).unwrap_err(), FramesRefusal::UnknownVersion(2));
+        bytes[3] = b'2';
+        assert_eq!(FramesFile::read(&bytes).unwrap_err(), FramesRefusal::SealRuleV1);
+        assert!(FramesRefusal::SealRuleV1.to_string().ends_with("(SealRuleNotServed)"));
         let mut bytes = good.clone();
-        bytes[60] = 1;
+        bytes[4] = 1;
+        assert_eq!(FramesFile::read(&bytes).unwrap_err(), FramesRefusal::UnknownVersion(1));
+        let mut bytes = good.clone();
+        bytes[76] = 1;
         assert_eq!(FramesFile::read(&bytes).unwrap_err(), FramesRefusal::UnusedBytesSet);
         let mut bytes = good.clone();
         bytes.pop();

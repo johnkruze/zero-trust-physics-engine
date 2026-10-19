@@ -150,9 +150,9 @@ fn a_signed_run_is_sealed_as_every_run_is_and_its_answer_says_who_signed_each_lo
     let at = |key: &str| order.iter().position(|name| *name == key).unwrap();
     assert!(at("state_digest") < at("load_source") && at("load_source") < at("frames"));
 
-    // The seal is the rule of every run: link_0 is the SHA-256 of the sealed
+    // The seal is the rule of every run: link_0 is the SHA-384 of the sealed
     // form of the whole request, signatures and all, and genesis_seal holds it.
-    let link_0 = hex::encode(Sha256::digest(genesis_seal::sealed_form::sealed_form(&request).as_bytes()));
+    let link_0 = genesis_seal::sealed_form::digest_hex(genesis_seal::sealed_form::sealed_form(&request).as_bytes());
     assert_eq!(&answer["frames"][0]["frame_hex"].as_str().unwrap()[96..128], &link_0[..32]);
     let report = genesis_seal::run::check_tape(&answer).unwrap();
     assert!(report.holds);
@@ -175,14 +175,14 @@ fn a_run_with_no_signature_keeps_its_seal_and_differs_only_by_its_label_and_rece
     let answer = ok(&mut door, "run_trajectory", &request);
     assert_eq!(answer["load_source"], json!({ "segments": 1, "signed": 0, "says": attest::CALLERS_NUMBER }));
     // Without the label the document is the one the receipt of 0.11.0 was over:
-    // the receipt is the SHA-256 of every byte before it.
+    // the receipt is the SHA-384 of every byte before it.
     let text = serde_json::to_string(&answer).unwrap();
     let mut without = answer.as_object().unwrap().clone();
     without.shift_remove("load_source");
-    without.shift_remove("receipt_sha256");
+    without.shift_remove("receipt_sha384");
     let document = serde_json::to_string(&without).unwrap();
     assert!(text.contains("\"load_source\":{\"segments\":1,\"signed\":0,"));
-    assert_ne!(sha(&document), answer["receipt_sha256"].as_str().unwrap());
+    assert_ne!(seal_sha(&document), answer["receipt_sha384"].as_str().unwrap());
     let report = genesis_seal::run::check_tape(&answer).unwrap();
     assert!(report.holds && report.signed_loads.is_empty());
 }
@@ -376,9 +376,9 @@ fn forged(answer: &Value, segment: usize) -> Value {
     let seal = genesis_seal::run::run_seal(&link, "completed", forged["steps_landed"].as_u64().unwrap(), None, forged["state_digest"].as_str());
     forged["run_seal"] = json!(seal);
     let mut body = forged.as_object().unwrap().clone();
-    body.shift_remove("receipt_sha256");
+    body.shift_remove("receipt_sha384");
     let text = serde_json::to_string(&body).unwrap();
-    forged["receipt_sha256"] = json!(sha(&text));
+    forged["receipt_sha384"] = json!(seal_sha(&text));
     forged
 }
 
@@ -551,7 +551,7 @@ struct Open {
 
 impl Open {
     fn start() -> Open {
-        let mut child = Command::new(env!("CARGO_BIN_EXE_hosted_door"))
+        let mut child = Command::new(env!("CARGO_BIN_EXE_hosted_door")).arg("--unsigned")
             .args(["--open", "--port", "0"])
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())

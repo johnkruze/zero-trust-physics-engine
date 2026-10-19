@@ -47,7 +47,7 @@ pub const JOURNAL_BEARING_SHEFFIELD: Solver = Solver {
                 unit: "rpm",
             },
             refusal: Some("SpeedNotPositive"),
-            bound: "The steady shaft speed, above zero (SpeedNotPositive otherwise). Above a film Reynolds number of 41.2 sqrt(R/c), about 1450 and near 143,000 rpm for an oil of 860 kg/m³, Taylor vortices form and the film is not laminar: refused as FilmNotLaminar. Compared at 100 to 800 rpm, where the film Reynolds number is at most about 8; outside that it computes the same equations, the film held at 65 °C at every speed. No other input is accepted: the bearing, the oil, the grid and the tolerances are constants of the solver.",
+            bound: "The steady shaft speed, above zero (SpeedNotPositive otherwise). Above a film Reynolds number rho omega R c / mu_film, with omega = 2 pi speed_rpm / 60, rho 860 kg/m³ and mu_film the film's viscosity, 0.02722 Pa s times the fitted multiplier 0.8201, of 41.2 sqrt(R/c), about 1450 and near 143,000 rpm, Taylor vortices form and the film is not laminar: refused as FilmNotLaminar. Compared at 100 to 800 rpm, where the film Reynolds number is at most about 8; outside that it computes the same equations, the film held at 65 °C at every speed. No other input is accepted: the bearing, the oil, the grid and the tolerances are constants of the solver.",
             only_when: None,
             asked_by_check: true,
         },
@@ -156,7 +156,7 @@ pub fn reject_name(reject: &BearingReject) -> &'static str {
 
 fn field_words() -> String {
     format!(
-        "SHA-256 of the sample count ({}) as 8 little-endian bytes, then the settled film pressure above ambient in pascals as little-endian f64 bytes: {} rows around the bush from the widest gap in the direction of rotation, each of {} samples from the middle of the bush toward one end.",
+        "SHA-384 of the sample count ({}) as 8 little-endian bytes, then the settled film pressure above ambient in pascals as little-endian f64 bytes: {} rows around the bush from the widest gap in the direction of rotation, each of {} samples from the middle of the bush toward one end.",
         bearing::CELLS_AROUND * bearing::CELLS_ALONG_HALF,
         bearing::CELLS_AROUND,
         bearing::CELLS_ALONG_HALF
@@ -166,7 +166,7 @@ fn field_words() -> String {
 fn sections() -> Sections {
     Sections {
         locked: json!({
-            "model": "The Reynolds equation for an oil of one viscosity between a rigid aligned shaft and a rigid bush, film thickness c (1 + e cos(theta)), ambient pressure at both ends, rupture where pressure and its gradient reach zero together. The shaft is moved until the film carries the load. Left out: the oil inlet and its supply pressure, elastic and thermal deformation, the change of viscosity with pressure and along the film, roughness, misalignment, any motion of the shaft centre.",
+            "model": "The Reynolds equation for an oil of one viscosity between a rigid aligned shaft and a rigid bush, film thickness c (1 + e cos(theta)), ambient pressure at both ends, rupture where pressure and its gradient reach zero together. The shaft is moved until the film carries the load: by false position with the Illinois weight on the eccentricity ratio, the miss being the natural logarithm of the Sommerfeld number the film carries less that of the one asked, from the bracket 0.05 and 0.95, settled in that order, each position's sweeps starting from the field of the position before (zero at the first), until the miss is within the load tolerance. Left out: the oil inlet and its supply pressure, elastic and thermal deformation, the change of viscosity with pressure and along the film, roughness, misalignment, any motion of the shaft centre.",
             "bearing_diameter_m": bearing::BEARING_DIAMETER_M,
             "bearing_length_m": bearing::BEARING_LENGTH_M,
             "radial_clearance_m": bearing::RADIAL_CLEARANCE_M,
@@ -177,6 +177,7 @@ fn sections() -> Sections {
             "eccentricity_ratio_max": bearing::ECCENTRICITY_RATIO_MAX,
             "cells_around": bearing::CELLS_AROUND,
             "cells_along_half": bearing::CELLS_ALONG_HALF,
+            "grid": "The unknowns are the film pressure at grid points, not at cell centres, in P = p c² / (mu omega R²), H = h / c and zeta = z / (L/2). Row i, 0 to 179, sits at theta_i = i dtheta from the widest gap in the direction of rotation, dtheta = 2 pi / 180, and the rows close round the bush, row 179 beside row 0. Sample j, 0 to 19, sits at zeta_j = j dzeta from the middle of the bush, dzeta = 1/20: there the pressure is mirrored, P(i, -1) = P(i, 1), and it is ambient, zero, at zeta_20 = 1, the end. Each point balances the flow through its four faces: around the bush through the faces at theta_i - dtheta/2 and theta_i + dtheta/2, each with H³ / dtheta², H = 1 + e cos(theta) taken exactly at the face; along it with (D/L)² H(theta_i)³ / dzeta², the film at the point; against the wedge 6 (H(theta_i + dtheta/2) - H(theta_i - dtheta/2)) / dtheta. The field is swept point by point, rows from 0 to 179 and each row from the middle outward, over-relaxed by the relaxation weight, and a point the balance would put below ambient is set to ambient. The film force sums P cos(theta_i) and P sin(theta_i) over the points times dtheta dzeta, the middle sample (j = 0) at half weight: the Sommerfeld number it carries is 1 / (pi |F|), and the attitude angle is atan2 of the sum of P sin(theta_i) over minus the sum of P cos(theta_i).",
             "relaxation_weight": bearing::RELAXATION_WEIGHT,
             "max_sweeps": bearing::MAX_SWEEPS,
             "max_shaft_positions": bearing::MAX_SHAFT_POSITIONS,
@@ -184,7 +185,7 @@ fn sections() -> Sections {
         invariants: json!([
             {
                 "name": "flow_balance_residual",
-                "rule": "Oil is conserved in every cell: a cell under pressure balances the flow through its four faces, and a cell at ambient is one that balance would put at or below ambient.",
+                "rule": "Oil is conserved at every grid point (locked.grid): a point under pressure balances the flow through its four faces, and a point at ambient is one that balance would put at or below ambient.",
                 "tolerance": bearing::FLOW_BALANCE_TOLERANCE,
                 "unit": "fraction of the peak pressure",
                 "compared": "at every shaft position",
@@ -202,7 +203,7 @@ fn sections() -> Sections {
         convergence: json!({
             "settle_tolerance": bearing::SETTLE_TOLERANCE,
             "load_tolerance": bearing::LOAD_TOLERANCE,
-            "rule": "At each shaft position no cell may move by more than the settle tolerance times the peak pressure in one sweep, and the film force must equal the load to the load tolerance, before a result is returned.",
+            "rule": "At each shaft position no grid point may move by more than the settle tolerance times the peak pressure in one sweep, and the film force must equal the load to the load tolerance, before a result is returned.",
             "refusal": "FilmNotSettled",
         }),
         reference: json!({

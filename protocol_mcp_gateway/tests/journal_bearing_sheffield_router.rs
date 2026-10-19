@@ -11,7 +11,7 @@ use genesis_solvers::journal_bearing_sheffield as bearing;
 use protocol_mcp_gateway::app;
 use reqwest::Client;
 use serde_json::{Value, json};
-use sha2::{Digest, Sha256};
+use sha2::{Digest, Sha384};
 use tokio::net::TcpListener;
 
 async fn spawn_app() -> String {
@@ -87,16 +87,16 @@ fn assert_number(section: &Value, key: &str, expected: f64) {
     assert_eq!(decimal.to_bits(), expected.to_bits(), "{key}");
 }
 
-fn sha256_hex(bytes: &[u8]) -> String {
-    hex::encode(Sha256::digest(bytes))
+fn sha384_hex(bytes: &[u8]) -> String {
+    hex::encode(Sha384::digest(bytes))
 }
 
 /// The receipt covers the wire bytes before it.
 fn assert_receipt(text: &str, body: &Value) {
-    let receipt = body["receipt_sha256"].as_str().expect("receipt");
-    let tail = format!(",\"receipt_sha256\":\"{receipt}\"}}");
+    let receipt = body["receipt_sha384"].as_str().expect("receipt");
+    let tail = format!(",\"receipt_sha384\":\"{receipt}\"}}");
     let document = text.strip_suffix(&tail).expect("the receipt is last");
-    assert_eq!(sha256_hex(format!("{document}}}").as_bytes()), receipt);
+    assert_eq!(sha384_hex(format!("{document}}}").as_bytes()), receipt);
 }
 
 fn film(load_n: f64, speed_rpm: f64) -> Value {
@@ -112,7 +112,7 @@ async fn three_films_match_the_solver_bit_for_bit() {
         let direct = bearing::solve(load_n, speed_rpm).expect("the solver converges");
 
         assert_eq!(body["inputs"], request);
-        assert_eq!(body["engine_version"], "genesis_solvers_v0.12.0");
+        assert_eq!(body["engine_version"], "genesis_solvers_v0.13.0");
         assert_eq!(body["outcome"], "converged");
         assert!(body["reject"].is_null());
         assert!(body["reject_detail"].is_null());
@@ -143,9 +143,9 @@ async fn three_films_match_the_solver_bit_for_bit() {
             direct.film_pressure_pa.len(),
             bearing::CELLS_AROUND * bearing::CELLS_ALONG_HALF
         );
-        assert_eq!(body["field_sha256"], sha256_hex(&field));
+        assert_eq!(body["field_sha384"], sha384_hex(&field));
 
-        assert_eq!(body["solution_seal"].as_str().unwrap().len(), 64);
+        assert_eq!(body["solution_seal"].as_str().unwrap().len(), 96);
         assert_receipt(&text, &body);
         assert_eq!(verdict(&base, &body).await, json!({ "holds": true, "values_hold": true, "cause": null, "compared": protocol_mcp_gateway::WHOLE_SOLUTION_COMPUTED }));
     }
@@ -165,7 +165,7 @@ async fn a_number_written_three_ways_is_one_question() {
         let (_, body) = solved(&base, &request).await;
         assert_eq!(
             body["seal_parts"]["inputs"],
-            sha256_hex(br#"{"parameters":{"load_n":x40b7700000000000,"speed_rpm":x4069000000000000},"solver":"journal_bearing_sheffield"}"#)
+            sha384_hex(br#"{"parameters":{"load_n":x40b7700000000000,"speed_rpm":x4069000000000000},"solver":"journal_bearing_sheffield"}"#)
         );
         seals.push(body["solution_seal"].as_str().unwrap().to_string());
     }
@@ -267,7 +267,7 @@ async fn the_bearing_is_listed_and_described_and_its_example_runs_unchanged() {
     let listed = reqwest::get(format!("{base}/solvers")).await.unwrap();
     let listed: Value = serde_json::from_str(&listed.text().await.unwrap()).unwrap();
     let solvers = listed["solvers"].as_array().expect("solvers");
-    assert_eq!(solvers.len(), 25);
+    assert_eq!(solvers.len(), protocol_mcp_gateway::SOLVERS);
     assert_eq!(solvers[2]["solver"], "journal_bearing_sheffield");
     assert!(solvers[2]["summary"].as_str().unwrap().ends_with('.'));
 
@@ -303,7 +303,10 @@ async fn the_bearing_is_listed_and_described_and_its_example_runs_unchanged() {
     assert!(result.contains("On the 16 runs not in the fit: mean absolute residual 0.0580 (target 0.15), worst absolute 0.1563 (target 0.35), mean +0.0199 (target 0.10)"), "{result}");
     assert!(result.contains("ultrasonic amplitude method") && result.contains("0.9356"), "{result}");
     // What was compared and what was not is said, beside what is returned.
-    let summary = solvers[2]["summary"].as_str().unwrap();
+    // Since 0.14.4 the whole spec sheet is the description's; the row gives
+    // what it computes, the comparison and the gap.
+    assert!(!solvers[2]["summary"].as_str().unwrap().contains("Range: "));
+    let summary = described["summary"].as_str().unwrap();
     assert!(summary.contains("Sommerfeld number, eccentricity ratio, attitude angle, minimum film thickness and peak film pressure"), "{summary}");
     assert!(summary.contains("the attitude angle and the peak film pressure come from the same settled film and have no measurement"), "{summary}");
     assert!(summary.contains("2 to 20 kN and 100 to 800 rpm") && summary.contains("within 0.058"), "{summary}");
@@ -374,8 +377,8 @@ async fn an_edited_film_is_named_by_its_part() {
     assert_fails(&base, &other_load, "inputs", "another load").await;
 
     let mut other_field = body.clone();
-    other_field["field_sha256"] = json!("0".repeat(64));
-    assert_fails(&base, &other_field, "field_sha256", "another field").await;
+    other_field["field_sha384"] = json!("0".repeat(96));
+    assert_fails(&base, &other_field, "field_sha384", "another field").await;
 
     let mut fewer = body.clone();
     fewer["iterations"] = json!(1);

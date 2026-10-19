@@ -1,10 +1,14 @@
 [package]
 name = "genesis_seal_parquet"
-version = "0.5.0"
+version = "0.6.0"
 edition = "2024"
 license = "Apache-2.0"
 rust-version = "1.88"
 description = "Converts a sealed dataset to Parquet, after its seal has been verified."
+
+# Its own workspace, with its own lock: found from any folder it is built in,
+# not only where the engine's workspace excludes it.
+[workspace]
 
 [lib]
 name = "genesis_seal_parquet"

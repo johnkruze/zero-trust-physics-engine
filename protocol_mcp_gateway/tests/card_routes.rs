@@ -77,7 +77,7 @@ async fn the_card_routes_give_the_bytes_of_the_tools_for_all_thirty_cards() {
         .as_array()
         .unwrap()
         .clone();
-    assert_eq!(cards.len(), 40);
+    assert_eq!(cards.len(), protocol_mcp_gateway::CARDS);
     for entry in &cards {
         let which = json!({ "domain": entry["domain"], "card": entry["card"] });
         let (status, http_text) = post(&base, "/describe_card", &which).await;

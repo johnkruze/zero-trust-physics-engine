@@ -128,7 +128,7 @@ async fn mcp_matches_http_for_a_step_a_run_and_a_violation() {
     assert_eq!(mcp_step_text, http_step);
     let http_json: Value = serde_json::from_str(&http_step).unwrap();
     let mcp_json: Value = serde_json::from_str(&mcp_step_text).unwrap();
-    assert_eq!(http_json["sha256_seal"], mcp_json["sha256_seal"]);
+    assert_eq!(http_json["sha384_seal"], mcp_json["sha384_seal"]);
     assert_eq!(http_json["inputs"], step, "a step echoes the whole request");
 
     let run = json!({
@@ -224,7 +224,7 @@ async fn mcp_matches_http_for_a_step_a_run_and_a_violation() {
     let mcp_json: Value = serde_json::from_str(&mcp_solution_text).unwrap();
     assert_eq!(http_json["outcome"], "converged");
     assert_eq!(http_json["solution_seal"], mcp_json["solution_seal"]);
-    assert_eq!(http_json["field_sha256"], mcp_json["field_sha256"]);
+    assert_eq!(http_json["field_sha384"], mcp_json["field_sha384"]);
 
     let (status, http_verdict) = post(&base, "/verify_solution", &http_json).await;
     assert_eq!(status, 200, "{http_verdict}");
@@ -335,7 +335,7 @@ async fn a_repeated_key_on_the_agent_door_is_refused_and_not_sealed() {
     assert_eq!(message["result"]["isError"], true, "{refused}");
     let text = message["result"]["content"][0]["text"].as_str().unwrap();
     assert_eq!(text, "Physical Violation: the key 'temperature_k' is repeated.");
-    assert!(!refused.contains("sha256_seal"), "{refused}");
+    assert!(!refused.contains("sha384_seal"), "{refused}");
 
     let listed = exchange(
         &mut stdin,
@@ -348,7 +348,7 @@ async fn a_repeated_key_on_the_agent_door_is_refused_and_not_sealed() {
     let body: Value =
         serde_json::from_str(listed["result"]["content"][0]["text"].as_str().unwrap()).unwrap();
     let pairs = body["cards"].as_array().expect("pairs");
-    assert_eq!(pairs.len(), 40, "{body}");
+    assert_eq!(pairs.len(), protocol_mcp_gateway::CARDS, "{body}");
 }
 
 #[tokio::test]
@@ -475,7 +475,7 @@ async fn an_unreadable_line_on_the_agent_door_is_answered() {
     assert_eq!(listed["id"], 3, "{listed}");
     let body: Value =
         serde_json::from_str(listed["result"]["content"][0]["text"].as_str().unwrap()).unwrap();
-    assert_eq!(body["cards"].as_array().expect("pairs").len(), 40);
+    assert_eq!(body["cards"].as_array().expect("pairs").len(), protocol_mcp_gateway::CARDS);
 }
 
 fn tool_text(result: &rmcp::model::CallToolResult) -> String {
@@ -584,13 +584,13 @@ async fn list_cards_and_describe_card_serve_the_thirty_one_pairs() {
     assert_eq!(listed.is_error, Some(false));
     let listed: Value = serde_json::from_str(&tool_text(&listed)).unwrap();
     assert_eq!(listed.as_object().unwrap().len(), 2, "{listed}");
-    assert_eq!(listed["count"], json!(40), "{listed}");
+    assert_eq!(listed["count"], json!(protocol_mcp_gateway::CARDS), "{listed}");
     let cards = listed["cards"].as_array().expect("cards");
     let pairs: Vec<(&str, &str)> = cards
         .iter()
         .map(|entry| {
-            // domain, card, against_measurement, specimen, and superseded_by on a superseded card.
-            assert_eq!(entry.as_object().unwrap().len(), 4 + usize::from(entry.get("superseded_by").is_some()), "{entry}");
+            // domain, card, against_measurement and specimen.
+            assert_eq!(entry.as_object().unwrap().len(), 4, "{entry}");
             assert!(entry["against_measurement"].is_string(), "{entry}");
             assert!(entry["specimen"].as_str().unwrap().ends_with('.'));
             (
@@ -599,6 +599,8 @@ async fn list_cards_and_describe_card_serve_the_thirty_one_pairs() {
             )
         })
         .collect();
+    // The served list of 0.15.0: one model per real object, each ID in its
+    // 0.14.3 place.
     assert_eq!(
         pairs,
         vec![
@@ -616,15 +618,11 @@ async fn list_cards_and_describe_card_serve_the_thirty_one_pairs() {
             ("aerospace", "capsule_stardust"),
             ("aerospace", "satellite_lageos1"),
             ("energy", "reactor_spert3"),
-            ("energy", "cell_2170_m80"),
             ("signal", "cantilever_eth"),
             ("energy", "cell_2170_model3"),
             ("materials", "creep_cmsx6"),
             ("aerospace", "capsule_insight"),
-            ("energy", "reactor_spert3_fuel"),
             ("aerospace", "crater_ryugu_sci"),
-            ("energy", "reactor_spert3_twin"),
-            ("energy", "reactor_spert3_ccore_twin"),
             ("energy", "generator_mmrtg_seebeck"),
             ("aerospace", "momentum_jwst_dihedral"),
             ("aerospace", "momentum_jwst_srp"),
@@ -645,21 +643,28 @@ async fn list_cards_and_describe_card_serve_the_thirty_one_pairs() {
         ]
     );
     // The one line of each model compared with measurement is its spec
-    // sheet: the six parts in order, each opening as it does, with the
-    // record's own numbers.
-    for index in [10, 11, 12, 14, 15, 16, 17, 18, 19, 20, 21, 22, 26, 29, 34, 35, 39] {
+    // sheet's row: what it computes, the comparison and the gap, in order,
+    // with the record's own numbers; since 0.14.4 the range, the fit and the
+    // refusals are the description's.
+    // By name since the fold of 0.15.0 moved the places.
+    let place = |name: &str| cards.iter().position(|card| card["card"] == name).unwrap_or_else(|| panic!("{name} is not listed"));
+    let compared = ["generator_mmrtg_f1", "capsule_stardust", "satellite_lageos1", "cantilever_eth", "cell_2170_model3", "creep_cmsx6", "capsule_insight", "crater_ryugu_sci", "grid_gb", "tokamak_jet_dte1", "runaway_18650_lco", "reactor_spert3", "reactor_spert3_ccore", "link_gothenburg_10010", "tire_eve_r19_ice", "reactor_triga_jsi", "reactor_msre_pump"];
+    for index in compared.map(place) {
         let line = cards[index]["specimen"].as_str().unwrap();
         let at = |mark: &str| line.find(mark).unwrap_or_else(|| panic!("cards[{index}] has no {mark:?}: {line}"));
-        let fitted = line.find(" Fitted on ").or_else(|| line.find(" Nothing fitted")).unwrap_or_else(|| panic!("cards[{index}]: {line}"));
-        assert!(at(" Range: ") < fitted && fitted < at(" Compared with ") && at(" Compared with ") < at(" Gap: ") && at(" Gap: ") < at(" Refuses "), "cards[{index}]: {line}");
+        assert!(at(" Compared with ") < at(" Gap: "), "cards[{index}]: {line}");
+        assert!(!line.contains(" Range: ") && !line.contains(" Fitted on ") && !line.contains(" Refuses "), "cards[{index}]: {line}");
         for word in ["blind", "held-back", "pass mark", "pass line", "fixed beforehand", " met ", " missed", "failed"] {
             assert!(!line.contains(word), "cards[{index}] says {word:?}: {line}");
         }
     }
-    for (index, number) in [(35, "39"), (34, "20 table rows"), (10, "2,809 to 4,087"), (17, "0.093"), (19, "30"), (26, "32.445 GHz")] {
+    for (name, number) in [("reactor_spert3_ccore", "the 111 left out of the fit"), ("reactor_triga_jsi", "20 table rows"), ("generator_mmrtg_f1", "2,809 to 4,087"), ("creep_cmsx6", "0.093"), ("link_gothenburg_10010", "32.445 GHz"), ("tokamak_jet_dte1", "0.830")] {
+        let index = place(name);
         assert!(cards[index]["specimen"].as_str().unwrap().contains(number), "cards[{index}]: {number}");
     }
-    assert!(cards[34]["specimen"].as_str().unwrap().contains("one thermocouple of one element"));
+    assert!(cards[place("reactor_triga_jsi")]["specimen"].as_str().unwrap().contains("one thermocouple of one element"));
+    let twin = cards.iter().find(|row| row["card"] == "runaway_18650_lco").expect("the twin is listed");
+    assert!(twin["specimen"].as_str().unwrap().contains("onsets within 16.2 K RMS"), "{twin}");
 
     for (domain, card) in pairs {
         let which = json!({ "domain": domain, "card": card });
@@ -697,17 +702,10 @@ async fn list_cards_and_describe_card_serve_the_thirty_one_pairs() {
         assert_eq!(mcp_run.is_error, Some(false), "{domain}/{card}");
         assert_eq!(tool_text(&mcp_run), http_run, "{domain}/{card}");
         let tape: Value = serde_json::from_str(&http_run).unwrap();
-        if card == "reactor_spert3" || card == "reactor_spert3_fuel" {
-            // The run of each reactor card goes to the first maximum of power, the end the card declares.
-            assert_eq!(tape["outcome"], "ended", "{domain}/{card}");
-            assert_eq!(tape["reject"], "PastFirstMaximum", "{domain}/{card}");
-        } else if card == "reactor_spert3_ccore" {
-            // Its run goes on to the first maximum of the hot-spot plate temperature, its end.
-            assert_eq!(tape["outcome"], "ended", "{domain}/{card}");
-            assert_eq!(tape["reject"], "PastPlateTemperatureMaximum", "{domain}/{card}");
-        } else {
-            assert_eq!(tape["outcome"], "completed", "{domain}/{card}");
-        }
+        // Every worked run completes since the fold of 0.15.0: reactor_spert3 is
+        // the E-core model, which declares no end, and the C-core model's worked
+        // transient, 1750 steps, stops short of its plate maximum (step 2303).
+        assert_eq!(tape["outcome"], "completed", "{domain}/{card}");
     }
 
     client.close().await.expect("close");

@@ -65,12 +65,12 @@ async fn permit_spike_returns_429_without_killing_the_runtime() {
             hit.detail
         );
         assert!(
-            !hit.detail.contains("sha256_seal"),
+            !hit.detail.contains("sha384_seal"),
             "429 wrote a frame seal: {}",
             hit.detail
         );
         assert!(
-            !hit.detail.contains("receipt_sha256"),
+            !hit.detail.contains("receipt_sha384"),
             "429 wrote a receipt: {}",
             hit.detail
         );
@@ -106,11 +106,11 @@ struct Hit {
 
 fn assert_sealed(body: &str) {
     let parsed: Value = serde_json::from_str(body).unwrap_or_else(|err| panic!("{err}: {body}"));
-    let seal = parsed["sha256_seal"].as_str().unwrap_or("");
-    assert_eq!(seal.len(), 64, "{body}");
+    let seal = parsed["sha384_seal"].as_str().unwrap_or("");
+    assert_eq!(seal.len(), 96, "{body}");
     assert!(seal.chars().all(|c| c.is_ascii_hexdigit()), "{seal}");
-    let receipt = parsed["receipt_sha256"].as_str().unwrap_or("");
-    assert_eq!(receipt.len(), 64, "{body}");
+    let receipt = parsed["receipt_sha384"].as_str().unwrap_or("");
+    assert_eq!(receipt.len(), 96, "{body}");
     assert!(receipt.chars().all(|c| c.is_ascii_hexdigit()), "{receipt}");
     assert_ne!(receipt, seal, "{body}");
     assert!(

@@ -166,9 +166,9 @@ async fn a_step_of_the_tyre_is_the_compiled_step_to_the_bit() {
     // 0.228109 x 1.2^-0.132823 x 5000 N.
     let force = answer["state"]["longitudinal_force_n"].as_f64().unwrap();
     assert!((force - 1_113.26).abs() < 0.01, "{force}");
-    assert!(answer["sha256_seal"].as_str().is_some_and(|seal| seal.len() == 64));
-    assert!(answer["receipt_sha256"].as_str().is_some_and(|seal| seal.len() == 64));
-    assert_eq!(answer["engine_version"], "genesis_kernel_v0.12.0");
+    assert!(answer["sha384_seal"].as_str().is_some_and(|seal| seal.len() == 96));
+    assert!(answer["receipt_sha384"].as_str().is_some_and(|seal| seal.len() == 96));
+    assert_eq!(answer["engine_version"], "genesis_kernel_v0.13.0");
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -224,7 +224,7 @@ async fn four_holds_chained_by_restarts_end_on_the_kernel_state_and_each_limit_e
             assert_eq!(status, 200, "{text}");
             let tape: Value = serde_json::from_str(&text).unwrap();
             assert_ne!(tape["outcome"], "ended", "{text}");
-            assert!(tape["run_seal"].as_str().is_some_and(|seal| seal.len() == 64));
+            assert!(tape["run_seal"].as_str().is_some_and(|seal| seal.len() == 96));
             let (status, report) = post(&base, "/verify_tape", &tape).await;
             assert_eq!(status, 200, "{report}");
             assert_eq!(serde_json::from_str::<Value>(&report).unwrap()["holds"], true, "{report}");
@@ -375,7 +375,7 @@ async fn a_restart_from_a_returned_distance_lands_where_small_steps_land() {
     let (status, text) =
         post(&base, "/verify_physics", &step_body(distance_m + 1.0e-9, &held, 16.0)).await;
     assert_eq!(status, 200, "{text}");
-    assert!(text.contains("sha256_seal"), "{text}");
+    assert!(text.contains("sha384_seal"), "{text}");
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -415,7 +415,7 @@ async fn each_limit_a_request_can_reach_is_named_and_carries_no_proof() {
         let (status, text) = post(&base, "/verify_physics", body).await;
         assert_eq!(status, 422, "{name}: {text}");
         assert!(text.contains(name), "{name}: {text}");
-        assert!(!text.contains("sha256_seal"), "{name}: {text}");
+        assert!(!text.contains("sha384_seal"), "{name}: {text}");
     }
     // The ends of each range land, and what lay past the compared range
     // through engine 0.9 lands now, flagged.
@@ -457,7 +457,7 @@ async fn each_limit_a_request_can_reach_is_named_and_carries_no_proof() {
     missing["parameters"].as_object_mut().unwrap().remove("slip_held_s");
     let (status, text) = post(&base, "/verify_physics", &missing).await;
     assert_eq!(status, 422, "{text}");
-    assert!(text.contains("slip_held_s") && !text.contains("sha256_seal"), "{text}");
+    assert!(text.contains("slip_held_s") && !text.contains("sha384_seal"), "{text}");
     let mut missing = run_body(0.0, 1.0, json!([{ "steps": 1, "load": good }]));
     missing["initial"].as_object_mut().unwrap().remove("slip_held_s");
     let (status, text) = post(&base, "/run_trajectory", &missing).await;
@@ -468,7 +468,7 @@ async fn each_limit_a_request_can_reach_is_named_and_carries_no_proof() {
         extra["parameters"][key] = json!(0.9);
         let (status, text) = post(&base, "/verify_physics", &extra).await;
         assert_eq!(status, 422, "{key}: {text}");
-        assert!(text.contains(key) && !text.contains("sha256_seal"), "{key}: {text}");
+        assert!(text.contains(key) && !text.contains("sha384_seal"), "{key}: {text}");
     }
     // A slip off the card in a later segment refuses the whole run before its first step.
     let segments = json!([
@@ -561,12 +561,13 @@ async fn the_local_connection_lists_the_tyre_and_gives_the_bytes_of_the_web_conn
         .find(|card| card["card"] == "tire_eve_r19_ice")
         .expect("the tyre is listed");
     assert_eq!(entry["domain"], "materials");
-    // The line an agent sees in the list says that the ratio is fitted.
-    assert!(entry["specimen"].as_str().unwrap().contains("Fitted on 72 of the 252 runs of the EVE ice dataset"));
+    // Since 0.14.4 a row gives what the model computes, the comparison and the gap; the whole spec sheet is the description's.
+    assert!(!entry["specimen"].as_str().unwrap().contains("Fitted on"));
 
     let which = json!({ "domain": "materials", "card": "tire_eve_r19_ice" });
     let (described, error) = local.tool("describe_card", &which).await;
     assert!(!error);
+    assert!(described.contains("Fitted on 72 of the 252 runs of the EVE ice dataset"), "{described}");
     let (status, over_web) = post(&web, "/describe_card", &which).await;
     assert_eq!(status, 200);
     assert_eq!(described, over_web);

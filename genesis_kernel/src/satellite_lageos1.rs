@@ -339,6 +339,7 @@ extern crate core;
 
 use core::prelude::v1::*;
 
+use crate::exceedance::{Exceedance, ExceedanceKind, Side};
 use crate::frame::LastStateFrame64;
 use crate::normal::{normal_or_zero, normal_or_zero_each};
 
@@ -1498,6 +1499,26 @@ pub fn step(
     load: SatelliteLoad,
     dt_s: f64,
 ) -> Result<(), StepReject> {
+    #[cfg(any(test, debug_assertions, feature = "check_exceedances"))]
+    let before = *state;
+    let stepped = step_landed(satellite, state, frame, load, dt_s);
+    #[cfg(any(test, debug_assertions, feature = "check_exceedances"))]
+    if stepped.is_ok() {
+        crate::exceedance::debug_check("satellite_lageos1", exceedances(satellite, &before, state, load, dt_s), frame.flags);
+    }
+    stepped
+}
+
+/// The step itself; [`step`] is it with, in a build that checks
+/// (`crate::exceedance::CHECKED`), the check that [`exceedances`] stands for
+/// the flags it wrote.
+fn step_landed(
+    satellite: &SatelliteLageos1,
+    state: &mut SatelliteState,
+    frame: &mut LastStateFrame64,
+    load: SatelliteLoad,
+    dt_s: f64,
+) -> Result<(), StepReject> {
     step_as_computed(satellite, state, frame, load, dt_s)?;
     normal_or_zero_state(state);
     Ok(())
@@ -2362,6 +2383,65 @@ fn state_is_finite(state: &SatelliteState) -> bool {
         && state.residual_conservation_error.is_finite()
         && state.radius_m.is_finite()
         && state.semi_major_axis_m.is_finite()
+}
+
+/// Every limit a flag of this card can mark: what [`exceedances`] reports
+/// beside a flag's bit (`crate::exceedance`).
+pub const EXCEEDANCE_KINDS: &[crate::exceedance::ExceedanceKind] = &[
+    SHADOW_KIND,
+    RADIUS_KIND,
+];
+
+const SHADOW_KIND: ExceedanceKind = ExceedanceKind::fixed(
+    "FLAG_EARTH_SHADOW",
+    FLAG_EARTH_SHADOW,
+    "distance_from_shadow_axis_m",
+    "m",
+    Side::Below,
+    FIELD_RADIUS_M,
+    "the Earth's radius, 6 378 136.3 m, from the line from the Sun through the Earth, on the far side from the Sun: inside it sunlight pressure is off, a part of the model not compared with data",
+);
+const RADIUS_KIND: ExceedanceKind = ExceedanceKind::fixed(
+    "FLAG_BELOW_COMPARED_RADIUS",
+    FLAG_BELOW_COMPARED_RADIUS,
+    "radius_m",
+    "m",
+    Side::Below,
+    COMPARED_RADIUS_MIN_M,
+    "the lowest point any compared run reached, 11 997 km from the Earth's centre; the card carries no air",
+);
+
+/// The limits the step from `before` to `after` under `load` over `dt_s`
+/// is past: one record for each limit a flag set on its frame marks.
+/// The shadow is read as `sunlit` reads it: the distance of the landing
+/// from the line through the Earth away from the Sun, at the landing's time.
+pub fn exceedances(
+    satellite: &SatelliteLageos1,
+    before: &SatelliteState,
+    after: &SatelliteState,
+    load: SatelliteLoad,
+    dt_s: f64,
+) -> crate::exceedance::Exceedances {
+    let _ = (before, load, dt_s);
+    let mut records = crate::exceedance::Exceedances::new();
+    if after.in_earth_shadow {
+        let sun_m = sun_position_m(satellite, after.epoch_utc_s());
+        let sun_distance = dot(sun_m, sun_m).sqrt();
+        let toward_sun = [sun_m[0] / sun_distance, sun_m[1] / sun_distance, sun_m[2] / sun_distance];
+        let p = after.position_m;
+        let along_m = dot(p, toward_sun);
+        let across_m = [
+            p[0] - along_m * toward_sun[0],
+            p[1] - along_m * toward_sun[1],
+            p[2] - along_m * toward_sun[2],
+        ];
+        records.push(Exceedance::at(SHADOW_KIND, satellite.field_radius_m, dot(across_m, across_m).sqrt()));
+    }
+    records.push_if(
+        after.radius_m < satellite.compared_radius_min_m,
+        Exceedance::at(RADIUS_KIND, satellite.compared_radius_min_m, after.radius_m),
+    );
+    records
 }
 
 #[cfg(test)]

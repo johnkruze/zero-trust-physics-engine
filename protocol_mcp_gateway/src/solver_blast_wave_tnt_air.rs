@@ -201,7 +201,7 @@ const REFUSALS: &[Refusal] = &[
 
 fn field_words() -> String {
     format!(
-        "SHA-256 of the count of the numbers that follow ({}) as 8 little-endian bytes, then the {} times after arrival of the history in seconds, then its {} overpressures in pascals, all as little-endian f64 bytes.",
+        "SHA-384 of the count of the numbers that follow ({}) as 8 little-endian bytes, then the {} times after arrival of the history in seconds, then its {} overpressures in pascals, all as little-endian f64 bytes.",
         2 * model::HISTORY_POINTS,
         model::HISTORY_POINTS,
         model::HISTORY_POINTS

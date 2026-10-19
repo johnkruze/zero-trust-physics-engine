@@ -30,9 +30,9 @@
     "bibtex": "@misc{kruze2026zerotrustphysics,\n  author       = {Kruze, John},\n  title        = {Zero-Trust Physics: a verifier for the physical answers of Super Intelligence},\n  year         = {2026},\n  month        = oct,\n  version      = {1.0},\n  howpublished = {Preprint},\n  publisher    = {Zenodo},\n  organization = {Protocol Company},\n  doi          = {10.5281/zenodo.23305697},\n  url          = {https://doi.org/10.5281/zenodo.23305697},\n  note         = {Byline on the paper: John Kruze, with Super Intelligence}\n}"
   },
   "counts": {
-    "cards": 40,
+    "cards": 36,
     "solvers": 25,
-    "models": 65
+    "models": 61
   },
   "models": {
     "materials/ti64_lattice": {
@@ -408,72 +408,6 @@
       "not_held_to_a_measurement": false,
       "cite_also": "paper"
     },
-    "energy/reactor_spert3": {
-      "kind": "card",
-      "real_thing": "The SPERT III E-core, a small oxide-fuelled pressurized-water test reactor at the National Reactor Testing Station, Idaho: cold-startup reactivity-insertion tests of the 1960s",
-      "sources": [
-        {
-          "role": "measurements",
-          "authors": "McCardell, R. K.; Herborn, D. I.; Houghtaling, J. E.",
-          "title": "Reactivity Accident Test Results and Analyses for the SPERT III E-Core: A Small, Oxide-Fueled, Pressurized-Water Reactor",
-          "year": 1969,
-          "publisher_or_venue": "Phillips Petroleum Co., Atomic Energy Division, Idaho Falls, Idaho, for the U.S. Atomic Energy Commission (contract AT(10-1)-205); distributed by the U.S. Department of Energy Office of Scientific and Technical Information",
-          "identifier": "IDO-17281; OSTI 4792676; 10.2172/4792676",
-          "url": "https://doi.org/10.2172/4792676",
-          "requested_acknowledgment": null,
-          "citation_text": "McCardell, R. K.; Herborn, D. I.; Houghtaling, J. E. (1969). Reactivity Accident Test Results and Analyses for the SPERT III E-Core: A Small, Oxide-Fueled, Pressurized-Water Reactor. Report IDO-17281, Phillips Petroleum Co., Atomic Energy Division, Idaho Falls, Idaho, for the U.S. Atomic Energy Commission, March 1969. OSTI 4792676. https://doi.org/10.2172/4792676",
-          "bibtex": "@techreport{mccardell1969spert3,\n  author = {McCardell, R. K. and Herborn, D. I. and Houghtaling, J. E.},\n  title = {Reactivity Accident Test Results and Analyses for the {SPERT III E-Core}: A Small, Oxide-Fueled, Pressurized-Water Reactor},\n  institution = {Phillips Petroleum Co., Atomic Energy Division, Idaho Falls, Idaho},\n  number = {IDO-17281},\n  year = {1969},\n  month = {mar},\n  doi = {10.2172/4792676},\n  url = {https://doi.org/10.2172/4792676},\n  note = {OSTI ID 4792676}\n}"
-        },
-        {
-          "role": "reference calculation",
-          "authors": "Olson, Arne P.",
-          "title": "Neutronics Calculations for SPERT-III, E-core",
-          "year": 2013,
-          "publisher_or_venue": "Argonne National Laboratory, Argonne, IL (United States); distributed by the U.S. Department of Energy Office of Scientific and Technical Information",
-          "identifier": "ANL/GTRI/TM-13/10; OSTI 1087815; 10.2172/1087815",
-          "url": "https://doi.org/10.2172/1087815",
-          "requested_acknowledgment": null,
-          "citation_text": "Olson, Arne P. (2013). Neutronics Calculations for SPERT-III, E-core. Report ANL/GTRI/TM-13/10, Argonne National Laboratory. OSTI 1087815. https://doi.org/10.2172/1087815",
-          "bibtex": "@techreport{olson2013spert3,\n  author = {Olson, Arne P.},\n  title = {Neutronics Calculations for {SPERT-III}, {E}-core},\n  institution = {Argonne National Laboratory},\n  address = {Argonne, IL},\n  number = {ANL/GTRI/TM-13/10},\n  year = {2013},\n  doi = {10.2172/1087815},\n  url = {https://doi.org/10.2172/1087815},\n  note = {OSTI ID 1087815}\n}"
-        }
-      ],
-      "how_used": "Table III of IDO-17281: the one fitted constant is fitted on 20 tests; the card is compared with the other 10, every third test in run order, outside the fit; the locked constants are the report's own. None of the report's measured values is stored in the card.",
-      "not_held_to_a_measurement": false,
-      "cite_also": "paper"
-    },
-    "energy/cell_2170_m80": {
-      "kind": "card",
-      "real_thing": "One Tesla Model 3 2170 lithium-ion cell, cell m80 of the McMaster University dataset, in six blocks of tests from -20 to 40 degrees Celsius",
-      "sources": [
-        {
-          "role": "measurements",
-          "authors": "Kollmeyer, Phillip J.; Khanum, Fauzia; Naguib, Mina; Emadi, Ali",
-          "title": "Tesla Model 3 2170 Li-ion Cell Dataset and Battery SOC Estimation Blind Modeling Tool",
-          "year": 2023,
-          "publisher_or_venue": "Borealis, V3 (version 3.0)",
-          "identifier": "10.5683/SP3/ZVTR4B",
-          "url": "https://doi.org/10.5683/SP3/ZVTR4B",
-          "requested_acknowledgment": "Borealis page: 'Our Community Norms as well as good scientific practices expect that proper credit is given via citation. Please use the data citation shown on the dataset page.' The dataset's overview slides (slide 5) say: 'Cite this paper when using data/tool' and give the 2022 IEEE ITEC paper.",
-          "citation_text": "Kollmeyer, Phillip J.; Khanum, Fauzia; Naguib, Mina; Emadi, Ali (2023). Tesla Model 3 2170 Li-ion Cell Dataset and Battery SOC Estimation Blind Modeling Tool. Borealis, V3. https://doi.org/10.5683/SP3/ZVTR4B",
-          "bibtex": "@misc{kollmeyer2023tesla2170,\n  author = {Kollmeyer, Phillip J. and Khanum, Fauzia and Naguib, Mina and Emadi, Ali},\n  title = {{Tesla Model 3 2170 Li-ion Cell Dataset and Battery SOC Estimation Blind Modeling Tool}},\n  year = {2023},\n  publisher = {Borealis},\n  version = {3.0},\n  doi = {10.5683/SP3/ZVTR4B},\n  url = {https://doi.org/10.5683/SP3/ZVTR4B},\n  note = {Dataset}\n}"
-        },
-        {
-          "role": "method",
-          "authors": "Kollmeyer, Phillip J.; Naguib, Mina; Khanum, Fauzia; Emadi, Ali",
-          "title": "A Blind Modeling Tool for Standardized Evaluation of Battery State of Charge Estimation Algorithms",
-          "year": 2022,
-          "publisher_or_venue": "2022 IEEE Transportation Electrification Conference & Expo (ITEC), pp. 243-248",
-          "identifier": "10.1109/ITEC53557.2022.9813996",
-          "url": "https://doi.org/10.1109/ITEC53557.2022.9813996",
-          "requested_acknowledgment": "Dataset overview slides, slide 5: 'Cite this paper when using data/tool'.",
-          "citation_text": "Kollmeyer, Phillip J.; Naguib, Mina; Khanum, Fauzia; Emadi, Ali (2022). A Blind Modeling Tool for Standardized Evaluation of Battery State of Charge Estimation Algorithms. 2022 IEEE Transportation Electrification Conference & Expo (ITEC), pp. 243-248. https://doi.org/10.1109/ITEC53557.2022.9813996",
-          "bibtex": "@inproceedings{kollmeyer2022blind,\n  author = {Kollmeyer, Phillip J. and Naguib, Mina and Khanum, Fauzia and Emadi, Ali},\n  title = {{A Blind Modeling Tool for Standardized Evaluation of Battery State of Charge Estimation Algorithms}},\n  booktitle = {2022 IEEE Transportation Electrification Conference \\& Expo (ITEC)},\n  year = {2022},\n  pages = {243--248},\n  publisher = {IEEE},\n  doi = {10.1109/ITEC53557.2022.9813996}\n}"
-        }
-      ],
-      "how_used": "The card's 2,307 fitted numbers were fitted on 17 characterisation files of cell m80 (the slow discharges and the pulse test of each block). Outside the fit, 18 tests were read for a forecast outside the engine, and the card is compared with 60 more (12 held-current discharges and 48 drive cycles).",
-      "not_held_to_a_measurement": false,
-      "cite_also": "paper"
-    },
     "signal/cantilever_eth": {
       "kind": "card",
       "real_thing": "One aluminium strip, 326 mm x 40 mm x 1 mm, clamped at one end at ETH Zürich and recorded ringing down in room air",
@@ -509,7 +443,7 @@
     },
     "energy/cell_2170_model3": {
       "kind": "card",
-      "real_thing": "Three Tesla Model 3 2170 lithium-ion cells of the McMaster University dataset (m80, m1000 and m448-N), from -10 to 40 degrees Celsius",
+      "real_thing": "Three Tesla Model 3 2170 lithium-ion cells of the McMaster University dataset (m80, m1000 and m448-N), from -20 to 40 degrees Celsius",
       "sources": [
         {
           "role": "measurements",
@@ -536,7 +470,7 @@
           "bibtex": "@inproceedings{kollmeyer2022blind,\n  author = {Kollmeyer, Phillip J. and Naguib, Mina and Khanum, Fauzia and Emadi, Ali},\n  title = {{A Blind Modeling Tool for Standardized Evaluation of Battery State of Charge Estimation Algorithms}},\n  booktitle = {2022 IEEE Transportation Electrification Conference \\& Expo (ITEC)},\n  year = {2022},\n  pages = {243--248},\n  publisher = {IEEE},\n  doi = {10.1109/ITEC53557.2022.9813996}\n}"
         }
       ],
-      "how_used": "The rest-voltage curve and 22 numbers were fitted on every test of cell m80 from -10 to 40 degrees Celsius; for cells m1000 and m448-N one resistance scale was fitted on four characterisation tests of each cell at each temperature; the card is compared with 45 runs of m1000 and 60 runs of m448-N (held-current discharges and drive cycles), outside the fit.",
+      "how_used": "Every published record of the three cells, -20 to 40 degrees Celsius: the rest-voltage curves are the mean of the three cells' slow discharges at 40 degrees, and the fitted numbers and one resistance scale per cell are fitted on all their pulse tests, slow loops, held-current discharges and drive cycles, which the card is compared with, each cell also left out of the fit in turn.",
       "not_held_to_a_measurement": false,
       "cite_also": "paper"
     },
@@ -687,51 +621,6 @@
         }
       ],
       "how_used": "Air built from seven Mars Climate Sounder temperature profiles set on the lander's surface pressure (NTRS 20200003204); drag from the 2008 Phoenix aerodynamic database (Fig. 9a, digitised); no constant from the accelerometer. Of the flight record (PDS insight_edl), the first 150 s were read to diagnose a first forecast; the card is compared with the last 59 s before the parachute.",
-      "not_held_to_a_measurement": false,
-      "cite_also": "paper"
-    },
-    "energy/reactor_spert3_fuel": {
-      "kind": "card",
-      "real_thing": "The SPERT III E-core, a small oxide-fuelled pressurized-water test reactor at the National Reactor Testing Station, Idaho: low-initial-power reactivity-insertion tests at about 70, 260 and 500 degrees Fahrenheit",
-      "sources": [
-        {
-          "role": "measurements",
-          "authors": "McCardell, R. K.; Herborn, D. I.; Houghtaling, J. E.",
-          "title": "Reactivity Accident Test Results and Analyses for the SPERT III E-Core: A Small, Oxide-Fueled, Pressurized-Water Reactor",
-          "year": 1969,
-          "publisher_or_venue": "Phillips Petroleum Co., Atomic Energy Division, Idaho Falls, Idaho, for the U.S. Atomic Energy Commission (contract AT(10-1)-205); distributed by the U.S. Department of Energy Office of Scientific and Technical Information",
-          "identifier": "IDO-17281; OSTI 4792676; 10.2172/4792676",
-          "url": "https://doi.org/10.2172/4792676",
-          "requested_acknowledgment": null,
-          "citation_text": "McCardell, R. K.; Herborn, D. I.; Houghtaling, J. E. (1969). Reactivity Accident Test Results and Analyses for the SPERT III E-Core: A Small, Oxide-Fueled, Pressurized-Water Reactor. Report IDO-17281, Phillips Petroleum Co., Atomic Energy Division, Idaho Falls, Idaho, for the U.S. Atomic Energy Commission, March 1969. OSTI 4792676. https://doi.org/10.2172/4792676",
-          "bibtex": "@techreport{mccardell1969spert3,\n  author = {McCardell, R. K. and Herborn, D. I. and Houghtaling, J. E.},\n  title = {Reactivity Accident Test Results and Analyses for the {SPERT III E-Core}: A Small, Oxide-Fueled, Pressurized-Water Reactor},\n  institution = {Phillips Petroleum Co., Atomic Energy Division, Idaho Falls, Idaho},\n  number = {IDO-17281},\n  year = {1969},\n  month = {mar},\n  doi = {10.2172/4792676},\n  url = {https://doi.org/10.2172/4792676},\n  note = {OSTI ID 4792676}\n}"
-        },
-        {
-          "role": "reference calculation",
-          "authors": "Olson, Arne P.",
-          "title": "Neutronics Calculations for SPERT-III, E-core",
-          "year": 2013,
-          "publisher_or_venue": "Argonne National Laboratory, Argonne, IL (United States); distributed by the U.S. Department of Energy Office of Scientific and Technical Information",
-          "identifier": "ANL/GTRI/TM-13/10; OSTI 1087815; 10.2172/1087815",
-          "url": "https://doi.org/10.2172/1087815",
-          "requested_acknowledgment": null,
-          "citation_text": "Olson, Arne P. (2013). Neutronics Calculations for SPERT-III, E-core. Report ANL/GTRI/TM-13/10, Argonne National Laboratory. OSTI 1087815. https://doi.org/10.2172/1087815",
-          "bibtex": "@techreport{olson2013spert3,\n  author = {Olson, Arne P.},\n  title = {Neutronics Calculations for {SPERT-III}, {E}-core},\n  institution = {Argonne National Laboratory},\n  address = {Argonne, IL},\n  number = {ANL/GTRI/TM-13/10},\n  year = {2013},\n  doi = {10.2172/1087815},\n  url = {https://doi.org/10.2172/1087815},\n  note = {OSTI ID 1087815}\n}"
-        },
-        {
-          "role": "constants",
-          "authors": "Linstrom, Peter (as the DataCite record of the DOI gives the creator; the pages read name no author)",
-          "title": "NIST Chemistry WebBook, NIST Standard Reference Database 69 (Thermophysical Properties of Fluid Systems: water isobars at 0.0853 MPa and 10.44 MPa)",
-          "year": 1997,
-          "publisher_or_venue": "National Institute of Standards and Technology",
-          "identifier": "10.18434/T4D303",
-          "url": "https://doi.org/10.18434/T4D303",
-          "requested_acknowledgment": null,
-          "citation_text": "Linstrom, Peter (1997). NIST Chemistry WebBook, NIST Standard Reference Database 69. National Institute of Standards and Technology. https://doi.org/10.18434/T4D303 (Thermophysical Properties of Fluid Systems, water, retrieved 2026-10-09).",
-          "bibtex": "@misc{nist_webbook_srd69,\n  author = {Linstrom, Peter},\n  title = {{NIST Chemistry WebBook, NIST Standard Reference Database 69}},\n  publisher = {National Institute of Standards and Technology},\n  year = {1997},\n  doi = {10.18434/T4D303},\n  url = {https://doi.org/10.18434/T4D303},\n  note = {Thermophysical Properties of Fluid Systems, water; retrieved 2026-10-09}\n}"
-        }
-      ],
-      "how_used": "Tables III and V of IDO-17281: four constants fitted on 28 tests (20 cold-startup, eight at 500 degF); compared with the 30 outside the fit (ten cold-startup, seven at 500 degF, the whole 260 degF series of 13). Water density and heat capacity for the three bands from the NIST WebBook. None of the report's measured values is stored in the card.",
       "not_held_to_a_measurement": false,
       "cite_also": "paper"
     },
@@ -987,7 +876,7 @@
       "not_held_to_a_measurement": false,
       "cite_also": "paper"
     },
-    "energy/reactor_spert3_twin": {
+    "energy/reactor_spert3": {
       "kind": "card",
       "real_thing": "The SPERT III E-core, a small oxide-fuelled pressurized-water test reactor at the National Reactor Testing Station, Idaho: all 70 tabulated reactivity-insertion tests, cold startup at about 70 degrees Fahrenheit, hot startup at about 260 and 500 degrees Fahrenheit, hot standby from about 1 MW and operating power from 19 MW",
       "sources": [
@@ -1040,11 +929,11 @@
           "bibtex": "@article{wagner2000if97,\n  author = {Wagner, W. and others},\n  title = {The {IAPWS} Industrial Formulation 1997 for the Thermodynamic Properties of Water and Steam},\n  journal = {Journal of Engineering for Gas Turbines and Power},\n  volume = {122},\n  number = {1},\n  pages = {150--182},\n  year = {2000},\n  doi = {10.1115/1.483186}\n}"
         }
       ],
-      "how_used": "The digital twin of the core: fitted on all 70 tests of IDO-17281 Tables III, V and VII, twelve constants, and compared with each test left out of the fit. The report's design data (Appendix A), kinetics, gap, heat-source and rod data (Appendix B, Table II) and rod worth curves (Fig. B-4) set its structure; UO2 heat capacity and conductivity are Fink's, the saturation temperature IAPWS-IF97's, and the water's properties polynomials fitted to the NIST WebBook isobar at 10.44 MPa. reactor_spert3_fuel, the earlier card of the same core, is served beside it.",
+      "how_used": "One model of the core: fitted on all 70 tests of IDO-17281 Tables III, V and VII, twelve constants, and compared with each test left out of the fit. The report's design data (Appendix A), kinetics, gap, heat-source and rod data (Appendix B, Table II) and rod worth curves (Fig. B-4) set its structure; UO2 heat capacity and conductivity are Fink's, the saturation temperature IAPWS-IF97's, and the water's properties polynomials fitted to the NIST WebBook isobar at 10.44 MPa.",
       "not_held_to_a_measurement": false,
       "cite_also": "paper"
     },
-    "energy/reactor_spert3_ccore_twin": {
+    "energy/reactor_spert3_ccore": {
       "kind": "card",
       "real_thing": "The SPERT III reactor with the C-19/52 highly enriched plate core, National Reactor Testing Station, Idaho: room-temperature step power excursions under pressure and flow, reported 1964",
       "sources": [
@@ -1085,7 +974,322 @@
           "bibtex": "@book{keepin1965kinetics,\n  author = {Keepin, G. R.},\n  title = {Physics of Nuclear Kinetics},\n  year = {1965},\n  note = {Publisher not confirmed from the evidence record}\n}"
         }
       ],
-      "how_used": "IDO-16918's appendix: the 111 usable step transients the card's eight constants are fitted on and compared with (peak power, energy to peak, plate temperature at peak and at its maximum), the same record reactor_spert3_ccore, served beside it, is compared with. IDO-17138 Table B-1 and IDO-16918 Table I: the core constants, the isothermal and void coefficients. Keepin: the delayed-neutron groups.",
+      "how_used": "Fitted on the 111 transients of IDO-16918's appendix, ten constants, each plate as its meat and its cladding joined by conduction, the plates' feedback lagging their temperature and the film next to them thinning with the flow, and compared with each tenth of the transients left out of the fit. IDO-17138's Table B-1 and IDO-16918's Table I give the core's constants and IDO-16918 the plate's thicknesses; the steam tables are IAPWS-IF97's and the IAPWS auxiliary equations'. Keepin: the delayed-neutron groups.",
+      "not_held_to_a_measurement": false,
+      "cite_also": "paper"
+    },
+    "energy/runaway_18650_lco": {
+      "kind": "card",
+      "real_thing": "One 18650 lithium-ion cell, LiCoO2 against graphite, fully charged, in thermal abuse: the lumped Hatchard-Kim model with a separator melt and a vent, fitted on the open records of LiCoO2 18650 oven, ramp and heat-wait-seek tests",
+      "how_used": "Seven constants are fitted on 13 records: Hatchard's oven tests at 145, 150 and 155 degC (reprinted by Lopez et al. 2015, Fig. 2a, timed and vented by Ostanek et al. 2023), Golubkov et al. (2014) Table 3, Mendoza-Hernandez et al. (2017) Table 1, and eight LiCoO2 rows Lei et al. (2017) Table 1 reprint; each record is also left out of the fit in turn. The melt and vent temperatures are Golubkov et al.'s (2014). Every other constant is published: Ostanek's (2025) Table 2, Hatchard's jelly roll as Coman et al. (2017) Table I reprint it.",
+      "not_held_to_a_measurement": false,
+      "cite_also": "paper",
+      "sources": [
+        {
+          "role": "constants",
+          "authors": "Ostanek, J. K.",
+          "title": "Simulink Model for Thermal Runaway of a Single Li-ion Cell using the Hatchard-Kim Reaction Mechanism and 0D Lumped Body Approach",
+          "year": 2025,
+          "publisher_or_venue": "Purdue University Research Repository",
+          "identifier": "10.4231/NWZX-2675",
+          "url": "https://doi.org/10.4231/NWZX-2675",
+          "requested_acknowledgment": null,
+          "citation_text": "Ostanek, J. K. (2025). Simulink Model for Thermal Runaway of a Single Li-ion Cell using the Hatchard-Kim Reaction Mechanism and 0D Lumped Body Approach, Version 1.0. Purdue University Research Repository. https://doi.org/10.4231/NWZX-2675",
+          "bibtex": "@misc{ostanek2025hatchardkim,\n  author = {Ostanek, J. K.},\n  title = {Simulink Model for Thermal Runaway of a Single Li-ion Cell using the {Hatchard-Kim} Reaction Mechanism and {0D} Lumped Body Approach},\n  howpublished = {Purdue University Research Repository},\n  year = {2025},\n  doi = {10.4231/NWZX-2675},\n  url = {https://doi.org/10.4231/NWZX-2675}\n}"
+        },
+        {
+          "role": "constants",
+          "authors": "Coman, P. T.; Darcy, E. C.; Veje, C. T.; White, R. E.",
+          "title": "Modelling Li-Ion Cell Thermal Runaway Triggered by an Internal Short Circuit Device Using an Efficiency Factor and Arrhenius Formulations",
+          "year": 2017,
+          "publisher_or_venue": "Journal of The Electrochemical Society 164(4), A587-A593",
+          "identifier": "10.1149/2.0341704jes",
+          "url": "https://doi.org/10.1149/2.0341704jes",
+          "requested_acknowledgment": null,
+          "citation_text": "Coman, P. T.; Darcy, E. C.; Veje, C. T.; White, R. E. (2017). Modelling Li-Ion Cell Thermal Runaway Triggered by an Internal Short Circuit Device Using an Efficiency Factor and Arrhenius Formulations. Journal of The Electrochemical Society 164(4), A587-A593. https://doi.org/10.1149/2.0341704jes",
+          "bibtex": "@article{coman2017modelling,\n  author = {Coman, P. T. and Darcy, E. C. and Veje, C. T. and White, R. E.},\n  title = {Modelling {Li-Ion} Cell Thermal Runaway Triggered by an Internal Short Circuit Device Using an Efficiency Factor and {Arrhenius} Formulations},\n  journal = {Journal of The Electrochemical Society},\n  volume = {164},\n  number = {4},\n  pages = {A587--A593},\n  year = {2017},\n  doi = {10.1149/2.0341704jes}\n}"
+        },
+        {
+          "role": "measurements",
+          "authors": "Lopez, C. F.; Jeevarajan, J. A.; Mukherjee, P. P.",
+          "title": "Characterization of Lithium-Ion Battery Thermal Abuse Behavior Using Experimental and Computational Analysis",
+          "year": 2015,
+          "publisher_or_venue": "Journal of The Electrochemical Society 162(10), A2163-A2173",
+          "identifier": "10.1149/2.0751510jes",
+          "url": "https://doi.org/10.1149/2.0751510jes",
+          "requested_acknowledgment": null,
+          "citation_text": "Lopez, C. F.; Jeevarajan, J. A.; Mukherjee, P. P. (2015). Characterization of Lithium-Ion Battery Thermal Abuse Behavior Using Experimental and Computational Analysis. Journal of The Electrochemical Society 162(10), A2163-A2173. https://doi.org/10.1149/2.0751510jes",
+          "bibtex": "@article{lopez2015characterization,\n  author = {Lopez, C. F. and Jeevarajan, J. A. and Mukherjee, P. P.},\n  title = {Characterization of Lithium-Ion Battery Thermal Abuse Behavior Using Experimental and Computational Analysis},\n  journal = {Journal of The Electrochemical Society},\n  volume = {162},\n  number = {10},\n  pages = {A2163--A2173},\n  year = {2015},\n  doi = {10.1149/2.0751510jes}\n}"
+        },
+        {
+          "role": "measurements",
+          "authors": "Ostanek, J. K.; Parhizi, M.; Li, W.; Kilaz, G.; Crompton, K. R.",
+          "title": "CFD-Based Thermal Abuse Simulations including Gas Generation and Venting of an 18650 Li-Ion Battery Cell",
+          "year": 2023,
+          "publisher_or_venue": "Journal of The Electrochemical Society 170, 090512",
+          "identifier": "10.1149/1945-7111/acf4c1",
+          "url": "https://doi.org/10.1149/1945-7111/acf4c1",
+          "requested_acknowledgment": null,
+          "citation_text": "Ostanek, J. K.; Parhizi, M.; Li, W.; Kilaz, G.; Crompton, K. R. (2023). CFD-Based Thermal Abuse Simulations including Gas Generation and Venting of an 18650 Li-Ion Battery Cell. Journal of The Electrochemical Society 170, 090512. https://doi.org/10.1149/1945-7111/acf4c1",
+          "bibtex": "@article{ostanek2023cfd,\n  author = {Ostanek, J. K. and Parhizi, M. and Li, W. and Kilaz, G. and Crompton, K. R.},\n  title = {{CFD}-Based Thermal Abuse Simulations including Gas Generation and Venting of an 18650 {Li-Ion} Battery Cell},\n  journal = {Journal of The Electrochemical Society},\n  volume = {170},\n  pages = {090512},\n  year = {2023},\n  doi = {10.1149/1945-7111/acf4c1}\n}"
+        },
+        {
+          "role": "measurements",
+          "authors": "Golubkov, A. W.; Fuchs, D.; Wagner, J.; Wiltsche, H.; Stangl, C.; Fauler, G.; Voitic, G.; Thaler, A.; Hacker, V.",
+          "title": "Thermal-runaway experiments on consumer Li-ion batteries with metal-oxide and olivin-type cathodes",
+          "year": 2014,
+          "publisher_or_venue": "RSC Advances 4, 3633-3642",
+          "identifier": "10.1039/c3ra45748f",
+          "url": "https://doi.org/10.1039/c3ra45748f",
+          "requested_acknowledgment": null,
+          "citation_text": "Golubkov, A. W.; Fuchs, D.; Wagner, J.; Wiltsche, H.; Stangl, C.; Fauler, G.; Voitic, G.; Thaler, A.; Hacker, V. (2014). Thermal-runaway experiments on consumer Li-ion batteries with metal-oxide and olivin-type cathodes. RSC Advances 4, 3633-3642. https://doi.org/10.1039/c3ra45748f",
+          "bibtex": "@article{golubkov2014thermal,\n  author = {Golubkov, A. W. and Fuchs, D. and Wagner, J. and Wiltsche, H. and Stangl, C. and Fauler, G. and Voitic, G. and Thaler, A. and Hacker, V.},\n  title = {Thermal-runaway experiments on consumer {Li-ion} batteries with metal-oxide and olivin-type cathodes},\n  journal = {RSC Advances},\n  volume = {4},\n  pages = {3633--3642},\n  year = {2014},\n  doi = {10.1039/c3ra45748f}\n}"
+        },
+        {
+          "role": "measurements",
+          "authors": "Mendoza-Hernandez, O. S.; Taniguchi, S.; Ishikawa, H.; Tanaka, K.; Fukuda, S.; Sone, Y.; Umeda, M.",
+          "title": "Accelerating Rate Calorimetry Tests of Lithium-Ion Cells Before and After Storage Degradation at High Temperature",
+          "year": 2017,
+          "publisher_or_venue": "E3S Web of Conferences 16, 07001",
+          "identifier": "10.1051/e3sconf/20171607001",
+          "url": "https://doi.org/10.1051/e3sconf/20171607001",
+          "requested_acknowledgment": null,
+          "citation_text": "Mendoza-Hernandez, O. S.; Taniguchi, S.; Ishikawa, H.; Tanaka, K.; Fukuda, S.; Sone, Y.; Umeda, M. (2017). Accelerating Rate Calorimetry Tests of Lithium-Ion Cells Before and After Storage Degradation at High Temperature. E3S Web of Conferences 16, 07001. https://doi.org/10.1051/e3sconf/20171607001",
+          "bibtex": "@article{mendoza2017arc,\n  author = {Mendoza-Hernandez, O. S. and Taniguchi, S. and Ishikawa, H. and Tanaka, K. and Fukuda, S. and Sone, Y. and Umeda, M.},\n  title = {Accelerating Rate Calorimetry Tests of Lithium-Ion Cells Before and After Storage Degradation at High Temperature},\n  journal = {E3S Web of Conferences},\n  volume = {16},\n  pages = {07001},\n  year = {2017},\n  doi = {10.1051/e3sconf/20171607001}\n}"
+        },
+        {
+          "role": "measurements",
+          "authors": "Lei, B.; Zhao, W.; Ziebert, C.; Uhlmann, N.; Rohde, M.; Seifert, H. J.",
+          "title": "Experimental Analysis of Thermal Runaway in 18650 Cylindrical Li-Ion Cells Using an Accelerating Rate Calorimeter",
+          "year": 2017,
+          "publisher_or_venue": "Batteries 3(2), 14",
+          "identifier": "10.3390/batteries3020014",
+          "url": "https://doi.org/10.3390/batteries3020014",
+          "requested_acknowledgment": null,
+          "citation_text": "Lei, B.; Zhao, W.; Ziebert, C.; Uhlmann, N.; Rohde, M.; Seifert, H. J. (2017). Experimental Analysis of Thermal Runaway in 18650 Cylindrical Li-Ion Cells Using an Accelerating Rate Calorimeter. Batteries 3(2), 14. https://doi.org/10.3390/batteries3020014",
+          "bibtex": "@article{lei2017experimental,\n  author = {Lei, B. and Zhao, W. and Ziebert, C. and Uhlmann, N. and Rohde, M. and Seifert, H. J.},\n  title = {Experimental Analysis of Thermal Runaway in 18650 Cylindrical {Li-Ion} Cells Using an Accelerating Rate Calorimeter},\n  journal = {Batteries},\n  volume = {3},\n  number = {2},\n  pages = {14},\n  year = {2017},\n  doi = {10.3390/batteries3020014}\n}"
+        }
+      ]
+    },
+    "energy/grid_gb": {
+      "kind": "card",
+      "real_thing": "The Great Britain 50 Hz transmission system in the 60 seconds after an importing interconnector trips, with the day's inertia and dynamic response held: 86 trips of 500 to 1402 MW, May 2017 to June 2026",
+      "sources": [
+        {
+          "role": "measurements",
+          "authors": "National Energy System Operator",
+          "title": "System Frequency",
+          "year": 2026,
+          "publisher_or_venue": "NESO Data Portal (dataset system-frequency-data)",
+          "identifier": null,
+          "url": "https://www.neso.energy/data-portal/system-frequency-data",
+          "requested_acknowledgment": "Supported by National Energy SO Open Data",
+          "citation_text": "National Energy System Operator (2026). System Frequency [one value per second, April 2017 to September 2026; retrieved 2026-10-09 and 2026-10-18]. NESO Data Portal. https://www.neso.energy/data-portal/system-frequency-data. Supported by National Energy SO Open Data.",
+          "bibtex": "@misc{neso2026systemfrequency,\n  author = {{National Energy System Operator}},\n  title = {System Frequency},\n  year = {2026},\n  howpublished = {NESO Data Portal, dataset system-frequency-data},\n  url = {https://www.neso.energy/data-portal/system-frequency-data},\n  note = {Retrieved 2026-10-09. Supported by National Energy SO Open Data}\n}"
+        },
+        {
+          "role": "measurements",
+          "authors": "National Grid Electricity System Operator",
+          "title": "System Inertia",
+          "year": 2026,
+          "publisher_or_venue": "NESO Data Portal (dataset system-inertia)",
+          "identifier": null,
+          "url": "https://www.neso.energy/data-portal/system-inertia",
+          "requested_acknowledgment": "Supported by National Energy SO Open Data",
+          "citation_text": "National Grid Electricity System Operator [now National Energy System Operator] (2026). System Inertia [half-hourly outturn inertia, 2017 to 2026; retrieved 2026-10-09 and 2026-10-18]. NESO Data Portal. https://www.neso.energy/data-portal/system-inertia. Supported by National Energy SO Open Data.",
+          "bibtex": "@misc{neso2026systeminertia,\n  author = {{National Grid Electricity System Operator}},\n  title = {System Inertia},\n  year = {2026},\n  howpublished = {NESO Data Portal, dataset system-inertia},\n  url = {https://www.neso.energy/data-portal/system-inertia},\n  note = {Retrieved 2026-10-09. Supported by National Energy SO Open Data}\n}"
+        },
+        {
+          "role": "measurements",
+          "authors": "Elexon Limited",
+          "title": "Generation by fuel type, five-minute (BMRS dataset FUELINST)",
+          "year": 2026,
+          "publisher_or_venue": "Elexon Balancing Mechanism Reporting Service (BMRS), Insights API",
+          "identifier": "BMRS dataset FUELINST",
+          "url": "https://bmrs.elexon.co.uk/generation-by-fuel-type",
+          "requested_acknowledgment": "Contains BMRS data © Elexon Limited copyright and database right 2026",
+          "citation_text": "Elexon Limited (2026). Generation by fuel type, BMRS dataset FUELINST [five-minute values around 1,160 falls of frequency, 2017 to 2026; retrieved 2026-10-09 and 2026-10-18 from https://data.elexon.co.uk/bmrs/api/v1/datasets/FUELINST]. Contains BMRS data © Elexon Limited copyright and database right 2026.",
+          "bibtex": "@misc{elexon2026fuelinst,\n  author = {{Elexon Limited}},\n  title = {Generation by fuel type, {BMRS} dataset {FUELINST}},\n  year = {2026},\n  howpublished = {Elexon Balancing Mechanism Reporting Service, Insights API},\n  url = {https://data.elexon.co.uk/bmrs/api/v1/datasets/FUELINST},\n  note = {Retrieved 2026-10-09. Contains BMRS data \\copyright{} Elexon Limited copyright and database right 2026}\n}"
+        },
+        {
+          "role": "measurements",
+          "authors": "National Energy System Operator",
+          "title": "Dynamic Containment, Regulation and Moderation auction results",
+          "year": 2026,
+          "publisher_or_venue": "NESO Data Portal (dataset dynamic-containment-data)",
+          "identifier": null,
+          "url": "https://www.neso.energy/data-portal/dynamic-containment-data",
+          "requested_acknowledgment": "Supported by National Energy SO Open Data",
+          "citation_text": "National Energy System Operator (2026). Dynamic Containment, Regulation and Moderation auction results [Dynamic Containment Masterdata, October 2020 to September 2021, and DC, DR & DM Results Summary, September 2021 to November 2023; retrieved 2026-10-18]. NESO Data Portal. https://www.neso.energy/data-portal/dynamic-containment-data. Supported by National Energy SO Open Data.",
+          "bibtex": "@misc{neso2026dcdata,\n  author = {{National Energy System Operator}},\n  title = {Dynamic Containment, Regulation and Moderation auction results},\n  year = {2026},\n  howpublished = {NESO Data Portal, dataset dynamic-containment-data},\n  url = {https://www.neso.energy/data-portal/dynamic-containment-data},\n  note = {Retrieved 2026-10-18. Supported by National Energy SO Open Data}\n}"
+        },
+        {
+          "role": "measurements",
+          "authors": "National Energy System Operator",
+          "title": "Enduring Auction Capability (EAC) auction results",
+          "year": 2026,
+          "publisher_or_venue": "NESO Data Portal (dataset eac-auction-results)",
+          "identifier": null,
+          "url": "https://www.neso.energy/data-portal/eac-auction-results",
+          "requested_acknowledgment": "Supported by National Energy SO Open Data",
+          "citation_text": "National Energy System Operator (2026). Enduring Auction Capability (EAC) auction results [Response-Reserve Results Summary and its FY2023 to FY2025 archives, November 2023 to October 2026; retrieved 2026-10-18]. NESO Data Portal. https://www.neso.energy/data-portal/eac-auction-results. Supported by National Energy SO Open Data.",
+          "bibtex": "@misc{neso2026eac,\n  author = {{National Energy System Operator}},\n  title = {Enduring Auction Capability (EAC) auction results},\n  year = {2026},\n  howpublished = {NESO Data Portal, dataset eac-auction-results},\n  url = {https://www.neso.energy/data-portal/eac-auction-results},\n  note = {Retrieved 2026-10-18. Supported by National Energy SO Open Data}\n}"
+        },
+        {
+          "role": "service curves and delivery times",
+          "authors": "National Energy System Operator",
+          "title": "Testing Guidance (DC, DM, DR); Public Dynamic Response Services Provider Guidance v14",
+          "year": 2026,
+          "publisher_or_venue": "NESO",
+          "identifier": null,
+          "url": "https://www.neso.energy/industry-information/balancing-services/frequency-response-services/dynamic-services-dcdmdr",
+          "requested_acknowledgment": null,
+          "citation_text": "National Energy System Operator (2026). Public Dynamic Response Services Provider Guidance, version 14, June 2026, Table 1, and Testing Guidance (DC, DM, DR) [retrieved 2026-10-18 from https://www.neso.energy/document/276606/download and https://www.neso.energy/document/347221/download].",
+          "bibtex": "@misc{neso2026dynamicguidance,\n  author = {{National Energy System Operator}},\n  title = {Public Dynamic Response Services Provider Guidance, v14},\n  year = {2026},\n  month = jun,\n  url = {https://www.neso.energy/document/276606/download},\n  note = {Retrieved 2026-10-18}\n}"
+        }
+      ],
+      "how_used": "The frequency once a second is what the card is fitted to and compared with, 60 samples a trip; the half-hourly outturn inertia, the demand and the size of each loss from FUELINST, and the cleared Dynamic Containment, Moderation and Regulation volumes of the four-hour block, low and high, are each trip's inputs. Five constants are fitted on all 86 trips at once, and each trip is also predicted with them refitted on the other 85. The service curves and delivery times are NESO's published figures, not fitted.",
+      "not_held_to_a_measurement": false,
+      "cite_also": "paper"
+    },
+    "energy/tokamak_jet_dte1": {
+      "kind": "card",
+      "real_thing": "The JET tokamak at Culham in heated pulses of 1996 to 1997, in deuterium and in deuterium-tritium (the DTE1 experiment): ten pulses, among them the fusion-energy record pulse 42982 and the fusion-power record pulse 42976",
+      "sources": [
+        {
+          "role": "measurements",
+          "authors": "The ITER 1D Modelling Working Group / ITPA profile database working group; pulses analysed with TRANSP and submitted by R. V. Budny (PPPL) (no author is printed on the release page)",
+          "title": "2008 Public Release of the International Multi-Tokamak Confinement Profile Database (PR08)",
+          "year": 2008,
+          "publisher_or_venue": "UKAEA Culham (tokamak-profiledb.ccfe.ac.uk)",
+          "identifier": null,
+          "url": "https://tokamak-profiledb.ccfe.ac.uk/PR08/index.htm",
+          "requested_acknowledgment": "Cite: (1) \"The International Multi-Tokamak Profile Database\", Nuc. Fus., 40, 1958 (2000); (2) ITER Physics Basis, Chapter 2, Nuc. Fus., 39, 2175 (1999). \"For publications using a smaller number of individual discharges from this database use the reference given in the comment file (*_com.dat) of the discharges or use the above general reference when none is available there.\"",
+          "citation_text": "International Multi-Tokamak Confinement Profile Database, 2008 Public Release (PR08). UKAEA Culham. https://tokamak-profiledb.ccfe.ac.uk/PR08/index.htm (retrieved 2026-10-09).",
+          "bibtex": "@misc{profiledb_pr08,\n  author = {{ITPA Confinement Profile Database Working Group}},\n  title = {2008 Public Release of the {International Multi-Tokamak Confinement Profile Database}},\n  howpublished = {Online database, UKAEA Culham},\n  year = {2008},\n  url = {https://tokamak-profiledb.ccfe.ac.uk/PR08/index.htm},\n  note = {Retrieved 2026-10-09}\n}"
+        },
+        {
+          "role": "measurements",
+          "authors": "The ITER 1D Modelling Working Group; Boucher, D.; Connor, J. W.; Houlberg, W. A.; Turner, M. F.; Bracco, G.; Chudnovskiy, A.; Cordey, J. G.; Greenwald, M. J.; Hoang, G. T.; Hogeweij, G. M. D.; Kaye, S. M.; Kinsey, J. E.; Mikkelsen, D. R.; Ongena, J.; Schissel, D. R.; Shirai, H.; Stober, J.; Stubberfield, P. M.; Waltz, R. E.; Weiland, J.",
+          "title": "The International Multi-Tokamak Profile Database",
+          "year": 2000,
+          "publisher_or_venue": "Nuclear Fusion 40 (12), 1955-1981",
+          "identifier": "10.1088/0029-5515/40/12/302",
+          "url": "https://doi.org/10.1088/0029-5515/40/12/302",
+          "requested_acknowledgment": null,
+          "citation_text": "The ITER 1D Modelling Working Group: Boucher, D.; Connor, J. W.; Houlberg, W. A.; Turner, M. F.; Bracco, G.; Chudnovskiy, A.; Cordey, J. G.; Greenwald, M. J.; Hoang, G. T.; Hogeweij, G. M. D.; Kaye, S. M.; Kinsey, J. E.; Mikkelsen, D. R.; Ongena, J.; Schissel, D. R.; Shirai, H.; Stober, J.; Stubberfield, P. M.; Waltz, R. E.; Weiland, J. (2000). The International Multi-Tokamak Profile Database. Nuclear Fusion 40(12), 1955-1981. https://doi.org/10.1088/0029-5515/40/12/302",
+          "bibtex": "@article{iter1d2000profiledb,\n  author = {{The ITER 1D Modelling Working Group} and Boucher, D. and Connor, J. W. and Houlberg, W. A. and Turner, M. F. and Bracco, G. and Chudnovskiy, A. and Cordey, J. G. and Greenwald, M. J. and Hoang, G. T. and Hogeweij, G. M. D. and Kaye, S. M. and Kinsey, J. E. and Mikkelsen, D. R. and Ongena, J. and Schissel, D. R. and Shirai, H. and Stober, J. and Stubberfield, P. M. and Waltz, R. E. and Weiland, J.},\n  title = {The International Multi-Tokamak Profile Database},\n  journal = {Nuclear Fusion},\n  volume = {40},\n  number = {12},\n  pages = {1955--1981},\n  year = {2000},\n  doi = {10.1088/0029-5515/40/12/302}\n}"
+        },
+        {
+          "role": "method",
+          "authors": "ITER Physics Expert Group on Confinement and Transport; ITER Physics Expert Group on Confinement Modelling and Database; ITER Physics Basis Editors",
+          "title": "Chapter 2: Plasma confinement and transport",
+          "year": 1999,
+          "publisher_or_venue": "Nuclear Fusion 39 (12), 2175-2249 (ITER Physics Basis)",
+          "identifier": "10.1088/0029-5515/39/12/302",
+          "url": "https://doi.org/10.1088/0029-5515/39/12/302",
+          "requested_acknowledgment": null,
+          "citation_text": "ITER Physics Expert Group on Confinement and Transport; ITER Physics Expert Group on Confinement Modelling and Database; ITER Physics Basis Editors (1999). Chapter 2: Plasma confinement and transport. Nuclear Fusion 39(12), 2175-2249. https://doi.org/10.1088/0029-5515/39/12/302",
+          "bibtex": "@article{iterphysicsbasis1999ch2,\n  author = {{ITER Physics Expert Group on Confinement and Transport} and {ITER Physics Expert Group on Confinement Modelling and Database} and {ITER Physics Basis Editors}},\n  title = {Chapter 2: Plasma confinement and transport},\n  journal = {Nuclear Fusion},\n  volume = {39},\n  number = {12},\n  pages = {2175--2249},\n  year = {1999},\n  doi = {10.1088/0029-5515/39/12/302}\n}"
+        },
+        {
+          "role": "measurements",
+          "authors": "Budny, R. V.; Ernst, D. R.; Hahm, T. S.; McCune, D. C.; Christiansen, J. P.; Cordey, J. G.; Gowers, C. G.; Guenther, K.; Hawkes, N.; Jarvis, O. N.; Stubberfield, P. M.; Zastrow, K.-D.; Horton, L. D.; Saibene, G.; Sartori, R.; Thomsen, K.; von Hellermann, M. G.",
+          "title": "Local transport in Joint European Tokamak edge-localized, high-confinement mode plasmas with H, D, DT, and T isotopes",
+          "year": 2000,
+          "publisher_or_venue": "Physics of Plasmas 7 (12), 5038-5050",
+          "identifier": "10.1063/1.1320466",
+          "url": "https://doi.org/10.1063/1.1320466",
+          "requested_acknowledgment": null,
+          "citation_text": "Budny, R. V.; Ernst, D. R.; Hahm, T. S.; McCune, D. C.; Christiansen, J. P.; Cordey, J. G.; Gowers, C. G.; Guenther, K.; Hawkes, N.; Jarvis, O. N.; Stubberfield, P. M.; Zastrow, K.-D.; Horton, L. D.; Saibene, G.; Sartori, R.; Thomsen, K.; von Hellermann, M. G. (2000). Local transport in Joint European Tokamak edge-localized, high-confinement mode plasmas with H, D, DT, and T isotopes. Physics of Plasmas 7(12), 5038-5050. https://doi.org/10.1063/1.1320466",
+          "bibtex": "@article{budny2000local,\n  author = {Budny, R. V. and Ernst, D. R. and Hahm, T. S. and McCune, D. C. and Christiansen, J. P. and Cordey, J. G. and Gowers, C. G. and Guenther, K. and Hawkes, N. and Jarvis, O. N. and Stubberfield, P. M. and Zastrow, K.-D. and Horton, L. D. and Saibene, G. and Sartori, R. and Thomsen, K. and von Hellermann, M. G.},\n  title = {Local transport in {Joint European Tokamak} edge-localized, high-confinement mode plasmas with {H}, {D}, {DT}, and {T} isotopes},\n  journal = {Physics of Plasmas},\n  volume = {7},\n  number = {12},\n  pages = {5038--5050},\n  year = {2000},\n  doi = {10.1063/1.1320466}\n}"
+        },
+        {
+          "role": "measurements",
+          "authors": "Sharapov, S. E.; Borba, D.; Fasoli, A.; Kerner, W.; Eriksson, L.-G.; Heeter, R. F.; Huysmans, G. T. A.; Mantsinen, M. J.",
+          "title": "Stability of alpha particle driven Alfvén eigenmodes in high performance JET DT plasmas",
+          "year": 1999,
+          "publisher_or_venue": "Nuclear Fusion 39 (3), 373-388",
+          "identifier": "10.1088/0029-5515/39/3/307",
+          "url": "https://doi.org/10.1088/0029-5515/39/3/307",
+          "requested_acknowledgment": null,
+          "citation_text": "Sharapov, S. E.; Borba, D.; Fasoli, A.; Kerner, W.; Eriksson, L.-G.; Heeter, R. F.; Huysmans, G. T. A.; Mantsinen, M. J. (1999). Stability of alpha particle driven Alfvén eigenmodes in high performance JET DT plasmas. Nuclear Fusion 39(3), 373-388. https://doi.org/10.1088/0029-5515/39/3/307",
+          "bibtex": "@article{sharapov1999stability,\n  author = {Sharapov, S. E. and Borba, D. and Fasoli, A. and Kerner, W. and Eriksson, L.-G. and Heeter, R. F. and Huysmans, G. T. A. and Mantsinen, M. J.},\n  title = {Stability of alpha particle driven {Alfvén} eigenmodes in high performance {JET DT} plasmas},\n  journal = {Nuclear Fusion},\n  volume = {39},\n  number = {3},\n  pages = {373--388},\n  year = {1999},\n  doi = {10.1088/0029-5515/39/3/307}\n}"
+        },
+        {
+          "role": "measurements",
+          "authors": "Horton, L. D.; Sartori, R.; Balet, B.; Budny, R. V.; Christiansen, J. P.; Clement, S.; Conway, G. D.; Cordey, J. G.; Fishpool, G. M.; Lingertat, J.; Lowry, C. G.; Maggi, C. F.; Mantsinen, M. J.; Riccardo, V.; Saibene, G.; Smeulders, P.; Smith, R. J.; Thomsen, K.; von Hellermann, M. G.",
+          "title": "High fusion power steady state operation in JET DT plasmas",
+          "year": 1999,
+          "publisher_or_venue": "Nuclear Fusion 39 (8), 993-1008",
+          "identifier": "10.1088/0029-5515/39/8/304",
+          "url": "https://doi.org/10.1088/0029-5515/39/8/304",
+          "requested_acknowledgment": null,
+          "citation_text": "Horton, L. D.; Sartori, R.; Balet, B.; Budny, R. V.; Christiansen, J. P.; Clement, S.; Conway, G. D.; Cordey, J. G.; Fishpool, G. M.; Lingertat, J.; Lowry, C. G.; Maggi, C. F.; Mantsinen, M. J.; Riccardo, V.; Saibene, G.; Smeulders, P.; Smith, R. J.; Thomsen, K.; von Hellermann, M. G. (1999). High fusion power steady state operation in JET DT plasmas. Nuclear Fusion 39(8), 993-1008. https://doi.org/10.1088/0029-5515/39/8/304",
+          "bibtex": "@article{horton1999high,\n  author = {Horton, L. D. and Sartori, R. and Balet, B. and Budny, R. V. and Christiansen, J. P. and Clement, S. and Conway, G. D. and Cordey, J. G. and Fishpool, G. M. and Lingertat, J. and Lowry, C. G. and Maggi, C. F. and Mantsinen, M. J. and Riccardo, V. and Saibene, G. and Smeulders, P. and Smith, R. J. and Thomsen, K. and von Hellermann, M. G.},\n  title = {High fusion power steady state operation in {JET DT} plasmas},\n  journal = {Nuclear Fusion},\n  volume = {39},\n  number = {8},\n  pages = {993--1008},\n  year = {1999},\n  doi = {10.1088/0029-5515/39/8/304}\n}"
+        },
+        {
+          "role": "measurements",
+          "authors": "Bateman, Glenn; Kritz, Arnold H.; Parail, Vassili V.; Cordey, J. G.; the JET Team",
+          "title": "Effect of isotope mass on transport simulations of Joint European Torus high-mode plasmas with Edge Localized Modes",
+          "year": 1999,
+          "publisher_or_venue": "Physics of Plasmas 6 (12), 4607-4614",
+          "identifier": "10.1063/1.873724",
+          "url": "https://doi.org/10.1063/1.873724",
+          "requested_acknowledgment": null,
+          "citation_text": "Bateman, Glenn; Kritz, Arnold H.; Parail, Vassili V.; Cordey, J. G.; the JET Team (1999). Effect of isotope mass on transport simulations of Joint European Torus high-mode plasmas with Edge Localized Modes. Physics of Plasmas 6(12), 4607-4614. https://doi.org/10.1063/1.873724",
+          "bibtex": "@article{bateman1999isotope,\n  author = {Bateman, Glenn and Kritz, Arnold H. and Parail, Vassili V. and Cordey, J. G. and {the JET Team}},\n  title = {Effect of isotope mass on transport simulations of {Joint European Torus} high-mode plasmas with Edge Localized Modes},\n  journal = {Physics of Plasmas},\n  volume = {6},\n  number = {12},\n  pages = {4607--4614},\n  year = {1999},\n  doi = {10.1063/1.873724}\n}"
+        },
+        {
+          "role": "constants",
+          "authors": "Bosch, H.-S.; Hale, G. M.",
+          "title": "Improved formulas for fusion cross-sections and thermal reactivities",
+          "year": 1992,
+          "publisher_or_venue": "Nuclear Fusion 32 (4), 611-631",
+          "identifier": "10.1088/0029-5515/32/4/I07",
+          "url": "https://doi.org/10.1088/0029-5515/32/4/I07",
+          "requested_acknowledgment": null,
+          "citation_text": "Bosch, H.-S.; Hale, G. M. (1992). Improved formulas for fusion cross-sections and thermal reactivities. Nuclear Fusion 32(4), 611-631. https://doi.org/10.1088/0029-5515/32/4/I07",
+          "bibtex": "@article{bosch1992improved,\n  author = {Bosch, H.-S. and Hale, G. M.},\n  title = {Improved formulas for fusion cross-sections and thermal reactivities},\n  journal = {Nuclear Fusion},\n  volume = {32},\n  number = {4},\n  pages = {611--631},\n  year = {1992},\n  doi = {10.1088/0029-5515/32/4/I07}\n}"
+        },
+        {
+          "role": "constants",
+          "authors": "Greenwald et al.",
+          "title": null,
+          "year": 1988,
+          "publisher_or_venue": "Nuclear Fusion 28, 2199",
+          "identifier": null,
+          "url": null,
+          "requested_acknowledgment": null,
+          "citation_text": "Greenwald et al. (1988). Nuclear Fusion 28, 2199.",
+          "bibtex": "@article{greenwald1988density,\n  author = {Greenwald and others},\n  journal = {Nuclear Fusion},\n  volume = {28},\n  pages = {2199},\n  year = {1988},\n  note = {Title and full author list not confirmed from the evidence record}\n}"
+        },
+        {
+          "role": "constants",
+          "authors": "Troyon et al.",
+          "title": null,
+          "year": 1984,
+          "publisher_or_venue": "Plasma Physics and Controlled Fusion 26, 209",
+          "identifier": null,
+          "url": null,
+          "requested_acknowledgment": null,
+          "citation_text": "Troyon et al. (1984). Plasma Physics and Controlled Fusion 26, 209.",
+          "bibtex": "@article{troyon1984beta,\n  author = {Troyon and others},\n  journal = {Plasma Physics and Controlled Fusion},\n  volume = {26},\n  pages = {209},\n  year = {1984},\n  note = {Title and full author list not confirmed from the evidence record}\n}"
+        },
+        {
+          "role": "method",
+          "authors": "Naval Research Laboratory",
+          "title": "NRL Plasma Formulary, 2019 revision",
+          "year": 2019,
+          "publisher_or_venue": "Naval Research Laboratory, Washington, DC",
+          "identifier": "NRL/PU/6790-19-640",
+          "url": "https://library.psfc.mit.edu/catalog/online_pubs/NRL_FORMULARY_19.pdf",
+          "requested_acknowledgment": null,
+          "citation_text": "Naval Research Laboratory (2019). NRL Plasma Formulary, 2019 revision. NRL/PU/6790-19-640. Naval Research Laboratory, Washington, DC.",
+          "bibtex": "@manual{nrl2019formulary,\n  title = {{NRL} Plasma Formulary},\n  organization = {Naval Research Laboratory},\n  address = {Washington, DC},\n  year = {2019},\n  number = {NRL/PU/6790-19-640},\n  note = {2019 revision}\n}"
+        }
+      ],
+      "how_used": "One model of ten pulses of the profile database: fitted on all ten, four constants (the confinement multipliers of the ELMy and the hot-ion H-mode, the slowing-down and the tail times), and compared with each pulse left out of the fit. The profile shapes are the means of the ten pulses' TRANSP profiles; the electron temperature and the effective charge are each pulse's measured traces, the beams' species and energies its comment and 0D files. The D-T cross-section and reactivity are Bosch and Hale's, the slowing-down time and critical energy the NRL Plasma Formulary's, the confinement time the IPB98(y,2) scaling of the ITER Physics Basis.",
       "not_held_to_a_measurement": false,
       "cite_also": "paper"
     },
@@ -1308,51 +1512,6 @@
       "not_held_to_a_measurement": false,
       "cite_also": "paper"
     },
-    "energy/grid_gb": {
-      "kind": "card",
-      "real_thing": "The Great Britain 50 Hz transmission system in the 60 seconds after an importing interconnector trips: 41 trips of 693 to 1402 MW, July 2017 to May 2026",
-      "sources": [
-        {
-          "role": "measurements",
-          "authors": "National Energy System Operator",
-          "title": "System Frequency",
-          "year": 2026,
-          "publisher_or_venue": "NESO Data Portal (dataset system-frequency-data)",
-          "identifier": null,
-          "url": "https://www.neso.energy/data-portal/system-frequency-data",
-          "requested_acknowledgment": "Supported by National Energy SO Open Data",
-          "citation_text": "National Energy System Operator (2026). System Frequency [one value per second, April 2017 to September 2026; retrieved 2026-10-09]. NESO Data Portal. https://www.neso.energy/data-portal/system-frequency-data. Supported by National Energy SO Open Data.",
-          "bibtex": "@misc{neso2026systemfrequency,\n  author = {{National Energy System Operator}},\n  title = {System Frequency},\n  year = {2026},\n  howpublished = {NESO Data Portal, dataset system-frequency-data},\n  url = {https://www.neso.energy/data-portal/system-frequency-data},\n  note = {Retrieved 2026-10-09. Supported by National Energy SO Open Data}\n}"
-        },
-        {
-          "role": "measurements",
-          "authors": "National Grid Electricity System Operator",
-          "title": "System Inertia",
-          "year": 2026,
-          "publisher_or_venue": "NESO Data Portal (dataset system-inertia)",
-          "identifier": null,
-          "url": "https://www.neso.energy/data-portal/system-inertia",
-          "requested_acknowledgment": "Supported by National Energy SO Open Data",
-          "citation_text": "National Grid Electricity System Operator [now National Energy System Operator] (2026). System Inertia [half-hourly outturn inertia, 2017 to 2026; retrieved 2026-10-09]. NESO Data Portal. https://www.neso.energy/data-portal/system-inertia. Supported by National Energy SO Open Data.",
-          "bibtex": "@misc{neso2026systeminertia,\n  author = {{National Grid Electricity System Operator}},\n  title = {System Inertia},\n  year = {2026},\n  howpublished = {NESO Data Portal, dataset system-inertia},\n  url = {https://www.neso.energy/data-portal/system-inertia},\n  note = {Retrieved 2026-10-09. Supported by National Energy SO Open Data}\n}"
-        },
-        {
-          "role": "measurements",
-          "authors": "Elexon Limited",
-          "title": "Generation by fuel type, five-minute (BMRS dataset FUELINST)",
-          "year": 2026,
-          "publisher_or_venue": "Elexon Balancing Mechanism Reporting Service (BMRS), Insights API",
-          "identifier": "BMRS dataset FUELINST",
-          "url": "https://bmrs.elexon.co.uk/generation-by-fuel-type",
-          "requested_acknowledgment": "Contains BMRS data © Elexon Limited copyright and database right 2026",
-          "citation_text": "Elexon Limited (2026). Generation by fuel type, BMRS dataset FUELINST [five-minute values around 41 events, 2017 to 2026; retrieved 2026-10-09 from https://data.elexon.co.uk/bmrs/api/v1/datasets/FUELINST]. Contains BMRS data © Elexon Limited copyright and database right 2026.",
-          "bibtex": "@misc{elexon2026fuelinst,\n  author = {{Elexon Limited}},\n  title = {Generation by fuel type, {BMRS} dataset {FUELINST}},\n  year = {2026},\n  howpublished = {Elexon Balancing Mechanism Reporting Service, Insights API},\n  url = {https://data.elexon.co.uk/bmrs/api/v1/datasets/FUELINST},\n  note = {Retrieved 2026-10-09. Contains BMRS data \\copyright{} Elexon Limited copyright and database right 2026}\n}"
-        }
-      ],
-      "how_used": "Trips found by a written rule in 114 months of one-second frequency; loss size from FUELINST interconnector flow before and after; inertia from the half-hourly series. Three constants fitted on 28 trips; compared with every third trip in time order, 13 of 41, outside the fit.",
-      "not_held_to_a_measurement": false,
-      "cite_also": "paper"
-    },
     "aerospace/solar_system": {
       "kind": "card",
       "real_thing": "The Solar System (Sun, eight planets, Moon, Ceres, Pallas, Vesta) carried forward from its state of 1999-01-01, compared with Deep Space Network round-trip light times to spacecraft at Mars, Mercury, Jupiter and Saturn",
@@ -1545,135 +1704,6 @@
         }
       ],
       "how_used": "The card's eighteen constants were fitted on the centroid packets of the 127 files of the 19 visits that started in April 2022; the card is compared with the 134 files of the 24 visits from 2022-05-02 to 2022-06-21, outside the fit.",
-      "not_held_to_a_measurement": false,
-      "cite_also": "paper"
-    },
-    "energy/tokamak_jet_dte1": {
-      "kind": "card",
-      "real_thing": "The JET tokamak at Culham in ELMy H-mode pulses of 1996 to 1997, in deuterium and in deuterium-tritium (the DTE1 experiment, including the 16 MW fusion-power record pulse 42976)",
-      "sources": [
-        {
-          "role": "measurements",
-          "authors": "The ITER 1D Modelling Working Group / ITPA profile database working group; pulses analysed with TRANSP and submitted by R. V. Budny (PPPL) (no author is printed on the release page)",
-          "title": "2008 Public Release of the International Multi-Tokamak Confinement Profile Database (PR08)",
-          "year": 2008,
-          "publisher_or_venue": "UKAEA Culham (tokamak-profiledb.ccfe.ac.uk)",
-          "identifier": null,
-          "url": "https://tokamak-profiledb.ccfe.ac.uk/PR08/index.htm",
-          "requested_acknowledgment": "Cite: (1) \"The International Multi-Tokamak Profile Database\", Nuc. Fus., 40, 1958 (2000); (2) ITER Physics Basis, Chapter 2, Nuc. Fus., 39, 2175 (1999). \"For publications using a smaller number of individual discharges from this database use the reference given in the comment file (*_com.dat) of the discharges or use the above general reference when none is available there.\"",
-          "citation_text": "International Multi-Tokamak Confinement Profile Database, 2008 Public Release (PR08). UKAEA Culham. https://tokamak-profiledb.ccfe.ac.uk/PR08/index.htm (retrieved 2026-10-09).",
-          "bibtex": "@misc{profiledb_pr08,\n  author = {{ITPA Confinement Profile Database Working Group}},\n  title = {2008 Public Release of the {International Multi-Tokamak Confinement Profile Database}},\n  howpublished = {Online database, UKAEA Culham},\n  year = {2008},\n  url = {https://tokamak-profiledb.ccfe.ac.uk/PR08/index.htm},\n  note = {Retrieved 2026-10-09}\n}"
-        },
-        {
-          "role": "measurements",
-          "authors": "The ITER 1D Modelling Working Group; Boucher, D.; Connor, J. W.; Houlberg, W. A.; Turner, M. F.; Bracco, G.; Chudnovskiy, A.; Cordey, J. G.; Greenwald, M. J.; Hoang, G. T.; Hogeweij, G. M. D.; Kaye, S. M.; Kinsey, J. E.; Mikkelsen, D. R.; Ongena, J.; Schissel, D. R.; Shirai, H.; Stober, J.; Stubberfield, P. M.; Waltz, R. E.; Weiland, J.",
-          "title": "The International Multi-Tokamak Profile Database",
-          "year": 2000,
-          "publisher_or_venue": "Nuclear Fusion 40 (12), 1955-1981",
-          "identifier": "10.1088/0029-5515/40/12/302",
-          "url": "https://doi.org/10.1088/0029-5515/40/12/302",
-          "requested_acknowledgment": null,
-          "citation_text": "The ITER 1D Modelling Working Group: Boucher, D.; Connor, J. W.; Houlberg, W. A.; Turner, M. F.; Bracco, G.; Chudnovskiy, A.; Cordey, J. G.; Greenwald, M. J.; Hoang, G. T.; Hogeweij, G. M. D.; Kaye, S. M.; Kinsey, J. E.; Mikkelsen, D. R.; Ongena, J.; Schissel, D. R.; Shirai, H.; Stober, J.; Stubberfield, P. M.; Waltz, R. E.; Weiland, J. (2000). The International Multi-Tokamak Profile Database. Nuclear Fusion 40(12), 1955-1981. https://doi.org/10.1088/0029-5515/40/12/302",
-          "bibtex": "@article{iter1d2000profiledb,\n  author = {{The ITER 1D Modelling Working Group} and Boucher, D. and Connor, J. W. and Houlberg, W. A. and Turner, M. F. and Bracco, G. and Chudnovskiy, A. and Cordey, J. G. and Greenwald, M. J. and Hoang, G. T. and Hogeweij, G. M. D. and Kaye, S. M. and Kinsey, J. E. and Mikkelsen, D. R. and Ongena, J. and Schissel, D. R. and Shirai, H. and Stober, J. and Stubberfield, P. M. and Waltz, R. E. and Weiland, J.},\n  title = {The International Multi-Tokamak Profile Database},\n  journal = {Nuclear Fusion},\n  volume = {40},\n  number = {12},\n  pages = {1955--1981},\n  year = {2000},\n  doi = {10.1088/0029-5515/40/12/302}\n}"
-        },
-        {
-          "role": "method",
-          "authors": "ITER Physics Expert Group on Confinement and Transport; ITER Physics Expert Group on Confinement Modelling and Database; ITER Physics Basis Editors",
-          "title": "Chapter 2: Plasma confinement and transport",
-          "year": 1999,
-          "publisher_or_venue": "Nuclear Fusion 39 (12), 2175-2249 (ITER Physics Basis)",
-          "identifier": "10.1088/0029-5515/39/12/302",
-          "url": "https://doi.org/10.1088/0029-5515/39/12/302",
-          "requested_acknowledgment": null,
-          "citation_text": "ITER Physics Expert Group on Confinement and Transport; ITER Physics Expert Group on Confinement Modelling and Database; ITER Physics Basis Editors (1999). Chapter 2: Plasma confinement and transport. Nuclear Fusion 39(12), 2175-2249. https://doi.org/10.1088/0029-5515/39/12/302",
-          "bibtex": "@article{iterphysicsbasis1999ch2,\n  author = {{ITER Physics Expert Group on Confinement and Transport} and {ITER Physics Expert Group on Confinement Modelling and Database} and {ITER Physics Basis Editors}},\n  title = {Chapter 2: Plasma confinement and transport},\n  journal = {Nuclear Fusion},\n  volume = {39},\n  number = {12},\n  pages = {2175--2249},\n  year = {1999},\n  doi = {10.1088/0029-5515/39/12/302}\n}"
-        },
-        {
-          "role": "measurements",
-          "authors": "Budny, R. V.; Ernst, D. R.; Hahm, T. S.; McCune, D. C.; Christiansen, J. P.; Cordey, J. G.; Gowers, C. G.; Guenther, K.; Hawkes, N.; Jarvis, O. N.; Stubberfield, P. M.; Zastrow, K.-D.; Horton, L. D.; Saibene, G.; Sartori, R.; Thomsen, K.; von Hellermann, M. G.",
-          "title": "Local transport in Joint European Tokamak edge-localized, high-confinement mode plasmas with H, D, DT, and T isotopes",
-          "year": 2000,
-          "publisher_or_venue": "Physics of Plasmas 7 (12), 5038-5050",
-          "identifier": "10.1063/1.1320466",
-          "url": "https://doi.org/10.1063/1.1320466",
-          "requested_acknowledgment": null,
-          "citation_text": "Budny, R. V.; Ernst, D. R.; Hahm, T. S.; McCune, D. C.; Christiansen, J. P.; Cordey, J. G.; Gowers, C. G.; Guenther, K.; Hawkes, N.; Jarvis, O. N.; Stubberfield, P. M.; Zastrow, K.-D.; Horton, L. D.; Saibene, G.; Sartori, R.; Thomsen, K.; von Hellermann, M. G. (2000). Local transport in Joint European Tokamak edge-localized, high-confinement mode plasmas with H, D, DT, and T isotopes. Physics of Plasmas 7(12), 5038-5050. https://doi.org/10.1063/1.1320466",
-          "bibtex": "@article{budny2000local,\n  author = {Budny, R. V. and Ernst, D. R. and Hahm, T. S. and McCune, D. C. and Christiansen, J. P. and Cordey, J. G. and Gowers, C. G. and Guenther, K. and Hawkes, N. and Jarvis, O. N. and Stubberfield, P. M. and Zastrow, K.-D. and Horton, L. D. and Saibene, G. and Sartori, R. and Thomsen, K. and von Hellermann, M. G.},\n  title = {Local transport in {Joint European Tokamak} edge-localized, high-confinement mode plasmas with {H}, {D}, {DT}, and {T} isotopes},\n  journal = {Physics of Plasmas},\n  volume = {7},\n  number = {12},\n  pages = {5038--5050},\n  year = {2000},\n  doi = {10.1063/1.1320466}\n}"
-        },
-        {
-          "role": "measurements",
-          "authors": "Sharapov, S. E.; Borba, D.; Fasoli, A.; Kerner, W.; Eriksson, L.-G.; Heeter, R. F.; Huysmans, G. T. A.; Mantsinen, M. J.",
-          "title": "Stability of alpha particle driven Alfvén eigenmodes in high performance JET DT plasmas",
-          "year": 1999,
-          "publisher_or_venue": "Nuclear Fusion 39 (3), 373-388",
-          "identifier": "10.1088/0029-5515/39/3/307",
-          "url": "https://doi.org/10.1088/0029-5515/39/3/307",
-          "requested_acknowledgment": null,
-          "citation_text": "Sharapov, S. E.; Borba, D.; Fasoli, A.; Kerner, W.; Eriksson, L.-G.; Heeter, R. F.; Huysmans, G. T. A.; Mantsinen, M. J. (1999). Stability of alpha particle driven Alfvén eigenmodes in high performance JET DT plasmas. Nuclear Fusion 39(3), 373-388. https://doi.org/10.1088/0029-5515/39/3/307",
-          "bibtex": "@article{sharapov1999stability,\n  author = {Sharapov, S. E. and Borba, D. and Fasoli, A. and Kerner, W. and Eriksson, L.-G. and Heeter, R. F. and Huysmans, G. T. A. and Mantsinen, M. J.},\n  title = {Stability of alpha particle driven {Alfvén} eigenmodes in high performance {JET DT} plasmas},\n  journal = {Nuclear Fusion},\n  volume = {39},\n  number = {3},\n  pages = {373--388},\n  year = {1999},\n  doi = {10.1088/0029-5515/39/3/307}\n}"
-        },
-        {
-          "role": "measurements",
-          "authors": "Horton, L. D.; Sartori, R.; Balet, B.; Budny, R. V.; Christiansen, J. P.; Clement, S.; Conway, G. D.; Cordey, J. G.; Fishpool, G. M.; Lingertat, J.; Lowry, C. G.; Maggi, C. F.; Mantsinen, M. J.; Riccardo, V.; Saibene, G.; Smeulders, P.; Smith, R. J.; Thomsen, K.; von Hellermann, M. G.",
-          "title": "High fusion power steady state operation in JET DT plasmas",
-          "year": 1999,
-          "publisher_or_venue": "Nuclear Fusion 39 (8), 993-1008",
-          "identifier": "10.1088/0029-5515/39/8/304",
-          "url": "https://doi.org/10.1088/0029-5515/39/8/304",
-          "requested_acknowledgment": null,
-          "citation_text": "Horton, L. D.; Sartori, R.; Balet, B.; Budny, R. V.; Christiansen, J. P.; Clement, S.; Conway, G. D.; Cordey, J. G.; Fishpool, G. M.; Lingertat, J.; Lowry, C. G.; Maggi, C. F.; Mantsinen, M. J.; Riccardo, V.; Saibene, G.; Smeulders, P.; Smith, R. J.; Thomsen, K.; von Hellermann, M. G. (1999). High fusion power steady state operation in JET DT plasmas. Nuclear Fusion 39(8), 993-1008. https://doi.org/10.1088/0029-5515/39/8/304",
-          "bibtex": "@article{horton1999high,\n  author = {Horton, L. D. and Sartori, R. and Balet, B. and Budny, R. V. and Christiansen, J. P. and Clement, S. and Conway, G. D. and Cordey, J. G. and Fishpool, G. M. and Lingertat, J. and Lowry, C. G. and Maggi, C. F. and Mantsinen, M. J. and Riccardo, V. and Saibene, G. and Smeulders, P. and Smith, R. J. and Thomsen, K. and von Hellermann, M. G.},\n  title = {High fusion power steady state operation in {JET DT} plasmas},\n  journal = {Nuclear Fusion},\n  volume = {39},\n  number = {8},\n  pages = {993--1008},\n  year = {1999},\n  doi = {10.1088/0029-5515/39/8/304}\n}"
-        },
-        {
-          "role": "measurements",
-          "authors": "Bateman, Glenn; Kritz, Arnold H.; Parail, Vassili V.; Cordey, J. G.; the JET Team",
-          "title": "Effect of isotope mass on transport simulations of Joint European Torus high-mode plasmas with Edge Localized Modes",
-          "year": 1999,
-          "publisher_or_venue": "Physics of Plasmas 6 (12), 4607-4614",
-          "identifier": "10.1063/1.873724",
-          "url": "https://doi.org/10.1063/1.873724",
-          "requested_acknowledgment": null,
-          "citation_text": "Bateman, Glenn; Kritz, Arnold H.; Parail, Vassili V.; Cordey, J. G.; the JET Team (1999). Effect of isotope mass on transport simulations of Joint European Torus high-mode plasmas with Edge Localized Modes. Physics of Plasmas 6(12), 4607-4614. https://doi.org/10.1063/1.873724",
-          "bibtex": "@article{bateman1999isotope,\n  author = {Bateman, Glenn and Kritz, Arnold H. and Parail, Vassili V. and Cordey, J. G. and {the JET Team}},\n  title = {Effect of isotope mass on transport simulations of {Joint European Torus} high-mode plasmas with Edge Localized Modes},\n  journal = {Physics of Plasmas},\n  volume = {6},\n  number = {12},\n  pages = {4607--4614},\n  year = {1999},\n  doi = {10.1063/1.873724}\n}"
-        },
-        {
-          "role": "constants",
-          "authors": "Bosch, H.-S.; Hale, G. M.",
-          "title": "Improved formulas for fusion cross-sections and thermal reactivities",
-          "year": 1992,
-          "publisher_or_venue": "Nuclear Fusion 32 (4), 611-631",
-          "identifier": "10.1088/0029-5515/32/4/I07",
-          "url": "https://doi.org/10.1088/0029-5515/32/4/I07",
-          "requested_acknowledgment": null,
-          "citation_text": "Bosch, H.-S.; Hale, G. M. (1992). Improved formulas for fusion cross-sections and thermal reactivities. Nuclear Fusion 32(4), 611-631. https://doi.org/10.1088/0029-5515/32/4/I07",
-          "bibtex": "@article{bosch1992improved,\n  author = {Bosch, H.-S. and Hale, G. M.},\n  title = {Improved formulas for fusion cross-sections and thermal reactivities},\n  journal = {Nuclear Fusion},\n  volume = {32},\n  number = {4},\n  pages = {611--631},\n  year = {1992},\n  doi = {10.1088/0029-5515/32/4/I07}\n}"
-        },
-        {
-          "role": "constants",
-          "authors": "Greenwald et al.",
-          "title": null,
-          "year": 1988,
-          "publisher_or_venue": "Nuclear Fusion 28, 2199",
-          "identifier": null,
-          "url": null,
-          "requested_acknowledgment": null,
-          "citation_text": "Greenwald et al. (1988). Nuclear Fusion 28, 2199.",
-          "bibtex": "@article{greenwald1988density,\n  author = {Greenwald and others},\n  journal = {Nuclear Fusion},\n  volume = {28},\n  pages = {2199},\n  year = {1988},\n  note = {Title and full author list not confirmed from the evidence record}\n}"
-        },
-        {
-          "role": "constants",
-          "authors": "Troyon et al.",
-          "title": null,
-          "year": 1984,
-          "publisher_or_venue": "Plasma Physics and Controlled Fusion 26, 209",
-          "identifier": null,
-          "url": null,
-          "requested_acknowledgment": null,
-          "citation_text": "Troyon et al. (1984). Plasma Physics and Controlled Fusion 26, 209.",
-          "bibtex": "@article{troyon1984beta,\n  author = {Troyon and others},\n  journal = {Plasma Physics and Controlled Fusion},\n  volume = {26},\n  pages = {209},\n  year = {1984},\n  note = {Title and full author list not confirmed from the evidence record}\n}"
-        }
-      ],
-      "how_used": "Time traces of ten JET pulses from the 2008 public release of the profile database (TRANSP reconstructions, not raw signals): four constants fitted on eight pulses; compared with pulses 42982 and 42976, outside the fit. Loss power from the IPB98(y,2) scaling, D-T power from the Bosch-Hale reactivity.",
       "not_held_to_a_measurement": false,
       "cite_also": "paper"
     },
@@ -1952,144 +1982,6 @@
       "how_used": "From the JSI pulse database: 43 per-pulse records of cores 215, 217 and 231, all read; ten constants fitted on 36 of them. Compared with, outside the fit: the table's peak power, energy and thermocouple maximum for 20 rows of the same cores whose records had not been fetched when the card was compared with them; 15 of those records have been fetched since. The card's structure was set with the peak power of every one of those 20 rows read. Constants from the 2024 article (Table 2, heat-capacity line) and the hot-rod factor 1.387 from the 2019 thesis (Table 4). None of the site's measured values is stored in the card.",
       "not_held_to_a_measurement": false,
       "cite_also": "paper"
-    },
-    "energy/reactor_spert3_ccore": {
-      "kind": "card",
-      "real_thing": "The SPERT III reactor with the C-19/52 highly enriched plate core, National Reactor Testing Station, Idaho: room-temperature step power excursions under pressure and flow, reported 1964",
-      "sources": [
-        {
-          "role": "measurements",
-          "authors": "Toole, C. R.",
-          "title": "The Effects of Pressure and Flow on Room Temperature Power Excursions in Spert III",
-          "year": 1964,
-          "publisher_or_venue": "Phillips Petroleum Co., Atomic Energy Division, Idaho Falls, Idaho, for the U.S. Atomic Energy Commission (contract AT(10-1)-205); distributed by the U.S. Department of Energy Office of Scientific and Technical Information",
-          "identifier": "IDO-16918; OSTI 4042264; 10.2172/4042264",
-          "url": "https://doi.org/10.2172/4042264",
-          "requested_acknowledgment": null,
-          "citation_text": "Toole, C. R. (1964). The Effects of Pressure and Flow on Room Temperature Power Excursions in Spert III. Report IDO-16918, Phillips Petroleum Co., Atomic Energy Division, Idaho Falls, Idaho, for the U.S. Atomic Energy Commission, June 1964. OSTI 4042264. https://doi.org/10.2172/4042264",
-          "bibtex": "@techreport{toole1964spert3,\n  author = {Toole, C. R.},\n  title = {The Effects of Pressure and Flow on Room Temperature Power Excursions in {Spert III}},\n  institution = {Phillips Petroleum Co., Atomic Energy Division, Idaho Falls, Idaho},\n  number = {IDO-16918},\n  year = {1964},\n  month = {jun},\n  doi = {10.2172/4042264},\n  url = {https://doi.org/10.2172/4042264},\n  note = {OSTI ID 4042264}\n}"
-        },
-        {
-          "role": "design data",
-          "authors": "Condit, C. M.; Scott, J. F.; Johnson, R. L.",
-          "title": "The Effects of Coolant Temperature and Initial Power Level on the Excursion Behavior of a Highly Enriched Plate Core in Spert III: Experiment and Analysis",
-          "year": 1967,
-          "publisher_or_venue": "Phillips Petroleum Co., Atomic Energy Division, Idaho Falls, Idaho, for the U.S. Atomic Energy Commission (contract AT(10-1)-205); distributed by the U.S. Department of Energy Office of Scientific and Technical Information",
-          "identifier": "IDO-17138; OSTI 4389198; 10.2172/4389198",
-          "url": "https://doi.org/10.2172/4389198",
-          "requested_acknowledgment": null,
-          "citation_text": "Condit, C. M.; Scott, J. F.; Johnson, R. L. (1967). The Effects of Coolant Temperature and Initial Power Level on the Excursion Behavior of a Highly Enriched Plate Core in Spert III: Experiment and Analysis. Report IDO-17138, Phillips Petroleum Co., Atomic Energy Division, Idaho Falls, Idaho, for the U.S. Atomic Energy Commission. OSTI 4389198. https://doi.org/10.2172/4389198",
-          "bibtex": "@techreport{condit1967spert3,\n  author = {Condit, C. M. and Scott, J. F. and Johnson, R. L.},\n  title = {The Effects of Coolant Temperature and Initial Power Level on the Excursion Behavior of a Highly Enriched Plate Core in {Spert III}: Experiment and Analysis},\n  institution = {Phillips Petroleum Co., Atomic Energy Division, Idaho Falls, Idaho},\n  number = {IDO-17138},\n  year = {1967},\n  doi = {10.2172/4389198},\n  url = {https://doi.org/10.2172/4389198},\n  note = {OSTI ID 4389198}\n}"
-        },
-        {
-          "role": "constants",
-          "authors": "Keepin, G. R.",
-          "title": "Physics of Nuclear Kinetics",
-          "year": 1965,
-          "publisher_or_venue": "book; publisher not recorded",
-          "identifier": null,
-          "url": null,
-          "requested_acknowledgment": null,
-          "citation_text": "Keepin, G. R. (1965). Physics of Nuclear Kinetics.",
-          "bibtex": "@book{keepin1965kinetics,\n  author = {Keepin, G. R.},\n  title = {Physics of Nuclear Kinetics},\n  year = {1965},\n  note = {Publisher not confirmed from the evidence record}\n}"
-        }
-      ],
-      "how_used": "The 126 step transients of IDO-16918's appendix: 15 rows excluded before any run, 72 fitted (two constants), 39 compared outside the fit (every third remaining row and the whole 1000 psig series). Core constants from IDO-17138 Table B-1; delayed-neutron set from Keepin.",
-      "not_held_to_a_measurement": false,
-      "cite_also": "paper"
-    },
-    "energy/runaway_18650_lco": {
-      "kind": "card",
-      "real_thing": "One 18650 lithium-ion cell, LiCoO2 against graphite, fully charged, in thermal abuse: the lumped four-stage model of Hatchard et al. (2001) and Kim et al. (2007), compared with open records of LiCoO2 18650 oven, ramp and heat-wait-seek tests",
-      "how_used": "No constant is fitted. The kinetics, heats, contents and starting amounts are Ostanek's (2025) Table 2; the jelly roll's density and specific heat are Hatchard's as Coman et al. (2017) Table I reprint them; the oven's convective coefficient and emissivity are Hatchard's as Lopez et al. (2015) state them. Compared, on 23 error measures, with Hatchard's oven tests at 145, 150 and 155 degC (reprinted by Lopez et al. 2015, Fig. 2a, timed by Ostanek et al. 2023), Golubkov et al. (2014) Table 3, Mendoza-Hernandez et al. (2017) Table 1, and the LiCoO2 rows Lei et al. (2017) Table 1 reprint.",
-      "not_held_to_a_measurement": false,
-      "cite_also": "paper",
-      "sources": [
-        {
-          "role": "constants",
-          "authors": "Ostanek, J. K.",
-          "title": "Simulink Model for Thermal Runaway of a Single Li-ion Cell using the Hatchard-Kim Reaction Mechanism and 0D Lumped Body Approach",
-          "year": 2025,
-          "publisher_or_venue": "Purdue University Research Repository",
-          "identifier": "10.4231/NWZX-2675",
-          "url": "https://doi.org/10.4231/NWZX-2675",
-          "requested_acknowledgment": null,
-          "citation_text": "Ostanek, J. K. (2025). Simulink Model for Thermal Runaway of a Single Li-ion Cell using the Hatchard-Kim Reaction Mechanism and 0D Lumped Body Approach, Version 1.0. Purdue University Research Repository. https://doi.org/10.4231/NWZX-2675",
-          "bibtex": "@misc{ostanek2025hatchardkim,\n  author = {Ostanek, J. K.},\n  title = {Simulink Model for Thermal Runaway of a Single Li-ion Cell using the {Hatchard-Kim} Reaction Mechanism and {0D} Lumped Body Approach},\n  howpublished = {Purdue University Research Repository},\n  year = {2025},\n  doi = {10.4231/NWZX-2675},\n  url = {https://doi.org/10.4231/NWZX-2675}\n}"
-        },
-        {
-          "role": "constants",
-          "authors": "Coman, P. T.; Darcy, E. C.; Veje, C. T.; White, R. E.",
-          "title": "Modelling Li-Ion Cell Thermal Runaway Triggered by an Internal Short Circuit Device Using an Efficiency Factor and Arrhenius Formulations",
-          "year": 2017,
-          "publisher_or_venue": "Journal of The Electrochemical Society 164(4), A587-A593",
-          "identifier": "10.1149/2.0341704jes",
-          "url": "https://doi.org/10.1149/2.0341704jes",
-          "requested_acknowledgment": null,
-          "citation_text": "Coman, P. T.; Darcy, E. C.; Veje, C. T.; White, R. E. (2017). Modelling Li-Ion Cell Thermal Runaway Triggered by an Internal Short Circuit Device Using an Efficiency Factor and Arrhenius Formulations. Journal of The Electrochemical Society 164(4), A587-A593. https://doi.org/10.1149/2.0341704jes",
-          "bibtex": "@article{coman2017modelling,\n  author = {Coman, P. T. and Darcy, E. C. and Veje, C. T. and White, R. E.},\n  title = {Modelling {Li-Ion} Cell Thermal Runaway Triggered by an Internal Short Circuit Device Using an Efficiency Factor and {Arrhenius} Formulations},\n  journal = {Journal of The Electrochemical Society},\n  volume = {164},\n  number = {4},\n  pages = {A587--A593},\n  year = {2017},\n  doi = {10.1149/2.0341704jes}\n}"
-        },
-        {
-          "role": "measurements",
-          "authors": "Lopez, C. F.; Jeevarajan, J. A.; Mukherjee, P. P.",
-          "title": "Characterization of Lithium-Ion Battery Thermal Abuse Behavior Using Experimental and Computational Analysis",
-          "year": 2015,
-          "publisher_or_venue": "Journal of The Electrochemical Society 162(10), A2163-A2173",
-          "identifier": "10.1149/2.0751510jes",
-          "url": "https://doi.org/10.1149/2.0751510jes",
-          "requested_acknowledgment": null,
-          "citation_text": "Lopez, C. F.; Jeevarajan, J. A.; Mukherjee, P. P. (2015). Characterization of Lithium-Ion Battery Thermal Abuse Behavior Using Experimental and Computational Analysis. Journal of The Electrochemical Society 162(10), A2163-A2173. https://doi.org/10.1149/2.0751510jes",
-          "bibtex": "@article{lopez2015characterization,\n  author = {Lopez, C. F. and Jeevarajan, J. A. and Mukherjee, P. P.},\n  title = {Characterization of Lithium-Ion Battery Thermal Abuse Behavior Using Experimental and Computational Analysis},\n  journal = {Journal of The Electrochemical Society},\n  volume = {162},\n  number = {10},\n  pages = {A2163--A2173},\n  year = {2015},\n  doi = {10.1149/2.0751510jes}\n}"
-        },
-        {
-          "role": "measurements",
-          "authors": "Ostanek, J. K.; Parhizi, M.; Li, W.; Kilaz, G.; Crompton, K. R.",
-          "title": "CFD-Based Thermal Abuse Simulations including Gas Generation and Venting of an 18650 Li-Ion Battery Cell",
-          "year": 2023,
-          "publisher_or_venue": "Journal of The Electrochemical Society 170, 090512",
-          "identifier": "10.1149/1945-7111/acf4c1",
-          "url": "https://doi.org/10.1149/1945-7111/acf4c1",
-          "requested_acknowledgment": null,
-          "citation_text": "Ostanek, J. K.; Parhizi, M.; Li, W.; Kilaz, G.; Crompton, K. R. (2023). CFD-Based Thermal Abuse Simulations including Gas Generation and Venting of an 18650 Li-Ion Battery Cell. Journal of The Electrochemical Society 170, 090512. https://doi.org/10.1149/1945-7111/acf4c1",
-          "bibtex": "@article{ostanek2023cfd,\n  author = {Ostanek, J. K. and Parhizi, M. and Li, W. and Kilaz, G. and Crompton, K. R.},\n  title = {{CFD}-Based Thermal Abuse Simulations including Gas Generation and Venting of an 18650 {Li-Ion} Battery Cell},\n  journal = {Journal of The Electrochemical Society},\n  volume = {170},\n  pages = {090512},\n  year = {2023},\n  doi = {10.1149/1945-7111/acf4c1}\n}"
-        },
-        {
-          "role": "measurements",
-          "authors": "Golubkov, A. W.; Fuchs, D.; Wagner, J.; Wiltsche, H.; Stangl, C.; Fauler, G.; Voitic, G.; Thaler, A.; Hacker, V.",
-          "title": "Thermal-runaway experiments on consumer Li-ion batteries with metal-oxide and olivin-type cathodes",
-          "year": 2014,
-          "publisher_or_venue": "RSC Advances 4, 3633-3642",
-          "identifier": "10.1039/c3ra45748f",
-          "url": "https://doi.org/10.1039/c3ra45748f",
-          "requested_acknowledgment": null,
-          "citation_text": "Golubkov, A. W.; Fuchs, D.; Wagner, J.; Wiltsche, H.; Stangl, C.; Fauler, G.; Voitic, G.; Thaler, A.; Hacker, V. (2014). Thermal-runaway experiments on consumer Li-ion batteries with metal-oxide and olivin-type cathodes. RSC Advances 4, 3633-3642. https://doi.org/10.1039/c3ra45748f",
-          "bibtex": "@article{golubkov2014thermal,\n  author = {Golubkov, A. W. and Fuchs, D. and Wagner, J. and Wiltsche, H. and Stangl, C. and Fauler, G. and Voitic, G. and Thaler, A. and Hacker, V.},\n  title = {Thermal-runaway experiments on consumer {Li-ion} batteries with metal-oxide and olivin-type cathodes},\n  journal = {RSC Advances},\n  volume = {4},\n  pages = {3633--3642},\n  year = {2014},\n  doi = {10.1039/c3ra45748f}\n}"
-        },
-        {
-          "role": "measurements",
-          "authors": "Mendoza-Hernandez, O. S.; Taniguchi, S.; Ishikawa, H.; Tanaka, K.; Fukuda, S.; Sone, Y.; Umeda, M.",
-          "title": "Accelerating Rate Calorimetry Tests of Lithium-Ion Cells Before and After Storage Degradation at High Temperature",
-          "year": 2017,
-          "publisher_or_venue": "E3S Web of Conferences 16, 07001",
-          "identifier": "10.1051/e3sconf/20171607001",
-          "url": "https://doi.org/10.1051/e3sconf/20171607001",
-          "requested_acknowledgment": null,
-          "citation_text": "Mendoza-Hernandez, O. S.; Taniguchi, S.; Ishikawa, H.; Tanaka, K.; Fukuda, S.; Sone, Y.; Umeda, M. (2017). Accelerating Rate Calorimetry Tests of Lithium-Ion Cells Before and After Storage Degradation at High Temperature. E3S Web of Conferences 16, 07001. https://doi.org/10.1051/e3sconf/20171607001",
-          "bibtex": "@article{mendoza2017arc,\n  author = {Mendoza-Hernandez, O. S. and Taniguchi, S. and Ishikawa, H. and Tanaka, K. and Fukuda, S. and Sone, Y. and Umeda, M.},\n  title = {Accelerating Rate Calorimetry Tests of Lithium-Ion Cells Before and After Storage Degradation at High Temperature},\n  journal = {E3S Web of Conferences},\n  volume = {16},\n  pages = {07001},\n  year = {2017},\n  doi = {10.1051/e3sconf/20171607001}\n}"
-        },
-        {
-          "role": "measurements",
-          "authors": "Lei, B.; Zhao, W.; Ziebert, C.; Uhlmann, N.; Rohde, M.; Seifert, H. J.",
-          "title": "Experimental Analysis of Thermal Runaway in 18650 Cylindrical Li-Ion Cells Using an Accelerating Rate Calorimeter",
-          "year": 2017,
-          "publisher_or_venue": "Batteries 3(2), 14",
-          "identifier": "10.3390/batteries3020014",
-          "url": "https://doi.org/10.3390/batteries3020014",
-          "requested_acknowledgment": null,
-          "citation_text": "Lei, B.; Zhao, W.; Ziebert, C.; Uhlmann, N.; Rohde, M.; Seifert, H. J. (2017). Experimental Analysis of Thermal Runaway in 18650 Cylindrical Li-Ion Cells Using an Accelerating Rate Calorimeter. Batteries 3(2), 14. https://doi.org/10.3390/batteries3020014",
-          "bibtex": "@article{lei2017experimental,\n  author = {Lei, B. and Zhao, W. and Ziebert, C. and Uhlmann, N. and Rohde, M. and Seifert, H. J.},\n  title = {Experimental Analysis of Thermal Runaway in 18650 Cylindrical {Li-Ion} Cells Using an Accelerating Rate Calorimeter},\n  journal = {Batteries},\n  volume = {3},\n  number = {2},\n  pages = {14},\n  year = {2017},\n  doi = {10.3390/batteries3020014}\n}"
-        }
-      ]
     },
     "atom_dft": {
       "kind": "solver",
@@ -3303,51 +3195,6 @@
       "not_held_to_a_measurement": false,
       "cite_also": "paper"
     },
-    "blast_wave_tnt_air": {
-      "kind": "solver",
-      "real_thing": "The incident blast wave of a charge of TNT equivalent in still sea-level air, a sphere in free air or a hemisphere on rigid ground; compared with the gauge records of 0.37 g propane/oxygen surface bursts of J. M. Dewey and I. Sochet",
-      "sources": [
-        {
-          "role": "measurements",
-          "authors": "Dewey, John M.; Sochet, Isabelle",
-          "title": "Database from an analysis of pressure measurements of the blast waves from the explosions of 0.3 g charges of stoichiometric, rich and lean propane/oxygen mixtures",
-          "year": 2020,
-          "publisher_or_venue": "Borealis (University of Victoria Dataverse)",
-          "identifier": "10.5683/SP2/VHN1UQ",
-          "url": "https://doi.org/10.5683/SP2/VHN1UQ",
-          "requested_acknowledgment": null,
-          "citation_text": "Dewey, J. M., & Sochet, I. (2020). Database from an analysis of pressure measurements of the blast waves from the explosions of 0.3 g charges of stoichiometric, rich and lean propane/oxygen mixtures. Borealis. https://doi.org/10.5683/SP2/VHN1UQ (retrieved 2026-10-14).",
-          "bibtex": "@misc{dewey2020propane,\n  author = {Dewey, John M. and Sochet, Isabelle},\n  title = {Database from an analysis of pressure measurements of the blast waves from the explosions of 0.3 g charges of stoichiometric, rich and lean propane/oxygen mixtures},\n  year = {2020},\n  publisher = {Borealis},\n  doi = {10.5683/SP2/VHN1UQ},\n  note = {Retrieved 2026-10-14}\n}"
-        },
-        {
-          "role": "reference",
-          "authors": "Dewey, John M.",
-          "title": "TNT Free-Field Blast Wave Properties Interface (TNTFFI 1.1c)",
-          "year": 2021,
-          "publisher_or_venue": "Borealis",
-          "identifier": "10.5683/SP2/WB8JKO",
-          "url": "https://doi.org/10.5683/SP2/WB8JKO",
-          "requested_acknowledgment": null,
-          "citation_text": "Dewey, J. M. (2021). TNT Free-Field Blast Wave Properties Interface (TNTFFI 1.1c). Borealis. https://doi.org/10.5683/SP2/WB8JKO (retrieved 2026-10-14).",
-          "bibtex": "@misc{dewey2021tntffi,\n  author = {Dewey, John M.},\n  title = {{TNT} Free-Field Blast Wave Properties Interface ({TNTFFI} 1.1c)},\n  year = {2021},\n  publisher = {Borealis},\n  doi = {10.5683/SP2/WB8JKO},\n  note = {Retrieved 2026-10-14}\n}"
-        },
-        {
-          "role": "reference",
-          "authors": "Kingery, Charles N.; Bulmash, Gerald; as simplified by Swisdak, Michael M.; coded by fcento100",
-          "title": "Airblast parameters from TNT spherical air burst and hemispherical surface burst (ARBRL-TR-02555, 1984); Simplified Kingery Airblast Calculations (1994, DTIC ADA526744); kingery-bulmash (Python)",
-          "year": 2024,
-          "publisher_or_venue": "GitHub, fcento100/kingery-bulmash, commit 194c3c7",
-          "identifier": null,
-          "url": "https://github.com/fcento100/kingery-bulmash",
-          "requested_acknowledgment": null,
-          "citation_text": "Kingery, C. N., & Bulmash, G. (1984). Airblast parameters from TNT spherical air burst and hemispherical surface burst. ARBRL-TR-02555, US Army BRL; Swisdak, M. M. (1994). Simplified Kingery Airblast Calculations. DTIC ADA526744; as coded in fcento100, kingery-bulmash, https://github.com/fcento100/kingery-bulmash (retrieved 2026-10-14). The coded coefficients have not been compared with either original.",
-          "bibtex": "@misc{fcento100kb,\n  author = {fcento100},\n  title = {kingery-bulmash: {Kingery-Bulmash} blast parameters after {Swisdak} (1994)},\n  year = {2024},\n  howpublished = {GitHub},\n  url = {https://github.com/fcento100/kingery-bulmash},\n  note = {Commit 194c3c7. Retrieved 2026-10-14}\n}"
-        }
-      ],
-      "how_used": "Nothing is fitted. The model is the company's own derivation (a point source of the charge's energy, Sedov-Taylor, the Euler equations and weak-shock theory). Dewey's TNT interface and the Kingery-Bulmash correlation are references the tests compare with; the solver is compared with the 24 Dewey-Sochet gauge traces of the rich and lean series, outside any fit.",
-      "not_held_to_a_measurement": false,
-      "cite_also": "paper"
-    },
     "stress_plate_hole_s235": {
       "kind": "solver",
       "real_thing": "A flat tensile bar of S235 low-carbon steel, 3.05 mm thick, with a hole of radius 4 mm in its parallel length 20.05 mm wide, pulled to 106.26 N/mm² and its surface displacement measured by stereo digital image correlation at the Institute of Applied Mechanics, Clausthal University of Technology, on 2023-11-16",
@@ -3570,6 +3417,63 @@
         }
       ],
       "how_used": "Channel T1 and the power of the institute's pulse records: two constants (gap conductance, thermocouple time constant) fitted on 39 pulses of cores 215, 217 and 231; compared with 16 pulses of cores 217 and 231 left out of the fit. Geometry, densities and the meat's heat capacity from the article; the hot-rod factor 1.387 from I. Vavtar's thesis.",
+      "not_held_to_a_measurement": false,
+      "cite_also": "paper"
+    },
+    "blast_wave_tnt_air": {
+      "kind": "solver",
+      "real_thing": "The incident blast wave of a charge of cast TNT in still sea-level air, a sphere in free air or a hemisphere on the ground, from its detonation products (JWL); fitted on and compared with J. M. Dewey's measurement-derived TNT free-air and surface-burst tables",
+      "sources": [
+        {
+          "role": "measurements",
+          "authors": "Dewey, John M.",
+          "title": "TNT Free-Field Blast Wave Properties Interface (TNTFFI 1.1c)",
+          "year": 2021,
+          "publisher_or_venue": "Borealis",
+          "identifier": "10.5683/SP2/WB8JKO",
+          "url": "https://doi.org/10.5683/SP2/WB8JKO",
+          "requested_acknowledgment": null,
+          "citation_text": "Dewey, J. M. (2021). TNT Free-Field Blast Wave Properties Interface (TNTFFI 1.1c). Borealis. https://doi.org/10.5683/SP2/WB8JKO (retrieved 2026-10-14).",
+          "bibtex": "@misc{dewey2021tntffi,\n  author = {Dewey, John M.},\n  title = {{TNT} Free-Field Blast Wave Properties Interface ({TNTFFI} 1.1c)},\n  year = {2021},\n  publisher = {Borealis},\n  doi = {10.5683/SP2/WB8JKO},\n  note = {Retrieved 2026-10-14}\n}"
+        },
+        {
+          "role": "measurements",
+          "authors": "Dewey, John M.",
+          "title": "TNT Surface-Burst Blast Wave Interface (TNTSBI 1.0c)",
+          "year": 2022,
+          "publisher_or_venue": "Borealis",
+          "identifier": "10.5683/SP3/CFPFRH",
+          "url": "https://doi.org/10.5683/SP3/CFPFRH",
+          "requested_acknowledgment": null,
+          "citation_text": "Dewey, J. M. (2022). TNT Surface-Burst Blast Wave Interface (TNTSBI 1.0c). Borealis. https://doi.org/10.5683/SP3/CFPFRH (retrieved 2026-10-14).",
+          "bibtex": "@misc{dewey2022tntsbi,\n  author = {Dewey, John M.},\n  title = {{TNT} Surface-Burst Blast Wave Interface ({TNTSBI} 1.0c)},\n  year = {2022},\n  publisher = {Borealis},\n  doi = {10.5683/SP3/CFPFRH},\n  note = {Retrieved 2026-10-14}\n}"
+        },
+        {
+          "role": "reference",
+          "authors": "Kingery, Charles N.; Bulmash, Gerald; as simplified by Swisdak, Michael M.; coded by fcento100",
+          "title": "Airblast parameters from TNT spherical air burst and hemispherical surface burst (ARBRL-TR-02555, 1984); Simplified Kingery Airblast Calculations (1994, DTIC ADA526744); kingery-bulmash (Python)",
+          "year": 2024,
+          "publisher_or_venue": "GitHub, fcento100/kingery-bulmash, commit 194c3c7",
+          "identifier": null,
+          "url": "https://github.com/fcento100/kingery-bulmash",
+          "requested_acknowledgment": null,
+          "citation_text": "Kingery, C. N., & Bulmash, G. (1984). Airblast parameters from TNT spherical air burst and hemispherical surface burst. ARBRL-TR-02555, US Army BRL; Swisdak, M. M. (1994). Simplified Kingery Airblast Calculations. DTIC ADA526744; as coded in fcento100, kingery-bulmash, https://github.com/fcento100/kingery-bulmash (retrieved 2026-10-14). The coded coefficients have not been compared with either original.",
+          "bibtex": "@misc{fcento100kb,\n  author = {fcento100},\n  title = {kingery-bulmash: {Kingery-Bulmash} blast parameters after {Swisdak} (1994)},\n  year = {2024},\n  howpublished = {GitHub},\n  url = {https://github.com/fcento100/kingery-bulmash},\n  note = {Commit 194c3c7. Retrieved 2026-10-14}\n}"
+        },
+        {
+          "role": "constants",
+          "authors": "Dobratz, B. M.; Crawford, P. C.",
+          "title": "LLNL Explosives Handbook: Properties of Chemical Explosives and Explosive Simulants",
+          "year": 1985,
+          "publisher_or_venue": "Lawrence Livermore National Laboratory, UCRL-52997 Change 2",
+          "identifier": "UCRL-52997",
+          "url": null,
+          "requested_acknowledgment": null,
+          "citation_text": "Dobratz, B. M., & Crawford, P. C. (1985). LLNL Explosives Handbook: Properties of Chemical Explosives and Explosive Simulants. UCRL-52997 Change 2, Lawrence Livermore National Laboratory. TNT's JWL constants at 1.630 g/cm^3 (A 373.8 GPa, B 3.747 GPa, R1 4.15, R2 0.90, omega 0.35, E0 6.00 GPa, D 6930 m/s, P_CJ 21.0 GPa), as transcribed with this source in the JWL article of the German Wikipedia (retrieved 2026-10-18); the handbook itself was not obtained.",
+          "bibtex": "@techreport{dobratz1985llnl,\n  author = {Dobratz, B. M. and Crawford, P. C.},\n  title = {{LLNL} Explosives Handbook: Properties of Chemical Explosives and Explosive Simulants},\n  institution = {Lawrence Livermore National Laboratory},\n  number = {UCRL-52997 Change 2},\n  year = {1985}\n}"
+        }
+      ],
+      "how_used": "Two constants are fitted on Dewey's TNT tables for 1 kg: the products' energy factor (1.234) on the free-air interface's peaks, impulses and durations, and the ground factor (1.825) on the surface-burst interface's peaks. The surface-burst interface's positive-phase table (impulse and duration), every arrival and the Kingery-Bulmash correlation are kept out of the fit and compared. Dobratz and Crawford's JWL constants of TNT are the products' equation of state. The engine stores no table value; the tests hold the comparison at named points.",
       "not_held_to_a_measurement": false,
       "cite_also": "paper"
     },

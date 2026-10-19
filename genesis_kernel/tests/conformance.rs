@@ -188,6 +188,15 @@ fn cell_2170_model3() -> Vec<Finding> {
         ledger: [energy_anchor_j, electrical_work_j, heat_j], physical: [state_of_charge])
 }
 
+fn cell_2170_twin() -> Vec<Finding> {
+    use cell_2170_twin::*;
+    kit!(cell_2170_twin, Cell2170Twin::cell(), CellState,
+        start: |c| CellState::try_rested(c, 80.0, 0.9, 4.2).unwrap(),
+        load: CellLoad { current_a: 4.5, case_temperature_c: -20.0 },
+        dt: 1.0, steps: 16, flags: FLAG_SUSTAINED_ABOVE_1C | FLAG_OUTSIDE_COMPARED_RUNS,
+        ledger: [energy_anchor_j, electrical_work_j, heat_j, heat_stored_j, heat_to_case_j], physical: [state_of_charge, core_temperature_c])
+}
+
 fn generator_mmrtg_f1() -> Vec<Finding> {
     use generator_mmrtg_f1::*;
     kit!(generator_mmrtg_f1, GeneratorMmrtgF1::curiosity(), GeneratorState,
@@ -313,6 +322,15 @@ fn grid_gb() -> Vec<Finding> {
         ledger: [kinetic_energy_anchor_mw_s, energy_lost_mw_s, energy_response_mw_s], physical: [frequency_hz])
 }
 
+fn grid_gb_twin() -> Vec<Finding> {
+    use grid_gb_twin::*;
+    kit!(grid_gb_twin, GridGbTwin::great_britain(), GridGbTwinState,
+        start: |c| GridGbTwinState::try_start(c, 49.948, 177000.0, 26774.0, ResponseHeld { dc_low_mw: 1145.0, dm_low_mw: 500.0, dr_low_mw: 480.0, dc_high_mw: 1080.0, dm_high_mw: 510.0, dr_high_mw: 480.0, fast_delivery_s: 1.0, regulation_delivery_s: 10.0 }).unwrap(),
+        load: GridGbTwinLoad { loss_mw: 1007.0 },
+        dt: 0.005, steps: 16, flags: 0,
+        ledger: [kinetic_energy_anchor_mw_s, energy_lost_mw_s, energy_response_mw_s], physical: [frequency_hz])
+}
+
 fn tire_eve_r19_ice() -> Vec<Finding> {
     use tire_eve_r19_ice::*;
     kit!(tire_eve_r19_ice, TireEveR19Ice::on_rig_ice(), TireState,
@@ -347,6 +365,30 @@ fn tokamak_jet_dte1() -> Vec<Finding> {
         },
         dt: 0.001, steps: 16, flags: FLAG_NEAR_DENSITY_LIMIT,
         ledger: [energy_anchor_j, energy_supplied_j, energy_lost_j], physical: [thermal_energy_j, fast_ion_energy_j])
+}
+
+fn tokamak_jet_dte1_twin() -> Vec<Finding> {
+    use tokamak_jet_dte1_twin::*;
+    kit!(tokamak_jet_dte1_twin, TokamakJetDte1Twin::dte1(), TwinState,
+        start: |c| TwinState::try_start(c, 9.0e6, 5.0e5, 7.0e5, 4.0e5).unwrap(),
+        load: TwinLoad {
+            deuterium_beam_power_w: 1.05e7,
+            tritium_beam_power_w: 9.5e6,
+            deuterium_beam_energy_kev: 80.0,
+            tritium_beam_energy_kev: 150.0,
+            icrh_power_w: 2.4e6,
+            ohmic_power_w: 5.0e5,
+            line_density_per_m3: 6.4e19,
+            plasma_current_a: 3.8e6,
+            toroidal_field_t: 3.9,
+            tritium_fraction: 0.451,
+            electron_temperature_kev: 7.4,
+            effective_charge: 2.4,
+            hot_ion_regime: 0.0,
+        },
+        dt: 0.001, steps: 16, flags: FLAG_NEAR_DENSITY_LIMIT | FLAG_OUTSIDE_COMPARED,
+        ledger: [energy_anchor_j, energy_supplied_j, energy_lost_j],
+        physical: [thermal_energy_j, deuterium_beam_ion_energy_j, tritium_beam_ion_energy_j, tail_ion_energy_j])
 }
 
 fn fingerpad_p02_glass() -> Vec<Finding> {
@@ -403,6 +445,15 @@ fn reactor_spert3_ccore_twin() -> Vec<Finding> {
         load: ReactorLoad { reactivity_inserted_dollar: 1.1, coolant_flow_m_per_s: 0.0 },
         dt: 0.0006, steps: 16, flags: FLAG_PROMPT_SUPERCRITICAL | FLAG_PAST_POWER_PEAK | FLAG_HOT_SPOT_BOILING | FLAG_OUTSIDE_COMPARED_RANGE,
         ledger: [population_anchor_mw, feedback_integral_dollar_mws, swept_energy_mws], physical: [power_mw, plate_rise_k, hot_spot_plate_rise_k])
+}
+
+fn reactor_spert3_ccore_plate() -> Vec<Finding> {
+    use reactor_spert3_ccore_plate::*;
+    kit!(reactor_spert3_ccore_plate, ReactorSpert3CcorePlate::c_core_plate(), ReactorState,
+        start: |c| ReactorState::try_start(c, 298.15, 0.0).unwrap(),
+        load: ReactorLoad { reactivity_inserted_dollar: 1.1, coolant_flow_m_per_s: 0.0 },
+        dt: 0.0003, steps: 16, flags: FLAG_PROMPT_SUPERCRITICAL | FLAG_PAST_POWER_PEAK | FLAG_HOT_SPOT_BOILING | FLAG_OUTSIDE_COMPARED_RANGE,
+        ledger: [population_anchor_mw, feedback_integral_dollar_mws, swept_energy_mws], physical: [power_mw, plate_rise_k, meat_rise_k, hot_spot_plate_rise_k])
 }
 
 fn runaway_18650_lco() -> Vec<Finding> {
@@ -473,7 +524,7 @@ fn reactor_msre_pump() -> Vec<Finding> {
         physical: [precursor_ws[1][40], precursor_ws[3][200]])
 }
 
-const CARDS: [(&str, fn() -> Vec<Finding>); 40] = [
+const CARDS: [(&str, fn() -> Vec<Finding>); 44] = [
     ("thermal", thermal),
     ("resonance", resonance),
     ("swing", swing),
@@ -499,21 +550,25 @@ const CARDS: [(&str, fn() -> Vec<Finding>); 40] = [
     ("crater_ryugu_sci", crater_ryugu_sci),
     ("link_gothenburg_10010", link_gothenburg_10010),
     ("grid_gb", grid_gb),
+    ("grid_gb_twin", grid_gb_twin),
     ("tire_eve_r19_ice", tire_eve_r19_ice),
     ("los_jwst_fine_guide", los_jwst_fine_guide),
     ("tokamak_jet_dte1", tokamak_jet_dte1),
+    ("tokamak_jet_dte1_twin", tokamak_jet_dte1_twin),
     ("fingerpad_p02_glass", fingerpad_p02_glass),
     ("accumulator_sbo450", accumulator_sbo450),
     ("reactor_triga_jsi", reactor_triga_jsi),
     ("reactor_spert3_ccore", reactor_spert3_ccore),
     ("reactor_spert3_twin", reactor_spert3_twin),
     ("reactor_spert3_ccore_twin", reactor_spert3_ccore_twin),
+    ("reactor_spert3_ccore_plate", reactor_spert3_ccore_plate),
     ("runaway_18650_lco", runaway_18650_lco),
     ("grasp_lift_glass_4tu", grasp_lift_glass_4tu),
     ("momentum_jwst_srp", momentum_jwst_srp),
     ("momentum_jwst_dihedral", momentum_jwst_dihedral),
     ("tokamak_vde_mast", tokamak_vde_mast),
     ("reactor_msre_pump", reactor_msre_pump),
+    ("cell_2170_twin", cell_2170_twin),
 ];
 
 /// Every card attacked; every finding printed and, with `CONFORMANCE_REPORT`

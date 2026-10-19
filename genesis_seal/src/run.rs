@@ -82,21 +82,21 @@ impl TapeReport {
     }
 }
 
-/// `link_0` of a run: SHA-256 of the sealed form of the whole request.
-pub fn link_0(request: &Value) -> [u8; 32] {
+/// `link_0` of a run: SHA-384 of the sealed form of the whole request.
+pub fn link_0(request: &Value) -> [u8; 48] {
     request_digest(request)
 }
 
 /// Write the first 16 bytes of `link` into the proof slot of `frame`, and
-/// return the next link, SHA-256 of the 64 frame bytes.
-pub fn seal_frame(link: &[u8; 32], frame: &mut [u8; FRAME_LEN]) -> [u8; 32] {
+/// return the next link, SHA-384 of the 64 frame bytes.
+pub fn seal_frame(link: &[u8; 48], frame: &mut [u8; FRAME_LEN]) -> [u8; 48] {
     frame[PROOF_START..].copy_from_slice(&link[..PROOF_LEN]);
     digest(frame)
 }
 
 /// The next link, when `frame` is 64 bytes and its proof slot holds the first
 /// 16 bytes of `link`.
-pub fn follow_frame(link: &[u8; 32], frame: &[u8]) -> Option<[u8; 32]> {
+pub fn follow_frame(link: &[u8; 48], frame: &[u8]) -> Option<[u8; 48]> {
     if frame.len() != FRAME_LEN || frame[PROOF_START..] != link[..PROOF_LEN] {
         return None;
     }
@@ -153,7 +153,7 @@ pub fn state_digest_text(
     Some(text)
 }
 
-/// SHA-256 of [`state_digest_text`], as hex.
+/// SHA-384 of [`state_digest_text`], as hex.
 pub fn state_digest(state: &Map<String, Value>, final_hex: &str, max_hex: &str) -> Option<String> {
     state_digest_text(state, final_hex, max_hex).map(|text| digest_hex(text.as_bytes()))
 }
@@ -217,9 +217,9 @@ pub(crate) fn string_or_null(text: Option<&str>) -> String {
     }
 }
 
-/// SHA-256 of the last link as 64 hex characters followed by [`run_tail`].
+/// SHA-384 of the last link as 96 hex characters followed by [`run_tail`].
 pub fn run_seal(
-    last_link: &[u8; 32],
+    last_link: &[u8; 48],
     outcome: &str,
     steps_landed: u64,
     reject: Option<&str>,
@@ -245,6 +245,7 @@ pub fn check_tape_text(bytes: &[u8]) -> Result<TapeReport, Refusal> {
 /// (`crate::attest`), then the state digest, then the run seal.
 pub fn check_tape(body: &Value) -> Result<TapeReport, Refusal> {
     let object = body.as_object().ok_or(Refusal::NotAnObject)?;
+    crate::refusal::refuse_other_rule(object)?;
     let inputs = required(object, "inputs")?;
     let frames = required(object, "frames")?
         .as_array()
@@ -262,9 +263,9 @@ pub fn check_tape(body: &Value) -> Result<TapeReport, Refusal> {
     let max_hex = optional_string(object, "max_residual_conservation_error_hex")?;
     let state_digest = optional_string(object, "state_digest")?;
 
-    require_digits("run_seal", &run_seal, 64)?;
+    require_digits("run_seal", &run_seal, 96)?;
     if let Some(text) = &state_digest {
-        require_digits("state_digest", text, 64)?;
+        require_digits("state_digest", text, 96)?;
     }
     if let Some(text) = &final_hex {
         require_digits("final_residual_conservation_error_hex", text, 16)?;
@@ -327,7 +328,7 @@ fn require_lowercase_frames(frames: &[Value]) -> Result<(), Refusal> {
         let Some(object) = frame.as_object() else {
             continue;
         };
-        for (key, digits) in [("frame_hex", 2 * 64), ("link", 64)] {
+        for (key, digits) in [("frame_hex", 2 * 64), ("link", 96)] {
             let capital = object
                 .get(key)
                 .and_then(Value::as_str)
@@ -345,7 +346,7 @@ fn require_lowercase_frames(frames: &[Value]) -> Result<(), Refusal> {
 
 /// One entry of `frames` in a tape: `frame_hex` is 128 hex characters and
 /// `link` is 64. Anything else is a chain failure at that index.
-fn follow_recorded(link: &[u8; 32], frame: &Value) -> Option<[u8; 32]> {
+fn follow_recorded(link: &[u8; 48], frame: &Value) -> Option<[u8; 48]> {
     let object = frame.as_object()?;
     let frame_hex = object.get("frame_hex")?.as_str()?;
     let stored_link = object.get("link")?.as_str()?;
@@ -415,7 +416,7 @@ mod tests {
     use serde_json::json;
 
     fn hash() -> String {
-        "ab".repeat(32)
+        "ab".repeat(48)
     }
 
     fn tape(final_state: Value) -> Value {
@@ -546,10 +547,10 @@ mod tests {
             "Physical Violation: 'final_state' must be a JSON object or null."
         );
         let mut body = tape(state.clone());
-        body["run_seal"] = json!("AB".repeat(32));
+        body["run_seal"] = json!("AB".repeat(48));
         assert_eq!(
             check_tape(&body).unwrap_err().to_string(),
-            "Physical Violation: 'run_seal' must be 64 lowercase hex digits."
+            "Physical Violation: 'run_seal' must be 96 lowercase hex digits."
         );
         let mut body = tape(state);
         body["outcome"] = json!("");
@@ -610,7 +611,7 @@ mod tests {
     #[test]
     fn capital_letters_in_a_frame_are_refused_by_name_and_other_faults_stay_chain_failures() {
         let mut upper_frame = tape(Value::Null);
-        upper_frame["frames"] = json!([{"frame_hex": "AB".repeat(64), "link": "ab".repeat(32)}]);
+        upper_frame["frames"] = json!([{"frame_hex": "AB".repeat(64), "link": "ab".repeat(48)}]);
         assert_eq!(
             check_tape(&upper_frame).unwrap_err().to_string(),
             "Physical Violation: 'frames[0].frame_hex' must be 128 lowercase hex digits."
@@ -618,19 +619,19 @@ mod tests {
 
         let mut upper_link = tape(Value::Null);
         upper_link["frames"] = json!([
-            {"frame_hex": "ab".repeat(64), "link": "ab".repeat(32)},
-            {"frame_hex": "ab".repeat(64), "link": "AB".repeat(32)}
+            {"frame_hex": "ab".repeat(64), "link": "ab".repeat(48)},
+            {"frame_hex": "ab".repeat(64), "link": "AB".repeat(48)}
         ]);
         assert_eq!(
             check_tape(&upper_link).unwrap_err().to_string(),
-            "Physical Violation: 'frames[1].link' must be 64 lowercase hex digits."
+            "Physical Violation: 'frames[1].link' must be 96 lowercase hex digits."
         );
 
         // The same frame in lowercase, and a frame that is not hex at all,
         // are still chain failures at their index.
         for frame in [
-            json!({"frame_hex": "ab".repeat(64), "link": "ab".repeat(32)}),
-            json!({"frame_hex": "zz", "link": "ab".repeat(32)}),
+            json!({"frame_hex": "ab".repeat(64), "link": "ab".repeat(48)}),
+            json!({"frame_hex": "zz", "link": "ab".repeat(48)}),
             json!("not an object"),
         ] {
             let mut body = tape(Value::Null);

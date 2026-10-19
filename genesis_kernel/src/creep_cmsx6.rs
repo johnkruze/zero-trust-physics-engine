@@ -191,6 +191,7 @@ extern crate core;
 
 use core::prelude::v1::*;
 
+use crate::exceedance::{Exceedance, ExceedanceKind, Side};
 use crate::frame::LastStateFrame64;
 use crate::normal::normal_or_zero;
 use crate::math::{exp, exp_m1, log};
@@ -575,6 +576,26 @@ pub fn step(
     load: CreepLoad,
     dt_s: f64,
 ) -> Result<(), StepReject> {
+    #[cfg(any(test, debug_assertions, feature = "check_exceedances"))]
+    let before = *state;
+    let stepped = step_landed(alloy, state, frame, load, dt_s);
+    #[cfg(any(test, debug_assertions, feature = "check_exceedances"))]
+    if stepped.is_ok() {
+        crate::exceedance::debug_check("creep_cmsx6", exceedances(alloy, &before, state, load, dt_s), frame.flags);
+    }
+    stepped
+}
+
+/// The step itself; [`step`] is it with, in a build that checks
+/// (`crate::exceedance::CHECKED`), the check that [`exceedances`] stands for
+/// the flags it wrote.
+fn step_landed(
+    alloy: &CreepCmsx6,
+    state: &mut CreepState,
+    frame: &mut LastStateFrame64,
+    load: CreepLoad,
+    dt_s: f64,
+) -> Result<(), StepReject> {
     step_as_computed(alloy, state, frame, load, dt_s)?;
     normal_or_zero_state(state);
     Ok(())
@@ -775,6 +796,72 @@ fn state_is_finite(state: &CreepState) -> bool {
         && state.heat_dissipated_mj_per_m3.is_finite()
         && state.work_defect_mj_per_m3.is_finite()
         && state.residual_conservation_error.is_finite()
+}
+
+/// Every limit a flag of this card can mark: what [`exceedances`] reports
+/// beside a flag's bit (`crate::exceedance`).
+pub const EXCEEDANCE_KINDS: &[crate::exceedance::ExceedanceKind] = &[
+    RISING_KIND,
+    START_LOW_KIND,
+    REACH_HIGH_KIND,
+];
+
+const RISING_KIND: ExceedanceKind = ExceedanceKind::varying(
+    "FLAG_CREEP_RATE_RISING",
+    FLAG_CREEP_RATE_RISING,
+    "creep_rate_percent_per_h",
+    "percent/h",
+    Side::Above,
+    "the creep rate at the start of the step",
+);
+const START_LOW_KIND: ExceedanceKind = ExceedanceKind::fixed(
+    "FLAG_OUTSIDE_MET_RANGE",
+    FLAG_OUTSIDE_MET_RANGE,
+    "creep_extension_at_step_start_percent",
+    "percent",
+    Side::Below,
+    CREEP_EXTENSION_MIN_PERCENT,
+    "0.1 percent creep extension: below it the law missed the measured curves at any stress",
+);
+const REACH_HIGH_KIND: ExceedanceKind = ExceedanceKind::fixed(
+    "FLAG_OUTSIDE_MET_RANGE",
+    FLAG_OUTSIDE_MET_RANGE,
+    "creep_extension_percent",
+    "percent",
+    Side::Above,
+    CREEP_EXTENSION_MAX_BELOW_FULL_REACH_PERCENT,
+    "0.2 percent creep extension at a stress below 170 MPa: past it the law missed the measured curves",
+);
+
+/// The limits the step from `before` to `after` under `load` over `dt_s`
+/// is past: one record for each limit a flag set on its frame marks.
+/// The conditions are those of the step's `creep_rate_rising` and of
+/// [`CreepCmsx6::outside_met_range`] over the step.
+pub fn exceedances(
+    alloy: &CreepCmsx6,
+    before: &CreepState,
+    after: &CreepState,
+    load: CreepLoad,
+    dt_s: f64,
+) -> crate::exceedance::Exceedances {
+    let _ = dt_s;
+    let mut records = crate::exceedance::Exceedances::new();
+    let stress = load.stress_mpa;
+    let from = before.creep_extension_percent;
+    let to = after.creep_extension_percent;
+    if after.creep_rate_rising {
+        let rate_at_start = alloy.creep_rate_percent_per_h(stress, from);
+        records.push(Exceedance::at(RISING_KIND, rate_at_start, after.creep_rate_percent_per_h));
+    }
+    records.push_if(
+        from < alloy.creep_extension_min_percent,
+        Exceedance::at(START_LOW_KIND, alloy.creep_extension_min_percent, from),
+    );
+    records.push_if(
+        stress < alloy.full_reach_stress_min_mpa && to > alloy.creep_extension_max_below_full_reach_percent,
+        Exceedance::at(REACH_HIGH_KIND, alloy.creep_extension_max_below_full_reach_percent, to),
+    );
+    records
 }
 
 #[cfg(test)]

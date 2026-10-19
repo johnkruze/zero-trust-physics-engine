@@ -218,6 +218,7 @@ extern crate core;
 
 use core::prelude::v1::*;
 
+use crate::exceedance::{Exceedance, ExceedanceKind, Side};
 use crate::frame::LastStateFrame64;
 use crate::normal::{normal_or_zero, normal_or_zero_each};
 
@@ -984,6 +985,26 @@ pub fn step(
     load: LosLoad,
     dt_s: f64,
 ) -> Result<(), StepReject> {
+    #[cfg(any(test, debug_assertions, feature = "check_exceedances"))]
+    let before = *state;
+    let stepped = step_landed(card, state, frame, load, dt_s);
+    #[cfg(any(test, debug_assertions, feature = "check_exceedances"))]
+    if stepped.is_ok() {
+        crate::exceedance::debug_check("los_jwst_fine_guide", exceedances(card, &before, state, load, dt_s), frame.flags);
+    }
+    stepped
+}
+
+/// The step itself; [`step`] is it with, in a build that checks
+/// (`crate::exceedance::CHECKED`), the check that [`exceedances`] stands for
+/// the flags it wrote.
+fn step_landed(
+    card: &LosJwstFineGuide,
+    state: &mut LosState,
+    frame: &mut LastStateFrame64,
+    load: LosLoad,
+    dt_s: f64,
+) -> Result<(), StepReject> {
     step_as_computed(card, state, frame, load, dt_s)?;
     normal_or_zero_state(state);
     Ok(())
@@ -1295,6 +1316,130 @@ fn state_is_finite(state: &LosState) -> bool {
         && state.unmeasured_in_row.is_finite()
 }
 
+
+/// Every limit a flag of this card can mark: what [`exceedances`] reports
+/// beside a flag's bit (`crate::exceedance`).
+pub const EXCEEDANCE_KINDS: &[crate::exceedance::ExceedanceKind] = &[
+    NO_MEASUREMENT_KIND,
+    DISTURBED_X,
+    DISTURBED_Y,
+    SIGMA_X,
+    SIGMA_Y,
+    RECOVERING_KIND,
+    COUNTS_LOW,
+    COUNTS_HIGH,
+];
+
+const NO_MEASUREMENT_KIND: ExceedanceKind = ExceedanceKind::state(
+    "FLAG_NO_MEASUREMENT",
+    FLAG_NO_MEASUREMENT,
+    "measurement",
+    "the frame has no measured centroid: it was predicted and not updated; no number to compare",
+);
+const DISTURBED_WORDS: &str = "5 mas from the lock point on the axis, the quiet offset: past it the card was measured worse than the last centroid";
+const DISTURBED_X: ExceedanceKind = ExceedanceKind::fixed(
+    "FLAG_POINTING_DISTURBED",
+    FLAG_POINTING_DISTURBED,
+    "offset_x_mas_magnitude",
+    "mas",
+    Side::Above,
+    QUIET_OFFSET_MAS,
+    DISTURBED_WORDS,
+);
+const DISTURBED_Y: ExceedanceKind = ExceedanceKind::fixed(
+    "FLAG_POINTING_DISTURBED",
+    FLAG_POINTING_DISTURBED,
+    "offset_y_mas_magnitude",
+    "mas",
+    Side::Above,
+    QUIET_OFFSET_MAS,
+    DISTURBED_WORDS,
+);
+const SIGMA_WORDS: &str = "four stated standard deviations of the innovation on the axis";
+const SIGMA_X: ExceedanceKind = ExceedanceKind::fixed(
+    "FLAG_BEYOND_FOUR_SIGMA",
+    FLAG_BEYOND_FOUR_SIGMA,
+    "innovation_x_sigma",
+    "1",
+    Side::Above,
+    INNOVATION_LIMIT_SIGMA,
+    SIGMA_WORDS,
+);
+const SIGMA_Y: ExceedanceKind = ExceedanceKind::fixed(
+    "FLAG_BEYOND_FOUR_SIGMA",
+    FLAG_BEYOND_FOUR_SIGMA,
+    "innovation_y_sigma",
+    "1",
+    Side::Above,
+    INNOVATION_LIMIT_SIGMA,
+    SIGMA_WORDS,
+);
+const RECOVERING_KIND: ExceedanceKind = ExceedanceKind::fixed(
+    "FLAG_RECOVERING",
+    FLAG_RECOVERING,
+    "since_disturbance_s",
+    "s",
+    Side::Below,
+    RECOVERY_S,
+    "30 s after the last centroid that was disturbed or beyond four sigma, less its rounding allowance",
+);
+const COUNTS_WORDS: &str = "the count rates the noise law was fitted on, 22,900 to 2,820,000 counts per second";
+const COUNTS_LOW: ExceedanceKind = ExceedanceKind::fixed(
+    "FLAG_COUNT_RATE_BEYOND_COMPARED",
+    FLAG_COUNT_RATE_BEYOND_COMPARED,
+    "counts_per_s",
+    "counts/s",
+    Side::Below,
+    COUNTS_MIN_PER_S,
+    COUNTS_WORDS,
+);
+const COUNTS_HIGH: ExceedanceKind = ExceedanceKind::fixed(
+    "FLAG_COUNT_RATE_BEYOND_COMPARED",
+    FLAG_COUNT_RATE_BEYOND_COMPARED,
+    "counts_per_s",
+    "counts/s",
+    Side::Above,
+    COUNTS_MAX_PER_S,
+    COUNTS_WORDS,
+);
+
+/// The limits the step from `before` to `after` under `load` over `dt_s`
+/// is past: one record for each limit a flag set on its frame marks.
+/// The offsets of the centroid from the lock point are read again as the
+/// step read them (`validate`); the innovation in standard deviations is
+/// its size over the square root of its variance.
+pub fn exceedances(
+    card: &LosJwstFineGuide,
+    before: &LosState,
+    after: &LosState,
+    load: LosLoad,
+    dt_s: f64,
+) -> crate::exceedance::Exceedances {
+    let mut records = crate::exceedance::Exceedances::new();
+    records.push_if(after.no_measurement, Exceedance::state(NO_MEASUREMENT_KIND));
+    if after.pointing_disturbed {
+        if let Ok(Some((offset_x_mas, offset_y_mas))) = validate(card, before, load, dt_s) {
+            let (x, y) = (offset_x_mas.abs(), offset_y_mas.abs());
+            records.push_if(x > card.quiet_offset_mas, Exceedance::at(DISTURBED_X, card.quiet_offset_mas, x));
+            records.push_if(y > card.quiet_offset_mas, Exceedance::at(DISTURBED_Y, card.quiet_offset_mas, y));
+        }
+    }
+    if after.beyond_four_sigma {
+        let sigma = card.innovation_limit_sigma;
+        let limit = sigma * sigma;
+        let (ix, vx) = (after.innovation_x_mas, after.innovation_variance_x_mas2);
+        let (iy, vy) = (after.innovation_y_mas, after.innovation_variance_y_mas2);
+        records.push_if(ix * ix > limit * vx, Exceedance::at(SIGMA_X, sigma, ix.abs() / vx.sqrt()));
+        records.push_if(iy * iy > limit * vy, Exceedance::at(SIGMA_Y, sigma, iy.abs() / vy.sqrt()));
+    }
+    records.push_if(after.recovering, Exceedance::at(RECOVERING_KIND, card.recovery_s, after.since_disturbance_s));
+    if !after.no_measurement && card.count_rate_beyond_compared(load.counts_per_s) {
+        let counts = load.counts_per_s;
+        records.push_if(!(counts >= card.counts_min_per_s), Exceedance::at(COUNTS_LOW, card.counts_min_per_s, counts));
+        records.push_if(!(counts <= card.counts_max_per_s), Exceedance::at(COUNTS_HIGH, card.counts_max_per_s, counts));
+    }
+    records
+}
 
 #[cfg(test)]
 mod tests {

@@ -170,9 +170,9 @@ async fn a_step_of_the_accumulator_is_the_compiled_step_to_the_bit() {
     // 0.075 mm of travel at 60 bar raises the pressure by about 0.034 bar.
     let pressure = answer["state"]["gas_pressure_pa"].as_f64().unwrap();
     assert!(pressure > 6.003e6 && pressure < 6.004e6, "{pressure}");
-    assert!(answer["sha256_seal"].as_str().is_some_and(|seal| seal.len() == 64));
-    assert!(answer["receipt_sha256"].as_str().is_some_and(|seal| seal.len() == 64));
-    assert_eq!(answer["engine_version"], "genesis_kernel_v0.12.0");
+    assert!(answer["sha384_seal"].as_str().is_some_and(|seal| seal.len() == 96));
+    assert!(answer["receipt_sha384"].as_str().is_some_and(|seal| seal.len() == 96));
+    assert_eq!(answer["engine_version"], "genesis_kernel_v0.13.0");
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -237,7 +237,7 @@ async fn a_push_and_a_pull_end_on_the_kernel_state_and_a_run_past_the_ceiling_ke
     let landed = tape["steps_landed"].as_u64().unwrap();
     assert!(landed > 0 && landed < 200, "{landed}");
     assert!(tape["reject_detail"].as_str().unwrap().contains("PressureAboveRated"));
-    assert!(tape["run_seal"].as_str().is_some_and(|seal| seal.len() == 64));
+    assert!(tape["run_seal"].as_str().is_some_and(|seal| seal.len() == 96));
     assert!(tape["final_state"]["gas_pressure_pa"].as_f64().unwrap() <= 3.3e7);
     let (status, report) = post(&base, "/verify_tape", &tape).await;
     assert_eq!(status, 200, "{report}");
@@ -294,7 +294,7 @@ async fn a_run_whose_heat_passes_its_share_of_the_work_is_refused_and_keeps_its_
         let landed = tape["steps_landed"].as_u64().unwrap() as usize;
         assert!(landed > 5 && landed < 400, "{landed}");
         assert_eq!(tape["frames"].as_array().unwrap().len(), landed);
-        assert!(tape["run_seal"].as_str().is_some_and(|seal| seal.len() == 64));
+        assert!(tape["run_seal"].as_str().is_some_and(|seal| seal.len() == 96));
         // The state is the kernel's at the last step that landed, and the next step is the one refused.
         let mut state = kernel_start(&initial);
         let mut frame = blank_frame();
@@ -384,7 +384,7 @@ async fn each_limit_a_request_can_reach_is_named_and_carries_no_proof() {
         let (status, text) = post(&base, "/verify_physics", body).await;
         assert_eq!(status, 422, "{name}: {text}");
         assert!(text.contains(name), "{name}: {text}");
-        assert!(!text.contains("sha256_seal"), "{name}: {text}");
+        assert!(!text.contains("sha384_seal"), "{name}: {text}");
     }
     // The exact ends of each range land, and so does 1 mm of travel stated three ways.
     let low = start(CHARGE_20, 3.7e6, ROOM_K, ROOM_K);
@@ -429,14 +429,14 @@ async fn each_limit_a_request_can_reach_is_named_and_carries_no_proof() {
         missing["parameters"].as_object_mut().unwrap().remove(key);
         let (status, text) = post(&base, "/verify_physics", &missing).await;
         assert_eq!(status, 422, "{key}: {text}");
-        assert!(text.contains(key) && !text.contains("sha256_seal"), "{key}: {text}");
+        assert!(text.contains(key) && !text.contains("sha384_seal"), "{key}: {text}");
     }
     for key in ["thermal_time_constant_s", "vessel_gas_volume_m3", "piston_area_m2", "gas_volume_m3"] {
         let mut extra = step_body(&good, 0.01, 0.01);
         extra["parameters"][key] = json!(0.9);
         let (status, text) = post(&base, "/verify_physics", &extra).await;
         assert_eq!(status, 422, "{key}: {text}");
-        assert!(text.contains(key) && !text.contains("sha256_seal"), "{key}: {text}");
+        assert!(text.contains(key) && !text.contains("sha384_seal"), "{key}: {text}");
     }
     // A speed past the compared in a later segment is stepped, within the millimetre a step.
     let segments = json!([
@@ -526,7 +526,7 @@ async fn the_heat_share_travels_with_a_carried_on_run_and_a_single_step() {
     assert!(text.contains("UpstreamOutcomeNotCarried") && !text.contains("run_seal\":"), "{text}");
     let (status, text) = post(&base, "/verify_physics", &step_body(&carried, 0.0005, 0.35)).await;
     assert_eq!(status, 422, "{text}");
-    assert!(text.contains("ContinuationWithoutUpstream") && !text.contains("sha256_seal"), "{text}");
+    assert!(text.contains("ContinuationWithoutUpstream") && !text.contains("sha384_seal"), "{text}");
     // With the sums dropped the refused step would land: the sums are what carry the limit.
     let mut dropped = carried.clone();
     dropped["work_moved_j"] = json!(0.0);
@@ -646,15 +646,16 @@ async fn the_local_connection_lists_the_accumulator_and_gives_the_bytes_of_the_w
     assert!(!error);
     let listed: Value = serde_json::from_str(&listed).unwrap();
     let cards = listed["cards"].as_array().unwrap();
-    assert_eq!(cards.len(), 40);
+    assert_eq!(cards.len(), protocol_mcp_gateway::CARDS);
     let entry = cards
         .iter()
         .find(|card| card["card"] == "accumulator_sbo450")
         .expect("the accumulator is listed");
     assert_eq!(entry["domain"], "energy");
-    // The line an agent sees in the list carries the standing: what is fitted and what was compared.
+    // The line an agent sees in the list carries the standing: what was
+    // compared and the gap. What is fitted is in the description (0.14.4).
     let line = entry["specimen"].as_str().unwrap();
-    assert!(line.contains("Fitted on the 100 runs from 0.01 to 10 Hz of the two records at 40 bar precharge and 60 bar load"), "{line}");
+    assert!(!line.contains("Fitted on"), "{line}");
     assert!(line.contains(STANDING), "{line}");
 
     let which = json!({ "domain": "energy", "card": "accumulator_sbo450" });
@@ -664,6 +665,8 @@ async fn the_local_connection_lists_the_accumulator_and_gives_the_bytes_of_the_w
     assert_eq!(status, 200);
     assert_eq!(described, over_web);
     let description: Value = serde_json::from_str(&described).unwrap();
+    let sheet = description["specimen"].as_str().unwrap();
+    assert!(sheet.contains("Fitted on the 100 runs from 0.01 to 10 Hz of the two records at 40 bar precharge and 60 bar load"), "{sheet}");
     let result = description["validation"]["result"].as_str().unwrap();
     assert!(result.starts_with(RESULT_STARTS), "{result}");
     let limits = description["validation"]["limits"].as_str().unwrap();
@@ -723,6 +726,10 @@ async fn the_local_connection_lists_the_accumulator_and_gives_the_bytes_of_the_w
         "0.01 to 20 Hz",
         AFTER_THE_FACT_LINE,
     ] {
+        assert!(sheet.contains(words), "{words}: {sheet}");
+    }
+    // The list's line is the sheet's computes, comparison and gap.
+    for words in ["within 0.93 percent median (target 2.0)", "Gap: 2.72 percent median at 109 to 132 bar (target 2.0)"] {
         assert!(line.contains(words), "{words}: {line}");
     }
     assert!(description["advisory"].as_array().is_none_or(Vec::is_empty), "{}", description["advisory"]);

@@ -199,7 +199,7 @@ async fn each_worked_plan_in_the_description_runs_as_written_and_is_a_sealed_dat
             let head = &body["head"];
             assert_eq!(head, &summary["head"], "{label} {kind}");
             let seal = head["dataset_seal"].as_str().unwrap_or_else(|| panic!("{label} {kind}: {body}"));
-            assert!(seal.len() == 64 && seal.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f')), "{label} {kind}");
+            assert!(seal.len() == 96 && seal.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f')), "{label} {kind}");
             let rows = body["rows"].as_array().unwrap();
             assert!(rows.len() >= rows_at_least, "{label} {kind}: {} rows", rows.len());
             assert_eq!(head["rows"], rows.len(), "{label} {kind}");
@@ -219,7 +219,8 @@ async fn each_worked_plan_in_the_description_runs_as_written_and_is_a_sealed_dat
             sent += 1;
         }
     }
-    assert_eq!(sent, 3 * 42);
+    // 0.15.0: the full view, one view per card (36) and one more view: 38, three plans each.
+    assert_eq!(sent, 3 * 38);
     // The full view and the cold plate's own view show the cold plate, with both kinds of path.
     for view in [View::full(), one_card("energy", "thermal")] {
         let description = said_at(&view, "run_dataset", Some("plan"));
@@ -254,13 +255,13 @@ async fn each_worked_plan_in_the_description_runs_as_written_and_is_a_sealed_dat
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn an_answer_is_as_large_as_the_descriptions_say() {
     let state = new_gateway_state();
-    assert!(description_of(&View::full(), "run_trajectory").contains("record_every sets which steps are recorded, about 230 characters each"));
+    assert!(description_of(&View::full(), "run_trajectory").contains("record_every sets which steps are recorded, about 262 characters each"));
     let run_words = said_at(&View::full(), "run_trajectory", Some("record_every"));
-    assert!(run_words.contains("about 230 characters for each recorded state, plus the request as it was sent, plus up to 8000 characters for the final state and the seals"), "{run_words}");
+    assert!(run_words.contains("about 262 characters for each recorded state, plus the request as it was sent, plus up to 8000 characters for the final state and the seals; a flagged state adds about 400 characters for each limit it is past (exceedances)"), "{run_words}");
     assert!(run_words.contains("What keeps it small: a larger record_every; the final state is returned in full whatever is recorded."), "{run_words}");
     let set_words = said_at(&View::full(), "run_dataset", Some("answer"));
     assert!(set_words.contains("a whole row counts its own request and 1900 characters, and for each number twice its name and 60 characters (150 for a 3-vector, 9 for a flag); store \"frames\" adds 128 characters for each recorded state to a full answer; the head repeats the request."), "{set_words}");
-    assert!(set_words.contains("one above 40000 characters is refused with what to change"), "{set_words}");
+    assert!(set_words.contains("one above 42500 characters is refused with what to change"), "{set_words}");
     assert_eq!(dataset::REST_OF_AN_ANSWER_CHARS, 8000);
 
     for item in descriptor::all() {
@@ -277,8 +278,18 @@ async fn an_answer_is_as_large_as_the_descriptions_say() {
             let body: Value = serde_json::from_str(&text).unwrap();
             let recorded = body["frames"].as_array().unwrap().len();
             let request_chars = serde_json::to_string(request).unwrap().len();
-            let rest = text.len() as i64 - request_chars as i64 - 230 * recorded as i64;
-            // About 230 for each recorded state: no more than 6 either way.
+            // A flagged state's records, and the run's extremes, stand
+            // beside the 262 (`src/exceedance.rs`).
+            let records: usize = body["frames"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter_map(|frame| frame.get("exceedances"))
+                .chain(body.get("exceedance_extremes"))
+                .map(|list| serde_json::to_string(list).unwrap().len() + 22)
+                .sum();
+            let rest = text.len() as i64 - request_chars as i64 - 262 * recorded as i64 - records as i64;
+            // About 262 for each recorded state (its 96-digit link): no more than 6 either way.
             assert!(
                 (-6 * recorded as i64..=dataset::REST_OF_AN_ANSWER_CHARS as i64 + 6 * recorded as i64).contains(&rest),
                 "{}: {} characters, {recorded} recorded, request {request_chars}",
@@ -314,8 +325,8 @@ async fn an_answer_is_as_large_as_the_descriptions_say() {
                 recorded += row["frames"].as_u64().unwrap() as usize;
             }
             match store {
-                // 128 characters for each recorded state, after the 64-byte header of the frame file.
-                "frames" => assert_eq!(body["frames_hex"].as_str().unwrap().len(), 128 * (recorded + 1), "{}", item.card),
+                // 128 characters for each recorded state, after the 80-byte header of the frame file.
+                "frames" => assert_eq!(body["frames_hex"].as_str().unwrap().len(), 128 * recorded + 160, "{}", item.card),
                 _ => assert!(body["frames_hex"].is_null(), "{}", item.card),
             }
             let head_chars = serde_json::to_string(&body["head"]).unwrap().len();
@@ -427,7 +438,7 @@ async fn a_check_whose_seals_hold_over_rows_the_engine_did_not_write_does_not_ho
     assert_eq!((report["holds"].clone(), report["cause"].clone(), report["row"].clone()), (json!(false), json!("leaf"), json!(0)), "{report}");
     assert!(report["fault"].as_str().unwrap().contains("its run_seal and its reject_detail give"), "{report}");
     // The keys of a row in another order: every value is the engine's, the
-    // rows sent do not hash to the head's rows_sha256, and the plan run again
+    // rows sent do not hash to the head's rows_sha384, and the plan run again
     // names the first key out of the engine's order.
     let mut reordered = made["rows"].clone();
     let first = reordered[2].as_object().unwrap().clone();
@@ -446,7 +457,7 @@ async fn a_check_whose_seals_hold_over_rows_the_engine_did_not_write_does_not_ho
     other["engine_version"] = json!("genesis_kernel_v0.9.0");
     let report = answer(&state, "verify_dataset", &json!({ "head": other, "rows": made["rows"], "frames_hex": made["frames_hex"] })).await;
     assert_eq!((report["holds"].clone(), report["cause"].clone(), report["differs_at"].clone()), (json!(false), json!("engine_version"), json!("head.engine_version")), "{report}");
-    assert!(report["difference"].as_str().unwrap().starts_with("The dataset names engine_version genesis_kernel_v0.9.0, and this engine is genesis_kernel_v0.12.0."), "{report}");
+    assert!(report["difference"].as_str().unwrap().starts_with("The dataset names engine_version genesis_kernel_v0.9.0, and this engine is genesis_kernel_v0.13.0."), "{report}");
 
     // A sealed value changed: the check does not hold, and no such sentence is given.
     let mut broken = made["rows"].clone();

@@ -160,6 +160,7 @@ extern crate core;
 
 use core::prelude::v1::*;
 
+use crate::exceedance::{Exceedance, ExceedanceKind, Side};
 use crate::frame::LastStateFrame64;
 use crate::normal::normal_or_zero;
 
@@ -579,6 +580,26 @@ pub fn step(
     load: TireLoad,
     dt_s: f64,
 ) -> Result<(), StepReject> {
+    #[cfg(any(test, debug_assertions, feature = "check_exceedances"))]
+    let before = *state;
+    let stepped = step_landed(tire, state, frame, load, dt_s);
+    #[cfg(any(test, debug_assertions, feature = "check_exceedances"))]
+    if stepped.is_ok() {
+        crate::exceedance::debug_check("tire_eve_r19_ice", exceedances(tire, &before, state, load, dt_s), frame.flags);
+    }
+    stepped
+}
+
+/// The step itself; [`step`] is it with, in a build that checks
+/// (`crate::exceedance::CHECKED`), the check that [`exceedances`] stands for
+/// the flags it wrote.
+fn step_landed(
+    tire: &TireEveR19Ice,
+    state: &mut TireState,
+    frame: &mut LastStateFrame64,
+    load: TireLoad,
+    dt_s: f64,
+) -> Result<(), StepReject> {
     step_as_computed(tire, state, frame, load, dt_s)?;
     normal_or_zero_state(state);
     Ok(())
@@ -782,6 +803,90 @@ fn state_is_finite(state: &TireState) -> bool {
         && state.slip_heat_j.is_finite()
         && state.energy_defect_j.is_finite()
         && state.residual_conservation_error.is_finite()
+}
+
+/// Every limit a flag of this card can mark: what [`exceedances`] reports
+/// beside a flag's bit (`crate::exceedance`).
+pub const EXCEEDANCE_KINDS: &[crate::exceedance::ExceedanceKind] = &[
+    FITTED_KIND,
+    LOAD_LOW,
+    LOAD_HIGH,
+    PRESSURE_LOW,
+    PRESSURE_HIGH,
+    HOLD_HIGH,
+    SETTLING_KIND,
+];
+
+const FITTED_KIND: ExceedanceKind = ExceedanceKind::fixed(
+    "FLAG_LOAD_ABOVE_FITTED",
+    FLAG_LOAD_ABOVE_FITTED,
+    "normal_load_n",
+    "N",
+    Side::Above,
+    NORMAL_LOAD_FITTED_CEILING_N,
+    "the largest normal load the constants were fitted on, 5,000 N",
+);
+const fn beyond(quantity: &'static str, unit: &'static str, side: Side, limit: f64, words: &'static str) -> ExceedanceKind {
+    ExceedanceKind::fixed("FLAG_BEYOND_COMPARED", FLAG_BEYOND_COMPARED, quantity, unit, side, limit, words)
+}
+const LOAD_WORDS: &str = "the normal loads compared with this tyre's measurements, 3,500 to 6,500 N";
+const LOAD_LOW: ExceedanceKind = beyond("normal_load_n", "N", Side::Below, COMPARED_LOAD_FLOOR_N, LOAD_WORDS);
+const LOAD_HIGH: ExceedanceKind = beyond("normal_load_n", "N", Side::Above, COMPARED_LOAD_CEILING_N, LOAD_WORDS);
+const PRESSURE_WORDS: &str = "the inflation pressures compared, 150 to 350 kPa";
+const PRESSURE_LOW: ExceedanceKind = beyond("inflation_pressure_pa", "Pa", Side::Below, COMPARED_PRESSURE_FLOOR_PA, PRESSURE_WORDS);
+const PRESSURE_HIGH: ExceedanceKind = beyond("inflation_pressure_pa", "Pa", Side::Above, COMPARED_PRESSURE_CEILING_PA, PRESSURE_WORDS);
+const HOLD_HIGH: ExceedanceKind = beyond(
+    "slip_held_s",
+    "s",
+    Side::Above,
+    COMPARED_HOLD_END_S,
+    "the longest slip held in the compared measurements, 21 s; set past it by more than its rounding allowance",
+);
+const SETTLING_KIND: ExceedanceKind = ExceedanceKind::fixed(
+    "FLAG_SLIP_SETTLING",
+    FLAG_SLIP_SETTLING,
+    "slip_held_at_step_start_s",
+    "s",
+    Side::Below,
+    SLIP_SETTLE_S,
+    "5 s after the slip was set: before it the measured force was still rising and the card's steady force missed it",
+);
+
+/// The limits the step from `before` to `after` under `load` over `dt_s`
+/// is past: one record for each limit a flag set on its frame marks.
+/// The conditions are those of the step's `load_above_fitted`, of
+/// [`TireEveR19Ice::beyond_compared`] and of the settling the step publishes.
+pub fn exceedances(
+    tire: &TireEveR19Ice,
+    before: &TireState,
+    after: &TireState,
+    load: TireLoad,
+    dt_s: f64,
+) -> crate::exceedance::Exceedances {
+    let _ = dt_s;
+    let mut records = crate::exceedance::Exceedances::new();
+    records.push_if(after.load_above_fitted, Exceedance::at(FITTED_KIND, tire.normal_load_fitted_ceiling_n, load.normal_load_n));
+    if after.beyond_compared {
+        let force = load.normal_load_n;
+        let pressure = load.inflation_pressure_pa;
+        records.push_if(!(force >= tire.compared_load_floor_n), Exceedance::at(LOAD_LOW, tire.compared_load_floor_n, force));
+        records.push_if(!(force <= tire.compared_load_ceiling_n), Exceedance::at(LOAD_HIGH, tire.compared_load_ceiling_n, force));
+        records.push_if(
+            !(pressure >= tire.compared_pressure_floor_pa),
+            Exceedance::at(PRESSURE_LOW, tire.compared_pressure_floor_pa, pressure),
+        );
+        records.push_if(
+            !(pressure <= tire.compared_pressure_ceiling_pa),
+            Exceedance::at(PRESSURE_HIGH, tire.compared_pressure_ceiling_pa, pressure),
+        );
+        records.push_if(
+            !(after.slip_held_s <= tire.compared_hold_end_s + tire.compared_hold_end_allowance_s),
+            Exceedance::at(HOLD_HIGH, tire.compared_hold_end_s, after.slip_held_s),
+        );
+    }
+    let held_before_s = held_before_step_s(before, load);
+    records.push_if(held_before_s < tire.slip_settle_s, Exceedance::at(SETTLING_KIND, tire.slip_settle_s, held_before_s));
+    records
 }
 
 #[cfg(test)]

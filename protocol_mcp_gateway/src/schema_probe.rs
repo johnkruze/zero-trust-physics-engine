@@ -56,6 +56,8 @@ fn parser_keys(tool: &str) -> (BTreeSet<String>, BTreeSet<String>) {
                 "final_residual_conservation_error_hex",
                 "max_residual_conservation_error_hex",
                 "state_digest",
+                crate::answer_key::PUBLIC_KEY_FIELD,
+                crate::answer_key::SEEN_NONCES_FIELD,
                 "request",
                 "chain_seal",
                 "links",
@@ -85,11 +87,13 @@ fn parser_keys(tool: &str) -> (BTreeSet<String>, BTreeSet<String>) {
                 "reject",
                 "result",
                 "invariants",
-                "field_sha256",
+                "field_sha384",
                 "seal_parts",
                 "solution_seal",
                 "request",
                 crate::chain::FROM,
+                crate::answer_key::PUBLIC_KEY_FIELD,
+                crate::answer_key::SEEN_NONCES_FIELD,
             ];
             (keys, vec![])
         }
@@ -106,9 +110,11 @@ fn parser_keys(tool: &str) -> (BTreeSet<String>, BTreeSet<String>) {
             let mut accepted = dataset::PARTS_KEYS.to_vec();
             accepted.push("dataset_seal");
             accepted.push("request");
+            accepted.push(crate::answer_key::PUBLIC_KEY_FIELD);
+            accepted.push(crate::answer_key::SEEN_NONCES_FIELD);
             (accepted, vec![])
         }
-        "verify_receipt" => (vec!["response_text"], vec!["response_text"]),
+        "verify_receipt" => (vec!["response_text", crate::answer_key::PUBLIC_KEY_FIELD, crate::answer_key::SEEN_NONCES_FIELD], vec!["response_text"]),
         // A run or a plan of solves: run and solves are each optional.
         "validate_series" => {
             let mut accepted = validation::TOP_LEVEL.to_vec();
@@ -345,7 +351,8 @@ fn the_pair_and_the_solver_are_strings_and_no_declaration_lists_the_catalogue() 
     }
     // Outside its worked examples no declaration names a card or a solver, in any view.
     let all_cards: BTreeSet<String> = View::full().cards().iter().map(|c| c.card.to_string()).collect();
-    assert_eq!(all_cards.len(), 40);
+    // 0.15.0: one model per real object, 36 cards.
+    assert_eq!(all_cards.len(), 36);
     let all_solvers: Vec<String> = View::full().solver_names().iter().map(|name| name.to_string()).collect();
     for (label, view) in views() {
         for tool in tools_in(&view) {

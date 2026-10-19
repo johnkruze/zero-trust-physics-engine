@@ -89,7 +89,7 @@ fn a_boron_density_under_one_nucleus_is_refused_at_once_and_zero_the_floor_and_t
         assert!(took < AT_ONCE, "{written}: {took:?}");
         // A check of it by request stops on the same sentence, with no proof.
         let started = Instant::now();
-        let check = local.tool("verify_solution", &json!({ "request": request, "solution_seal": "ab".repeat(32) }));
+        let check = local.tool("verify_solution", &json!({ "request": request, "solution_seal": "ab".repeat(48) }));
         assert_eq!(check, (true, sentence));
         assert!(started.elapsed() < AT_ONCE, "{written}: {:?}", started.elapsed());
     }
@@ -108,7 +108,7 @@ fn a_boron_density_under_one_nucleus_is_refused_at_once_and_zero_the_floor_and_t
         let request = with(json!(boron));
         let body = answered(&mut local, &request);
         assert_eq!(body["outcome"], "converged", "{boron}");
-        assert_eq!(body["engine_version"], "genesis_solvers_v0.12.0");
+        assert_eq!(body["engine_version"], "genesis_solvers_v0.13.0");
         let direct = lhd::solve(&LhdQuestion {
             beam_energy_kev: parameter("beam_energy_kev"),
             beam_power_w: parameter("beam_power_w"),
@@ -187,7 +187,7 @@ fn a_history_row_under_a_millisecond_after_the_one_before_is_refused_at_once_and
     );
     assert!(took < AT_ONCE, "{took:?}");
     let started = Instant::now();
-    let check = local.tool("verify_solution", &json!({ "request": vanishing, "solution_seal": "ab".repeat(32) }));
+    let check = local.tool("verify_solution", &json!({ "request": vanishing, "solution_seal": "ab".repeat(48) }));
     assert_eq!(check, (true, sentence));
     assert!(started.elapsed() < AT_ONCE, "{:?}", started.elapsed());
     // A later row is named by its own number, and a span a millionth of a
@@ -207,7 +207,7 @@ fn a_history_row_under_a_millisecond_after_the_one_before_is_refused_at_once_and
     let apart = slab_request(json!([0.0, 1.0, 1.001, 2.0]));
     let body = answered(&mut local, &apart);
     assert_eq!(body["outcome"], "converged", "{body}");
-    assert_eq!(body["engine_version"], "genesis_solvers_v0.12.0");
+    assert_eq!(body["engine_version"], "genesis_solvers_v0.13.0");
     assert!(body["iterations"].as_u64().unwrap() > 0);
     assert_eq!(body["result"]["time_steps"].as_f64(), body["iterations"].as_f64());
     let (error, text) = local.tool("verify_solution", &json!({ "request": apart, "solution_seal": body["solution_seal"] }));

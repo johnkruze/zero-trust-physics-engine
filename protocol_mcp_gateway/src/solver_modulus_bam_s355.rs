@@ -222,7 +222,7 @@ pub fn reject_name(reject: &ModulusReject) -> &'static str {
 
 fn field_words() -> String {
     format!(
-        "SHA-256 of the sample count ({}) as 8 little-endian bytes, then the two bending modes at the recovered moduli, flatwise then edgewise, as little-endian f64 bytes: deflection over length, rotation, scaled moment and scaled shear force at each of {} stations along the bar.",
+        "SHA-384 of the sample count ({}) as 8 little-endian bytes, then the two bending modes at the recovered moduli, flatwise then edgewise, as little-endian f64 bytes: deflection over length, rotation, scaled moment and scaled shear force at each of {} stations along the bar.",
         2 * 4 * (modulus::MODE_INTERVALS + 1),
         modulus::MODE_INTERVALS + 1
     )

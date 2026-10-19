@@ -32,7 +32,7 @@ use genesis_kernel::solar_system::{
 use protocol_mcp_gateway::{VerifyPhysicsResponse, app, commit_request_proof};
 use reqwest::Client;
 use serde_json::{Map, Value, json};
-use sha2::{Digest, Sha256};
+use sha2::{Digest, Sha384};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::TcpListener;
 use tokio::process::{Child, ChildStdin, ChildStdout, Command};
@@ -80,8 +80,8 @@ async fn post(base: &str, path: &str, body: &Value) -> (u16, String) {
     post_text(base, path, &answer_text::as_sent(body)).await
 }
 
-fn sha256_hex(bytes: &[u8]) -> String {
-    hex::encode(Sha256::digest(bytes))
+fn sha384_hex(bytes: &[u8]) -> String {
+    hex::encode(Sha384::digest(bytes))
 }
 
 fn system() -> SolarSystem {
@@ -247,7 +247,7 @@ fn assert_state_is(published_state: &Value, state: &SolarSystemState, label: &st
 }
 
 fn split_receipt(text: &str) -> (String, String) {
-    const MARKER: &str = ",\"receipt_sha256\":\"";
+    const MARKER: &str = ",\"receipt_sha384\":\"";
     let at = text.rfind(MARKER).expect("a receipt");
     (format!("{}}}", &text[..at]), text[at + MARKER.len()..text.len() - 2].to_string())
 }
@@ -255,7 +255,7 @@ fn split_receipt(text: &str) -> (String, String) {
 /// The refusal is named and the answer carries no proof.
 fn names(text: &str, name: &str) -> bool {
     text.contains(&format!("({name}). That state is not sealed."))
-        && !text.contains("sha256_seal")
+        && !text.contains("sha384_seal")
         && !text.contains("run_seal")
 }
 
@@ -275,7 +275,7 @@ async fn a_step_of_the_system_matches_the_compiled_step_with_the_same_proof_byte
         assert_eq!(status, 200, "{answer}");
         let response: VerifyPhysicsResponse = serde_json::from_str(&answer).unwrap();
         assert_eq!(response.inputs, request);
-        assert_eq!(response.engine_version, "genesis_kernel_v0.12.0");
+        assert_eq!(response.engine_version, "genesis_kernel_v0.13.0");
 
         let mut state = SolarSystemState::try_state(&system, position_m, velocity_m_s).unwrap();
         let mut frame = blank_frame(commit_request_proof(&request));
@@ -283,13 +283,13 @@ async fn a_step_of_the_system_matches_the_compiled_step_with_the_same_proof_byte
         assert_eq!(frame.flags, 0);
         assert_state_is(&response.state, &state, "step");
         assert_eq!(response.residual_conservation_error.to_bits(), state.residual_conservation_error.to_bits());
-        assert_eq!(response.sha256_seal, sha256_hex(&frame.to_bytes()));
+        assert_eq!(response.sha384_seal, sha384_hex(&frame.to_bytes()));
         let mut naked = frame;
         naked.proof = [0; 16];
-        assert_ne!(response.sha256_seal, sha256_hex(&naked.to_bytes()));
+        assert_ne!(response.sha384_seal, sha384_hex(&naked.to_bytes()));
         let (document, receipt) = split_receipt(&answer);
-        assert_eq!(receipt, response.receipt_sha256);
-        assert_eq!(sha256_hex(document.as_bytes()), receipt);
+        assert_eq!(receipt, response.receipt_sha384);
+        assert_eq!(sha384_hex(document.as_bytes()), receipt);
         let (status, report) = post(&base, "/verify_receipt", &json!({ "response_text": answer })).await;
         assert_eq!(status, 200, "{report}");
         let report: Value = serde_json::from_str(&report).unwrap();
@@ -301,7 +301,7 @@ async fn a_step_of_the_system_matches_the_compiled_step_with_the_same_proof_byte
         assert_eq!(report["matches"], false, "{report}");
         let (_, again) = post_text(&base, "/verify_physics", &text).await;
         assert_eq!(again, answer);
-        seals.push(response.sha256_seal);
+        seals.push(response.sha384_seal);
     }
     seals.sort();
     seals.dedup();
@@ -543,7 +543,7 @@ async fn a_step_outside_the_floor_and_the_ceiling_a_missing_input_and_a_load_are
     for dt_s in [f64::from_bits(ceiling.to_bits() + 1), 86_400.0, f64::from_bits(floor.to_bits() - 1), 0.0, -1800.0] {
         let (status, text) = post(&base, "/verify_physics", &step_body(&position_m, &velocity_m_s, dt_s)).await;
         assert_eq!(status, 422, "{dt_s}: {text}");
-        assert!(text.contains("dt_s") && !text.contains("sha256_seal"), "{dt_s}: {text}");
+        assert!(text.contains("dt_s") && !text.contains("sha384_seal"), "{dt_s}: {text}");
         let (status, text) = post(&base, "/run_trajectory", &run_body(&position_m, &velocity_m_s, dt_s, 2, 1)).await;
         assert_eq!(status, 422, "{dt_s}: {text}");
         assert!(!text.contains("run_seal"), "{dt_s}: {text}");
@@ -567,7 +567,7 @@ async fn a_step_outside_the_floor_and_the_ceiling_a_missing_input_and_a_load_are
         extra["parameters"][key] = json!([0.0, 0.0, 0.0]);
         let (status, text) = post(&base, "/verify_physics", &extra).await;
         assert_eq!(status, 422, "{key}: {text}");
-        assert!(text.contains(key) && !text.contains("sha256_seal"), "{key}: {text}");
+        assert!(text.contains(key) && !text.contains("sha384_seal"), "{key}: {text}");
     }
     // The card has no load: a load in a segment is refused.
     let mut loaded = run_body(&position_m, &velocity_m_s, 1800.0, 2, 1);
@@ -714,7 +714,7 @@ const KEY_ALL: &str = "key-for-the-client-that-sees-everything";
 const KEY_SYSTEM: &str = "solar-system-key-0123456789abcdef0123456789abcdef";
 
 fn client_entry(label: &str, key: &str, cards: Value) -> Value {
-    json!({ "client": label, "key_sha256": sha256_hex(key.as_bytes()), "cards": cards, "solvers": [], "max_in_flight": 8, "max_permits": 1 })
+    json!({ "client": label, "key_sha256": key_sha256_hex(key.as_bytes()), "cards": cards, "solvers": [], "max_in_flight": 8, "max_permits": 1 })
 }
 
 /// The local connection: `mcp_stdio` as a child process.
@@ -774,7 +774,7 @@ impl Hosted {
         std::fs::create_dir_all(&dir).unwrap();
         let file = dir.join("keys.json");
         std::fs::write(&file, serde_json::to_string_pretty(keys).unwrap()).unwrap();
-        let mut child = Command::new(env!("CARGO_BIN_EXE_hosted_door"))
+        let mut child = Command::new(env!("CARGO_BIN_EXE_hosted_door")).arg("--unsigned")
             .arg("--port")
             .arg("0")
             .arg("--keys")
@@ -844,7 +844,8 @@ async fn the_three_connections_list_the_system_and_give_the_same_bytes_for_its_d
     let entry = cards.iter().find(|card| card["card"] == "solar_system").expect("the system is listed");
     assert_eq!(entry["domain"], "aerospace");
     let summary = entry["specimen"].as_str().unwrap();
-    assert!(summary.contains("Nothing fitted") && summary.contains("The caller supplies every position and velocity"), "{summary}");
+    // Since 0.14.4 a row gives what the model computes, the comparison and the gap; the whole spec sheet is the description's.
+    assert!(!summary.contains("Nothing fitted") && summary.contains("The caller supplies every position and velocity"), "{summary}");
 
     let all_pairs: Vec<Value> = cards.iter().map(|card| json!([card["domain"], card["card"]])).collect();
     let keys = json!([
@@ -988,4 +989,11 @@ async fn the_three_connections_list_the_system_and_give_the_same_bytes_for_its_d
     let (status, on_web) = post(&web, "/verify_physics", &off).await;
     assert_eq!(status, 422);
     assert!(names(&text, "DistanceOutsideCard") && on_web.contains("(DistanceOutsideCard)"), "{text} | {on_web}");
+}
+
+/// SHA-256 of a client's key, as the hosted door's keys file holds it: an
+/// authentication hash, not a seal, so it stays SHA-256 under seal rule v2.
+fn key_sha256_hex(bytes: &[u8]) -> String {
+    use sha2::{Digest, Sha256};
+    hex::encode(Sha256::digest(bytes))
 }

@@ -9,7 +9,7 @@ use genesis_solvers::atom_dft;
 use protocol_mcp_gateway::app;
 use reqwest::Client;
 use serde_json::{Value, json};
-use sha2::{Digest, Sha256};
+use sha2::{Digest, Sha384};
 use tokio::net::TcpListener;
 
 async fn spawn_app() -> String {
@@ -89,16 +89,16 @@ fn flip_hex(text: &str) -> String {
     format!("{}{last}", &text[..text.len() - 1])
 }
 
-fn sha256_hex(bytes: &[u8]) -> String {
-    hex::encode(Sha256::digest(bytes))
+fn sha384_hex(bytes: &[u8]) -> String {
+    hex::encode(Sha384::digest(bytes))
 }
 
 /// The receipt covers the wire bytes before it.
 fn assert_receipt(text: &str, body: &Value) {
-    let receipt = body["receipt_sha256"].as_str().expect("receipt");
-    let tail = format!(",\"receipt_sha256\":\"{receipt}\"}}");
+    let receipt = body["receipt_sha384"].as_str().expect("receipt");
+    let tail = format!(",\"receipt_sha384\":\"{receipt}\"}}");
     let document = text.strip_suffix(&tail).expect("the receipt is last");
-    assert_eq!(sha256_hex(format!("{document}}}").as_bytes()), receipt);
+    assert_eq!(sha384_hex(format!("{document}}}").as_bytes()), receipt);
 }
 
 #[tokio::test]
@@ -119,7 +119,7 @@ async fn hydrogen_neon_and_argon_match_the_solver_bit_for_bit() {
         let direct = atom_dft::solve(atomic_number).expect("the solver converges");
 
         assert_eq!(body["inputs"], request);
-        assert_eq!(body["engine_version"], "genesis_solvers_v0.12.0");
+        assert_eq!(body["engine_version"], "genesis_solvers_v0.13.0");
         assert_eq!(body["outcome"], "converged");
         assert!(body["reject"].is_null());
         assert!(body["reject_detail"].is_null());
@@ -165,9 +165,9 @@ async fn hydrogen_neon_and_argon_match_the_solver_bit_for_bit() {
             field.extend_from_slice(&sample.to_le_bytes());
         }
         assert_eq!(direct.electron_density.len(), atom_dft::GRID_POINTS);
-        assert_eq!(body["field_sha256"], sha256_hex(&field));
+        assert_eq!(body["field_sha384"], sha384_hex(&field));
 
-        assert_eq!(body["solution_seal"].as_str().unwrap().len(), 64);
+        assert_eq!(body["solution_seal"].as_str().unwrap().len(), 96);
         assert_receipt(&text, &body);
         let report = verdict(&base, &body).await;
         assert_eq!(report, json!({ "holds": true, "values_hold": true, "cause": null, "compared": protocol_mcp_gateway::WHOLE_SOLUTION_COMPUTED }));
@@ -181,14 +181,14 @@ async fn the_seal_is_the_request_the_hex_lines_the_field_hash_and_the_tail() {
     let (_, body) = solved(&base, &atom(1)).await;
     let sealed = r#"{"parameters":{"atomic_number":x3ff0000000000000},"solver":"atom_dft"}"#;
     assert_eq!(
-        sha256_hex(sealed.as_bytes()),
-        "c9b4fa3ff898d0dead7f28184283950a3e9d8c8be6548c2154e952809a2e8f25"
+        sha384_hex(sealed.as_bytes()),
+        "e6b40d036c3dd0bab04252c785d49d518a576b1aa30d957e3d5f8d05314278dd2e7d1d48bc9d26b4a42901cd81f16351"
     );
-    assert_eq!(body["seal_parts"]["inputs"], sha256_hex(sealed.as_bytes()));
+    assert_eq!(body["seal_parts"]["inputs"], sha384_hex(sealed.as_bytes()));
     let mut bytes = sealed.as_bytes().to_vec();
     // The engine version is a line of its own after the request.
     let version = format!("engine_version:{}\n", body["engine_version"].as_str().unwrap());
-    assert_eq!(body["seal_parts"]["engine_version"], sha256_hex(version.as_bytes()));
+    assert_eq!(body["seal_parts"]["engine_version"], sha384_hex(version.as_bytes()));
     bytes.extend_from_slice(version.as_bytes());
     for section in ["invariants", "result"] {
         let object = body[section].as_object().unwrap();
@@ -199,14 +199,14 @@ async fn the_seal_is_the_request_the_hex_lines_the_field_hash_and_the_tail() {
             bytes.extend_from_slice(line.as_bytes());
         }
     }
-    bytes.extend_from_slice(body["field_sha256"].as_str().unwrap().as_bytes());
+    bytes.extend_from_slice(body["field_sha384"].as_str().unwrap().as_bytes());
     let tail = format!(
         r#"{{"outcome":"converged","iterations":{},"reject":null}}"#,
         body["iterations"]
     );
     bytes.extend_from_slice(tail.as_bytes());
-    assert_eq!(body["solution_seal"], sha256_hex(&bytes));
-    assert_eq!(body["seal_parts"]["outcome"], sha256_hex(tail.as_bytes()));
+    assert_eq!(body["solution_seal"], sha384_hex(&bytes));
+    assert_eq!(body["seal_parts"]["outcome"], sha384_hex(tail.as_bytes()));
 }
 
 #[tokio::test]
@@ -215,18 +215,18 @@ async fn the_same_request_seals_the_same_and_another_atom_does_not() {
     let (first_text, first) = solved(&base, &atom(2)).await;
     let (second_text, second) = solved(&base, &atom(2)).await;
     assert_eq!(first["solution_seal"], second["solution_seal"]);
-    assert_eq!(first["field_sha256"], second["field_sha256"]);
+    assert_eq!(first["field_sha384"], second["field_sha384"]);
     assert_eq!(first_text, second_text);
 
     let reordered: Value =
         serde_json::from_str(r#"{"parameters":{"atomic_number":2},"solver":"atom_dft"}"#).unwrap();
     let (_, third) = solved(&base, &reordered).await;
     assert_eq!(first["solution_seal"], third["solution_seal"]);
-    assert_eq!(first["field_sha256"], third["field_sha256"]);
+    assert_eq!(first["field_sha384"], third["field_sha384"]);
 
     let (_, other) = solved(&base, &atom(1)).await;
     assert_ne!(first["solution_seal"], other["solution_seal"]);
-    assert_ne!(first["field_sha256"], other["field_sha256"]);
+    assert_ne!(first["field_sha384"], other["field_sha384"]);
 }
 
 #[tokio::test]
@@ -252,8 +252,8 @@ async fn verify_solution_names_the_edited_part() {
     assert_eq!(edits, 11, "nine result numbers and two invariants");
 
     let mut field = body.clone();
-    field["field_sha256"] = json!(flip_hex(body["field_sha256"].as_str().unwrap()));
-    assert_fails(&base, &field, "field_sha256", "field hash").await;
+    field["field_sha384"] = json!(flip_hex(body["field_sha384"].as_str().unwrap()));
+    assert_fails(&base, &field, "field_sha384", "field hash").await;
 
     let mut outcome = body.clone();
     outcome["outcome"] = json!("refused");
@@ -277,9 +277,9 @@ async fn verify_solution_names_the_edited_part() {
 
     // An edit that also replaces its own part digest still fails the seal.
     let mut covered = body.clone();
-    let forged = flip_hex(body["field_sha256"].as_str().unwrap());
-    covered["seal_parts"]["field_sha256"] = json!(sha256_hex(forged.as_bytes()));
-    covered["field_sha256"] = json!(forged);
+    let forged = flip_hex(body["field_sha384"].as_str().unwrap());
+    covered["seal_parts"]["field_sha384"] = json!(sha384_hex(forged.as_bytes()));
+    covered["field_sha384"] = json!(forged);
     assert_fails(
         &base,
         &covered,
@@ -289,10 +289,10 @@ async fn verify_solution_names_the_edited_part() {
     .await;
 
     let mut missing = body.clone();
-    missing.as_object_mut().unwrap().remove("field_sha256");
+    missing.as_object_mut().unwrap().remove("field_sha384");
     let (status, text) = post(&base, "/verify_solution", &missing).await;
     assert_eq!(status, 422, "{text}");
-    assert_eq!(text, "Missing required parameter: 'field_sha256' (InputMissing).");
+    assert_eq!(text, "Missing required parameter: 'field_sha384' (InputMissing).");
 }
 
 #[tokio::test]
@@ -366,7 +366,7 @@ async fn the_described_example_runs_unchanged_and_converges() {
     assert_eq!(listed.status().as_u16(), 200);
     let listed: Value = serde_json::from_str(&listed.text().await.unwrap()).unwrap();
     let solvers = listed["solvers"].as_array().expect("solvers");
-    assert_eq!(solvers.len(), 25);
+    assert_eq!(solvers.len(), protocol_mcp_gateway::SOLVERS);
     assert_eq!(solvers[0]["solver"], "atom_dft");
     assert_eq!(solvers[1]["solver"], "ablator_slab");
     assert_eq!(solvers[3]["solver"], "propeller_apc_10x7e");
@@ -400,12 +400,12 @@ async fn the_described_example_runs_unchanged_and_converges() {
     assert_eq!(body["inputs"], described["example_solve"]);
     // The worked example in the map: neon, and the hash of its sealed form.
     assert_eq!(
-        sha256_hex(br#"{"parameters":{"atomic_number":x4024000000000000},"solver":"atom_dft"}"#),
-        "1eac37e0cf92dfc49ae0d9699482e4d235b0815737d818439be116ccc464ab41"
+        sha384_hex(br#"{"parameters":{"atomic_number":x4024000000000000},"solver":"atom_dft"}"#),
+        "cc0f7a4eb3bc318555e9adb45607d6327cd58121ddd5e0ba212764a4492d13e0b777ca71a6c2fe290a79511cf209bf38"
     );
     assert_eq!(
         body["seal_parts"]["inputs"],
-        "1eac37e0cf92dfc49ae0d9699482e4d235b0815737d818439be116ccc464ab41"
+        "cc0f7a4eb3bc318555e9adb45607d6327cd58121ddd5e0ba212764a4492d13e0b777ca71a6c2fe290a79511cf209bf38"
     );
     assert_eq!(
         verdict(&base, &body).await,
@@ -420,7 +420,7 @@ async fn the_described_example_runs_unchanged_and_converges() {
 #[tokio::test]
 async fn a_repeated_key_in_a_solution_is_refused_and_not_sealed() {
     let base = spawn_app().await;
-    let body = r#"{"inputs":{"solver":"atom_dft","parameters":{"atomic_number":1,"atomic_number":2}},"outcome":"converged","iterations":1,"reject":null,"result":null,"invariants":null,"field_sha256":null,"seal_parts":{"inputs":"aa","result":"aa","invariants":"aa","field_sha256":"aa","outcome":"aa"},"solution_seal":"bb"}"#;
+    let body = r#"{"inputs":{"solver":"atom_dft","parameters":{"atomic_number":1,"atomic_number":2}},"outcome":"converged","iterations":1,"reject":null,"result":null,"invariants":null,"field_sha384":null,"seal_parts":{"inputs":"aa","result":"aa","invariants":"aa","field_sha384":"aa","outcome":"aa"},"solution_seal":"bb"}"#;
     let client = Client::new();
     let response = client
         .post(format!("{base}/verify_solution"))
@@ -496,7 +496,7 @@ async fn a_number_never_seals_the_same_as_a_string() {
     let (_, body) = solved(&base, &atom(2)).await;
     assert_eq!(
         body["seal_parts"]["inputs"],
-        sha256_hex(br#"{"parameters":{"atomic_number":x4000000000000000},"solver":"atom_dft"}"#)
+        sha384_hex(br#"{"parameters":{"atomic_number":x4000000000000000},"solver":"atom_dft"}"#)
     );
     for forged in [
         json!("x4000000000000000"),

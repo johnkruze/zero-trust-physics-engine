@@ -19,7 +19,7 @@ use genesis_solvers::stress_plate_hole_s235_elastic::{self as plate, ElasticPlat
 use protocol_mcp_gateway::app;
 use reqwest::Client;
 use serde_json::{Value, json};
-use sha2::{Digest, Sha256};
+use sha2::{Digest, Sha384};
 use tokio::net::TcpListener;
 
 const SOURCE: &str = include_str!("../../genesis_solvers/src/stress_plate_hole_s235_elastic.rs");
@@ -72,7 +72,11 @@ fn the_worked_question_converges_and_the_word_is_calibrated() {
     let row = rows.iter().find(|row| row["solver"] == "stress_plate_hole_s235_elastic").expect("listed");
     assert_eq!(row["against_measurement"], "compared with measurement", "{row}");
     let summary = row["summary"].as_str().expect("a summary");
-    assert!(summary.contains("Nothing fitted here") && summary.contains("up to 590.04 MPa") && summary.contains("(StrainBeyondSmallStrain)"), "{summary}");
+    // Since 0.14.4 a row gives what the model computes, the comparison and the gap; the whole spec sheet is the description's.
+    assert!(!summary.contains("Nothing fitted here") && summary.contains("Compared with the same 1,186 points"), "{summary}");
+    let described: Value = door.value("describe_solver", &json!({ "solver": "stress_plate_hole_s235_elastic" })).expect("described");
+    let sheet = described["summary"].as_str().unwrap();
+    assert!(sheet.contains("Nothing fitted here") && sheet.contains("up to 590.04 MPa") && sheet.contains("(StrainBeyondSmallStrain)"), "{sheet}");
     let original = rows.iter().find(|row| row["solver"] == "stress_plate_hole_s235").expect("listed");
     assert_eq!(original["against_measurement"], "compared with measurement", "{original}");
 }
@@ -170,13 +174,13 @@ async fn the_laboratory_s_load_matches_the_solver_bit_for_bit_and_its_proof_hold
     assert!(direct.section_force_residual <= plate::SECTION_FORCE_TOLERANCE);
 
     // The field hash is the count of numbers, then seven numbers for each node.
-    let mut hasher = Sha256::new();
+    let mut hasher = Sha384::new();
     hasher.update((direct.nodes.len() as u64).to_le_bytes());
     for value in &direct.nodes {
         hasher.update(value.to_le_bytes());
     }
     let own = hex::encode(hasher.finalize());
-    let served = body["field_sha256"].as_str().expect("field hash");
+    let served = body["field_sha384"].as_str().expect("field hash");
     assert_eq!(served, own);
 
     // The proof holds, and an edit of a number breaks it by name.
@@ -210,7 +214,7 @@ async fn below_first_yield_the_two_solvers_serve_the_same_field() {
     let original: Value = serde_json::from_str(&text).unwrap();
     assert_eq!(original["outcome"], "converged");
     assert_eq!(original["result"]["plastic_zone_area_mm2"], 0.0);
-    assert_eq!(elastic["field_sha256"], original["field_sha256"]);
+    assert_eq!(elastic["field_sha384"], original["field_sha384"]);
     for key in ["point_displacement_x_mm_hex", "point_displacement_y_mm_hex", "point_stress_xx_mpa_hex", "point_strain_xx_hex", "hole_edge_stress_mpa_hex", "strain_energy_j_hex", "boundary_work_j_hex"] {
         assert_eq!(elastic["result"][key], original["result"][key], "{key}");
     }

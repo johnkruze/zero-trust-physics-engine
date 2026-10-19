@@ -50,6 +50,7 @@ extern crate core;
 
 use core::prelude::v1::*;
 
+use crate::exceedance::{Exceedance, ExceedanceKind, Side};
 use crate::frame::LastStateFrame64;
 use crate::normal::normal_or_zero;
 
@@ -336,6 +337,26 @@ impl TendonState {
 /// with its sign ([`crate::normal`]).
 #[must_use]
 pub fn step(
+    tendon: &Tendon,
+    state: &mut TendonState,
+    frame: &mut LastStateFrame64,
+    load: TendonLoad,
+    dt_s: f64,
+) -> Result<(), StepReject> {
+    #[cfg(any(test, debug_assertions, feature = "check_exceedances"))]
+    let before = *state;
+    let stepped = step_landed(tendon, state, frame, load, dt_s);
+    #[cfg(any(test, debug_assertions, feature = "check_exceedances"))]
+    if stepped.is_ok() {
+        crate::exceedance::debug_check("cable_stretch", exceedances(tendon, &before, state, load, dt_s), frame.flags);
+    }
+    stepped
+}
+
+/// The step itself; [`step`] is it with, in a build that checks
+/// (`crate::exceedance::CHECKED`), the check that [`exceedances`] stands for
+/// the flags it wrote.
+fn step_landed(
     tendon: &Tendon,
     state: &mut TendonState,
     frame: &mut LastStateFrame64,
@@ -659,6 +680,48 @@ fn step_bias_work(
     };
     predicted[2] += extra_j;
     commit(tendon, state, frame, load, dt_s, predicted)
+}
+
+/// Every limit a flag of this card can mark: what [`exceedances`] reports
+/// beside a flag's bit (`crate::exceedance`).
+pub const EXCEEDANCE_KINDS: &[crate::exceedance::ExceedanceKind] = &[
+    DEGRADE_KIND,
+    CONTROL_KIND,
+];
+
+const DEGRADE_KIND: ExceedanceKind = ExceedanceKind::fixed(
+    "FLAG_TRACKING_DEGRADE",
+    FLAG_TRACKING_DEGRADE,
+    "elongation_m",
+    "m",
+    Side::AtOrAbove,
+    DEGRADE_ELONGATION_M,
+    "the elongation at which tracking degrades, 2 mm",
+);
+const CONTROL_KIND: ExceedanceKind = ExceedanceKind::fixed(
+    "FLAG_CONTROL_LIMIT",
+    FLAG_CONTROL_LIMIT,
+    "elongation_m",
+    "m",
+    Side::AtOrAbove,
+    CONTROL_ELONGATION_M,
+    "the elongation at the control limit, 5 mm",
+);
+
+/// The limits the step from `before` to `after` under `load` over `dt_s`
+/// is past: one record for each limit a flag set on its frame marks.
+pub fn exceedances(
+    tendon: &Tendon,
+    before: &TendonState,
+    after: &TendonState,
+    load: TendonLoad,
+    dt_s: f64,
+) -> crate::exceedance::Exceedances {
+    let _ = (tendon, before, load, dt_s);
+    let mut records = crate::exceedance::Exceedances::new();
+    records.push_if(after.tracking_degraded, Exceedance::fixed(DEGRADE_KIND, after.elongation_m));
+    records.push_if(after.control_limited, Exceedance::fixed(CONTROL_KIND, after.elongation_m));
+    records
 }
 
 #[cfg(test)]

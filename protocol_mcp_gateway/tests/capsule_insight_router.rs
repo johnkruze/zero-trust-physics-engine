@@ -24,7 +24,7 @@ use genesis_kernel::frame::LastStateFrame64;
 use protocol_mcp_gateway::{VerifyPhysicsResponse, app, commit_request_proof};
 use reqwest::Client;
 use serde_json::{Value, json};
-use sha2::{Digest, Sha256};
+use sha2::{Digest, Sha384};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::TcpListener;
 use tokio::process::{Child, ChildStdin, ChildStdout, Command};
@@ -72,8 +72,8 @@ async fn post(base: &str, path: &str, body: &Value) -> (u16, String) {
     post_text(base, path, &answer_text::as_sent(body)).await
 }
 
-fn sha256_hex(bytes: &[u8]) -> String {
-    hex::encode(Sha256::digest(bytes))
+fn sha384_hex(bytes: &[u8]) -> String {
+    hex::encode(Sha384::digest(bytes))
 }
 
 fn below(x: f64) -> f64 {
@@ -245,7 +245,7 @@ fn assert_state_is(published_state: &Value, state: &CapsuleState, label: &str) {
 }
 
 fn split_receipt(text: &str) -> (String, String) {
-    const MARKER: &str = ",\"receipt_sha256\":\"";
+    const MARKER: &str = ",\"receipt_sha384\":\"";
     let at = text.rfind(MARKER).expect("a receipt");
     (format!("{}}}", &text[..at]), text[at + MARKER.len()..text.len() - 2].to_string())
 }
@@ -304,15 +304,15 @@ async fn a_step_of_the_capsule_matches_the_compiled_step_with_the_same_proof_byt
             response.residual_conservation_error.to_bits(),
             state.residual_conservation_error.to_bits()
         );
-        assert_eq!(response.sha256_seal, sha256_hex(&frame.to_bytes()));
+        assert_eq!(response.sha384_seal, sha384_hex(&frame.to_bytes()));
         // The proof is in the bytes: the same frame with a zero proof hashes apart.
         let mut naked = frame;
         naked.proof = [0; 16];
-        assert_ne!(response.sha256_seal, sha256_hex(&naked.to_bytes()));
+        assert_ne!(response.sha384_seal, sha384_hex(&naked.to_bytes()));
         let (document, receipt) = split_receipt(&answer);
-        assert_eq!(receipt, response.receipt_sha256);
-        assert_eq!(sha256_hex(document.as_bytes()), receipt);
-        seals.push(response.sha256_seal);
+        assert_eq!(receipt, response.receipt_sha384);
+        assert_eq!(sha384_hex(document.as_bytes()), receipt);
+        seals.push(response.sha384_seal);
     }
     seals.sort();
     seals.dedup();
@@ -370,7 +370,7 @@ async fn the_whole_entry_ends_at_the_flown_deployment_with_the_state_of_the_kern
         assert_eq!(status, 200, "{receipt}");
         let receipt: Value = serde_json::from_str(&receipt).unwrap();
         assert_eq!(receipt["matches"], true, "lift {lift}: {receipt}");
-        assert_eq!(receipt["receipt_sha256"], tape["receipt_sha256"]);
+        assert_eq!(receipt["receipt_sha384"], tape["receipt_sha384"]);
 
         // The same request gives the same proof.
         let (_, again) = post(&base, "/run_trajectory", &request).await;
@@ -469,7 +469,7 @@ async fn the_lift_lands_at_its_limit_and_is_refused_by_name_at_the_next_number_o
         let (status, text) = post(&base, "/verify_physics", &step_body(entry(), outside, ceiling())).await;
         assert_eq!(status, 422, "{outside}: {text}");
         assert!(text.contains("'lift_over_drag'") && text.contains("LiftOutsideCard"), "{text}");
-        assert!(!text.contains("sha256_seal"), "{text}");
+        assert!(!text.contains("sha384_seal"), "{text}");
         // In the first segment of a run and in a later one: the whole run is
         // refused before its first step.
         for position in [0, 1] {
@@ -501,7 +501,7 @@ async fn a_start_off_the_card_is_refused_by_name_and_the_edges_of_the_card_land(
     let base = spawn_app().await;
     let datum = capsule_insight::DATUM_RADIUS_M;
     let named = |text: &str, name: &str| {
-        text.contains(&format!("({name}). That state is not sealed.")) && !text.contains("sha256_seal") && !text.contains("run_seal")
+        text.contains(&format!("({name}). That state is not sealed.")) && !text.contains("sha384_seal") && !text.contains("run_seal")
     };
     // (phase, the refusal).
     let off: [((f64, f64, f64), &str); 6] = [
@@ -536,7 +536,7 @@ async fn a_start_off_the_card_is_refused_by_name_and_the_edges_of_the_card_land(
     ] {
         let (status, text) = post(&base, "/verify_physics", &step_body(phase, 0.0, ceiling() / 8.0)).await;
         assert_eq!(status, 200, "{phase:?}: {text}");
-        assert!(text.contains("sha256_seal"), "{text}");
+        assert!(text.contains("sha384_seal"), "{text}");
     }
     // The top knot of the corridor is on the card: a capsule going down
     // from it lands.
@@ -752,14 +752,14 @@ async fn the_local_connection_lists_the_capsule_and_gives_the_bytes_of_the_web_c
     let web = spawn_app().await;
     let mut local = Local::start().await;
 
-    // Thirty cards, the InSight capsule the nineteenth, in the aerospace domain.
+    // The InSight capsule is the eighteenth card (the fold of 0.15.0), in the aerospace domain.
     let (listed, error) = result_text(&local.call("list_cards", &json!({})).await);
     assert!(!error);
     let listed: Value = serde_json::from_str(&listed).unwrap();
     let cards = listed["cards"].as_array().unwrap();
-    assert_eq!(cards.len(), 40);
-    assert_eq!(cards[18]["domain"], "aerospace");
-    assert_eq!(cards[18]["card"], "capsule_insight");
+    assert_eq!(cards.len(), protocol_mcp_gateway::CARDS);
+    assert_eq!(cards[17]["domain"], "aerospace");
+    assert_eq!(cards[17]["card"], "capsule_insight");
     let on_web: Value = Client::new().get(format!("{web}/cards")).send().await.unwrap().json().await.unwrap();
     assert_eq!(on_web, listed);
 

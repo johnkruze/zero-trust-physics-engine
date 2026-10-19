@@ -166,7 +166,7 @@ const REFUSALS: &[Refusal] = &[
 ];
 
 fn field_words() -> String {
-    "SHA-256 of the count of the numbers that follow as 8 little-endian bytes, which is 3 times one more than the accepted steps, then for the streamline's start and each accepted step in turn the surface distance from the stagnation point in m, the temperature in K and the electron density per cubic metre, all as little-endian f64 bytes.".to_string()
+    "SHA-384 of the count of the numbers that follow as 8 little-endian bytes, which is 3 times one more than the accepted steps, then for the streamline's start and each accepted step in turn the surface distance from the stagnation point in m, the temperature in K and the electron density per cubic metre, all as little-endian f64 bytes.".to_string()
 }
 
 fn sections() -> Sections {

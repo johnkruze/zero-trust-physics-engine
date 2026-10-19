@@ -9,7 +9,7 @@ use genesis_solvers::argon_pair_gas::{self as argon, Question};
 use protocol_mcp_gateway::app;
 use reqwest::Client;
 use serde_json::{Value, json};
-use sha2::{Digest, Sha256};
+use sha2::{Digest, Sha384};
 use tokio::net::TcpListener;
 
 async fn spawn_app() -> String {
@@ -123,14 +123,14 @@ async fn a_held_back_point_matches_the_solver_bit_for_bit_and_its_proof_holds() 
     assert_number(invariants, "collision_integral_rule_gap", direct.collision_integral_rule_gap);
 
     // The field hash is the count of numbers, the energies and the cross-sections.
-    let mut hasher = Sha256::new();
+    let mut hasher = Sha384::new();
     hasher.update((direct.collision_energies.len() as u64 * 2).to_le_bytes());
     for value in direct.collision_energies.iter().chain(&direct.cross_sections) {
         hasher.update(value.to_le_bytes());
     }
     let own = hex::encode(hasher.finalize());
-    let served = body["field_sha256"].as_str().expect("field hash");
-    assert_eq!(served.len(), 64);
+    let served = body["field_sha384"].as_str().expect("field hash");
+    assert_eq!(served.len(), 96);
     assert_eq!(served, own);
 
     // The proof holds, and an edit of any number breaks it by name.
@@ -153,7 +153,7 @@ async fn a_held_back_point_matches_the_solver_bit_for_bit_and_its_proof_holds() 
     }
     assert_eq!(edits, 14, "eleven result numbers and three invariants");
     let mut field = body.clone();
-    field["field_sha256"] = json!(flip_hex(served));
+    field["field_sha384"] = json!(flip_hex(served));
     let (_, text) = post(&base, "/verify_solution", &field).await;
     assert_eq!(serde_json::from_str::<Value>(&text).unwrap()["holds"], false);
 
@@ -254,7 +254,15 @@ async fn the_description_says_what_is_fitted_and_its_example_runs_unchanged() {
         .iter()
         .find(|row| row["solver"] == "argon_pair_gas")
         .expect("argon_pair_gas is listed");
-    let summary = row["summary"].as_str().expect("a sentence");
+    // Since 0.14.4 a row gives what the model computes, the comparison and
+    // the gap; the whole spec sheet is the description's.
+    let row_summary = row["summary"].as_str().expect("a sentence");
+    assert!(!row_summary.contains("Range: "), "{row_summary}");
+    let (_, full) = post(&base, "/describe_solver", &json!({ "solver": "argon_pair_gas" })).await;
+    let full: Value = serde_json::from_str(&full).unwrap();
+    let summary = full["summary"].as_str().unwrap().to_string();
+    let summary = summary.as_str();
+    assert!(summary.starts_with(row_summary.split_once(" Compared with ").unwrap().0), "{summary}");
     assert!(summary.contains("Fitted on 42 of the 66 measured speeds of sound at or below 500 kPa"), "{summary}");
 
     let (status, text) = post(&base, "/describe_solver", &json!({ "solver": "argon_pair_gas" })).await;

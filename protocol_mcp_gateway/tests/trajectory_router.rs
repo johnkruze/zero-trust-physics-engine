@@ -17,7 +17,7 @@ use genesis_kernel::{
 use protocol_mcp_gateway::app;
 use reqwest::Client;
 use serde_json::{Value, json};
-use sha2::{Digest, Sha256};
+use sha2::{Digest, Sha384};
 use tokio::net::TcpListener;
 
 async fn spawn_app() -> String {
@@ -558,7 +558,7 @@ fn assert_landed(body: &Value, residual: f64, probes: &[(&str, Probe)], steps: u
     assert_eq!(body["steps_landed"], steps, "{body}");
     assert_eq!(body["steps_requested"], steps, "{body}");
     assert!(body["reject"].is_null(), "{body}");
-    assert_eq!(body["engine_version"], "genesis_kernel_v0.12.0");
+    assert_eq!(body["engine_version"], "genesis_kernel_v0.13.0");
     let got = body["final_residual_conservation_error"]
         .as_f64()
         .expect("final residual");
@@ -577,7 +577,7 @@ fn frames_cover_landed(body: &Value, landed: u64) {
     for (index, frame) in frames.iter().enumerate() {
         assert_eq!(frame["step"], index as u64 + 1, "{frame}");
         assert_eq!(frame["frame_hex"].as_str().unwrap().len(), 128);
-        assert_eq!(frame["link"].as_str().unwrap().len(), 64);
+        assert_eq!(frame["link"].as_str().unwrap().len(), 96);
     }
 }
 
@@ -1744,7 +1744,7 @@ async fn swing_dispatch_and_speed_deviation_outside_the_card_are_422_and_not_a_r
         assert_eq!(status, 422, "{response}");
         assert!(response.contains(name), "{response}");
         assert!(!response.contains("run_seal"), "{response}");
-        assert!(!response.contains("receipt_sha256"), "{response}");
+        assert!(!response.contains("receipt_sha384"), "{response}");
     }
 
     // A later segment is held to the same dispatch limit.
@@ -1970,7 +1970,7 @@ async fn verify_tape_refuses_capital_letters_in_a_frame_by_name() {
     assert_eq!(status, 200, "{response}");
     let tape: Value = serde_json::from_str(&response).unwrap();
 
-    for (frame, key, digits) in [(0, "frame_hex", 128), (1, "link", 64), (2, "frame_hex", 128)] {
+    for (frame, key, digits) in [(0, "frame_hex", 128), (1, "link", 96), (2, "frame_hex", 128)] {
         let mut edited = tape.clone();
         let low = edited["frames"][frame][key].as_str().unwrap().to_string();
         assert_ne!(low, low.to_uppercase());
@@ -2180,7 +2180,7 @@ async fn object_key_order_does_not_change_the_seals() {
     assert_eq!(again, 200, "{right_text}");
     let left_body: Value = serde_json::from_str(&left_text).unwrap();
     let right_body: Value = serde_json::from_str(&right_text).unwrap();
-    assert_eq!(left_body["sha256_seal"], right_body["sha256_seal"]);
+    assert_eq!(left_body["sha384_seal"], right_body["sha384_seal"]);
     assert_ne!(
         serde_json::to_string(&left_body["inputs"]).unwrap(),
         serde_json::to_string(&right_body["inputs"]).unwrap()
@@ -2286,7 +2286,7 @@ fn thermal_run_text(heat_power_w: &str) -> String {
     )
 }
 
-/// The worked example in the map: the request, its sealed text, its SHA-256,
+/// The worked example in the map: the request, its sealed text, its SHA-384,
 /// and every link after it, with no call to the gateway's own sealing code.
 #[tokio::test]
 async fn the_run_seal_is_rebuilt_from_the_response_alone() {
@@ -2301,10 +2301,10 @@ async fn the_run_seal_is_rebuilt_from_the_response_alone() {
         r#"{"card":"thermal","domain":"energy","dt_s":x3fb999999999999a,"initial":{"temperature_k":x4072526666666666},"record_every":x3ff0000000000000,"segments":[{"load":{"ambient_k":x4072526666666666,"heat_power_w":x3ff0000000000000},"steps":x4024000000000000}]}"#
     );
     assert_eq!(sealed.len(), 253);
-    let mut link = Sha256::digest(sealed.as_bytes()).to_vec();
+    let mut link = Sha384::digest(sealed.as_bytes()).to_vec();
     assert_eq!(
         hex::encode(&link),
-        "dced576688495b353ee304b7b8400f3fab60536a2deeb86932cb744039703da0"
+        "8615887c32e2e2edb7d4be74b822e7f64ea384173a9332d97be6278dec255c3d57c9249ca16c5a5d5dfa6c2e43d9baf9"
     );
 
     let frames = tape["frames"].as_array().unwrap();
@@ -2312,7 +2312,7 @@ async fn the_run_seal_is_rebuilt_from_the_response_alone() {
     for frame in frames {
         assert_eq!(proof_hex(frame), hex::encode(&link[..16]), "{frame}");
         let bytes = hex::decode(frame["frame_hex"].as_str().unwrap()).unwrap();
-        link = Sha256::digest(&bytes).to_vec();
+        link = Sha384::digest(&bytes).to_vec();
         assert_eq!(frame["link"], hex::encode(&link), "{frame}");
     }
     let tail = format!(
@@ -2321,7 +2321,7 @@ async fn the_run_seal_is_rebuilt_from_the_response_alone() {
     );
     let mut bytes = hex::encode(&link).into_bytes();
     bytes.extend_from_slice(tail.as_bytes());
-    assert_eq!(tape["run_seal"], hex::encode(Sha256::digest(&bytes)));
+    assert_eq!(tape["run_seal"], hex::encode(Sha384::digest(&bytes)));
 }
 
 #[tokio::test]
@@ -2338,7 +2338,7 @@ async fn zero_and_zero_point_zero_seal_the_same() {
                 post(&base, "/verify_physics", &thermal_step_text(spelling)).await;
             assert_eq!(status, 200, "{spelling}: {text}");
             let body: Value = serde_json::from_str(&text).unwrap();
-            frame_seals.push(body["sha256_seal"].as_str().unwrap().to_string());
+            frame_seals.push(body["sha384_seal"].as_str().unwrap().to_string());
             step_echoes.push(serde_json::to_string(&body["inputs"]).unwrap());
 
             let body = run_trajectory(&base, &thermal_run_text(spelling)).await;
@@ -2378,7 +2378,7 @@ async fn negative_zero_seals_apart_from_zero() {
         let (status, text) = post(&base, "/verify_physics", &thermal_step_text(spelling)).await;
         assert_eq!(status, 200, "{spelling}: {text}");
         let step: Value = serde_json::from_str(&text).unwrap();
-        assert_ne!(step["sha256_seal"], zero_step["sha256_seal"], "{spelling}");
+        assert_ne!(step["sha384_seal"], zero_step["sha384_seal"], "{spelling}");
 
         let run = run_trajectory(&base, &thermal_run_text(spelling)).await;
         assert_eq!(run["outcome"], "completed", "{spelling}: {run}");
@@ -2391,7 +2391,7 @@ async fn negative_zero_seals_apart_from_zero() {
         );
         assert_ne!(run["run_seal"], zero_run["run_seal"], "{spelling}");
         negative_seals.push((
-            step["sha256_seal"].as_str().unwrap().to_string(),
+            step["sha384_seal"].as_str().unwrap().to_string(),
             run["run_seal"].as_str().unwrap().to_string(),
         ));
     }
@@ -2471,7 +2471,7 @@ async fn a_tape_survives_a_respelling_of_its_numbers() {
     // Every seal holds over the values. Since 0.11.0 the long form writes the
     // answer again, and a request spelled another way has another receipt:
     // the receipt is the first place named, not a seal.
-    assert_eq!(named(&report), (json!(false), Value::Null, json!("answer_text"), json!("receipt_sha256")), "{report}");
+    assert_eq!(named(&report), (json!(false), Value::Null, json!("answer_text"), json!("receipt_sha384")), "{report}");
 
     // A count written with a decimal point is the same number to a seal,
     // and a request the engine turns away: the inputs are named.
@@ -2538,7 +2538,7 @@ async fn a_number_never_seals_the_same_as_a_string() {
         );
         let (status, text) = post(&base, "/verify_physics", &step).await;
         assert_eq!(status, 422, "{forged}: {text}");
-        assert!(!text.contains("sha256_seal"), "{text}");
+        assert!(!text.contains("sha384_seal"), "{text}");
     }
 }
 
@@ -3068,6 +3068,9 @@ fn capsule_probes(state: &capsule_stardust::CapsuleState) -> Vec<(&'static str, 
         num("mach", state.mach),
         num("load_g", state.load_g),
         num("heat_flux_w_m2", state.heat_flux_w_m2),
+        num("stagnation_pressure_pa", state.stagnation_pressure_pa),
+        num("recovery_enthalpy_j_kg", state.recovery_enthalpy_j_kg),
+        num("heat_transfer_coefficient_kg_m2_s", state.heat_transfer_coefficient_kg_m2_s),
         num("drag_loss_j_kg", state.drag_loss_j_kg),
         num("energy_anchor_j_kg", state.energy_anchor_j_kg),
         num("energy_defect_j_kg", state.energy_defect_j_kg),

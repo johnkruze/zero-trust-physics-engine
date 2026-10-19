@@ -34,7 +34,7 @@ pub const ALL: &[&Solver] = &[
     &crate::solver_water_hammer_oil_line::WATER_HAMMER_OIL_LINE,
     &crate::solver_orifice_air_chamber::ORIFICE_AIR_CHAMBER,
     &crate::solver_pneumatic_hose_resonance::PNEUMATIC_HOSE_RESONANCE,
-    &crate::solver_blast_wave_tnt_air::BLAST_WAVE_TNT_AIR,
+    &crate::solver_blast_wave_tnt_air_twin::BLAST_WAVE_TNT_AIR_TWIN,
     &crate::solver_stress_plate_hole_s235::STRESS_PLATE_HOLE_S235,
     &crate::solver_stress_plate_hole_s235_elastic::STRESS_PLATE_HOLE_S235_ELASTIC,
     &crate::solver_icf_hotspot_burn::ICF_HOTSPOT_BURN,
@@ -67,7 +67,7 @@ pub struct Solver {
     pub invariants: &'static [Output],
     /// What `iterations` counts, for the description.
     pub iterations: &'static str,
-    /// What `field_sha256` covers, for the description.
+    /// What `field_sha384` covers, for the description.
     pub field: fn() -> String,
     /// What the solver returns when it does not refuse, as in "a ground
     /// state". It is written into the detail of a sealed refusal.
@@ -384,7 +384,7 @@ pub struct Answer {
     pub result: Vec<(String, Published)>,
     /// Each name of `invariants` with its value.
     pub invariants: Vec<(String, Published)>,
-    /// The field `field_sha256` covers.
+    /// The field `field_sha384` covers.
     pub field: Vec<f64>,
 }
 
@@ -485,8 +485,7 @@ pub fn list_value_in(view: &View) -> Value {
             if let Some((word, _)) = crate::find_model::verdict_of_solver(solver.name) {
                 row.insert("against_measurement".to_string(), json!(word));
             }
-            crate::succession::into(&mut row, view, solver.name);
-            row.insert("summary".to_string(), json!(crate::spec_sheet::summary_of(solver.name, solver.summary)));
+            row.insert("summary".to_string(), json!(crate::spec_sheet::row_of(solver.name, solver.summary)));
             Value::Object(row)
         })
         .collect();
@@ -670,8 +669,14 @@ const MORE_HOW: &str = "describe_solver with 'solver' and 'part' set to a name b
 /// parts the solver's entry keeps for asking, with a sentence for each under
 /// `more`. For a solver that keeps no part it is the whole description.
 pub fn describe_value(name: &str) -> Option<Value> {
+    describe_value_in(&View::full(), name)
+}
+
+/// [`describe_value`] as a view sees it: the couplings it lists are the
+/// view's own, as `describe_card` lists a card's.
+pub fn describe_value_in(view: &View, name: &str) -> Option<Value> {
     let solver = find(name)?;
-    let whole = describe_whole(name)?;
+    let whole = describe_whole_in(view, name)?;
     if solver.parts.is_empty() {
         return Some(whole);
     }
@@ -696,7 +701,12 @@ pub fn describe_value(name: &str) -> Option<Value> {
 /// One part of a description, alone: any key of the whole description but
 /// the three every description holds.
 pub fn describe_part(name: &str, part: &str) -> Option<Value> {
-    let whole = describe_whole(name)?;
+    describe_part_in(&View::full(), name, part)
+}
+
+/// [`describe_part`] as a view sees it.
+pub fn describe_part_in(view: &View, name: &str, part: &str) -> Option<Value> {
+    let whole = describe_whole_in(view, name)?;
     let value = part_names(&whole)
         .contains(&part)
         .then(|| whole[part].clone())?;
@@ -723,6 +733,12 @@ fn part_names(whole: &Value) -> Vec<&str> {
 
 /// Everything the gateway says of one solver.
 pub fn describe_whole(name: &str) -> Option<Value> {
+    describe_whole_in(&View::full(), name)
+}
+
+/// [`describe_whole`] as a view sees it: a coupling is listed only where the
+/// view holds both of its pieces.
+pub fn describe_whole_in(view: &View, name: &str) -> Option<Value> {
     let solver = find(name)?;
     let sections = (solver.sections)();
     let has_an_array = solver
@@ -753,18 +769,21 @@ pub fn describe_whole(name: &str) -> Option<Value> {
     );
     described.insert("number_rule".to_string(), json!(SOLVER_NUMBER_RULE));
     described.insert("locked".to_string(), sections.locked);
-    described.insert(
-        "returns".to_string(),
-        json!({
+    let mut returns = json!({
             "outcome": "`converged` or `refused`. Both are HTTP 200.",
             "iterations": solver.iterations,
             "result": solver.result.iter().map(output_row).collect::<Vec<_>>(),
             "invariants": solver.invariants.iter().map(output_row).collect::<Vec<_>>(),
             "hex": hex,
-            "field_sha256": (solver.field)(),
-            "on_refusal": "`result`, `invariants` and `field_sha256` are null. `reject` names the refusal and `solution_seal` binds it.",
-        }),
-    );
+            "field_sha384": (solver.field)(),
+            "on_refusal": "`result`, `invariants` and `field_sha384` are null. `reject` names the refusal and `solution_seal` binds it.",
+        });
+    // What a flag of the result reports beside it, on a solver that has one.
+    if let Some(limits) = crate::solver_exceedance::describe(solver.name) {
+        returns["exceedances"] = json!(crate::solver_exceedance::DESCRIBE_RULE);
+        returns["exceedance_limits"] = limits;
+    }
+    described.insert("returns".to_string(), returns);
     described.insert("invariants".to_string(), sections.invariants);
     described.insert("convergence".to_string(), sections.convergence);
     // The open connection's count of this solver in a plan of solves: the
@@ -791,7 +810,7 @@ pub fn describe_whole(name: &str) -> Option<Value> {
     }
     // The couplings into this solver: a card's sealed run handed in through
     // `from`, as describe_card lists a card's.
-    let couplings = crate::couplings::table_into_solver(&crate::view::View::full(), solver.name);
+    let couplings = crate::couplings::table_into_solver(view, solver.name);
     if couplings.as_array().is_some_and(|list| !list.is_empty()) {
         described.insert("couplings".to_string(), couplings);
     }
@@ -821,8 +840,13 @@ const FULL_FORM_HAS: &str = "each input's bound in words, what each returned nam
 /// is returned, the refusals and the worked examples are given by name, and
 /// the first worked example also as a request.
 pub fn describe_short(name: &str) -> Option<Value> {
+    describe_short_in(&View::full(), name)
+}
+
+/// [`describe_short`] as a view sees it.
+pub fn describe_short_in(view: &View, name: &str) -> Option<Value> {
     let solver = find(name)?;
-    let whole = describe_whole(name)?;
+    let whole = describe_whole_in(view, name)?;
     let names = |list: &Value| Value::Array(list.as_array().into_iter().flatten().map(|row| row["name"].clone()).collect());
     let inputs: Vec<Value> = whole["inputs"]
         .as_array()
@@ -898,14 +922,14 @@ pub fn describe_request_in(view: &View, request: &Value) -> Result<Value, DoorEr
                 "Physical Violation: 'form' \"short\" and 'part' each ask for less than the whole description; send one of them.".to_string(),
             ));
         }
-        return describe_short(solver).map(|short| with_successor(view, solver, short)).ok_or_else(not_found);
+        return describe_short_in(view, solver).ok_or_else(not_found);
     }
     match object.get("part") {
-        None => describe_value(solver).map(|whole| with_successor(view, solver, whole)).ok_or_else(not_found),
-        Some(Value::String(part)) => match describe_part(solver, part) {
+        None => describe_value_in(view, solver).ok_or_else(not_found),
+        Some(Value::String(part)) => match describe_part_in(view, solver, part) {
             Some(described) => Ok(described),
             None => {
-                let whole = describe_whole(solver).ok_or_else(not_found)?;
+                let whole = describe_whole_in(view, solver).ok_or_else(not_found)?;
                 let names: Vec<String> = part_names(&whole)
                     .iter()
                     .map(|name| format!("\"{name}\""))
@@ -921,22 +945,6 @@ pub fn describe_request_in(view: &View, request: &Value) -> Result<Value, DoorEr
             "Physical Violation: 'part' must be a string; this request has {other}."
         ))),
     }
-}
-
-/// A description of a solver a newer one supersedes, with `superseded_by`
-/// after the solver's name.
-fn with_successor(view: &View, solver: &str, described: Value) -> Value {
-    let Some(by) = crate::succession::superseded_by(view, solver) else { return described };
-    let Value::Object(map) = described else { return described };
-    let mut out = Map::new();
-    for (key, value) in map {
-        let here = key == "solver";
-        out.insert(key, value);
-        if here {
-            out.insert(crate::succession::KEY.to_string(), json!(by));
-        }
-    }
-    Value::Object(out)
 }
 
 /// The names of a solver's worked examples, as its description keys them.
@@ -1218,7 +1226,7 @@ pub fn solution_schema_in(_view: &View) -> Map<String, Value> {
             "reject": { "type": ["string", "null"] },
             "result": { "type": ["object", "null"] },
             "invariants": { "type": ["object", "null"] },
-            "field_sha256": { "type": ["string", "null"] },
+            "field_sha384": { "type": ["string", "null"] },
             "seal_parts": {
                 "type": "object",
                 "properties": {
@@ -1226,20 +1234,22 @@ pub fn solution_schema_in(_view: &View) -> Map<String, Value> {
                     "engine_version": digest,
                     "result": digest,
                     "invariants": digest,
-                    "field_sha256": digest,
+                    "field_sha384": digest,
                     "outcome": digest,
                 },
-                "required": ["inputs", "engine_version", "result", "invariants", "field_sha256", "outcome"],
+                "required": ["inputs", "engine_version", "result", "invariants", "field_sha384", "outcome"],
                 "additionalProperties": true
             },
-            "solution_seal": { "type": "string", "pattern": "^[0-9a-f]{64}$", "description": "The solution_seal of the solve answer: with request, or as part of the whole answer." },
+            "solution_seal": { "type": "string", "pattern": "^[0-9a-f]{96}$", "description": "The solution_seal of the solve answer: with request, or as part of the whole answer." },
             "from": {
                 "type": "object",
                 "description": "Beside the whole answer of a chained solve: the from solve took (request, run_seal, coupling). The upstream run is computed again and held to its seal, each handed value to it, and the request solved again with it; the answer alone is refused (AnswerCarriesNoRequest)."
-            }
+            },
+            "public_key": { "type": "string", "description": "The base64 of the ML-DSA-87 public key (2,592 bytes) to check the answer's signature with; without it, this engine's own." },
+            "seen_nonces": { "type": "array", "items": { "type": "string", "pattern": "^[0-9a-f]{64}$" }, "description": "Nonces of signatures already seen: one of them again is SignatureNonceReplayed." }
         },
         "additionalProperties": true,
-        "description": "Either request and solution_seal alone, the short form: the request is solved again and its seal compared with solution_seal. Or the whole solve answer sent back as it came, without request, the long form: inputs, engine_version, outcome, iterations, reject, result, invariants, field_sha256, seal_parts and solution_seal are then all required. The solution seal is recomputed from its exact hex values and the part that fails is named; then its request is solved again under a physics permit and the limits of solve, and the engine's whole answer to it compared with the answer sent, value by value and then byte for byte, the receipt included, so an answer that holds is every byte the engine's. A seal has no key: an answer whose values were rewritten with its seal parts, seal and receipt worked out again holds every seal, and only the solve shows it is not the engine's (cause solution_seal). The long form's answer carries holds, true when the answer sent is every byte the engine's, and values_hold beside it, true when every value of it is the engine's answer to its request computed again, whatever its spelling: each number by its 64-bit value, strings, flags and null exactly, keys and their order, the receipt string among them. A copy whose numbers a client wrote again in its own spelling (0.0001 for 1.0e-4, 12 for 12.0) has holds false and values_hold true, and differs_at names the first place its text differs."
+        "description": "Either request and solution_seal alone, the short form: the request is solved again and its seal compared with solution_seal. Or the whole solve answer sent back as it came, without request, the long form: inputs, engine_version, outcome, iterations, reject, result, invariants, field_sha384, seal_parts and solution_seal are then all required. The solution seal is recomputed from its exact hex values and the part that fails is named; then its request is solved again under a physics permit and the limits of solve, and the engine's whole answer to it compared with the answer sent, value by value and then byte for byte, the receipt included, so an answer that holds is every byte the engine's. A seal has no key: an answer whose values were rewritten with its seal parts, seal and receipt worked out again holds every seal, and only the solve shows it is not the engine's (cause solution_seal). The long form's answer carries holds, true when the answer sent is every byte the engine's, and values_hold beside it, true when every value of it is the engine's answer to its request computed again, whatever its spelling: each number by its 64-bit value, strings, flags and null exactly, keys and their order, the receipt string among them. A copy whose numbers a client wrote again in its own spelling (0.0001 for 1.0e-4, 12 for 12.0) has holds false and values_hold true, and differs_at names the first place its text differs. An answer the engine signed (signature, ML-DSA-87 over its receipt, with issued_at, expires_at and nonce) has its signature checked first, against public_key or else this engine's own key: one that does not hold is cause signature, named (SignatureDoesNotVerify, SignatureExpired, SignatureNonceReplayed, SignatureKeyMismatch, ReceiptDoesNotMatch, SignatureAbsent when public_key is given and there is none), and nothing is computed."
     }))
 }
 
@@ -1577,7 +1587,7 @@ mod tests {
                 Some(solver.inputs.len()),
                 "{name}"
             );
-            assert!(described["returns"]["field_sha256"].as_str().unwrap().ends_with('.'));
+            assert!(described["returns"]["field_sha384"].as_str().unwrap().ends_with('.'));
         }
     }
 

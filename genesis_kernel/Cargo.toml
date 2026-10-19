@@ -1,5 +1,11 @@
 [package]
 name = "genesis_kernel"
-version = "0.12.0"
+version = "0.13.0"
 edition = "2024"
 license = "Apache-2.0"
+
+[features]
+# The tests' check that every landed step's exceedances stand for its flags
+# word (`exceedance::CHECKED`). The gateway's tests turn it on through their
+# dev-dependency; no served build has it.
+check_exceedances = []

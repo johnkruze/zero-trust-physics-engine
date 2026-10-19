@@ -2,7 +2,7 @@
 //! again, and the answer the engine writes for it compared with the answer
 //! as it was sent, value by value and then byte by byte.
 //!
-//! A seal has no key: it is a plain SHA-256 built by a published rule, so
+//! A seal has no key: it is a plain SHA-384 built by a published rule, so
 //! anyone can change a value of an answer, its hex, the seal parts, the seal
 //! and the receipt, and every seal still holds. Recomputing the seals from
 //! the answer's own values therefore shows only that the answer is
@@ -383,7 +383,7 @@ fn added(at: &str) -> Difference {
 }
 
 fn changed(at: &str) -> Difference {
-    if at == "receipt_sha256" || at.ends_with(".receipt_sha256") {
+    if at == "receipt_sha384" || at.ends_with(".receipt_sha384") {
         return Difference::new(
             at,
             "The receipt the answer sent carries is not the receipt of the answer the engine writes for this request, while every other value is the engine's: the receipt was changed, or worked out again over a text that is not the engine's (a number spelled another way, a key in another order), which gives another receipt and the same seal. verify_receipt compares a copy's own bytes with the receipt that same copy carries.",
@@ -435,7 +435,7 @@ mod tests {
     /// of it.
     #[test]
     fn a_text_of_the_same_values_is_held_to_the_engines_bytes() {
-        let engine = r#"{"inputs":{"solver":"x","parameters":{"a":0.0001}},"outcome":"converged","result":{"v":[1.9630162443860628e-3,2.0e-4],"v_hex":["3f6014be5246e69b","3f2a36e2eb1c432d"]},"receipt_sha256":"ab"}"#;
+        let engine = r#"{"inputs":{"solver":"x","parameters":{"a":0.0001}},"outcome":"converged","result":{"v":[1.9630162443860628e-3,2.0e-4],"v_hex":["3f6014be5246e69b","3f2a36e2eb1c432d"]},"receipt_sha384":"ab"}"#;
         let at = |sent: &str| {
             let value: Value = serde_json::from_str(sent).unwrap();
             compare(engine, &value, sent).ok().and_then(|compared| compared.difference).map(|difference| difference.at)
@@ -448,7 +448,7 @@ mod tests {
         assert_eq!(at(&engine.replace("\"converged\"", "\"\\u0063onverged\"")).as_deref(), Some("outcome"));
         assert_eq!(at(&engine.replace("\"outcome\"", "\"\\u006futcome\"")).as_deref(), Some("outcome"));
         assert_eq!(at(&engine.replace("\"result\":{", "\"result\": {")).as_deref(), Some("result"));
-        assert_eq!(at(&engine.replace(",\"receipt_sha256\"", ", \"receipt_sha256\"")).as_deref(), Some("receipt_sha256"));
+        assert_eq!(at(&engine.replace(",\"receipt_sha384\"", ", \"receipt_sha384\"")).as_deref(), Some("receipt_sha384"));
         // Each says what it is.
         let value: Value = serde_json::from_str(engine).unwrap();
         let respelled = engine.replace("2.0e-4", "2e-4");

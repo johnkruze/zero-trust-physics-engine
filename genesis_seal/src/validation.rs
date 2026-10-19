@@ -119,15 +119,15 @@ pub fn statistics(
     }))
 }
 
-/// SHA-256 of the sealed form of the `measurements` array, as 64 lowercase hex digits.
-pub fn measurements_sha256(measurements: &Value) -> String {
+/// SHA-384 of the sealed form of the `measurements` array, as 96 lowercase hex digits.
+pub fn measurements_sha384(measurements: &Value) -> String {
     digest_hex(sealed_form(measurements).as_bytes())
 }
 
 /// What the validation seal is taken over.
 pub struct SealParts<'a> {
     pub run_seal: &'a str,
-    pub measurements_sha256: &'a str,
+    pub measurements_sha384: &'a str,
     pub quantity: &'a str,
     pub component: Option<u64>,
     /// How the run ended: the answer's `outcome`.
@@ -145,26 +145,26 @@ pub struct SealParts<'a> {
     pub commitment: Option<&'a Commitment>,
 }
 
-/// The validation seal: SHA-256 over these bytes, in this order, with nothing between them.
+/// The validation seal: SHA-384 over these bytes, in this order, with nothing between them.
 ///
-/// 1. `run_seal`, 64 hex characters.
-/// 2. `measurements_sha256`, 64 hex characters.
+/// 1. `run_seal`, 96 hex characters.
+/// 2. `measurements_sha384`, 96 hex characters.
 /// 3. The compact JSON `{"quantity","component","outcome","steps_landed","reject","compared","not_reached","max_abs_error_step"}`,
 ///    the keys in that order, no spaces. `component`, `reject` and `max_abs_error_step` are
 ///    null when there is none. `quantity`, `outcome` and `reject` are JSON strings.
 /// 4. The three lines `rms_error_hex:<hex>\n`, `mean_signed_error_hex:<hex>\n` and
 ///    `max_abs_error_hex:<hex>\n`, each hex being 16 digits, or the word `null` when
 ///    nothing was compared.
-/// 5. SHA-256 of the `model_values_hex` joined by commas, as 64 hex characters. For
+/// 5. SHA-384 of the `model_values_hex` joined by commas, as 96 hex characters. For
 ///    no value it is the hash of the empty text.
 /// 6. Only when the comparison opened a commitment: the two lines
-///    `commitment_sha256:<64 hex>\n` and `commitment_salt:<hex>\n`. A
+///    `commitment_sha384:<96 hex>\n` and `commitment_salt:<hex>\n`. A
 ///    comparison without one has no sixth part, so its seal is the seal of
 ///    the five.
 pub fn validation_seal(parts: &SealParts) -> String {
     let mut bytes = Vec::new();
     bytes.extend_from_slice(parts.run_seal.as_bytes());
-    bytes.extend_from_slice(parts.measurements_sha256.as_bytes());
+    bytes.extend_from_slice(parts.measurements_sha384.as_bytes());
     let component = match parts.component {
         Some(component) => component.to_string(),
         None => "null".to_string(),
@@ -209,11 +209,11 @@ pub fn validation_seal(parts: &SealParts) -> String {
 /// The first part of an answer that does not follow from the rest, in the order checked.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ValidationCause {
-    /// `measurements_sha256` is not the hash of the measurements in `inputs`.
+    /// `measurements_sha384` is not the hash of the measurements in `inputs`.
     Measurements,
     /// `inputs` carries a commitment that its measurements, quantity and
     /// component do not open: the digest of them and the salt is not the
-    /// commitment's `sha256`.
+    /// commitment's `sha384`.
     Commitment,
     /// Every sealed part holds, and the answer says `commitment_opened` with
     /// no commitment in its `inputs`, or carries one in `inputs` and does not
@@ -258,7 +258,7 @@ pub struct ValidationReport {
     pub compared: u64,
     pub not_reached: u64,
     pub rebuilt: Option<Statistics>,
-    pub measurements_sha256: String,
+    pub measurements_sha384: String,
     pub validation_seal: String,
     /// With `load_signature`: where the reading that does not verify is, and
     /// the sentence of why.
@@ -268,10 +268,10 @@ pub struct ValidationReport {
     /// measurements, each in place order.
     pub signed_loads: Vec<crate::attest::Verified>,
     pub signed_measurements: Vec<crate::attest::Verified>,
-    /// With a commitment in `inputs`: its `sha256` as the answer carries it,
-    /// the one to hold beside the sha256 published before the comparison.
-    pub commitment_sha256: Option<String>,
-    /// With a commitment: the SHA-256 of the committed bytes, made again from
+    /// With a commitment in `inputs`: its `sha384` as the answer carries it,
+    /// the one to hold beside the sha384 published before the comparison.
+    pub commitment_sha384: Option<String>,
+    /// With a commitment: the SHA-384 of the committed bytes, made again from
     /// the answer's measurements, quantity, component and salt.
     pub commitment_recomputed: Option<String>,
     /// The answer says `commitment_opened` (a value other than null).
@@ -285,7 +285,7 @@ pub struct ValidationReport {
 /// (with `quantity`, `component` when the quantity is a vector, and
 /// `measurements`), `steps_landed`, `run_seal`, `compared`, `not_reached`, the
 /// three statistics each with its `_hex`, `max_abs_error_step`,
-/// `model_values_hex`, `measurements_sha256` and `validation_seal`. Other keys
+/// `model_values_hex`, `measurements_sha384` and `validation_seal`. Other keys
 /// are ignored, so a whole answer can be posted as it is. Only the `_hex`
 /// values are read; a decimal copy is covered by the receipt.
 ///
@@ -324,6 +324,7 @@ pub struct ValidationReport {
 pub fn check_validation(bytes: &[u8]) -> Result<ValidationReport, Refusal> {
     let value = json_text::read(bytes)?;
     let answer = value.as_object().ok_or(Refusal::NotAnObject)?;
+    crate::refusal::refuse_other_rule(answer)?;
     let inputs = object_of(answer, "inputs")?;
     let quantity = string_of(inputs, "inputs.quantity", "quantity")?;
     let component = match inputs.get("component") {
@@ -367,7 +368,7 @@ pub fn check_validation(bytes: &[u8]) -> Result<ValidationReport, Refusal> {
         )
     };
     let place = if solves { "row" } else { "step" };
-    let stated_hash = hash_of(answer, "measurements_sha256")?;
+    let stated_hash = hash_of(answer, "measurements_sha384")?;
     let stated_seal = hash_of(answer, "validation_seal")?;
     let stated_compared = whole_of(answer, "compared")?;
     let stated_not_reached = whole_of(answer, "not_reached")?;
@@ -412,7 +413,7 @@ pub fn check_validation(bytes: &[u8]) -> Result<ValidationReport, Refusal> {
         None => true,
     };
 
-    let computed_hash = measurements_sha256(&Value::Array(measurements.clone()));
+    let computed_hash = measurements_sha384(&Value::Array(measurements.clone()));
     let stated_statistics = stated_statistics(
         answer,
         stated_compared,
@@ -435,7 +436,7 @@ pub fn check_validation(bytes: &[u8]) -> Result<ValidationReport, Refusal> {
     let seal_of = |statistics: Option<&Statistics>| {
         validation_seal(&SealParts {
             run_seal: &run_seal,
-            measurements_sha256: &stated_hash,
+            measurements_sha384: &stated_hash,
             quantity: &quantity,
             component,
             outcome: &outcome,
@@ -450,10 +451,10 @@ pub fn check_validation(bytes: &[u8]) -> Result<ValidationReport, Refusal> {
     };
     let component_given = inputs.get("component").cloned().unwrap_or(Value::Null);
     let commitment_recomputed = commitment.as_ref().map(|commitment| {
-        commitment::commitment_sha256(&quantity, &component_given, &Value::Array(measurements.clone()), &commitment.salt)
+        commitment::commitment_sha384(&quantity, &component_given, &Value::Array(measurements.clone()), &commitment.salt)
     });
     let commitment_opens = match (&commitment, &commitment_recomputed) {
-        (Some(commitment), Some(recomputed)) => *recomputed == commitment.sha256,
+        (Some(commitment), Some(recomputed)) => *recomputed == commitment.sha384,
         _ => true,
     };
     let commitment_opened = answer.get("commitment_opened").is_some_and(|said| !said.is_null());
@@ -499,13 +500,13 @@ pub fn check_validation(bytes: &[u8]) -> Result<ValidationReport, Refusal> {
         compared: stated_compared,
         not_reached: stated_not_reached,
         rebuilt,
-        measurements_sha256: computed_hash,
+        measurements_sha384: computed_hash,
         validation_seal: seal_of(rebuilt.as_ref()),
         broken_place: signature_fault.as_ref().map(|fault| fault.place().label()),
         load_fault: signature_fault.as_ref().map(ToString::to_string),
         signed_loads,
         signed_measurements,
-        commitment_sha256: commitment.as_ref().map(|commitment| commitment.sha256.clone()),
+        commitment_sha384: commitment.as_ref().map(|commitment| commitment.sha384.clone()),
         commitment_recomputed,
         commitment_opened,
     })
@@ -611,10 +612,10 @@ fn whole_of(object: &Map<String, Value>, key: &str) -> Result<u64, Refusal> {
 fn hash_of(object: &Map<String, Value>, key: &str) -> Result<String, Refusal> {
     match object.get(key) {
         None => Err(Refusal::Missing(key.to_string())),
-        Some(Value::String(text)) if is_lower_hex(text, 64) => Ok(text.clone()),
+        Some(Value::String(text)) if is_lower_hex(text, 96) => Ok(text.clone()),
         Some(Value::String(_)) => Err(Refusal::NotExactHex {
             field: key.to_string(),
-            digits: 64,
+            digits: 96,
         }),
         Some(_) => Err(wrong(key, "a string")),
     }
@@ -681,15 +682,15 @@ mod tests {
                 measured.push(item["value"].as_f64().unwrap());
             }
         }
-        let hash = measurements_sha256(&measurements);
+        let hash = measurements_sha384(&measurements);
         let stats = statistics(&steps, model, &measured).unwrap();
         let hexes: Vec<String> = model.iter().map(|value| bits_hex(*value)).collect();
         let compared = steps.len() as u64;
         let not_reached = items.len() as u64 - compared;
-        let run_seal = "ab".repeat(32);
+        let run_seal = "ab".repeat(48);
         let seal = validation_seal(&SealParts {
             run_seal: &run_seal,
-            measurements_sha256: &hash,
+            measurements_sha384: &hash,
             quantity: "terminal_v",
             component: None,
             outcome: "completed",
@@ -708,7 +709,7 @@ mod tests {
         };
         let mut inputs = json!({"run": {}, "quantity": "terminal_v", "measurements": measurements});
         if let Some(commitment) = commitment {
-            inputs["commitment"] = json!({"sha256": commitment.sha256, "salt": commitment.salt});
+            inputs["commitment"] = json!({"sha384": commitment.sha384, "salt": commitment.salt});
         }
         let mut written = json!({
             "inputs": inputs,
@@ -723,7 +724,7 @@ mod tests {
             "max_abs_error_hex": hex(Statistics::max_abs_error_hex),
             "max_abs_error_step": stats.as_ref().map(|s| s.max_abs_error_step),
             "model_values_hex": hexes,
-            "measurements_sha256": hash,
+            "measurements_sha384": hash,
             "validation_seal": seal,
         });
         if commitment.is_some() {
@@ -745,11 +746,11 @@ mod tests {
         let measured = [1.5_f64, 4.0];
         let stats = statistics(&rows, &model, &measured).unwrap().unwrap();
         let hexes: Vec<String> = model.iter().map(|value| bits_hex(*value)).collect();
-        let hash = measurements_sha256(&measurements);
-        let dataset_seal = "cd".repeat(32);
+        let hash = measurements_sha384(&measurements);
+        let dataset_seal = "cd".repeat(48);
         let seal = validation_seal(&SealParts {
             run_seal: &dataset_seal,
-            measurements_sha256: &hash,
+            measurements_sha384: &hash,
             quantity: "sound_speed_m_s",
             component: None,
             outcome: SOLVES_OUTCOME,
@@ -776,7 +777,7 @@ mod tests {
             "max_abs_error_hex": stats.max_abs_error_hex(),
             "max_abs_error_row": stats.max_abs_error_step,
             "model_values_hex": hexes,
-            "measurements_sha256": hash,
+            "measurements_sha384": hash,
             "validation_seal": seal,
         })
     }
@@ -790,7 +791,7 @@ mod tests {
         assert_eq!(report.validation_seal, genuine["validation_seal"].as_str().unwrap());
 
         let mut edited = genuine.clone();
-        edited["dataset_seal"] = json!("ce".repeat(32));
+        edited["dataset_seal"] = json!("ce".repeat(48));
         assert_eq!(check(&edited).cause, Some(ValidationCause::ValidationSeal));
         let mut edited = genuine.clone();
         edited["converged"] = json!(4);
@@ -863,7 +864,7 @@ mod tests {
         assert_eq!(check(&changed).cause, Some(ValidationCause::ModelValues));
 
         let mut changed = genuine.clone();
-        changed["measurements_sha256"] = json!("cd".repeat(32));
+        changed["measurements_sha384"] = json!("cd".repeat(48));
         assert_eq!(check(&changed).cause, Some(ValidationCause::Measurements));
 
         let mut changed = genuine.clone();
@@ -871,7 +872,7 @@ mod tests {
         assert_eq!(check(&changed).cause, Some(ValidationCause::Measurements));
 
         let mut changed = genuine.clone();
-        changed["validation_seal"] = json!("ef".repeat(32));
+        changed["validation_seal"] = json!("ef".repeat(48));
         assert_eq!(check(&changed).cause, Some(ValidationCause::ValidationSeal));
 
         let mut changed = genuine.clone();
@@ -879,7 +880,7 @@ mod tests {
         assert_eq!(check(&changed).cause, Some(ValidationCause::Counts));
 
         let mut changed = genuine;
-        changed["run_seal"] = json!("12".repeat(32));
+        changed["run_seal"] = json!("12".repeat(48));
         assert_eq!(check(&changed).cause, Some(ValidationCause::ValidationSeal));
     }
 
@@ -916,9 +917,9 @@ mod tests {
     fn a_respelled_measurement_gives_the_same_hash() {
         let one = json!([{"step": 1, "value": 1.0}]);
         let other: Value = serde_json::from_str(r#"[{"value":1,"step":1}]"#).unwrap();
-        assert_eq!(measurements_sha256(&one), measurements_sha256(&other));
+        assert_eq!(measurements_sha384(&one), measurements_sha384(&other));
         let moved = json!([{"step": 1, "value": 1.0000000000000002}]);
-        assert_ne!(measurements_sha256(&one), measurements_sha256(&moved));
+        assert_ne!(measurements_sha384(&one), measurements_sha384(&moved));
     }
 
     #[test]
@@ -931,8 +932,8 @@ mod tests {
         };
         let hexes = vec![bits_hex(1.5)];
         let seal = validation_seal(&SealParts {
-            run_seal: &"11".repeat(32),
-            measurements_sha256: &"22".repeat(32),
+            run_seal: &"11".repeat(48),
+            measurements_sha384: &"22".repeat(48),
             quantity: "position_m",
             component: Some(2),
             outcome: "refused",
@@ -945,8 +946,8 @@ mod tests {
             commitment: None,
         });
         let mut text = String::new();
-        text.push_str(&"11".repeat(32));
-        text.push_str(&"22".repeat(32));
+        text.push_str(&"11".repeat(48));
+        text.push_str(&"22".repeat(48));
         text.push_str(r#"{"quantity":"position_m","component":2,"outcome":"refused","steps_landed":3,"reject":"FirstLawBreach","compared":1,"not_reached":4,"max_abs_error_step":7}"#);
         text.push_str("rms_error_hex:3ff0000000000000\n");
         text.push_str("mean_signed_error_hex:3fe0000000000000\n");
@@ -980,7 +981,7 @@ mod tests {
     /// `terminal_v`, with no component.
     fn committed() -> Commitment {
         Commitment {
-            sha256: commitment::commitment_sha256("terminal_v", &Value::Null, &measurements(), SALT),
+            sha384: commitment::commitment_sha384("terminal_v", &Value::Null, &measurements(), SALT),
             salt: SALT.to_string(),
         }
     }
@@ -991,21 +992,21 @@ mod tests {
         let genuine = answer_with(measurements(), &[3.9, 3.7, 3.0], 5, Some(&commitment));
         let report = check(&genuine);
         assert!(report.holds, "{:?}", report.cause);
-        assert_eq!(report.commitment_sha256.as_deref(), Some(commitment.sha256.as_str()));
-        assert_eq!(report.commitment_recomputed.as_deref(), Some(commitment.sha256.as_str()));
+        assert_eq!(report.commitment_sha384.as_deref(), Some(commitment.sha384.as_str()));
+        assert_eq!(report.commitment_recomputed.as_deref(), Some(commitment.sha384.as_str()));
         assert_eq!(report.validation_seal, genuine["validation_seal"].as_str().unwrap());
         // The same comparison without a commitment is sealed over the five
         // parts alone, and the seal with one is those bytes and two lines.
         let plain = answer(&[3.9, 3.7, 3.0], 5);
         let report = check(&plain);
-        assert!(report.holds && report.commitment_sha256.is_none() && report.commitment_recomputed.is_none());
+        assert!(report.holds && report.commitment_sha384.is_none() && report.commitment_recomputed.is_none());
         assert_ne!(plain["validation_seal"], genuine["validation_seal"]);
         let five = |commitment: Option<&Commitment>| {
             let stats = statistics(&[1, 2, 5], &[3.9, 3.7, 3.0], &[3.9, 3.8, 3.0]).unwrap().unwrap();
             let hexes: Vec<String> = [3.9_f64, 3.7, 3.0].iter().map(|value| bits_hex(*value)).collect();
             validation_seal(&SealParts {
-                run_seal: &"ab".repeat(32),
-                measurements_sha256: &measurements_sha256(&measurements()),
+                run_seal: &"ab".repeat(48),
+                measurements_sha384: &measurements_sha384(&measurements()),
                 quantity: "terminal_v",
                 component: None,
                 outcome: "completed",
@@ -1026,11 +1027,11 @@ mod tests {
     fn the_sixth_part_is_the_two_lines_after_the_five() {
         let stats = Statistics { rms_error: 1.0, mean_signed_error: 0.5, max_abs_error: 2.0, max_abs_error_step: 7 };
         let hexes = vec![bits_hex(1.5)];
-        let commitment = Commitment { sha256: "33".repeat(32), salt: SALT.to_string() };
+        let commitment = Commitment { sha384: "33".repeat(48), salt: SALT.to_string() };
         let parts = |commitment: Option<&Commitment>| {
             validation_seal(&SealParts {
-                run_seal: &"11".repeat(32),
-                measurements_sha256: &"22".repeat(32),
+                run_seal: &"11".repeat(48),
+                measurements_sha384: &"22".repeat(48),
                 quantity: "position_m",
                 component: Some(2),
                 outcome: "refused",
@@ -1044,15 +1045,15 @@ mod tests {
             })
         };
         let mut text = String::new();
-        text.push_str(&"11".repeat(32));
-        text.push_str(&"22".repeat(32));
+        text.push_str(&"11".repeat(48));
+        text.push_str(&"22".repeat(48));
         text.push_str(r#"{"quantity":"position_m","component":2,"outcome":"refused","steps_landed":3,"reject":"FirstLawBreach","compared":1,"not_reached":4,"max_abs_error_step":7}"#);
         text.push_str("rms_error_hex:3ff0000000000000\n");
         text.push_str("mean_signed_error_hex:3fe0000000000000\n");
         text.push_str("max_abs_error_hex:4000000000000000\n");
         text.push_str(&digest_hex(b"3ff8000000000000"));
         assert_eq!(parts(None), digest_hex(text.as_bytes()));
-        text.push_str(&format!("commitment_sha256:{}\ncommitment_salt:{SALT}\n", "33".repeat(32)));
+        text.push_str(&format!("commitment_sha384:{}\ncommitment_salt:{SALT}\n", "33".repeat(48)));
         assert_eq!(parts(Some(&commitment)), digest_hex(text.as_bytes()));
     }
 
@@ -1077,11 +1078,11 @@ mod tests {
             let forged = answer_with(data, &model, 5, Some(&commitment));
             let report = check(&forged);
             assert_eq!(report.cause, Some(ValidationCause::Commitment), "{label}");
-            assert_eq!(report.commitment_sha256.as_deref(), Some(commitment.sha256.as_str()), "{label}");
-            assert_ne!(report.commitment_recomputed.as_deref(), Some(commitment.sha256.as_str()), "{label}");
+            assert_eq!(report.commitment_sha384.as_deref(), Some(commitment.sha384.as_str()), "{label}");
+            assert_ne!(report.commitment_recomputed.as_deref(), Some(commitment.sha384.as_str()), "{label}");
         }
-        // Another salt under the same sha256, the seal made again with it.
-        let wrong_salt = Commitment { sha256: commitment.sha256.clone(), salt: "ff".repeat(16) };
+        // Another salt under the same sha384, the seal made again with it.
+        let wrong_salt = Commitment { sha384: commitment.sha384.clone(), salt: "ff".repeat(16) };
         let forged = answer_with(measurements(), &[3.9, 3.7, 3.0], 5, Some(&wrong_salt));
         assert_eq!(check(&forged).cause, Some(ValidationCause::Commitment));
         // Another quantity named in inputs: the commitment is of terminal_v.
@@ -1094,7 +1095,7 @@ mod tests {
         assert_eq!(check(&taken).cause, Some(ValidationCause::ValidationSeal));
         // A commitment put into an answer sealed without one: the seal speaks.
         let mut put = answer(&[3.9, 3.7, 3.0], 5);
-        put["inputs"]["commitment"] = json!({"sha256": commitment.sha256, "salt": SALT});
+        put["inputs"]["commitment"] = json!({"sha384": commitment.sha384, "salt": SALT});
         assert_eq!(check(&put).cause, Some(ValidationCause::ValidationSeal));
         // A changed measurement whose hash was not made again is still
         // named by the hash first.
@@ -1109,14 +1110,14 @@ mod tests {
         let genuine = answer_with(measurements(), &[3.9, 3.7, 3.0], 5, Some(&commitment));
         for (edit, sentence) in [
             (
-                json!({"sha256": commitment.sha256, "salt": "0001020304050607"}),
-                "Physical Violation: 'inputs.commitment.salt' is 16 hex digits, and a salt is at least 32, 16 bytes: a shorter salt leaves the committed data to be found by trying salts against the sha256 (CommitmentSaltTooShort).",
+                json!({"sha384": commitment.sha384, "salt": "0001020304050607"}),
+                "Physical Violation: 'inputs.commitment.salt' is 16 hex digits, and a salt is at least 32, 16 bytes: a shorter salt leaves the committed data to be found by trying salts against the sha384 (CommitmentSaltTooShort).",
             ),
-            (json!({"sha256": commitment.sha256}), "Missing required parameter: 'inputs.commitment.salt' (InputMissing)."),
-            (json!({"salt": SALT}), "Missing required parameter: 'inputs.commitment.sha256' (InputMissing)."),
+            (json!({"sha384": commitment.sha384}), "Missing required parameter: 'inputs.commitment.salt' (InputMissing)."),
+            (json!({"salt": SALT}), "Missing required parameter: 'inputs.commitment.sha384' (InputMissing)."),
             (
-                json!({"sha256": commitment.sha256.to_uppercase(), "salt": SALT}),
-                "Physical Violation: 'inputs.commitment.sha256' must be 64 lowercase hex digits, the SHA-256 committed (CommitmentMalformed).",
+                json!({"sha384": commitment.sha384.to_uppercase(), "salt": SALT}),
+                "Physical Violation: 'inputs.commitment.sha384' must be 96 lowercase hex digits, the SHA-384 committed (CommitmentMalformed).",
             ),
         ] {
             let mut changed = genuine.clone();
@@ -1131,17 +1132,17 @@ mod tests {
         let mut genuine = solves_answer();
         let measured = genuine["inputs"]["measurements"].clone();
         let commitment = Commitment {
-            sha256: commitment::commitment_sha256("sound_speed_m_s", &Value::Null, &measured, SALT),
+            sha384: commitment::commitment_sha384("sound_speed_m_s", &Value::Null, &measured, SALT),
             salt: SALT.to_string(),
         };
-        genuine["inputs"]["commitment"] = json!({"sha256": commitment.sha256, "salt": SALT});
+        genuine["inputs"]["commitment"] = json!({"sha384": commitment.sha384, "salt": SALT});
         genuine["commitment_opened"] = json!(commitment::OPENED);
         // Sealed again with the sixth part.
         let stats = statistics(&[0, 3], &[1.25, 4.5], &[1.5, 4.0]).unwrap().unwrap();
         let hexes: Vec<String> = [1.25_f64, 4.5].iter().map(|value| bits_hex(*value)).collect();
         genuine["validation_seal"] = json!(validation_seal(&SealParts {
             run_seal: genuine["dataset_seal"].as_str().unwrap(),
-            measurements_sha256: genuine["measurements_sha256"].as_str().unwrap(),
+            measurements_sha384: genuine["measurements_sha384"].as_str().unwrap(),
             quantity: "sound_speed_m_s",
             component: None,
             outcome: SOLVES_OUTCOME,
@@ -1173,7 +1174,7 @@ mod tests {
         assert!(!report.holds);
         assert_eq!(report.cause, Some(ValidationCause::CommitmentOpened));
         assert_eq!(report.cause.unwrap().as_str(), "commitment_opened");
-        assert!(report.commitment_opened && report.commitment_sha256.is_none());
+        assert!(report.commitment_opened && report.commitment_sha384.is_none());
         assert_eq!(report.validation_seal, plain["validation_seal"].as_str().unwrap());
         let mut null = plain.clone();
         null["commitment_opened"] = Value::Null;
@@ -1185,7 +1186,7 @@ mod tests {
         unsaid.as_object_mut().unwrap().remove("commitment_opened");
         let report = check(&unsaid);
         assert_eq!(report.cause, Some(ValidationCause::CommitmentOpened));
-        assert!(!report.commitment_opened && report.commitment_sha256.is_some());
+        assert!(!report.commitment_opened && report.commitment_sha384.is_some());
         // Data that do not open the commitment are named first.
         let mut both = unsaid.clone();
         both["inputs"]["commitment"]["salt"] = json!("ee".repeat(16));

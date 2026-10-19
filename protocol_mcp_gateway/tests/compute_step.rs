@@ -89,12 +89,12 @@ fn a_steps_answer_sent_to_verify_tape_is_named_with_how_a_step_is_verified() {
     assert!(error, "{refused}");
     assert_eq!(
         refused,
-        "Physical Violation: this is the answer of one step (compute_step): it carries sha256_seal and no frames, and verify_tape verifies a run. A step is verified by request: send its inputs to compute_step, or to verify_step, its earlier name, and compare the sha256_seal it answers with this one; the step is computed again under a physics permit."
+        "Physical Violation: this is the answer of one step (compute_step): it carries sha384_seal and no frames, and verify_tape verifies a run. A step is verified by request: send its inputs to compute_step, or to verify_step, its earlier name, and compare the sha384_seal it answers with this one; the step is computed again under a physics permit."
     );
     for tool in ["compute_step", "verify_step"] {
         let (error, again) = stdio.tool(tool, &step["inputs"]);
         assert!(!error, "{again}");
         let again: Value = serde_json::from_str(&again).unwrap();
-        assert_eq!(again["sha256_seal"], step["sha256_seal"], "{tool}");
+        assert_eq!(again["sha384_seal"], step["sha384_seal"], "{tool}");
     }
 }

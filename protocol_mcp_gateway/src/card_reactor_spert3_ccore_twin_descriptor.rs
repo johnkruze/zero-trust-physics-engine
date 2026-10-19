@@ -203,3 +203,105 @@ pub(super) fn meaning(name: &str) -> Option<&'static str> {
         _ => return None,
     })
 }
+
+/// A list of the card's numbers as its source holds them, joined for a sentence.
+fn numbers(values: &[f64]) -> String {
+    values.iter().map(|value| format!("{value}")).collect::<Vec<_>>().join(", ")
+}
+
+/// Every equation, constant, property law and discretisation of the card, in
+/// the order a rebuild needs them, each number the card's own constant: what
+/// an outsider needs to compute the card's answers again from its
+/// description alone. Units: MW, MJ (MW s), K, s, m and dollars unless a
+/// sentence names another; temperatures in degC are T - 273.15.
+pub(super) fn equations() -> Vec<String> {
+    use reactor_spert3_ccore_twin as c;
+    let state_keys: Vec<String> = crate::card_reactor_spert3_ccore_twin::rest(|fields| fields.iter().map(|(name, _)| (*name).to_string()).collect());
+    vec![
+        format!(
+            "Kinetics, six groups: dP/dt = ((rho - 1) / l*) P + sum lambda_i C_i and dC_i/dt = (b_i / l*) P - lambda_i C_i, rho the net reactivity in dollars. l* = {} s (IDO-16918 Table I); b_i {} and lambda_i {} per s (Keepin 1965, thermal fission of U-235). The start: P_0 = {} MW, C_i = b_i P_0 / (l* lambda_i), every rise, store and account zero, t = 0. A step of reactivity rho_0 (the load) is in from t = 0.",
+            c::GENERATION_TIME_REDUCED_S,
+            numbers(&c::GROUP_FRACTION),
+            numbers(&c::GROUP_DECAY_PER_S),
+            c::INITIAL_POWER_MW,
+        ),
+        format!(
+            "Three nodes, each per the whole plate area A = {} m^2: the core average (F = 1), the feedback node (F = F_r = {}) and the hot spot (F = 2.04 x 1.30). Each holds the plate rise T_p, the film rise T_f, the bulk-water rise T_w (rises above the initial temperature theta_i) and the latent heat of its vapour U in MJ. C_p dT_p/dt = F (1 - f_w) P - H_1 (T_p - T_f) - A q_b; C_f dT_f/dt = F f_w phi P + H_1 (T_p - T_f) - H_2 (T_f - T_w) + (1 - eps) A q_b - s C_f T_f; C_b dT_w/dt = F f_w (1 - phi) P + H_2 (T_f - T_w) + U / tau_c - s C_b T_w; dU/dt = eps A q_b - U / tau_c - s U; dE/dt = P. Plates C_p = {} MJ/K, water C_w = {} MJ/K, film C_f = phi C_w and bulk C_b = (1 - phi) C_w, phi = {}; f_w = {} (fission heat directly in the water); tau_c = {} s; eps = {} (the share of boiling heat that stays as vapour); sweep s = 2 v / L, L = {} m, v the load's coolant flow.",
+            c::HEAT_TRANSFER_AREA_M2,
+            c::FEEDBACK_PEAKING,
+            c::PLATE_HEAT_CAPACITY_MWS_PER_K,
+            c::WATER_HEAT_CAPACITY_MWS_PER_K,
+            c::FILM_SHARE,
+            c::WATER_DIRECT_HEATING_FRACTION,
+            c::CONDENSATION_TIME_S,
+            c::NET_VAPOUR_SHARE,
+            c::ACTIVE_LENGTH_M,
+        ),
+        format!(
+            "Conductances: H_1 = A sqrt(h_s^2 + h_DB^2) / 1e6 and H_2 = A sqrt(h_fb^2 + h_DB^2) / 1e6 MW/K, h_s = {} and h_fb = {} W/(m^2 K). Dittus-Boelter for water at 25 degC between the plates: h_DB = 0.023 Re^0.8 Pr^0.4 k / D_h, Re = rho v D_h / mu, with rho = {} kg/m^3, mu = {} Pa s, k = {} W/(m K), Pr = {}, D_h = 2 x 0.128 x 0.0254 m; zero with no flow. A power x^y is exp(y ln x) throughout.",
+            c::PLATE_FILM_CONDUCTANCE_W_PER_M2_K,
+            c::FILM_BULK_CONDUCTANCE_W_PER_M2_K,
+            c::WATER_DENSITY_KG_PER_M3,
+            c::WATER_VISCOSITY_PA_S,
+            c::WATER_CONDUCTIVITY_W_PER_M_K,
+            c::WATER_PRANDTL,
+        ),
+        format!(
+            "Boiling, per node, when the wall superheat dT_sat = theta_i + T_p - T_sat is above zero (else q_b = 0): q_n = m_n (dT_sat / ({} e^(-p / {} MPa)))^2 MW/m^2 (Thom), q_c = m_c q_Z (1 + {} (rho_f / rho_g)^{} c_l dT_sub / h_fg) (Zuber with the Ivey-Morris subcooling term), dT_sub = max(0, T_sat - (theta_i + T_w)), q_Z = {} sqrt(rho_g) h_fg (sigma g (rho_f - rho_g))^(1/4) / 1e6 MW/m^2 with the fourth root as sqrt(sqrt()), g = {} m/s^2, c_l = {} J/(kg K); q_b = q_n q_c / (q_n + q_c). m_n = {}, m_c = {}. p is the absolute pressure, (psig + {}) x {} MPa.",
+            c::THOM_SUPERHEAT_K,
+            c::THOM_PRESSURE_MPA,
+            c::IVEY_MORRIS_CONSTANT,
+            c::IVEY_MORRIS_EXPONENT,
+            c::ZUBER_CONSTANT,
+            c::GRAVITY_M_PER_S2,
+            c::WATER_SPECIFIC_HEAT_J_PER_KG_K,
+            c::NUCLEATE_MULTIPLIER,
+            c::CRITICAL_FLUX_MULTIPLIER,
+            c::ATMOSPHERE_PSI,
+            c::MPA_PER_PSI,
+        ),
+        format!(
+            "Saturation, at the system pressure and held for the run. T_sat by IAPWS-IF97 region 4 backward: beta = sqrt(sqrt(p)); E = beta^2 + n3 beta + n6, F = n1 beta^2 + n4 beta + n7, G = n2 beta^2 + n5 beta + n8, D = 2 G / (-F - sqrt(F^2 - 4 E G)), T_sat = (n10 + D - sqrt((n10 + D)^2 - 4 (n9 + n10 D))) / 2 K, with this card's n1 to n10 = {}. With tau = 1 - T_sat / {} K, Wagner and Pruss (1993): S = a1 tau + a2 tau sqrt(tau) + a3 tau^3 + a4 tau^3 sqrt(tau) + a5 tau^4 + a6 tau^7.5, a = {}; S' = a1 + 1.5 a2 sqrt(tau) + 3 a3 tau^2 + 3.5 a4 tau^2 sqrt(tau) + 4 a5 tau^3 + 7.5 a6 tau^6.5; p_s = {} e^(T_c S / T_sat) MPa, dp/dT = p_s (-T_c S / T_sat^2 - S' / T_sat); rho_f = {} (1 + sum b_i tau^(1/3, 2/3, 5/3, 16/3, 43/3, 110/3)), b = {}; rho_g = {} exp(sum c_i tau^(2/6, 4/6, 8/6, 18/6, 37/6, 71/6)), c = {}; the latent heat h_fg = T_sat (dp/dT) 1e6 (1 / rho_g - 1 / rho_f) J/kg (Clausius-Clapeyron); surface tension sigma = {} tau^{} (1 + b_s tau) N/m, b_s = {} (IAPWS 1994). tau^2 and tau^3 are products and every other power of tau is exp(y ln tau).",
+            numbers(&c::SATURATION_N),
+            c::CRITICAL_TEMPERATURE_K,
+            numbers(&c::VAPOUR_PRESSURE_A),
+            c::CRITICAL_PRESSURE_MPA,
+            c::CRITICAL_DENSITY_KG_PER_M3,
+            numbers(&c::LIQUID_DENSITY_B),
+            c::CRITICAL_DENSITY_KG_PER_M3,
+            numbers(&c::VAPOUR_DENSITY_C),
+            c::SURFACE_TENSION_N_PER_M,
+            c::SURFACE_TENSION_EXPONENT,
+            c::SURFACE_TENSION_B,
+        ),
+        format!(
+            "Reactivity, on the feedback node: rho = rho_0 - rho_mod - rho_plate - rho_void. rho_mod = phi (I(theta_f) - I(theta_f0)) + (1 - phi) (I(theta_i + T_w) - I(theta_i)) (moderator_feedback_dollar), temperatures in degC. I(theta) is the integral from 0 degC of the isothermal coefficient alpha(theta), dollars per K: {} flat up to {} degC, then straight through the points ({}) degC with ({}) dollars per K, its last segment continued; I(theta) = {} theta up to the first point, else {} x {} plus, segment by segment, alpha_i x + m_i x^2 / 2 over the width x of each segment to theta. The film's temperature as the reactivity takes it bends smoothly onto saturation: theta_f = T_sat - w ln(1 + e^((T_sat - theta_i - T_f) / w)) degC, w = {} K, computed with ln(1 + y) as ln_1p and, where the exponent u is above zero, as u + ln_1p(e^(-u)); theta_f0 is its value at T_f = 0. rho_plate = D chi (T_p - T_w) + a_D T_p (plate_feedback_dollar), D chi = {} x (3 x 17.3e-6 x 0.030 / 0.128) dollars per K, the product taken left to right: the water the plates displace, 44 cents per percent of moderator density times 3 x 17.3e-6 /K x 0.030 in / 0.128 in, a_D = {} dollars per K (Doppler and bowing, fitted). rho_void = K_v alpha_v (void_feedback_dollar), K_v = {} dollars, alpha_v = U x 1e6 / (rho_g h_fg V_w) the void fraction (void_fraction), V_w = C_w x 1e6 / ({} x {}) m^3, 0.159.",
+            c::COEFFICIENT_DOLLAR_PER_K[0],
+            c::COEFFICIENT_TEMPERATURE_C[0],
+            numbers(&c::COEFFICIENT_TEMPERATURE_C),
+            numbers(&c::COEFFICIENT_DOLLAR_PER_K),
+            c::COEFFICIENT_DOLLAR_PER_K[0],
+            c::COEFFICIENT_DOLLAR_PER_K[0],
+            c::COEFFICIENT_TEMPERATURE_C[0],
+            c::FILM_SATURATION_WIDTH_K,
+            c::DENSITY_COEFFICIENT_DOLLAR,
+            c::PLATE_COEFFICIENT_DOLLAR_PER_K,
+            c::VOID_COEFFICIENT_DOLLAR,
+            c::WATER_DENSITY_KG_PER_M3,
+            c::WATER_SPECIFIC_HEAT_J_PER_KG_K,
+        ),
+        "The step: one classical fourth-order Runge-Kutta step of the 20 values P, C_1 to C_6, E and, for the core average, the feedback node and the hot spot in turn, T_p, T_f, T_w and U, every property at each stage's own values; the landed values below the normal range are written as zero. Over the step, by the two-point Hermite rule h (f_0 + f_1) / 2 + h^2 (f'_0 - f'_1) / 12 from the values and the rates at its two ends: Q = integral of (rho_0 - rho) P (feedback_integral_dollar_mws), f' = (d(rho_0 - rho)/dt) P + (rho_0 - rho) dP/dt, and for each node S_j = integral of s (C_f T_f + C_b T_w + U) (swept_energy_mws, feedback_swept_energy_mws, hot_spot_swept_energy_mws). The rate of rho_0 - rho is phi alpha(theta_f) (d theta_f / d T_f) dT_f/dt + (1 - phi) alpha(theta_i + T_w) dT_w/dt + D chi (dT_p/dt - dT_w/dt) + a_D dT_p/dt + K_v (dalpha_v/dt), on the feedback node, with d theta_f / d T_f = 1 / (1 + e^(-u)) for u above zero and e^u / (1 + e^u) otherwise.".to_string(),
+        format!(
+            "residual_conservation_error = max(|d_N| / max(N, N_0), |d_j| / (F_j E) over the three nodes while E is above zero). Neutrons: N = P + sum C_i, N_0 its start value (population_anchor_mw), d_N = N - N_0 - (rho_0 E - Q) / l* (population_defect_mw). Node j: d_j = F_j E - (C_p T_p + C_f T_f + C_b T_w + U + S_j) (energy_defect_mws, feedback_energy_defect_mws, hot_spot_energy_defect_mws). A step past {:e} is refused, as SpontaneousGeneration when the balance that sets the residual is above zero and as FirstLawBreach when below.",
+            c::RESIDUAL_CONSERVATION_LIMIT,
+        ),
+        format!(
+            "The step ceiling, at the state a step starts from and at its landing: with r_g = (rho - 1) / l* when above zero and r_d = (1 - rho) / l* otherwise, and r_t the largest over the nodes of H_1 / C_p + (H_1 + H_2) / C_f + H_2 / C_b + 1 / tau_c + 2 s + A q_b' / C_p, q_b' = q_c^2 (2 q_n / dT_sat) / (q_n + q_c)^2 the boiling slope (zero without boiling), a step is refused as DtAboveStateCeiling when dt r_g is above {}, dt r_d above {} or dt r_t above {}. A landing whose void fraction U x 1e6 / (rho_g h_fg V_w) is one or more in any node is refused as VoidFractionAboveOne.",
+            c::GROWTH_PHASE_STEP,
+            c::DECAY_PHASE_STEP,
+            c::THERMAL_PHASE_STEP,
+        ),
+        "The run's records, at each landed step: while past_power_peak is unset, a P strictly above peak_power_mw (P_0 at the start) sets peak_power_mw, peak_energy_mws, peak_time_s and peak_plate_rise_k to its P, E, t and hot-spot T_p; a hot-spot T_p strictly above plate_rise_max_k (0 at the start) sets it and plate_rise_max_time_s. past_power_peak is set by the first landed step whose dP/dt (power_rate_mw_per_s, at the landed state) is not above zero; past_plate_maximum by the first landed step after it whose hot-spot dT_p/dt (hot_spot_plate_rate_k_per_s) is not above zero, and the next step is refused as PastPlateTemperatureMaximum, the run's end. hot_spot_plate_temperature_k = theta_i + hot-spot T_p in K; reactivity_net_dollar = rho; prompt_supercritical is rho above 1, hot_spot_boiling theta_i + hot-spot T_p above T_sat (saturation_temperature_k).".to_string(),
+        format!("The state's keys, in the order the engine writes them: {}.", state_keys.join(", ")),
+    ]
+}

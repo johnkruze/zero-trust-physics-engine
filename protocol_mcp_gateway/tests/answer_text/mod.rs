@@ -24,11 +24,11 @@ fn given() -> &'static Mutex<HashMap<String, Vec<(Value, String)>>> {
 
 /// Remember the text of an answer, when it is one that ends with a receipt.
 pub fn remember(text: &str) {
-    if !text.contains("\"receipt_sha256\"") {
+    if !text.contains("\"receipt_sha384\"") {
         return;
     }
     let Ok(value) = serde_json::from_str::<Value>(text) else { return };
-    let Some(receipt) = value.get("receipt_sha256").and_then(Value::as_str).map(str::to_string) else { return };
+    let Some(receipt) = value.get("receipt_sha384").and_then(Value::as_str).map(str::to_string) else { return };
     let mut given = given().lock().unwrap();
     let entries = given.entry(receipt).or_default();
     if !entries.iter().any(|(held, _)| *held == value) {
@@ -46,7 +46,7 @@ pub fn as_sent(body: &Value) -> String {
 }
 
 fn write(given: &HashMap<String, Vec<(Value, String)>>, value: &Value, out: &mut String) {
-    if let Some(receipt) = value.get("receipt_sha256").and_then(Value::as_str) {
+    if let Some(receipt) = value.get("receipt_sha384").and_then(Value::as_str) {
         if let Some((_, text)) = given.get(receipt).and_then(|entries| entries.iter().find(|(held, _)| held == value)) {
             out.push_str(text);
             return;

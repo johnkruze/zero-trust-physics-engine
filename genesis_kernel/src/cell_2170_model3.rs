@@ -416,6 +416,7 @@ extern crate core;
 
 use core::prelude::v1::*;
 
+use crate::exceedance::{Exceedance, ExceedanceKind, Side};
 use crate::frame::LastStateFrame64;
 use crate::normal::{normal_or_zero, normal_or_zero_each};
 use crate::math::{exp, log};
@@ -1253,6 +1254,26 @@ pub fn step(
     load: CellLoad,
     dt_s: f64,
 ) -> Result<(), StepReject> {
+    #[cfg(any(test, debug_assertions, feature = "check_exceedances"))]
+    let before = *state;
+    let stepped = step_landed(cell, state, frame, load, dt_s);
+    #[cfg(any(test, debug_assertions, feature = "check_exceedances"))]
+    if stepped.is_ok() {
+        crate::exceedance::debug_check("cell_2170_model3", exceedances(cell, &before, state, load, dt_s), frame.flags);
+    }
+    stepped
+}
+
+/// The step itself; [`step`] is it with, in a build that checks
+/// (`crate::exceedance::CHECKED`), the check that [`exceedances`] stands for
+/// the flags it wrote.
+fn step_landed(
+    cell: &Cell2170Model3,
+    state: &mut CellState,
+    frame: &mut LastStateFrame64,
+    load: CellLoad,
+    dt_s: f64,
+) -> Result<(), StepReject> {
     step_as_computed(cell, state, frame, load, dt_s)?;
     normal_or_zero_state(state);
     Ok(())
@@ -1874,6 +1895,210 @@ fn state_is_finite(state: &CellState) -> bool {
         && state.heat_j.is_finite()
         && state.energy_defect_j.is_finite()
         && state.residual_conservation_error.is_finite()
+}
+
+/// Every limit a flag of this card can mark: what [`exceedances`] reports
+/// beside a flag's bit (`crate::exceedance`).
+pub const EXCEEDANCE_KINDS: &[crate::exceedance::ExceedanceKind] = &[
+    SUSTAINED_KIND,
+    CAPACITY_LOW,
+    CAPACITY_HIGH,
+    CASE_LOW,
+    CASE_HIGH,
+    DISCHARGE_HIGH,
+    CHARGE_HIGH,
+    BLOCK_CASE_LOW,
+    BLOCK_CASE_HIGH,
+    BLOCK_CAPACITY_LOW,
+    BLOCK_CAPACITY_HIGH,
+    CASE_CHANGE,
+    CASE_SPAN,
+    MEAN_DISCHARGE_HIGH,
+    MEAN_CHARGE_HIGH,
+    SOC_LOW,
+    SOC_HIGH,
+];
+
+const SUSTAINED_KIND: ExceedanceKind = ExceedanceKind::fixed(
+    "FLAG_SUSTAINED_ABOVE_1C",
+    FLAG_SUSTAINED_ABOVE_1C,
+    "current_mean_a",
+    "A",
+    Side::Above,
+    SUSTAINED_FLAG_A,
+    "a running mean discharge current of 4.6 A, just above 1C: only the hill cycle reaches this region",
+);
+const fn outside(quantity: &'static str, unit: &'static str, side: Side, limit: f64, words: &'static str) -> ExceedanceKind {
+    ExceedanceKind::fixed("FLAG_OUTSIDE_COMPARED_RUNS", FLAG_OUTSIDE_COMPARED_RUNS, quantity, unit, side, limit, words)
+}
+const fn outside_varying(quantity: &'static str, unit: &'static str, side: Side, words: &'static str) -> ExceedanceKind {
+    ExceedanceKind::varying("FLAG_OUTSIDE_COMPARED_RUNS", FLAG_OUTSIDE_COMPARED_RUNS, quantity, unit, side, words)
+}
+const CAPACITY_WORDS: &str = "the capacities of the compared cells, 4.16 to 4.70 Ah";
+const CAPACITY_LOW: ExceedanceKind = outside("capacity_ah", "Ah", Side::Below, CAPACITY_MIN_AH, CAPACITY_WORDS);
+const CAPACITY_HIGH: ExceedanceKind = outside("capacity_ah", "Ah", Side::Above, CAPACITY_MAX_AH, CAPACITY_WORDS);
+const CASE_WORDS: &str = "the case temperatures of the compared runs, -12.9 to 45.9 degC";
+const CASE_LOW: ExceedanceKind = outside("case_temperature_c", "degC", Side::Below, CASE_TEMPERATURE_MIN_C, CASE_WORDS);
+const CASE_HIGH: ExceedanceKind = outside("case_temperature_c", "degC", Side::Above, CASE_TEMPERATURE_MAX_C, CASE_WORDS);
+const DISCHARGE_HIGH: ExceedanceKind = outside(
+    "current_a",
+    "A",
+    Side::Above,
+    DISCHARGE_CURRENT_MAX_A,
+    "the largest discharging current compared, 13.524 A (discharge is positive)",
+);
+const CHARGE_HIGH: ExceedanceKind = outside(
+    "current_a",
+    "A",
+    Side::Below,
+    -CHARGE_CURRENT_MAX_A,
+    "the largest charging current compared, 13.984 A, as the negative current -13.984 A",
+);
+const BLOCK_CASE_WORDS: &str = "the nearer edge of the case temperatures of the compared blocks of tests that hold the step's capacity: no block held this capacity and case temperature together";
+const BLOCK_CASE_LOW: ExceedanceKind = outside_varying("case_temperature_c", "degC", Side::Below, BLOCK_CASE_WORDS);
+const BLOCK_CASE_HIGH: ExceedanceKind = outside_varying("case_temperature_c", "degC", Side::Above, BLOCK_CASE_WORDS);
+const BLOCK_CAPACITY_WORDS: &str = "the nearer edge of the capacities of the compared blocks of tests: no block held this capacity at any case temperature";
+const BLOCK_CAPACITY_LOW: ExceedanceKind = outside_varying("capacity_ah", "Ah", Side::Below, BLOCK_CAPACITY_WORDS);
+const BLOCK_CAPACITY_HIGH: ExceedanceKind = outside_varying("capacity_ah", "Ah", Side::Above, BLOCK_CAPACITY_WORDS);
+const CASE_CHANGE: ExceedanceKind = outside(
+    "case_temperature_change_k",
+    "K",
+    Side::Above,
+    CASE_TEMPERATURE_CHANGE_MAX_K,
+    "the largest change of case temperature from one step to the next in the compared runs, 5.4 K",
+);
+const CASE_SPAN: ExceedanceKind = outside(
+    "case_temperature_span_k",
+    "K",
+    Side::Above,
+    CASE_TEMPERATURE_SPAN_MAX_K,
+    "the widest span of case temperature within one compared run, 19.2 K",
+);
+const MEAN_DISCHARGE_HIGH: ExceedanceKind = outside(
+    "current_mean_a",
+    "A",
+    Side::Above,
+    SUSTAINED_DISCHARGE_MAX_A,
+    "the largest running mean discharging current compared, 8.722 A",
+);
+const MEAN_CHARGE_HIGH: ExceedanceKind = outside(
+    "current_mean_a",
+    "A",
+    Side::Below,
+    -SUSTAINED_CHARGE_MAX_A,
+    "the largest running mean charging current compared, 2.993 A, as the negative current -2.993 A",
+);
+const SOC_WORDS: &str = "the states of charge of the compared runs, 0 to 1.02; set past them by more than the running sum's rounding allowance";
+const SOC_LOW: ExceedanceKind = outside("state_of_charge", "1", Side::Below, STATE_OF_CHARGE_MIN, SOC_WORDS);
+const SOC_HIGH: ExceedanceKind = outside("state_of_charge", "1", Side::Above, STATE_OF_CHARGE_MAX, SOC_WORDS);
+
+/// The capacity and case temperature that no block held together, read
+/// against the nearer edge: the case temperature against the blocks that
+/// hold the capacity, or, where none does, the capacity against every block.
+fn block_record(cell: &Cell2170Model3, capacity_ah: f64, case_c: f64) -> Exceedance {
+    fn keep(nearest: &mut Option<(f64, Exceedance)>, distance: f64, record: Exceedance) {
+        if nearest.is_none_or(|(held, _)| distance < held) {
+            *nearest = Some((distance, record));
+        }
+    }
+    let mut nearest: Option<(f64, Exceedance)> = None;
+    let mut block = 0;
+    while block < BLOCK_COUNT {
+        let least_ah = cell.block_capacity_least_ah[block];
+        let most_ah = cell.block_capacity_most_ah[block];
+        if capacity_ah >= least_ah && capacity_ah <= most_ah {
+            let least_c = cell.block_case_temperature_least_c[block];
+            let most_c = cell.block_case_temperature_most_c[block];
+            if case_c < least_c {
+                keep(&mut nearest, least_c - case_c, Exceedance::at(BLOCK_CASE_LOW, least_c, case_c));
+            } else if case_c > most_c {
+                keep(&mut nearest, case_c - most_c, Exceedance::at(BLOCK_CASE_HIGH, most_c, case_c));
+            }
+        }
+        block += 1;
+    }
+    if let Some((_, record)) = nearest {
+        return record;
+    }
+    let mut block = 0;
+    while block < BLOCK_COUNT {
+        let least_ah = cell.block_capacity_least_ah[block];
+        let most_ah = cell.block_capacity_most_ah[block];
+        if capacity_ah < least_ah {
+            keep(&mut nearest, least_ah - capacity_ah, Exceedance::at(BLOCK_CAPACITY_LOW, least_ah, capacity_ah));
+        } else if capacity_ah > most_ah {
+            keep(&mut nearest, capacity_ah - most_ah, Exceedance::at(BLOCK_CAPACITY_HIGH, most_ah, capacity_ah));
+        }
+        block += 1;
+    }
+    match nearest {
+        Some((_, record)) => record,
+        None => Exceedance::at(BLOCK_CAPACITY_LOW, capacity_ah, capacity_ah),
+    }
+}
+
+/// The limits the step from `before` to `after` under `load` over `dt_s`
+/// is past: one record for each limit a flag set on its frame marks.
+/// The conditions are those of `compared_flags`, from the state before the
+/// step, its load, and the running mean and state of charge it landed at.
+pub fn exceedances(
+    cell: &Cell2170Model3,
+    before: &CellState,
+    after: &CellState,
+    load: CellLoad,
+    dt_s: f64,
+) -> crate::exceedance::Exceedances {
+    let mut records = crate::exceedance::Exceedances::new();
+    let state = before;
+    let current_mean_a = after.current_mean_a;
+    let state_of_charge = after.state_of_charge;
+    let allowance = state_of_charge_allowance(cell, state.t_s, dt_s);
+    records.push_if(current_mean_a > cell.sustained_flag_a, Exceedance::at(SUSTAINED_KIND, cell.sustained_flag_a, current_mean_a));
+    let capacity = state.capacity_ah;
+    records.push_if(!(capacity >= cell.capacity_min_ah), Exceedance::at(CAPACITY_LOW, cell.capacity_min_ah, capacity));
+    records.push_if(!(capacity <= cell.capacity_max_ah), Exceedance::at(CAPACITY_HIGH, cell.capacity_max_ah, capacity));
+    let case_c = load.case_temperature_c;
+    records.push_if(case_c < cell.case_temperature_min_c, Exceedance::at(CASE_LOW, cell.case_temperature_min_c, case_c));
+    records.push_if(case_c > cell.case_temperature_max_c, Exceedance::at(CASE_HIGH, cell.case_temperature_max_c, case_c));
+    records.push_if(
+        load.current_a > cell.discharge_current_max_a,
+        Exceedance::at(DISCHARGE_HIGH, cell.discharge_current_max_a, load.current_a),
+    );
+    records.push_if(
+        load.current_a < -cell.charge_current_max_a,
+        Exceedance::at(CHARGE_HIGH, -cell.charge_current_max_a, load.current_a),
+    );
+    if !cell.capacity_compared_at(capacity, case_c) {
+        records.push(block_record(cell, capacity, case_c));
+    }
+    let change = abs_f64(case_c - state.case_temperature_c);
+    records.push_if(
+        state.t_s > 0.0 && !(change <= cell.case_temperature_change_max_k),
+        Exceedance::at(CASE_CHANGE, cell.case_temperature_change_max_k, change),
+    );
+    if state.case_span_known {
+        let least = if case_c < state.case_temperature_least_c { case_c } else { state.case_temperature_least_c };
+        let most = if case_c > state.case_temperature_most_c { case_c } else { state.case_temperature_most_c };
+        let span = most - least;
+        records.push_if(!(span <= cell.case_temperature_span_max_k), Exceedance::at(CASE_SPAN, cell.case_temperature_span_max_k, span));
+    }
+    records.push_if(
+        !(current_mean_a <= cell.sustained_discharge_max_a),
+        Exceedance::at(MEAN_DISCHARGE_HIGH, cell.sustained_discharge_max_a, current_mean_a),
+    );
+    records.push_if(
+        !(current_mean_a >= -cell.sustained_charge_max_a),
+        Exceedance::at(MEAN_CHARGE_HIGH, -cell.sustained_charge_max_a, current_mean_a),
+    );
+    records.push_if(
+        !(state_of_charge >= cell.state_of_charge_min - allowance),
+        Exceedance::at(SOC_LOW, cell.state_of_charge_min, state_of_charge),
+    );
+    records.push_if(
+        !(state_of_charge <= cell.state_of_charge_max + allowance),
+        Exceedance::at(SOC_HIGH, cell.state_of_charge_max, state_of_charge),
+    );
+    records
 }
 
 #[cfg(test)]

@@ -128,7 +128,7 @@ pub fn reject_name(reject: &HoseReject) -> &'static str {
 
 fn field_words() -> String {
     format!(
-        "SHA-256 of the count of the numbers that follow as 8 little-endian bytes, then the gain at each of the {} points of the logarithmic scan from {} Hz to 1.25 times the sixth lossless mode, or to where slip flow begins in the viscous layer at the mean pressure where that is lower, as little-endian f64 bytes.",
+        "SHA-384 of the count of the numbers that follow as 8 little-endian bytes, then the gain at each of the {} points of the logarithmic scan from {} Hz to 1.25 times the sixth lossless mode, or to where slip flow begins in the viscous layer at the mean pressure where that is lower, as little-endian f64 bytes.",
         hose::SCAN_POINTS,
         hose::SCAN_LOW_HZ
     )

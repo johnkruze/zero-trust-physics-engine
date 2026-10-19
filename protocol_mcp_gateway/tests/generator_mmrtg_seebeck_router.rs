@@ -131,7 +131,7 @@ fn a_restart_from_a_returned_mission_time_lands_where_the_run_straight_through_l
             "parameters": { "mission_time_s": ninth_s, "dt_s": dt_s }
         }))
         .expect("the single step is answered");
-    assert!(step["sha256_seal"].is_string(), "{step}");
+    assert!(step["sha384_seal"].is_string(), "{step}");
 }
 
 /// Steps past the last day of the record complete with both flags: two
@@ -205,7 +205,7 @@ fn the_companion_shares_the_fuel_of_generator_mmrtg_f1_and_not_its_output() {
     }
     let gap_w = bits(&original["state"]["electrical_power_w_hex"]) - bits(&companion["state"]["electrical_power_w_hex"]);
     assert!((gap_w - 0.1994).abs() < 1.0e-3, "{gap_w}");
-    assert_ne!(original["sha256_seal"], companion["sha256_seal"]);
+    assert_ne!(original["sha384_seal"], companion["sha384_seal"]);
 }
 
 /// The description says, first, what the card is: the second form of the

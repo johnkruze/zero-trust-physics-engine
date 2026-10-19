@@ -419,6 +419,16 @@ fn blast_wave_tnt_air() -> Kit {
     }
 }
 
+fn blast_wave_tnt_air_twin() -> Kit {
+    use blast_wave_tnt_air_twin::*;
+    Kit {
+        model: "blast_wave_tnt_air_twin",
+        numbers: vec![("charge_mass_kg".into(), 1.0), ("distance_m".into(), 5.0)],
+        solve: |n| debug(solve(&TwinQuestion { charge_mass_kg: n[0], distance_m: n[1], burst: blast_wave_tnt_air::Burst::FreeAir })),
+        every_number: true,
+    }
+}
+
 fn stress_plate_hole_s235() -> Kit {
     use stress_plate_hole_s235::*;
     Kit {
@@ -513,7 +523,7 @@ fn plasma_sheath_ram_c2() -> Kit {
     }
 }
 
-const SOLVERS: [(&str, fn() -> Kit); 24] = [
+const SOLVERS: [(&str, fn() -> Kit); 25] = [
     ("atom_dft", atom_dft),
     ("ablator_slab", ablator_slab),
     ("journal_bearing_sheffield", journal_bearing_sheffield),
@@ -533,6 +543,7 @@ const SOLVERS: [(&str, fn() -> Kit); 24] = [
     ("orifice_air_chamber", orifice_air_chamber),
     ("pneumatic_hose_resonance", pneumatic_hose_resonance),
     ("blast_wave_tnt_air", blast_wave_tnt_air),
+    ("blast_wave_tnt_air_twin", blast_wave_tnt_air_twin),
     ("stress_plate_hole_s235", stress_plate_hole_s235),
     ("stress_plate_hole_s235_elastic", stress_plate_hole_s235_elastic),
     ("icf_hotspot_burn", icf_hotspot_burn),

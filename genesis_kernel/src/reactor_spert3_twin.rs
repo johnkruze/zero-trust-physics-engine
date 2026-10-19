@@ -14,19 +14,23 @@
 //! the card. `reactor_spert3` and `reactor_spert3_fuel` are served beside it
 //! unchanged.
 //!
-//! Fitted on all 70 tests, at the median test: peak power within 6.0
-//! percent, energy to peak within 7.9, time to peak within 3.4 and the
+//! Fitted on all 70 tests, run on to the minimum of the fit's objective
+//! (226.98; 237.67 at 0.14.3), at the median test: peak power within 6.3
+//! percent, energy to peak within 8.7, time to peak within 4.0 and the
 //! hot-spot clad temperature rise within 9.5; in the report's standard
-//! deviations, root mean square 1.46, 2.78, 3.19 and 1.31, with 67 of 70, 62
-//! of 70, 41 of 66 and 62 of 69 tests within two. Compared with tests left out
-//! of the fit, each predicted by the twelve numbers refitted on the other 69:
-//! 6.2, 7.8, 3.0 and 10.5 percent at the median; 1.47, 2.82, 3.37 and 1.36
-//! sd. By series, peak power and time to peak at the median, fit and left
-//! out: cold startup 4.2 and 2.7 percent, both; 260 degF 15.4 and 3.4, 13.4
-//! and 2.7; 500 degF 4.3 and 3.7, 3.5 and 3.0; hot standby 14.8 and 4.2, 15.5
-//! and 2.5. The largest gap: the three operating-power tests from 19 MW, energy
-//! to peak 82 percent low and time to peak 39 percent early, broad maxima
-//! timed on a hand-started clock (IDO-17281 p. 148). The record:
+//! deviations, root mean square 0.99, 2.72, 3.22 and 1.34, with 67 of 70, 64
+//! of 70, 40 of 66 and 60 of 69 tests within two. Compared with tests left out
+//! of the fit, each refitted on the other 69 from a start that never saw it:
+//! 6.8, 8.6, 4.1 and 9.2 percent at the median; 2.15, 2.87, 3.33 and 1.39
+//! sd. By series, peak power and time to peak at the median, left out: cold
+//! startup 5.0 and 3.1 percent; 260 degF 14.9 and 4.2; 500 degF 6.3 and 5.0;
+//! hot standby 12.7 and 3.6. The largest gap: the three operating-power tests from 19 MW, energy
+//! to peak 82 percent low and time to peak 39 percent early, in the first
+//! 0.15 s: Figs. D-68 to D-70 put the reactivity in over 0.10 to 0.16 s,
+//! longer for the smaller insertion, where the rod here takes 0.06 to 0.08 s;
+//! not the hand-started clock of those tests (IDO-17281 p. 148), Table VII's
+//! times agreeing with the figures' from the transient's start within 0.012
+//! s. The record:
 //! `evidence/research/reactor_spert3/twin/` (`COMPARISON.md`, `score.py`).
 //!
 //! ```text
@@ -41,7 +45,10 @@
 //! clad                  C_c dT_c/dt = f_c P + G_fc (T_5 − T_c) − q_cw(T_c, T_w)
 //! clad to water         q_cw = S [h (T_c − T_w) + q_nb(T_c − T_sat)],  q_nb(Δ) = (Δ e^(p / 6.2 MPa) / 25 K)^4 MW/m², Δ > 0
 //! water                 C_w dT_w/dt = f_w P + q_cw − C_w (2 v / L) (T_w − T_in)
-//! hot rod               the same rings and clad at F_hot = c_h PF(T_in) times the power, cooled by the same water
+//! hot rod               the same rings and clad at F_hot = c_h PF(T_in) times the power, cooled by the same water:
+//!                       the clad thermocouple's place, its clad temperature the one compared
+//! peak rod              the same rings and clad at PF(T_in) itself, nothing fitted: the fuel temperatures,
+//!                       the margin to melting and the FuelMelting stop; it feeds back nothing
 //! energy released       dE/dt = P
 //! ```
 //!
@@ -68,13 +75,13 @@
 //! heat, viscosity and conductivity (polynomials fitted to the NIST WebBook
 //! isobar at 10.44 MPa, 290 to 540 K, within 0.02, 0.17, 1.05 and 0.04
 //! percent), Dittus-Boelter for forced convection and Jens-Lottes for
-//! nucleate boiling. Fitted on the 70 tests, nine constants of the card:
+//! nucleate boiling. Fitted on the 70 tests, eight constants of the card:
 //! [`ROD_DELAY_S`], [`ROD_ACCELERATION_GAIN_PER_MPA`], [`DOPPLER_WEIGHT`],
 //! [`DOPPLER_PEAKING_SHARE`], [`DOPPLER_SCALE_HOT`] (two),
-//! [`MODERATOR_WEIGHT`], [`HOT_SPOT_SHARE`] and
-//! [`NATURAL_CONVECTION_W_PER_M2_K`]; and three start powers, which the
+//! [`HOT_SPOT_SHARE`] and [`NATURAL_CONVECTION_W_PER_M2_K`], with
+//! [`MODERATOR_WEIGHT`] held at one; and three start powers, which the
 //! startup tables do not give and a caller sends as `initial_power_mw`:
-//! 11.7719 W cold, 4.04032 W at 260 degF and 12.4711 W at 500 degF (the
+//! 7.9949547 W cold, 4.1397337 W at 260 degF and 8.3415176 W at 500 degF (the
 //! report says about 50 W cold and 10 to 50 W hot). Table VII's initial
 //! powers are the report's, per test.
 //!
@@ -85,7 +92,7 @@
 //! stage weight shows in `N − N_anchor − W / l*`. The energy released `E`
 //! equals the heat held in the rings, the clad and the water, from Fink's
 //! enthalpy in closed form, plus the heat the flow has carried out, and the
-//! hot rod's share equals its own heat held plus its heat to the water. The
+//! hot rod's share, and the peak rod's, equals its own heat held plus its heat to the water. The
 //! residual is the largest of the three defects, the population's over the
 //! population and the two energies' over the energy released or one kelvin
 //! of the core, whichever is larger.
@@ -101,7 +108,7 @@
 //! `core` only; `sqrt` from IEEE 754 and every other function from
 //! [`crate::math`]. The state is `Copy`. An accepted step writes time, power,
 //! energy released, net reactivity, the average fuel temperature, the
-//! hot-spot clad temperature, the water temperature, the hot-spot fuel's
+//! hot-spot clad temperature, the water temperature, the peak rod's fuel
 //! margin to melting and the residual into [`LastStateFrame64`]. The 16-byte
 //! frame proof is not touched.
 
@@ -109,6 +116,7 @@ extern crate core;
 
 use core::prelude::v1::*;
 
+use crate::exceedance::{Exceedance, ExceedanceKind, Side};
 use crate::frame::LastStateFrame64;
 use crate::normal::{normal_or_zero, normal_or_zero_each};
 
@@ -116,8 +124,9 @@ use crate::normal::{normal_or_zero, normal_or_zero_each};
 pub const RINGS: usize = 6;
 /// Length of the integrated vector: power, six precursors, the average rod's
 /// rings and clad, the hot rod's rings and clad, the water, the energy
-/// released, the heat the flow carried out and the hot rod's heat to the water.
-const NY: usize = 13 + 2 * RINGS;
+/// released, the heat the flow carried out and the hot rod's heat to the water,
+/// then the peak rod's rings and clad and its heat to the water.
+const NY: usize = 15 + 3 * RINGS;
 const IP: usize = 0;
 const IC: usize = 1;
 const IF: usize = 7;
@@ -128,6 +137,9 @@ const IW: usize = 9 + 2 * RINGS;
 const IE: usize = 10 + 2 * RINGS;
 const IQ: usize = 11 + 2 * RINGS;
 const IQH: usize = 12 + 2 * RINGS;
+const IK: usize = 13 + 2 * RINGS;
+const IKCLAD: usize = 13 + 3 * RINGS;
+const IQK: usize = 14 + 3 * RINGS;
 
 /// Delayed-neutron group fractions `b_i`, fractions of the total delayed
 /// fraction; sum 1. IDO-17281, Appendix B 3.3.
@@ -136,8 +148,10 @@ pub const GROUP_FRACTION: [f64; 6] = [0.0352, 0.2014, 0.1858, 0.4006, 0.1437, 0.
 pub const GROUP_DECAY_PER_S: [f64; 6] = [0.0127, 0.0317, 0.1167, 0.3142, 1.4007, 3.8803];
 
 /// The three temperatures of the report's tables, K: 70, 250 and 500 degF.
-/// Every quantity given at them is interpolated linearly in the inlet
-/// temperature between them and continued along the nearer segment outside.
+/// Every quantity given at them is interpolated linearly between them and
+/// continued along the nearer segment outside, in the inlet temperature but
+/// for the moderator coefficient, which is taken in the water temperature and
+/// integrated from the start's water temperature (`moderator_integral`).
 pub const TABLE_TEMPERATURE_K: [f64; 3] = [(70.0 + 459.67) / 1.8, (250.0 + 459.67) / 1.8, (500.0 + 459.67) / 1.8];
 /// Reduced prompt-neutron generation time `l*`, s. IDO-17281 Table II.
 pub const GENERATION_TIME_REDUCED_S: [f64; 3] = [0.00215, 0.00218, 0.00225];
@@ -237,27 +251,29 @@ pub const JENS_LOTTES_K: f64 = 25.0;
 pub const JENS_LOTTES_PRESSURE_MPA: f64 = 6.2;
 
 /// Delay from the clock's zero to the start of the rod's motion, s. Fitted.
-pub const ROD_DELAY_S: f64 = 0.00246118;
+pub const ROD_DELAY_S: f64 = 0.0010369315;
 /// Weight `F_D` of the average fuel temperature rise in the Doppler
 /// feedback: its slope at the start is `F_D A / T̄_0`. Fitted.
-pub const DOPPLER_WEIGHT: f64 = 0.954200;
+pub const DOPPLER_WEIGHT: f64 = 0.92835769;
 /// Share `c_κ` of the peak-to-average power density that sets how the
 /// Doppler feedback saturates, `κ = c_κ PF(T_in)`. Fitted.
-pub const DOPPLER_PEAKING_SHARE: f64 = 0.476328;
+pub const DOPPLER_PEAKING_SHARE: f64 = 0.26584318;
 /// The Doppler coefficient at 250 and at 500 degF over Table II's, the 70
 /// degF value as printed. Fitted.
-pub const DOPPLER_SCALE_HOT: [f64; 2] = [1.13261, 1.48122];
+pub const DOPPLER_SCALE_HOT: [f64; 2] = [1.1674972, 1.4828376];
 /// The rod's acceleration at the system pressure over its design value,
 /// less one, per MPa: `a = 2000 in/s² (1 + g p)`. Fitted.
-pub const ROD_ACCELERATION_GAIN_PER_MPA: f64 = 0.0219966;
-/// Weight `W_M` on the moderator feedback. Fitted.
-pub const MODERATOR_WEIGHT: f64 = 1.02792;
+pub const ROD_ACCELERATION_GAIN_PER_MPA: f64 = 0.024930321;
+/// Weight `W_M` on the moderator feedback: held at one, Table II's
+/// coefficient as printed (fitted, it moved 21 percent between refits at no
+/// change in the fit).
+pub const MODERATOR_WEIGHT: f64 = 1.0;
 /// Share `c_h` of the peak-to-average power density at the clad
 /// thermocouple: the hot rod runs at `F_hot = c_h PF(T_in)` times the average rod. Fitted.
-pub const HOT_SPOT_SHARE: f64 = 1.40615;
+pub const HOT_SPOT_SHARE: f64 = 1.4328386;
 /// Heat transfer coefficient added to Dittus-Boelter's, W/(m² K): free
 /// convection, the whole of it with no flow. Fitted.
-pub const NATURAL_CONVECTION_W_PER_M2_K: f64 = 3787.37;
+pub const NATURAL_CONVECTION_W_PER_M2_K: f64 = 3707.8868;
 
 /// `max(|N − N_anchor − W / l*| / N, energy defects)` must stay at or under this.
 pub const RESIDUAL_CONSERVATION_LIMIT: f64 = 1.0e-6;
@@ -278,12 +294,125 @@ pub const FLAG_PAST_PEAK: u64 = 1 << 1;
 pub const FLAG_HOT_SPOT_BOILING: u64 = 1 << 2;
 /// The net reactivity is above one dollar.
 pub const FLAG_PROMPT_SUPERCRITICAL: u64 = 1 << 3;
-/// The run is outside the conditions the 70 tests span: inlet 53 to 513 degF,
-/// flow 0 to 24 ft/s, initial power to 19 MW, reactivity 0.46 to 1.29 dollars,
-/// pressure 0.0853 to 10.44 MPa.
+/// The run is farther than one from the nearest of the 70 tested conditions,
+/// in [`compared_distance`]: inlet temperature in 25 K, pressure in factors of
+/// 2, flow in 1.5 m/s, initial power in factors of 10 and reactivity in 0.1 dollar.
 pub const FLAG_OUTSIDE_COMPARED: u64 = 1 << 4;
 
-/// Edges of the compared span of each start field and the reactivity.
+/// The 70 tested conditions of IDO-17281 Tables III, V and VII, in the card's
+/// start fields and load: inlet temperature K, pressure MPa, flow m/s, initial
+/// power MW (the three fitted start powers for the startup tests) and the
+/// reactivity sent, dollars (the inhour value of the printed period for the
+/// startups, Table VII's insertion for the rest). Conditions only: no measured
+/// outcome of the tables is here.
+pub const COMPARED_CONDITIONS: [[f64; 5]; 70] = [
+    [296.48333333333335, 0.0853, 0.0, 7.9949547e-06, 0.768622], // test 22
+    [294.2611111111111, 0.0853, 0.0, 7.9949547e-06, 0.890085], // test 18
+    [290.37222222222226, 0.0853, 0.0, 7.9949547e-06, 0.933346], // test 13
+    [290.9277777777778, 0.0853, 0.0, 7.9949547e-06, 0.937262], // test 14
+    [291.48333333333335, 0.0853, 0.0, 7.9949547e-06, 0.972309], // test 39
+    [294.2611111111111, 0.0853, 0.0, 7.9949547e-06, 0.973376], // test 23
+    [298.7055555555556, 0.0853, 0.0, 7.9949547e-06, 0.981415], // test 45
+    [292.03888888888895, 0.0853, 0.0, 7.9949547e-06, 0.981998], // test 15
+    [300.9277777777778, 0.0853, 0.0, 7.9949547e-06, 0.982086], // test 50
+    [298.15000000000003, 0.0853, 0.0, 7.9949547e-06, 0.982381], // test 44
+    [293.7055555555556, 0.0853, 0.0, 7.9949547e-06, 0.983103], // test 46
+    [306.48333333333335, 0.0853, 0.0, 7.9949547e-06, 0.983144], // test 71
+    [293.15000000000003, 0.0853, 0.0, 7.9949547e-06, 0.984979], // test 17
+    [292.5944444444445, 0.0853, 0.0, 7.9949547e-06, 0.986262], // test 74
+    [292.03888888888895, 0.0853, 0.0, 7.9949547e-06, 0.987572], // test 87
+    [292.5944444444445, 0.0853, 0.0, 7.9949547e-06, 0.99029], // test 73
+    [300.9277777777778, 0.0853, 0.0, 7.9949547e-06, 0.99831], // test 51
+    [297.5944444444445, 0.0853, 0.0, 7.9949547e-06, 1.001533], // test 49
+    [292.5944444444445, 0.0853, 0.0, 7.9949547e-06, 1.009989], // test 16
+    [286.48333333333335, 0.0853, 0.0, 7.9949547e-06, 1.013991], // test 38
+    [293.7055555555556, 0.0853, 0.0, 7.9949547e-06, 1.028949], // test 19
+    [295.37222222222226, 0.0853, 0.0, 7.9949547e-06, 1.045389], // test 20
+    [293.15000000000003, 0.0853, 0.0, 7.9949547e-06, 1.049964], // test 75
+    [295.37222222222226, 0.0853, 0.0, 7.9949547e-06, 1.086001], // test 21
+    [292.5944444444445, 0.0853, 0.0, 7.9949547e-06, 1.087414], // test 40
+    [296.48333333333335, 0.0853, 0.0, 7.9949547e-06, 1.092043], // test 48
+    [295.37222222222226, 0.0853, 0.0, 7.9949547e-06, 1.098717], // test 47
+    [294.2611111111111, 0.0853, 0.0, 7.9949547e-06, 1.12771], // test 41
+    [298.7055555555556, 0.0853, 0.0, 7.9949547e-06, 1.164758], // test 42
+    [298.7055555555556, 0.0853, 0.0, 7.9949547e-06, 1.210365], // test 43
+    [399.2611111111111, 10.44, 4.2672, 4.1397337e-06, 0.751401], // test 24
+    [399.2611111111111, 10.44, 4.2672, 4.1397337e-06, 0.75787], // test 25
+    [399.2611111111111, 10.44, 6.7056000000000004, 4.1397337e-06, 0.919241], // test 36
+    [399.2611111111111, 10.44, 4.2672, 4.1397337e-06, 0.932461], // test 26
+    [399.2611111111111, 10.44, 0.7315200000000001, 4.1397337e-06, 0.970007], // test 30
+    [399.2611111111111, 10.44, 5.7912, 4.1397337e-06, 0.975297], // test 37
+    [399.2611111111111, 10.44, 6.7056000000000004, 4.1397337e-06, 0.978097], // test 33
+    [399.2611111111111, 10.44, 4.2672, 4.1397337e-06, 0.97867], // test 27
+    [399.2611111111111, 10.44, 6.7056000000000004, 4.1397337e-06, 0.987953], // test 35
+    [399.2611111111111, 10.44, 6.7056000000000004, 4.1397337e-06, 1.000715], // test 34
+    [399.2611111111111, 10.44, 4.2672, 4.1397337e-06, 1.033574], // test 28
+    [399.2611111111111, 10.44, 0.7315200000000001, 4.1397337e-06, 1.037079], // test 31
+    [399.2611111111111, 10.44, 0.7315200000000001, 4.1397337e-06, 1.089915], // test 32
+    [399.2611111111111, 10.44, 4.2672, 4.1397337e-06, 1.10215], // test 29
+    [394.8166666666667, 10.44, 4.2672, 4.1397337e-06, 1.206769], // test 70
+    [533.15, 10.44, 4.2672, 8.3415176e-06, 0.642335], // test 52
+    [533.15, 10.44, 4.2672, 8.3415176e-06, 0.761913], // test 53
+    [533.7055555555556, 10.44, 4.2672, 8.3415176e-06, 0.836652], // test 63
+    [533.7055555555556, 10.44, 1.4630400000000001, 8.3415176e-06, 0.83997], // test 64
+    [533.15, 10.44, 7.315200000000001, 8.3415176e-06, 0.868624], // test 65
+    [532.0388888888889, 10.44, 4.2672, 8.3415176e-06, 0.927981], // test 54
+    [533.15, 10.44, 4.2672, 8.3415176e-06, 1.001424], // test 55
+    [533.7055555555556, 10.44, 4.2672, 8.3415176e-06, 1.04207], // test 56
+    [533.15, 10.44, 4.2672, 8.3415176e-06, 1.093531], // test 57
+    [533.15, 10.44, 4.2672, 8.3415176e-06, 1.099566], // test 62
+    [533.15, 10.44, 4.2672, 8.3415176e-06, 1.118023], // test 61
+    [533.15, 10.44, 4.2672, 8.3415176e-06, 1.133069], // test 68
+    [533.7055555555556, 10.44, 1.4630400000000001, 8.3415176e-06, 1.137854], // test 67
+    [533.7055555555556, 10.44, 7.315200000000001, 8.3415176e-06, 1.150591], // test 66
+    [533.15, 10.44, 4.2672, 8.3415176e-06, 1.152896], // test 58
+    [533.15, 10.44, 4.2672, 8.3415176e-06, 1.166908], // test 59
+    [533.15, 10.44, 4.2672, 8.3415176e-06, 1.227331], // test 60
+    [540.3722222222223, 10.44, 4.2672, 1.1, 0.86], // test 79
+    [536.4833333333333, 10.44, 4.2672, 1.3, 1.08], // test 80
+    [535.3722222222223, 10.44, 4.2672, 0.9, 1.17], // test 81
+    [535.3722222222223, 10.44, 4.2672, 1.1, 1.25], // test 83
+    [535.9277777777778, 10.44, 4.2672, 1.2, 1.29], // test 82
+    [535.9277777777778, 10.44, 4.2672, 19.0, 0.46], // test 84
+    [534.8166666666667, 10.44, 4.2672, 19.0, 0.87], // test 85
+    [534.2611111111112, 10.44, 4.2672, 19.0, 1.17], // test 86
+];
+/// The scales of [`compared_distance`]: one unit of distance is 25 K of inlet
+/// temperature, a factor of 2 in pressure, 1.5 m/s of flow, a factor of 10 in
+/// initial power or 0.1 dollar of reactivity.
+pub const COMPARED_SCALES: [f64; 5] = [25.0, 1.0, 1.5, 1.0, 0.1];
+
+/// Distance of a run's conditions from the nearest tested condition, in the
+/// units of [`COMPARED_SCALES`], Euclidean; `None` for the reactivity leaves
+/// it out (a start before its first step). A run farther than one is flagged
+/// [`FLAG_OUTSIDE_COMPARED`].
+#[must_use]
+pub fn compared_distance(inlet_k: f64, pressure_mpa: f64, flow_m_per_s: f64, initial_power_mw: f64, reactivity_dollar: Option<f64>) -> f64 {
+    let decade = crate::math::log(10.0);
+    let power_decades = |p: f64| crate::math::log(if p > 1.0e-12 { p } else { 1.0e-12 }) / decade;
+    let octave = crate::math::log(2.0);
+    let pressure_octaves = |p: f64| crate::math::log(if p > 1.0e-12 { p } else { 1.0e-12 }) / octave;
+    let mut nearest = f64::INFINITY;
+    let mut i = 0;
+    while i < COMPARED_CONDITIONS.len() {
+        let c = &COMPARED_CONDITIONS[i];
+        let d = [
+            (inlet_k - c[0]) / COMPARED_SCALES[0],
+            (pressure_octaves(pressure_mpa) - pressure_octaves(c[1])) / COMPARED_SCALES[1],
+            (flow_m_per_s - c[2]) / COMPARED_SCALES[2],
+            (power_decades(initial_power_mw) - power_decades(c[3])) / COMPARED_SCALES[3],
+            match reactivity_dollar { Some(r) => (r - c[4]) / COMPARED_SCALES[4], None => 0.0 },
+        ];
+        let squared = d[0] * d[0] + d[1] * d[1] + d[2] * d[2] + d[3] * d[3] + d[4] * d[4];
+        if squared < nearest {
+            nearest = squared;
+        }
+        i += 1;
+    }
+    nearest.sqrt()
+}
+
+/// Edges of the box the 70 tests' conditions span, each start field and the reactivity (the range in words; the flag is [`compared_distance`]).
 pub const COMPARED_INLET_MIN_K: f64 = (53.0 + 459.67) / 1.8;
 pub const COMPARED_INLET_MAX_K: f64 = (513.0 + 459.67) / 1.8;
 pub const COMPARED_FLOW_MAX_M_PER_S: f64 = 24.0 * 0.3048;
@@ -312,7 +441,7 @@ pub enum StepReject {
     StateOutsideCard,
     /// The step is longer than 0.4 of the prompt time constant, or than the growth share of it while the prompt pole grows, at the state it starts from or lands on.
     DtAboveStateCeiling,
-    /// A ring of the hot rod reached the melting point of UO2, 3120 K.
+    /// A ring of the peak rod, at the core's own peak-to-average power density, reached the melting point of UO2, 3120 K.
     FuelMelting,
     /// The water in the core reached its saturation temperature: bulk boiling, where the single-phase water of the card no longer holds.
     WaterAtSaturation,
@@ -410,6 +539,14 @@ pub struct ReactorState {
     pub energy_released_mws: f64,
     pub heat_carried_out_mws: f64,
     pub hot_heat_to_water_mws: f64,
+    /// The peak rod: the same rings and clad at the core's own peak-to-average
+    /// power density, `PF(T_in)`, nothing fitted; it gives the fuel
+    /// temperatures, the margin to melting and the `FuelMelting` stop. The hot
+    /// rod above stands for the clad thermocouple only.
+    pub peak_fuel_k: [f64; RINGS],
+    pub peak_clad_k: f64,
+    pub peak_heat_to_water_mws: f64,
+    pub peak_heat_anchor_mws: f64,
     /// Ledger anchors and the booked integral of `ρ P`.
     pub population_anchor_mw: f64,
     pub heat_anchor_mws: f64,
@@ -428,6 +565,8 @@ pub struct ReactorState {
     pub population_defect_mw: f64,
     pub energy_defect_mws: f64,
     pub hot_energy_defect_mws: f64,
+    pub peak_fuel_centre_k: f64,
+    pub peak_energy_defect_mws: f64,
     pub residual_conservation_error: f64,
     /// The highest power of the run, when it was reached and the energy released by then.
     pub peak_power_mw: f64,
@@ -453,6 +592,7 @@ struct Terms {
     doppler_kappa: f64,
     moderator_weight: f64,
     hot_factor: f64,
+    peak_factor: f64,
     rho_total: f64,
     rod_slope: f64,
     rod_bottom: f64,
@@ -620,6 +760,7 @@ fn terms(card: &ReactorSpert3Twin, state: &ReactorState, rho_total: f64) -> Term
         doppler_kappa: card.doppler_peaking_share * table(inlet_k, &PEAK_TO_AVERAGE),
         moderator_weight: card.moderator_weight,
         hot_factor: card.hot_spot_share * table(inlet_k, &PEAK_TO_AVERAGE),
+        peak_factor: table(inlet_k, &PEAK_TO_AVERAGE),
         rho_total,
         rod_slope,
         rod_bottom,
@@ -745,11 +886,14 @@ fn rates(terms: &Terms, inlet_k: f64, t_s: f64, y: &[f64; NY]) -> [f64; NY] {
     k[IF..IF + RINGS + 1].copy_from_slice(&rod);
     let hot_to_water = rod_rates(terms, p * terms.hot_factor, &y[IH..IH + RINGS], y[IHCLAD], y[IW], &mut rod);
     k[IH..IH + RINGS + 1].copy_from_slice(&rod);
+    let peak_to_water = rod_rates(terms, p * terms.peak_factor, &y[IK..IK + RINGS], y[IKCLAD], y[IW], &mut rod);
+    k[IK..IK + RINGS + 1].copy_from_slice(&rod);
     let carried = terms.water_capacity * terms.sweep_per_s * (y[IW] - inlet_k);
     k[IW] = (WATER_HEATING_FRACTION * p + to_water - carried) / terms.water_capacity;
     k[IE] = p;
     k[IQ] = carried;
     k[IQH] = hot_to_water;
+    k[IQK] = peak_to_water;
     k
 }
 
@@ -836,6 +980,9 @@ fn vector(state: &ReactorState) -> [f64; NY] {
     y[IE] = state.energy_released_mws;
     y[IQ] = state.heat_carried_out_mws;
     y[IQH] = state.hot_heat_to_water_mws;
+    y[IK..IK + RINGS].copy_from_slice(&state.peak_fuel_k);
+    y[IKCLAD] = state.peak_clad_k;
+    y[IQK] = state.peak_heat_to_water_mws;
     y
 }
 
@@ -850,6 +997,9 @@ fn unpack(state: &mut ReactorState, y: &[f64; NY]) {
     state.energy_released_mws = y[IE];
     state.heat_carried_out_mws = y[IQ];
     state.hot_heat_to_water_mws = y[IQH];
+    state.peak_fuel_k.copy_from_slice(&y[IK..IK + RINGS]);
+    state.peak_clad_k = y[IKCLAD];
+    state.peak_heat_to_water_mws = y[IQK];
 }
 
 /// Steady rings and clad of one rod at `power_mw`, cooled by water at `water_k`.
@@ -958,6 +1108,10 @@ pub(crate) fn start_with(
         energy_released_mws: 0.0,
         heat_carried_out_mws: 0.0,
         hot_heat_to_water_mws: 0.0,
+        peak_fuel_k: [inlet_temperature_k; RINGS],
+        peak_clad_k: inlet_temperature_k,
+        peak_heat_to_water_mws: 0.0,
+        peak_heat_anchor_mws: 0.0,
         population_anchor_mw: 0.0,
         heat_anchor_mws: 0.0,
         hot_heat_anchor_mws: 0.0,
@@ -974,6 +1128,8 @@ pub(crate) fn start_with(
         population_defect_mw: 0.0,
         energy_defect_mws: 0.0,
         hot_energy_defect_mws: 0.0,
+        peak_fuel_centre_k: inlet_temperature_k,
+        peak_energy_defect_mws: 0.0,
         residual_conservation_error: 0.0,
         peak_power_mw: initial_power_mw,
         time_of_peak_s: 0.0,
@@ -995,12 +1151,15 @@ pub(crate) fn start_with(
     }
     let (fuel, clad) = steady_rod(&t, initial_power_mw, water_k)?;
     let (hot_fuel, hot_clad) = steady_rod(&t, initial_power_mw * t.hot_factor, water_k)?;
+    let (peak_fuel, peak_clad) = steady_rod(&t, initial_power_mw * t.peak_factor, water_k)?;
     state.water_k = water_k;
     state.start_water_k = water_k;
     state.fuel_k = fuel;
     state.clad_k = clad;
     state.hot_fuel_k = hot_fuel;
     state.hot_clad_k = hot_clad;
+    state.peak_fuel_k = peak_fuel;
+    state.peak_clad_k = peak_clad;
     state.start_fuel_average_k = average(&t, &fuel);
     for i in 0..6 {
         state.precursor_mw[i] = GROUP_FRACTION[i] * initial_power_mw / (GROUP_DECAY_PER_S[i] * t.l_star);
@@ -1010,9 +1169,10 @@ pub(crate) fn start_with(
     state.population_anchor_mw = population(&state);
     state.heat_anchor_mws = core_heat(&t, &y);
     state.hot_heat_anchor_mws = heat_held(&t, &state.hot_fuel_k, state.hot_clad_k);
+    state.peak_heat_anchor_mws = heat_held(&t, &state.peak_fuel_k, state.peak_clad_k);
     state.hot_clad_max_k = hot_clad;
     derive(&t, &mut state);
-    if !finite_state(&state) || !(state.hot_fuel_k[0] < UO2_MELTING_POINT_K) {
+    if !finite_state(&state) || !(state.peak_fuel_k[0] < UO2_MELTING_POINT_K) {
         return None;
     }
     Some(state)
@@ -1045,6 +1205,7 @@ fn derive(terms: &Terms, state: &mut ReactorState) {
     };
     state.fuel_average_k = average(terms, &state.fuel_k);
     state.hot_fuel_centre_k = state.hot_fuel_k[0];
+    state.peak_fuel_centre_k = state.peak_fuel_k[0];
     state.saturation_k = terms.saturation_k;
     state.hot_clad_heat_flux_mw_per_m2 = clad_flux(terms, state.hot_clad_k, state.water_k) * 1.0e-6;
     state.population_defect_mw = population(state) - state.population_anchor_mw - state.reactivity_power_integral / terms.l_star;
@@ -1052,32 +1213,55 @@ fn derive(terms: &Terms, state: &mut ReactorState) {
     state.energy_defect_mws = state.energy_released_mws - core;
     let hot_in = terms.hot_factor * (FUEL_HEATING_FRACTION + CLAD_HEATING_FRACTION) * state.energy_released_mws;
     state.hot_energy_defect_mws = hot_in - (heat_held(terms, &state.hot_fuel_k, state.hot_clad_k) - state.hot_heat_anchor_mws) - state.hot_heat_to_water_mws;
+    let peak_in = terms.peak_factor * (FUEL_HEATING_FRACTION + CLAD_HEATING_FRACTION) * state.energy_released_mws;
+    state.peak_energy_defect_mws = peak_in - (heat_held(terms, &state.peak_fuel_k, state.peak_clad_k) - state.peak_heat_anchor_mws) - state.peak_heat_to_water_mws;
     let n = population(state).max(state.population_anchor_mw);
     let kelvin = terms.water_capacity + terms.clad_capacity + 0.3;
     let energy_scale = state.energy_released_mws.max(kelvin);
     let hot_scale = (terms.hot_factor * state.energy_released_mws).max(kelvin);
+    let peak_scale = (terms.peak_factor * state.energy_released_mws).max(kelvin);
     state.residual_conservation_error = (state.population_defect_mw.abs() / n)
         .max(state.energy_defect_mws.abs() / energy_scale)
-        .max(state.hot_energy_defect_mws.abs() / hot_scale);
-    state.fuel_melt_margin_k = UO2_MELTING_POINT_K - state.hot_fuel_k[0].max(state.hot_fuel_k[1]);
+        .max(state.hot_energy_defect_mws.abs() / hot_scale)
+        .max(state.peak_energy_defect_mws.abs() / peak_scale);
+    state.fuel_melt_margin_k = UO2_MELTING_POINT_K - state.peak_fuel_k[0].max(state.peak_fuel_k[1]);
     state.rod_moving = state.t_s > terms.rod_delay_s && state.t_s < terms.rod_end_s;
     state.past_peak = state.power_mw < state.peak_power_mw;
     state.hot_spot_boiling = state.hot_clad_k > terms.saturation_k;
     state.prompt_supercritical = net > 1.0;
-    state.outside_compared = !(state.inlet_temperature_k >= COMPARED_INLET_MIN_K
-        && state.inlet_temperature_k <= COMPARED_INLET_MAX_K
-        && state.coolant_flow_m_per_s <= COMPARED_FLOW_MAX_M_PER_S
-        && state.initial_power_mw <= COMPARED_POWER_MAX_MW
-        && state.system_pressure_mpa >= COMPARED_PRESSURE_MIN_MPA
-        && state.system_pressure_mpa <= COMPARED_PRESSURE_MAX_MPA
-        && (!state.reactivity_recorded
-            || (state.reactivity_inserted_dollar >= COMPARED_REACTIVITY_MIN_DOLLAR && state.reactivity_inserted_dollar <= COMPARED_REACTIVITY_MAX_DOLLAR)));
+    state.outside_compared = !(compared_distance(
+        state.inlet_temperature_k,
+        state.system_pressure_mpa,
+        state.coolant_flow_m_per_s,
+        state.initial_power_mw,
+        if state.reactivity_recorded { Some(state.reactivity_inserted_dollar) } else { None },
+    ) <= 1.0);
 }
 
 /// Advance one step and write the frame. A refused step leaves `state` and
 /// `frame` as they were. A value of the landed state below the normal range
 /// is written as zero with its sign ([`crate::normal`]).
 pub fn step(
+    card: &ReactorSpert3Twin,
+    state: &mut ReactorState,
+    frame: &mut LastStateFrame64,
+    load: ReactorLoad,
+    dt_s: f64,
+) -> Result<(), StepReject> {
+    #[cfg(any(test, debug_assertions, feature = "check_exceedances"))]
+    let before = *state;
+    let stepped = step_landed(card, state, frame, load, dt_s);
+    #[cfg(any(test, debug_assertions, feature = "check_exceedances"))]
+    if stepped.is_ok() {
+        crate::exceedance::debug_check("reactor_spert3_twin", exceedances(card, &before, state, load, dt_s), frame.flags);
+    }
+    stepped
+}
+
+/// The step itself; [`step`] is it with, in a build that checks
+/// (`crate::exceedance::CHECKED`), the check that [`exceedances`] stands for
+/// the flags it wrote.
+fn step_landed(
     card: &ReactorSpert3Twin,
     state: &mut ReactorState,
     frame: &mut LastStateFrame64,
@@ -1126,6 +1310,11 @@ fn normal_or_zero_state(state: &mut ReactorState) {
         &mut s.energy_released_mws,
         &mut s.heat_carried_out_mws,
         &mut s.hot_heat_to_water_mws,
+        &mut s.peak_clad_k,
+        &mut s.peak_heat_to_water_mws,
+        &mut s.peak_heat_anchor_mws,
+        &mut s.peak_fuel_centre_k,
+        &mut s.peak_energy_defect_mws,
         &mut s.population_anchor_mw,
         &mut s.heat_anchor_mws,
         &mut s.hot_heat_anchor_mws,
@@ -1155,6 +1344,7 @@ fn normal_or_zero_state(state: &mut ReactorState) {
     normal_or_zero_each(&mut s.precursor_mw);
     normal_or_zero_each(&mut s.fuel_k);
     normal_or_zero_each(&mut s.hot_fuel_k);
+    normal_or_zero_each(&mut s.peak_fuel_k);
 }
 
 fn step_as_computed(card: &ReactorSpert3Twin, state: &ReactorState, load: ReactorLoad, dt_s: f64) -> Result<ReactorState, StepReject> {
@@ -1195,7 +1385,7 @@ fn step_as_computed(card: &ReactorSpert3Twin, state: &ReactorState, load: Reacto
     if above_state_ceiling(&terms, next.t_s, &landed, dt_s) {
         return Err(StepReject::DtAboveStateCeiling);
     }
-    if next.hot_fuel_k.iter().any(|t| !(*t < UO2_MELTING_POINT_K)) {
+    if next.peak_fuel_k.iter().any(|t| !(*t < UO2_MELTING_POINT_K)) {
         return Err(StepReject::FuelMelting);
     }
     if !(next.water_k < terms.saturation_k) {
@@ -1215,7 +1405,7 @@ fn step_as_computed(card: &ReactorSpert3Twin, state: &ReactorState, load: Reacto
         return Err(StepReject::NonFiniteState);
     }
     if !(next.residual_conservation_error <= RESIDUAL_CONSERVATION_LIMIT) {
-        let created = next.population_defect_mw > 0.0 || next.energy_defect_mws < 0.0 || next.hot_energy_defect_mws < 0.0;
+        let created = next.population_defect_mw > 0.0 || next.energy_defect_mws < 0.0 || next.hot_energy_defect_mws < 0.0 || next.peak_energy_defect_mws < 0.0;
         return Err(if created { StepReject::SpontaneousGeneration } else { StepReject::FirstLawBreach });
     }
     Ok(next)
@@ -1228,9 +1418,10 @@ fn above_state_ceiling(terms: &Terms, t_s: f64, y: &[f64; NY], dt_s: f64) -> boo
 }
 
 fn state_inside(state: &ReactorState) -> bool {
-    let temps_positive = state.fuel_k.iter().chain(state.hot_fuel_k.iter()).all(|t| *t > 0.0)
+    let temps_positive = state.fuel_k.iter().chain(state.hot_fuel_k.iter()).chain(state.peak_fuel_k.iter()).all(|t| *t > 0.0)
         && state.clad_k > 0.0
         && state.hot_clad_k > 0.0
+        && state.peak_clad_k > 0.0
         && state.water_k > 0.0
         && state.start_fuel_average_k > 0.0
         && state.start_water_k > 0.0;
@@ -1265,6 +1456,11 @@ fn finite_state(state: &ReactorState) -> bool {
         s.energy_released_mws,
         s.heat_carried_out_mws,
         s.hot_heat_to_water_mws,
+        s.peak_clad_k,
+        s.peak_heat_to_water_mws,
+        s.peak_heat_anchor_mws,
+        s.peak_fuel_centre_k,
+        s.peak_energy_defect_mws,
         s.population_anchor_mw,
         s.heat_anchor_mws,
         s.hot_heat_anchor_mws,
@@ -1293,6 +1489,7 @@ fn finite_state(state: &ReactorState) -> bool {
     .chain(s.precursor_mw.iter())
     .chain(s.fuel_k.iter())
     .chain(s.hot_fuel_k.iter())
+    .chain(s.peak_fuel_k.iter())
     .all(|v| v.is_finite())
 }
 
@@ -1334,6 +1531,106 @@ pub fn inhour_dollar(inlet_temperature_k: f64, period_s: f64) -> f64 {
         rho += GROUP_FRACTION[i] * omega / (omega + GROUP_DECAY_PER_S[i]);
     }
     rho
+}
+
+/// Every limit a flag of this card can mark: what [`exceedances`] reports
+/// beside a flag's bit (`crate::exceedance`).
+pub const EXCEEDANCE_KINDS: &[crate::exceedance::ExceedanceKind] = &[
+    ROD_AFTER_DELAY,
+    ROD_BEFORE_END,
+    PEAK_KIND,
+    BOILING_KIND,
+    PROMPT_KIND,
+    DISTANCE_KIND,
+];
+
+const ROD_AFTER_DELAY: ExceedanceKind = ExceedanceKind::fixed(
+    "FLAG_ROD_MOVING",
+    FLAG_ROD_MOVING,
+    "t_s",
+    "s",
+    Side::Above,
+    ROD_DELAY_S,
+    "the rod moves from its delay after the start to the time it is out: the time it starts",
+);
+const ROD_BEFORE_END: ExceedanceKind = ExceedanceKind::varying(
+    "FLAG_ROD_MOVING",
+    FLAG_ROD_MOVING,
+    "t_s",
+    "s",
+    Side::Below,
+    "the rod moves from its delay after the start to the time it is out: the time it is out, which the inserted reactivity sets",
+);
+const PEAK_KIND: ExceedanceKind = ExceedanceKind::varying(
+    "FLAG_PAST_PEAK",
+    FLAG_PAST_PEAK,
+    "power_mw",
+    "MW",
+    Side::Below,
+    "the largest power so far (peak_power_mw): the extent is the fall from it",
+);
+const BOILING_KIND: ExceedanceKind = ExceedanceKind::varying(
+    "FLAG_HOT_SPOT_BOILING",
+    FLAG_HOT_SPOT_BOILING,
+    "hot_clad_k",
+    "K",
+    Side::Above,
+    "the saturation temperature of the water at the system pressure (saturation_k)",
+);
+const PROMPT_KIND: ExceedanceKind = ExceedanceKind::fixed(
+    "FLAG_PROMPT_SUPERCRITICAL",
+    FLAG_PROMPT_SUPERCRITICAL,
+    "net_reactivity_dollar",
+    "dollar",
+    Side::Above,
+    1.0,
+    "one dollar of net reactivity: prompt critical",
+);
+const DISTANCE_KIND: ExceedanceKind = ExceedanceKind::fixed(
+    "FLAG_OUTSIDE_COMPARED",
+    FLAG_OUTSIDE_COMPARED,
+    "compared_distance",
+    "1",
+    Side::Above,
+    1.0,
+    "one unit of distance from the nearest of the 70 tested conditions (compared_distance): 25 K of inlet temperature, a factor of 2 in pressure, 1.5 m/s of flow, a factor of 10 in initial power or 0.1 dollar of reactivity",
+);
+
+/// The limits the step from `before` to `after` under `load` over `dt_s`
+/// is past: one record for each limit a flag set on its frame marks.
+/// The conditions are those `derive` writes the five flags' booleans by.
+pub fn exceedances(
+    card: &ReactorSpert3Twin,
+    before: &ReactorState,
+    after: &ReactorState,
+    load: ReactorLoad,
+    dt_s: f64,
+) -> crate::exceedance::Exceedances {
+    let _ = dt_s;
+    let mut records = crate::exceedance::Exceedances::new();
+    let s = after;
+    if s.rod_moving {
+        let mut start = *before;
+        start.reactivity_inserted_dollar = load.reactivity_inserted_dollar;
+        start.reactivity_recorded = true;
+        let rod_end_s = terms(card, &start, load.reactivity_inserted_dollar).rod_end_s;
+        records.push(Exceedance::at(ROD_AFTER_DELAY, card.rod_delay_s, s.t_s));
+        records.push(Exceedance::at(ROD_BEFORE_END, rod_end_s, s.t_s));
+    }
+    records.push_if(s.past_peak, Exceedance::at(PEAK_KIND, s.peak_power_mw, s.power_mw));
+    records.push_if(s.hot_spot_boiling, Exceedance::at(BOILING_KIND, s.saturation_k, s.hot_clad_k));
+    records.push_if(s.prompt_supercritical, Exceedance::fixed(PROMPT_KIND, s.net_reactivity_dollar));
+    if s.outside_compared {
+        let distance = compared_distance(
+            s.inlet_temperature_k,
+            s.system_pressure_mpa,
+            s.coolant_flow_m_per_s,
+            s.initial_power_mw,
+            if s.reactivity_recorded { Some(s.reactivity_inserted_dollar) } else { None },
+        );
+        records.push(Exceedance::fixed(DISTANCE_KIND, distance));
+    }
+    records
 }
 
 #[cfg(test)]
@@ -1390,6 +1687,27 @@ mod tests {
         assert!((saturation_temperature_k(0.1) - 372.755_919_1).abs() < 1e-6);
         assert!((saturation_temperature_k(1.0) - 453.035_632_4).abs() < 1e-6);
         assert!((saturation_temperature_k(10.0) - 584.149_488_0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn the_compared_flag_marks_distance_from_the_tested_conditions_not_their_box() {
+        // every tested condition is at distance zero
+        for c in COMPARED_CONDITIONS {
+            assert_eq!(compared_distance(c[0], c[1], c[2], c[3], Some(c[4])), 0.0);
+        }
+        // inside the box, far from every test: 350 degF, 5 MPa, no flow, 5 MW (the V&V report's point)
+        let far = compared_distance(f_to_k(350.0), 5.0, 0.0, 5.0, Some(1.0));
+        assert!(far > 1.0, "{far}");
+        let card = ReactorSpert3Twin::e_core();
+        let mut state = ReactorState::try_start(&card, f_to_k(350.0), 5.0, 0.0, 5.0).unwrap();
+        let mut frame = LastStateFrame64 { t: 0.0, pos: [0.0; 3], vel: [0.0; 3], force_torque: 0.0, residual: 0.0, flags: 0, proof: [0; 16] };
+        step(&card, &mut state, &mut frame, ReactorLoad { reactivity_inserted_dollar: 1.0 }, 1.0e-5).unwrap();
+        assert!(frame.flags & FLAG_OUTSIDE_COMPARED != 0);
+        // near a test: test 81's conditions, 2 K warmer and 0.03 dollar more, stay compared
+        let near = compared_distance(f_to_k(504.0) + 2.0, 10.44, 14.0 * 0.3048, 0.9, Some(1.20));
+        assert!(near < 1.0, "{near}");
+        // a cold start of one dollar from 50 W, as the worked example, is compared
+        assert!(compared_distance(f_to_k(70.0), 0.0853, 0.0, 5.0e-5, Some(1.0)) <= 1.0);
     }
 
     #[test]
@@ -1452,6 +1770,19 @@ mod tests {
         let mut heat = state;
         heat.heat_anchor_mws += 1.0;
         assert!(step(&card, &mut heat, &mut frame, ReactorLoad { reactivity_inserted_dollar: 1.0 }, 1e-4).is_err());
+    }
+
+    #[test]
+    fn the_peak_rod_runs_at_the_cores_own_peaking_and_the_hot_rod_at_the_clad_thermocouples() {
+        // test 86's start, 502 degF, 19 MW: the peak rod at PF = 3.6 has its centre at 1942 K, the
+        // hot rod at 1.43 PF, the clad thermocouple's place, far hotter; the margin to melting is the peak rod's
+        let card = ReactorSpert3Twin::e_core();
+        let state = ReactorState::try_start(&card, f_to_k(502.0), 10.44, 14.0 * 0.3048, 19.0).unwrap();
+        assert!((state.peak_fuel_centre_k - 1942.4).abs() < 0.5, "{}", state.peak_fuel_centre_k);
+        assert!(state.hot_fuel_centre_k > state.peak_fuel_centre_k + 500.0, "{}", state.hot_fuel_centre_k);
+        assert_eq!(state.fuel_melt_margin_k, UO2_MELTING_POINT_K - state.peak_fuel_k[0].max(state.peak_fuel_k[1]));
+        // its heat ledger closes with the others at the start
+        assert!(state.peak_energy_defect_mws.abs() < 1.0e-9, "{}", state.peak_energy_defect_mws);
     }
 
     #[test]

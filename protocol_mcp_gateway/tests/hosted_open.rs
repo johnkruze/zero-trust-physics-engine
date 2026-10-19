@@ -25,7 +25,7 @@ struct Open {
 
 impl Open {
     fn start(arguments: &[&str]) -> Open {
-        let mut child = Command::new(env!("CARGO_BIN_EXE_hosted_door"))
+        let mut child = Command::new(env!("CARGO_BIN_EXE_hosted_door")).arg("--unsigned")
             .args(["--open", "--port", "0"])
             .args(arguments)
             .stdout(Stdio::piped())
@@ -95,7 +95,7 @@ fn header<'a>(reply: &'a Reply, name: &str) -> Option<&'a str> {
 }
 
 fn refused_at_start(arguments: &[&str], needle: &str) {
-    let output = Command::new(env!("CARGO_BIN_EXE_hosted_door")).args(arguments).output().unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_hosted_door")).arg("--unsigned").args(arguments).output().unwrap();
     let said = String::from_utf8_lossy(&output.stderr).into_owned();
     assert_eq!(output.status.code(), Some(2), "{arguments:?}: {said}");
     assert!(said.starts_with("The hosted door did not start: "), "{said}");
@@ -177,7 +177,7 @@ fn the_door_serves_when_its_starter_has_closed_its_output() {
     for _ in 0..5 {
         // A port that is free now; another process may take it before the door does, and then the next is tried.
         let port = std::net::TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port();
-        let mut child = Command::new(env!("CARGO_BIN_EXE_hosted_door"))
+        let mut child = Command::new(env!("CARGO_BIN_EXE_hosted_door")).arg("--unsigned")
             .args(["--open", "--port", &port.to_string()])
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -216,7 +216,7 @@ fn the_door_serves_when_its_starter_has_closed_its_output() {
         let _ = child.kill();
         let _ = child.wait();
         assert!(healthy, "the door stopped ({exited:?}): {said}");
-        assert!(tool_result(&stepped.unwrap()).1.contains("sha256_seal"));
+        assert!(tool_result(&stepped.unwrap()).1.contains("sha384_seal"));
         return;
     }
     panic!("no free port was found for the door in five tries");
@@ -291,7 +291,7 @@ fn every_card_and_solver_is_served_with_the_bytes_of_the_local_connection() {
         let here = door.tool(tool, arguments);
         let there = local.tool(tool, arguments);
         assert_eq!(here, there, "{tool} {arguments:.200}");
-        if here.1.contains("receipt_sha256") && !here.0 {
+        if here.1.contains("receipt_sha384") && !here.0 {
             sealed += 1;
         }
     }
@@ -367,7 +367,7 @@ fn every_card_and_solver_is_served_with_the_bytes_of_the_local_connection() {
         assert!(text.contains("is answered \"Too many concurrent physics tasks.\" and nothing waits: the same call sent later is answered once one is free. An answer is waited for 60 seconds, and long work is stopped there."), "{name}: {text}");
     }
     for name in ["run_dataset", "verify_dataset"] {
-        assert!(said(name).contains("On this open connection a dataset is returned inline and holds at most 300 runs (OPEN_MAX_DATASET_ROWS), 1000000 steps in all (OPEN_MAX_DATASET_STEPS), 10000 frames and an answer counted from the plan at 4194304 bytes (OPEN_MAX_DATASET_ANSWER_BYTES) and 40000 characters, up to about 140 summary rows;"), "{name}");
+        assert!(said(name).contains("On this open connection a dataset is returned inline and holds at most 300 runs (OPEN_MAX_DATASET_ROWS), 1000000 steps in all (OPEN_MAX_DATASET_STEPS), 10000 frames and an answer counted from the plan at 4194304 bytes (OPEN_MAX_DATASET_ANSWER_BYTES) and 42500 characters, up to about 150 summary rows;"), "{name}");
     }
     for name in ["list_cards", "describe_card", "list_solvers", "describe_solver", "verify_receipt", "cite", "find_model"] {
         assert!(!said(name).contains("On this open connection"), "{name}");
@@ -486,7 +486,7 @@ fn what_a_remote_client_sends_is_answered_as_the_protocol_says() {
         let listed = door.send("POST", "/mcp", &headers, LIST);
         assert!(listed.status == 200 && listed.body.contains("\"run_trajectory\""), "{:.200}", listed.body);
         let called = door.send("POST", "/mcp", &headers, &tool_body(3, "verify_step", &thermal_step()));
-        assert!(called.status == 200 && called.body.contains("sha256_seal"), "{:.200}", called.body);
+        assert!(called.status == 200 && called.body.contains("sha384_seal"), "{:.200}", called.body);
         assert!(header(&called, "mcp-session-id").is_none());
     }
     // A request of revision 2026-07-28 needs no initialize before it: server/discover is answered
@@ -554,7 +554,7 @@ async fn a_standard_mcp_client_with_no_key_connects_lists_and_calls() {
         .await
         .expect("verify_step");
     assert_eq!(called.is_error, Some(false));
-    assert!(called.content[0].as_text().unwrap().text.contains("sha256_seal"));
+    assert!(called.content[0].as_text().unwrap().text.contains("sha384_seal"));
     client.cancel().await.expect("close");
 }
 
@@ -742,7 +742,7 @@ fn the_pages_state_the_limits_of_the_open_door_that_are_in_force() {
     for part in ["at most 300 a minute", "at most 16 in flight at once and 4 from one address", "a body of at most 4194304 bytes", "at most 1000000 steps and 10000 recorded states", "at most 300 runs", "1000000 steps in total", "one address holds at most 1 at a time (permits-per-address)", "waited for 60 seconds"] {
         assert!(statement.contains(part), "{part}: {statement}");
     }
-    for part in ["and a call of a tool other than run_trajectory, verify_tape, run_dataset, verify_dataset, verify_receipt, validate_series at most 2097152 bytes, then HTTP 413 as well (NARROW_LIMIT, as on every connection)", "at most 40000 characters, as on every connection: a plan reaches that first, a grid on one axis at about 140 summary rows and a list sooner, its head repeating each run's request, so a plan of 300 runs is refused by it"] {
+    for part in ["and a call of a tool other than run_trajectory, verify_tape, run_dataset, verify_dataset, verify_receipt, validate_series at most 2097152 bytes, then HTTP 413 as well (NARROW_LIMIT, as on every connection)", "at most 42500 characters, as on every connection: a plan reaches that first, a grid on one axis at about 150 summary rows and a list sooner, its head repeating each run's request, so a plan of 300 runs is refused by it"] {
         assert!(statement.contains(part), "{part}: {statement}");
     }
     let opening = rules.said_at_opening();

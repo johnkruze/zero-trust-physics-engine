@@ -495,15 +495,11 @@ async fn all_twenty_one_cards_carry_a_validation_of_five_parts_and_nine_are_the_
     assert_eq!(status, 200);
     let list: Value = serde_json::from_str(&text).unwrap();
     let cards = list["cards"].as_array().unwrap_or_else(|| list.as_array().unwrap());
-    assert_eq!(cards.len(), 40);
-    let fitted = ["cell_18650pf", "generator_mmrtg_f1", "generator_mmrtg_seebeck", "capsule_stardust", "satellite_lageos1", "cantilever_eth", "creep_cmsx6", "capsule_insight", "reactor_spert3_fuel", "reactor_spert3_twin", "crater_ryugu_sci", "reactor_spert3_ccore_twin", "momentum_jwst_dihedral", "momentum_jwst_srp", "link_gothenburg_10010", "solar_system", "los_jwst_fine_guide", "tokamak_jet_dte1", "fingerpad_p02_glass", "accumulator_sbo450", "reactor_triga_jsi", "reactor_spert3_ccore", "runaway_18650_lco", "grasp_lift_glass_4tu", "tokamak_vde_mast", "reactor_msre_pump"];
-    // The reactor is fitted and has not been compared yet: its result says so.
-    let awaiting = "reactor_spert3";
-    // The 2170 cell was compared with its held-back tests and missed: its result says so.
-    let compared_and_missed = "cell_2170_m80";
-    // The physical 2170 cell was run once on runs of two further cells that no
-    // model had seen: its result gives both counts and what was not tested.
-    let run_once_on_two_further_cells = "cell_2170_model3";
+    assert_eq!(cards.len(), protocol_mcp_gateway::CARDS);
+    let fitted = ["cell_18650pf", "generator_mmrtg_f1", "generator_mmrtg_seebeck", "capsule_stardust", "satellite_lageos1", "cantilever_eth", "creep_cmsx6", "capsule_insight", "reactor_spert3", "crater_ryugu_sci", "grid_gb", "momentum_jwst_dihedral", "momentum_jwst_srp", "link_gothenburg_10010", "solar_system", "los_jwst_fine_guide", "tokamak_jet_dte1", "fingerpad_p02_glass", "accumulator_sbo450", "reactor_triga_jsi", "reactor_spert3_ccore", "runaway_18650_lco", "grasp_lift_glass_4tu", "tokamak_vde_mast", "reactor_msre_pump", "cell_2170_model3"];
+    // Since the fold of 0.15.0 the records of the earlier reactor_spert3,
+    // cell_2170_m80, cell_2170_model3 and grid_gb cards are not served: each ID is its newer
+    // model, whose record its spec sheet gives, and no case of their own.
     let mut generic = 0;
     for entry in cards {
         let (domain, card) = (entry["domain"].as_str().unwrap(), entry["card"].as_str().unwrap());
@@ -521,57 +517,7 @@ async fn all_twenty_one_cards_carry_a_validation_of_five_parts_and_nine_are_the_
         for key in &keys {
             assert!(!record[*key].as_str().unwrap().is_empty(), "{card} {key}");
         }
-        if card == run_once_on_two_further_cells {
-            let result = record["result"].as_str().unwrap();
-            assert!(
-                result.starts_with("Run once on runs of two further cells of the same type that no model had seen"),
-                "{card}"
-            );
-            for words in [
-                "Third cell, m448-N: 51 of 60 runs within every target",
-                "Second cell, m1000: 31 of 45 runs within every target, under the 36 to 41 expected",
-                "two of the five conditions hold",
-                "All ten hill-climb cycles",
-            ] {
-                assert!(result.contains(words), "{card}: {words}");
-            }
-            assert!(record["limits"].as_str().unwrap().contains("have now been read"), "{card}");
-            assert!(record["data"].as_str().unwrap().contains("Borealis 10.5683/SP3/ZVTR4B"), "{card}");
-            assert!(record["limits"].as_str().unwrap().contains("The model was developed on all the tests of the first cell, m80."), "{card}");
-            assert!(!record.values().any(|part| part.as_str().unwrap().contains("seal")), "{card}");
-        } else if card == compared_and_missed {
-            assert!(
-                record["result"].as_str().is_some_and(|text| text.starts_with(
-                    "On the 60 tests: 27 runs within every target, and no temperature with every run within."
-                )),
-                "{card}"
-            );
-            assert!(record["data"].as_str().unwrap().contains("Borealis 10.5683/SP3/ZVTR4B"), "{card}");
-            assert!(!record.values().any(|part| part.as_str().unwrap().contains("seal")), "{card}");
-        } else if card == awaiting {
-            assert!(
-                record["result"].as_str().is_some_and(|text| text.starts_with(
-                    "On the 10 tests not in the fit. Peak power: RMS 0.58 of the report's standard deviation (target 1.5)"
-                )),
-                "{card}"
-            );
-        } else if card == "grid_gb" {
-            // The Great Britain card was run once on its held-back trips: its
-            // result gives the count, the dropped trip and each line, and its
-            // limits say that it missed on the opened trips.
-            let result = record["result"].as_str().unwrap();
-            assert!(
-                result.starts_with("On the 12 trips outside the fit, run once through the engine: every target held."),
-                "{card}"
-            );
-            for words in ["dropped by the quality rule", "0.166", "0.182", "0.046 Hz", "No trip was refused"] {
-                assert!(result.contains(words), "{card}: {words}");
-            }
-            let limits = record["limits"].as_str().unwrap();
-            assert!(limits.contains("are an easier set than the 28 in it") && limits.contains("the depth error is 0.302 (target 0.25)"), "{card}");
-            assert!(record["data"].as_str().unwrap().contains("NESO Open Data"), "{card}");
-            assert!(!record.values().any(|part| part.as_str().unwrap().contains("seal")), "{card}");
-        } else if card == "tire_eve_r19_ice" {
+        if card == "tire_eve_r19_ice" {
             // The tyre is fitted and was compared once on its runs outside the fit: its result gives the errors.
             let result = record["result"].as_str().unwrap();
             assert!(

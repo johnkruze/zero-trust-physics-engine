@@ -4,27 +4,38 @@
     python3 kit/new_model.py card   <name> --domain energy --title "A heated body" [--root DIR] [--dry-run]
     python3 kit/new_model.py solver <name> --title "A heated rod" [--root DIR] [--dry-run]
     python3 kit/new_model.py rows   <name> [--root DIR] [--dry-run]
-    ... card|solver <name> --compared [--protocol FILE [--held-back FILE ...]]
-    ... card|solver <name> --calibrated --companion-to <model> [--protocol FILE --output FILE --program FILE --not-blind "<sentence>"]
+    ... card|solver <name> --fitted-on N --compared-with M --records runs --within "X" --gap "G" [--supersedes <model>]
+    ... card|solver <name> --reference-calculation --compared-with M --within "X" [--gap "G"]
 
---compared stamps a model of a real thing compared with measurements of it:
-its citation and find_model entry name it so (never "the company's own
-specimen"), and forecast first is set up: with --protocol, the protocol's
-SHA-256 and each held-back file's are recorded and committed by
-kit/forecast.py register before any held-back data is read; without it, the
-stamp says the command to run first.
+The evidence flags stamp the model's spec sheet from its numbers:
 
---calibrated --companion-to <model> stamps a model calibrated to the record:
-its structure or constants are chosen with the record of a real object open,
-so its comparison with that record is not a blind test, and it is served
-beside <model>, the served model of the same object, the scored original. It is stamped with the sixth word (find_model's Marks::Calibrated and
-its row of CALIBRATIONS, naming the companion), a citation that names the
-companion's real object, its sources and the companion, a validation result
-that opens by saying it is calibrated to the record and not a blind test and
-names the companion, and no blind registration. With --protocol (the
-comparison's own record), --output, --program and --not-blind the
-calibration is recorded and committed at once by kit/forecast.py calibrate;
-without them the stamp says the command to run.
+  (none)                    a company specimen: find_model's Marks::NotCompared
+                            and no spec sheet.
+  --compared-with M         compared with measurement: M records not in the
+  --within X                fit, within X (the accuracy, in numbers);
+  --fitted-on N             N records its constants were fitted on (0, or
+                            left out, when nothing is fitted);
+  --records WORD            what a record is: runs, profiles, cultures;
+  --gap G                   the largest disagreement, one line with its
+                            number; a model compared with measurement gives it.
+  --reference-calculation   held to a reference calculation on M records:
+                            Marks::Reference, its numbers in the entry's
+                            marks_words, and no spec sheet.
+  --supersedes <model>      the served model of the same object this one
+                            replaces: the citation takes its real object and
+                            sources, and the row { model: <model>, by: <name> }
+                            goes into src/succession.rs, so <model> stays
+                            served under its own ID with superseded_by.
+
+A model compared with measurement gets Marks::Measured in find_model.rs and
+its row of spec_sheet::SHEETS in src/spec_sheet.rs, the six parts: what it
+computes; Range; Fitted on N (or Nothing fitted); Compared with M not in the
+fit, within X; Gap; Refuses. The stamp writes the three in numbers from the
+flags, and the template's own computes, Range and Refuses, which its owner
+rewrites as the real object. The spec line (fitted on N; compared with M not
+in the fit, within X; the largest gap) is also its record's result and its
+citation's how_used. Nothing here registers a forecast: forecast.py register
+is for data that does not exist yet.
 
 <name> is the model's snake_case name, as it is served. --root is the
 workspace (the folder whose Cargo.toml lists the crates); the default is the
@@ -195,95 +206,148 @@ def served(stamp, key):
     return found.group(1) if found else "?"
 
 
-def citation(key, kind, title, compared=False):
-    """The model's citation. A model compared with measurements of a real
-    thing is not the company's own specimen: its citation names the real
-    thing and, until it is scored, says that its sources are named when it
-    is; its owner writes them in."""
-    if compared:
-        real_thing = f"{title}, compared with measurements of it"
-        how_used = "The measurements it is compared with are named here, with their people and licence, when it is compared with them (kit/forecasts/" + key.split("/")[-1] + ".json)."
+# The three kinds of evidence a served model carries: the word find_model
+# serves for it (spec_sheet::WORDS) and the Marks variant of a new entry.
+EVIDENCE_WORDS = {
+    "measurement": "compared with measurement",
+    "reference": "held to a reference calculation",
+    "specimen": "company specimen",
+}
+MARKS = {"measurement": "Measured", "reference": "Reference", "specimen": "NotCompared"}
+# What a new entry compared with measurement says as marks_words: its spec
+# sheet gives the numbers (find_model serves the sheet's accuracy).
+MEASURED_WORDS = "its spec sheet gives the comparison and the gap"
+
+
+class Evidence:
+    """What a stamped model was fitted on and compared with, in numbers.
+
+    kind is "measurement", "reference" or "specimen". fitted_on and
+    compared_with are counts of records (runs, profiles, cultures, points:
+    `records` names them); within is the accuracy reached on the records not
+    in the fit, in numbers; gap is the largest disagreement, one line with
+    its number; supersedes is the served model this one replaces."""
+
+    def __init__(self, kind="specimen", fitted_on=None, compared_with=None, records="records", within=None, gap=None, supersedes=None):
+        self.kind = kind
+        self.fitted_on = fitted_on
+        self.compared_with = compared_with
+        self.records = records or "records"
+        self.within = within
+        self.gap = gap
+        self.supersedes = supersedes
+
+    @classmethod
+    def of(cls, args):
+        if args is None:
+            return cls()
+        kind = "reference" if getattr(args, "reference_calculation", False) else ("measurement" if getattr(args, "compared_with", None) is not None else "specimen")
+        return cls(kind, getattr(args, "fitted_on", None), getattr(args, "compared_with", None), getattr(args, "records", None),
+                   getattr(args, "within", None), getattr(args, "gap", None), getattr(args, "supersedes", None))
+
+    def spec_line(self):
+        """The spec sheet in one line: fitted on N; compared with M not in
+        the fit, within X; the gap. Empty for a company specimen."""
+        if self.kind == "specimen":
+            return ""
+        parts = []
+        if self.kind == "measurement":
+            parts.append("nothing fitted" if not self.fitted_on else f"fitted on {self.fitted_on} {self.records}")
+            parts.append(f"compared with {self.compared_with} {self.records} not in the fit, within {self.within}")
+        else:
+            parts.append(f"held to a reference calculation on {self.compared_with} {self.records}, within {self.within}")
+        if self.gap:
+            parts.append(f"the largest gap: {self.gap}")
+        if self.supersedes:
+            parts.append(f"supersedes {self.supersedes}")
+        return "; ".join(parts)
+
+    def result(self):
+        """The record's result sentence, the spec line as a sentence."""
+        line = self.spec_line()
+        return line[:1].upper() + line[1:] + "."
+
+    def fitted_sentence(self):
+        """The spec sheet's third part: "Fitted on N ..." or "Nothing fitted"."""
+        return f"Fitted on {self.fitted_on} {self.records}." if self.fitted_on else "Nothing fitted."
+
+    def compared_sentence(self):
+        """The fourth part: "Compared with M ... not in the fit: within X"."""
+        return f"Compared with {self.compared_with} {self.records} not in the fit: within {self.within.rstrip('.')}."
+
+    def gap_sentence(self):
+        """The fifth part: "Gap: ...", one line with its number."""
+        return f"Gap: {self.gap.rstrip('.')}."
+
+    def reference_words(self):
+        """A reference calculation's numbers, find_model's marks_words, which
+        it serves as "Held to a reference calculation: <these>."."""
+        words = f"{self.compared_with} {self.records}, within {self.within.rstrip('.')}"
+        return words + (f"; the largest gap: {self.gap.rstrip('.')}" if self.gap else "")
+
+
+def marks_of(stamp, evidence):
+    """The Marks variant of a new entry with this evidence, where
+    find_model.rs declares it; None where it does not (then the stamp says
+    so)."""
+    try:
+        text = stamp.text("protocol_mcp_gateway/src/find_model.rs")
+    except OSError:
+        return None
+    variant = MARKS[evidence.kind]
+    return f"Marks::{variant}" if re.search(rf"^\s*{variant},", text, re.M) else None
+
+
+def citation(key, kind, title, evidence=None, predecessor=None):
+    """The model's citation. A company specimen says so. A model compared
+    with measurements, or held to a reference calculation, names the real
+    thing and its numbers; its owner writes in the sources (people, data
+    set, licence). A model that supersedes another takes that model's real
+    thing and sources, the same object."""
+    evidence = evidence or Evidence()
+    if evidence.kind == "specimen" and predecessor is None:
+        entry = {
+            "kind": kind,
+            "real_thing": f"{title}, a company specimen.",
+            "sources": [],
+            "how_used": "Company specimen: its constants are its own declared values. Cite the paper.",
+            "not_held_to_a_measurement": True,
+            "cite_also": "paper",
+        }
     else:
-        real_thing = f"{title}, a company specimen."
-        how_used = "Company specimen: its constants are its own declared values. Cite the paper."
-    return (
-        f'    "{key}": {{\n'
-        f'      "kind": "{kind}",\n'
-        f'      "real_thing": "{real_thing}",\n'
-        f'      "sources": [],\n'
-        f'      "how_used": "{how_used}",\n'
-        f'      "not_held_to_a_measurement": true,\n'
-        f'      "cite_also": "paper"\n'
-        f'    }},'
-    )
-
-
-# What find_model says of a compared model stamped before its scoring: what
-# is so until then, and not "the company's own specimen".
-NOT_YET_SCORED = (
-    '"not yet compared with the measurements of it: its spec sheet (src/spec_sheet.rs) is written when it is '
-    '(kit/forecasts/{name}.json)"'
-)
-
-
-# What find_model says after the sixth word of a model stamped calibrated,
-# until its own numbers against the record are written.
-CALIBRATED_WORDS = (
-    '"its numbers against the record are those of its spec sheet (src/spec_sheet.rs; kit/forecasts/{name}.json)"'
-)
-
-# What a stamped calibrated model's validation result opens with.
-CALIBRATED_RESULT = (
-    "A second form of the object of {companion}, which is served beside it under its own ID. "
-    "Its structure or constants were chosen with that record read; its spec sheet gives what it is fitted on and its numbers against the record."
-)
-
-# What the row of CALIBRATIONS says until the calibration is recorded.
-NOT_BLIND_UNTIL_RECORDED = "What of the record was seen before its structure or constants were chosen is written here as its calibration states it (kit/forecasts/{name}.json)."
+        how = evidence.result() if evidence.kind != "specimen" else ""
+        if predecessor is not None:
+            name, own = predecessor
+            how = (how + " " if how else "") + f"It supersedes {name}, a model of the same object, whose sources these are."
+        else:
+            how += " Its sources, with their people and licence, are written here by its owner."
+        entry = {
+            "kind": kind,
+            "real_thing": predecessor[1]["real_thing"] if predecessor else (f"{title}, compared with measurements of it." if evidence.kind == "measurement" else f"{title}, held to a reference calculation."),
+            "sources": predecessor[1]["sources"] if predecessor else [],
+            "how_used": how,
+            "not_held_to_a_measurement": evidence.kind != "measurement",
+            "cite_also": "paper",
+        }
+    lines = json.dumps({key: entry}, indent=2, ensure_ascii=False).split("\n")[1:-1]
+    return "\n".join("  " + line for line in lines) + ","
 
 
 def rust_text(text):
     return text.replace("\\", "\\\\").replace('"', '\\"')
 
 
-def companion_citation(stamp, companion):
-    """The citation key and entry of the served model `companion`."""
+def served_citation(stamp, model):
+    """The citation key and entry of the served model `model`."""
     table = json.loads(stamp.text("protocol_mcp_gateway/data/citations.json"))
-    found = [key for key in table["models"] if key.split("/")[-1] == companion]
+    found = [key for key in table["models"] if key.split("/")[-1] == model]
     if len(found) != 1:
-        sys.exit(f"--companion-to {companion}: no served model of that name in protocol_mcp_gateway/data/citations.json")
-    return found[0], table["models"][found[0]]
+        sys.exit(f"--supersedes {model}: no served model of that name in protocol_mcp_gateway/data/citations.json")
+    return found[0].split("/")[-1], table["models"][found[0]]
 
 
-def calibrated_citation(stamp, key, kind, companion):
-    """The citation of a model calibrated to the record: the real object and
-    the sources are its companion's, and how they are used says so."""
-    _, own = companion_citation(stamp, companion)
-    entry = {
-        "kind": kind,
-        "real_thing": own["real_thing"],
-        "sources": own["sources"],
-        "how_used": (
-            f"A second form of {companion}'s real object: its structure or constants were chosen with {companion}'s record read; "
-            f"{companion} is served beside it, and the sources are {companion}'s."
-        ),
-        "not_held_to_a_measurement": False,
-        "cite_also": "paper",
-    }
-    lines = json.dumps({key: entry}, indent=2, ensure_ascii=False).split("\n")[1:-1]
-    return "\n".join("  " + line for line in lines) + ","
-
-
-def calibration_row(name, companion, not_blind):
-    return f'    Calibration {{ model: "{name}", companion_to: "{companion}", not_blind: "{rust_text(not_blind)}" }},'
-
-
-def entry(key, title, compared=False, calibrated=None):
+def entry(key, title, marks="Marks::NotCompared", marks_words="OWN_SPECIMEN"):
     words = title.lower()
-    if calibrated:
-        marks, marks_words = "Marks::Calibrated", CALIBRATED_WORDS.format(name=key.split("/")[-1])
-    else:
-        marks, marks_words = "Marks::NotCompared", NOT_YET_SCORED.format(name=key.split("/")[-1]) if compared else "OWN_SPECIMEN"
     return (
         f'    Entry {{ key: "{key}", marks: {marks}, marks_words: {marks_words},\n'
         f'        strong: &["{words}"],\n'
@@ -294,87 +358,139 @@ def entry(key, title, compared=False, calibrated=None):
     )
 
 
-def compared_by_hand(stamp, name, args):
-    """What a compared model's stamp leaves, forecast first."""
-    if args.protocol:
-        if stamp.dry:
-            stamp.done.append(f"would register the protocol {args.protocol} and {len(args.held_back)} held-back file(s) in kit/forecasts/{name}.json and commit it")
-        else:
-            done = subprocess.run(
-                [sys.executable, os.path.join(HERE, "forecast.py"), "--root", stamp.root, "register", name, "--protocol", args.protocol, "--held-back", *args.held_back],
-                capture_output=True, text=True,
-            )
-            if done.returncode != 0:
-                sys.exit(done.stderr.strip() or done.stdout.strip())
-            stamp.done.append(done.stdout.strip())
-    else:
+def evidence_entry(stamp, key, title, evidence):
+    """find_model's entry for the stamped model, with the Marks of its
+    evidence: Measured (its spec sheet gives the numbers) or Reference (its
+    numbers in marks_words)."""
+    if evidence.kind == "specimen":
+        return entry(key, title)
+    marks = marks_of(stamp, evidence)
+    if marks is None:
         stamp.by_hand.append(
-            f"Forecast first, before any held-back data is read: python3 protocol_mcp_gateway/kit/forecast.py register {name} --protocol <its validation_protocol.md> --held-back <each held-back file>; "
-            f"read each held-back file only through python3 protocol_mcp_gateway/kit/forecast.py open {name} <file>, and record the scoring with forecast.py score {name} --output <the scored output> --program <the scoring program>. "
-            "The conformance suite holds a forecast the description states (\"Forecast committed before the data was opened, as <SHA-256>.\") to this registration."
+            f"find_model.rs declares no Marks::{MARKS[evidence.kind]}, the variant served as {EVIDENCE_WORDS[evidence.kind]!r}: the entry of {key} is stamped "
+            "Marks::NotCompared, and find_model's test of a company specimen names it until its marks are set to that word's variant."
         )
-    stamp.by_hand += [
-        f"The stamped citation and find_model entry of {name} name it a model compared with measurements, not yet compared: once compared, write its sources (people, data set, licence) and how they are used in citations.json, set not_held_to_a_measurement to false, give its find_model entry Marks::Measured, and write its spec sheet row in protocol_mcp_gateway/src/spec_sheet.rs (what it computes; Range; Fitted on; Compared with ... within; Gap; Refuses). find_model's test every_model_compared_with_measurement_has_its_spec_sheet fails until the row is there.",
-        "The stamped description is the template's, a company specimen: rewrite its validation record and summary as the real thing it is, in numbers; its list sentence is its spec sheet.",
+        marks = "Marks::NotCompared"
+    words = MEASURED_WORDS if evidence.kind == "measurement" else evidence.reference_words()
+    return entry(key, title, marks, '"' + rust_text(words) + '"')
+
+
+# The template's own parts of a spec sheet, which its owner rewrites as the
+# real object: what it computes, its range and where it refuses, each as the
+# template's physics gives it (the refusals are the template's, so the
+# stamped tree's tests hold the sheet to them).
+TEMPLATE_SHEET = {
+    "card": (
+        "{title}: the temperature of a body of 500 J/K warmed by a heater and cooled through 0.5 W/K to a bath, its heat ledger held at every step.",
+        "Range: the template's, the body from above 0 K to 933.47 K, its melting point; write where it was compared and how far it computes past that.",
+        "Refuses a body or a bath at or below absolute zero (BelowAbsoluteZero) or at or above the body's melting point (AboveMeltingPoint).",
+    ),
+    "solver": (
+        "{title}: steady heat conduction along a 0.5 m aluminium rod with heat generated inside it, the peak temperature and the heat leaving each end.",
+        "Range: the template's, ends held from above 0 K to 933.47 K, the rod's melting point; write where it was compared and how far it computes past that.",
+        "Refuses an end at or below absolute zero or above the melting point (EndOutsideSolid) and a field that does not settle (NotSettled).",
+    ),
+}
+# Where a new row of spec_sheet::SHEETS goes: after the cards described in
+# their own files, or after the last solver.
+SHEET_ANCHORS = {"card": "    // <<< sheets: card files >>>", "solver": "    // <<< sheets: solvers two >>>"}
+
+
+def sheet_row(stamp, kind, name, title, evidence):
+    """The model's row of spec_sheet::SHEETS, from its numbers: Fitted on,
+    Compared with ... within and Gap from the flags, the template's computes,
+    Range and Refuses. Only a model compared with measurement has one."""
+    if evidence.kind != "measurement":
+        return
+    computes, range_, refuses = TEMPLATE_SHEET[kind]
+    parts = [
+        ("model", name),
+        ("computes", computes.format(title=title)),
+        ("range", range_),
+        ("fitted_on", evidence.fitted_sentence()),
+        ("compared", evidence.compared_sentence()),
+        ("gap", evidence.gap_sentence()),
+        ("refuses", refuses),
     ]
+    row = "    SpecSheet {\n" + "".join(f'        {field}: "{rust_text(text)}",\n' for field, text in parts) + "    },"
+    stamp.hook("protocol_mcp_gateway/src/spec_sheet.rs", SHEET_ANCHORS[kind], row, where="before",
+               what="its spec sheet: a row of SHEETS, in numbers")
 
 
-def not_blind_of(args):
-    return " ".join((args.not_blind or "").split())
+def succession_row(stamp, old, new):
+    """The row { model: old, by: new } at the end of succession::TABLE: old
+    stays served under its own ID and says superseded_by new."""
+    rel = "protocol_mcp_gateway/src/succession.rs"
+    try:
+        text = stamp.text(rel)
+    except OSError:
+        stamp.by_hand.append(f"{rel}: add Succession {{ model: \"{old}\", by: \"{new}\" }} to TABLE")
+        return
+    start = text.find("pub const TABLE: &[Succession] = &[")
+    end = text.find("\n];", start) if start >= 0 else -1
+    if end < 0:
+        stamp.by_hand.append(f"{rel}: no TABLE to add a row to; add Succession {{ model: \"{old}\", by: \"{new}\" }}")
+        return
+    table = text[start:end]
+    already = re.search(rf'Succession \{{ model: "{old}", by: "(\w+)" \}}', table)
+    if already:
+        stamp.by_hand.append(f"{rel}: {old} is superseded already, by {already.group(1)}; a model has one successor (every_row_names_two_served_models)")
+        return
+    row = f'    Succession {{ model: "{old}", by: "{new}" }},'
+    stamp.pending[rel] = text[:end + 1] + row + "\n" + text[end + 1:]
+    stamp.done.append(f"edit {rel}: {old} superseded_by {new}")
 
 
-def calibrated_by_hand(stamp, name, args):
-    """What a calibrated model's stamp leaves: its calibration, recorded now
-    when the stamp is given the comparison's files, and its own words."""
-    companion = args.companion_to
-    given = [args.protocol, args.output, args.program, args.not_blind]
-    if all(given):
-        if stamp.dry:
-            stamp.done.append(f"would record the calibration of {name} beside {companion} in kit/forecasts/{name}.json and commit it")
-        else:
-            done = subprocess.run(
-                [sys.executable, os.path.join(HERE, "forecast.py"), "--root", stamp.root, "calibrate", name, "--companion-to", companion,
-                 "--protocol", args.protocol, "--output", args.output, "--program", args.program, "--not-blind", not_blind_of(args)],
-                capture_output=True, text=True,
-            )
-            if done.returncode != 0:
-                sys.exit(done.stderr.strip() or done.stdout.strip())
-            stamp.done.append(done.stdout.strip())
-    else:
+def evidence_by_hand(stamp, name, evidence):
+    """What a stamp of a compared or superseding model leaves to its owner."""
+    if evidence.kind != "specimen":
+        stamp.done.append(f"spec line of {name}: {evidence.spec_line()}")
         stamp.by_hand.append(
-            f"Its calibration: python3 protocol_mcp_gateway/kit/forecast.py calibrate {name} --companion-to {companion} --protocol <the comparison's own record> "
-            f"--output <its scored output> --program <the program that scored it> --not-blind \"<what of the record was seen before the structure or constants were chosen>\"; "
-            f"then the same sentence as not_blind in its row of CALIBRATIONS (find_model.rs), which find_model's test holds to the registration word for word. "
-            "Until it is recorded the served sweep names the calibration missing."
+            f"The stamped description is the template's (a heated body or rod): rewrite its specimen, data and limits as the real object of {name}. "
+            "Its record's result is stamped as the spec line; keep it in numbers as the comparison is run again."
         )
-    stamp.by_hand += [
-        f"The stamped description is the template's: rewrite its specimen, data and limits as the real object it is calibrated to. Its validation result opens, as stamped, by saying it is calibrated to the record and not a blind test and naming {companion}; give its numbers against the record there, as after the fact, and in its find_model marks_words.",
-        f"No blind registration is stamped. A forecast of data not yet read is registered with forecast.py register {name} --protocol <its validation_protocol.md> --held-back <each file>, beside the calibration in the same record; its word stays calibrated to the record until that forecast is scored (forecast.py score {name} ... --verdict met, \"met in part\" or missed), and then is the scoring's.",
-    ]
+        if not evidence.supersedes:
+            stamp.by_hand.append(f"citations.json: write the sources of {name} (people, data set, licence).")
+    if evidence.kind == "measurement":
+        stamp.by_hand.append(
+            f"src/spec_sheet.rs, the SHEETS row of {name}: Fitted on, Compared with and Gap are stamped from the flags; rewrite computes, Range (where it was "
+            "compared, in numbers, and how far it computes past that) and Refuses (by name) as the real object, and name what was fitted. "
+            "find_model's every_model_compared_with_measurement_has_its_spec_sheet and the sheet's every_spec_sheet_has_the_shape hold it."
+        )
+    if evidence.kind != "specimen":
+        stamp.by_hand.append(
+            f"find_model's every_served_model_carries_its_word_on_its_list_row_and_in_a_match counts the models of each word: "
+            f"{EVIDENCE_WORDS[evidence.kind]!r} goes up by one."
+        )
+        stamp.by_hand.append(
+            "A forecast of data that does not exist yet is fixed before the data arrives: python3 protocol_mcp_gateway/kit/forecast.py register "
+            f"{name} --protocol <the forecast> (one commit), and its description says \"Forecast committed before the data was opened, as <SHA-256>.\". "
+            "Data already on disk needs no registration: fit on what helps, compare on the rest, and give both counts in the spec sheet."
+        )
+    if evidence.supersedes:
+        stamp.by_hand.append(
+            f"{evidence.supersedes} stays served under its own ID; the succession.rs row gives it superseded_by \"{name}\" once {name} is served. "
+            f"Say in {name}'s spec sheet what it computes that {evidence.supersedes} does not."
+        )
 
 
-def calibrated_result(stamp, rel, old, companion):
-    """The stamped validation result of a calibrated model, in place of the template's."""
-    stamp.replace_once(rel, re.escape(old), lambda _: f'"{rust_text(CALIBRATED_RESULT.format(companion=companion))}".to_string(),',
-                       what="the validation result: calibrated to the record, not a blind test, beside its companion")
+def evidence_result(stamp, rel, old, evidence):
+    """The stamped record's result, the spec line, in place of the template's."""
+    stamp.replace_once(rel, re.escape(old), lambda _: f'"{rust_text(evidence.result())}".to_string(),',
+                       what="the record's result: the spec line, in numbers")
 
 
-def calibrated_registrations(stamp, name, companion, args):
-    stamp.hook("protocol_mcp_gateway/src/find_model.rs", "pub(crate) const CALIBRATIONS: &[Calibration] = &[",
-               calibration_row(name, companion, not_blind_of(args) or NOT_BLIND_UNTIL_RECORDED.format(name=name)),
-               what="its row of CALIBRATIONS: the companion and what of the record was seen first")
-
-
-def stamp_card(stamp, name, domain, title, compared=False, calibrated=None, args=None):
+def stamp_card(stamp, name, domain, title, evidence=None):
+    evidence = evidence or Evidence()
     words = {"name": name, "Name": camel(name), "NAME": name.upper(), "domain": domain, "Title": title}
     Name = words["Name"]
     stamp.write_new(f"genesis_kernel/src/{name}.rs", fill("card/kernel.rs", words))
     stamp.write_new(f"genesis_kernel/tests/{name}_conformance.rs", fill("card/kernel_conformance.rs", words))
     stamp.write_new(f"protocol_mcp_gateway/src/card_{name}.rs", fill("card/gateway.rs", words))
     stamp.write_new(f"protocol_mcp_gateway/src/card_{name}_descriptor.rs", fill("card/descriptor.rs", words))
-    if calibrated and f"protocol_mcp_gateway/src/card_{name}_descriptor.rs" in stamp.pending:
-        calibrated_result(stamp, f"protocol_mcp_gateway/src/card_{name}_descriptor.rs",
-                          '"Held: the card\'s tests run it from the floor to the ceiling, and every step holds its conservation ledger to its stated limit.".to_string(),', calibrated)
+    if evidence.kind != "specimen" and f"protocol_mcp_gateway/src/card_{name}_descriptor.rs" in stamp.pending:
+        evidence_result(stamp, f"protocol_mcp_gateway/src/card_{name}_descriptor.rs",
+                        '"Held: the card\'s tests run it from the floor to the ceiling, and every step holds its conservation ledger to its stated limit.".to_string(),', evidence)
     stamp.write_new(f"protocol_mcp_gateway/tests/{name}_router.rs", fill("card/router_test.rs", words))
     module_line(stamp, "genesis_kernel/src/lib.rs", name)
 
@@ -434,16 +550,17 @@ def stamp_card(stamp, name, domain, title, compared=False, calibrated=None, args
     stamp.hook("protocol_mcp_gateway/src/chain.rs", 'Continued { card: "crater_ryugu_sci", differ: &["t_s"], within_one_ulp: &[] },',
                f'    Continued {{ card: "{name}", differ: &["boundary_work_j", "energy_anchor_j", "t_s"], within_one_ulp: &[] }},',
                what="the continued cards: what a run cut in two through from ends with otherwise than uncut (the ledger is anchored again at the cut)")
-    stamp.hook_after_entry("protocol_mcp_gateway/src/find_model.rs", '    Entry { key: "aerospace/crater_ryugu_sci",', entry(f"{domain}/{name}", title, compared, calibrated),
+    stamp.hook_after_entry("protocol_mcp_gateway/src/find_model.rs", '    Entry { key: "aerospace/crater_ryugu_sci",', evidence_entry(stamp, f"{domain}/{name}", title, evidence),
                            ends_with="},", what="find_model entry, after the crater's, as the card is after it in the list of cards")
-    if calibrated:
-        calibrated_registrations(stamp, name, calibrated, args)
-    cited = calibrated_citation(stamp, f"{domain}/{name}", "card", calibrated) if calibrated else citation(f"{domain}/{name}", "card", title, compared)
+    predecessor = served_citation(stamp, evidence.supersedes) if evidence.supersedes else None
+    cited = citation(f"{domain}/{name}", "card", title, evidence, predecessor)
     stamp.hook("protocol_mcp_gateway/data/citations.json", '    "aerospace/crater_ryugu_sci": {', cited, where="before", what="citation")
     counts(stamp, "card")
+    sheet_row(stamp, "card", name, title, evidence)
+    if evidence.supersedes:
+        succession_row(stamp, evidence.supersedes, name)
     stamp.by_hand += [
         f"The tests that count the cards ({served(stamp, 'cards')} before this one): grep -rn '{served(stamp, 'cards')}' protocol_mcp_gateway/tests protocol_mcp_gateway/src | grep -i card",
-        "protocol_mcp_gateway/tests/tools_093.rs FULL_DESCRIPTIONS: the pinned hash of the full descriptions moves; the main session recomputes it at the merge.",
         f"A frame quantity the template does not use needs its unit in descriptor.rs unit_of; force_torque_state names melt_margin_k for {name}.",
         "Replace the template physics in the card, then its fields in card_<name>.rs, card_<name>_descriptor.rs and the published_reject lines in lib.rs.",
         "find_model entry: its terms; citations.json: its sources when the card stands on someone's data; ends.rs and fresh_start.rs when the card has an end or continuation fields.",
@@ -454,13 +571,14 @@ def stamp_card(stamp, name, domain, title, compared=False, calibrated=None, args
     ]
 
 
-def stamp_solver(stamp, name, title, compared=False, calibrated=None, args=None):
+def stamp_solver(stamp, name, title, evidence=None):
+    evidence = evidence or Evidence()
     words = {"name": name, "Name": camel(name), "NAME": name.upper(), "domain": "", "Title": title}
     stamp.write_new(f"genesis_solvers/src/{name}.rs", fill("solver/solver.rs", words))
     stamp.write_new(f"genesis_solvers/tests/{name}_conformance.rs", fill("solver/solver_conformance.rs", words))
     stamp.write_new(f"protocol_mcp_gateway/src/solver_{name}.rs", fill("solver/gateway.rs", words))
-    if calibrated and f"protocol_mcp_gateway/src/solver_{name}.rs" in stamp.pending:
-        calibrated_result(stamp, f"protocol_mcp_gateway/src/solver_{name}.rs", "crate::descriptor::OWN_SPECIMEN_SOLVER_RESULT.to_string(),", calibrated)
+    if evidence.kind != "specimen" and f"protocol_mcp_gateway/src/solver_{name}.rs" in stamp.pending:
+        evidence_result(stamp, f"protocol_mcp_gateway/src/solver_{name}.rs", "crate::descriptor::OWN_SPECIMEN_SOLVER_RESULT.to_string(),", evidence)
     stamp.write_new(f"protocol_mcp_gateway/tests/{name}_router.rs", fill("solver/router_test.rs", words))
     stamp.hook("genesis_solvers/src/lib.rs", "pub mod pipe_flow_superpipe;", f"pub mod {name};", what="the module")
     stamp.hook("protocol_mcp_gateway/src/lib.rs", "mod solver_pipe_flow_superpipe;", f"mod solver_{name};", what="the entry's module")
@@ -468,17 +586,18 @@ def stamp_solver(stamp, name, title, compared=False, calibrated=None, args=None)
                f"    &crate::solver_{name}::{name.upper()},", what="the table of solvers")
     stamp.hook("protocol_mcp_gateway/src/open_plan.rs", '    ("pipe_flow_superpipe", 0.01),', f'    ("{name}", 0.01),',
                what="OPEN_SOLVE_SECONDS: 0.01 s, the template's; measure the solver's own")
-    stamp.hook_after_entry("protocol_mcp_gateway/src/find_model.rs", '    Entry { key: "pipe_flow_superpipe",', entry(name, title, compared, calibrated),
+    stamp.hook_after_entry("protocol_mcp_gateway/src/find_model.rs", '    Entry { key: "pipe_flow_superpipe",', evidence_entry(stamp, name, title, evidence),
                            ends_with="},", what="find_model entry, after the Superpipe's, as the solver is after it in the table of solvers")
-    if calibrated:
-        calibrated_registrations(stamp, name, calibrated, args)
-    cited = calibrated_citation(stamp, name, "solver", calibrated) if calibrated else citation(name, "solver", title, compared)
+    predecessor = served_citation(stamp, evidence.supersedes) if evidence.supersedes else None
+    cited = citation(name, "solver", title, evidence, predecessor)
     stamp.hook("protocol_mcp_gateway/data/citations.json", '    "pipe_flow_superpipe": {', cited, where="before", what="citation")
     counts(stamp, "solver")
+    sheet_row(stamp, "solver", name, title, evidence)
+    if evidence.supersedes:
+        succession_row(stamp, evidence.supersedes, name)
     stamp.by_hand += [
         f"The tests that count the solvers ({served(stamp, 'solvers')} before this one): grep -rn '{served(stamp, 'solvers')}' protocol_mcp_gateway/tests protocol_mcp_gateway/src | grep -i solver",
         "protocol_mcp_gateway/src/open_plan.rs OPEN_SOLVE_SECONDS: the stamp writes 0.01 s; write the solver's measured time for one solve.",
-        "protocol_mcp_gateway/tests/tools_093.rs FULL_DESCRIPTIONS: the pinned hash moves; the main session recomputes it at the merge.",
         "Replace the template physics, then the entry's inputs, outputs, refusals and sections.",
     ]
 
@@ -569,8 +688,41 @@ def add_rows(stamp, name):
     return failed
 
 
+def evidence_of(parser, args):
+    """The evidence the flags give, or the parser's error naming what is missing."""
+    if args.kind == "rows":
+        if any(getattr(args, flag) is not None for flag in ("fitted_on", "compared_with", "within", "gap", "supersedes")) or args.reference_calculation:
+            parser.error("rows adds a card's flag and unit rows; the evidence flags go with card or solver")
+        return Evidence()
+    if args.within is not None and args.compared_with is None:
+        parser.error("--within goes with --compared-with: the accuracy is on the records not in the fit")
+    if args.compared_with is not None and args.within is None:
+        parser.error("--compared-with goes with --within <the accuracy, in numbers>")
+    if args.reference_calculation and args.compared_with is None:
+        parser.error("--reference-calculation goes with --compared-with M --within X: the records of the calculation it is held to")
+    if args.fitted_on is not None and args.compared_with is None:
+        parser.error("--fitted-on goes with --compared-with M --within X: the records not in the fit")
+    if args.gap is not None and args.compared_with is None:
+        parser.error("--gap goes with --compared-with")
+    if args.compared_with is not None and not args.reference_calculation and args.gap is None:
+        parser.error("--compared-with goes with --gap <the largest disagreement, one line with its number>: a spec sheet gives its gap")
+    if args.gap is not None and not re.search(r"\d", args.gap):
+        parser.error("--gap is one line with its number")
+    if args.within is not None and not re.search(r"\d", args.within):
+        parser.error("--within is the accuracy in numbers")
+    for flag in ("fitted_on", "compared_with"):
+        value = getattr(args, flag)
+        if value is not None and value < 0:
+            parser.error(f"--{flag.replace('_', '-')} is a count, 0 or more")
+    if args.supersedes == args.name:
+        parser.error("--supersedes names the served model this one replaces, not itself")
+    return Evidence.of(args)
+
+
 def main():
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    # No abbreviations: the retired flags (--compared, --calibrated)
+    # are refused by name, not read as the start of another.
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter, allow_abbrev=False)
     parser.add_argument("kind", choices=["card", "solver", "rows"])
     parser.add_argument("name")
     parser.add_argument("--domain", default="energy", help="a card's domain: energy, materials, signal or aerospace")
@@ -578,51 +730,29 @@ def main():
     parser.add_argument("--root", default=os.path.dirname(os.path.dirname(HERE)))
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--keep-existing", action="store_true", help="keep a model file that exists and stamp the rest around it")
-    parser.add_argument("--compared", action="store_true", help="a model of a real thing compared with measurements of it: its citation and find_model entry say so, not the company's own specimen, and forecast first is set up")
-    parser.add_argument("--protocol", help="with --compared: its validation protocol, fingerprinted and committed now by kit/forecast.py register, before any held-back data is read; with --calibrated: the comparison's own record, for kit/forecast.py calibrate")
-    parser.add_argument("--held-back", nargs="*", default=[], help="with --protocol: each held-back data file, fingerprinted as it is held")
-    parser.add_argument("--calibrated", action="store_true", help="a model calibrated to the record: its structure or constants chosen with the record of a real object open, served beside --companion-to under the sixth word, with no blind registration")
-    parser.add_argument("--companion-to", help="with --calibrated: the served model of the same real object, the scored original, that it stands beside")
-    parser.add_argument("--output", help="with --calibrated --protocol: the comparison's scored output")
-    parser.add_argument("--program", help="with --calibrated --protocol: the program that scored it")
-    parser.add_argument("--not-blind", help="with --calibrated --protocol: one sentence, what of the record was seen before the structure or constants were chosen")
+    parser.add_argument("--fitted-on", type=int, help="how many records its constants were fitted on (0: nothing fitted)")
+    parser.add_argument("--compared-with", type=int, help="how many records not in the fit it was compared with")
+    parser.add_argument("--records", default="records", help="what one record is, plural: runs, profiles, cultures, step transients")
+    parser.add_argument("--within", help="the accuracy on the records not in the fit, in numbers: \"2.7 percent rms, 6.1 worst\"")
+    parser.add_argument("--gap", help="the largest disagreement, one line with its number")
+    parser.add_argument("--reference-calculation", action="store_true", help="held to a published calculation, not a measurement")
+    parser.add_argument("--supersedes", help="the served model of the same object this one replaces; it stays served, its succession.rs row added")
     args = parser.parse_args()
-    if args.calibrated and args.compared:
-        sys.exit("--calibrated and --compared are two words: a model calibrated to the record is a companion of a scored original")
-    if args.calibrated != bool(args.companion_to):
-        sys.exit("--calibrated goes with --companion-to <the served model it stands beside>")
-    if (args.output or args.program or args.not_blind) and not args.calibrated:
-        sys.exit("--output, --program and --not-blind are for a model calibrated to the record: give --calibrated")
-    if args.calibrated:
-        given = [args.protocol, args.output, args.program, args.not_blind]
-        if any(given) and not all(given):
-            sys.exit("--protocol, --output, --program and --not-blind record the calibration together: give all four, or none")
-        if args.held_back:
-            sys.exit("--held-back is for a blind registration, which a calibrated stamp does not make: register one later with kit/forecast.py register")
-        if args.companion_to == args.name:
-            sys.exit("--companion-to names the served model it stands beside, not itself")
-    elif args.protocol or args.held_back:
-        if not args.compared:
-            sys.exit("--protocol and --held-back are for a model compared with measurements: give --compared")
-    if args.held_back and not args.protocol:
-        sys.exit("--held-back needs --protocol: the protocol is fixed before the held-back data is fingerprinted")
+    evidence = evidence_of(parser, args)
     if not re.fullmatch(r"[a-z][a-z0-9_]*", args.name):
         sys.exit("the name is snake_case: letters, digits and underscores, starting with a letter")
     title = args.title or args.name.replace("_", " ").capitalize()
     stamp = Stamp(os.path.abspath(args.root), args.dry_run, args.keep_existing)
     failed = []
-    calibrated = args.companion_to if args.calibrated else None
     if args.kind == "card":
-        stamp_card(stamp, args.name, args.domain, title, args.compared, calibrated, args)
+        stamp_card(stamp, args.name, args.domain, title, evidence)
     elif args.kind == "rows":
         failed = add_rows(stamp, args.name)
     else:
-        stamp_solver(stamp, args.name, title, args.compared, calibrated, args)
+        stamp_solver(stamp, args.name, title, evidence)
     stamp.commit()
-    if args.compared and args.kind != "rows":
-        compared_by_hand(stamp, args.name, args)
-    if calibrated and args.kind != "rows":
-        calibrated_by_hand(stamp, args.name, args)
+    if args.kind != "rows":
+        evidence_by_hand(stamp, args.name, evidence)
     print(("Would write" if args.dry_run else "Wrote") + f" {args.kind} {args.name} in {stamp.root}:")
     for line in stamp.done:
         print("  " + line)

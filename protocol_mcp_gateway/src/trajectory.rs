@@ -10,7 +10,7 @@
 use genesis_kernel::frame::LastStateFrame64;
 use serde::Serialize;
 use serde_json::{Map, Value};
-use sha2::{Digest, Sha256};
+use sha2::{Digest, Sha384};
 
 use crate::descriptor::{self, Card};
 use crate::view::View;
@@ -33,6 +33,11 @@ pub struct RecordedFrame {
     pub step: u64,
     pub frame_hex: String,
     pub link: String,
+    /// Present only when the frame carries a flag: for each flag, the limit
+    /// it marks, the value, and the extent past it (`src/exceedance.rs`).
+    /// Outside the link and the run seal; the receipt covers it.
+    #[serde(skip_serializing_if = "Vec::is_empty", serialize_with = "crate::serialize_exact_values")]
+    pub exceedances: Vec<Value>,
 }
 
 #[derive(Serialize)]
@@ -59,21 +64,27 @@ pub struct TrajectoryResponse {
     /// Present only when the request asked for a readout.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub readout: Option<crate::readout::Readout>,
+    /// Present only when a landed step carried a flag: the largest extent of
+    /// each limit over every landed step, recorded or not.
+    #[serde(skip_serializing_if = "Vec::is_empty", serialize_with = "crate::serialize_exact_values")]
+    pub exceedance_extremes: Vec<Value>,
     pub frames: Vec<RecordedFrame>,
     pub run_seal: String,
     /// Present only when the request named its upstream in `from`: the
     /// chain commitment, outside the run seal.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub chain: Option<Value>,
-    pub receipt_sha256: String,
+    /// The seal rule, `zero-trust-physics/seal/v2`, just before the receipt.
+    pub seal_rule: &'static str,
+    pub receipt_sha384: String,
 }
 
 #[derive(Serialize)]
 pub struct TapeReport {
     pub holds: bool,
     pub broken_link: Option<u64>,
-    /// `chain`, `load_signature`, `state`, `run_seal`, or null when the tape
-    /// holds.
+    /// `chain`, `load_signature`, `state`, `run_seal`, `exceedances`, or
+    /// null when the tape holds.
     pub cause: Option<String>,
     /// With `load_signature`: where the reading is, and why it does not hold.
     pub broken_place: Option<String>,
@@ -110,6 +121,9 @@ struct RunTail<'a> {
 const CAUSE_CHAIN: &str = "chain";
 const CAUSE_RUN_SEAL: &str = "run_seal";
 const CAUSE_STATE: &str = "state";
+/// A recorded frame whose `exceedances` do not name the bits of its flags
+/// word (`first_exceedances_off_their_bits`).
+const CAUSE_EXCEEDANCES: &str = "exceedances";
 pub(crate) const CAUSE_LOAD_SIGNATURE: &str = "load_signature";
 
 pub async fn run(state: &crate::AppState, request: Value) -> Result<TrajectoryResponse, DoorError> {
@@ -197,10 +211,10 @@ pub async fn verify(state: &crate::AppState, body: &Value, text: Option<&str>) -
     let chain_seal_given = if object.contains_key(crate::verify_by_request::REQUEST) {
         match object.get(CHAIN_SEAL) {
             None => None,
-            Some(Value::String(text)) if crate::json_text::is_lower_hex(text, 64) => Some(text.clone()),
+            Some(Value::String(text)) if crate::json_text::is_lower_hex(text, 96) => Some(text.clone()),
             Some(_) => {
                 return Err(DoorError::Unprocessable(
-                    "Physical Violation: 'chain_seal' must be 64 lowercase hex digits.".to_string(),
+                    "Physical Violation: 'chain_seal' must be 96 lowercase hex digits.".to_string(),
                 ));
             }
         }
@@ -240,7 +254,7 @@ pub async fn verify(state: &crate::AppState, body: &Value, text: Option<&str>) -
         "run_trajectory",
         given,
         &response.run_seal,
-        Some(&response.receipt_sha256),
+        Some(&response.receipt_sha384),
         &crate::verify_by_request::compared_with_receipt("run", "run_seal"),
         crate::verify_by_request::TEXT_NOT_COMPARED,
         None,
@@ -274,7 +288,7 @@ pub async fn verify(state: &crate::AppState, body: &Value, text: Option<&str>) -
         // is handed back.
         report.insert("cause".into(), Value::String(CHAIN_SEAL.to_string()));
         report.shift_remove("recomputed_run_seal");
-        report.shift_remove("recomputed_receipt_sha256");
+        report.shift_remove("recomputed_receipt_sha384");
         report.insert(
             "not_held".into(),
             Value::String(crate::verify_by_request::not_held(CHAIN_SEAL, "run_trajectory")),
@@ -587,13 +601,13 @@ fn from_of(upstream: &Value, upstream_answer: &Map<String, Value>, link: &Map<St
 }
 
 /// A step that is the last link: its request computed again by compute_step,
-/// its sha256_seal compared, and its whole answer compared with the link sent.
+/// its sha384_seal compared, and its whole answer compared with the link sent.
 async fn step_held(state: &crate::AppState, object: &Map<String, Value>, from: Value, sent_text: &str) -> Result<TextHeld, DoorError> {
     use crate::rebuild::{CAUSE_ANSWER_TEXT, Difference};
     let held = |cause: Option<&'static str>, difference: Option<Difference>, computed: bool| TextHeld { values_hold: cause.is_none(), cause, difference, computed };
     if let Some(Value::String(version)) = object.get("engine_version") {
         if version != crate::ENGINE_VERSION {
-            let says = crate::rebuild::another_version(version, crate::ENGINE_VERSION, "sha256_seal");
+            let says = crate::rebuild::another_version(version, crate::ENGINE_VERSION, "sha384_seal");
             return Ok(held(Some(crate::rebuild::CAUSE_ENGINE_VERSION), Some(Difference::new("engine_version", says)), false));
         }
     }
@@ -609,9 +623,9 @@ async fn step_held(state: &crate::AppState, object: &Map<String, Value>, from: V
         }
         Err(other) => return Err(other),
     };
-    if Some(response.sha256_seal.as_str()) != object.get("sha256_seal").and_then(Value::as_str) {
-        let says = "The step was computed again and lands on another sha256_seal: its sealed parts are not the engine's step of this request.";
-        return Ok(held(Some("sha256_seal"), Some(Difference::new("sha256_seal", says)), true));
+    if Some(response.sha384_seal.as_str()) != object.get("sha384_seal").and_then(Value::as_str) {
+        let says = "The step was computed again and lands on another sha384_seal: its sealed parts are not the engine's step of this request.";
+        return Ok(held(Some("sha384_seal"), Some(Difference::new("sha384_seal", says)), true));
     }
     let engine_text = serde_json::to_string(&response).map_err(|error| {
         DoorError::Internal(format!("Physical Violation: the response could not be encoded. {error}"))
@@ -660,7 +674,7 @@ async fn verify_chain(state: &crate::AppState, body: &Value, text: Option<&str>)
         for (index, (link, link_text)) in links.iter().zip(&texts).enumerate() {
             let Some(object) = link.as_object() else { break };
             let from = upstream.as_ref().map(|(request, answer)| from_of(request, answer, object));
-            let is_step = object.contains_key("sha256_seal") && !object.contains_key("run_seal");
+            let is_step = object.contains_key("sha384_seal") && !object.contains_key("run_seal");
             let held = match (is_step, from.clone()) {
                 (true, Some(from)) => step_held(state, object, from, link_text).await?,
                 _ => text_held(state, object, from.clone(), link_text).await?,
@@ -733,7 +747,7 @@ fn links_refusal(body: &Value, refusal: &genesis_seal::refusal::Refusal) -> Stri
     match refusal {
         Refusal::Missing(key) => match (value_at(body, key), key.rsplit('.').next()) {
             (Some(value), Some("outcome")) if !value.is_string() => format!("Physical Violation: '{key}' must be a string."),
-            (Some(Value::Null), Some("upstream_run_seal" | "chain_seal")) => format!("Physical Violation: '{key}' must be 64 lowercase hex digits."),
+            (Some(Value::Null), Some("upstream_run_seal" | "chain_seal")) => format!("Physical Violation: '{key}' must be 96 lowercase hex digits."),
             _ => format!("Missing required parameter: '{key}' (InputMissing)."),
         },
         Refusal::WrongType { field, .. } if field == CHAIN_LINKS && count > genesis_seal::chain::MAX_CHAIN_LINKS => format!(
@@ -788,7 +802,7 @@ fn placed_in_link(body: &Value, refusal: &genesis_seal::refusal::Refusal) -> Opt
     }
     let links = body.get(CHAIN_LINKS)?.as_array()?;
     let index = links.iter().position(|link| {
-        let is_step = link.get("sha256_seal").is_some() && link.get("run_seal").is_none();
+        let is_step = link.get("sha384_seal").is_some() && link.get("run_seal").is_none();
         !is_step && genesis_seal::run::check_tape(link).is_err()
     })?;
     if genesis_seal::run::check_tape(&links[index]).err().as_ref() != Some(refusal) {
@@ -826,12 +840,12 @@ fn value_at<'a>(body: &'a Value, place: &str) -> Option<&'a Value> {
 /// The answer of one step sent to `verify_tape`, which verifies a run: what
 /// it is and how a step is verified (the red team of 0.13.0). It had been
 /// refused as "Missing required parameter: 'frames' (InputMissing)".
-pub(crate) const STEP_ANSWER_TO_VERIFY_TAPE: &str = "Physical Violation: this is the answer of one step (compute_step): it carries sha256_seal and no frames, and verify_tape verifies a run. A step is verified by request: send its inputs to compute_step, or to verify_step, its earlier name, and compare the sha256_seal it answers with this one; the step is computed again under a physics permit.";
+pub(crate) const STEP_ANSWER_TO_VERIFY_TAPE: &str = "Physical Violation: this is the answer of one step (compute_step): it carries sha384_seal and no frames, and verify_tape verifies a run. A step is verified by request: send its inputs to compute_step, or to verify_step, its earlier name, and compare the sha384_seal it answers with this one; the step is computed again under a physics permit.";
 
-/// The whole answer of a step: `sha256_seal`, with no `frames` and no
+/// The whole answer of a step: `sha384_seal`, with no `frames` and no
 /// `run_seal`.
 fn is_a_step_answer(object: &Map<String, Value>) -> bool {
-    object.contains_key("sha256_seal") && !object.contains_key("frames") && !object.contains_key("run_seal")
+    object.contains_key("sha384_seal") && !object.contains_key("frames") && !object.contains_key("run_seal")
 }
 
 /// A tape that names a pair outside the view is read as a tape that names a
@@ -1169,6 +1183,11 @@ pub(crate) fn execute_observed(
     let mut link = digest_bytes(crate::sealed_form(&prepared.request).as_bytes());
     let mut frames = Vec::new();
     let mut pending: Option<(u64, LastStateFrame64)> = None;
+    // The records of the last landed step, written out only when its frame
+    // is recorded.
+    let mut landed_records: Option<genesis_kernel::exceedance::Exceedances> = None;
+    let card_name = prepared.request["card"].as_str().unwrap_or_default().to_string();
+    let mut extremes = crate::exceedance::Extremes::default();
     let mut steps_landed = 0_u64;
     let mut last_residual: Option<f64> = None;
     let mut max_residual: Option<f64> = None;
@@ -1189,6 +1208,16 @@ pub(crate) fn execute_observed(
             match prepared.live.audit(&frame) {
                 Ok(residual) => {
                     steps_landed += 1;
+                    // A step with no flag has no record; a build that checks
+                    // reads its records anyway, to hold them to its flags.
+                    landed_records = if frame.flags == 0 && !genesis_kernel::exceedance::CHECKED {
+                        None
+                    } else {
+                        let records = prepared.live.exceedances(&snapshot);
+                        crate::exceedance::debug_check(&card_name, steps_landed, frame.flags, &records);
+                        extremes.observe(&card_name, steps_landed, frame.flags, &records);
+                        Some(records)
+                    };
                     max_residual = Some(match max_residual {
                         Some(current) if residual > current => residual,
                         Some(current) => current,
@@ -1199,7 +1228,8 @@ pub(crate) fn execute_observed(
                         observe(steps_landed, &prepared.live)?;
                     }
                     if steps_landed % prepared.record_every == 0 {
-                        record(&mut frames, &mut link, steps_landed, &mut frame);
+                        let exceedances = written(&card_name, frame.flags, landed_records.as_ref());
+                        record(&mut frames, &mut link, steps_landed, &mut frame, exceedances);
                         pending = None;
                     } else {
                         pending = Some((steps_landed, frame));
@@ -1214,7 +1244,9 @@ pub(crate) fn execute_observed(
         }
     }
     if let Some((step, mut frame)) = pending {
-        record(&mut frames, &mut link, step, &mut frame);
+        // The last landed step's frame: its records are the last read.
+        let exceedances = written(&card_name, frame.flags, landed_records.as_ref());
+        record(&mut frames, &mut link, step, &mut frame, exceedances);
     }
     let last_state = if steps_landed == 0 {
         None
@@ -1295,15 +1327,17 @@ pub(crate) fn execute_observed(
         state_digest,
         load_source: prepared.load_source,
         readout: None,
+        exceedance_extremes: extremes.finish(),
         frames,
         run_seal,
         chain: None,
-        receipt_sha256: String::new(),
+        seal_rule: crate::SEAL_RULE,
+        receipt_sha384: String::new(),
     })
 }
 
-/// A hash is 64 lowercase hex digits. A state hex is 16, or an array of those.
-/// A frame's `frame_hex` (128 digits) and `link` (64) written with capital
+/// A hash is 96 lowercase hex digits. A state hex is 16, or an array of those.
+/// A frame's `frame_hex` (128 digits) and `link` (96) written with capital
 /// letters are refused by name; any other fault in a frame is a chain failure.
 fn require_exact_tape(
     view: &View,
@@ -1315,12 +1349,12 @@ fn require_exact_tape(
     final_hex: Option<&str>,
     max_hex: Option<&str>,
 ) -> Result<(), DoorError> {
-    if !crate::json_text::is_lower_hex(run_seal, 64) {
-        return Err(exact_digits("run_seal", 64));
+    if !crate::json_text::is_lower_hex(run_seal, 96) {
+        return Err(exact_digits("run_seal", 96));
     }
     if let Some(text) = state_digest {
-        if !crate::json_text::is_lower_hex(text, 64) {
-            return Err(exact_digits("state_digest", 64));
+        if !crate::json_text::is_lower_hex(text, 96) {
+            return Err(exact_digits("state_digest", 96));
         }
     }
     if let Some(text) = final_hex {
@@ -1340,7 +1374,7 @@ fn require_exact_tape(
         let Some(object) = frame.as_object() else {
             continue;
         };
-        for (key, digits) in [("frame_hex", 128), ("link", 64)] {
+        for (key, digits) in [("frame_hex", 128), ("link", 96)] {
             let capital = object
                 .get(key)
                 .and_then(Value::as_str)
@@ -1453,7 +1487,7 @@ fn recompute(
             return broken(index);
         }
         let digest = digest_bytes(&bytes);
-        let Some(stored) = decode_fixed(stored_link, 32) else {
+        let Some(stored) = decode_fixed(stored_link, 48) else {
             return broken(index);
         };
         if stored.as_slice() != digest.as_slice() {
@@ -1472,7 +1506,34 @@ fn recompute(
     if seal != run_seal {
         return tape_report(false, Some(frames.len() as u64), Some(CAUSE_RUN_SEAL));
     }
+    if let Some(index) = first_exceedances_off_their_bits(frames) {
+        return tape_report(false, Some(index as u64), Some(CAUSE_EXCEEDANCES));
+    }
     tape_report(true, None, None)
+}
+
+/// The first recorded frame whose `exceedances` do not name exactly the
+/// bits of its own flags word: an entry for a bit the frame does not carry,
+/// a bit it carries with no entry, or entries that are not a list of
+/// records with a bit. A frame with no `exceedances` is not held to it: an
+/// answer of 0.14.3 or before has none, and a frame with no flag has none.
+/// The frames' bytes have been read by the links before this is asked.
+fn first_exceedances_off_their_bits(frames: &[Value]) -> Option<usize> {
+    frames.iter().position(|frame| {
+        let Some(entries) = frame.get("exceedances") else {
+            return false;
+        };
+        let flags = frame
+            .get("frame_hex")
+            .and_then(Value::as_str)
+            .and_then(|text| decode_fixed(text, 64))
+            .map(|bytes| u64::from_le_bytes(bytes[40..48].try_into().expect("eight bytes")));
+        let named = entries.as_array().and_then(|entries| crate::exceedance::bits_named(entries));
+        match (flags, named) {
+            (Some(flags), Some(named)) => named != flags,
+            _ => true,
+        }
+    })
 }
 
 fn tape_report(holds: bool, broken_link: Option<u64>, cause: Option<&str>) -> TapeReport {
@@ -1487,11 +1548,20 @@ fn state_broken() -> TapeReport {
     tape_report(false, None, Some(CAUSE_STATE))
 }
 
+/// The `exceedances` a recorded frame carries: none for a frame with no flag.
+fn written(card: &str, flags: u64, records: Option<&genesis_kernel::exceedance::Exceedances>) -> Vec<Value> {
+    match records {
+        Some(records) => crate::exceedance::frame_json(card, flags, records),
+        None => crate::exceedance::frame_json(card, flags, &genesis_kernel::exceedance::Exceedances::new()),
+    }
+}
+
 fn record(
     frames: &mut Vec<RecordedFrame>,
-    link: &mut [u8; 32],
+    link: &mut [u8; 48],
     step: u64,
     frame: &mut LastStateFrame64,
+    exceedances: Vec<Value>,
 ) {
     frame.proof.copy_from_slice(&link[..16]);
     let bytes = frame.to_bytes();
@@ -1501,11 +1571,12 @@ fn record(
         step,
         frame_hex: hex::encode(bytes),
         link: hex::encode(digest),
+        exceedances,
     });
 }
 
 fn seal_run(
-    link: &[u8; 32],
+    link: &[u8; 48],
     outcome: &str,
     steps_landed: u64,
     reject: Option<&str>,
@@ -1638,14 +1709,25 @@ struct TrajectoryDocument<'a> {
     load_source: &'a Value,
     #[serde(skip_serializing_if = "no_readout")]
     readout: &'a Option<crate::readout::Readout>,
+    #[serde(skip_serializing_if = "no_extremes", serialize_with = "exact_extremes")]
+    exceedance_extremes: &'a Vec<Value>,
     frames: &'a Vec<RecordedFrame>,
     run_seal: &'a str,
     #[serde(skip_serializing_if = "Option::is_none")]
     chain: &'a Option<Value>,
+    seal_rule: &'static str,
 }
 
 fn no_readout(readout: &&Option<crate::readout::Readout>) -> bool {
     readout.is_none()
+}
+
+fn no_extremes(extremes: &&Vec<Value>) -> bool {
+    extremes.is_empty()
+}
+
+fn exact_extremes<S: serde::Serializer>(extremes: &&Vec<Value>, serializer: S) -> Result<S::Ok, S::Error> {
+    crate::serialize_exact_values(extremes, serializer)
 }
 
 /// Takes bytes written to it and says whether they are, in order, the bytes
@@ -1701,16 +1783,18 @@ fn seal_trajectory(mut response: TrajectoryResponse) -> Result<TrajectoryRespons
         state_digest: &response.state_digest,
         load_source: &response.load_source,
         readout: &response.readout,
+        exceedance_extremes: &response.exceedance_extremes,
         frames: &response.frames,
         run_seal: &response.run_seal,
         chain: &response.chain,
+        seal_rule: crate::SEAL_RULE,
     })
     .map_err(encode_error)?;
-    response.receipt_sha256 = crate::digest_hex(document.as_bytes());
+    response.receipt_sha384 = crate::digest_hex(document.as_bytes());
     // The response with its receipt must be the document with the receipt
     // appended. It is written to a comparison and not to a string.
     debug_assert!(document.ends_with('}'));
-    let tail = format!(",\"receipt_sha256\":\"{}\"}}", response.receipt_sha256);
+    let tail = format!(",\"receipt_sha384\":\"{}\"}}", response.receipt_sha384);
     let mut compare = SameAs {
         head: &document.as_bytes()[..document.len() - 1],
         tail: tail.as_bytes(),
@@ -1726,9 +1810,9 @@ fn seal_trajectory(mut response: TrajectoryResponse) -> Result<TrajectoryRespons
     Ok(response)
 }
 
-fn digest_bytes(bytes: &[u8]) -> [u8; 32] {
-    let digest = Sha256::digest(bytes);
-    let mut out = [0_u8; 32];
+fn digest_bytes(bytes: &[u8]) -> [u8; 48] {
+    let digest = Sha384::digest(bytes);
+    let mut out = [0_u8; 48];
     out.copy_from_slice(&digest);
     out
 }
@@ -1926,7 +2010,7 @@ mod tests {
     use serde_json::json;
 
     fn hash() -> String {
-        "ab".repeat(32)
+        "ab".repeat(48)
     }
 
     fn tape(final_state: Value) -> Value {

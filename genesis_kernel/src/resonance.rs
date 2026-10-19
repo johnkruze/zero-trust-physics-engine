@@ -65,6 +65,7 @@ extern crate core;
 
 use core::prelude::v1::*;
 
+use crate::exceedance::{Exceedance, ExceedanceKind, Side};
 use crate::frame::LastStateFrame64;
 use crate::normal::normal_or_zero;
 
@@ -406,6 +407,26 @@ pub fn step(
     load: OscillatorLoad,
     dt_s: f64,
 ) -> Result<(), StepReject> {
+    #[cfg(any(test, debug_assertions, feature = "check_exceedances"))]
+    let before = *state;
+    let stepped = step_landed(oscillator, state, frame, load, dt_s);
+    #[cfg(any(test, debug_assertions, feature = "check_exceedances"))]
+    if stepped.is_ok() {
+        crate::exceedance::debug_check("resonance", exceedances(oscillator, &before, state, load, dt_s), frame.flags);
+    }
+    stepped
+}
+
+/// The step itself; [`step`] is it with, in a build that checks
+/// (`crate::exceedance::CHECKED`), the check that [`exceedances`] stands for
+/// the flags it wrote.
+fn step_landed(
+    oscillator: &DynamicOscillator,
+    state: &mut OscillatorState,
+    frame: &mut LastStateFrame64,
+    load: OscillatorLoad,
+    dt_s: f64,
+) -> Result<(), StepReject> {
     step_as_computed(oscillator, state, frame, load, dt_s)?;
     normal_or_zero_state(state);
     Ok(())
@@ -675,6 +696,37 @@ fn step_bias_work(
     };
     predicted[2] += extra_j;
     commit(oscillator, state, frame, load, dt_s, predicted)
+}
+
+/// Every limit a flag of this card can mark: what [`exceedances`] reports
+/// beside a flag's bit (`crate::exceedance`).
+pub const EXCEEDANCE_KINDS: &[crate::exceedance::ExceedanceKind] = &[
+    STROKE_KIND,
+];
+
+const STROKE_KIND: ExceedanceKind = ExceedanceKind::fixed(
+    "FLAG_STROKE_LIMIT",
+    FLAG_STROKE_LIMIT,
+    "displacement_m_magnitude",
+    "m",
+    Side::AtOrAbove,
+    STROKE_M,
+    "the mount's stroke, 1/64 m in magnitude",
+);
+
+/// The limits the step from `before` to `after` under `load` over `dt_s`
+/// is past: one record for each limit a flag set on its frame marks.
+pub fn exceedances(
+    oscillator: &DynamicOscillator,
+    before: &OscillatorState,
+    after: &OscillatorState,
+    load: OscillatorLoad,
+    dt_s: f64,
+) -> crate::exceedance::Exceedances {
+    let _ = (before, load, dt_s);
+    let mut records = crate::exceedance::Exceedances::new();
+    records.push_if(after.stroke_limited, Exceedance::at(STROKE_KIND, oscillator.stroke_m, after.displacement_m.abs()));
+    records
 }
 
 #[cfg(test)]

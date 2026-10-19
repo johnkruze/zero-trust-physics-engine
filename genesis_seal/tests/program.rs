@@ -140,7 +140,7 @@ fn verify_dataset_holds_a_dataset_of_saved_runs_and_names_the_first_break() {
     assert!(out.contains("frames_file: not given\n"), "{out}");
 
     let mut changed = files.frames.clone().unwrap();
-    changed[64 + 64 * (113 * 3 + 20)] ^= 0x01;
+    changed[80 + 64 * (113 * 3 + 20)] ^= 0x01;
     let bad_frames = write(&folder, "frames_changed.bin", &changed);
     let (code, out, _) = run(&["verify-dataset", &head, &rows, &bad_frames]);
     assert_eq!(code, 1);
@@ -183,11 +183,11 @@ fn verify_dataset_holds_a_dataset_of_saved_runs_and_names_the_first_break() {
     assert!(error.starts_with("refused: The head was not read."), "{error}");
 }
 
-/// The head of `rows`, with its rows_sha256 and its receipt worked out
+/// The head of `rows`, with its rows_sha384 and its receipt worked out
 /// again, as a forger who changed the rows would write it.
 fn head_for(head: &[u8], rows: &[u8]) -> Vec<u8> {
     let mut read = genesis_seal::dataset::Head::read(head).unwrap();
-    read.rows_sha256 = Some(genesis_seal::sealed_form::digest_hex(rows));
+    read.rows_sha384 = Some(genesis_seal::sealed_form::digest_hex(rows));
     read.wire().into_bytes()
 }
 
@@ -234,7 +234,7 @@ fn verify_dataset_names_the_row_of_a_dropped_or_repeated_row_and_of_a_decimal_th
     assert!(out.starts_with("holds: false\ncause: plan\nrow: 4\n"), "{out}");
     assert!(out.contains("fault: A row is repeated: row 6 stands in its own place and also in the place of row 4, so row 4 is missing.\n"), "{out}");
 
-    // A decimal of a final state changed, with the head's rows_sha256 and
+    // A decimal of a final state changed, with the head's rows_sha384 and
     // receipt worked out again: every seal holds, the decimal is named, and
     // the exit code says the bytes are not the engine's.
     let state = |row: &Value| row["final_state"].as_object().unwrap().clone();
@@ -407,16 +407,16 @@ fn verify_dataset_holds_the_three_files_the_writer_wrote() {
 
 /// An answer of `validate_series` made by the rules of the crate alone, with its receipt.
 fn validation_answer() -> Value {
-    use genesis_seal::validation::{SealParts, bits_hex, measurements_sha256, statistics, validation_seal};
+    use genesis_seal::validation::{SealParts, bits_hex, measurements_sha384, statistics, validation_seal};
     let measurements = json!([{"step": 1, "value": 3.9}, {"step": 2, "value": 3.8}]);
     let model = [3.9_f64, 3.7];
-    let hash = measurements_sha256(&measurements);
+    let hash = measurements_sha384(&measurements);
     let stats = statistics(&[1, 2], &model, &[3.9, 3.8]).unwrap().unwrap();
     let hexes: Vec<String> = model.iter().map(|value| bits_hex(*value)).collect();
-    let run_seal = "ab".repeat(32);
+    let run_seal = "ab".repeat(48);
     let seal = validation_seal(&SealParts {
         run_seal: &run_seal,
-        measurements_sha256: &hash,
+        measurements_sha384: &hash,
         quantity: "terminal_v",
         component: None,
         outcome: "completed",
@@ -441,7 +441,7 @@ fn validation_answer() -> Value {
         "max_abs_error_hex": stats.max_abs_error_hex(),
         "max_abs_error_step": stats.max_abs_error_step,
         "model_values_hex": hexes,
-        "measurements_sha256": hash,
+        "measurements_sha384": hash,
         "validation_seal": seal,
     })
 }
@@ -463,12 +463,12 @@ fn verify_validation_holds_an_answer_and_names_each_change_to_it() {
     for (name, edit, cause) in [
         ("statistic", "mean_signed_error_hex", "statistics"),
         ("model_value", "model_values_hex", "model_values"),
-        ("measurement_hash", "measurements_sha256", "measurements"),
+        ("measurement_hash", "measurements_sha384", "measurements"),
     ] {
         let mut changed = genuine.clone();
         match edit {
             "model_values_hex" => changed[edit][1] = json!("4000000000000000"),
-            "measurements_sha256" => changed[edit] = json!("cd".repeat(32)),
+            "measurements_sha384" => changed[edit] = json!("cd".repeat(48)),
             _ => changed[edit] = json!("3fe0000000000000"),
         }
         let path = write(&folder, &format!("{name}.json"), wire(&changed).as_bytes());
@@ -495,30 +495,30 @@ fn verify_validation_holds_an_answer_and_names_each_change_to_it() {
 /// open under `salt`, sealed with it, or, given `opened`, with other data in
 /// place of the committed ones and every other part made again from them.
 fn committed_answer(salt: &str, opened: Option<Value>) -> Value {
-    use genesis_seal::commitment::{Commitment, commitment_sha256};
-    use genesis_seal::validation::{SealParts, bits_hex, measurements_sha256, statistics, validation_seal};
+    use genesis_seal::commitment::{Commitment, commitment_sha384};
+    use genesis_seal::validation::{SealParts, bits_hex, measurements_sha384, statistics, validation_seal};
     let committed = json!([{"step": 1, "value": 3.9}, {"step": 2, "value": 3.8}]);
-    let sha256 = commitment_sha256("terminal_v", &Value::Null, &committed, salt);
-    let commitment = Commitment { sha256, salt: salt.to_string() };
+    let sha384 = commitment_sha384("terminal_v", &Value::Null, &committed, salt);
+    let commitment = Commitment { sha384, salt: salt.to_string() };
     let measurements = opened.unwrap_or(committed);
     let measured: Vec<f64> = measurements.as_array().unwrap().iter().map(|item| item["value"].as_f64().unwrap()).collect();
     let steps: Vec<u64> = measurements.as_array().unwrap().iter().map(|item| item["step"].as_u64().unwrap()).collect();
     let model = [3.9_f64, 3.7];
-    let hash = measurements_sha256(&measurements);
+    let hash = measurements_sha384(&measurements);
     let stats = statistics(&steps, &model, &measured).unwrap().unwrap();
     let hexes: Vec<String> = model.iter().map(|value| bits_hex(*value)).collect();
     let mut answer = validation_answer();
     answer["inputs"]["measurements"] = measurements;
-    answer["inputs"]["commitment"] = json!({"sha256": commitment.sha256, "salt": salt});
+    answer["inputs"]["commitment"] = json!({"sha384": commitment.sha384, "salt": salt});
     answer["commitment_opened"] = json!(genesis_seal::commitment::OPENED);
-    answer["measurements_sha256"] = json!(hash);
+    answer["measurements_sha384"] = json!(hash);
     answer["rms_error_hex"] = json!(stats.rms_error_hex());
     answer["mean_signed_error_hex"] = json!(stats.mean_signed_error_hex());
     answer["max_abs_error_hex"] = json!(stats.max_abs_error_hex());
     answer["max_abs_error_step"] = json!(stats.max_abs_error_step);
     answer["validation_seal"] = json!(validation_seal(&SealParts {
-        run_seal: &"ab".repeat(32),
-        measurements_sha256: &hash,
+        run_seal: &"ab".repeat(48),
+        measurements_sha384: &hash,
         quantity: "terminal_v",
         component: None,
         outcome: "completed",
@@ -539,26 +539,26 @@ fn verify_validation_opens_a_commitment_and_names_data_that_do_not_open_it() {
     let salt = "000102030405060708090a0b0c0d0e0f";
     let wire = |value: &Value| genesis_seal::receipt::with_receipt(&serde_json::to_string(value).unwrap());
     let genuine = committed_answer(salt, None);
-    let committed = genuine["inputs"]["commitment"]["sha256"].as_str().unwrap().to_string();
+    let committed = genuine["inputs"]["commitment"]["sha384"].as_str().unwrap().to_string();
     let path = write(&folder, "genuine.json", wire(&genuine).as_bytes());
     let (code, out, _) = run(&["verify-validation", &path]);
     assert_eq!(code, 0, "{out}");
     assert!(out.starts_with("holds: true\ncause: none\n"), "{out}");
-    assert!(out.contains(&format!("commitment_sha256: {committed}\ncommitment: opens\nreceipt: matches\n")), "{out}");
+    assert!(out.contains(&format!("commitment_sha384: {committed}\ncommitment: opens\nreceipt: matches\n")), "{out}");
 
     // One digit of one measurement, every other part made again from it,
     // the receipt too: the commitment alone speaks.
     let one_digit = committed_answer(salt, Some(json!([{"step": 1, "value": 3.8}, {"step": 2, "value": 3.8}])));
-    assert_eq!(one_digit["inputs"]["commitment"]["sha256"], committed.as_str());
+    assert_eq!(one_digit["inputs"]["commitment"]["sha384"], committed.as_str());
     let path = write(&folder, "one_digit.json", wire(&one_digit).as_bytes());
     let (code, out, _) = run(&["verify-validation", &path]);
     assert_eq!(code, 1, "{out}");
     assert!(out.starts_with("holds: false\ncause: commitment\n"), "{out}");
-    assert!(out.contains(&format!("commitment_sha256: {committed}\ncommitment: does not open: ")), "{out}");
+    assert!(out.contains(&format!("commitment_sha384: {committed}\ncommitment: does not open: ")), "{out}");
 
-    // Another salt under the sha256 committed.
+    // Another salt under the sha384 committed.
     let mut wrong_salt = committed_answer("ffeeddccbbaa99887766554433221100", None);
-    wrong_salt["inputs"]["commitment"]["sha256"] = json!(committed);
+    wrong_salt["inputs"]["commitment"]["sha384"] = json!(committed);
     let path = write(&folder, "wrong_salt.json", wire(&wrong_salt).as_bytes());
     let (code, out, _) = run(&["verify-validation", &path]);
     assert_eq!(code, 1, "{out}");
@@ -690,7 +690,7 @@ fn every_field_of_an_answer_changed_in_turn_is_named_with_the_receipt_and_withou
         let bytes = serde_json::to_string(&changed).unwrap();
         // The receipt of the genuine answer kept on the edited bytes: the receipt names every edit.
         let genuine_text = with_receipt(&genuine);
-        let tail = &genuine_text[genuine_text.rfind(",\"receipt_sha256\"").unwrap()..];
+        let tail = &genuine_text[genuine_text.rfind(",\"receipt_sha384\"").unwrap()..];
         let old_receipt = format!("{}{}", &bytes[..bytes.len() - 1], tail);
         let path = write(&folder, "kept_old.json", old_receipt.as_bytes());
         let (code, out, _) = run(&["verify-validation", &path]);
@@ -802,7 +802,7 @@ fn verify_chain_holds_a_chain_and_names_each_break() {
     assert_eq!(code, 0, "{out}");
     assert_eq!(
         out,
-        "holds: true\nlinks: 2\nbroken_link: none\ncause: none\nchain_seal: ebe580913f63594dbaa1cd6dd2e2da63774e4c1ca27bcca1b65e73b100f579df\n"
+        "holds: true\nlinks: 2\nbroken_link: none\ncause: none\nchain_seal: e90d52d5b0594deea7ee56610b7ecb8d81cd508f7c1a58f2d1c2c295a5383f6d94695137d3a13da5dc2155071c863c9b\n"
     );
     let flip = |text: &str| {
         let last = if text.ends_with('0') { '1' } else { '0' };
@@ -834,4 +834,27 @@ fn verify_chain_holds_a_chain_and_names_each_break() {
     reversed["links"].as_array_mut().unwrap().reverse();
     let path = write(&folder, "reversed.json", &serde_json::to_vec(&reversed).unwrap());
     assert_eq!(run(&["verify-chain", &path]).0, 2);
+}
+
+/// RT3 W2 of the red team of 0.14.0 rc1: a plan of solves is verified by
+/// request only, by the engine's verify_dataset, and the program refused its
+/// head and rows, exit 2, as "'solver' is not a field of this request.",
+/// which did not say so. It now says what the files are and where they are
+/// verified, still exit 2 (the input was not read). The fixtures are a plan
+/// of two atom_dft solves as engine 0.15.0 wrote it (seal rule v2), `answer:
+/// "full"`; the 0.14.3 answer they replace is a v1 record, refused first as
+/// SealRuleNotServed.
+#[test]
+fn a_plan_of_solves_is_refused_by_what_it_is() {
+    let fixtures = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
+    let head = fixtures.join("plan_of_solves_head.json").to_string_lossy().into_owned();
+    let rows = fixtures.join("plan_of_solves_rows.jsonl").to_string_lossy().into_owned();
+    let said = "refused: Physical Violation: this is a plan of solves: its request names 'solver' in place of 'domain' and 'card'. A plan of solves is verified by its request alone: send the request and its dataset_seal to the engine's verify_dataset. genesis_seal reads a dataset of runs.";
+    let text: Value = serde_json::from_str(&std::fs::read_to_string(&head).unwrap()).unwrap();
+    let request = write(&folder("plan_of_solves"), "request.json", &serde_json::to_vec(&text["request"]).unwrap());
+    for arguments in [vec!["verify-dataset", &head, &rows], vec!["row-proof", &head, &rows, "1"], vec!["expand", &request, "0"]] {
+        let (code, out, error) = run(&arguments);
+        assert_eq!(code, 2, "{arguments:?}: {out}{error}");
+        assert_eq!(format!("{out}{error}").trim_end(), said, "{arguments:?}");
+    }
 }

@@ -1,21 +1,21 @@
-//! A commitment to the measurements of a comparison: a salted SHA-256 made
+//! A commitment to the measurements of a comparison: a salted SHA-384 made
 //! before the comparison and opened by it.
 //!
 //! A laboratory or an agent that holds measurements back commits to them
-//! first: it publishes the SHA-256 of a fixed tag, the committed text of the
+//! first: it publishes the SHA-384 of a fixed tag, the committed text of the
 //! measurements, the quantity they are of and its component, and a salt it
 //! keeps. The comparison then carries the measurements, the commitment's
-//! `sha256` and the salt. The engine computes the digest again from the
+//! `sha384` and the salt. The engine computes the digest again from the
 //! request alone, refuses a request whose measurements are not the committed
 //! ones before any physics (`CommitmentDoesNotMatch`), and the validation
 //! seal covers the commitment. A commitment shows that the data were not
-//! changed after it was made. When it was made is shown by where its sha256
+//! changed after it was made. When it was made is shown by where its sha384
 //! was published, not by the engine; the salt keeps the data from being found
-//! by trying values against the published sha256 before they are opened.
+//! by trying values against the published sha384 before they are opened.
 //!
-//! The committed bytes, so that a program with any SHA-256 makes the same:
+//! The committed bytes, so that a program with any SHA-384 makes the same:
 //!
-//! 1. `zero-trust-physics/measurement-commitment/v1` and a line break;
+//! 1. `zero-trust-physics/measurement-commitment/v2` and a line break;
 //! 2. the sealed form (`crate::sealed_form`) of the object
 //!    `{"component": <the request's component, or null>, "measurements":
 //!    <the request's measurements array>, "quantity": <the request's
@@ -31,11 +31,11 @@ use crate::sealed_form::{digest_hex, sealed_form};
 
 /// The first line of the committed bytes: what they are for, and the version
 /// of the rule.
-pub const DOMAIN_LINE: &str = "zero-trust-physics/measurement-commitment/v1\n";
+pub const DOMAIN_LINE: &str = "zero-trust-physics/measurement-commitment/v2\n";
 /// The key of a commitment in a request of `validate_series`.
 pub const COMMITMENT: &str = "commitment";
 /// The fields of a commitment, each required, in the order they are read.
-pub const FIELDS: [&str; 2] = ["sha256", "salt"];
+pub const FIELDS: [&str; 2] = ["sha384", "salt"];
 /// The fewest hex digits of a salt: 16 bytes, past what trying every salt finds.
 pub const LEAST_SALT_DIGITS: usize = 32;
 /// The most hex digits of a salt: 64 bytes.
@@ -49,13 +49,13 @@ pub const DOES_NOT_MATCH: &str = "CommitmentDoesNotMatch";
 pub const INPUT_MISSING: &str = "InputMissing";
 
 /// What an answer says of a commitment it opened, under `commitment_opened`.
-pub const OPENED: &str = "The measurements, the quantity and the component of this request are the ones committed: the SHA-256 of the tag zero-trust-physics/measurement-commitment/v1, their committed text and the salt is commitment.sha256, and validation_seal covers the commitment. A commitment shows that the data were not changed after it was made; when it was made is shown by where its sha256 was published before this comparison, not by the engine.";
+pub const OPENED: &str = "The measurements, the quantity and the component of this request are the ones committed: the SHA-384 of the tag zero-trust-physics/measurement-commitment/v2, their committed text and the salt is commitment.sha384, and validation_seal covers the commitment. A commitment shows that the data were not changed after it was made; when it was made is shown by where its sha384 was published before this comparison, not by the engine.";
 
 /// A commitment as a request carries it: the digest and the salt, each in
 /// lowercase hex.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Commitment {
-    pub sha256: String,
+    pub sha384: String,
     pub salt: String,
 }
 
@@ -69,7 +69,7 @@ pub enum CommitmentFault {
     /// The salt has fewer than `LEAST_SALT_DIGITS` hex digits.
     SaltTooShort { field: String, digits: usize },
     /// The digest of the request's measurements, quantity, component and
-    /// salt is not the commitment's `sha256`.
+    /// salt is not the commitment's `sha384`.
     DoesNotMatch { computed: String, committed: String },
 }
 
@@ -96,11 +96,11 @@ impl std::fmt::Display for CommitmentFault {
             }
             CommitmentFault::SaltTooShort { field, digits } => write!(
                 out,
-                "Physical Violation: '{field}' is {digits} hex digits, and a salt is at least {LEAST_SALT_DIGITS}, 16 bytes: a shorter salt leaves the committed data to be found by trying salts against the sha256 ({SALT_TOO_SHORT})."
+                "Physical Violation: '{field}' is {digits} hex digits, and a salt is at least {LEAST_SALT_DIGITS}, 16 bytes: a shorter salt leaves the committed data to be found by trying salts against the sha384 ({SALT_TOO_SHORT})."
             ),
             CommitmentFault::DoesNotMatch { computed, committed } => write!(
                 out,
-                "Physical Violation: the measurements, the quantity and the component of this request are not the ones committed: the SHA-256 of the tag, their committed text and the salt is {computed}, and commitment.sha256 is {committed}. Nothing is computed and nothing is sealed ({DOES_NOT_MATCH})."
+                "Physical Violation: the measurements, the quantity and the component of this request are not the ones committed: the SHA-384 of the tag, their committed text and the salt is {computed}, and commitment.sha384 is {committed}. Nothing is computed and nothing is sealed ({DOES_NOT_MATCH})."
             ),
         }
     }
@@ -115,12 +115,12 @@ fn malformed(field: String, says: &str) -> CommitmentFault {
 pub fn read(value: &Value, at: &str) -> Result<Commitment, CommitmentFault> {
     let object = value
         .as_object()
-        .ok_or_else(|| malformed(at.to_string(), "must be a JSON object of sha256 and salt"))?;
+        .ok_or_else(|| malformed(at.to_string(), "must be a JSON object of sha384 and salt"))?;
     for key in object.keys() {
         if !FIELDS.contains(&key.as_str()) {
             return Err(malformed(
                 format!("{at}.{key}"),
-                "is not a field of a commitment: its fields are sha256 and salt",
+                "is not a field of a commitment: its fields are sha384 and salt",
             ));
         }
     }
@@ -129,12 +129,12 @@ pub fn read(value: &Value, at: &str) -> Result<Commitment, CommitmentFault> {
             return Err(CommitmentFault::Missing { field: format!("{at}.{field}") });
         }
     }
-    let sha256 = match &object["sha256"] {
-        Value::String(text) if is_lower_hex(text, 64) => text.clone(),
+    let sha384 = match &object["sha384"] {
+        Value::String(text) if is_lower_hex(text, 96) => text.clone(),
         _ => {
             return Err(malformed(
-                format!("{at}.sha256"),
-                "must be 64 lowercase hex digits, the SHA-256 committed",
+                format!("{at}.sha384"),
+                "must be 96 lowercase hex digits, the SHA-384 committed",
             ));
         }
     };
@@ -155,7 +155,7 @@ pub fn read(value: &Value, at: &str) -> Result<Commitment, CommitmentFault> {
     if salt.len() > MOST_SALT_DIGITS {
         return Err(malformed(field, "must be at most 128 hex digits, 64 bytes"));
     }
-    Ok(Commitment { sha256, salt })
+    Ok(Commitment { sha384, salt })
 }
 
 /// The commitment of a request's object, if it carries one.
@@ -184,27 +184,27 @@ pub fn committed_bytes(quantity: &str, component: &Value, measurements: &Value, 
     bytes
 }
 
-/// SHA-256 of the committed bytes, as 64 lowercase hex digits.
-pub fn commitment_sha256(quantity: &str, component: &Value, measurements: &Value, salt: &str) -> String {
+/// SHA-384 of the committed bytes, as 96 lowercase hex digits.
+pub fn commitment_sha384(quantity: &str, component: &Value, measurements: &Value, salt: &str) -> String {
     digest_hex(&committed_bytes(quantity, component, measurements, salt))
 }
 
 impl Commitment {
     /// The commitment opened by these measurements, or why it is not.
     pub fn open(&self, quantity: &str, component: &Value, measurements: &Value) -> Result<(), CommitmentFault> {
-        let computed = commitment_sha256(quantity, component, measurements, &self.salt);
-        if computed == self.sha256 {
+        let computed = commitment_sha384(quantity, component, measurements, &self.salt);
+        if computed == self.sha384 {
             Ok(())
         } else {
-            Err(CommitmentFault::DoesNotMatch { computed, committed: self.sha256.clone() })
+            Err(CommitmentFault::DoesNotMatch { computed, committed: self.sha384.clone() })
         }
     }
 
     /// The sixth part of the validation seal, present only with a
-    /// commitment: `commitment_sha256:<hex>` and `commitment_salt:<hex>`,
+    /// commitment: `commitment_sha384:<hex>` and `commitment_salt:<hex>`,
     /// each with a line break.
     pub fn seal_part(&self) -> String {
-        format!("commitment_sha256:{}\ncommitment_salt:{}\n", self.sha256, self.salt)
+        format!("commitment_sha384:{}\ncommitment_salt:{}\n", self.sha384, self.salt)
     }
 }
 
@@ -230,15 +230,15 @@ mod tests {
         assert_eq!(text.len(), 221);
         let bytes = committed_bytes("temperature_k", &Value::Null, &worked(), SALT);
         assert_eq!(bytes.len(), 283);
-        assert!(bytes.starts_with(b"zero-trust-physics/measurement-commitment/v1\n{\"component\":null,"));
+        assert!(bytes.starts_with(b"zero-trust-physics/measurement-commitment/v2\n{\"component\":null,"));
         assert!(bytes.ends_with(&[b'}', b'\n', 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]));
-        let sha256 = commitment_sha256("temperature_k", &Value::Null, &worked(), SALT);
-        assert_eq!(sha256, WORKED_SHA256);
-        let commitment = Commitment { sha256, salt: SALT.to_string() };
+        let sha384 = commitment_sha384("temperature_k", &Value::Null, &worked(), SALT);
+        assert_eq!(sha384, WORKED_SHA384);
+        let commitment = Commitment { sha384, salt: SALT.to_string() };
         assert_eq!(commitment.open("temperature_k", &Value::Null, &worked()), Ok(()));
     }
 
-    const WORKED_SHA256: &str = "82937bf8c51c983ab59ea7d5414dc9d31d88147cd52ff4a986ce14ea386a95b9";
+    const WORKED_SHA384: &str = "18126b4fff8f624e2414d62b927c54cb0a9eb0a0f437e2dd3afcb027ed77852cffd2ec48dfe8b09ba149f22da8920691";
 
     #[test]
     fn spelling_spacing_and_key_order_do_not_move_the_digest_and_every_value_does() {
@@ -247,7 +247,7 @@ mod tests {
         )
         .unwrap();
         let digest = |quantity: &str, component: &Value, measurements: &Value, salt: &str| {
-            commitment_sha256(quantity, component, measurements, salt)
+            commitment_sha384(quantity, component, measurements, salt)
         };
         let honest = digest("temperature_k", &Value::Null, &worked(), SALT);
         assert_eq!(digest("temperature_k", &Value::Null, &respelled, SALT), honest);
@@ -284,85 +284,85 @@ mod tests {
     #[test]
     fn a_commitment_is_read_with_every_field_and_a_salt_of_at_least_sixteen_bytes() {
         let read_at = |value: Value| read(&value, "commitment");
-        let sha = "ab".repeat(32);
+        let sha = "ab".repeat(48);
         assert_eq!(
-            read_at(json!({ "sha256": sha, "salt": SALT })),
-            Ok(Commitment { sha256: sha.clone(), salt: SALT.to_string() })
+            read_at(json!({ "sha384": sha, "salt": SALT })),
+            Ok(Commitment { sha384: sha.clone(), salt: SALT.to_string() })
         );
         for (value, name, sentence) in [
-            (json!({ "sha256": sha }), INPUT_MISSING, "Missing required parameter: 'commitment.salt' (InputMissing)."),
-            (json!({ "salt": SALT }), INPUT_MISSING, "Missing required parameter: 'commitment.sha256' (InputMissing)."),
-            (json!({}), INPUT_MISSING, "Missing required parameter: 'commitment.sha256' (InputMissing)."),
+            (json!({ "sha384": sha }), INPUT_MISSING, "Missing required parameter: 'commitment.salt' (InputMissing)."),
+            (json!({ "salt": SALT }), INPUT_MISSING, "Missing required parameter: 'commitment.sha384' (InputMissing)."),
+            (json!({}), INPUT_MISSING, "Missing required parameter: 'commitment.sha384' (InputMissing)."),
             (
-                json!({ "sha256": sha, "salt": "00010203040506070809" }),
+                json!({ "sha384": sha, "salt": "00010203040506070809" }),
                 SALT_TOO_SHORT,
-                "Physical Violation: 'commitment.salt' is 20 hex digits, and a salt is at least 32, 16 bytes: a shorter salt leaves the committed data to be found by trying salts against the sha256 (CommitmentSaltTooShort).",
+                "Physical Violation: 'commitment.salt' is 20 hex digits, and a salt is at least 32, 16 bytes: a shorter salt leaves the committed data to be found by trying salts against the sha384 (CommitmentSaltTooShort).",
             ),
             (
-                json!({ "sha256": sha, "salt": "" }),
+                json!({ "sha384": sha, "salt": "" }),
                 SALT_TOO_SHORT,
-                "Physical Violation: 'commitment.salt' is 0 hex digits, and a salt is at least 32, 16 bytes: a shorter salt leaves the committed data to be found by trying salts against the sha256 (CommitmentSaltTooShort).",
+                "Physical Violation: 'commitment.salt' is 0 hex digits, and a salt is at least 32, 16 bytes: a shorter salt leaves the committed data to be found by trying salts against the sha384 (CommitmentSaltTooShort).",
             ),
             (
-                json!({ "sha256": sha, "salt": SALT, "pepper": "00" }),
+                json!({ "sha384": sha, "salt": SALT, "pepper": "00" }),
                 MALFORMED,
-                "Physical Violation: 'commitment.pepper' is not a field of a commitment: its fields are sha256 and salt (CommitmentMalformed).",
+                "Physical Violation: 'commitment.pepper' is not a field of a commitment: its fields are sha384 and salt (CommitmentMalformed).",
             ),
             (
                 json!("ab"),
                 MALFORMED,
-                "Physical Violation: 'commitment' must be a JSON object of sha256 and salt (CommitmentMalformed).",
+                "Physical Violation: 'commitment' must be a JSON object of sha384 and salt (CommitmentMalformed).",
             ),
             (
                 Value::Null,
                 MALFORMED,
-                "Physical Violation: 'commitment' must be a JSON object of sha256 and salt (CommitmentMalformed).",
+                "Physical Violation: 'commitment' must be a JSON object of sha384 and salt (CommitmentMalformed).",
             ),
         ] {
             let fault = read_at(value.clone()).unwrap_err();
             assert_eq!((fault.name(), fault.to_string().as_str()), (name, sentence), "{value}");
         }
         for (value, field) in [
-            (json!({ "sha256": sha.to_uppercase(), "salt": SALT }), "sha256"),
-            (json!({ "sha256": &sha[..62], "salt": SALT }), "sha256"),
-            (json!({ "sha256": 1, "salt": SALT }), "sha256"),
-            (json!({ "sha256": sha, "salt": SALT.to_uppercase() }), "salt"),
-            (json!({ "sha256": sha, "salt": format!("{SALT}0") }), "salt"),
-            (json!({ "sha256": sha, "salt": "0".repeat(130) }), "salt"),
-            (json!({ "sha256": sha, "salt": 12 }), "salt"),
-            (json!({ "sha256": sha, "salt": null }), "salt"),
+            (json!({ "sha384": sha.to_uppercase(), "salt": SALT }), "sha384"),
+            (json!({ "sha384": &sha[..94], "salt": SALT }), "sha384"),
+            (json!({ "sha384": 1, "salt": SALT }), "sha384"),
+            (json!({ "sha384": sha, "salt": SALT.to_uppercase() }), "salt"),
+            (json!({ "sha384": sha, "salt": format!("{SALT}0") }), "salt"),
+            (json!({ "sha384": sha, "salt": "0".repeat(130) }), "salt"),
+            (json!({ "sha384": sha, "salt": 12 }), "salt"),
+            (json!({ "sha384": sha, "salt": null }), "salt"),
         ] {
             let fault = read_at(value.clone()).unwrap_err();
             assert_eq!(fault.name(), MALFORMED, "{value}: {fault}");
             assert!(fault.to_string().starts_with(&format!("Physical Violation: 'commitment.{field}' ")), "{fault}");
         }
         // The longest salt is taken.
-        assert!(read_at(json!({ "sha256": sha, "salt": "0".repeat(128) })).is_ok());
+        assert!(read_at(json!({ "sha384": sha, "salt": "0".repeat(128) })).is_ok());
     }
 
     #[test]
     fn a_commitment_opened_by_other_measurements_is_refused_by_name_with_both_digests() {
-        let sha256 = commitment_sha256("temperature_k", &Value::Null, &worked(), SALT);
-        let commitment = Commitment { sha256: sha256.clone(), salt: SALT.to_string() };
+        let sha384 = commitment_sha384("temperature_k", &Value::Null, &worked(), SALT);
+        let commitment = Commitment { sha384: sha384.clone(), salt: SALT.to_string() };
         let mut changed = worked();
         changed[0]["value"] = json!(293.3);
         let fault = commitment.open("temperature_k", &Value::Null, &changed).unwrap_err();
         assert_eq!(fault.name(), DOES_NOT_MATCH);
-        let computed = commitment_sha256("temperature_k", &Value::Null, &changed, SALT);
+        let computed = commitment_sha384("temperature_k", &Value::Null, &changed, SALT);
         assert_eq!(
             fault.to_string(),
-            format!("Physical Violation: the measurements, the quantity and the component of this request are not the ones committed: the SHA-256 of the tag, their committed text and the salt is {computed}, and commitment.sha256 is {sha256}. Nothing is computed and nothing is sealed (CommitmentDoesNotMatch).")
+            format!("Physical Violation: the measurements, the quantity and the component of this request are not the ones committed: the SHA-384 of the tag, their committed text and the salt is {computed}, and commitment.sha384 is {sha384}. Nothing is computed and nothing is sealed (CommitmentDoesNotMatch).")
         );
-        let wrong_salt = Commitment { sha256, salt: "ff".repeat(16) };
+        let wrong_salt = Commitment { sha384, salt: "ff".repeat(16) };
         assert_eq!(wrong_salt.open("temperature_k", &Value::Null, &worked()).unwrap_err().name(), DOES_NOT_MATCH);
     }
 
     #[test]
     fn the_seal_part_is_two_lines() {
-        let commitment = Commitment { sha256: "ab".repeat(32), salt: SALT.to_string() };
+        let commitment = Commitment { sha384: "ab".repeat(48), salt: SALT.to_string() };
         assert_eq!(
             commitment.seal_part(),
-            format!("commitment_sha256:{}\ncommitment_salt:{SALT}\n", "ab".repeat(32))
+            format!("commitment_sha384:{}\ncommitment_salt:{SALT}\n", "ab".repeat(48))
         );
     }
 }

@@ -10,21 +10,37 @@ https://mcp.zerotrustphysics.com/mcp
 
 That address is open to any agent, and nothing here is needed to use it. This repository is for building the same engine on your own machine and getting the same proofs.
 
-## What 0.14.3 is
+## What 0.15.0 is
 
-This is engine 0.14.3, the version the open address has served since 18 October 2026: 40 models, 25 field solvers and 18 tools. Of the 380 worked answers 0.14.2 gives, 308 are the same bytes and 72 changed in their words only, every proof kept. The 23 other worked answers are the new models'.
+This is engine 0.15.0, the version the open address has served since 19 October 2026: 36 models, 25 field solvers and 18 tools.
 
-- **`reactor_spert3_twin`**, the SPERT III E-core test reactor (1,392 UO2 rods) through a reactivity burst. Twelve numbers fitted on all 70 tests of report IDO-17281: at the median test, peak power within 6.0 percent, energy to the peak within 7.9 and time to the peak within 3.4. Predicted from fits that left each test out in turn: 6.2, 7.8 and 3.0. Its largest gap: from 19 MW of operating power, 3 tests, energy reads 81.8 percent low.
-- **`reactor_spert3_ccore_twin`**, the SPERT III C-core (93 percent enriched plates), with subcooled boiling. Eight constants fitted on 111 transients of report IDO-16918; predicted with each tenth left out in turn, peak power within 12.6 percent RMS, energy to the peak within 19.6 and the hot-spot plate rise at peak power within 13.4. Its largest gap: at 230 psig with 5,000 to 20,000 gpm, peak power 21.2 percent RMS.
-- **`reactor_msre_pump`**, the reactivity the control rods of the Molten-Salt Reactor Experiment supply while the fuel pump starts or coasts down. Two constants fitted on the start-up; on the 73 coast-down rod readings not in the fit, within 8.1 pcm RMS, largest 23.7. The steady circulation loss: 0.2120 % dk/k against the measured 0.212 ± 0.004.
-- **`fuel_rod_triga_jsi`**, a field solver: the temperature of the instrumented fuel element 6753 of the Jožef Stefan Institute's TRIGA Mark II reactor through a pulse. Two constants fitted on 39 pulses; on 16 pulses not in the fit, the thermocouple's maximum rise within 9.2 percent (mean 5.5), its time after the power peak within 19.6 percent (mean 11.9), and its rise 10 s after the peak within 4.3 percent on the 8 records that run that long.
-- **`solve` and `verify_solution` take `from`:** a sealed run of a model handed into a field solver under one chain proof. The coupling `triga_pulse_to_element_6753` hands a pulse of the `reactor_triga_jsi` model to `fuel_rod_triga_jsi`; chained on the same 16 pulses, the thermocouple's maximum rise reads 9.8 to 4.3 percent low.
+- **One model for each real object.** 36 models and 25 field solvers, where 0.14.3 served 40 and 25. Where a newer model of an object had been served beside the older one, the newer one now answers under the object's own ID, and the other IDs are retired: ten IDs in all, four of them served in 0.14.3 (`cell_2170_m80`, `reactor_spert3_fuel`, `reactor_spert3_twin`, `reactor_spert3_ccore_twin`). A request that names a retired ID is refused by name, `RetiredModel`, with the ID that serves its object.
+- **Seal rule v2: SHA-384.** Every seal is SHA-384, written as 96 hex digits, and every answer that carries a receipt names its rule, `"seal_rule":"zero-trust-physics/seal/v2"`. The fields named for their hash are renamed to match (`receipt_sha384`, `sha384_seal`, `field_sha384` and the rest). A record of rule v1 (SHA-256, engine 0.14.3 and earlier) is refused by name, `SealRuleNotServed`. The texts hashed, their order and their separators are those of rule v1, so every seal of 0.15.0 differs from 0.14.3's.
+- **Signed answers: ML-DSA-87.** Every answer that ends with a receipt (`compute_step`, `verify_step`, `run_trajectory`, `solve`, `run_dataset`'s head, `validate_series` and `design_run`) is signed as it leaves the open address: ML-DSA-87 of FIPS 204 over the receipt, an issue time, an expiry an hour later and a new nonce. The public key is 2,592 bytes and served at `https://mcp.zerotrustphysics.com/answer-key`. Its fingerprint, the `key_id` every signature names, is its SHA-384:
+
+  ```
+  ca06027a972c81c8630fed9f4ea2d4e91596b9434a88a03b7eb325b24e40645b7090cb705927745e73ee8b272eb1be38
+  ```
+
+  `verify_tape`, `verify_solution`, `verify_dataset` and `verify_receipt` take `public_key` and `seen_nonces`, and name a signature that does not hold: forged (`SignatureDoesNotVerify`), expired (`SignatureExpired`), of another key (`SignatureKeyMismatch`) or replayed (`SignatureNonceReplayed`). The signing library is the RustCrypto `ml-dsa` crate, version 0.1.1, pure Rust, written to FIPS 204 final. **It is not validated under FIPS 140-3**, and its authors say it has not been independently audited. The Python programs check the signature with `dilithium-py` 1.5.1, which is not validated either. A signature shows who issued an answer and when; the seals, and the answer computed again, show what was computed.
+- **The Stardust → PICA chain.** The entry of the Stardust capsule (`capsule_stardust`) hands its nose conditions to the heat-shield solver (`ablator_slab`) through the coupling `stardust_entry_to_pica_slab`, under one chain proof. The entry: peak load 32.17 g against 32.89 g reconstructed, the drogue condition within 1.01 s of the radar record. The shield, fed by the entry: nose wear 4.65 mm, about a third more than measured, and the face within 156 K RMS of the airborne spectra. Alone, on 31 arc-jet tests outside the fit, the solver's wear has a mean of −2.6 percent and its hottest face is within 7 percent on 24 of 28; the face runs 4.1 percent hot on average.
+- **Flags that say how far.** Past what a model was compared with it keeps going and flags every step, as before. Since 0.15.0 each flagged step also carries, for each flag, the limit, the value the step reached, the extent past the limit in the limit's unit, and that extent as a fraction of the limit. A run carries `exceedance_extremes`: for each limit it went past, how many steps, the first, and the step of the largest extent with its numbers. The receipt covers them, and `verify_tape` holds them to each frame's flags.
+
+The models that now answer under the object's own ID, in their own words (`describe_card` and `describe_solver`):
+
+- **`reactor_spert3`**, the SPERT III E-core test reactor (1,392 UO2 rods) through a reactivity burst. On each of the 70 tests left out of the fit in turn: at the median test, peak power within 6.8 percent, energy to the peak within 8.6, time to the peak within 4.1 and hot-spot clad rise within 9.2. Its largest gap: from 19 MW of operating power, 3 tests, energy reads 81.2 percent low.
+- **`reactor_spert3_ccore`**, the SPERT III C-core (93 percent enriched plates), with subcooled boiling and void. With each tenth of the 111 transients left out of the fit in turn: peak power within 10.4 percent RMS, energy to the peak 17.2, the hot-spot plate rise at peak power 12.3. Its largest gap: at 5,000 to 20,000 gpm the plate maximum reads 24.6 percent RMS.
+- **`cell_2170_model3`**, one Tesla Model 3 2170 lithium-ion cell (m80, m1000 or m448-N) from −20 to 40 °C, voltage and core temperature. With each cell left out of the fit in turn, its 234 runs: within 20.2 mV RMS. Its largest gap: the rated-current discharge at −20 °C, 68.7 mV RMS.
+- **`grid_gb`**, the frequency of the Great Britain grid after an importing interconnector trips. With each of 86 trips left out of the fit in turn: depth of the fall within 0.224 RMS relative error, near 60 s within 0.076 Hz. Its largest gap: the 11 trips since November 2025, depth 0.359 RMS, 23 percent too deep on average.
+- **`tokamak_jet_dte1`**, a heated JET pulse of the 1996 to 1997 D-T campaign. With each of 10 pulses left out in turn, medians: thermal energy within 16.0 percent of peak RMS, fast ions 5.3, fusion power 16.4. Its largest gap: pulse 42976 left out, fusion energy 4.03 MJ against 10.30.
+- **`runaway_18650_lco`**, thermal runaway of one LiCoO2 18650 cell. With each record left out in turn: onsets within 16.2 K RMS on 10 records, peaks within 51.7 K RMS on 7. Its largest gap: Lu's cell peaked at 370 °C against 705.
+- **`blast_wave_tnt_air`**, a field solver: the blast wave of a TNT charge in free air or on the ground. Against the surface-burst table kept out of the fit, impulse within 3.9 percent and duration within 8.0 from scaled distance 1.75 out; every arrival within 2.0 percent in free air and 5.3 on the ground. Its largest gap: near the fireball, at scaled distance 1.31, impulse 25 percent and duration 22 percent above the free-air table.
 
 And three things about every answer and every model:
 
-- **The same bytes on every machine tested.** Every exponential, logarithm, power and trigonometric function an answer depends on is computed by the engine's own code, never by the machine's math library. For 0.14.3, the open address, built from this source on Linux x86-64, gave the same answer, byte for byte, to all 403 worked questions as a build on a Mac (Apple M4 Pro), and the same 13 printed proofs.
-- **Anyone can recompute a proof.** A proof is a SHA-256 hash that binds the question to the answer, byte for byte. `genesis_seal`, in this repository, confirms one with no engine, and so do the Python programs at https://github.com/johnkruze/zero-trust-physics .
-- **Every model says what stands behind it, numbers first.** One of three words: "compared with measurement" (50 of the 65 models: a real object), "held to a reference calculation" (3: a published calculation) or "company specimen" (12: an object the company specified, every constant stated). Each of the 50 describes itself as a spec sheet in six parts: what it computes; its range; what it was fitted on, or that nothing was fitted; what it was compared with, and within what; the gap, where it does worst; and what it refuses. A model replaced by a newer one names it in `superseded_by` and is still served: `reactor_spert3` and `reactor_spert3_fuel` name `reactor_spert3_twin`, and `reactor_spert3_ccore` names `reactor_spert3_ccore_twin`.
+- **The same bytes on every machine tested.** Every exponential, logarithm, power and trigonometric function an answer depends on is computed by the engine's own code, never by the machine's math library. For 0.15.0, the open address, built from this source on Linux x86-64, gave the same answer, byte for byte with its signature taken out, to all 379 worked questions as a build on a Mac (Apple M4 Pro), and the same 13 printed proofs.
+- **Anyone can recompute a proof.** A proof is a SHA-384 hash that binds the question to the answer, byte for byte. `genesis_seal`, in this repository, confirms one with no engine, and checks the signature, and so do the Python programs at https://github.com/johnkruze/zero-trust-physics .
+- **Every model says what stands behind it, numbers first.** One of three words: "compared with measurement" (46 of the 61 models: a real object), "held to a reference calculation" (3: a published calculation) or "company specimen" (12: an object the company specified, every constant stated). Each of the 46 states what it computes, what it was fitted on, what it was compared with and within what, and its gap, where it does worst.
 
 ## What is in this repository
 
@@ -61,10 +77,20 @@ printf '%s\n' \
 It holds, and the answer's `run_seal` is its proof:
 
 ```
-6bd7e54b83c71da84eda74f3314416d619bbbce112186aa548085cb5a4ba0d34
+d18acfdf04f5dd59a4baad927675e3b32c17ea57ee7867a20f3e7248634b93b3548210790ff6f935f67bd659662a3fea
 ```
 
-That is the proof the open address gives for the same question, and the one on the front page of https://zerotrustphysics.com . Ask again at 71.45 amps and the model stops and says why.
+That is the proof the open address gives for the same question. Ask again at 71.45 amps and the model stops at the pack's 36.0 V cutoff and says so, `UndervoltageCutoff`.
+
+Run this way, with no key, the engine's answers carry their seals and receipt and no signature, and it says so once when it starts. To sign them as the open address does, make a key of your own and give it to the engine:
+
+```sh
+target/release/answer_key new my_answer.key      # a new seed, readable by you alone; prints its public key
+target/release/answer_key public my_answer.key   # the public key again: {"alg":"ML-DSA-87","key_id":...,"public_key":...}
+ZTP_SIGNING_KEY_FILE=my_answer.key target/release/mcp_stdio
+```
+
+Your signatures are your key's, and name its `key_id`. Only the open address's answers carry the key shown above.
 
 To hand the engine to your own agent, name the program in your MCP client:
 
@@ -76,7 +102,7 @@ To hand the engine to your own agent, name the program in your MCP client:
 }
 ```
 
-`target/release/hosted_door` serves the same engine over HTTP, as the open address does. Run it with no arguments and it says what it needs.
+`target/release/hosted_door` serves the same engine over HTTP, as the open address does, and serves its public key at `/answer-key`. Run it with no arguments and it says what it needs; it takes the key as `--signing-key <file>`.
 
 ## Confirm a proof with no engine
 
@@ -86,7 +112,13 @@ Save the text of a run's answer to a file, then:
 target/release/genesis_seal verify-run answer.json
 ```
 
-Run `genesis_seal` alone and it lists what else it confirms: a chain of runs, a dataset, one row of a dataset. The same checks in Python, with nothing to install, are at https://github.com/johnkruze/zero-trust-physics .
+To check the signature too, give it the public key, the base64 `public_key` of `https://mcp.zerotrustphysics.com/answer-key`, saved to a file:
+
+```sh
+target/release/genesis_seal verify-run answer.json --public-key answer_key.pub --nonce-ledger seen.txt
+```
+
+Run `genesis_seal` alone and it lists what else it confirms: a chain of runs, a dataset, one row of a dataset, a signature alone. The same checks in Python are at https://github.com/johnkruze/zero-trust-physics : the seals with Python's standard library alone, the signature with one package, `dilithium-py`.
 
 ## Run the tests
 
@@ -100,12 +132,11 @@ cd genesis_seal_parquet && cargo build --release --locked && cargo test --releas
 
 Some tests print one line, `skipped: … needs the saved runs`, and return: they compare with runs the company keeps, which are not in this repository. The tests use Unix tools such as `ps` and `mkfifo`.
 
-One of the gateway's tests fails in this repository, because of what it checks: `generator_mmrtg_seebeck_meets_the_served_contract`. The MMRTG model's description states a prediction made before the data it predicts were published, and the test looks for the commit that recorded that prediction in the company's own repository of the gateway; this repository is one commit without that history.
-Every other test passed on 18 October 2026 on an Apple M4 Pro: kernel 838, solvers 525, seal 201, gateway 1,192, Parquet converter 20. One gateway test times a run while it holds its permit, and on a heavily loaded machine it can fail and then pass when run again.
+Every test passed on 19 October 2026 on an Apple M4 Pro: kernel 901, solvers 545, seal 212, gateway 1,140, Parquet converter 23. One gateway test, `a_comparison_of_solves_opens_its_commitment_with_rows_in_the_place_of_steps`, starts the debug build of `genesis_seal` that the test itself builds; on a heavily loaded machine that program once did not start, and the test passed when run again (`--test validation_router`, 19 of 19 in 9 s).
 
 ## Two things to know
 
-- **Proofs and machines.** Build it on your machine and every model and every field solver gives the proof the open address gives. For 0.14.3 that was measured on the two machine kinds above, a Mac (Apple M4 Pro) and Linux x86-64. On another kind, compare one worked answer with the open address before relying on it.
+- **Proofs and machines.** Build it on your machine and every model and every field solver gives the proof the open address gives. For 0.15.0 that was measured on the two machine kinds above, a Mac (Apple M4 Pro) and Linux x86-64. On another kind, compare one worked answer with the open address before relying on it.
 - **Paths that are not here.** Comments and some descriptions name files under `evidence/`, and `REFERENCE.md`, `AGENTS.md` and `HOSTING.md`. Those are the company's own records and are not part of this repository.
 
 ## Credit

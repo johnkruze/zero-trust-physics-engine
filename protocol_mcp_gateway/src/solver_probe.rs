@@ -250,7 +250,7 @@ pub const STAND_IN: Solver = Solver {
 };
 
 fn field_words() -> String {
-    "SHA-256 of the count of samples as 8 little-endian bytes, then each scaled sample as little-endian f64 bytes.".to_string()
+    "SHA-384 of the count of samples as 8 little-endian bytes, then each scaled sample as little-endian f64 bytes.".to_string()
 }
 
 fn sections() -> Sections {
@@ -746,39 +746,42 @@ mod tests {
         let field = digest_hex(&field);
         let tail = r#"{"outcome":"converged","iterations":3,"reject":null}"#;
         let version = format!("engine_version:{}\n", body["engine_version"].as_str().expect("version"));
-        assert_eq!(body["field_sha256"], field);
-        assert_eq!(field, "34638362c2d1a0d7254b72506cd1fb8a3758a6d980b25df5c60e7b596df7471f");
+        assert_eq!(body["field_sha384"], field);
+        assert_eq!(field, "24f03ee6aaec31d51d3e7f3bb738458dbfefc462e744c69214f9c31e773a114a0c5c52af27b1b71297ea71cb199dd212");
         assert_eq!(
             body["seal_parts"],
             json!({
-                "inputs": "98d4d8168a9a03c3c50bee9c6655d2cca63e268bf433caf5b960403dbc9f3ae1",
+                "inputs": "169679b2b32ba51660f480232cbaab0fd049ac71eb9516063c4a4e2c25ebf2c5fb562cc8cae04b411f06e2b185e251c0",
                 "engine_version": digest_hex(version.as_bytes()),
-                "result": "593057774641f16f38ac36b1cda018ec2796ec18ac528d045b01b4721394f230",
-                "invariants": "4edf3f7c8ec30d9d1e2caec821fa16530a80439c5a249b3b2d05a63da6c37d1f",
-                "field_sha256": "9e5eb14bd81a38bac3cbbfdbc11dc0d5cb577e4265755da5bf7536430f722d5c",
-                "outcome": "0d4652e12010aabc6a5ba72c7f8de38695979966b17362b20061e9b3003471ae"
+                "result": "70da7df8b9f84b4de861b4fb8ca9204641290b9a3697347eb4c62b1c405bee7282ff75ee44882fe568a15d82fa489255",
+                "invariants": "3339c760fc6f163896d16e9d3a3392d7c62c42f7d0d1fe5c90a76db7fd9b62d18ec0ffba9050fbb22a31ef2a652fb596",
+                "field_sha384": "f64b1cc09bd66c7b14a4c292baefe1df7b879d56ed6075a746cf2b826dabc806d18742572614b118b4e2d1de23f9c162",
+                "outcome": "980374226c30a2b064dfc1be6fc04c40de547d0d0c849762b139cda1cef1433cd6c2494686c111d34233733cda1be275"
             })
         );
         assert_eq!(body["seal_parts"]["result"], digest_hex(result.as_bytes()));
         let whole = format!("{request}{version}{invariants}{result}{field}{tail}");
         assert_eq!(body["solution_seal"], digest_hex(whole.as_bytes()));
-        // Worked out with Python's hashlib, with the solvers at version 0.12.0
-        // (the canonical math, for engine 0.14.0); with 0.11.0 put back the
+        // Worked out with Python's hashlib, with the solvers at version 0.13.0;
+        // with 0.12.0 put back the same rule gives the seal pinned for engine
+        // 0.14.0 to 0.14.3, 27ebb2d4...3bb3; with 0.11.0 put back the
         // same rule gives the seal pinned for engine 0.13.0, 2cb15626...920d,
         // with 0.10.0 the seal pinned for engine 0.12.0, 696e29da...a375,
         // with 0.9.0 the seal pinned before it, 8b8feb69...8e08, and with
         // 0.8.0 dddd976a...7170. Of the six parts only the version's has
-        // moved.
-        assert_eq!(body["engine_version"], "genesis_solvers_v0.12.0");
+        // moved. Under seal rule v2 (0.15.0) the first SHA-384 pin,
+        // 4f1e88b5...de0b, hashed the version line of 0.12.0; the seal is
+        // now taken with this answer's own version, 0.13.0.
+        assert_eq!(body["engine_version"], "genesis_solvers_v0.13.0");
         assert_eq!(
             body["solution_seal"],
-            "27ebb2d41a8e530643cc3914a38f1e7804739cb7fe905400ae9e096865473bb3"
+            "f01ec7271632ee35873617ba3366f43c1552277dd4514dd5bb138e64077dd60e0b88602edc511ac755fc56dba0a2db59"
         );
 
         // The receipt covers the bytes before it.
-        let receipt = body["receipt_sha256"].as_str().expect("receipt");
+        let receipt = body["receipt_sha384"].as_str().expect("receipt");
         let document = text
-            .strip_suffix(&format!(",\"receipt_sha256\":\"{receipt}\"}}"))
+            .strip_suffix(&format!(",\"receipt_sha384\":\"{receipt}\"}}"))
             .expect("the receipt is last");
         assert_eq!(digest_hex(format!("{document}}}").as_bytes()), receipt);
 
@@ -879,8 +882,8 @@ mod tests {
         invariant["invariants"]["sum_residual_hex"] = json!(one);
         doors.assert_fails(&invariant, "invariants", "an invariant changed").await;
         let mut field = body.clone();
-        field["field_sha256"] = json!("ab".repeat(32));
-        doors.assert_fails(&field, "field_sha256", "the field hash changed").await;
+        field["field_sha384"] = json!("ab".repeat(48));
+        doors.assert_fails(&field, "field_sha384", "the field hash changed").await;
         let mut inputs = body.clone();
         inputs["inputs"]["parameters"]["samples"] = json!([1.5, 4.0, 2.5]);
         doors.assert_fails(&inputs, "inputs", "two samples of the request swapped").await;
@@ -1129,7 +1132,7 @@ mod tests {
         assert!(body["iterations"].is_null());
         assert!(body["result"].is_null());
         assert!(body["invariants"].is_null());
-        assert!(body["field_sha256"].is_null());
+        assert!(body["field_sha384"].is_null());
         let tail = r#"{"outcome":"refused","iterations":null,"reject":"SumTooLarge"}"#;
         assert_eq!(body["seal_parts"]["outcome"], digest_hex(tail.as_bytes()));
         let sealed = r#"{"parameters":{"gain":x4010000000000000,"mode":"plain","samples":[x4049000000000000,x404e000000000000,x4051800000000000]},"solver":"stand_in"}"#;
@@ -1190,7 +1193,7 @@ mod tests {
         assert_eq!(text.len(), 133);
         assert_eq!(
             digest_hex(text.as_bytes()),
-            "292f816c5ca14b63291df87e289d74929fee18979689449807dbb838065b20d2"
+            "e166f10eaccd67e26ff198fe27c06ac543c90a151eb33dfa22795ef984b1b39ce53d8505c5708ee250bc1e1c66b146f7"
         );
         // `REFERENCE.md` is beside the crate and is not in its history. Where
         // it is on the disk, it holds this example.
@@ -1199,7 +1202,7 @@ mod tests {
             for held in [
                 "`result.cell_k_hex:[4072c00000000000,4072d00000000000]`",
                 "`result.probe_k_hex:[[4072c00000000000],[4072c00000000000,4072d00000000000],[]]`",
-                "292f816c5ca14b63291df87e289d74929fee18979689449807dbb838065b20d2",
+                "e166f10eaccd67e26ff198fe27c06ac543c90a151eb33dfa22795ef984b1b39ce53d8505c5708ee250bc1e1c66b146f7",
             ] {
                 assert!(
                     reference.contains(held),
@@ -1344,7 +1347,7 @@ mod switched {
     };
 
     fn field_words() -> String {
-        "SHA-256 of the count of marks as 8 little-endian bytes, then each mark as little-endian f64 bytes.".to_string()
+        "SHA-384 of the count of marks as 8 little-endian bytes, then each mark as little-endian f64 bytes.".to_string()
     }
 
     fn sections() -> Sections {

@@ -17,7 +17,10 @@ pub(crate) const CARD: &str = "reactor_msre_pump";
 
 /// The flags the card declares, ORed.
 pub(crate) const FLAGS: u64 =
-    reactor_msre_pump::FLAG_FLOW_CHANGING | reactor_msre_pump::FLAG_FUEL_CIRCULATING | reactor_msre_pump::FLAG_OUTSIDE_COMPARED_RUNS;
+    reactor_msre_pump::FLAG_FLOW_CHANGING
+        | reactor_msre_pump::FLAG_FUEL_CIRCULATING
+        | reactor_msre_pump::FLAG_OUTSIDE_COMPARED_RUNS
+        | reactor_msre_pump::FLAG_ROD_AT_DRIVE_SPEED;
 
 pub(crate) struct ReactorMsrePumpCall {
     card: reactor_msre_pump::ReactorMsrePump,
@@ -68,11 +71,19 @@ impl ReactorMsrePumpCall {
             .map_err(|reject| StepFailure::from_reject(reject, reject_sentence(reject)))
     }
 
+    /// The limits the step from `before` to the state now held is past
+    /// (`crate::exceedance`).
+    pub(crate) fn exceedances(&self, before: &reactor_msre_pump::ReactorMsrePumpState) -> genesis_kernel::exceedance::Exceedances {
+        genesis_kernel::reactor_msre_pump::exceedances(&self.card, before, &self.state, self.load, self.dt_s)
+    }
+
     pub(crate) fn run(mut self, proof: [u8; 16]) -> Result<IntegratedFrame, String> {
+        let before = self.state;
         let mut frame = blank_frame(proof);
         self.step_into(&mut frame).map_err(|failure| failure.detail)?;
         Ok(IntegratedFrame {
             frame,
+            exceedances: self.exceedances(&before),
             residual_conservation_error: self.state.residual_conservation_error,
             state: state(&self.state)?,
         })
@@ -105,7 +116,7 @@ const OUTSIDE: [&str; 6] = [
 ];
 
 /// The published fields of the state, in order: the clock, the pump and the
-/// fuel flow, the answer, the ledger's residual, each group's precursors in
+/// fuel flow, the answer (what the rods supply, then what the salt asks), the ledger's residual, each group's precursors in
 /// the vessel and outside it, and the flags' booleans. The 252 parcels' own
 /// contents are the card's and are not published.
 pub(crate) fn with<T>(state: &reactor_msre_pump::ReactorMsrePumpState, finish: impl FnOnce(&[(&str, StateField)]) -> T) -> T {
@@ -118,6 +129,7 @@ pub(crate) fn with<T>(state: &reactor_msre_pump::ReactorMsrePumpState, finish: i
         ("fuel_flow_fraction", StateField::F64(state.fuel_flow_fraction)),
         ("fuel_flow_rate_per_s", StateField::F64(state.fuel_flow_rate_per_s)),
         ("phase_s", StateField::F64(state.phase_s)),
+        ("rod_reactivity_percent_dk_k", StateField::F64(state.rod_reactivity_percent_dk_k)),
         ("rod_compensation_percent_dk_k", StateField::F64(state.rod_compensation_percent_dk_k)),
         ("circulation_loss_percent_dk_k", StateField::F64(state.circulation_loss_percent_dk_k)),
         ("loss_at_start_percent_dk_k", StateField::F64(state.loss_at_start_percent_dk_k)),
@@ -131,6 +143,7 @@ pub(crate) fn with<T>(state: &reactor_msre_pump::ReactorMsrePumpState, finish: i
     }
     fields.push(("flow_changing", StateField::Bool(state.flow_changing)));
     fields.push(("fuel_circulating", StateField::Bool(state.fuel_circulating)));
+    fields.push(("rod_at_drive_speed", StateField::Bool(state.rod_at_drive_speed)));
     finish(&fields)
 }
 

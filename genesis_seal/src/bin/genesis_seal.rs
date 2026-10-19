@@ -9,7 +9,7 @@
 //!
 //! `verify-validation` opens a commitment the comparison carries again from
 //! the answer's own measurements, quantity, component and salt, and prints
-//! the commitment's sha256, the one to hold beside the sha256 published
+//! the commitment's sha384, the one to hold beside the sha384 published
 //! before the comparison; data that do not open it are `cause: commitment`,
 //! and a `commitment_opened` said with no commitment in the inputs, or left
 //! out beside one, is `cause: commitment_opened`.
@@ -19,10 +19,26 @@
 //! reading is printed with its key, the name it gives itself, its time, its
 //! seq, its challenge and what the list says of it. Exit code 4: every seal
 //! holds and a signed reading is not one the list trusts.
+//!
+//! The engine's signature on an answer (ML-DSA-87 over its receipt,
+//! `genesis_seal::answer_signature`) is checked by `verify-run`,
+//! `verify-chain` (each link), `verify-validation`, `verify-dataset` (the
+//! head) and `verify-signature`, against `--public-key <file>` (the base64 of
+//! the engine's 2,592-byte key), at `--now <YYYY-MM-DDTHH:MM:SSZ>` or this
+//! machine's clock, with `--nonce-ledger <file>`, the verifier's own list of
+//! the nonces it has seen, one per line: a nonce found there is
+//! `SignatureNonceReplayed`, and a signature that holds has its nonce added.
+//! The lines `signature`, `signature_cause`, `key_id`, `issued_at`,
+//! `expires_at` and `nonce` are printed for an answer that carries a
+//! signature or when a key is given. Exit code 5: every seal holds and the
+//! signature does not; it is said before 3 and 4. A record of seal rule v1
+//! (SHA-256, engine 0.14.3 and earlier) is not read: `cause:
+//! SealRuleNotServed`, exit code 2.
 
 use std::path::Path;
 use std::process::ExitCode;
 
+use genesis_seal::answer_signature::{self, Check, PublicKey, SignatureReport};
 use genesis_seal::attest::{Trust, Trusted, Verified, stream};
 use genesis_seal::chain::check_chain_text;
 use genesis_seal::dataset::{DatasetReport, check_dataset_stream, check_row_proof, row_proof};
@@ -34,13 +50,15 @@ use genesis_seal::stored_file::open_regular;
 use genesis_seal::validation::{ValidationCause, check_validation};
 
 const USAGE: &str = "usage:
-  genesis_seal verify-run <tape file> [--trust <trust file>]
-  genesis_seal verify-chain <chain file>
-  genesis_seal verify-validation <answer file> [--trust <trust file>]
-  genesis_seal verify-dataset <head file> <rows file> [frame file] [--trust <trust file>]
+  genesis_seal verify-run <tape file> [--trust <trust file>] [signature options]
+  genesis_seal verify-chain <chain file> [signature options]
+  genesis_seal verify-validation <answer file> [--trust <trust file>] [signature options]
+  genesis_seal verify-dataset <head file> <rows file> [frame file] [--trust <trust file>] [signature options]
+  genesis_seal verify-signature <answer file> --public-key <key file> [--now <time>] [--nonce-ledger <file>]
   genesis_seal row-proof <head file> <rows file> <row number> [frame file]
   genesis_seal verify-proof <proof file>
-  genesis_seal expand <request file> <row number>";
+  genesis_seal expand <request file> <row number>
+signature options: --public-key <key file> --now <YYYY-MM-DDTHH:MM:SSZ> --nonce-ledger <file>";
 
 /// Said whenever `verify-validation` finds no receipt at the end of the answer.
 const RECEIPT_ABSENT_NOTE: &str = "note: the receipt is absent, so the bytes of this answer are not covered. The seal covers the measurements, the quantity, the component, the outcome, steps_landed, reject, the counts, the model values and the three statistics in hex. Only the receipt covers the decimal copies of the statistics, engine_version, reject_detail, does_not_show, and the run and any other field inside inputs. A change to one of those is not seen without it.";
@@ -57,6 +75,127 @@ const BROKEN: u8 = 1;
 const REFUSED: u8 = 2;
 const BYTES_DIFFER: u8 = 3;
 const NOT_TRUSTED: u8 = 4;
+const SIGNATURE_DOES_NOT_HOLD: u8 = 5;
+
+/// What the verifier brings to check the engine's signature.
+struct SignatureGiven {
+    key: Option<PublicKey>,
+    now_s: i64,
+    ledger: Option<String>,
+    seen: Vec<String>,
+}
+
+/// Take `--<name> <value>` out of the arguments, at most once, after the command.
+fn take_option(arguments: &mut Vec<&str>, name: &str) -> Result<Option<String>, u8> {
+    let flag = format!("--{name}");
+    let count = arguments.iter().filter(|argument| **argument == flag).count();
+    match arguments.iter().position(|argument| *argument == flag) {
+        None => Ok(None),
+        Some(at) if count == 1 && at >= 1 && at + 1 < arguments.len() => {
+            let value = arguments[at + 1].to_string();
+            arguments.drain(at..at + 2);
+            Ok(Some(value))
+        }
+        Some(_) => {
+            eprintln!("{USAGE}");
+            Err(REFUSED)
+        }
+    }
+}
+
+fn read_signature_options(arguments: &mut Vec<&str>) -> Result<SignatureGiven, u8> {
+    let key = match take_option(arguments, "public-key")? {
+        None => None,
+        Some(path) => {
+            let bytes = read_file(&path)?;
+            let key = std::str::from_utf8(&bytes).ok().and_then(PublicKey::from_base64);
+            match key {
+                Some(key) => Some(key),
+                None => {
+                    eprintln!("refused: the public key '{path}' is not the base64 of an ML-DSA-87 public key (2,592 bytes).");
+                    return Err(REFUSED);
+                }
+            }
+        }
+    };
+    let now_s = match take_option(arguments, "now")? {
+        None => answer_signature::now_s(),
+        Some(text) => match answer_signature::parse_time(&text) {
+            Some(seconds) => seconds,
+            None => {
+                eprintln!("refused: '--now {text}' is not a time written YYYY-MM-DDTHH:MM:SSZ.");
+                return Err(REFUSED);
+            }
+        },
+    };
+    let ledger = take_option(arguments, "nonce-ledger")?;
+    let seen = match &ledger {
+        None => Vec::new(),
+        Some(path) => match std::fs::read_to_string(path) {
+            Ok(text) => text.lines().map(str::trim).filter(|line| !line.is_empty()).map(str::to_string).collect(),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Vec::new(),
+            Err(error) => {
+                eprintln!("refused: the nonce ledger '{path}' could not be read: {error}");
+                return Err(REFUSED);
+            }
+        },
+    };
+    Ok(SignatureGiven { key, now_s, ledger, seen })
+}
+
+impl SignatureGiven {
+    fn check(&self, text: &str) -> SignatureReport {
+        answer_signature::check(text, Check { public_key: self.key.as_ref(), now_s: self.now_s, seen_nonces: &self.seen })
+    }
+
+    /// Print the signature lines of one answer, when it carries a signature
+    /// or a key was given; add its nonce to the ledger when it holds. True
+    /// when a signature was checked and does not hold.
+    fn print(&self, label: Option<&str>, report: &SignatureReport) -> Result<bool, u8> {
+        if !report.present && self.key.is_none() {
+            return Ok(false);
+        }
+        let prefix = label.map(|label| format!("{label}.")).unwrap_or_default();
+        let said = match (report.present, report.cause) {
+            (false, _) => "absent",
+            (true, Some(answer_signature::SignatureCause::KeyNotGiven)) => "not checked",
+            (true, None) => "holds",
+            (true, Some(_)) => "does not hold",
+        };
+        println!("{prefix}signature: {said}");
+        match report.cause {
+            Some(answer_signature::SignatureCause::KeyNotGiven) => {
+                println!("{prefix}signature_note: no --public-key was given, so the signature was not checked.");
+            }
+            Some(cause) => {
+                println!("{prefix}signature_cause: {}", cause.name());
+                println!("{prefix}signature_fault: {}", cause.sentence());
+            }
+            None => {}
+        }
+        if let Some(envelope) = &report.envelope {
+            println!("{prefix}key_id: {}", envelope.key_id);
+            println!("{prefix}issued_at: {}", envelope.issued_at);
+            println!("{prefix}expires_at: {}", envelope.expires_at);
+            println!("{prefix}nonce: {}", envelope.nonce);
+        }
+        if report.holds() {
+            if let (Some(path), Some(envelope)) = (&self.ledger, &report.envelope) {
+                use std::io::Write;
+                let written = std::fs::OpenOptions::new()
+                    .create(true)
+                    .append(true)
+                    .open(path)
+                    .and_then(|mut file| file.write_all(format!("{}\n", envelope.nonce).as_bytes()));
+                if let Err(error) = written {
+                    eprintln!("refused: the nonce ledger '{path}' could not be written: {error}");
+                    return Err(REFUSED);
+                }
+            }
+        }
+        Ok(self.key.is_some() && !report.holds())
+    }
+}
 
 fn main() -> ExitCode {
     let arguments: Vec<String> = std::env::args().skip(1).collect();
@@ -79,12 +218,18 @@ fn main() -> ExitCode {
         None => None,
     };
     let trust = trust.as_ref();
+    let signing = match read_signature_options(&mut arguments) {
+        Ok(signing) => signing,
+        Err(code) => return ExitCode::from(code),
+    };
+    let signing = &signing;
     let code = match arguments.as_slice() {
-        ["verify-run", tape] => verify_run(tape, trust),
-        ["verify-chain", chain] if trust.is_none() => verify_chain(chain),
-        ["verify-validation", answer] => verify_validation(answer, trust),
-        ["verify-dataset", head, rows] => verify_dataset(head, rows, None, trust),
-        ["verify-dataset", head, rows, frames] => verify_dataset(head, rows, Some(frames), trust),
+        ["verify-run", tape] => verify_run(tape, trust, signing),
+        ["verify-chain", chain] if trust.is_none() => verify_chain(chain, signing),
+        ["verify-validation", answer] => verify_validation(answer, trust, signing),
+        ["verify-dataset", head, rows] => verify_dataset(head, rows, None, trust, signing),
+        ["verify-dataset", head, rows, frames] => verify_dataset(head, rows, Some(frames), trust, signing),
+        ["verify-signature", answer] if trust.is_none() && signing.key.is_some() => verify_signature(answer, signing),
         ["row-proof", head, rows, row] => write_row_proof(head, rows, row, None),
         ["row-proof", head, rows, row, frames] => write_row_proof(head, rows, row, Some(frames)),
         // `check-proof` is the earlier name of `verify-proof`, kept for the
@@ -123,8 +268,16 @@ fn read_row_number(text: &str) -> Result<u64, u8> {
 }
 
 fn refused(refusal: impl std::fmt::Display) -> u8 {
-    eprintln!("refused: {refusal}");
+    let text = refusal.to_string();
+    if text.contains(genesis_seal::refusal::SEAL_RULE_NOT_SERVED) {
+        println!("cause: {}", genesis_seal::refusal::SEAL_RULE_NOT_SERVED);
+    }
+    eprintln!("refused: {text}");
     REFUSED
+}
+
+fn text_of(bytes: &[u8]) -> &str {
+    std::str::from_utf8(bytes).unwrap_or("")
 }
 
 fn or_none<T: std::fmt::Display>(value: Option<T>) -> String {
@@ -194,7 +347,7 @@ fn print_readings(readings: &[(Option<u64>, &Verified)], trust: Option<&Trust>) 
     untrusted
 }
 
-fn verify_run(tape: &str, trust: Option<&Trust>) -> Result<u8, u8> {
+fn verify_run(tape: &str, trust: Option<&Trust>, signing: &SignatureGiven) -> Result<u8, u8> {
     let bytes = read_file(tape)?;
     let report = check_tape_text(&bytes).map_err(refused)?;
     let receipt = check_receipt(&bytes);
@@ -202,12 +355,15 @@ fn verify_run(tape: &str, trust: Option<&Trust>) -> Result<u8, u8> {
     println!("broken_link: {}", or_none(report.broken_link));
     println!("cause: {}", or_none(report.cause));
     println!("receipt: {}", receipt.as_str());
+    let signature_fails = signing.print(None, &signing.check(text_of(&bytes)))?;
     print_signature_fault(&report.broken_place, &report.load_fault);
     // The readings are listed only for a tape that holds: a broken tape's
     // readings are not the ones it would have to hold.
     let untrusted = report.holds && print_signed("signed_loads", &report.signed_loads, trust);
     Ok(if !report.holds {
         BROKEN
+    } else if signature_fails {
+        SIGNATURE_DOES_NOT_HOLD
     } else if receipt == ReceiptCheck::DoesNotMatch {
         BYTES_DIFFER
     } else if untrusted {
@@ -219,21 +375,32 @@ fn verify_run(tape: &str, trust: Option<&Trust>) -> Result<u8, u8> {
 
 /// A chain: `{"links": [<answer>, ...]}`, the answers in order. Every run
 /// is checked alone, then each link against the one before it.
-fn verify_chain(chain: &str) -> Result<u8, u8> {
+fn verify_chain(chain: &str, signing: &SignatureGiven) -> Result<u8, u8> {
     let bytes = read_file(chain)?;
     let report = check_chain_text(&bytes).map_err(refused)?;
+    let links = link_texts(text_of(&bytes));
     println!("holds: {}", report.holds);
     println!("links: {}", report.links);
     println!("broken_link: {}", or_none(report.broken_link));
     println!("cause: {}", or_none(report.cause));
     println!("chain_seal: {}", or_none(report.chain_seal.as_deref()));
     if report.last_is_step {
-        println!("note: the last link is a step; its answer holds no frame, so its sha256_seal is shown by sending its request again.");
+        println!("note: the last link is a step; its answer holds no frame, so its sha384_seal is shown by sending its request again.");
     }
-    Ok(if report.holds { HOLDS } else { BROKEN })
+    let mut signature_fails = false;
+    for (index, link) in links.iter().enumerate() {
+        signature_fails |= signing.print(Some(&format!("links[{index}]")), &signing.check(link))?;
+    }
+    Ok(if !report.holds {
+        BROKEN
+    } else if signature_fails {
+        SIGNATURE_DOES_NOT_HOLD
+    } else {
+        HOLDS
+    })
 }
 
-fn verify_validation(answer: &str, trust: Option<&Trust>) -> Result<u8, u8> {
+fn verify_validation(answer: &str, trust: Option<&Trust>, signing: &SignatureGiven) -> Result<u8, u8> {
     let bytes = read_file(answer)?;
     let report = check_validation(&bytes).map_err(refused)?;
     let receipt = check_receipt(&bytes);
@@ -258,7 +425,7 @@ fn verify_validation(answer: &str, trust: Option<&Trust>) -> Result<u8, u8> {
             println!("max_abs_error_step: none");
         }
     }
-    println!("measurements_sha256: {}", report.measurements_sha256);
+    println!("measurements_sha384: {}", report.measurements_sha384);
     println!("validation_seal: {}", report.validation_seal);
     // Said only of an answer whose commitment_opened does not follow from its
     // inputs, and of one that carries a commitment, so the lines of every
@@ -270,27 +437,30 @@ fn verify_validation(answer: &str, trust: Option<&Trust>) -> Result<u8, u8> {
             println!("commitment_opened: not said, and the inputs carry a commitment");
         }
     }
-    if let (Some(committed), Some(recomputed)) = (&report.commitment_sha256, &report.commitment_recomputed) {
-        println!("commitment_sha256: {committed}");
+    if let (Some(committed), Some(recomputed)) = (&report.commitment_sha384, &report.commitment_recomputed) {
+        println!("commitment_sha384: {committed}");
         if committed == recomputed {
             println!("commitment: opens");
         } else {
-            println!("commitment: does not open: the SHA-256 of the tag, the answer's committed text and the salt is {recomputed}");
+            println!("commitment: does not open: the SHA-384 of the tag, the answer's committed text and the salt is {recomputed}");
         }
     }
     println!("receipt: {}", receipt.as_str());
     if receipt == ReceiptCheck::Absent {
-        if report.commitment_sha256.is_some() {
+        if report.commitment_sha384.is_some() {
             println!("{RECEIPT_ABSENT_NOTE_COMMITTED}");
         } else {
             println!("{RECEIPT_ABSENT_NOTE}");
         }
     }
+    let signature_fails = signing.print(None, &signing.check(text_of(&bytes)))?;
     print_signature_fault(&report.broken_place, &report.load_fault);
     let mut untrusted = report.holds && print_signed("signed_loads", &report.signed_loads, trust);
     untrusted |= report.holds && print_signed("signed_measurements", &report.signed_measurements, trust);
     Ok(if !report.holds {
         BROKEN
+    } else if signature_fails {
+        SIGNATURE_DOES_NOT_HOLD
     } else if receipt == ReceiptCheck::DoesNotMatch {
         BYTES_DIFFER
     } else if untrusted {
@@ -304,7 +474,7 @@ fn print_dataset(report: &DatasetReport, fault: Option<&Fault>) {
     print!("{}", report_lines(report, fault));
 }
 
-fn verify_dataset(head: &str, rows: &str, frames: Option<&str>, trust: Option<&Trust>) -> Result<u8, u8> {
+fn verify_dataset(head: &str, rows: &str, frames: Option<&str>, trust: Option<&Trust>, signing: &SignatureGiven) -> Result<u8, u8> {
     let head = read_file(head)?;
     let rows = read_file(rows)?;
     // The frame file is read as a stream, never held whole.
@@ -320,6 +490,7 @@ fn verify_dataset(head: &str, rows: &str, frames: Option<&str>, trust: Option<&T
     // hex, are named as the tool verify_dataset names them.
     let fault = fault_of(&head, &rows, &report, SEARCH_MOST_ROWS);
     print_dataset(&report, fault.as_ref());
+    let signature_fails = signing.print(None, &signing.check(text_of(&head)))?;
     // The signed readings of every row, once the rows hold: a row's request
     // is an ordinary run request.
     // Each row is its own run, so no stream is read across rows.
@@ -340,6 +511,8 @@ fn verify_dataset(head: &str, rows: &str, frames: Option<&str>, trust: Option<&T
     }
     Ok(if !report.holds {
         BROKEN
+    } else if signature_fails {
+        SIGNATURE_DOES_NOT_HOLD
     } else if bytes_differ(&report, fault.as_ref()) {
         BYTES_DIFFER
     } else if untrusted {
@@ -347,6 +520,64 @@ fn verify_dataset(head: &str, rows: &str, frames: Option<&str>, trust: Option<&T
     } else {
         HOLDS
     })
+}
+
+/// The engine's signature on any answer, with its receipt, and nothing else.
+fn verify_signature(answer: &str, signing: &SignatureGiven) -> Result<u8, u8> {
+    let bytes = read_file(answer)?;
+    let text = std::str::from_utf8(&bytes).map_err(|_| refused("the answer is not UTF-8 text."))?;
+    let report = signing.check(text);
+    let receipt = check_receipt(&bytes);
+    println!("receipt: {}", receipt.as_str());
+    let fails = signing.print(None, &report)?;
+    Ok(if fails { SIGNATURE_DOES_NOT_HOLD } else { HOLDS })
+}
+
+/// The text of each answer of a chain file, `{"links": [<answer>, ...]}`, as
+/// it stands in the file. Empty when the file is not of that form; the chain
+/// check has refused it by then.
+fn link_texts(text: &str) -> Vec<&str> {
+    let Some(start) = text.find('[') else { return Vec::new() };
+    let bytes = text.as_bytes();
+    let mut links = Vec::new();
+    let mut depth = 0_usize;
+    let mut in_string = false;
+    let mut escaped = false;
+    let mut opened = None;
+    for (index, &byte) in bytes.iter().enumerate().skip(start + 1) {
+        if in_string {
+            if escaped {
+                escaped = false;
+            } else if byte == b'\\' {
+                escaped = true;
+            } else if byte == b'"' {
+                in_string = false;
+            }
+            continue;
+        }
+        match byte {
+            b'"' => in_string = true,
+            b'{' | b'[' => {
+                if depth == 0 {
+                    opened = Some(index);
+                }
+                depth += 1;
+            }
+            b'}' | b']' => {
+                if depth == 0 {
+                    break;
+                }
+                depth -= 1;
+                if depth == 0 {
+                    if let Some(open) = opened.take() {
+                        links.push(&text[open..=index]);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    links
 }
 
 fn write_row_proof(head: &str, rows: &str, row: &str, frames: Option<&str>) -> Result<u8, u8> {

@@ -39,25 +39,7 @@ pub(crate) struct End {
 /// meaning in its kernel.
 pub(crate) const ENDS: &[End] = &[
     End {
-        card: "reactor_spert3",
-        reject: "PastFirstMaximum",
-        end: "the first maximum of power, where the card's burst ends",
-        side: Side::Always,
-    },
-    End {
-        card: "reactor_spert3_fuel",
-        reject: "PastFirstMaximum",
-        end: "the first maximum of power, where the card's burst ends",
-        side: Side::Always,
-    },
-    End {
         card: "reactor_spert3_ccore",
-        reject: "PastPlateTemperatureMaximum",
-        end: "the first maximum of the hot-spot plate surface temperature after the first maximum of power, where the card's transient ends",
-        side: Side::Always,
-    },
-    End {
-        card: "reactor_spert3_ccore_twin",
         reject: "PastPlateTemperatureMaximum",
         end: "the first maximum of the hot-spot plate temperature after the first maximum of power, where the card's transient ends",
         side: Side::Always,
@@ -85,7 +67,7 @@ pub(crate) const ENDS: &[End] = &[
     End {
         card: "runaway_18650_lco",
         reject: "EveryReactantConsumed",
-        end: "every reactant consumed: the heat the lithium in the SEI and in the graphite, the unreacted cathode and the electrolyte still hold falling to 1e-6 of the cell's chemical heat or under, 0.0205 J, where the runaway has finished",
+        end: "every reactant consumed: the heat the six stages still hold or take falling to 1e-6 of the cell's chemical heat or under, 0.0205 J, where the runaway has finished",
         // Met only by a step from a cell that holds more than that heat: a
         // spent start is stepped and meets no end, so the reject has one side.
         side: Side::Always,

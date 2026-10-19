@@ -24,7 +24,7 @@ struct Open {
 
 impl Open {
     fn start_with(extra: &[&str]) -> Open {
-        let mut child = Command::new(env!("CARGO_BIN_EXE_hosted_door"))
+        let mut child = Command::new(env!("CARGO_BIN_EXE_hosted_door")).arg("--unsigned")
             .args(["--open", "--port", "0"])
             .args(extra)
             .stdout(Stdio::piped())
@@ -122,10 +122,11 @@ async fn same_on_every_connection(calls: &[(&str, Value, bool)]) {
         assert_eq!(status == 200, !error_due, "{tool} web status {status}");
         let (status, hosted_error, hosted) = keyed.tool(KEY, tool, arguments);
         // find_model says how much it compared the description with: what
-        // this key sees, three cards and one solver, where the others see all.
+        // this key sees, three cards and one solver, where the others see all
+        // (four until 0.15.0, when its list lost grid_gb written twice).
         let through_key = local
-            .replace("\"searched\":{\"cards\":40,\"solvers\":25}", "\"searched\":{\"cards\":3,\"solvers\":1}")
-            .replace("(40 cards and 25 solvers)", "(3 cards and 1 solver)");
+            .replace(&format!("\"searched\":{{\"cards\":{},\"solvers\":{}}}", protocol_mcp_gateway::CARDS, protocol_mcp_gateway::SOLVERS), "\"searched\":{\"cards\":3,\"solvers\":1}")
+            .replace(&format!("({} cards and {} solvers)", protocol_mcp_gateway::CARDS, protocol_mcp_gateway::SOLVERS), "(3 cards and 1 solver)");
         assert_eq!((status, hosted_error, hosted.as_str()), (200, *error_due, through_key.as_str()), "{tool} hosted");
         let (open_error, opened) = open.tool(tool, arguments);
         assert_eq!((open_error, opened.as_str()), (*error_due, local.as_str()), "{tool} open");
@@ -168,7 +169,7 @@ fn cite_gives_the_service_and_the_paper_first_then_the_people_whose_measurements
     assert_eq!(lines.len(), data.len() + 2);
     let keys: Vec<&str> = grid.as_object().unwrap().keys().map(String::as_str).collect();
     assert_eq!(keys, ["domain", "card", "service", "paper", "real_thing", "how_used", "data", "text", "bibtex", "about"]);
-    assert_eq!(lines[0], "John Kruze (Protocol Company). Zero-Trust Physics: a physics verifier for Super Intelligence. Served at https://mcp.zerotrustphysics.com/mcp, engine genesis_kernel_v0.12.0. Accessed [the date you asked].");
+    assert_eq!(lines[0], "John Kruze (Protocol Company). Zero-Trust Physics: a physics verifier for Super Intelligence. Served at https://mcp.zerotrustphysics.com/mcp, engine genesis_kernel_v0.13.0. Accessed [the date you asked].");
     assert!(bibtex.contains("@misc{zerotrustphysics_service,"));
     // A generic specimen stands on no measured data: the service and the paper alone, and the answer says so.
     let pack = ok(&mut door, "cite", &json!({ "domain": "energy", "card": "battery_sag" }));
@@ -193,7 +194,7 @@ fn cite_gives_the_service_and_the_paper_first_then_the_people_whose_measurements
     }
     // A solver's answers carry the solvers' engine version, and its citation of the service says that one.
     let atom = ok(&mut door, "cite", &json!({ "solver": "atom_dft" }));
-    assert_eq!(atom["service"]["engine_version"], "genesis_solvers_v0.12.0");
+    assert_eq!(atom["service"]["engine_version"], "genesis_solvers_v0.13.0");
     // With no name: how to cite the service itself: its name, who made it,
     // where it is served, and the paper.
     let service = ok(&mut door, "cite", &json!({}));
@@ -204,7 +205,13 @@ fn cite_gives_the_service_and_the_paper_first_then_the_people_whose_measurements
     assert_eq!(service["service"]["site"], "https://zerotrustphysics.com");
     assert_eq!(service["service"]["paper"], "https://doi.org/10.5281/zenodo.23305697");
     assert_eq!(service["service"]["contact"], "kruze@zerotrustphysics.com");
-    assert_eq!(service["service"]["engine_version"], "genesis_kernel_v0.12.0 and genesis_solvers_v0.12.0");
+    // Restored in 0.14.4 beside the rest: the engine's source, the programs
+    // that check a proof with no engine, the page for agents and the phone.
+    assert_eq!(service["service"]["engine_source"], "https://github.com/johnkruze/zero-trust-physics-engine");
+    assert_eq!(service["service"]["proof_checkers"], "https://github.com/johnkruze/zero-trust-physics");
+    assert_eq!(service["service"]["site_for_agents"], "https://zerotrustphysics.com/llms.txt");
+    assert_eq!(service["service"]["phone"], "928-264-7883");
+    assert_eq!(service["service"]["engine_version"], "genesis_kernel_v0.13.0 and genesis_solvers_v0.13.0");
     let text = service["text"].as_str().unwrap();
     assert!(text.starts_with("John Kruze (Protocol Company). Zero-Trust Physics: a physics verifier for Super Intelligence. Served at https://mcp.zerotrustphysics.com/mcp"), "{text}");
     assert!(text.ends_with("https://doi.org/10.5281/zenodo.23305697"));
@@ -239,7 +246,7 @@ fn find_model_gives_fit_first_and_then_how_the_model_did_against_measurement() {
     let mut door = Stdio2::start(None);
     let found = ok(&mut door, "find_model", &json!({ "description": "a lithium cell discharging in the cold" }));
     assert_eq!(found["count"], 3);
-    assert_eq!(found["searched"], json!({ "cards": 40, "solvers": 25 }));
+    assert_eq!(found["searched"], json!({ "cards": protocol_mcp_gateway::CARDS, "solvers": protocol_mcp_gateway::SOLVERS }));
     let first = &found["matches"][0];
     assert_eq!((first["domain"].as_str(), first["card"].as_str()), (Some("energy"), Some("cell_2170_model3")));
     assert!(first["fit"].as_str().unwrap().starts_with("matches your description on the words ") && first["fit"].as_str().unwrap().contains("\"lithium\"") && first["fit"].as_str().unwrap().contains("\"cold\""));
@@ -262,9 +269,11 @@ fn find_model_gives_fit_first_and_then_how_the_model_did_against_measurement() {
     assert!(burst["matches"][0]["accuracy_against_measurement"].as_str().unwrap().starts_with("Compared with "), "{burst}");
     assert_eq!(burst["matches"][1]["card"], "capsule_insight");
     let grid = ok(&mut door, "find_model", &json!({ "description": "power grid frequency after losing a link" }));
-    assert_eq!(grid["matches"][0]["card"], "grid_gb");
+    // One model of the grid since the fold of 0.15.0, where the twin and the earlier card were two.
+    assert_eq!((grid["matches"][0]["card"].as_str(), grid["matches"][1]["card"].as_str()), (Some("grid_gb"), None));
     // A sentence in a user's own words finds the one model that fits.
     let cable = ok(&mut door, "find_model", &json!({ "description": "how far the mains frequency in Britain drops when the undersea power cable from France suddenly fails" }));
+    // One match since the fold of 0.15.0: the grid has one model.
     assert_eq!((cable["count"].as_u64(), cable["matches"][0]["card"].as_str()), (Some(1), Some("grid_gb")));
     let pack = ok(&mut door, "find_model", &json!({ "description": "a 12S battery pack under load" }));
     assert_eq!(pack["matches"][0]["against_measurement"], "company specimen");
@@ -273,7 +282,7 @@ fn find_model_gives_fit_first_and_then_how_the_model_did_against_measurement() {
     let none = ok(&mut door, "find_model", &json!({ "description": "the temperature of the brake discs of a freight train after an emergency stop from 100 km/h" }));
     assert_eq!(none["matches"], json!([]));
     let said = none["none_fits"].as_str().unwrap();
-    assert!(said.starts_with("Nothing served fits this description. It was compared with everything this connection serves (40 cards and 25 solvers), and no served model fits it; list_cards and list_solvers name everything served."), "{said}");
+    assert!(said.starts_with(&format!("Nothing served fits this description. It was compared with everything this connection serves ({} cards and {} solvers), and no served model fits it; list_cards and list_solvers name everything served.", protocol_mcp_gateway::CARDS, protocol_mcp_gateway::SOLVERS)), "{said}");
     // Where a request for a model goes: the maker, by name and address, said
     // as what is so. It read "write to John Kruze of Protocol Company at ...
     // and name an open dataset of it" until the instruction became a
@@ -288,8 +297,10 @@ fn find_model_gives_fit_first_and_then_how_the_model_did_against_measurement() {
 fn grid_run(loss_mw: f64) -> Value {
     json!({
         "domain": "energy", "card": "grid_gb",
-        "initial": { "frequency_hz": 49.942, "inertia_mw_s": 241000.0, "demand_mw": 27132.0 },
-        "dt_s": 0.02, "segments": [{ "steps": 100, "load": { "loss_mw": loss_mw } }], "record_every": 100
+        // The served model's worked start (0.15.0: its six service volumes and two delivery times) and step.
+        "initial": { "frequency_hz": 49.948, "inertia_mw_s": 177000.0, "demand_mw": 26774.0, "dc_low_mw": 1145.0, "dm_low_mw": 500.0, "dr_low_mw": 480.0,
+                     "dc_high_mw": 1080.0, "dm_high_mw": 510.0, "dr_high_mw": 480.0, "fast_delivery_s": 1.0, "regulation_delivery_s": 10.0 },
+        "dt_s": 0.006665926008221309, "segments": [{ "steps": 100, "load": { "loss_mw": loss_mw } }], "record_every": 100
     })
 }
 
@@ -363,14 +374,17 @@ fn a_stop_part_way_and_an_answer_are_one_block_with_the_bytes_of_0_8_1() {
     assert_eq!(blocks.len(), 1);
     let stopped = parsed(&blocks[0]);
     assert_eq!((stopped["outcome"].as_str(), stopped["steps_landed"].as_u64()), (Some("refused"), Some(4950)));
-    assert_eq!(stopped["run_seal"], "bd8430a05a4fde3f3814808ae390a5c8d8f08e7144e9a16a5e9f0fe4b4873ac4");
+    assert_eq!(stopped["run_seal"], "4c7251c4a3ce03d5c9b6d1a4c3263c9bc078a3aa20be8bb525ca2494a9061b4fc50738d85b280bd1df369ee6c2f33ef3");
     // An answer has one block, as before.
     assert_eq!(door.blocks("run_trajectory", &pack_run(50.0)).len(), 1);
 }
 
 /// The answers of the tools served in 0.8.1 carry the keys they carried
 /// and no other: a receipt covers the whole answer, so a key added inside
-/// one would change every printed receipt.
+/// one would change every printed receipt. Since 0.15.0 a run with a flagged
+/// step carries exceedance_extremes and its flagged frames their
+/// exceedances (REFERENCE.md, "The extent of a flag"): this pack run sags,
+/// so its receipt moves and its run seal does not.
 #[test]
 fn the_earlier_answers_carry_no_new_key() {
     let mut door = Stdio2::start(None);
@@ -380,9 +394,9 @@ fn the_earlier_answers_carry_no_new_key() {
         keys(&run),
         ["inputs", "engine_version", "outcome", "steps_requested", "steps_landed", "reject", "reject_detail", "final_state",
          "final_residual_conservation_error", "final_residual_conservation_error_hex", "max_residual_conservation_error",
-         "max_residual_conservation_error_hex", "state_digest", "load_source", "frames", "run_seal", "receipt_sha256"]
+         "max_residual_conservation_error_hex", "state_digest", "load_source", "exceedance_extremes", "frames", "run_seal", "seal_rule", "receipt_sha384"]
     );
-    assert_eq!(run["run_seal"], "37e4cf1e9c2a207785891546f45a460661c50c895a9c8257646f4ef9713c0200");
+    assert_eq!(run["run_seal"], "da2a5777faf85b3121558be4123d4a3686aed1a5fbed23fdbd90a40bb26a99d3f93181ebe7062f3498b561eba7aed24c");
     // One key was added, on John Kruze's word of 14 October 2026: every run
     // answer says where its loads came from. It moves every run receipt once
     // and no run seal; the answer with it taken out is, byte for byte, the
@@ -391,39 +405,46 @@ fn the_earlier_answers_carry_no_new_key() {
     let (_, labelled) = door.tool("run_trajectory", &pack_run(50.0));
     let label = format!(",\"load_source\":{}", serde_json::to_string(&run["load_source"]).unwrap());
     assert_eq!(labelled.matches(&label).count(), 1);
-    let labelled_document = labelled.rsplit_once(",\"receipt_sha256\":").unwrap().0;
-    assert_eq!(run["receipt_sha256"], sha(&format!("{labelled_document}}}")));
-    let unlabelled = labelled.replacen(&label, "", 1);
-    let unlabelled_document = unlabelled.rsplit_once(",\"receipt_sha256\":").unwrap().0;
-    let run: Value = serde_json::from_str(&format!("{unlabelled_document},\"receipt_sha256\":\"{}\"}}", sha(&format!("{unlabelled_document}}}")))).unwrap();
+    let labelled_document = labelled.rsplit_once(",\"receipt_sha384\":").unwrap().0;
+    assert_eq!(run["receipt_sha384"], seal_sha(&format!("{labelled_document}}}")));
+    // So does the extent of a flag (0.15.0): its keys taken out as well, the
+    // answer is the one pinned below.
+    let unlabelled = without_key(&without_key(&labelled.replacen(&label, "", 1), "exceedances"), "exceedance_extremes");
+    let unlabelled_document = unlabelled.rsplit_once(",\"receipt_sha384\":").unwrap().0;
+    let run: Value = serde_json::from_str(&format!("{unlabelled_document},\"receipt_sha384\":\"{}\"}}", seal_sha(&format!("{unlabelled_document}}}")))).unwrap();
     // The receipt covers every byte of the answer, the engine version among them, and moved with
-    // kernel 0.9.0, 0.10.0, 0.11.0 and 0.12.0: the same text with genesis_kernel_v0.11.0 put back
-    // gives the receipt pinned for 0.11.0, f5bd6143...636e, with genesis_kernel_v0.10.0 the
+    // kernel 0.9.0, 0.10.0, 0.11.0, 0.12.0 and 0.13.0: the same text with genesis_kernel_v0.12.0
+    // put back gives the receipt pinned for 0.12.0, dc02efc5...fe55, with genesis_kernel_v0.11.0
+    // the receipt pinned for 0.11.0, f5bd6143...636e, with genesis_kernel_v0.10.0 the
     // receipt pinned for 0.10.0, 323535ed...7d25, with genesis_kernel_v0.9.0 the receipt pinned
     // for 0.9.0, 743c0cfb...ee52, and with genesis_kernel_v0.8.0 the receipt printed before,
     // 2329593a...515e. The run seal does not cover the version and is the seal it was.
-    assert_eq!(run["engine_version"], "genesis_kernel_v0.12.0");
-    assert_eq!(run["receipt_sha256"], "dc02efc588c87bcef75162bcacfe37d8fe5d65b4da5c7e135add536d96c9fe55");
-    let text = format!("{unlabelled_document},\"receipt_sha256\":\"{}\"}}", sha(&format!("{unlabelled_document}}}")));
-    let document = text.strip_suffix(",\"receipt_sha256\":\"dc02efc588c87bcef75162bcacfe37d8fe5d65b4da5c7e135add536d96c9fe55\"}").expect("the receipt is last");
-    assert_eq!(sha(&format!("{document}}}")), "dc02efc588c87bcef75162bcacfe37d8fe5d65b4da5c7e135add536d96c9fe55");
-    let before = document.replacen("genesis_kernel_v0.12.0", "genesis_kernel_v0.11.0", 1);
-    assert_eq!(sha(&format!("{before}}}")), "f5bd614398bfd91a0a039302c46a2e545013e8aec1112c44dffd7e988520636e");
-    let before = document.replacen("genesis_kernel_v0.12.0", "genesis_kernel_v0.10.0", 1);
-    assert_eq!(sha(&format!("{before}}}")), "323535ed160a543c495de118bea44d611529bdd86ba08ade320f6811a3757d25");
-    let before = document.replacen("genesis_kernel_v0.12.0", "genesis_kernel_v0.9.0", 1);
-    assert_eq!(sha(&format!("{before}}}")), "743c0cfbffc80865c572159464a6b43f7a50abac0a8fd7425579e44d9358ee52");
-    let earlier = document.replacen("genesis_kernel_v0.12.0", "genesis_kernel_v0.8.0", 1);
-    assert_eq!(sha(&format!("{earlier}}}")), "2329593a18f106db67fb9d04363f8f1eb37a8e7d2ca42784a41a21609914515e");
+    assert_eq!(run["engine_version"], "genesis_kernel_v0.13.0");
+    // Moved again with kernel 0.13.0 (0.15.0): the same text with genesis_kernel_v0.12.0 put
+    // back gives the receipt pinned with seal rule v2 before, 492c71d1...b51e.
+    assert_eq!(run["receipt_sha384"], "34efa909324696334b85040510c56e9b2cc8a9a8a08460ce340774250e97cc09815ef60e8e47ba9b5e8026ee2838e243");
+    let text = format!("{unlabelled_document},\"receipt_sha384\":\"{}\"}}", seal_sha(&format!("{unlabelled_document}}}")));
+    let document = text.strip_suffix(",\"receipt_sha384\":\"34efa909324696334b85040510c56e9b2cc8a9a8a08460ce340774250e97cc09815ef60e8e47ba9b5e8026ee2838e243\"}").expect("the receipt is last");
+    assert_eq!(seal_sha(&format!("{document}}}")), "34efa909324696334b85040510c56e9b2cc8a9a8a08460ce340774250e97cc09815ef60e8e47ba9b5e8026ee2838e243");
+    let before = document.replacen("genesis_kernel_v0.13.0", "genesis_kernel_v0.12.0", 1);
+    assert_eq!(seal_sha(&format!("{before}}}")), "492c71d15b3d167a1c92739fbec1e5cdbe3fbb4e4144b2484ef2f5f748586e5c8f73afc80972b7463de2325cd623b51e");
+    let before = document.replacen("genesis_kernel_v0.13.0", "genesis_kernel_v0.11.0", 1);
+    assert_eq!(seal_sha(&format!("{before}}}")), "beb57da0d227137ebe37a025dc0d85e865c75fdffc071c16fc7936161a2ee9675b9a8200f5f70b9590d20a4fecdaf691");
+    let before = document.replacen("genesis_kernel_v0.13.0", "genesis_kernel_v0.10.0", 1);
+    assert_eq!(seal_sha(&format!("{before}}}")), "ced38362a19b9e5166801be053b2d5ecf6a950cfc20a95c60c41bac1f536757ee9f52c2de3b4d552f20f19c24f7132c5");
+    let before = document.replacen("genesis_kernel_v0.13.0", "genesis_kernel_v0.9.0", 1);
+    assert_eq!(seal_sha(&format!("{before}}}")), "7a15b6e422994398594d9eff6a5c8773502c2dd732d487b6629f831010a8b40ddda690301ed18d4d1f7f0733db28b277");
+    let earlier = document.replacen("genesis_kernel_v0.13.0", "genesis_kernel_v0.8.0", 1);
+    assert_eq!(seal_sha(&format!("{earlier}}}")), "0ea62e8e34645a010f2d51708dff4a093db20f61408f02ac921e7fbf974396635c62c5e08039b9fde550ff9ce8984667");
     let step = ok(&mut door, "verify_step", &thermal_step());
-    assert_eq!(keys(&step), ["inputs", "engine_version", "state", "residual_conservation_error", "sha256_seal", "receipt_sha256"]);
+    assert_eq!(keys(&step), ["inputs", "engine_version", "state", "residual_conservation_error", "sha384_seal", "seal_rule", "receipt_sha384"]);
     let solved = ok(&mut door, "solve", &json!({ "solver": "atom_dft", "parameters": { "atomic_number": 10 } }));
     assert_eq!(
         keys(&solved),
-        ["inputs", "engine_version", "outcome", "reject", "reject_detail", "iterations", "result", "invariants", "field_sha256",
-         "seal_parts", "solution_seal", "receipt_sha256"]
+        ["inputs", "engine_version", "outcome", "reject", "reject_detail", "iterations", "result", "invariants", "field_sha384",
+         "seal_parts", "solution_seal", "seal_rule", "receipt_sha384"]
     );
-    assert_eq!(solved["seal_parts"]["inputs"], "1eac37e0cf92dfc49ae0d9699482e4d235b0815737d818439be116ccc464ab41");
+    assert_eq!(solved["seal_parts"]["inputs"], "cc0f7a4eb3bc318555e9adb45607d6327cd58121ddd5e0ba212764a4492d13e0b777ca71a6c2fe290a79511cf209bf38");
 }
 
 fn pack_flip() -> Value {
@@ -469,16 +490,17 @@ fn find_flip_returns_the_two_runs_either_side_each_with_the_proof_it_has_alone()
     // The same request gives the same pair, byte for byte.
     assert_eq!(door.tool("find_flip", &pack_flip()), door.tool("find_flip", &pack_flip()));
     // One stop name to another, and a run that ends beside one that completes.
-    let reactor = ok(&mut door, "describe_card", &json!({ "domain": "energy", "card": "reactor_spert3" }));
+    // On the SPERT III C-core card, the one card of the reactor with a declared end since the fold of 0.15.0.
+    let reactor = ok(&mut door, "describe_card", &json!({ "domain": "energy", "card": "reactor_spert3_ccore" }));
     let reactor_run = reactor["example_run_trajectory"].clone();
     let asked = reactor_run["segments"][0]["steps"].as_u64().unwrap();
     let ended = ok(&mut door, "find_flip", &json!({
-        "request": reactor_run, "vary": "segments[0].steps", "low": 1, "high": asked
+        "request": reactor_run, "vary": "segments[0].steps", "low": 1, "high": asked.max(2400)
     }));
-    assert_eq!((ended["low_is"].as_str(), ended["high_is"].as_str()), (Some("completed"), Some("ended (PastFirstMaximum)")), "{ended}");
+    assert_eq!((ended["low_is"].as_str(), ended["high_is"].as_str()), (Some("completed"), Some("ended (PastPlateTemperatureMaximum)")), "{ended}");
     assert_eq!(ended["neighbours"], true);
     // A side that stops before computing has no proof, and says so.
-    let door_side = ok(&mut door, "find_flip", &json!({ "request": grid_run(0.0), "vary": "initial.demand_mw", "low": -1000.0, "high": 27132.0 }));
+    let door_side = ok(&mut door, "find_flip", &json!({ "request": grid_run(0.0), "vary": "initial.demand_mw", "low": -1000.0, "high": 26774.0 }));
     assert_eq!(door_side["low_is"], "stopped before computing (DemandNegative)");
     assert_eq!(door_side["low"]["run_seal"], Value::Null);
     assert!(door_side["low"]["no_proof"].as_str().unwrap().contains("no proof is issued"));
@@ -548,7 +570,7 @@ fn no_connection_keeps_anything() {
         assert_eq!(refused(&mut door, gone, &json!({})), format!("Tool not recognized: {gone}"));
     }
     let start = |arguments: &[&str]| -> String {
-        let out = Command::new(env!("CARGO_BIN_EXE_hosted_door")).args(arguments).output().unwrap();
+        let out = Command::new(env!("CARGO_BIN_EXE_hosted_door")).arg("--unsigned").args(arguments).output().unwrap();
         assert_eq!(out.status.code(), Some(2), "{arguments:?}");
         String::from_utf8_lossy(&out.stderr).into_owned()
     };
@@ -600,7 +622,7 @@ fn every_connection_says_who_it_is_first() {
         assert_eq!(info["title"], "Zero-Trust Physics: a physics verifier for Super Intelligence", "{at}");
         assert_eq!(info["websiteUrl"], "https://zerotrustphysics.com", "{at}");
         assert_eq!(info["version"], env!("CARGO_PKG_VERSION"), "{at}");
-        assert_eq!(info["description"], "genesis_kernel_v0.12.0", "{at}");
+        assert_eq!(info["description"], "genesis_kernel_v0.13.0", "{at}");
         let said = answer["result"]["instructions"].as_str().unwrap();
         assert!(said.starts_with(opening), "{at}: {said}");
         for gone in ["John Kruze", "928-264-7883", "https://github.com/", "https://doi.org/"] {
@@ -612,4 +634,33 @@ fn every_connection_says_who_it_is_first() {
     let (local_said, open_said) = (local["result"]["instructions"].as_str().unwrap(), opened["result"]["instructions"].as_str().unwrap());
     assert_eq!(local_said, opening);
     assert!(open_said.starts_with(&format!("{local_said} This open connection asks no key and stores nothing. From one address:")) && open_said.ends_with(" Each tool that computes states its own limits in its description."), "{open_said}");
+}
+
+/// The text with every `,"key":[...]` taken out, the list matched by its
+/// brackets: the records of a flag hold no bracket in a string.
+fn without_key(text: &str, key: &str) -> String {
+    let needle = format!(",\"{key}\":[");
+    let mut out = String::new();
+    let mut rest = text;
+    while let Some(at) = rest.find(&needle) {
+        out.push_str(&rest[..at]);
+        let mut depth = 0usize;
+        let mut end = at + needle.len() - 1;
+        for (index, byte) in rest.as_bytes()[at + needle.len() - 1..].iter().enumerate() {
+            match byte {
+                b'[' => depth += 1,
+                b']' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        end = at + needle.len() - 1 + index + 1;
+                        break;
+                    }
+                }
+                _ => {}
+            }
+        }
+        rest = &rest[end..];
+    }
+    out.push_str(rest);
+    out
 }

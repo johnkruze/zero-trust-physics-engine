@@ -185,7 +185,7 @@ fn one_changed_byte_in_a_frame_is_exit_1_and_nothing_is_written() {
     needs_saved_runs!();
     let files = dataset_of(&eight_short_runs(), "frames");
     let mut frames = files.frames.clone().unwrap();
-    frames[64 + 3 * 113 * 64 + 57 * 64 + 20] ^= 1; // row 3, frame 57, byte 20
+    frames[80 + 3 * 113 * 64 + 57 * 64 + 20] ^= 1; // row 3, frame 57, byte 20
     let dir = folder("frame_byte");
     let out = dir.join("out");
     let ran = convert(&dir, &files.head, &files.rows, Some(&frames), &out);
@@ -239,10 +239,10 @@ fn a_rows_file_that_is_not_the_one_the_head_names_is_exit_3_and_nothing_is_writt
     // A frame file that is not the one named: also 3. A frame file with a byte of the
     // unused header changed is refused (2) by the sealing crate's own reader.
     let mut frames = files.frames.clone().unwrap();
-    frames[60] = 1;
+    frames[76] = 1;
     let ran = convert(&dir, &files.head, &files.rows, Some(&frames), &out);
     assert_eq!(ran.code, 2, "{}{}", ran.stdout, ran.stderr);
-    assert!(ran.stderr.contains("refused: Bytes 56 to 63"), "{}", ran.stderr);
+    assert!(ran.stderr.contains("refused: Bytes 72 to 79"), "{}", ran.stderr);
     assert_eq!(contents(&out), None);
 }
 
@@ -300,7 +300,7 @@ fn with_frames_and_without_frames() {
         let bytes = batch.column_by_name("frame_bytes").unwrap().as_fixed_size_binary();
         let proof = batch.column_by_name("proof_slot").unwrap().as_fixed_size_binary();
         for i in 0..batch.num_rows() {
-            let start = 64 + index * 64;
+            let start = 80 + index * 64;
             assert_eq!(bytes.value(i), &source[start..start + 64]);
             assert_eq!(proof.value(i), &source[start + 48..start + 64]);
             assert_eq!((row.value(i), frame.value(i)), ((index / 113) as u64, (index % 113) as u64));
@@ -317,7 +317,7 @@ fn with_frames_and_without_frames() {
     assert!(ran.stdout.contains("chains: not rebuilt: the frames were not given"));
     assert_eq!(contents(&out).unwrap(), ["rows.parquet"]);
     let (_, metadata) = read_parquet(&out.join("rows.parquet"));
-    assert_eq!(meta(&metadata, "source_frames_sha256"), "not given");
+    assert_eq!(meta(&metadata, "source_frames_sha384"), "not given");
 
     // 3. a plan that stores no frames: rows only; a frame file given to it is refused.
     let none = dataset_of(&eight_short_runs(), "none");
@@ -372,13 +372,18 @@ fn the_row_count_and_the_frame_count_in_parquet_equal_the_heads() {
             let head = &files.assembled.head;
             assert_eq!(meta(metadata, "dataset_seal"), head.dataset_seal);
             assert_eq!(meta(metadata, "merkle_root"), head.merkle_root);
-            assert_eq!(meta(metadata, "plan_sha256"), head.plan_sha256);
+            assert_eq!(meta(metadata, "plan_sha384"), head.plan_sha384);
+            assert_eq!(meta(metadata, "seal_rule"), "zero-trust-physics/seal/v2");
+            assert_eq!(meta(metadata, "source_head_sha384"), genesis_seal::sealed_form::digest_hex(&files.head));
+            assert_eq!(meta(metadata, "source_head_sha384").len(), 96);
+            assert_eq!(meta(metadata, "head_signature"), "absent");
+            assert_eq!(meta(metadata, "head_signature_key_id"), "none");
             assert_eq!(meta(metadata, "engine_version"), counts.engine_version);
             assert_eq!(meta(metadata, "rows"), counts.rows.to_string());
             assert_eq!(meta(metadata, "frames"), counts.frames.to_string());
             assert_eq!(meta(metadata, "completed"), counts.completed.to_string());
-            assert_eq!(meta(metadata, "source_rows_sha256"), head.rows_sha256.clone().unwrap());
-            assert_eq!(meta(metadata, "source_frames_sha256"), head.frames_sha256.clone().unwrap());
+            assert_eq!(meta(metadata, "source_rows_sha384"), head.rows_sha384.clone().unwrap());
+            assert_eq!(meta(metadata, "source_frames_sha384"), head.frames_sha384.clone().unwrap());
             assert!(meta(metadata, "note").contains("The sealed record is the three source files"));
         }
     }
@@ -436,7 +441,7 @@ fn the_verification_names_what_check_dataset_names_given_the_whole_frame_file() 
     let files = dataset_of(&eight_short_runs(), "frames");
     let frames = files.frames.clone().unwrap();
     let dir = folder("agree");
-    let at = |row: usize, frame: usize, byte: usize| 64 + (row * 113 + frame) * 64 + byte;
+    let at = |row: usize, frame: usize, byte: usize| 80 + (row * 113 + frame) * 64 + byte;
     let mut cases: Vec<(String, Vec<u8>, Vec<u8>, Vec<u8>)> = Vec::new();
     let case = |name: &str, head: &[u8], rows: &[u8], frames: &[u8], cases: &mut Vec<_>| {
         cases.push((name.to_string(), head.to_vec(), rows.to_vec(), frames.to_vec()));
@@ -463,13 +468,13 @@ fn the_verification_names_what_check_dataset_names_given_the_whole_frame_file() 
     // frame file of another dataset: the dataset seal
     let other = dataset_of(&eight_short_runs()[..4], "frames");
     let mut wrong_seal = frames.clone();
-    wrong_seal[24..56].copy_from_slice(&other.frames.as_ref().unwrap()[24..56]);
+    wrong_seal[24..72].copy_from_slice(&other.frames.as_ref().unwrap()[24..72]);
     case("header seal", &files.head, &files.rows, &wrong_seal, &mut cases);
     let mut swapped = split_lines(&files.rows);
     swapped.swap(0, 1);
     case("plan", &files.head, &join_lines(&swapped), &frames, &mut cases);
     let mut head_root = files.assembled.head.clone();
-    head_root.merkle_root = "0".repeat(64);
+    head_root.merkle_root = "0".repeat(96);
     case("root", head_root.wire().as_bytes(), &files.rows, &frames, &mut cases);
 
     for (name, head, rows, frames) in cases {
@@ -674,4 +679,156 @@ fn an_ended_run_converts_and_its_count_is_carried_and_verified() {
     let ran = convert(&dir, &head, &files.rows, files.frames.as_deref(), &out);
     assert_ne!(ran.code, 0, "{}{}", ran.stdout, ran.stderr);
     assert_eq!(contents(&out), None);
+}
+
+/// RT3 W2 of the red team of 0.14.0 rc1: the head and rows of a plan of
+/// solves (two atom_dft solves as engine 0.15.0 wrote them, seal rule v2,
+/// `answer: "full"`; written by 0.14.3 they are a v1 record, refused first as
+/// SealRuleNotServed) were refused, exit 2, as "'solver' is not a field of
+/// this request.", which did not say that a plan of solves is verified by its
+/// request alone. The program now says so, exit 2, and writes nothing.
+#[test]
+fn a_plan_of_solves_is_refused_by_what_it_is_and_nothing_is_written() {
+    let fixtures = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
+    let head = std::fs::read(fixtures.join("plan_of_solves_head.json")).unwrap();
+    let rows = std::fs::read(fixtures.join("plan_of_solves_rows.jsonl")).unwrap();
+    let dir = folder("plan_of_solves");
+    let out = dir.join("out");
+    let ran = convert(&dir, &head, &rows, None, &out);
+    assert_eq!(ran.code, 2, "{}{}", ran.stdout, ran.stderr);
+    assert_eq!(
+        format!("{}{}", ran.stdout, ran.stderr).trim_end(),
+        "refused: Physical Violation: this is a plan of solves: its request names 'solver' in place of 'domain' and 'card'. A plan of solves is verified by its request alone: send the request and its dataset_seal to the engine's verify_dataset. genesis_seal reads a dataset of runs."
+    );
+    assert_eq!(contents(&out), None);
+}
+
+/// 2026-10-18T21:04:05Z, the issue time of the test signatures.
+const ISSUED: i64 = 1_792_357_445;
+const INSIDE: &str = "2026-10-18T21:30:00Z";
+const AFTER: &str = "2026-10-18T22:04:06Z";
+
+/// A test answer key made from a labelled seed: never an operator's.
+fn test_key(label: &str) -> genesis_seal::answer_signature::SigningKey {
+    use sha2::Digest;
+    let digest = sha2::Sha384::digest(format!("a test answer key, never an operator's: {label}").as_bytes());
+    let mut seed = [0_u8; genesis_seal::answer_signature::SEED_LEN];
+    seed.copy_from_slice(&digest[..genesis_seal::answer_signature::SEED_LEN]);
+    genesis_seal::answer_signature::SigningKey::from_seed(&seed)
+}
+
+fn signed_head(key: &genesis_seal::answer_signature::SigningKey, head: &[u8], nonce: u8) -> Vec<u8> {
+    let text = std::str::from_utf8(head).unwrap();
+    key.sign_text(text, ISSUED, 3600, &[nonce; genesis_seal::answer_signature::NONCE_LEN])
+        .expect("the head is signed")
+        .into_bytes()
+}
+
+#[test]
+fn a_head_carrying_the_engines_signature_converts_with_the_signature_split_off() {
+    needs_saved_runs!();
+    let files = dataset_of(&eight_short_runs(), "frames");
+    let key = test_key("genesis_seal_parquet");
+    let signed = signed_head(&key, &files.head, 5);
+    assert!(signed.len() > files.head.len() + 6000);
+    // The head without its signature is the unsigned head, byte for byte.
+    let split = genesis_seal::answer_signature::split(std::str::from_utf8(&signed).unwrap()).unwrap().unwrap();
+    assert_eq!(split.unsigned.as_bytes(), files.head.as_slice());
+    let dir = folder("signed_head");
+    let key_file = write(&dir, "answer_key.pub", key.public_key().to_base64().as_bytes());
+
+    // Read with the signature split off: the same head as the unsigned one.
+    let frames_path = write(&dir, "frames.bin", files.frames.as_deref().unwrap());
+    let verified = verify(&signed, &files.rows, Some(std::path::Path::new(&frames_path))).unwrap();
+    assert_eq!(verified.head, files.assembled.head);
+    assert_eq!(verified.head_sha384, genesis_seal::sealed_form::digest_hex(&signed));
+
+    // The unsigned conversion, to compare with.
+    let unsigned_out = dir.join("unsigned");
+    let ran = convert(&dir, &files.head, &files.rows, files.frames.as_deref(), &unsigned_out);
+    assert_eq!(ran.code, 0, "{}{}", ran.stdout, ran.stderr);
+    assert!(!ran.stdout.contains("signature"), "{}", ran.stdout);
+    let (unsigned_rows, _) = read_parquet(&unsigned_out.join("rows.parquet"));
+    let (unsigned_frames, _) = read_parquet(&unsigned_out.join("frames.parquet"));
+
+    // No key given: the signature is split off and not checked, and said so.
+    let out = dir.join("not_checked");
+    let ran = convert(&dir, &signed, &files.rows, files.frames.as_deref(), &out);
+    assert_eq!((ran.code, ran.stderr.as_str()), (0, ""), "{}", ran.stdout);
+    assert!(ran.stdout.starts_with("holds: true\ncause: none\n"), "{}", ran.stdout);
+    assert!(ran.stdout.contains("signature: not checked\nsignature_note: no --public-key was given, so the signature was not checked.\n"), "{}", ran.stdout);
+    assert!(ran.stdout.contains(&format!("key_id: {}\nissued_at: 2026-10-18T21:04:05Z\nexpires_at: 2026-10-18T22:04:05Z\n", key.public_key().key_id())), "{}", ran.stdout);
+    let (rows, metadata) = read_parquet(&out.join("rows.parquet"));
+    assert_eq!(rows, unsigned_rows);
+    assert_eq!(meta(&metadata, "head_signature"), "not checked");
+    assert_eq!(meta(&metadata, "head_signature_key_id"), key.public_key().key_id());
+    assert_eq!(meta(&metadata, "source_head_sha384"), genesis_seal::sealed_form::digest_hex(&signed));
+    assert_eq!(meta(&metadata, "dataset_seal"), files.assembled.head.dataset_seal);
+
+    // The key given, inside the signature's hour: it holds, and both files convert.
+    let out = dir.join("holds");
+    let ran = convert_with(&dir, &signed, &files.rows, files.frames.as_deref(), &out, &["--public-key", &key_file, "--now", INSIDE]);
+    assert_eq!((ran.code, ran.stderr.as_str()), (0, ""), "{}", ran.stdout);
+    assert!(ran.stdout.contains("signature: holds\nkey_id: "), "{}", ran.stdout);
+    assert_eq!(contents(&out).unwrap(), ["frames.parquet", "rows.parquet"]);
+    let (rows, metadata) = read_parquet(&out.join("rows.parquet"));
+    let (frames, frames_meta) = read_parquet(&out.join("frames.parquet"));
+    assert_eq!(rows, unsigned_rows);
+    assert_eq!(frames, unsigned_frames);
+    for metadata in [&metadata, &frames_meta] {
+        assert_eq!(meta(metadata, "head_signature"), "holds");
+        assert_eq!(meta(metadata, "seal_rule"), "zero-trust-physics/seal/v2");
+    }
+    assert_exact(&files.rows, &rows);
+}
+
+#[test]
+fn a_forged_an_expired_and_a_wrong_keyed_signature_on_the_head_are_refused_by_name_and_nothing_is_written() {
+    needs_saved_runs!();
+    let files = dataset_of(&eight_short_runs(), "frames");
+    let key = test_key("genesis_seal_parquet");
+    let other = test_key("another key");
+    let signed = signed_head(&key, &files.head, 6);
+    let dir = folder("signature_refused");
+    let key_file = write(&dir, "answer_key.pub", key.public_key().to_base64().as_bytes());
+
+    // Forged: one character of the signature's value changed.
+    let text = String::from_utf8(signed.clone()).unwrap();
+    let at = text.find("\"value\":\"").unwrap() + "\"value\":\"".len() + 10;
+    let mut forged = text.into_bytes();
+    forged[at] = if forged[at] == b'A' { b'B' } else { b'A' };
+    // Signed by another key, checked with this one.
+    let by_other = signed_head(&other, &files.head, 7);
+
+    for (name, head, now, cause) in [
+        ("forged", forged, INSIDE, "SignatureDoesNotVerify"),
+        ("expired", signed.clone(), AFTER, "SignatureExpired"),
+        ("wrong key", by_other, INSIDE, "SignatureKeyMismatch"),
+        ("unsigned", files.head.clone(), INSIDE, "SignatureAbsent"),
+    ] {
+        // With the key given, none of them converts.
+        let out = dir.join("out");
+        let ran = convert_with(&dir, &head, &files.rows, files.frames.as_deref(), &out, &["--public-key", &key_file, "--now", now]);
+        assert_eq!(ran.code, 5, "{name}: {}{}", ran.stdout, ran.stderr);
+        assert!(ran.stdout.starts_with("holds: true\ncause: none\n"), "{name}: {}", ran.stdout);
+        assert!(ran.stdout.contains("signature: does not hold\n") || (name == "unsigned" && ran.stdout.contains("signature: absent\n")), "{name}: {}", ran.stdout);
+        assert!(ran.stdout.contains(&format!("signature_cause: {cause}\n")), "{name}: {}", ran.stdout);
+        assert!(ran.stderr.contains("The engine's signature on the head does not hold, so it is not converted.\nnothing was written."), "{name}: {}", ran.stderr);
+        assert_eq!(contents(&out), None, "{name}");
+    }
+    // The same signed head, at a time inside its hour, converts.
+    let ran = convert_with(&dir, &signed, &files.rows, files.frames.as_deref(), &dir.join("out"), &["--public-key", &key_file, "--now", INSIDE]);
+    assert_eq!(ran.code, 0, "{}{}", ran.stdout, ran.stderr);
+
+    // A key file that is not a key, and a time not of the form: refused (2) before any reading.
+    let not_a_key = write(&dir, "not_a_key.pub", b"not base64 of a key");
+    let ran = convert_with(&dir, &signed, &files.rows, files.frames.as_deref(), &dir.join("out_bad_key"), &["--public-key", &not_a_key]);
+    assert_eq!(ran.code, 2, "{}", ran.stderr);
+    assert!(ran.stderr.contains("is not the base64 of an ML-DSA-87 public key"), "{}", ran.stderr);
+    let ran = convert_with(&dir, &signed, &files.rows, files.frames.as_deref(), &dir.join("out_bad_now"), &["--public-key", &key_file, "--now", "tomorrow"]);
+    assert_eq!(ran.code, 2, "{}", ran.stderr);
+    assert!(ran.stderr.contains("'--now tomorrow' is not a time written YYYY-MM-DDTHH:MM:SSZ."), "{}", ran.stderr);
+    for out in ["out_bad_key", "out_bad_now"] {
+        assert_eq!(contents(&dir.join(out)), None);
+    }
 }

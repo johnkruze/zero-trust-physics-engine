@@ -16,7 +16,6 @@ use std::io::{BufRead, BufReader};
 use std::path::Path;
 use std::process::{Child, Command, Stdio};
 
-use genesis_kernel::reactor_spert3_fuel as fuel;
 use genesis_kernel::resonance::DynamicOscillator;
 use hosted_support::*;
 use serde_json::{Value, json};
@@ -31,7 +30,7 @@ struct Open {
 
 impl Open {
     fn start() -> Open {
-        let mut child = Command::new(env!("CARGO_BIN_EXE_hosted_door"))
+        let mut child = Command::new(env!("CARGO_BIN_EXE_hosted_door")).arg("--unsigned")
             .args(["--open", "--port", "0"])
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -139,33 +138,40 @@ fn chained(mut request: Value, upstream: &Value, run_seal: &Value, coupling: Opt
     request
 }
 
-// The two SPERT III cards.
+// The TRIGA pulse handed to its fuel element: from 0.15.0 the one coupling
+// of a card into a solver left beside stardust_entry_to_pica_slab; the
+// SPERT III and cell m80 couplings between cards are removed with their
+// retired models (tests/fuel_rod_triga_jsi_router.rs holds the worked chain).
 
-fn point_burst(reactivity: f64) -> Value {
+fn triga_pulse() -> Value {
     json!({
-        "domain": "energy", "card": "reactor_spert3",
-        "initial": { "coolant_temperature_k": 300.92777777777775 },
-        "dt_s": 0.0007144471176212568,
-        "segments": [{ "steps": 3000, "load": { "reactivity_inserted_dollar": reactivity } }],
-        "record_every": 3000
+        "domain": "energy", "card": "reactor_triga_jsi",
+        "initial": { "start_temperature_k": 296.15, "rod_table_core": 231.0 },
+        "dt_s": 5.0e-5,
+        "segments": [
+            { "steps": 60000, "load": { "reactivity_inserted_dollar": 2.5, "rods_dropped": 0.0 } },
+            { "steps": 219000, "load": { "reactivity_inserted_dollar": 2.5, "rods_dropped": 1.0 } }
+        ],
+        "record_every": 200
     })
 }
 
-fn fuel_burst(inlet_k: f64, reactivity: f64, flow: f64) -> Value {
-    json!({
-        "domain": "energy", "card": "reactor_spert3_fuel",
-        "initial": { "inlet_temperature_k": inlet_k },
-        "dt_s": fuel_gate(),
-        "segments": [{ "steps": 60000, "load": { "reactivity_inserted_dollar": reactivity, "coolant_flow_m_per_s": flow } }],
-        "record_every": 3000
-    })
+/// The element's solve of the pulse a card run gives, its history read off
+/// the recorded frames, with from naming `coupling`.
+fn element_solve(pulse: &Value, answer: &Value, coupling: Option<&str>) -> Value {
+    let mut times = Vec::new();
+    let mut energy = Vec::new();
+    for frame in answer["frames"].as_array().unwrap() {
+        let bytes = hex::decode(frame["frame_hex"].as_str().unwrap()).unwrap();
+        times.push(f64::from_le_bytes(bytes[0..8].try_into().unwrap()));
+        energy.push(f64::from(f32::from_le_bytes(bytes[12..16].try_into().unwrap())));
+    }
+    let request = json!({
+        "solver": "fuel_rod_triga_jsi",
+        "parameters": { "start_temperature_k": 296.15, "time_s": times, "core_energy_released_mws": energy }
+    });
+    chained(request, pulse, &answer["run_seal"], coupling)
 }
-
-fn fuel_gate() -> f64 {
-    fuel::ReactorSpert3Fuel::e_core_low_initial_power().gate_dt_s().unwrap()
-}
-
-const REACTIVITY: f64 = 0.9982818460448638;
 
 /// A door to call: the local connection.
 fn local() -> Stdio2 {
@@ -182,7 +188,7 @@ fn refused_by_name(door: &mut Stdio2, tool: &str, arguments: &Value, name: &str)
     let (error, text) = door.tool(tool, arguments);
     assert!(error, "{tool} answered where {name} was due: {text}");
     assert!(text.contains(&format!("({name})")), "{name} not named: {text}");
-    assert!(!text.contains("run_seal\":") && !text.contains("chain_seal\":") && !text.contains("sha256_seal"), "{text}");
+    assert!(!text.contains("run_seal\":") && !text.contains("chain_seal\":") && !text.contains("sha384_seal"), "{text}");
     text
 }
 
@@ -222,7 +228,7 @@ fn a_chained_continuation_is_the_hand_typed_run_with_a_chain_beside_it() {
     assert_eq!(chain_answer["inputs"], by_hand_request);
     let mut tape = chain_answer.as_object().unwrap().clone();
     tape.shift_remove("chain");
-    tape.shift_remove("receipt_sha256");
+    tape.shift_remove("receipt_sha384");
     let alone = genesis_seal::run::check_tape(&Value::Object(tape)).unwrap();
     assert!(alone.holds, "{alone:?}");
     // The straight run's state, bit for bit.
@@ -264,7 +270,7 @@ fn a_chained_continuation_is_the_hand_typed_run_with_a_chain_beside_it() {
     let check = ok(&mut door, "verify_tape", &json!({ "request": request, "run_seal": chain_answer["run_seal"], "chain_seal": chain["chain_seal"] }));
     assert_eq!(check["holds"], json!(true), "{check}");
     assert_eq!(check["recomputed_chain_seal"], chain["chain_seal"]);
-    let wrong = ok(&mut door, "verify_tape", &json!({ "request": request, "run_seal": chain_answer["run_seal"], "chain_seal": "ab".repeat(32) }));
+    let wrong = ok(&mut door, "verify_tape", &json!({ "request": request, "run_seal": chain_answer["run_seal"], "chain_seal": "ab".repeat(48) }));
     assert_eq!((wrong["holds"].clone(), wrong["cause"].clone()), (json!(false), json!("chain_seal")), "{wrong}");
 }
 
@@ -399,9 +405,9 @@ fn a_broken_ledger_is_refused_by_name_every_time() {
         refused_by_name(&mut door, "run_trajectory", &chained(mount_run(initial, 50), &r1, &a1["run_seal"], None), "ContinuationNotFromUpstream");
     }
     // A continuation onto another card is not a continuation.
-    let burst = point_burst(REACTIVITY);
-    let burst_answer = ok(&mut door, "run_trajectory", &burst);
-    refused_by_name(&mut door, "run_trajectory", &chained(mount_run(handed_back(&a1["final_state"]), 50), &burst, &burst_answer["run_seal"], None), "ContinuationNotFromUpstream");
+    let plate = thermal_run(10, 293.15);
+    let plate_answer = ok(&mut door, "run_trajectory", &plate);
+    refused_by_name(&mut door, "run_trajectory", &chained(mount_run(handed_back(&a1["final_state"]), 50), &plate, &plate_answer["run_seal"], None), "ContinuationNotFromUpstream");
     // A run that did not complete is not continued.
     let hot = json!({
         "domain": "energy", "card": "thermal",
@@ -417,7 +423,7 @@ fn a_broken_ledger_is_refused_by_name_every_time() {
 }
 
 /// A continuation into one step: the step is the hand-typed step, and the
-/// chain seal commits its sha256_seal. As the last link of the links form it
+/// chain seal commits its sha384_seal. As the last link of the links form it
 /// is computed again by compute_step, from the link before it, since 0.12.0.
 #[test]
 fn a_step_continues_from_a_sealed_run() {
@@ -443,433 +449,66 @@ fn a_step_continues_from_a_sealed_run() {
     assert!(report["compared"].as_str().unwrap().contains("computed again under a physics permit and the limits of run_trajectory, or of compute_step for a step"), "{report}");
 }
 
-/// Coupling: the SPERT III burst handed from one card to the other, both
-/// directions; refused by name outside the downstream range, with a swapped
-/// or unknown name, and with a value not the one handed.
+/// Coupling: the TRIGA pulse handed from the card to its fuel element under
+/// one chain proof, the solve typed by hand with the same solution seal;
+/// refused by name with a swapped or unknown coupling name, with a value not
+/// the one handed, and with a forged upstream seal. From 0.15.0 no coupling
+/// between two cards is served: the SPERT III burst and cell m80 couplings
+/// went with their retired models.
 #[test]
-fn a_coupling_hands_the_burst_on_and_is_refused_by_name_where_it_must_be() {
+fn a_coupling_hands_the_pulse_on_and_is_refused_by_name_where_it_must_be() {
     let mut door = local();
-    let up = point_burst(REACTIVITY);
+    let up = triga_pulse();
     let up_answer = ok(&mut door, "run_trajectory", &up);
-    assert_eq!(up_answer["outcome"], "ended", "the burst ends at its first maximum");
-    let inlet = published(&up_answer["final_state"], "coolant_temperature_k");
-    let down = fuel_burst(inlet, REACTIVITY, 0.0);
-    let by_hand = ok(&mut door, "run_trajectory", &down);
-    let request = chained(down.clone(), &up, &up_answer["run_seal"], Some("spert3_burst_to_fuel_card"));
-    let coupled = ok(&mut door, "run_trajectory", &request);
-    for key in RESULT_KEYS {
-        assert_eq!(coupled[key], by_hand[key], "{key}");
-    }
+    assert_eq!(up_answer["outcome"], "completed");
+    let request = element_solve(&up, &up_answer, Some("triga_pulse_to_element_6753"));
+    let coupled = ok(&mut door, "solve", &request);
+    let mut by_hand = request.clone();
+    by_hand.as_object_mut().unwrap().remove("from");
+    let plain = ok(&mut door, "solve", &by_hand);
+    assert_eq!(coupled["solution_seal"], plain["solution_seal"]);
+    assert!(plain.get("chain").is_none());
     let chain = &coupled["chain"];
     assert_eq!(chain["kind"], "coupling");
-    assert_eq!(chain["coupling"], "spert3_burst_to_fuel_card");
-    assert_eq!(chain["handed"][0]["from"], "final_state.coolant_temperature_k");
-    assert_eq!(chain["handed"][0]["to"], "initial.inlet_temperature_k");
-    assert_eq!(chain["handed"][0]["unit"], "K");
-    assert_eq!(chain["handed"][1]["from"], "inputs.segments[*].load.reactivity_inserted_dollar");
-    assert_eq!(chain["handed"][1]["unit"], "dollars");
-    // The ledger at the coupling: handed over equals received, bit for bit.
-    assert_eq!(chain["handed"][0]["value_hex"], up_answer["final_state"]["coolant_temperature_k_hex"]);
-    assert_eq!(chain["handed"][0]["value_hex"], json!(format!("{:016x}", coupled["inputs"]["initial"]["inlet_temperature_k"].as_f64().unwrap().to_bits())));
-    let report = ok(&mut door, "verify_tape", &json!({ "links": [up_answer, coupled] }));
-    assert_eq!(report["holds"], json!(true), "{report}");
-    let check = ok(&mut door, "verify_tape", &json!({ "request": request, "run_seal": coupled["run_seal"], "chain_seal": chain["chain_seal"] }));
-    assert_eq!(check["holds"], json!(true), "{check}");
-
-    for _ in 0..3 {
-        // A swapped coupling name.
-        refused_by_name(&mut door, "run_trajectory", &chained(down.clone(), &up, &up_answer["run_seal"], Some("spert3_fuel_burst_to_point_card")), "CouplingNotOfThesePieces");
-        refused_by_name(&mut door, "run_trajectory", &chained(down.clone(), &up, &up_answer["run_seal"], Some("capsule_stardust_to_ablator_slab")), "UnknownCoupling");
-        // The ledger at the coupling broken: a value received is not the value handed.
-        let mut off = down.clone();
-        off["segments"][0]["load"]["reactivity_inserted_dollar"] = json!(REACTIVITY.next_up());
-        refused_by_name(&mut door, "run_trajectory", &chained(off, &up, &up_answer["run_seal"], Some("spert3_burst_to_fuel_card")), "CouplingLedgerBreach");
-        let mut off = down.clone();
-        off["initial"]["inlet_temperature_k"] = json!(inlet.next_down());
-        refused_by_name(&mut door, "run_trajectory", &chained(off, &up, &up_answer["run_seal"], Some("spert3_burst_to_fuel_card")), "CouplingLedgerBreach");
-        // A forged upstream seal.
-        let mut forged_seal = up_answer["run_seal"].clone();
-        flip_hex(&mut forged_seal);
-        refused_by_name(&mut door, "run_trajectory", &chained(down.clone(), &up, &forged_seal, Some("spert3_burst_to_fuel_card")), "UpstreamProofBroken");
-    }
-
-    // The other direction: a hot-startup burst of the fuel card is handed on to
-    // the point card, which takes any liquid water and was compared cold only;
-    // its burst there is the same as at a cold coolant.
-    let band = 2;
-    let hot_inlet = 0.5 * (fuel::BAND_INLET_MIN_K[band] + fuel::BAND_INLET_MAX_K[band]);
-    let hot_reactivity = 0.5 * (fuel::BAND_REACTIVITY_MIN_DOLLAR[band] + fuel::BAND_REACTIVITY_MAX_DOLLAR[band]);
-    let hot_flow = 0.5 * (fuel::BAND_FLOW_MIN_M_PER_S[band] + fuel::BAND_FLOW_MAX_M_PER_S[band]);
-    let hot = fuel_burst(hot_inlet, hot_reactivity, hot_flow);
-    let hot_answer = ok(&mut door, "run_trajectory", &hot);
-    let to_point = point_burst(hot_reactivity);
-    let mut to_point = to_point;
-    to_point["initial"]["coolant_temperature_k"] = json!(hot_inlet);
-    let handed_hot = ok(&mut door, "run_trajectory", &chained(to_point.clone(), &hot, &hot_answer["run_seal"], Some("spert3_fuel_burst_to_point_card")));
-    assert_eq!(handed_hot["outcome"], "ended", "{handed_hot}");
-    // A point burst at a coolant temperature between the fuel card's bands is
-    // outside the fuel card's declared inlet temperature.
-    let between_k = 350.0;
-    let mut warm_up = point_burst(REACTIVITY);
-    warm_up["initial"]["coolant_temperature_k"] = json!(between_k);
-    let warm_answer = ok(&mut door, "run_trajectory", &warm_up);
-    for _ in 0..2 {
-        let text = refused_by_name(&mut door, "run_trajectory", &chained(fuel_burst(between_k, REACTIVITY, 0.0), &warm_up, &warm_answer["run_seal"], Some("spert3_burst_to_fuel_card")), "CouplingOutsideRange");
-        assert!(text.contains("three inlet bands"), "{text}");
-    }
-    // A cold burst of the fuel card hands on to the point card.
-    let cold = fuel_burst(inlet, REACTIVITY, 0.0);
-    let cold_answer = ok(&mut door, "run_trajectory", &cold);
-    let back = ok(&mut door, "run_trajectory", &chained(point_burst(REACTIVITY), &cold, &cold_answer["run_seal"], Some("spert3_fuel_burst_to_point_card")));
-    assert_eq!(back["run_seal"], up_answer["run_seal"], "the point card's burst, whichever way it was reached");
-    // describe_card names each card's couplings.
-    let described = ok(&mut door, "describe_card", &json!({ "domain": "energy", "card": "reactor_spert3" }));
-    let names: Vec<&str> = described["couplings"].as_array().unwrap().iter().map(|c| c["name"].as_str().unwrap()).collect();
-    assert_eq!(names, ["spert3_burst_to_fuel_card", "spert3_fuel_burst_to_point_card"]);
-    let thermal = ok(&mut door, "describe_card", &json!({ "domain": "energy", "card": "thermal" }));
-    assert!(thermal.get("couplings").is_none());
-}
-
-/// The SPERT III couplings give, after the couplings that carry conditions
-/// were added, the bytes engine 0.12.0 served: the chain seal of each
-/// direction and of a coupled step, and every handed entry, read off the
-/// served binary (`evidence/verification/engine_0.12.0_served/mcp_stdio`)
-/// on the cards' worked runs.
-#[test]
-fn the_spert3_couplings_keep_the_seals_and_the_handed_bytes_of_0_12_0() {
-    let mut door = local();
-    let point = ok(&mut door, "describe_card", &json!({ "domain": "energy", "card": "reactor_spert3" }));
-    let fuel_card = ok(&mut door, "describe_card", &json!({ "domain": "energy", "card": "reactor_spert3_fuel" }));
-    assert!(point["couplings"].as_array().unwrap().iter().all(|entry| entry.get("conditions").is_none()), "{}", point["couplings"]);
-    let up = point["example_run_trajectory"].clone();
-    let up_answer = ok(&mut door, "run_trajectory", &up);
-    let reactivity = up["segments"][0]["load"]["reactivity_inserted_dollar"].clone();
-    let mut down = fuel_card["example_run_trajectory"].clone();
-    down["initial"]["inlet_temperature_k"] = json!(published(&up_answer["final_state"], "coolant_temperature_k"));
-    for segment in down["segments"].as_array_mut().unwrap() {
-        segment["load"]["reactivity_inserted_dollar"] = reactivity.clone();
-    }
-    let to_fuel = ok(&mut door, "run_trajectory", &chained(down.clone(), &up, &up_answer["run_seal"], Some("spert3_burst_to_fuel_card")));
-    let handed = |to: &str, inlet: &str| {
-        json!([
-            { "from": format!("final_state.{inlet}"), "to": format!("{to}.{}", if inlet == "coolant_temperature_k" { "inlet_temperature_k" } else { "coolant_temperature_k" }), "unit": "K", "value_hex": "4072ced82d82d82d" },
-            { "from": "inputs.segments[*].load.reactivity_inserted_dollar", "to": if to == "parameters" { "parameters.reactivity_inserted_dollar" } else { "segments[*].load.reactivity_inserted_dollar" }, "unit": "dollars", "value_hex": "3feff1ecc51e8097" }
-        ])
-    };
-    assert_eq!(to_fuel["chain"]["upstream_run_seal"], "4c8bdd5f99972231b3bb40f20787e89962b01270d577a2a3bff4196c1bc13c1d");
-    assert_eq!(to_fuel["chain"]["handed"], handed("initial", "coolant_temperature_k"));
-    assert_eq!(to_fuel["chain"]["chain_seal"], "31a4fc273e047c9019322fdea2ac1016983f7298ff57a4a1518a98993aad60af");
-    let fuel_answer = ok(&mut door, "run_trajectory", &down);
-    let mut back = up.clone();
-    back["initial"]["coolant_temperature_k"] = json!(published(&fuel_answer["final_state"], "inlet_temperature_k"));
-    let to_point = ok(&mut door, "run_trajectory", &chained(back, &down, &fuel_answer["run_seal"], Some("spert3_fuel_burst_to_point_card")));
-    assert_eq!(to_point["chain"]["upstream_run_seal"], "8c369ac1d55d6fcd2cd5fa8f4cf52a3ce04a90a94773b5420fc0ffb7e81445c9");
-    assert_eq!(to_point["chain"]["handed"], handed("initial", "inlet_temperature_k"));
-    assert_eq!(to_point["chain"]["chain_seal"], "32e21fac572f4964169aefa542f42981f00b3b89190a098eb333b070b4987511");
-    let mut step = fuel_card["example_compute_step"].clone();
-    step["parameters"]["inlet_temperature_k"] = down["initial"]["inlet_temperature_k"].clone();
-    step["parameters"]["reactivity_inserted_dollar"] = reactivity;
-    let step = ok(&mut door, "compute_step", &chained(step, &up, &up_answer["run_seal"], Some("spert3_burst_to_fuel_card")));
-    assert_eq!(step["chain"]["handed"], handed("parameters", "coolant_temperature_k"));
-    assert_eq!(step["chain"]["chain_seal"], "96bd8e405e6e4f68621a12c1dc8e2201ca2c094879e3b8d6683a8803c67f846c");
-}
-
-// Cell m80 of the Tesla Model 3 2170 dataset, in its 40 degC block.
-
-/// The capacity of cell m80's 40 degC block in both cards.
-const M80_CAPACITY_40_AH: f64 = 4.67683635335689;
-
-/// A run of the physical model of cell m80: a discharge at 4.5 A, then a rest.
-fn model3_run(capacity_ah: f64, state_of_charge: f64, discharge_s: u64, rest_s: u64) -> Value {
-    let mut segments = Vec::new();
-    if discharge_s > 0 {
-        segments.push(json!({ "steps": discharge_s, "load": { "current_a": 4.5, "case_temperature_c": 40.0 } }));
-    }
-    if rest_s > 0 {
-        segments.push(json!({ "steps": rest_s, "load": { "current_a": 0.0, "case_temperature_c": 40.0 } }));
-    }
-    json!({
-        "domain": "energy", "card": "cell_2170_model3",
-        "initial": { "cell_number": 80.0, "state_of_charge": state_of_charge, "capacity_ah": capacity_ah, "case_temperature_least_c": 40.0, "case_temperature_most_c": 40.0 },
-        "dt_s": 1.0, "segments": segments, "record_every": discharge_s + rest_s
-    })
-}
-
-/// A run of the table card's cell m80: a discharge at 4.5 A, then a rest.
-fn m80_run(block_chamber_c: f64, charge_removed_ah: f64, discharge_s: u64, rest_s: u64) -> Value {
-    let mut segments = Vec::new();
-    if discharge_s > 0 {
-        segments.push(json!({ "steps": discharge_s, "load": { "current_a": -4.5, "case_temperature_c": 40.0 } }));
-    }
-    if rest_s > 0 {
-        segments.push(json!({ "steps": rest_s, "load": { "current_a": 0.0, "case_temperature_c": 40.0 } }));
-    }
-    json!({
-        "domain": "energy", "card": "cell_2170_m80",
-        "initial": { "block_chamber_c": block_chamber_c, "charge_removed_ah": charge_removed_ah },
-        "dt_s": 1.0, "segments": segments, "record_every": discharge_s + rest_s
-    })
-}
-
-/// `request` with the case temperature of its last segment, its rest, set to `case_c`.
-fn rest_at(request: &Value, case_c: f64) -> Value {
-    let mut request = request.clone();
-    request["segments"].as_array_mut().unwrap().last_mut().unwrap()["load"]["case_temperature_c"] = json!(case_c);
-    request
-}
-
-/// A chain's links verify with the program of genesis_seal, without the engine.
-fn verify_chain_holds(links: &Value, name: &str) {
-    let program = seal_program();
-    let path = scratch(name).join("chain.json");
-    std::fs::write(&path, links.to_string()).unwrap();
-    let out = Command::new(&program).arg("verify-chain").arg(&path).output().unwrap();
-    let said = String::from_utf8_lossy(&out.stdout).to_string();
-    assert_eq!(out.status.code(), Some(0), "{said}");
-    assert!(said.contains("holds: true") && said.contains("links: 2"), "{said}");
-}
-
-/// Cell m80, rested in its 40 degC block, handed between its two cards:
-/// each coupled answer is the downstream run typed by hand, bit for bit, with
-/// its chain beside it, and the chain verifies by request, as links computed
-/// again and with the program of genesis_seal. A coupled step is the step
-/// typed by hand.
-#[test]
-fn cell_m80_rested_in_its_40_degc_block_is_handed_between_its_two_cards() {
-    let mut door = local();
-    // The physical model to the table card: the charge removed since full,
-    // the cell at the capacity of the block.
-    let up = model3_run(M80_CAPACITY_40_AH, 1.0, 1800, 3600);
-    let up_answer = ok(&mut door, "run_trajectory", &up);
-    assert_eq!(up_answer["outcome"], "completed");
-    let charge = published(&up_answer["final_state"], "charge_removed_ah");
-    let down = m80_run(40.0, charge, 600, 0);
-    let by_hand = ok(&mut door, "run_trajectory", &down);
-    let request = chained(down.clone(), &up, &up_answer["run_seal"], Some("cell_2170_model3_to_m80"));
-    let coupled = ok(&mut door, "run_trajectory", &request);
-    for key in RESULT_KEYS {
-        assert_eq!(coupled[key], by_hand[key], "{key}");
-    }
-    let chain = &coupled["chain"];
-    assert_eq!((chain["kind"].as_str(), chain["coupling"].as_str()), (Some("coupling"), Some("cell_2170_model3_to_m80")));
+    assert_eq!(chain["coupling"], "triga_pulse_to_element_6753");
     assert_eq!(chain["upstream_run_seal"], up_answer["run_seal"]);
-    assert_eq!(
-        chain["handed"],
-        json!([{ "from": "final_state.charge_removed_ah", "to": "initial.charge_removed_ah", "unit": "Ah", "value_hex": up_answer["final_state"]["charge_removed_ah_hex"] }])
-    );
-    assert_eq!(chain["handed"][0]["value_hex"], json!(format!("{:016x}", coupled["inputs"]["initial"]["charge_removed_ah"].as_f64().unwrap().to_bits())));
-    let links = json!({ "links": [up_answer, coupled] });
-    let report = ok(&mut door, "verify_tape", &links);
-    assert_eq!((report["holds"].clone(), report["chain_seal"].clone()), (json!(true), chain["chain_seal"].clone()), "{report}");
-    let check = ok(&mut door, "verify_tape", &json!({ "request": request, "run_seal": coupled["run_seal"], "chain_seal": chain["chain_seal"] }));
-    assert_eq!((check["holds"].clone(), check["recomputed_chain_seal"].clone()), (json!(true), chain["chain_seal"].clone()), "{check}");
-    verify_chain_holds(&links, "cell_model3_to_m80");
-    // Into one step of the table card.
-    let described = ok(&mut door, "describe_card", &json!({ "domain": "energy", "card": "cell_2170_m80" }));
-    let mut step = described["example_compute_step"].clone();
-    step["parameters"]["block_chamber_c"] = json!(40.0);
-    step["parameters"]["charge_removed_ah"] = json!(charge);
-    let step_by_hand = ok(&mut door, "compute_step", &step);
-    let step_coupled = ok(&mut door, "compute_step", &chained(step.clone(), &up, &up_answer["run_seal"], Some("cell_2170_model3_to_m80")));
-    assert_eq!(step_coupled["sha256_seal"], step_by_hand["sha256_seal"]);
-    assert_eq!(step_coupled["state"], step_by_hand["state"]);
-    assert_eq!(step_coupled["chain"]["handed"][0]["to"], "parameters.charge_removed_ah");
-    let report = ok(&mut door, "verify_tape", &json!({ "links": [up_answer, step_coupled] }));
-    assert_eq!(report["holds"], json!(true), "{report}");
-
-    // The table card to the physical model: the charge level as the state of
-    // charge, into cell m80 at the block's capacity.
-    let up = m80_run(40.0, 0.0, 1800, 3600);
-    let up_answer = ok(&mut door, "run_trajectory", &up);
-    assert_eq!(up_answer["outcome"], "completed");
-    let level = published(&up_answer["final_state"], "charge_level");
-    let down = model3_run(M80_CAPACITY_40_AH, level, 600, 0);
-    let by_hand = ok(&mut door, "run_trajectory", &down);
-    let request = chained(down.clone(), &up, &up_answer["run_seal"], Some("cell_2170_m80_to_model3"));
-    let coupled = ok(&mut door, "run_trajectory", &request);
-    for key in RESULT_KEYS {
-        assert_eq!(coupled[key], by_hand[key], "{key}");
-    }
-    let chain = &coupled["chain"];
-    assert_eq!(
-        chain["handed"],
-        json!([{ "from": "final_state.charge_level", "to": "initial.state_of_charge", "unit": "1", "value_hex": up_answer["final_state"]["charge_level_hex"] }])
-    );
-    // One quantity: the physical model starts at the charge the table card removed.
-    let removed = published(&up_answer["final_state"], "charge_removed_ah");
-    let started = (1.0 - level) * M80_CAPACITY_40_AH;
-    assert!((started - removed).abs() < 1e-12, "{started} {removed}");
-    let links = json!({ "links": [up_answer, coupled] });
-    let report = ok(&mut door, "verify_tape", &links);
-    assert_eq!(report["holds"], json!(true), "{report}");
-    let check = ok(&mut door, "verify_tape", &json!({ "request": request, "run_seal": coupled["run_seal"], "chain_seal": chain["chain_seal"] }));
-    assert_eq!(check["holds"], json!(true), "{check}");
-    verify_chain_holds(&links, "cell_m80_to_model3");
-
-    // A chain of three: the physical model, the table card, the physical model.
-    let first = model3_run(M80_CAPACITY_40_AH, 1.0, 1200, 3600);
-    let first_answer = ok(&mut door, "run_trajectory", &first);
-    let second = chained(
-        m80_run(40.0, published(&first_answer["final_state"], "charge_removed_ah"), 1200, 3600),
-        &first,
-        &first_answer["run_seal"],
-        Some("cell_2170_model3_to_m80"),
-    );
-    let second_answer = ok(&mut door, "run_trajectory", &second);
-    let third = chained(
-        model3_run(M80_CAPACITY_40_AH, published(&second_answer["final_state"], "charge_level"), 600, 0),
-        &second,
-        &second_answer["run_seal"],
-        Some("cell_2170_m80_to_model3"),
-    );
-    let third_answer = ok(&mut door, "run_trajectory", &third);
-    assert_eq!(third_answer["chain"]["upstream_chain_seal"], second_answer["chain"]["chain_seal"]);
-    let report = ok(&mut door, "verify_tape", &json!({ "links": [first_answer, second_answer, third_answer] }));
-    assert_eq!(report["holds"], json!(true), "{report}");
-}
-
-/// Each condition of the two cell m80 couplings is refused by name, with no
-/// proof and before any physics: sent with an upstream seal that is not the
-/// engine's, a link that does not meet a condition is named for the
-/// condition, where the same link meeting them all is computed again and
-/// named UpstreamProofBroken. Outside the downstream range, with a value not
-/// the one handed and with the other coupling's name, the link is refused
-/// as every coupling's is.
-#[test]
-fn each_condition_of_the_cell_m80_couplings_is_refused_by_name_before_any_physics() {
-    let mut door = local();
-    let forged = json!("ab".repeat(32));
-    let condition = |door: &mut Stdio2, request: &Value, says: &str| {
-        for _ in 0..2 {
-            let text = refused_by_name(door, "run_trajectory", request, "CouplingConditionNotMet");
-            assert!(text.contains(says), "{says}: {text}");
-            assert!(text.contains("so neither run is computed"), "{text}");
-        }
-    };
-    // The physical model to the table card.
-    let forward = |up: &Value, down: Value, seal: &Value| chained(down, up, seal, Some("cell_2170_model3_to_m80"));
-    let up = model3_run(M80_CAPACITY_40_AH, 1.0, 1800, 3600);
-    let down = m80_run(40.0, 2.25, 600, 0);
-    refused_by_name(&mut door, "run_trajectory", &forward(&up, down.clone(), &forged), "UpstreamProofBroken");
-    let mut other_cell = up.clone();
-    other_cell["initial"]["cell_number"] = json!(1000.0);
-    condition(&mut door, &forward(&other_cell, down.clone(), &forged), "the upstream request states cell_number 1000");
-    // The physical model's own reading of the 40 degC block's capacity, to four places, is another capacity.
-    condition(&mut door, &forward(&model3_run(4.6768, 1.0, 1800, 3600), down.clone(), &forged), "the upstream request states capacity_ah 4.6768");
-    condition(&mut door, &forward(&model3_run(4.5006, 1.0, 1800, 3600), down.clone(), &forged), "the upstream request states capacity_ah 4.5006");
-    condition(&mut door, &forward(&model3_run(M80_CAPACITY_40_AH, 1.0, 1800, 3599), down.clone(), &forged), "the upstream run ends with 3599 s at a current_a of zero");
-    condition(&mut door, &forward(&model3_run(M80_CAPACITY_40_AH, 1.0, 1800, 0), down.clone(), &forged), "the upstream run ends with 0 s at a current_a of zero");
-    condition(&mut door, &forward(&up, m80_run(25.0, 2.25, 600, 0), &forged), "the downstream request states block_chamber_c 25");
-    // The hour of rest at a case temperature of the 40 degC block's compared
-    // tests, 39.063 to 45.535 degC: a cold hour is refused, and at either
-    // end of the band the link meets every condition and is computed, so
-    // the forged seal is named.
-    condition(&mut door, &forward(&rest_at(&up, -12.9), down.clone(), &forged), "the upstream request holds a case_temperature_c of -12.9 in its last 3600 s at a current_a of zero");
-    condition(&mut door, &forward(&rest_at(&up, 25.0), down.clone(), &forged), "the upstream request holds a case_temperature_c of 25 in its last 3600 s");
-    for case_c in [39.063, 45.535] {
-        refused_by_name(&mut door, "run_trajectory", &forward(&rest_at(&up, case_c), down.clone(), &forged), "UpstreamProofBroken");
-    }
-    // A step of the table card in another block.
-    let described = ok(&mut door, "describe_card", &json!({ "domain": "energy", "card": "cell_2170_m80" }));
-    let mut step = described["example_compute_step"].clone();
-    step["parameters"]["block_chamber_c"] = json!(10.0);
-    let text = refused_by_name(&mut door, "compute_step", &forward(&up, step, &forged), "CouplingConditionNotMet");
-    assert!(text.contains("the downstream request states block_chamber_c 10"), "{text}");
-    // The table card to the physical model.
-    let reverse = |up: &Value, down: Value, seal: &Value| chained(down, up, seal, Some("cell_2170_m80_to_model3"));
-    let up = m80_run(40.0, 0.0, 1800, 3600);
-    let down = model3_run(M80_CAPACITY_40_AH, 0.5, 600, 0);
-    refused_by_name(&mut door, "run_trajectory", &reverse(&up, down.clone(), &forged), "UpstreamProofBroken");
-    condition(&mut door, &reverse(&m80_run(25.0, 0.0, 1800, 3600), down.clone(), &forged), "the upstream request states block_chamber_c 25");
-    condition(&mut door, &reverse(&m80_run(40.0, 0.0, 1800, 60), down.clone(), &forged), "the upstream run ends with 60 s at a current_a of zero");
-    condition(&mut door, &reverse(&rest_at(&up, -20.0), down.clone(), &forged), "the upstream request holds a case_temperature_c of -20 in its last 3600 s at a current_a of zero");
-    for case_c in [39.063, 45.535] {
-        refused_by_name(&mut door, "run_trajectory", &reverse(&rest_at(&up, case_c), down.clone(), &forged), "UpstreamProofBroken");
-    }
-    let mut other_cell = down.clone();
-    other_cell["initial"]["cell_number"] = json!(448.0);
-    condition(&mut door, &reverse(&up, other_cell, &forged), "the downstream request states cell_number 448");
-    condition(&mut door, &reverse(&up, model3_run(4.6768, 0.5, 600, 0), &forged), "the downstream request states capacity_ah 4.6768");
-    condition(&mut door, &reverse(&up, model3_run(M80_CAPACITY_40_AH.next_up(), 0.5, 600, 0), &forged), "the downstream request states capacity_ah 4.676836353356891");
-
-    // With the upstream's own seal: outside the downstream range. A cell
-    // started above full and rested has a charge removed below zero, past
-    // the top of the table card's tables, -0.02 Ah.
-    let above_full = model3_run(M80_CAPACITY_40_AH, 1.01, 0, 3600);
-    let above_answer = ok(&mut door, "run_trajectory", &above_full);
-    let removed = published(&above_answer["final_state"], "charge_removed_ah");
-    assert!(removed < -0.02, "{removed}");
     for _ in 0..2 {
-        let text = refused_by_name(&mut door, "run_trajectory", &forward(&above_full, m80_run(40.0, removed, 600, 0), &above_answer["run_seal"]), "CouplingOutsideRange");
-        assert!(text.contains("the tables of cell_2170_m80's 40 degC block"), "{text}");
-    }
-    // A rest at the band's coldest end, with the upstream's own seal: the
-    // coupled run is the run typed by hand.
-    let edge = rest_at(&model3_run(M80_CAPACITY_40_AH, 1.0, 1800, 3600), 39.063);
-    let edge_answer = ok(&mut door, "run_trajectory", &edge);
-    let handed = m80_run(40.0, published(&edge_answer["final_state"], "charge_removed_ah"), 600, 0);
-    let by_hand = ok(&mut door, "run_trajectory", &handed);
-    let coupled = ok(&mut door, "run_trajectory", &forward(&edge, handed, &edge_answer["run_seal"]));
-    assert_eq!(coupled["run_seal"], by_hand["run_seal"]);
-    // A value received that is not the value handed; the other coupling's name.
-    let up = model3_run(M80_CAPACITY_40_AH, 1.0, 1800, 3600);
-    let up_answer = ok(&mut door, "run_trajectory", &up);
-    let charge = published(&up_answer["final_state"], "charge_removed_ah");
-    for _ in 0..2 {
-        refused_by_name(&mut door, "run_trajectory", &forward(&up, m80_run(40.0, charge.next_up(), 600, 0), &up_answer["run_seal"]), "CouplingLedgerBreach");
-        refused_by_name(&mut door, "run_trajectory", &chained(m80_run(40.0, charge, 600, 0), &up, &up_answer["run_seal"], Some("cell_2170_m80_to_model3")), "CouplingNotOfThesePieces");
-        // Without a coupling's name the link is a continuation, which neither card takes.
-        refused_by_name(&mut door, "run_trajectory", &chained(model3_run(M80_CAPACITY_40_AH, 0.5, 60, 0), &up, &up_answer["run_seal"], None), "ContinuationNotOnCard");
+        // A swapped coupling name, and one that is not served.
+        refused_by_name(&mut door, "solve", &element_solve(&up, &up_answer, Some("stardust_entry_to_pica_slab")), "CouplingNotOfThesePieces");
+        refused_by_name(&mut door, "solve", &element_solve(&up, &up_answer, Some("spert3_burst_to_fuel_card")), "UnknownCoupling");
+        // The ledger at the coupling broken: a value received is not the value handed.
+        let mut off = request.clone();
+        off["parameters"]["start_temperature_k"] = json!(296.15_f64.next_up());
+        refused_by_name(&mut door, "solve", &off, "CouplingLedgerBreach");
+        // A forged upstream seal.
+        let mut forged = request.clone();
+        flip_hex(&mut forged["from"]["run_seal"]);
+        refused_by_name(&mut door, "solve", &forged, "UpstreamProofBroken");
     }
 }
 
-/// describe_card lists each cell m80 coupling, with its conditions, on both
-/// of its cards, and the engine serves five couplings, one of them into a solver.
+/// No card lists a coupling from 0.15.0, since none couples two cards; each
+/// of the two couplings into a solver is listed by describe_solver.
 #[test]
 fn describe_card_lists_each_coupling_on_both_of_its_cards() {
     let mut door = local();
     let cards = ok(&mut door, "list_cards", &json!({}));
-    let mut listed: Vec<(String, String)> = Vec::new();
     for entry in cards["cards"].as_array().unwrap() {
         let (domain, card) = (entry["domain"].as_str().unwrap(), entry["card"].as_str().unwrap());
         let described = ok(&mut door, "describe_card", &json!({ "domain": domain, "card": card }));
-        for coupling in described.get("couplings").and_then(Value::as_array).into_iter().flatten() {
-            let name = coupling["name"].as_str().unwrap().to_string();
-            let here = format!("{domain}/{card}");
-            assert!(coupling["upstream"] == json!(here) || coupling["downstream"] == json!(here), "{name} on {here}");
-            listed.push((name, here));
-        }
+        assert!(described.get("couplings").is_none(), "{domain}/{card}: {}", described["couplings"]);
     }
-    listed.sort();
-    let names: Vec<&str> = listed.iter().map(|(name, _)| name.as_str()).collect();
-    assert_eq!(
-        names,
-        [
-            "cell_2170_m80_to_model3", "cell_2170_m80_to_model3",
-            "cell_2170_model3_to_m80", "cell_2170_model3_to_m80",
-            "spert3_burst_to_fuel_card", "spert3_burst_to_fuel_card",
-            "spert3_fuel_burst_to_point_card", "spert3_fuel_burst_to_point_card",
-        ]
-    );
-    // The coupling into a solver is listed by describe_solver, not on its card.
-    let element = ok(&mut door, "describe_solver", &json!({ "solver": "fuel_rod_triga_jsi" }));
-    assert_eq!(element["couplings"][0]["name"], "triga_pulse_to_element_6753");
-    assert_eq!(element["couplings"][0]["downstream"], "solver/fuel_rod_triga_jsi");
-    let m80 = ok(&mut door, "describe_card", &json!({ "domain": "energy", "card": "cell_2170_m80" }));
-    let model3 = ok(&mut door, "describe_card", &json!({ "domain": "energy", "card": "cell_2170_model3" }));
-    assert_eq!(m80["couplings"], model3["couplings"]);
-    let entry = &m80["couplings"][0];
-    let keys: Vec<&str> = entry.as_object().unwrap().keys().map(String::as_str).collect();
-    assert_eq!(keys, ["name", "upstream", "downstream", "handed", "conditions", "meaning"]);
-    assert_eq!(entry["conditions"].as_array().unwrap().len(), 5);
-    for coupling in m80["couplings"].as_array().unwrap() {
-        let meaning = coupling["meaning"].as_str().unwrap();
-        assert!(meaning.contains("40 degC block") && meaning.contains("bit for bit") && meaning.contains("4.67683635335689 Ah"), "{meaning}");
-        assert!(!meaning.to_lowercase().contains("check"), "{meaning}");
+    for (solver, name, upstream) in [
+        ("fuel_rod_triga_jsi", "triga_pulse_to_element_6753", "energy/reactor_triga_jsi"),
+        ("ablator_slab", "stardust_entry_to_pica_slab", "aerospace/capsule_stardust"),
+    ] {
+        let described = ok(&mut door, "describe_solver", &json!({ "solver": solver }));
+        let couplings = described["couplings"].as_array().unwrap();
+        assert_eq!(couplings.len(), 1, "{solver}");
+        assert_eq!(couplings[0]["name"], name);
+        assert_eq!(couplings[0]["upstream"], upstream);
+        assert_eq!(couplings[0]["downstream"], format!("solver/{solver}"));
     }
-    // The short form lists no coupling.
-    let short = ok(&mut door, "describe_card", &json!({ "domain": "energy", "card": "cell_2170_m80", "form": "short" }));
-    assert!(short.get("couplings").is_none());
 }
 
 /// Pass line (e): the chain's runs are capped by name before any physics:
@@ -883,10 +522,10 @@ fn the_chain_is_capped_by_name_before_any_physics() {
     });
     let mut request = plate(1);
     for _ in 0..16 {
-        request = chained(plate(1), &request, &json!("ab".repeat(32)), None);
+        request = chained(plate(1), &request, &json!("ab".repeat(48)), None);
     }
     refused_by_name(&mut door, "run_trajectory", &request, "ChainTooLong");
-    let long = chained(plate(500_000), &plate(600_000), &json!("ab".repeat(32)), None);
+    let long = chained(plate(500_000), &plate(600_000), &json!("ab".repeat(48)), None);
     refused_by_name(&mut door, "run_trajectory", &long, "ChainStepsAboveLimit");
     // A from that is not one is named.
     let (error, text) = door.tool("run_trajectory", &json!({ "domain": "energy", "card": "thermal", "initial": { "temperature_k": 293.15 }, "dt_s": 1.0, "segments": [{ "steps": 1, "load": { "heat_power_w": 0.0, "ambient_k": 293.15 } }], "record_every": 1, "from": { "request": plate(1) } }));
@@ -907,27 +546,18 @@ async fn every_connection_gives_the_same_bytes_for_a_chain() {
     parameters["accel_m_s2"] = json!(3.0);
     parameters["dt_s"] = json!(gate());
     let step = chained(json!({ "domain": "signal", "card": "resonance", "parameters": parameters }), &r1, &a1["run_seal"], None);
-    let up = point_burst(REACTIVITY);
+    let up = triga_pulse();
     let up_answer = ok(&mut stdio, "run_trajectory", &up);
-    let inlet = published(&up_answer["final_state"], "coolant_temperature_k");
-    let coupled = chained(fuel_burst(inlet, REACTIVITY, 0.0), &up, &up_answer["run_seal"], Some("spert3_burst_to_fuel_card"));
-    let coupled_answer = ok(&mut stdio, "run_trajectory", &coupled);
+    let coupled = element_solve(&up, &up_answer, Some("triga_pulse_to_element_6753"));
     let mut broken = handed_back(&a1["final_state"]);
     broken["t_s"] = json!(broken["t_s"].as_f64().unwrap().next_up());
-    let cell_up = model3_run(M80_CAPACITY_40_AH, 1.0, 600, 3600);
-    let cell_up_answer = ok(&mut stdio, "run_trajectory", &cell_up);
-    let cell_down = m80_run(40.0, published(&cell_up_answer["final_state"], "charge_removed_ah"), 300, 0);
-    let cell_coupled = chained(cell_down.clone(), &cell_up, &cell_up_answer["run_seal"], Some("cell_2170_model3_to_m80"));
-    let mut cell_elsewhere = cell_coupled.clone();
-    cell_elsewhere["initial"]["block_chamber_c"] = json!(0.0);
 
     let base = web().await;
     let keyed = Hosted::start(
         vec![json!({
             "client": "all", "key_sha256": sha(KEY),
-            // reactor_spert3_twin beside the two it supersedes: superseded_by is said here as in the full view.
-            "cards": [["signal", "resonance"], ["energy", "reactor_spert3"], ["energy", "reactor_spert3_fuel"], ["energy", "reactor_spert3_twin"], ["energy", "cell_2170_m80"], ["energy", "cell_2170_model3"]],
-            "solvers": [], "max_in_flight": 4, "max_permits": 2
+            "cards": [["signal", "resonance"], ["energy", "reactor_triga_jsi"]],
+            "solvers": ["fuel_rod_triga_jsi"], "max_in_flight": 4, "max_permits": 2
         })],
         None,
     );
@@ -935,17 +565,12 @@ async fn every_connection_gives_the_same_bytes_for_a_chain() {
     let calls = [
         ("run_trajectory", r2.clone()),
         ("verify_step", step),
-        ("run_trajectory", coupled.clone()),
+        ("solve", coupled.clone()),
         ("verify_tape", json!({ "request": r2, "run_seal": a2["run_seal"], "chain_seal": a2["chain"]["chain_seal"] })),
         ("verify_tape", json!({ "links": [a1.clone(), a2.clone()] })),
-        ("verify_tape", json!({ "links": [up_answer.clone(), coupled_answer.clone()] })),
         ("run_trajectory", chained(mount_run(broken, 50), &r1, &a1["run_seal"], None)),
-        ("run_trajectory", chained(fuel_burst(inlet, REACTIVITY, 0.0), &up, &up_answer["run_seal"], Some("spert3_fuel_burst_to_point_card"))),
-        ("describe_card", json!({ "domain": "energy", "card": "reactor_spert3_fuel" })),
-        ("run_trajectory", cell_coupled.clone()),
-        ("run_trajectory", cell_elsewhere),
-        ("verify_tape", json!({ "request": cell_coupled, "run_seal": ok(&mut stdio, "run_trajectory", &cell_down)["run_seal"] })),
-        ("describe_card", json!({ "domain": "energy", "card": "cell_2170_model3" })),
+        ("solve", element_solve(&up, &up_answer, Some("stardust_entry_to_pica_slab"))),
+        ("describe_solver", json!({ "solver": "fuel_rod_triga_jsi" })),
     ];
     for (tool, arguments) in &calls {
         let (error, local) = stdio.tool(tool, arguments);
@@ -961,12 +586,12 @@ async fn every_connection_gives_the_same_bytes_for_a_chain() {
     let narrow = Hosted::start(
         vec![json!({
             "client": "narrow", "key_sha256": sha(KEY),
-            "cards": [["energy", "reactor_spert3_fuel"]],
-            "solvers": [], "max_in_flight": 4, "max_permits": 2
+            "cards": [],
+            "solvers": ["fuel_rod_triga_jsi"], "max_in_flight": 4, "max_permits": 2
         })],
         None,
     );
-    let (_, error, text) = narrow.tool(KEY, "run_trajectory", &coupled);
+    let (_, error, text) = narrow.tool(KEY, "solve", &coupled);
     assert!(error && text.contains("Card not recognized (UnknownCard)."), "{text}");
 }
 
@@ -997,7 +622,7 @@ fn seal_program() -> std::path::PathBuf {
 #[test]
 fn a_start_field_returned_under_another_name_is_carried_and_held() {
     let mut door = local();
-    let sources: [(&str, &str, &[(&str, &str)]); 5] = [
+    let sources: [(&str, &str, &[(&str, &str)]); 6] = [
         ("materials", "ti64_lattice", &[
             ("start_t_s", "final_state.t_s"),
             ("start_force_n", "final_state.applied_force_n"),
@@ -1008,6 +633,7 @@ fn a_start_field_returned_under_another_name_is_carried_and_held() {
         ("energy", "cell_18650pf", &[("held_current_a", "inputs.initial.held_current_a")]),
         ("energy", "generator_mmrtg_f1", &[("mission_time_s", "final_state.t_s")]),
         ("energy", "generator_mmrtg_seebeck", &[("mission_time_s", "final_state.t_s")]),
+        ("energy", "tokamak_jet_dte1", &[("elapsed_time_s", "final_state.t_s")]),
         ("energy", "tokamak_jet_dte1", &[("elapsed_time_s", "final_state.t_s")]),
     ];
     for (domain, card, renamed) in sources {
@@ -1144,7 +770,7 @@ fn describe_card_says_per_card_what_a_continuation_carries_and_the_engine_agrees
             short["record_every"] = json!(1);
             let (error, text) = door.tool("run_trajectory", &short);
             let answer = if error { None } else { Some(parsed(&text)) };
-            let seal = answer.as_ref().map(|a| a["run_seal"].clone()).unwrap_or(json!("ab".repeat(32)));
+            let seal = answer.as_ref().map(|a| a["run_seal"].clone()).unwrap_or(json!("ab".repeat(48)));
             let mut next = upstream.clone();
             next["from"] = json!({ "request": short, "run_seal": seal });
             refused_by_name(&mut door, "run_trajectory", &next, "ContinuationNotOnCard");
@@ -1197,45 +823,6 @@ fn describe_card_says_per_card_what_a_continuation_carries_and_the_engine_agrees
             }
         }
     }
-    assert_eq!((served, refused), (27, 13));
-}
-
-/// A key whose view holds one card of a coupling sees no coupling naming the
-/// other: one SPERT III card, or one of the two cards of cell m80.
-#[test]
-fn a_keyed_view_lists_only_couplings_of_cards_it_holds() {
-    let mut door = local();
-    for (card, other) in [("reactor_spert3_fuel", "reactor_spert3"), ("cell_2170_m80", "cell_2170_model3"), ("cell_2170_model3", "cell_2170_m80")] {
-        let narrow = Hosted::start(
-            vec![json!({
-                "client": "narrow", "key_sha256": sha(KEY),
-                "cards": [["energy", card]],
-                "solvers": [], "max_in_flight": 4, "max_permits": 2
-            })],
-            None,
-        );
-        let pair = json!({ "domain": "energy", "card": card });
-        let (_, error, text) = narrow.tool(KEY, "describe_card", &pair);
-        assert!(!error, "{text}");
-        assert!(!text.contains("\"couplings\"") && !text.contains(&format!("energy/{other}\"")), "{text}");
-        // The rest of the description is the full view's, the couplings, last in it, left out,
-        // and superseded_by, whose successor this view does not hold (succession::TABLE).
-        let (_, full_text) = door.tool("describe_card", &pair);
-        assert_eq!(text, format!("{}}}", &full_text[..full_text.find(",\"couplings\":").expect("the couplings")]).replace("\"superseded_by\":\"reactor_spert3_twin\",", ""), "{card}");
-        let full = parsed(&full_text);
-        assert_eq!(full["couplings"].as_array().unwrap().len(), 2, "{card}");
-    }
-    // A key that holds both cards of cell m80 sees both couplings.
-    let both = Hosted::start(
-        vec![json!({
-            "client": "both", "key_sha256": sha(KEY),
-            "cards": [["energy", "cell_2170_m80"], ["energy", "cell_2170_model3"]],
-            "solvers": [], "max_in_flight": 4, "max_permits": 2
-        })],
-        None,
-    );
-    let pair = json!({ "domain": "energy", "card": "cell_2170_m80" });
-    let (_, error, text) = both.tool(KEY, "describe_card", &pair);
-    assert!(!error, "{text}");
-    assert_eq!(text, door.tool("describe_card", &pair).1);
+    // 27 and 9 from 0.15.0: 36 cards, the retired models not served.
+    assert_eq!((served, refused), (27, 9));
 }

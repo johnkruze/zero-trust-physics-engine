@@ -88,8 +88,12 @@ pub(crate) const ANSWER: &str = "answer";
 
 /// The most characters an inline answer may hold. It is counted from the
 /// plan before anything runs. It is under 50,343 characters, the smallest
-/// answer that agents calling the door could not read.
-pub const MAX_INLINE_ANSWER_CHARS: u64 = 40_000;
+/// answer that agents calling the door could not read, with the engine's
+/// signature (about 6,600 characters) after the head's receipt. Seal rule v2
+/// writes each hash in 96 characters where v1 wrote 64, 32 more for each
+/// row's seal: 40,000 under v1, 42,500 under v2, so a plan that fitted
+/// still fits.
+pub const MAX_INLINE_ANSWER_CHARS: u64 = 42_500;
 
 /// How much of each row an inline answer carries.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -388,7 +392,7 @@ pub(crate) fn inline_answer_chars(request: &DatasetRequest, form: Form) -> u64 {
         }
     }
     if form == Form::Full && request.store() == Store::Frames {
-        counted = counted.saturating_add(totals.frames.saturating_add(1).saturating_mul(128));
+        counted = counted.saturating_add(totals.frames.saturating_mul(128).saturating_add(2 * genesis_seal::frames::HEADER_LEN as u64));
     }
     counted
 }
@@ -575,7 +579,7 @@ fn run_plan_version_words(head: &Head, given: &str) -> String {
     let ours = &head.counts.engine_version;
     let theirs = crate::verify_by_request::other_versions("genesis_kernel", ours).into_iter().find(|name| {
         let counts = Counts { engine_version: name.clone(), ..head.counts.clone() };
-        dataset_seal(&head.plan_sha256, &head.merkle_root, &counts) == given
+        dataset_seal(&head.plan_sha384, &head.merkle_root, &counts) == given
     });
     match theirs {
         Some(theirs) => format!(
@@ -687,8 +691,8 @@ pub(crate) fn answer_of_results(request: &DatasetRequest, form: Form, replaced: 
     // The head names the two files these bytes would make, so a reader can
     // write both and give them to the program in `genesis_seal`. The head is
     // the same whichever form the answer takes.
-    assembled.head.rows_sha256 = Some(digest_hex(&assembled.rows_text()));
-    assembled.head.frames_sha256 = assembled.frames_bytes().map(|bytes| digest_hex(&bytes));
+    assembled.head.rows_sha384 = Some(digest_hex(&assembled.rows_text()));
+    assembled.head.frames_sha384 = assembled.frames_bytes().map(|bytes| digest_hex(&bytes));
     match form {
         Form::Full => answer(&assembled, replaced),
         Form::Summary | Form::States => {
@@ -1080,11 +1084,11 @@ pub(crate) fn most_rows_bytes(head: &genesis_seal::dataset::Head, head_bytes: u6
 }
 
 /// The most bytes of a stored frame file that are read, from its head alone:
-/// twice its true size, which is the 64-byte header and 64 bytes for each
+/// twice its true size, which is the 80-byte header and 64 bytes for each
 /// frame the head counts. A file of a wrong length inside that is read and
 /// named for what it is, as before; a file past it is not read.
 pub(crate) fn most_frames_bytes(frames: u64) -> u64 {
-    frames.saturating_add(1).saturating_mul(128)
+    frames.saturating_mul(64).saturating_add(genesis_seal::frames::HEADER_LEN as u64).saturating_mul(2)
 }
 
 /// True when a stored head is the head of the dataset `head` seals: the same
@@ -1097,11 +1101,11 @@ pub(crate) fn most_frames_bytes(frames: u64) -> u64 {
 fn seals_the_same_dataset(stored: &genesis_seal::dataset::Head, head: &genesis_seal::dataset::Head) -> bool {
     use genesis_seal::sealed_form::sealed_form;
     stored.counts == head.counts
-        && stored.plan_sha256 == head.plan_sha256
+        && stored.plan_sha384 == head.plan_sha384
         && stored.merkle_root == head.merkle_root
         && stored.dataset_seal == head.dataset_seal
-        && stored.frames_sha256 == head.frames_sha256
-        && stored.rows_sha256.is_some() == head.rows_sha256.is_some()
+        && stored.frames_sha384 == head.frames_sha384
+        && stored.rows_sha384.is_some() == head.rows_sha384.is_some()
         && sealed_form(&stored.request) == sealed_form(&head.request)
 }
 
@@ -1207,16 +1211,16 @@ fn confirm_stored_folder(
         }
     };
     let most_rows = most_rows_bytes(&stored, stored_bytes.len() as u64);
-    if hash_of(ROWS_FILE, most_rows)? != stored.rows_sha256 || stored.rows_sha256.is_none() {
+    if hash_of(ROWS_FILE, most_rows)? != stored.rows_sha384 || stored.rows_sha384.is_none() {
         return Err(differs(ROWS_FILE));
     }
-    if hash_of(FRAMES_FILE, most_frames_bytes(stored.counts.frames))? != stored.frames_sha256 {
+    if hash_of(FRAMES_FILE, most_frames_bytes(stored.counts.frames))? != stored.frames_sha384 {
         return Err(differs(FRAMES_FILE));
     }
     // The same dataset sent with a number spelled another way: the stored
     // rows are another text of the same rows. They are held to this job's
     // rows value for value before the folder is answered from.
-    if stored.rows_sha256 != head.rows_sha256 {
+    if stored.rows_sha384 != head.rows_sha384 {
         let same_values = match open_regular(&folder.join(ROWS_FILE)) {
             Ok(opened) if opened.size() <= most_rows => rows_hold_the_same_values(opened, rows_of_this_job),
             _ => false,
@@ -1258,12 +1262,12 @@ pub(crate) async fn verify(state: &AppState, body: &Value, text: Option<&str>) -
             .ok_or_else(|| DoorError::Unprocessable(no_directory_to_verify()))?;
         let seal = match object.get("dataset_seal") {
             Some(Value::String(text))
-                if text.len() == 64
+                if text.len() == 96
                     && text.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f')) =>
             {
                 text.clone()
             }
-            _ => return Err(wrong("dataset_seal", "64 lowercase hex digits")),
+            _ => return Err(wrong("dataset_seal", "96 lowercase hex digits")),
         };
         let one_at_a_time = Arc::clone(&state.stored_verifications)
             .try_acquire_owned()
@@ -2101,7 +2105,7 @@ pub fn run_schema() -> Map<String, Value> {
         "required": ["plan"],
         "additionalProperties": false,
         "description": format!(
-            "A plan of runs on one card (domain, card, plan, store and return, all required) or of solves of one solver (solver and plan). Rows <= {MAX_DATASET_ROWS}, steps in total <= {MAX_DATASET_STEPS}, stored frames <= {MAX_DATASET_FRAMES}; inline: an answer counted from the plan <= {MAX_INLINE_ANSWER_CHARS} characters, which a plan reaches first, a grid on one axis at about 140 summary rows and a list sooner, its head repeating each run's request (a plan of more than {MAX_INLINE_ROWS} rows is refused before it is counted, as too large to return inline), and frames <= {MAX_INLINE_FRAMES}; solves <= {}. With return \"file\" the answer is the head and the names of the files stored, on a connection started with a directory for them.",
+            "A plan of runs on one card (domain, card, plan, store and return, all required) or of solves of one solver (solver and plan). Rows <= {MAX_DATASET_ROWS}, steps in total <= {MAX_DATASET_STEPS}, stored frames <= {MAX_DATASET_FRAMES}; inline: an answer counted from the plan <= {MAX_INLINE_ANSWER_CHARS} characters, which a plan reaches first, a grid on one axis at about 150 summary rows and a list sooner, its head repeating each run's request (a plan of more than {MAX_INLINE_ROWS} rows is refused before it is counted, as too large to return inline), and frames <= {MAX_INLINE_FRAMES}; solves <= {}. With return \"file\" the answer is the head and the names of the files stored, on a connection started with a directory for them.",
             crate::solve_plan::MAX_SOLVES
         ),
     }))
@@ -2121,12 +2125,14 @@ pub fn verify_schema() -> Map<String, Value> {
             },
             "dataset_seal": {
                 "type": "string",
-                "pattern": "^[0-9a-f]{64}$",
+                "pattern": "^[0-9a-f]{96}$",
                 "description": "With request: the dataset_seal of the run_dataset answer, compared with the seal the plan runs to. Alone: the seal of a dataset stored as files (return \"file\"), read from the connection's own folder of that name. A dataset returned in the answer is not stored: it is verified with its request, or by its head, rows and frames_hex."
-            }
+            },
+            "public_key": { "type": "string", "description": "The base64 of the ML-DSA-87 public key (2,592 bytes) to check the answer's signature with; without it, this engine's own." },
+            "seen_nonces": { "type": "array", "items": { "type": "string", "pattern": "^[0-9a-f]{64}$" }, "description": "Nonces of signatures already seen: one of them again is SignatureNonceReplayed." }
         },
         "additionalProperties": false,
-        "description": "One of three forms. request and dataset_seal, the short form: the plan is run again and its seal compared. The three parts a full run_dataset answer carries (head, rows and frames_hex, all three required together, as they came), the long form: the rows, the root and the seal are recomputed from their exact values, then the head's plan is run again under the permits and the limits of run_dataset and the engine's full answer to it compared with the parts sent, value by value and then byte for byte, so a dataset that holds is every byte the engine's. dataset_seal alone: the stored dataset of that seal, its seals recomputed from its files and its plan run again into a folder of its own, the stored files compared with that run's byte for byte. The long form's answer carries holds, true when the answer sent is every byte the engine's, and values_hold beside it, true when every value of it is the engine's answer to its request computed again, whatever its spelling: each number by its 64-bit value, strings, flags and null exactly, keys and their order, the receipt string among them. A copy whose numbers a client wrote again in its own spelling (0.0001 for 1.0e-4, 12 for 12.0) has holds false and values_hold true, and differs_at names the first place its text differs."
+        "description": "One of three forms. request and dataset_seal, the short form: the plan is run again and its seal compared. The three parts a full run_dataset answer carries (head, rows and frames_hex, all three required together, as they came), the long form: the rows, the root and the seal are recomputed from their exact values, then the head's plan is run again under the permits and the limits of run_dataset and the engine's full answer to it compared with the parts sent, value by value and then byte for byte, so a dataset that holds is every byte the engine's. dataset_seal alone: the stored dataset of that seal, its seals recomputed from its files and its plan run again into a folder of its own, the stored files compared with that run's byte for byte. The long form's answer carries holds, true when the answer sent is every byte the engine's, and values_hold beside it, true when every value of it is the engine's answer to its request computed again, whatever its spelling: each number by its 64-bit value, strings, flags and null exactly, keys and their order, the receipt string among them. A copy whose numbers a client wrote again in its own spelling (0.0001 for 1.0e-4, 12 for 12.0) has holds false and values_hold true, and differs_at names the first place its text differs. An answer the engine signed (signature, ML-DSA-87 over its receipt, with issued_at, expires_at and nonce) has its signature checked first, against public_key or else this engine's own key: one that does not hold is cause signature, named (SignatureDoesNotVerify, SignatureExpired, SignatureNonceReplayed, SignatureKeyMismatch, ReceiptDoesNotMatch, SignatureAbsent when public_key is given and there is none), and nothing is computed. The signature of a dataset follows its head's receipt."
     }))
 }
 

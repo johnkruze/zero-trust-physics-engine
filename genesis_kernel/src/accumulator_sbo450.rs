@@ -198,6 +198,7 @@ extern crate core;
 
 use core::prelude::v1::*;
 
+use crate::exceedance::{Exceedance, ExceedanceKind, Side};
 use crate::frame::LastStateFrame64;
 use crate::normal::normal_or_zero;
 
@@ -831,7 +832,24 @@ impl GasState {
         let gas = accumulator.gas();
         let v = match gas.volume_m3_kg(gas_temperature_k, gas_pressure_pa) {
             Some(v) => v,
-            None => return Err(StepReject::NonFiniteState),
+            None => {
+                // No volume is worked out from a pressure so small that the
+                // volume overflows (under about 6.49e-150 Pa for the worked
+                // charge: the random conformance test of 16 October 2026,
+                // D1). Above the critical temperature the pressure falls
+                // with the volume on every isotherm, so a pressure under the
+                // one the charge has filling the whole gas side is a gas
+                // larger than the vessel: no oil is left to draw out.
+                let filling_pa = gas.pressure_pa(
+                    gas_temperature_k,
+                    accumulator.vessel_gas_volume_m3 * (1.0 + accumulator.computed_limit_allowance)
+                        / gas_mass_kg,
+                );
+                if gas_pressure_pa < filling_pa {
+                    return Err(StepReject::OilSideEmpty);
+                }
+                return Err(StepReject::NonFiniteState);
+            }
         };
         let gas_volume_m3 = gas_mass_kg * v;
         if !volume_in_vessel(accumulator, gas_volume_m3) {
@@ -1041,6 +1059,26 @@ fn runge_kutta(
 /// with its sign ([`crate::normal`]).
 #[must_use]
 pub fn step(
+    accumulator: &AccumulatorSbo450,
+    state: &mut GasState,
+    frame: &mut LastStateFrame64,
+    load: AccumulatorLoad,
+    dt_s: f64,
+) -> Result<(), StepReject> {
+    #[cfg(any(test, debug_assertions, feature = "check_exceedances"))]
+    let before = *state;
+    let stepped = step_landed(accumulator, state, frame, load, dt_s);
+    #[cfg(any(test, debug_assertions, feature = "check_exceedances"))]
+    if stepped.is_ok() {
+        crate::exceedance::debug_check("accumulator_sbo450", exceedances(accumulator, &before, state, load, dt_s), frame.flags);
+    }
+    stepped
+}
+
+/// The step itself; [`step`] is it with, in a build that checks
+/// (`crate::exceedance::CHECKED`), the check that [`exceedances`] stands for
+/// the flags it wrote.
+fn step_landed(
     accumulator: &AccumulatorSbo450,
     state: &mut GasState,
     frame: &mut LastStateFrame64,
@@ -1267,6 +1305,124 @@ fn state_is_finite(state: &GasState) -> bool {
         && state.work_moved_j.is_finite()
         && state.heat_moved_j.is_finite()
         && state.heat_share.is_finite()
+}
+
+/// Every limit a flag of this card can mark: what [`exceedances`] reports
+/// beside a flag's bit (`crate::exceedance`).
+pub const EXCEEDANCE_KINDS: &[crate::exceedance::ExceedanceKind] = &[
+    MASS_BELOW_20,
+    MASS_ABOVE_20,
+    MASS_BELOW_40,
+    MASS_ABOVE_40,
+    WALL_LOW,
+    WALL_HIGH,
+    PISTON_HIGH,
+    GAS_LOW,
+    GAS_HIGH,
+    PRESSURE_LOW,
+    PRESSURE_HIGH,
+];
+
+const MASS_WORDS: &str = "the gas masses of the two compared charges, 0.013639 to 0.013667 kg (20 bar) and 0.02744 to 0.027495 kg (40 bar): the nearer edge";
+const fn outside(quantity: &'static str, unit: &'static str, side: Side, limit: f64, words: &'static str) -> ExceedanceKind {
+    ExceedanceKind::fixed("FLAG_OUTSIDE_COMPARED_RUNS", FLAG_OUTSIDE_COMPARED_RUNS, quantity, unit, side, limit, words)
+}
+const MASS_BELOW_20: ExceedanceKind = outside("gas_mass_kg", "kg", Side::Below, GAS_MASS_20_BAR_FLOOR_KG, MASS_WORDS);
+const MASS_ABOVE_20: ExceedanceKind = outside("gas_mass_kg", "kg", Side::Above, GAS_MASS_20_BAR_CEILING_KG, MASS_WORDS);
+const MASS_BELOW_40: ExceedanceKind = outside("gas_mass_kg", "kg", Side::Below, GAS_MASS_40_BAR_FLOOR_KG, MASS_WORDS);
+const MASS_ABOVE_40: ExceedanceKind = outside("gas_mass_kg", "kg", Side::Above, GAS_MASS_40_BAR_CEILING_KG, MASS_WORDS);
+const WALL_WORDS: &str = "the wall temperatures of the compared runs, 293.4 to 293.7 K";
+const WALL_LOW: ExceedanceKind = outside("wall_temperature_k", "K", Side::Below, WALL_TEMPERATURE_FLOOR_K, WALL_WORDS);
+const WALL_HIGH: ExceedanceKind = outside("wall_temperature_k", "K", Side::Above, WALL_TEMPERATURE_CEILING_K, WALL_WORDS);
+const PISTON_HIGH: ExceedanceKind = outside(
+    "piston_speed_m_s_magnitude",
+    "m/s",
+    Side::Above,
+    PISTON_SPEED_CEILING_M_S,
+    "the fastest piston of the compared runs, 0.7 m/s in magnitude",
+);
+const GAS_WORDS: &str = "the gas temperatures of the compared runs, 285.9 to 301.8 K";
+const GAS_LOW: ExceedanceKind = outside("gas_temperature_k", "K", Side::Below, GAS_TEMPERATURE_FLOOR_K, GAS_WORDS);
+const GAS_HIGH: ExceedanceKind = outside("gas_temperature_k", "K", Side::Above, GAS_TEMPERATURE_CEILING_K, GAS_WORDS);
+const PRESSURE_WORDS: &str = "the nearer edge of the compared pressure bands of the charge the gas mass is nearer: 3.7 to 4.3 and 5.5 to 6.7 MPa at 20 bar, 5.7 to 6.4 and 7.5 to 8.6 MPa at 40 bar";
+const PRESSURE_LOW: ExceedanceKind = ExceedanceKind::varying(
+    "FLAG_OUTSIDE_COMPARED_RUNS",
+    FLAG_OUTSIDE_COMPARED_RUNS,
+    "gas_pressure_pa",
+    "Pa",
+    Side::Below,
+    PRESSURE_WORDS,
+);
+const PRESSURE_HIGH: ExceedanceKind = ExceedanceKind::varying(
+    "FLAG_OUTSIDE_COMPARED_RUNS",
+    FLAG_OUTSIDE_COMPARED_RUNS,
+    "gas_pressure_pa",
+    "Pa",
+    Side::Above,
+    PRESSURE_WORDS,
+);
+
+/// The limits the step from `before` to `after` under `load` over `dt_s`
+/// is past: one record for each limit a flag set on its frame marks.
+/// The conditions are those of `inside_compared_runs` on the landed state.
+/// A mass between the charges, or a pressure between the bands, is read
+/// against the nearer edge.
+pub fn exceedances(
+    accumulator: &AccumulatorSbo450,
+    before: &GasState,
+    after: &GasState,
+    load: AccumulatorLoad,
+    dt_s: f64,
+) -> crate::exceedance::Exceedances {
+    let _ = (before, dt_s);
+    let mut records = crate::exceedance::Exceedances::new();
+    let a = accumulator;
+    let mass = after.gas_mass_kg;
+    if !mass_is_a_measured_charge(a, mass) {
+        let record = if mass < a.gas_mass_20_bar_floor_kg {
+            Exceedance::at(MASS_BELOW_20, a.gas_mass_20_bar_floor_kg, mass)
+        } else if mass > a.gas_mass_40_bar_ceiling_kg {
+            Exceedance::at(MASS_ABOVE_40, a.gas_mass_40_bar_ceiling_kg, mass)
+        } else if mass - a.gas_mass_20_bar_ceiling_kg <= a.gas_mass_40_bar_floor_kg - mass {
+            Exceedance::at(MASS_ABOVE_20, a.gas_mass_20_bar_ceiling_kg, mass)
+        } else {
+            Exceedance::at(MASS_BELOW_40, a.gas_mass_40_bar_floor_kg, mass)
+        };
+        records.push(record);
+    }
+    let wall = after.wall_temperature_k;
+    records.push_if(!(wall >= a.wall_temperature_floor_k), Exceedance::at(WALL_LOW, a.wall_temperature_floor_k, wall));
+    records.push_if(!(wall <= a.wall_temperature_ceiling_k), Exceedance::at(WALL_HIGH, a.wall_temperature_ceiling_k, wall));
+    let speed = load.piston_speed_m_s.abs();
+    records.push_if(!(speed <= a.piston_speed_ceiling_m_s), Exceedance::at(PISTON_HIGH, a.piston_speed_ceiling_m_s, speed));
+    let gas = after.gas_temperature_k;
+    records.push_if(!(gas >= a.gas_temperature_floor_k), Exceedance::at(GAS_LOW, a.gas_temperature_floor_k, gas));
+    records.push_if(!(gas <= a.gas_temperature_ceiling_k), Exceedance::at(GAS_HIGH, a.gas_temperature_ceiling_k, gas));
+    let pressure = after.gas_pressure_pa;
+    if !pressure_in_charge_bands(a, mass, pressure, a.computed_limit_allowance) {
+        let bands = if mass <= a.gas_mass_20_bar_ceiling_kg { &a.pressure_bands_20_bar_pa } else { &a.pressure_bands_40_bar_pa };
+        // The nearer band edge: below the lower band, above the upper, or
+        // in the gap between them.
+        let record = if pressure < bands[0][0] {
+            Exceedance::at(PRESSURE_LOW, bands[0][0], pressure)
+        } else if pressure > bands[1][1] {
+            Exceedance::at(PRESSURE_HIGH, bands[1][1], pressure)
+        } else if pressure > bands[0][1] && pressure < bands[1][0] {
+            if pressure - bands[0][1] <= bands[1][0] - pressure {
+                Exceedance::at(PRESSURE_HIGH, bands[0][1], pressure)
+            } else {
+                Exceedance::at(PRESSURE_LOW, bands[1][0], pressure)
+            }
+        } else if pressure <= bands[0][1] {
+            // Inside a band but past its widened edge cannot be: the bands
+            // are widened, so this reads the band's own lower edge.
+            Exceedance::at(PRESSURE_LOW, bands[0][0], pressure)
+        } else {
+            Exceedance::at(PRESSURE_HIGH, bands[1][1], pressure)
+        };
+        records.push(record);
+    }
+    records
 }
 
 #[cfg(test)]
@@ -2194,5 +2350,21 @@ mod tests {
             - state.start_energy_j;
         assert!((state.work_on_gas_j - state.heat_to_wall_j - gained).abs() < 1.0e-9 * card.ledger_scale_j());
         assert!(state.heat_to_wall_j > 0.0);
+    }
+
+    /// The random conformance test of 16 October 2026, D1: the worked step's
+    /// charge from a pressure under about 6.49e-150 Pa was refused
+    /// NonFiniteState, though the incoming values are finite, where from
+    /// that pressure up it is OilSideEmpty, the limit it passes: the volume
+    /// worked back from so small a pressure overflows. It is OilSideEmpty
+    /// at every pressure under the charge's filling pressure.
+    #[test]
+    fn a_vanishing_pressure_is_a_gas_larger_than_the_vessel() {
+        let card = card();
+        for pressure in [6.489339284672497e-150, 6.489339283313507e-150, 1e-200, 5e-324, 1e-100, 1.0] {
+            assert_eq!(unmoved(&card, 0.02747, pressure, 293.15, 293.55).err(), Some(StepReject::OilSideEmpty), "{pressure:e}");
+        }
+        // A charge inside the vessel still starts.
+        assert!(unmoved(&card, CHARGE_40_BAR_KG, 3.299e7, ROOM_K, ROOM_K).is_ok());
     }
 }

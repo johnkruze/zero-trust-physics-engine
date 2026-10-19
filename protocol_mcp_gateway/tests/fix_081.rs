@@ -134,7 +134,7 @@ fn a_fresh_start_states_its_own_anchors_or_is_refused_by_name() {
             assert!(text.ends_with("(ContinuationWithoutUpstream)."), "{card} {tool}: {text}");
             assert!(text.contains(&format!("'{section}.{field}' is ")), "{card} {tool}: {text}");
             assert!(text.contains("where the allowance is"), "{card} {tool}: {text}");
-            assert!(!text.contains("run_seal") && !text.contains("sha256_seal"), "{card} {tool}: {text}");
+            assert!(!text.contains("run_seal") && !text.contains("sha384_seal"), "{card} {tool}: {text}");
         }
         // Continued from the worked run's sealed answer, with from: taken,
         // its anchor being the upstream's, not its own energy.
@@ -213,7 +213,7 @@ fn a_chained_check_given_only_a_run_seal_returns_no_chain_seal() {
 }
 
 /// Each short check says what it did not compare in true words: a run's and
-/// a solution's send a copy to verify_receipt and to recomputed_receipt_sha256
+/// a solution's send a copy to verify_receipt and to recomputed_receipt_sha384
 /// together; a dataset's says it compared no rows, that only the head has a
 /// receipt, and what the long form does with the decimals of a row.
 #[test]
@@ -223,7 +223,7 @@ fn each_short_check_says_truly_what_it_did_not_compare() {
     let made = ok(&mut door, "run_trajectory", &run);
     let report = ok(&mut door, "verify_tape", &json!({ "request": run, "run_seal": made["run_seal"] }));
     let words = report["text_not_compared"].as_str().unwrap();
-    assert!(words.contains("compare that receipt_sha256 with recomputed_receipt_sha256"), "{words}");
+    assert!(words.contains("compare that receipt_sha384 with recomputed_receipt_sha384"), "{words}");
     assert!(words.contains("A copy is verified in full only when the two are equal"), "{words}");
     assert!(!words.contains("compares every byte of an answer"), "{words}");
     let solve = json!({ "solver": "atom_dft", "parameters": { "atomic_number": 2 } });
@@ -235,7 +235,7 @@ fn each_short_check_says_truly_what_it_did_not_compare() {
         "plan": { "kind": "list", "runs": [plan_run()] },
         "store": "none", "return": "inline"
     });
-    let report = ok(&mut door, "verify_dataset", &json!({ "request": plan, "dataset_seal": "0".repeat(64) }));
+    let report = ok(&mut door, "verify_dataset", &json!({ "request": plan, "dataset_seal": "0".repeat(96) }));
     let dataset_words = report["text_not_compared"].as_str().unwrap();
     // Until the long form held each decimal of a final state to the hex
     // beside it, the sentence began "No tool compares the decimals in a
@@ -270,7 +270,7 @@ fn the_dataset_long_form_returns_no_rebuilt_seal_that_does_not_hold() {
     assert_eq!(held["holds"], json!(true), "{held}");
     assert_eq!(held["dataset_seal"], made["head"]["dataset_seal"]);
     let mut forged = whole.clone();
-    forged["head"]["dataset_seal"] = json!("0".repeat(64));
+    forged["head"]["dataset_seal"] = json!("0".repeat(96));
     let (_, text) = door.tool("verify_dataset", &forged);
     let report = parsed(&text);
     assert_eq!(report["holds"], json!(false), "{report}");

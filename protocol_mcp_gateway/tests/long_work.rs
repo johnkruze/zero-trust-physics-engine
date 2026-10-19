@@ -21,7 +21,7 @@ struct Open {
 
 impl Open {
     fn start_with(extra: &[&str]) -> Open {
-        let mut child = Command::new(env!("CARGO_BIN_EXE_hosted_door"))
+        let mut child = Command::new(env!("CARGO_BIN_EXE_hosted_door")).arg("--unsigned")
             .args(["--open", "--port", "0"])
             .args(extra)
             .stdout(Stdio::piped())
@@ -149,7 +149,7 @@ fn while_long_work_computes_other_long_work_is_told_so_and_a_step_is_answered() 
     assert_eq!((error, text.as_str()), (true, "Too many concurrent physics tasks."));
     // A single step from another address is answered: the pool's other permit is left for it.
     let (error, text) = from("10.0.0.2", "verify_step", &thermal_step());
-    assert!(!error && text.contains("sha256_seal"), "{text}");
+    assert!(!error && text.contains("sha384_seal"), "{text}");
     let (error, text) = running.join().unwrap();
     assert!(error && text.contains("The work was stopped there"), "{text}");
     // After the stop the other address's long work is answered.
@@ -228,7 +228,7 @@ fn a_vanishing_boron_density_gets_the_solvers_own_refusal_alike_on_the_open_and_
     assert_eq!(through, (true, sentence.to_string()));
     assert_eq!(through, local.tool("solve", &slow));
     // A check of it by request, and a plan with it as a row: the same bytes on both connections.
-    let check = json!({ "request": slow, "solution_seal": "ab".repeat(32) });
+    let check = json!({ "request": slow, "solution_seal": "ab".repeat(48) });
     let checked = open.call("verify_solution", &check, 30);
     assert_eq!(checked, (true, sentence.to_string()));
     assert_eq!(checked, local.tool("verify_solution", &check));

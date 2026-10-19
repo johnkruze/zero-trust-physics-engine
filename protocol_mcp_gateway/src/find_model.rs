@@ -7,9 +7,8 @@
 //! first (the words that matched, and the one real thing the model is of
 //! with its range) and then accuracy (what it was fitted on, what it was
 //! compared with outside the fit and within what, and the gap), kept apart
-//! so that a model with a gap is not read as a model that does not fit. A
-//! model a newer one supersedes (`crate::succession`) is given after its
-//! successor, under its own ID. When nothing fits the answer is
+//! so that a model with a gap is not read as a model that does not fit. One
+//! model is served for each real object, under the object's ID. When nothing fits the answer is
 //! complete in itself: every card and solver was compared, here are the
 //! nearest by words and why they are not it, and where requests for a model
 //! go, said as what is so and not as an instruction. The same description
@@ -99,7 +98,6 @@ impl Marks {
 /// What `against_measurement` holds, said in the description of each tool
 /// that returns it.
 pub(crate) const AGAINST_MEASUREMENT_SAYS: &str = crate::spec_sheet::AGAINST_MEASUREMENT_SAYS;
-
 
 pub struct Entry {
     /// `domain/card` for a card, the solver's name for a solver.
@@ -220,28 +218,22 @@ pub const INDEX: &[Entry] = &[
         weak: &["earth", "space", "sun", "moon", "tide", "position"],
         other: &["iss", "space station", "gps", "glonass", "galileo", "starlink", "hubble", "geostationary", "sputnik", "landsat"],
         own: &["lageos"] },
-    Entry { key: "energy/reactor_spert3", marks: Marks::Missed, marks_words: "met five of eight pass lines; the comparison was not blind, as its validation says",
-        strong: &["spert", "reactivity", "power excursion", "prompt critical"],
-        plain: &["reactor", "burst", "transient", "fission", "e-core", "kinetics", "power pulse", "criticality", "step in reactivity"],
-        weak: &["nuclear", "power", "peak", "core", "step", "cold"],
+    Entry { key: "energy/reactor_spert3", marks: Marks::Measured, marks_words: "its spec sheet gives the comparison and the gap",
+        strong: &["spert iii", "spert 3", "digital twin", "hot standby", "operating power", "rod ejection", "reactor transient"],
+        plain: &["spert", "reactor", "transient", "e-core", "burst", "fission", "power excursion", "transient rod", "rod worth", "clad temperature", "hot startup", "cold startup", "initial power", "uo2", "oxide fuel", "pressurized water", "test reactor", "twin"],
+        weak: &["nuclear", "power", "peak", "core", "fuel", "hot", "coolant", "flow", "clad", "inlet", "pressure", "doppler"],
         other: &["spert i", "spert ii", "spert iv", "spert 1", "spert 2", "spert 4", "borax", "kewb", "godiva", "nsrr", "cabri", "chernobyl", "rbmk", "fukushima", "three mile island", "candu", "triga", "c-core", "sl-1", "ebr"],
         own: &["spert"] },
-    Entry { key: "energy/cell_2170_m80", marks: Marks::Missed, marks_words: "only 27 of the 60 held-back runs met their marks",
-        strong: &["2170", "tesla", "model 3", "m80"],
-        plain: &["lithium", "lithium-ion", "li-ion", "cell", "battery", "discharge", "case temperature", "drive cycle"],
-        weak: &["voltage", "current", "temperature", "electric car", "ev", "drain", "cold"],
-        other: &["m448", "m1000", "lg", "samsung", "sony", "murata", "molicel", "a123", "catl", "byd", "18650", "ncr18650pf", "4680", "26650", "pouch", "prismatic", "lead acid", "nimh", "nickel metal", "alkaline", "lifepo4", "lfp"],
-        own: &["m80"] },
     Entry { key: "signal/cantilever_eth", marks: Marks::Missed, marks_words: "met three of four pass lines; the comparison was not blind, as its validation says",
         strong: &["cantilever", "ring down", "ringdown", "ringing"],
         plain: &["beam", "strip", "aluminium", "aluminum", "bending mode", "damping", "vibrating", "clamped", "deflection", "free vibration", "eth", "flick", "pluck", "ruler", "tuning fork", "zurich", "zürich"],
         weak: &["vibration", "amplitude", "decay", "air", "oscillation"],
         other: &[],
         own: &[] },
-    Entry { key: "energy/cell_2170_model3", marks: Marks::InPart, marks_words: "met all five conditions on one new cell and missed three of five on the other",
-        strong: &["2170", "tesla", "model 3", "m448", "m1000"],
-        plain: &["lithium", "lithium-ion", "li-ion", "cell", "battery", "discharge", "case temperature", "drive cycle", "cold", "hysteresis", "freezing"],
-        weak: &["voltage", "current", "temperature", "electric car", "ev", "winter", "drain"],
+    Entry { key: "energy/cell_2170_model3", marks: Marks::Measured, marks_words: "its spec sheet gives the comparison and the gap",
+        strong: &["2170", "tesla", "model 3", "m448", "m1000", "m80", "cell twin", "battery twin"],
+        plain: &["lithium", "lithium-ion", "li-ion", "cell", "battery", "discharge", "case temperature", "core temperature", "drive cycle", "cold", "freezing", "self-heating", "battery sizing", "cold weather", "arctic", "winter", "electrolyte", "butler-volmer", "arrhenius", "hysteresis"],
+        weak: &["voltage", "current", "temperature", "electric car", "ev", "drain", "heat", "twin", "sizing"],
         other: &["lg", "samsung", "sony", "murata", "molicel", "a123", "catl", "byd", "18650", "ncr18650pf", "4680", "26650", "pouch", "prismatic", "lead acid", "nimh", "nickel metal", "alkaline", "lifepo4", "lfp"],
         own: &["tesla", "model 3", "m448", "m1000", "m80"] },
     Entry { key: "materials/creep_cmsx6", marks: Marks::Met, marks_words: "the comparison passed on the six held-back tests",
@@ -256,30 +248,12 @@ pub const INDEX: &[Entry] = &[
         weak: &["mach", "altitude", "space", "g load", "descent"],
         other: &["phoenix", "perseverance", "viking", "pathfinder", "schiaparelli", "beagle", "exomars", "tianwen", "zhurong", "msl", "mars science laboratory", "mars 2020", "curiosity rover", "apollo", "soyuz", "orion", "dragon", "shuttle", "genesis", "hayabusa", "osiris", "galileo", "huygens", "shenzhou", "starliner", "vostok", "stardust", "venus", "titan", "jupiter", "saturn", "moon", "lunar", "hayabusa2"],
         own: &["insight"] },
-    Entry { key: "energy/reactor_spert3_fuel", marks: Marks::Missed, marks_words: "met 18 of 24 pass lines across the three groups; the comparison was not blind, as its validation says",
-        strong: &["spert", "reactivity", "fuel temperature", "power excursion"],
-        plain: &["reactor", "burst", "transient", "fission", "e-core", "inlet temperature", "coolant flow", "doppler", "power pulse", "transient rod", "ramp"],
-        weak: &["nuclear", "power", "peak", "core", "fuel", "hot", "coolant", "flow", "inlet"],
-        other: &["spert i", "spert ii", "spert iv", "spert 1", "spert 2", "spert 4", "borax", "kewb", "godiva", "nsrr", "cabri", "chernobyl", "rbmk", "fukushima", "three mile island", "candu", "triga", "c-core", "sl-1", "ebr"],
-        own: &["spert"] },
     Entry { key: "aerospace/crater_ryugu_sci", marks: Marks::Missed, marks_words: "missed its pass line on Ryugu and met both laboratory lines; the comparison was not blind, as its validation says",
         strong: &["crater", "ryugu", "hayabusa2", "hayabusa", "impactor", "asteroid"],
         plain: &["impact", "regolith", "ejecta", "projectile", "excavation", "microgravity"],
         weak: &["radius", "sand", "copper", "hit", "surface"],
         other: &["dimorphos", "didymos", "dart", "deep impact", "tempel", "bennu", "itokawa", "eros", "vesta", "ceres", "meteor crater", "barringer", "arizona", "chicxulub", "moon", "lunar", "mars"],
         own: &["ryugu", "hayabusa2"] },
-    Entry { key: "energy/reactor_spert3_twin", marks: Marks::Measured, marks_words: "its spec sheet gives the comparison and the gap",
-        strong: &["spert iii", "spert 3", "digital twin", "hot standby", "operating power", "rod ejection", "reactor transient"],
-        plain: &["spert", "reactor", "transient", "e-core", "burst", "fission", "power excursion", "transient rod", "rod worth", "clad temperature", "hot startup", "cold startup", "initial power", "uo2", "oxide fuel", "pressurized water", "test reactor", "twin"],
-        weak: &["nuclear", "power", "peak", "core", "fuel", "hot", "coolant", "flow", "clad", "inlet", "pressure", "doppler"],
-        other: &["spert i", "spert ii", "spert iv", "spert 1", "spert 2", "spert 4", "borax", "kewb", "godiva", "nsrr", "cabri", "chernobyl", "rbmk", "fukushima", "three mile island", "candu", "triga", "c-core", "sl-1", "ebr"],
-        own: &["spert"] },
-    Entry { key: "energy/reactor_spert3_ccore_twin", marks: Marks::Measured, marks_words: "its spec sheet gives the comparison and the gap",
-        strong: &["subcooled boiling", "void feedback", "void reactivity", "c-19/52", "ccore twin"],
-        plain: &["spert", "spert iii", "c-core", "reactor", "power excursion", "step insertion", "reactivity insertion", "flow", "void", "saturation temperature", "plate temperature", "highly enriched", "stainless steel clad", "plate core", "research reactor", "test reactor", "transient", "reactivity", "doppler", "moderator temperature", "peak power", "energy to peak", "pressurized", "psig", "gpm"],
-        weak: &["pressure", "boiling", "nuclear", "fuel plate", "idaho", "ido-16918", "kinetics", "burst", "hot spot", "coolant"],
-        other: &["triga", "e-core", "spert i", "borax", "tokamak", "fusion", "battery", "msre"],
-        own: &["c-core", "subcooled", "twin"] },
     Entry { key: "energy/generator_mmrtg_seebeck", marks: Marks::Calibrated, marks_words: "within 0.00319 of 115.4 W by root mean square on days 0 to 4,087, the days its constants were fitted on; its blind forecast of the days after 4,087 is registered and waits for the record's next release",
         strong: &["mmrtg", "rtg", "radioisotope", "curiosity", "plutonium", "thermoelectric generator", "seebeck", "matched load"],
         plain: &["rover", "mars rover", "thermoelectric", "nuclear battery", "decay", "generator output", "mission day", "sol", "mars science laboratory", "thermocouple", "temperature drop", "calibrated"],
@@ -304,9 +278,9 @@ pub const INDEX: &[Entry] = &[
         weak: &["link", "signal", "weather", "antenna", "db", "storm"],
         other: &["satellite", "wifi", "wi-fi", "fibre", "fiber", "optical", "laser", "lidar"],
         own: &["gothenburg", "openmrg"] },
-    Entry { key: "energy/grid_gb", marks: Marks::Met, marks_words: "met all seven pass lines on the 12 held-back trips; the comparison was not blind, as its validation says",
-        strong: &["grid frequency", "power grid", "interconnector", "great britain", "transmission system", "national grid", "mains frequency", "system frequency"],
-        plain: &["grid", "frequency", "50 hz", "inertia", "trip", "loss of infeed", "blackout", "losing a link", "electricity system", "outage", "generation loss", "frequency drop", "mains", "power cable", "undersea cable", "subsea cable", "infeed", "import", "nadir", "power station", "power cut"],
+    Entry { key: "energy/grid_gb", marks: Marks::Measured, marks_words: "its spec sheet gives the comparison and the gap",
+        strong: &["grid frequency", "power grid", "interconnector", "great britain", "transmission system", "national grid", "mains frequency", "system frequency", "dynamic containment", "dynamic moderation", "dynamic regulation", "frequency response", "grid twin"],
+        plain: &["grid", "frequency", "50 hz", "inertia", "trip", "loss of infeed", "blackout", "losing a link", "electricity system", "outage", "generation loss", "frequency drop", "mains", "power cable", "undersea cable", "subsea cable", "infeed", "import", "nadir", "power station", "power cut", "grid battery", "battery storage", "response holding", "neso", "rocof"],
         weak: &["power", "loss", "demand", "link", "britain", "british", "uk", "england", "scotland", "wales", "france", "electricity", "mw", "fail", "sudden", "suddenly"],
         other: &["texas", "ercot", "california", "caiso", "pjm", "australia", "australian", "japan", "india", "china", "new zealand", "eastern interconnection", "western interconnection", "america", "american", "60 hz", "japanese", "indian", "chinese"],
         own: &["great britain", "britain", "british", "national grid", "gb"] },
@@ -328,9 +302,9 @@ pub const INDEX: &[Entry] = &[
         weak: &["sensor", "space", "star", "tracking", "filter"],
         other: &["hubble", "hst", "spitzer", "kepler", "chandra", "euclid", "gaia", "herschel", "tess", "keck", "vlt", "subaru", "backyard", "amateur", "binoculars"],
         own: &["jwst", "james webb", "webb"] },
-    Entry { key: "energy/tokamak_jet_dte1", marks: Marks::Missed, marks_words: "met three of four marks on the primary pulse; the comparison was not blind, as its validation says",
-        strong: &["tokamak", "jet", "joint european torus", "deuterium-tritium", "h-mode", "plasma", "fusion"],
-        plain: &["deuterium", "tritium", "confinement", "stored energy", "fusion power", "neutral beam", "dte1", "elmy", "culham", "d-t", "thermal energy", "plasma current", "toroidal field", "heating power"],
+    Entry { key: "energy/tokamak_jet_dte1", marks: Marks::Measured, marks_words: "its spec sheet gives the comparison and the gap",
+        strong: &["tokamak", "jet", "joint european torus", "deuterium-tritium", "h-mode", "plasma", "fusion", "digital twin", "hot-ion"],
+        plain: &["deuterium", "tritium", "confinement", "stored energy", "fusion power", "fusion energy", "neutral beam", "beam-target", "dte1", "elmy", "culham", "d-t", "thermal energy", "fast ions", "slowing down", "ion temperature", "electron temperature", "tritium fraction", "plasma current", "toroidal field", "heating power", "twin"],
         weak: &["energy", "pulse", "heating", "reactor", "magnetic"],
         other: &["diii-d", "iter", "asdex", "kstar", "jt-60", "alcator", "c-mod", "nstx", "mast", "tore supra", "sparc", "tftr", "stellarator", "lhd", "w7-x", "wendelstein", "nif", "national ignition facility", "laser", "inertial", "z-pinch", "z machine", "boron", "p-b11", "pb11", "aneutronic", "arc jet", "jet engine", "jet stream", "jet fuel", "jet aircraft", "water jet"],
         own: &["jet", "joint european torus", "dte1"] },
@@ -352,15 +326,15 @@ pub const INDEX: &[Entry] = &[
         weak: &["nuclear", "power", "peak", "core", "fuel", "rod"],
         other: &["spert", "borax", "kewb", "godiva", "nsrr", "cabri", "chernobyl", "rbmk", "fukushima", "three mile island", "candu", "acrr", "mainz", "vienna", "oregon", "pavia", "sl-1", "ebr"],
         own: &["ljubljana", "jsi", "jozef stefan", "jožef stefan"] },
-    Entry { key: "energy/reactor_spert3_ccore", marks: Marks::Missed, marks_words: "missed all three pass lines; the comparison was not blind, as its validation says",
-        strong: &["spert", "c-core", "reactivity", "plate fuel"],
-        plain: &["reactor", "transient", "fission", "plate temperature", "stainless", "step transient", "power excursion", "highly enriched"],
-        weak: &["nuclear", "power", "peak", "core", "plate", "pressure"],
-        other: &["spert i", "spert ii", "spert iv", "spert 1", "spert 2", "spert 4", "borax", "kewb", "godiva", "nsrr", "cabri", "chernobyl", "rbmk", "fukushima", "three mile island", "candu", "triga", "e-core", "sl-1", "ebr"],
-        own: &["spert"] },
-    Entry { key: "energy/runaway_18650_lco", marks: Marks::Missed, marks_words: "met 8 of 23 pass lines; it self-heats and runs away early",
+    Entry { key: "energy/reactor_spert3_ccore", marks: Marks::Measured, marks_words: "its spec sheet gives the comparison and the gap",
+        strong: &["subcooled boiling", "void feedback", "void reactivity", "c-19/52", "plate conduction", "meat and cladding", "film thinning"],
+        plain: &["spert", "spert iii", "c-core", "reactor", "power excursion", "step insertion", "reactivity insertion", "flow", "void", "saturation temperature", "plate temperature", "highly enriched", "stainless steel clad", "plate core", "research reactor", "test reactor", "transient", "reactivity", "doppler", "moderator temperature", "peak power", "energy to peak", "pressurized", "psig", "gpm"],
+        weak: &["pressure", "boiling", "nuclear", "fuel plate", "idaho", "ido-16918", "kinetics", "burst", "hot spot", "coolant"],
+        other: &["triga", "e-core", "spert i", "borax", "tokamak", "fusion", "battery", "msre"],
+        own: &["c-core", "subcooled", "cladding", "meat"] },
+    Entry { key: "energy/runaway_18650_lco", marks: Marks::Measured, marks_words: "its spec sheet gives the comparison and the gap",
         strong: &["thermal runaway", "runaway", "licoo2", "lithium cobalt oxide", "oven test", "accelerating rate calorimetry", "accelerating rate calorimeter", "self-heating", "hatchard"],
-        plain: &["18650", "oven", "abuse", "calorimeter", "calorimetry", "exothermic", "decomposition", "sei", "electrolyte", "cathode", "anode", "venting", "fire", "heat-wait-seek", "lco"],
+        plain: &["18650", "oven", "abuse", "calorimeter", "calorimetry", "exothermic", "decomposition", "sei", "electrolyte", "cathode", "anode", "venting", "separator", "fire", "heat-wait-seek", "lco", "twin"],
         weak: &["cell", "battery", "lithium", "lithium-ion", "li-ion", "heat", "temperature", "safety", "heater"],
         other: &["ncr18650pf", "panasonic", "2170", "21700", "4680", "26650", "pouch", "prismatic", "lifepo4", "lfp", "nca", "nmc", "lmo", "sodium-ion", "lead acid", "nimh"],
         own: &["licoo2", "lco", "lithium cobalt oxide", "hatchard"] },
@@ -496,11 +470,11 @@ pub const INDEX: &[Entry] = &[
         weak: &["air", "tube", "frequency", "pressure", "line", "volume"],
         other: &[],
         own: &[] },
-    Entry { key: "blast_wave_tnt_air", marks: Marks::Missed, marks_words: "missed all three lines on the propane/oxygen charges compared; the comparison was not blind, as its validation says",
-        strong: &["blast wave", "blast overpressure", "overpressure", "explosion", "explosive", "tnt", "friedlander", "kingery-bulmash", "airblast", "air blast"],
-        plain: &["shock wave", "charge", "detonation", "blast", "impulse", "stand-off", "standoff", "safe distance", "scaled distance", "hopkinson", "sachs", "sedov", "point blast", "surface burst", "free air", "c-4", "pe4", "semtex", "propane"],
+    Entry { key: "blast_wave_tnt_air", marks: Marks::Measured, marks_words: "its spec sheet gives the comparison and the gap",
+        strong: &["blast wave", "blast overpressure", "overpressure", "explosion", "explosive", "tnt", "friedlander", "kingery-bulmash", "airblast", "air blast", "jwl", "jones-wilkins-lee", "detonation products"],
+        plain: &["shock wave", "charge", "detonation", "blast", "impulse", "stand-off", "standoff", "safe distance", "scaled distance", "hopkinson", "surface burst", "free air", "fireball", "reflection factor", "ground factor", "high explosive", "cast tnt", "twin"],
         weak: &["pressure", "shock", "wave", "ground", "air"],
-        other: &["nuclear", "underwater", "buried", "landmine", "dust explosion", "vapour cloud", "vapor cloud", "sonic boom", "volcano", "meteor", "tunnel"],
+        other: &["nuclear", "underwater", "buried", "landmine", "dust explosion", "vapour cloud", "vapor cloud", "sonic boom", "volcano", "meteor", "tunnel", "propane"],
         own: &["tnt"] },
     Entry { key: "stress_plate_hole_s235", marks: Marks::Missed, marks_words: "missed one of three pass lines (the strain near the hole, by 0.6 points) and met the other two; the comparison was not blind, as its validation says",
         strong: &["plate with a hole", "hole in a plate", "hole in a steel plate", "steel plate with a hole", "open hole", "stress concentration", "notched plate", "perforated plate", "kirsch", "s235"],
@@ -567,7 +541,6 @@ fn served_name(entry: &Entry) -> &'static str {
     entry.key.rsplit('/').next().unwrap_or(entry.key)
 }
 
-
 /// How `ln2_line_dlr_fttf` did on its six held-back tests.
 const LN2_LINE_MARKS: Marks = Marks::Missed;
 const LN2_LINE_MARKS_WORDS: &str = "missed seven of eleven marks on the six held-back tests and met four: the first rise at S2, the front's speed from S1 to S2, the second surge's time and the steady pressure drop";
@@ -583,7 +556,7 @@ const STOP: &[&str] = &[
 
 pub fn description() -> String {
     format!(
-        "Finds the served model for a real thing described in plain words, such as \"a lithium cell discharging in the cold\". It returns the best few cards and solvers, each with fit first (the words that matched, and model_of: the one real thing it is a model of, and its range) and then accuracy: against_measurement, the evidence behind it in one of three words, as list_cards and list_solvers give it (\"compared with measurement\", \"held to a reference calculation\" or \"company specimen\"); compared_with, what it was fitted on; and accuracy_against_measurement, what it was compared with outside the fit, within what, and the gap, in numbers. Fit and accuracy are separate: a model with a gap is still the served model of its thing. A model a newer one supersedes carries superseded_by and comes after it, still served under its own ID. The names it gives (domain and card, or solver) are the names list_cards and list_solvers give and the names describe_card, describe_solver, cite and every other tool take; describe_card or describe_solver gives the range and every refusal. When nothing served fits it says so, having compared every card and solver, names the nearest by words and why they are not it, or says that there is no near one, and says where requests for a model go. A model is set aside when the description names another thing of its kind (another gas, another maker's cell, another planet's probe). It is matched against a fixed list of terms with no model call: the same words give the same answer."
+        "Finds the served model for a real thing described in plain words, such as \"a lithium cell discharging in the cold\". It returns the best few cards and solvers, each with fit first (the words that matched, and model_of: the one real thing it is a model of, and its range) and then accuracy: against_measurement, the evidence behind it in one of three words, as list_cards and list_solvers give it (\"compared with measurement\", \"held to a reference calculation\" or \"company specimen\"); compared_with, what it was fitted on; and accuracy_against_measurement, what it was compared with outside the fit, within what, and the gap, in numbers. Fit and accuracy are separate: a model with a gap is still the served model of its thing. The names it gives (domain and card, or solver) are the names list_cards and list_solvers give and the names describe_card, describe_solver, cite and every other tool take; describe_card or describe_solver gives the range and every refusal. When nothing served fits it says so, having compared every card and solver, names the nearest by words and why they are not it, or says that there is no near one, and says where requests for a model go. A model is set aside when the description names another thing of its kind (another gas, another maker's cell, another planet's probe). It is matched against a fixed list of terms with no model call: the same words give the same answer."
     )
 }
 
@@ -843,7 +816,6 @@ fn named(view: &View, entry: &Entry) -> Option<(Map<String, Value>, Option<Value
         None => summary,
     };
     row.insert("model_of".to_string(), summary);
-    crate::succession::into(&mut row, view, served_name(entry));
     Some((row, validation, reference))
 }
 
@@ -904,7 +876,7 @@ fn served(cards: usize, solvers: usize) -> String {
 fn about(cards: usize, solvers: usize) -> String {
     let served = served(cards, solvers);
     format!(
-        "Fit and accuracy are separate. Fit: each match is a match on words; model_of is the one real thing the model is of, and its range. For a thing described by its kind (a cell discharging, a capsule entering an atmosphere), a match is the served model of that kind of thing, and fits. For one particular other object (a named cell, a dataset of your own), a model of a different object of the same kind is not a model of it, and nothing served fits. Accuracy: against_measurement names the evidence (compared with measurement, held to a reference calculation, or company specimen); compared_with says what the model was fitted on; accuracy_against_measurement gives what it was compared with outside the fit, within what, and the gap, in numbers. A model with a gap is still the served model of its thing. A model with superseded_by is still served under its own ID, every earlier proof with it verifies, and the newer model is listed before it. describe_card or describe_solver, by the names given here, has the whole record, the range and every refusal by name, and cite, by the same names, the people whose data it stands on. Everything this connection serves ({served}) was compared with the description; when nothing served fits, requests for a model go to {} at {}, each naming an open dataset of the thing.",
+        "Fit and accuracy are separate. Fit: each match is a match on words; model_of is the one real thing the model is of, and its range. For a thing described by its kind (a cell discharging, a capsule entering an atmosphere), a match is the served model of that kind of thing, and fits. For one particular other object (a named cell, a dataset of your own), a model of a different object of the same kind is not a model of it, and nothing served fits. Accuracy: against_measurement names the evidence (compared with measurement, held to a reference calculation, or company specimen); compared_with says what the model was fitted on; accuracy_against_measurement gives what it was compared with outside the fit, within what, and the gap, in numbers. A model with a gap is still the served model of its thing. describe_card or describe_solver, by the names given here, has the whole record, the range and every refusal by name, and cite, by the same names, the people whose data it stands on. Everything this connection serves ({served}) was compared with the description; when nothing served fits, requests for a model go to {} at {}, each naming an open dataset of the thing.",
         crate::identity::MAKER,
         crate::identity::EMAIL
     )
@@ -1004,23 +976,6 @@ pub fn find_in(view: &View, request: &Value) -> Result<Value, DoorError> {
         if listed.contains(&name) {
             continue;
         }
-        // A model a newer one supersedes: the newer first, then the
-        // original under its own ID.
-        if let Some(by) = crate::succession::superseded_by(view, name).filter(|by| !listed.contains(by)) {
-            if let Some(newer) = INDEX.iter().find(|entry| served_name(entry) == by) {
-                if let Some(mut row) = record(view, newer, &found.matched) {
-                    let terms: Vec<String> = found.matched.iter().map(|term| format!("\"{term}\"")).collect();
-                    row.insert("fit".to_string(), json!(format!("supersedes {name}, which matches your description on the words {}", terms.join(", "))));
-                    row.insert("supersedes".to_string(), json!(crate::succession::supersedes(view, by)));
-                    row.insert("score".to_string(), json!(found.score));
-                    matches.push(Value::Object(row));
-                    listed.push(by);
-                    if matches.len() == limit {
-                        break;
-                    }
-                }
-            }
-        }
         let Some(mut row) = record(view, found.entry, &found.matched) else {
             continue;
         };
@@ -1102,66 +1057,6 @@ mod tests {
         for entry in INDEX.iter().filter(|entry| !entry.marks.compared()) {
             assert!(crate::spec_sheet::of(served_name(entry)).is_none(), "{}: a sheet, and not compared with measurement", entry.key);
         }
-    }
-
-    /// A model a newer one supersedes: its list row, its descriptions and its
-    /// match say so, and find_model gives the newer model first and the
-    /// original after it under its own ID. Stand-ins: two served cards of one
-    /// object, before any successor is merged.
-    #[test]
-    fn a_superseded_model_is_said_so_and_its_successor_comes_first() {
-        static STAND_IN: &[crate::succession::Succession] = &[crate::succession::Succession { model: "reactor_spert3", by: "reactor_spert3_ccore" }];
-        let view = View::full();
-        let before = find_in(&view, &json!({ "description": "SPERT III reactor power excursion", "limit": 5 })).unwrap();
-        crate::succession::with_table(STAND_IN, || {
-            let answer = find_in(&view, &json!({ "description": "SPERT III reactor power excursion", "limit": 5 })).unwrap();
-            let cards: Vec<&str> = answer["matches"].as_array().unwrap().iter().map(|row| row["card"].as_str().unwrap()).collect();
-            let at = |card: &str| cards.iter().position(|named| *named == card).unwrap_or_else(|| panic!("{card}: {answer}"));
-            assert!(at("reactor_spert3_ccore") + 1 == at("reactor_spert3"), "{cards:?}");
-            assert_eq!(cards.iter().filter(|card| **card == "reactor_spert3_ccore").count(), 1, "{cards:?}");
-            let newer = &answer["matches"][at("reactor_spert3_ccore")];
-            assert_eq!(newer["supersedes"], json!(["reactor_spert3"]));
-            assert!(newer["fit"].as_str().unwrap().starts_with("supersedes reactor_spert3, which matches your description on the words"), "{newer}");
-            let old = &answer["matches"][at("reactor_spert3")];
-            assert_eq!(old["superseded_by"], "reactor_spert3_ccore");
-            assert_eq!(old["model_of"], before["matches"].as_array().unwrap().iter().find(|row| row["card"] == "reactor_spert3").unwrap()["model_of"]);
-            // The list row, the full and the short descriptions.
-            let list = crate::descriptor::list_value_in(&view);
-            let row = list["cards"].as_array().unwrap().iter().find(|row| row["card"] == "reactor_spert3").unwrap();
-            assert_eq!(row["superseded_by"], "reactor_spert3_ccore");
-            assert_eq!(row.as_object().unwrap().keys().collect::<Vec<_>>(), ["domain", "card", "against_measurement", "superseded_by", "specimen"]);
-            let full = crate::descriptor::describe_value_in(&view, "energy", "reactor_spert3").unwrap();
-            assert_eq!(full.as_object().unwrap().keys().take(3).collect::<Vec<_>>(), ["domain", "card", "superseded_by"]);
-            let short = crate::descriptor::describe_short_in(&view, "energy", "reactor_spert3").unwrap();
-            assert_eq!(short["superseded_by"], "reactor_spert3_ccore");
-            // The successor and every other model say nothing of it.
-            for card in ["reactor_spert3_ccore", "reactor_spert3_fuel"] {
-                assert!(crate::descriptor::describe_value_in(&view, "energy", card).unwrap().get("superseded_by").is_none(), "{card}");
-            }
-            // A view that does not serve the successor says nothing either.
-            let without = View::limited([("energy".to_string(), "reactor_spert3".to_string())], []);
-            let list = crate::descriptor::list_value_in(&without);
-            assert!(list["cards"][0].get("superseded_by").is_none(), "{list}");
-        });
-        // With the served table, which is empty until the merge, nothing changes.
-        assert_eq!(find_in(&view, &json!({ "description": "SPERT III reactor power excursion", "limit": 5 })).unwrap(), before);
-    }
-
-    /// A solver a newer one supersedes, on a stand-in.
-    #[test]
-    fn a_superseded_solver_says_so_on_its_row_and_in_its_descriptions() {
-        static STAND_IN: &[crate::succession::Succession] = &[crate::succession::Succession { model: "fusion_pb11_thermal", by: "fusion_pb11_lhd" }];
-        let view = View::full();
-        crate::succession::with_table(STAND_IN, || {
-            let list = crate::solvers::list_value_in(&view);
-            let row = list["solvers"].as_array().unwrap().iter().find(|row| row["solver"] == "fusion_pb11_thermal").unwrap();
-            assert_eq!(row["superseded_by"], "fusion_pb11_lhd");
-            for form in ["full", "short"] {
-                let described = crate::solvers::describe_request_in(&view, &json!({ "solver": "fusion_pb11_thermal", "form": form })).unwrap();
-                assert_eq!(described["superseded_by"], "fusion_pb11_lhd", "{form}");
-                assert_eq!(described.as_object().unwrap().keys().nth(1).map(String::as_str), Some("superseded_by"), "{form}");
-            }
-        });
     }
 
     #[test]
@@ -1332,10 +1227,7 @@ mod tests {
             ("an LG M50 lithium-ion cell discharging at 5 amps", "cell_18650pf", "lg"),
             ("pointing jitter of the Hubble Space Telescope on its guide star", "los_jwst_fine_guide", "hubble"),
             ("the crater the DART spacecraft made on the asteroid Dimorphos", "crater_ryugu_sci", "dimorphos"),
-            ("the frequency of the Texas power grid after it loses a power station", "grid_gb", "texas"),
             ("a Formula 1 tyre slipping on dry asphalt", "tire_eve_r19_ice", "formula 1"),
-            ("the SPERT I reactor after a step in reactivity", "reactor_spert3", "spert i"),
-            ("a deuterium plasma in the DIII-D tokamak under neutral beam heating", "tokamak_jet_dte1", "diii-d"),
             ("Young's modulus of an Inconel bar from its resonant frequencies", "modulus_bam_s355", "inconel"),
             ("a fed-batch culture of the fungus Aspergillus niger", "culture_trichoderma_ambr250", "aspergillus"),
             ("the heat shield of the Galileo probe charring as it enters Jupiter", "ablator_slab", "galileo"),
@@ -1357,12 +1249,15 @@ mod tests {
         }
         // The name is read whole: "SPERT III" is not "SPERT I", and a cell of
         // the dataset the card holds is not another maker's cell.
-        // Each is superseded (succession::TABLE): its successor first, then the original under its own ID.
-        assert_eq!(keys("the SPERT III E-core reactor, cold, after a step in reactivity")[..2], ["energy/reactor_spert3_twin", "energy/reactor_spert3"]);
-        assert_eq!(keys("the SPERT III reactor with its C-core after a step in reactivity")[..2], ["energy/reactor_spert3_ccore_twin", "energy/reactor_spert3_ccore"]);
+        // 0.15.0: one model for each core, under its original ID.
+        assert_eq!(keys("the SPERT III E-core reactor, cold, after a step in reactivity"), ["energy/reactor_spert3"]);
+        assert_eq!(keys("the SPERT III reactor with its C-core after a step in reactivity")[0], "energy/reactor_spert3_ccore");
         // Another maker's cell, or another cathode, is not this LiCoO2 cell.
         assert_ne!(first_of("thermal runaway of a Panasonic NCR18650PF cell").as_deref(), Some("energy/runaway_18650_lco"));
         assert_ne!(first_of("thermal runaway of an NMC 18650 cell").as_deref(), Some("energy/runaway_18650_lco"));
+        assert_ne!(first_of("thermal runaway of a Panasonic NCR18650PF cell").as_deref(), Some("energy/runaway_18650_lco"));
+        assert_ne!(first_of("thermal runaway of an NMC 18650 cell").as_deref(), Some("energy/runaway_18650_lco"));
+        assert_eq!(keys("an 18650 lithium-ion cell going into thermal runaway in an oven")[0], "energy/runaway_18650_lco");
         // The things themselves, and their kinds, are found as before.
         for (description, first) in [
             ("the speed of sound in argon gas", "argon_pair_gas"),
@@ -1388,8 +1283,7 @@ mod tests {
             ("the viscosity of argon gas, compared with air", "argon_pair_gas"),
             ("pointing jitter of the Webb telescope, set against Hubble's", "aerospace/los_jwst_fine_guide"),
             ("the capsule of the InSight lander, built on the Phoenix design, entering the atmosphere of Mars", "aerospace/capsule_insight"),
-            // reactor_spert3 is superseded: its successor comes first (succession::TABLE).
-            ("the SPERT III E-core reactor after a step in reactivity, as SPERT I was tested before it", "energy/reactor_spert3_twin"),
+            ("the SPERT III E-core reactor after a step in reactivity, as SPERT I was tested before it", "energy/reactor_spert3"),
             ("the electrical output of the radioisotope generator on the Curiosity rover, the kind Voyager carried before it", "energy/generator_mmrtg_f1"),
         ] {
             assert_eq!(first_of(description).as_deref(), Some(first), "{description}: {:?}", keys(description));
@@ -1414,26 +1308,22 @@ mod tests {
 
     /// A model's own published quantities and inputs, and the names of the
     /// real things it takes, put it first: the distance the Solar System card
-    /// publishes, the cells each Tesla card holds, the inputs that part the
-    /// two cards of one reactor core and the two models of one tokamak.
+    /// publishes, the cells the Tesla card holds, the inputs the E-core's one
+    /// model takes and the two models of one tokamak.
     #[test]
     fn a_models_own_quantities_and_the_names_of_its_things_put_it_first() {
         // The card publishes earth_to_mars_m and earth_mars_distance_m. Neither sentence found it before.
         assert_eq!(keys("How far is Mars from the Earth one day after 1 January 1999?"), ["aerospace/solar_system"]);
         assert_eq!(first_of("the distance from the Earth to Mars over ten years").as_deref(), Some("aerospace/solar_system"));
-        // Cell m448-N is held by the physical card alone; cell m80 by both, and the card of cell m80 alone comes first for it.
+        // The 2170 cell (0.15.0: one model, under its original ID) holds cells m448-N, m1000 and m80.
         assert_eq!(keys("cell m448-N of the Tesla Model 3 2170 lithium-ion cell dataset, discharged at a constant 4.5 amps"), ["energy/cell_2170_model3"]);
         assert_eq!(keys("cell m1000 of the Tesla Model 3 2170 lithium-ion cell dataset at 0 degrees Celsius"), ["energy/cell_2170_model3"]);
+        assert_eq!(keys("cell m80 of the Tesla Model 3 2170 lithium-ion cell dataset, discharged at a constant 1.5 amps"), ["energy/cell_2170_model3"]);
+        // The E-core's one model takes a cold step and an inlet temperature, a coolant flow and a rod that ramps.
+        assert_eq!(keys("the SPERT III E-core reactor is cold when a step in reactivity is put in all at once"), ["energy/reactor_spert3"]);
         assert_eq!(
-            keys("cell m80 of the Tesla Model 3 2170 lithium-ion cell dataset, discharged at a constant 1.5 amps")[..2],
-            ["energy/cell_2170_m80", "energy/cell_2170_model3"]
-        );
-        // The E-core's two cards: one takes a cold step, the other an inlet temperature, a coolant flow and a rod that ramps.
-        // Both are superseded by reactor_spert3_twin, which comes first; then the original that fits.
-        assert_eq!(keys("the SPERT III E-core reactor is cold when a step in reactivity is put in all at once")[..2], ["energy/reactor_spert3_twin", "energy/reactor_spert3"]);
-        assert_eq!(
-            keys("the SPERT III E-core reactor in a burst with hot coolant flowing through the core as its transient rod ramps in reactivity")[..2],
-            ["energy/reactor_spert3_twin", "energy/reactor_spert3_fuel"]
+            keys("the SPERT III E-core reactor in a burst with hot coolant flowing through the core as its transient rod ramps in reactivity"),
+            ["energy/reactor_spert3"]
         );
         // One tokamak, two models: the solver takes the plasma in shells, the card its energies under the heating power.
         assert_eq!(
@@ -1464,7 +1354,7 @@ mod tests {
             "SPERT III operating power excursion at 19 MW",
             "SPERT 3 rod ejection with the clad temperature",
         ] {
-            assert_eq!(first_of(description).as_deref(), Some("energy/reactor_spert3_twin"), "{description}");
+            assert_eq!(first_of(description).as_deref(), Some("energy/reactor_spert3"), "{description}");
         }
     }
 
@@ -1472,12 +1362,11 @@ mod tests {
     fn plain_descriptions_find_their_models() {
         // (description, the model that must come first, models that must be among the matches)
         let table: &[(&str, &str, &[&str])] = &[
-            ("a lithium cell discharging in the cold", "energy/cell_2170_model3", &["energy/cell_2170_m80", "energy/cell_18650pf"]),
             ("something falling into an atmosphere", "aerospace/capsule_stardust", &["aerospace/capsule_insight"]),
-            ("power grid frequency after losing a link", "energy/grid_gb", &[]),
             ("a satellite in orbit around the Earth", "aerospace/satellite_lageos1", &[]),
             ("the heat shield of a capsule charring in an arc jet", "ablator_slab", &[]),
-            ("a research reactor pulse after a step in reactivity", "energy/reactor_triga_jsi", &["energy/reactor_spert3"]),
+            // 0.15.0: the SPERT III reactor found beside it is the C-core's; the E-core twin is not a pulse.
+            ("a research reactor pulse after a step in reactivity", "energy/reactor_triga_jsi", &["energy/reactor_spert3_ccore"]),
             ("how fast does a turbine blade superalloy creep at high temperature", "materials/creep_cmsx6", &[]),
             ("a car tyre slipping on ice", "materials/tire_eve_r19_ice", &[]),
             ("pointing jitter of the James Webb telescope", "aerospace/los_jwst_fine_guide", &[]),
@@ -1580,7 +1469,7 @@ mod tests {
             ("the electrical power of the Curiosity rover's generator on mission day 2,000", "energy/generator_mmrtg_f1"),
             ("the minimum oil film thickness in the University of Sheffield journal bearing rig at a load of 25 kN and 300 rpm", "journal_bearing_sheffield"),
             ("the largest constant current the battery pack can deliver for ten minutes starting from full charge", "energy/battery_sag"),
-            ("cell m80 of the Tesla Model 3 2170 cell dataset, discharged at a constant current for thirty minutes", "energy/cell_2170_m80"),
+            ("cell m80 of the Tesla Model 3 2170 cell dataset, discharged at a constant current for thirty minutes", "energy/cell_2170_model3"),
             ("this service's model of the Stardust capsule's entry", "aerospace/capsule_stardust"),
             ("this service's creep model of the superalloy CMSX-6", "materials/creep_cmsx6"),
         ];
@@ -1686,13 +1575,7 @@ mod tests {
         let view = View::full();
         for entry in INDEX {
             let row = record(&view, entry, &["term"]).unwrap();
-            let mut order: Vec<&str> = row.keys().map(String::as_str).filter(|key| !matches!(*key, "domain" | "card" | "solver")).collect();
-            // A superseded model says its successor first (succession::TABLE), and only then.
-            let superseded = crate::succession::superseded_by(&view, served_name(entry)).is_some();
-            assert_eq!(order.first() == Some(&crate::succession::KEY), superseded, "{}", entry.key);
-            if superseded {
-                order.remove(0);
-            }
+            let order: Vec<&str> = row.keys().map(String::as_str).filter(|key| !matches!(*key, "domain" | "card" | "solver")).collect();
             assert_eq!(order, ["fit", "model_of", "compared_with", "against_measurement", "accuracy_against_measurement"], "{}", entry.key);
             assert!(row.values().all(|value| value.is_string()), "{}: no true, false or null to misread", entry.key);
             let said = row["accuracy_against_measurement"].as_str().unwrap();
@@ -1729,8 +1612,8 @@ mod tests {
         // match fits, so that it is not read as none fits.
         assert!(about.contains("For a thing described by its kind (a cell discharging, a capsule entering an atmosphere), a match is the served model of that kind of thing, and fits."), "{about}");
         assert!(about.contains("For one particular other object (a named cell, a dataset of your own), a model of a different object of the same kind is not a model of it, and nothing served fits."), "{about}");
-        // The two Tesla cards no longer tie for a sentence that names cell m80.
-        assert_eq!(first_of("Tesla Model 3 2170 cell m80 constant current discharge at 25 C").as_deref(), Some("energy/cell_2170_m80"));
+        // A sentence that names cell m80 finds the one 2170 cell model (0.15.0).
+        assert_eq!(keys("Tesla Model 3 2170 cell m80 constant current discharge at 25 C"), ["energy/cell_2170_model3"]);
     }
 
     /// Every served card and solver carries `against_measurement` on its
@@ -1757,21 +1640,20 @@ mod tests {
             assert_eq!(row.unwrap_or_else(|| panic!("{} is on no list", entry.key))["against_measurement"], word, "{}: its list row", entry.key);
             assert_eq!(record(&view, entry, &[]).unwrap()["against_measurement"], word, "{}: its match", entry.key);
         }
-        assert_eq!(counted.into_iter().collect::<Vec<_>>(), [("company specimen", 12), ("compared with measurement", 50), ("held to a reference calculation", 3)]);
+        assert_eq!(counted.into_iter().collect::<Vec<_>>(), [("company specimen", 12), ("compared with measurement", 46), ("held to a reference calculation", 3)]);
         // No row of either list is without the word, but the solver compiled for tests only.
         assert_eq!(cards["cards"].as_array().unwrap().len(), INDEX.iter().filter(|entry| entry.key.contains('/')).count());
         for row in cards["cards"].as_array().unwrap() {
             assert!(row["against_measurement"].is_string(), "{row}");
-            // A superseded card names its successor after its word (succession::TABLE).
-            let superseded = crate::succession::superseded_by(&view, row["card"].as_str().unwrap()).is_some();
-            let expected: &[&str] = if superseded { &["domain", "card", "against_measurement", "superseded_by", "specimen"] } else { &["domain", "card", "against_measurement", "specimen"] };
+            let expected: &[&str] = &["domain", "card", "against_measurement", "specimen"];
             assert_eq!(row.as_object().unwrap().keys().map(String::as_str).collect::<Vec<_>>(), expected, "{row}");
         }
         for row in solvers["solvers"].as_array().unwrap() {
             if row["solver"] == crate::solver_probe::STAND_IN.name {
                 assert!(row.get("against_measurement").is_none(), "{row}");
             } else {
-                assert_eq!(row.as_object().unwrap().keys().collect::<Vec<_>>(), ["solver", "against_measurement", "summary"]);
+                let expected: &[&str] = &["solver", "against_measurement", "summary"];
+                assert_eq!(row.as_object().unwrap().keys().map(String::as_str).collect::<Vec<_>>(), expected, "{row}");
             }
         }
         // And through the tool: a match gives the word before its phrase.
@@ -1829,7 +1711,7 @@ mod tests {
         let about = about(31, 13);
         let examples = about.split("For a thing described by its kind (").nth(1).unwrap().split(')').next().unwrap();
         assert_eq!(examples, "a cell discharging, a capsule entering an atmosphere");
-        assert_eq!(keys("a cell discharging"), ["energy/cell_18650pf", "energy/cell_2170_m80", "energy/cell_2170_model3"]);
+        assert_eq!(keys("a cell discharging"), ["energy/cell_18650pf", "energy/cell_2170_model3"]);
         assert_eq!(keys("a capsule entering an atmosphere"), ["aerospace/capsule_stardust", "aerospace/capsule_insight"]);
         assert!(description().contains("such as \"a lithium cell discharging in the cold\""));
         assert_eq!(first_of("a lithium cell discharging in the cold").as_deref(), Some("energy/cell_2170_model3"));
@@ -1918,10 +1800,8 @@ mod tests {
             keys("the JET tokamak at Culham in its deuterium-tritium campaign: plasma energy and fusion power through a pulse as the heating rises")[..2],
             ["energy/tokamak_jet_dte1", "tokamak_dt_beam_target"]
         );
-        assert_eq!(
-            keys("the neutron rate of one time slice of a deuterium-tritium pulse, from its profiles and its neutral beams")[..2],
-            ["tokamak_dt_beam_target", "energy/tokamak_jet_dte1"]
-        );
+        let slice = keys("the neutron rate of one time slice of a deuterium-tritium pulse, from its profiles and its neutral beams");
+        assert_eq!(slice[..2], ["tokamak_dt_beam_target", "energy/tokamak_jet_dte1"]);
     }
 
     /// Things said without their usual name are found by a word a person

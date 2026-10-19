@@ -638,14 +638,14 @@ pub fn sedov_taylor_overpressure_pa(sedov: &SedovTaylor, energy_j: f64, r_m: f64
 // Sachs lengths and times in Sachs lengths over c0). Everything is per
 // steradian: a cell between radii a and b holds (b^3 - a^3)/3 of volume.
 
-const P0: f64 = 1.0;
-const RHO0: f64 = GAMMA;
+pub(crate) const P0: f64 = 1.0;
+pub(crate) const RHO0: f64 = GAMMA;
 
-fn ambient_specific_energy() -> f64 {
+pub(crate) fn ambient_specific_energy() -> f64 {
     P0 / ((GAMMA - 1.0) * RHO0)
 }
 
-fn shell_volume(a: f64, b: f64) -> f64 {
+pub(crate) fn shell_volume(a: f64, b: f64) -> f64 {
     (b * b * b - a * a * a) / 3.0
 }
 
@@ -849,7 +849,7 @@ fn primitives(flow: &Flow, w: &mut Work) -> Result<(), BlastReject> {
 }
 
 /// Monotonized-central limited slope.
-fn limited(left: f64, right: f64) -> f64 {
+pub(crate) fn limited(left: f64, right: f64) -> f64 {
     if left * right <= 0.0 {
         0.0
     } else {
@@ -857,7 +857,7 @@ fn limited(left: f64, right: f64) -> f64 {
     }
 }
 
-fn between(x: f64, a: f64, b: f64) -> f64 {
+pub(crate) fn between(x: f64, a: f64, b: f64) -> f64 {
     x.max(a.min(b)).min(a.max(b))
 }
 
@@ -975,19 +975,19 @@ fn front_of(flow: &Flow, w: &Work) -> f64 {
 /// seven speed gauges at every step, and the shock's radius from the
 /// arrival at the point on.
 #[derive(Clone, Debug)]
-struct Record {
-    t: Vec<f64>,
-    point: Vec<f64>,
-    front: Vec<f64>,
-    gauge_r: [f64; 7],
-    gauges: [Vec<f64>; 7],
-    worst_energy: f64,
-    steps: usize,
+pub(crate) struct Record {
+    pub(crate) t: Vec<f64>,
+    pub(crate) point: Vec<f64>,
+    pub(crate) front: Vec<f64>,
+    pub(crate) gauge_r: [f64; 7],
+    pub(crate) gauges: [Vec<f64>; 7],
+    pub(crate) worst_energy: f64,
+    pub(crate) steps: usize,
 }
 
 /// A fault put in on purpose by the tests, to show that what must hold is held.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Fault {
+pub(crate) enum Fault {
     None,
     /// Heat added to one cell at every step, booked nowhere.
     UnbookedHeat,
@@ -1152,7 +1152,7 @@ fn run(sedov: &SedovTaylor, grid: &Grid, point: f64, fault: Fault) -> Result<Rec
 }
 
 /// The time at which a record first rises through half its largest value.
-fn arrival_of(t: &[f64], p: &[f64]) -> f64 {
+pub(crate) fn arrival_of(t: &[f64], p: &[f64]) -> f64 {
     let mut top = 0;
     for k in 0..p.len() {
         if p[k] > p[top] {
@@ -1170,20 +1170,20 @@ fn arrival_of(t: &[f64], p: &[f64]) -> f64 {
 
 /// The positive phase at one Sachs distance, in the run's units.
 #[derive(Clone, Debug)]
-struct Wave {
+pub(crate) struct Wave {
     /// Arrival time.
-    arrival: f64,
-    peak: f64,
-    mach: f64,
-    duration: f64,
-    impulse: f64,
+    pub(crate) arrival: f64,
+    pub(crate) peak: f64,
+    pub(crate) mach: f64,
+    pub(crate) duration: f64,
+    pub(crate) impulse: f64,
     /// (time after arrival, overpressure) of the history, ending at zero.
-    history: Vec<(f64, f64)>,
+    pub(crate) history: Vec<(f64, f64)>,
     /// The shock's radius when the positive phase ends.
-    front_at_end: f64,
+    pub(crate) front_at_end: f64,
 }
 
-fn wave_of(rec: &Record, point: f64) -> Result<Wave, BlastReject> {
+pub(crate) fn wave_of(rec: &Record, point: f64) -> Result<Wave, BlastReject> {
     // the shock's Mach number: a least-squares quadratic of arrival time in radius
     let mut s = [0.0f64; 5];
     let mut ty = [0.0f64; 3];
@@ -1309,7 +1309,7 @@ pub fn friedlander_decay(fraction: f64) -> Option<f64> {
 /// The positive phase carried from Sachs distance `from` to `to` by
 /// weak-shock theory, starting from the Friedlander form of `wave`.
 /// Returns the wave there and the change of r times the impulse.
-fn carried(wave: &Wave, decay: f64, from: f64, to: f64, fault: Fault) -> (Wave, f64) {
+pub(crate) fn carried(wave: &Wave, decay: f64, from: f64, to: f64, fault: Fault) -> (Wave, f64) {
     // r p' over retarded time from the shock, sharp at the front
     let mut tau = Vec::with_capacity(WEAK_SHOCK_POINTS + 1);
     let mut level = Vec::with_capacity(WEAK_SHOCK_POINTS + 1);
@@ -1373,7 +1373,7 @@ fn carried(wave: &Wave, decay: f64, from: f64, to: f64, fault: Fault) -> (Wave, 
 /// `far` (carried to `to`) ends: the radius whose arrival is that time, by
 /// bisection to adjacent 64-bit numbers. The shock is supersonic and slows
 /// toward c0, so its arrival rises with the radius.
-fn reach_at_end(wave: &Wave, decay: f64, from: f64, to: f64, far: &Wave) -> f64 {
+pub(crate) fn reach_at_end(wave: &Wave, decay: f64, from: f64, to: f64, far: &Wave) -> f64 {
     let end = far.arrival + far.duration;
     let arrival = |r: f64| carried(wave, decay, from, r, Fault::None).0.arrival;
     let (mut lo, mut hi) = (to, to + 2.0 * far.mach * far.duration);

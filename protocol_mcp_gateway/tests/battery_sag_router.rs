@@ -83,7 +83,7 @@ async fn a_full_pack_refuses_every_charging_current_by_name_and_seals_nothing() 
         let (status, text) = step(&base, json!({"soc": 1.0, "current_a": current_a, "dt_s": 0.1})).await;
         assert_eq!(status, 422, "current {current_a}: {text}");
         assert!(text.contains("(OvervoltageCutoff)"), "current {current_a}: {text}");
-        assert!(!text.contains("sha256_seal"), "{text}");
+        assert!(!text.contains("sha384_seal"), "{text}");
     }
     // At rest and under discharge a full pack still lands.
     for current_a in [0.0, 5.0e-14, 22.0] {

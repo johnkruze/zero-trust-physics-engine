@@ -83,28 +83,28 @@ impl fmt::Display for Outcome {
     }
 }
 
-/// The leaf of a row: the compact JSON `row`, `request_sha256`, `outcome`,
-/// `run_seal`, `reject_detail_sha256`, in that order. `request_sha256` is the
+/// The leaf of a row: the compact JSON `row`, `request_sha384`, `outcome`,
+/// `run_seal`, `reject_detail_sha384`, in that order. `request_sha384` is the
 /// row's `link_0` as hex. `run_seal` is null for a row that was not admitted.
-/// `reject_detail_sha256` is the SHA-256 of the UTF-8 bytes of the row's
+/// `reject_detail_sha384` is the SHA-384 of the UTF-8 bytes of the row's
 /// `reject_detail`, or null when the row has none, so the sentence of a
 /// refusal, and for a row that was not admitted the only place its refusal's
 /// name is written, is sealed with the row.
 pub fn leaf_text(
     row: u64,
-    request_sha256: &str,
+    request_sha384: &str,
     outcome: &str,
     run_seal: Option<&str>,
     reject_detail: Option<&str>,
 ) -> String {
-    let detail_sha256 = reject_detail.map(|sentence| digest_hex(sentence.as_bytes()));
+    let detail_sha384 = reject_detail.map(|sentence| digest_hex(sentence.as_bytes()));
     format!(
-        "{{\"row\":{},\"request_sha256\":{},\"outcome\":{},\"run_seal\":{},\"reject_detail_sha256\":{}}}",
+        "{{\"row\":{},\"request_sha384\":{},\"outcome\":{},\"run_seal\":{},\"reject_detail_sha384\":{}}}",
         row,
-        json_string(request_sha256),
+        json_string(request_sha384),
         json_string(outcome),
         string_or_null(run_seal),
-        string_or_null(detail_sha256.as_deref()),
+        string_or_null(detail_sha384.as_deref()),
     )
 }
 
@@ -306,6 +306,7 @@ impl Row {
     /// wrong type and a hex value that is not exact are refused by name.
     pub fn read(value: &Value) -> Result<Row, Refusal> {
         let object = value.as_object().ok_or(Refusal::NotAnObject)?;
+        crate::refusal::refuse_other_rule(object)?;
         require_exact_keys(object, ROW_KEYS)?;
         let row = require_whole(object, "row")?;
         let request = required(object, "request")?;
@@ -372,7 +373,7 @@ impl Row {
                 if is_null {
                     return Err(Refusal::NotExactHex {
                         field: key.to_string(),
-                        digits: 64,
+                        digits: 96,
                     });
                 }
             }
@@ -461,12 +462,12 @@ mod tests {
     fn the_leaf_is_compact_json_with_five_keys_in_order() {
         assert_eq!(
             leaf_text(7, "ab", "completed", Some("cd"), None),
-            r#"{"row":7,"request_sha256":"ab","outcome":"completed","run_seal":"cd","reject_detail_sha256":null}"#
+            r#"{"row":7,"request_sha384":"ab","outcome":"completed","run_seal":"cd","reject_detail_sha384":null}"#
         );
-        // The SHA-256 of the three bytes "abc" (FIPS 180-2, appendix B.1).
+        // The SHA-384 of the three bytes "abc" (FIPS 180-2, appendix B.1).
         assert_eq!(
             leaf_text(0, "ab", "unadmitted", None, Some("abc")),
-            r#"{"row":0,"request_sha256":"ab","outcome":"unadmitted","run_seal":null,"reject_detail_sha256":"ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"}"#
+            r#"{"row":0,"request_sha384":"ab","outcome":"unadmitted","run_seal":null,"reject_detail_sha384":"cb00753f45a35e8bb5a03d699ac65007272c32ab0eded1631a8b605a43ff5bed8086072ba1e7cc2358baeca134c825a7"}"#
         );
         // Each sentence is its own leaf, and a sentence given is not the sentence absent.
         assert_ne!(leaf_text(2, "ab", "refused", Some("cd"), Some("x")), leaf_text(2, "ab", "refused", Some("cd"), Some("y")));
@@ -480,7 +481,7 @@ mod tests {
         assert_eq!(
             line,
             format!(
-                r#"{{"row":3,"request":{{"card":"thermal","domain":"energy","dt_s":0.1}},"outcome":"unadmitted","steps_landed":null,"reject":null,"reject_detail":"Physical Violation: the load is above the limit.","final_state":null,"final_residual_conservation_error_hex":null,"max_residual_conservation_error_hex":null,"state_digest":null,"frames":0,"last_link":null,"run_seal":null,"leaf":{{"row":3,"request_sha256":"{}","outcome":"unadmitted","run_seal":null,"reject_detail_sha256":"{}"}}}}"#,
+                r#"{{"row":3,"request":{{"card":"thermal","domain":"energy","dt_s":0.1}},"outcome":"unadmitted","steps_landed":null,"reject":null,"reject_detail":"Physical Violation: the load is above the limit.","final_state":null,"final_residual_conservation_error_hex":null,"max_residual_conservation_error_hex":null,"state_digest":null,"frames":0,"last_link":null,"run_seal":null,"leaf":{{"row":3,"request_sha384":"{}","outcome":"unadmitted","run_seal":null,"reject_detail_sha384":"{}"}}}}"#,
                 hex::encode(link_0(&request())),
                 digest_hex(b"Physical Violation: the load is above the limit.")
             )
@@ -529,7 +530,7 @@ mod tests {
             "Physical Violation: 'outcome' must be \"completed\", \"ended\", \"refused\" or \"unadmitted\"."
         );
         assert_eq!(
-            edited(&|row| row["run_seal"] = json!("ab".repeat(32))),
+            edited(&|row| row["run_seal"] = json!("ab".repeat(48))),
             "Physical Violation: 'run_seal' must be null for a row that was not admitted."
         );
         assert_eq!(
@@ -545,11 +546,11 @@ mod tests {
                 row["outcome"] = json!("completed");
                 row["steps_landed"] = json!(0);
             }),
-            "Physical Violation: 'last_link' must be 64 lowercase hex digits."
+            "Physical Violation: 'last_link' must be 96 lowercase hex digits."
         );
         assert_eq!(
-            edited(&|row| row["state_digest"] = json!("AB".repeat(32))),
-            "Physical Violation: 'state_digest' must be 64 lowercase hex digits."
+            edited(&|row| row["state_digest"] = json!("AB".repeat(48))),
+            "Physical Violation: 'state_digest' must be 96 lowercase hex digits."
         );
         assert_eq!(
             edited(&|row| row["final_residual_conservation_error_hex"] = json!("0")),

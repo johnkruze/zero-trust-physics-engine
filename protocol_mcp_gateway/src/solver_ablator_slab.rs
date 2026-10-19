@@ -497,7 +497,7 @@ pub const ABLATOR_SLAB: Solver = Solver {
             "K",
             Shape::Numbers,
             ASK_PROFILE,
-            "Temperature at each of those depths at the end. `field_sha256` covers these values.",
+            "Temperature at each of those depths at the end. `field_sha384` covers these values.",
         ),
         asked(
             "final_profile_density_kg_per_m3",
@@ -789,7 +789,7 @@ const REFUSALS: &[Refusal] = &[
 
 fn field_words() -> String {
     format!(
-        "SHA-256 of the count of points in the final profile through the thickness (at most {}) as 8 little-endian bytes, then the temperature at each point in kelvin as little-endian f64 bytes. These are the values of `final_profile_temperature_k`. The hash is made whether or not the request asks for the profile.",
+        "SHA-384 of the count of points in the final profile through the thickness (at most {}) as 8 little-endian bytes, then the temperature at each point in kelvin as little-endian f64 bytes. These are the values of `final_profile_temperature_k`. The hash is made whether or not the request asks for the profile.",
         slab::PROFILE_POINTS_MAX
     )
 }
@@ -1192,6 +1192,14 @@ fn question(given: &Given) -> Result<(String, SlabQuestion, Wanted), String> {
 
 /// The sentence a caller reads for a limit the request itself shows: the
 /// solver's own sentence and the solver's name for it.
+/// Why the question of `given` is outside each compared envelope, the
+/// arc-jet one, the Stardust one and the thermocouple-block one: `None` for
+/// one it lies inside (`src/solver_exceedance.rs`).
+pub(crate) fn envelope_misses(given: &Given) -> Option<[Option<slab::EnvelopeMiss>; 3]> {
+    let (material, question, _) = question(given).ok()?;
+    slab::envelope_misses_of(&material, &question).ok()
+}
+
 fn door_sentence(reject: &SlabReject) -> String {
     format!("Physical Violation: {reject} ({}).", reject.name())
 }
@@ -1205,7 +1213,7 @@ fn check(given: &Given) -> Result<(), String> {
 
 fn solve(given: &Given) -> Result<Solved, String> {
     let (material, question, wanted) = question(given)?;
-    // The final profile is always taken from the solver: `field_sha256`
+    // The final profile is always taken from the solver: `field_sha384`
     // covers its temperatures. It is published only when asked for.
     let taken = Wanted {
         final_profile: true,
@@ -1653,7 +1661,7 @@ mod tests {
                     assert!(body["iterations"].is_null());
                     assert!(body["result"].is_null());
                     assert!(body["invariants"].is_null());
-                    assert!(body["field_sha256"].is_null());
+                    assert!(body["field_sha384"].is_null());
                     let report = solution::check(&body).unwrap_or_else(|_| panic!("{name} parses"));
                     assert!(report.holds, "{name} {:?}", report.cause);
                     let mut renamed = body.clone();
@@ -2308,6 +2316,7 @@ mod tests {
                 "open_connection",
                 "example_solve",
                 "example_solve_arc_jet_test",
+                "couplings",
                 "more",
             ]
         );
@@ -2321,8 +2330,10 @@ mod tests {
         // were fixed, so the comparison is not blind; since 0.14.0 rc2 its
         // open_connection also says how many of its worked solve one inline
         // answer holds where the local connection admits the engine's own 64
-        // (rc2 item 6): 20,805 characters, where rc1's came to 20,497.
-        assert!(text.chars().count() < 21_000, "{} characters", text.chars().count());
+        // (rc2 item 6): 20,805 characters, where rc1's came to 20,497. Since
+        // the coupling stardust_entry_to_pica_slab its couplings, what is
+        // handed, the five conditions and the meaning, add about 3,000.
+        assert!(text.chars().count() < 24_000, "{} characters", text.chars().count());
         let more = first["more"].as_object().expect("more");
         assert_eq!(
             more.keys().collect::<Vec<_>>(),
@@ -2360,6 +2371,7 @@ mod tests {
                 "example_solve",
                 "example_solve_arc_jet_test",
                 "example_solve_stardust_near_nose",
+                "couplings",
             ]
         );
         for key in more.keys().filter(|key| *key != "how") {

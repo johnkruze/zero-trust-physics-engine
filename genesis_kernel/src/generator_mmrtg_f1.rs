@@ -134,6 +134,7 @@ extern crate core;
 
 use core::prelude::v1::*;
 
+use crate::exceedance::{Exceedance, ExceedanceKind, Side};
 use crate::frame::LastStateFrame64;
 use crate::normal::normal_or_zero;
 
@@ -590,6 +591,26 @@ pub fn step(
     load: GeneratorLoad,
     dt_s: f64,
 ) -> Result<(), StepReject> {
+    #[cfg(any(test, debug_assertions, feature = "check_exceedances"))]
+    let before = *state;
+    let stepped = step_landed(generator, state, frame, load, dt_s);
+    #[cfg(any(test, debug_assertions, feature = "check_exceedances"))]
+    if stepped.is_ok() {
+        crate::exceedance::debug_check("generator_mmrtg_f1", exceedances(generator, &before, state, load, dt_s), frame.flags);
+    }
+    stepped
+}
+
+/// The step itself; [`step`] is it with, in a build that checks
+/// (`crate::exceedance::CHECKED`), the check that [`exceedances`] stands for
+/// the flags it wrote.
+fn step_landed(
+    generator: &GeneratorMmrtgF1,
+    state: &mut GeneratorState,
+    frame: &mut LastStateFrame64,
+    load: GeneratorLoad,
+    dt_s: f64,
+) -> Result<(), StepReject> {
     step_as_computed(generator, state, frame, load, dt_s)?;
     normal_or_zero_state(state);
     Ok(())
@@ -890,6 +911,48 @@ fn state_is_finite(state: &GeneratorState) -> bool {
         && state.converter_account_defect_j.is_finite()
         && state.converter_account_error.is_finite()
         && state.range_margin_s.is_finite()
+}
+
+/// Every limit a flag of this card can mark: what [`exceedances`] reports
+/// beside a flag's bit (`crate::exceedance`).
+pub const EXCEEDANCE_KINDS: &[crate::exceedance::ExceedanceKind] = &[
+    FITTING_KIND,
+    RECORD_KIND,
+];
+
+const FITTING_KIND: ExceedanceKind = ExceedanceKind::fixed(
+    "FLAG_PAST_FITTING_SPAN",
+    FLAG_PAST_FITTING_SPAN,
+    "t_s",
+    "s",
+    Side::Above,
+    FITTING_SPAN_END_S,
+    "mission day 2,060, the end of the span the constants were fitted on, in seconds of mission time",
+);
+const RECORD_KIND: ExceedanceKind = ExceedanceKind::fixed(
+    "FLAG_PAST_RECORD",
+    FLAG_PAST_RECORD,
+    "t_s",
+    "s",
+    Side::Above,
+    MISSION_TIME_MAX_S,
+    "mission day 4,087, the last day of the published record and of the days compared, in seconds; set past it by more than 2^-22 s",
+);
+
+/// The limits the step from `before` to `after` under `load` over `dt_s`
+/// is past: one record for each limit a flag set on its frame marks.
+pub fn exceedances(
+    generator: &GeneratorMmrtgF1,
+    before: &GeneratorState,
+    after: &GeneratorState,
+    load: GeneratorLoad,
+    dt_s: f64,
+) -> crate::exceedance::Exceedances {
+    let _ = (before, load, dt_s);
+    let mut records = crate::exceedance::Exceedances::new();
+    records.push_if(after.past_fitting_span, Exceedance::fixed(FITTING_KIND, after.t_s));
+    records.push_if(past_record(generator, after.t_s), Exceedance::at(RECORD_KIND, generator.mission_time_max_s, after.t_s));
+    records
 }
 
 #[cfg(test)]

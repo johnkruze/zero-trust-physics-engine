@@ -134,6 +134,7 @@ extern crate core;
 
 use core::prelude::v1::*;
 
+use crate::exceedance::{Exceedance, ExceedanceKind, Side};
 use crate::frame::LastStateFrame64;
 use crate::normal::normal_or_zero;
 use crate::math::{exp, exp_m1, log};
@@ -626,6 +627,26 @@ impl CellState {
 /// with its sign ([`crate::normal`]).
 #[must_use]
 pub fn step(
+    cell: &Cell2170M80,
+    state: &mut CellState,
+    frame: &mut LastStateFrame64,
+    load: CellLoad,
+    dt_s: f64,
+) -> Result<(), StepReject> {
+    #[cfg(any(test, debug_assertions, feature = "check_exceedances"))]
+    let before = *state;
+    let stepped = step_landed(cell, state, frame, load, dt_s);
+    #[cfg(any(test, debug_assertions, feature = "check_exceedances"))]
+    if stepped.is_ok() {
+        crate::exceedance::debug_check("cell_2170_m80", exceedances(cell, &before, state, load, dt_s), frame.flags);
+    }
+    stepped
+}
+
+/// The step itself; [`step`] is it with, in a build that checks
+/// (`crate::exceedance::CHECKED`), the check that [`exceedances`] stands for
+/// the flags it wrote.
+fn step_landed(
     cell: &Cell2170M80,
     state: &mut CellState,
     frame: &mut LastStateFrame64,
@@ -1275,6 +1296,88 @@ fn state_is_finite(state: &CellState) -> bool {
         && state.residual_conservation_error.is_finite()
         && state.lower_limit_margin_v.is_finite()
         && state.upper_limit_margin_v.is_finite()
+}
+
+/// Every limit a flag of this card can mark: what [`exceedances`] reports
+/// beside a flag's bit (`crate::exceedance`).
+pub const EXCEEDANCE_KINDS: &[crate::exceedance::ExceedanceKind] = &[
+    NO_MARK_KIND,
+    CASE_LOW_KIND,
+    CASE_HIGH_KIND,
+    CHARGE_HIGH_KIND,
+    DISCHARGE_HIGH_KIND,
+];
+
+const NO_MARK_KIND: ExceedanceKind = ExceedanceKind::fixed(
+    "FLAG_BLOCK_MET_NO_MARK",
+    FLAG_BLOCK_MET_NO_MARK,
+    "block_chamber_c",
+    "degC",
+    Side::AtOrBelow,
+    -10.0,
+    "the chamber settings of the blocks in which no compared test met its marks, -10 and -20 degC: at or below -10 degC",
+);
+const CASE_WORDS: &str = "the coldest and the warmest case temperature in the compared tests of the step's block";
+const CASE_LOW_KIND: ExceedanceKind = ExceedanceKind::varying(
+    "FLAG_OUTSIDE_COMPARED_TESTS",
+    FLAG_OUTSIDE_COMPARED_TESTS,
+    "case_temperature_c",
+    "degC",
+    Side::Below,
+    CASE_WORDS,
+);
+const CASE_HIGH_KIND: ExceedanceKind = ExceedanceKind::varying(
+    "FLAG_OUTSIDE_COMPARED_TESTS",
+    FLAG_OUTSIDE_COMPARED_TESTS,
+    "case_temperature_c",
+    "degC",
+    Side::Above,
+    CASE_WORDS,
+);
+const CHARGE_HIGH_KIND: ExceedanceKind = ExceedanceKind::varying(
+    "FLAG_OUTSIDE_COMPARED_TESTS",
+    FLAG_OUTSIDE_COMPARED_TESTS,
+    "current_a",
+    "A",
+    Side::Above,
+    "the largest charging current in the compared tests of the step's block (charge is positive)",
+);
+const DISCHARGE_HIGH_KIND: ExceedanceKind = ExceedanceKind::varying(
+    "FLAG_OUTSIDE_COMPARED_TESTS",
+    FLAG_OUTSIDE_COMPARED_TESTS,
+    "current_a",
+    "A",
+    Side::Below,
+    "the largest discharging current in the compared tests of the step's block, as a negative current",
+);
+
+/// The limits the step from `before` to `after` under `load` over `dt_s`
+/// is past: one record for each limit a flag set on its frame marks.
+/// The conditions are those of [`Cell2170M80::compared_flags`] in the
+/// block of the state before the step.
+pub fn exceedances(
+    cell: &Cell2170M80,
+    before: &CellState,
+    after: &CellState,
+    load: CellLoad,
+    dt_s: f64,
+) -> crate::exceedance::Exceedances {
+    let _ = (after, dt_s);
+    let mut records = crate::exceedance::Exceedances::new();
+    let Some(block) = cell.block_of(before.block_chamber_c) else {
+        return records;
+    };
+    records.push_if(cell.block_met_no_mark[block], Exceedance::fixed(NO_MARK_KIND, cell.block_chamber_c[block]));
+    let case_c = load.case_temperature_c;
+    let least = cell.block_case_min_c[block];
+    let most = cell.block_case_max_c[block];
+    records.push_if(case_c < least, Exceedance::at(CASE_LOW_KIND, least, case_c));
+    records.push_if(case_c > most, Exceedance::at(CASE_HIGH_KIND, most, case_c));
+    let charge_most = cell.block_current_charge_max_a[block];
+    let discharge_most = -cell.block_current_discharge_max_a[block];
+    records.push_if(load.current_a > charge_most, Exceedance::at(CHARGE_HIGH_KIND, charge_most, load.current_a));
+    records.push_if(load.current_a < discharge_most, Exceedance::at(DISCHARGE_HIGH_KIND, discharge_most, load.current_a));
+    records
 }
 
 #[cfg(test)]

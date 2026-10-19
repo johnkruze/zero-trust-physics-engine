@@ -217,6 +217,7 @@ extern crate core;
 
 use core::prelude::v1::*;
 
+use crate::exceedance::{Exceedance, ExceedanceKind, Side};
 use crate::frame::LastStateFrame64;
 use crate::normal::normal_or_zero;
 use crate::math::{exp, log};
@@ -829,6 +830,26 @@ pub fn step(
     load: TokamakLoad,
     dt_s: f64,
 ) -> Result<(), StepReject> {
+    #[cfg(any(test, debug_assertions, feature = "check_exceedances"))]
+    let before = *state;
+    let stepped = step_landed(tokamak, state, frame, load, dt_s);
+    #[cfg(any(test, debug_assertions, feature = "check_exceedances"))]
+    if stepped.is_ok() {
+        crate::exceedance::debug_check("tokamak_jet_dte1", exceedances(tokamak, &before, state, load, dt_s), frame.flags);
+    }
+    stepped
+}
+
+/// The step itself; [`step`] is it with, in a build that checks
+/// (`crate::exceedance::CHECKED`), the check that [`exceedances`] stands for
+/// the flags it wrote.
+fn step_landed(
+    tokamak: &TokamakJetDte1,
+    state: &mut TokamakState,
+    frame: &mut LastStateFrame64,
+    load: TokamakLoad,
+    dt_s: f64,
+) -> Result<(), StepReject> {
     step_as_computed(tokamak, state, frame, load, dt_s)?;
     normal_or_zero_state(state);
     Ok(())
@@ -1179,6 +1200,37 @@ fn state_is_finite(state: &TokamakState) -> bool {
         && state.residual_conservation_error.is_finite()
 }
 
+
+/// Every limit a flag of this card can mark: what [`exceedances`] reports
+/// beside a flag's bit (`crate::exceedance`).
+pub const EXCEEDANCE_KINDS: &[crate::exceedance::ExceedanceKind] = &[
+    DENSITY_KIND,
+];
+
+const DENSITY_KIND: ExceedanceKind = ExceedanceKind::fixed(
+    "FLAG_NEAR_DENSITY_LIMIT",
+    FLAG_NEAR_DENSITY_LIMIT,
+    "greenwald_fraction",
+    "1",
+    Side::Above,
+    NEAR_DENSITY_LIMIT_FRACTION,
+    "0.85 of the Greenwald density at the step's plasma current",
+);
+
+/// The limits the step from `before` to `after` under `load` over `dt_s`
+/// is past: one record for each limit a flag set on its frame marks.
+pub fn exceedances(
+    tokamak: &TokamakJetDte1,
+    before: &TokamakState,
+    after: &TokamakState,
+    load: TokamakLoad,
+    dt_s: f64,
+) -> crate::exceedance::Exceedances {
+    let _ = (tokamak, before, load, dt_s);
+    let mut records = crate::exceedance::Exceedances::new();
+    records.push_if(after.near_density_limit, Exceedance::fixed(DENSITY_KIND, after.greenwald_fraction));
+    records
+}
 
 #[cfg(test)]
 mod tests {

@@ -802,6 +802,11 @@ pub const LARGEST_STEP_S: f64 = 0.05;
 /// A step is accepted when no temperature moved by more than this in the
 /// last Newton pass. Kelvin.
 pub const NEWTON_TEMPERATURE_TOLERANCE_K: f64 = 1.0e-9;
+/// How many times one step may take its last Newton update back halfway,
+/// when the equations give no finite value at the iterate it reached. Each
+/// counts as a pass of [`NEWTON_PASS_LIMIT`]. Twenty halvings bring an
+/// update of 30,000 K under 0.03 K.
+pub const NEWTON_BACKTRACKS_MAX: u32 = 20;
 /// And no gas flux moved by more than this. kg/m²/s.
 pub const NEWTON_GAS_FLUX_TOLERANCE_KG_PER_M2_S: f64 = 1.0e-12;
 /// A step that has not settled after this many Newton passes is refused.
@@ -3193,6 +3198,7 @@ fn cell_faces(thickness_m: f64, numerics: &Numerics) -> Vec<f64> {
 }
 
 /// State at one time.
+#[derive(Clone)]
 struct Slab {
     face_depth_m: Vec<f64>,
     temperature_k: Vec<f64>,
@@ -3422,6 +3428,37 @@ impl Band {
 }
 
 /// Scratch arrays for one time step.
+/// The last Newton update of a step: what was added to each unknown.
+struct NewtonUpdate {
+    taken: bool,
+    backtracks: u32,
+    face_temperature_k: f64,
+    char_flux: f64,
+    temperature_k: Vec<f64>,
+    gas_flux: Vec<f64>,
+}
+
+impl NewtonUpdate {
+    fn new(n: usize) -> Self {
+        Self { taken: false, backtracks: 0, face_temperature_k: 0.0, char_flux: 0.0, temperature_k: vec![0.0; n], gas_flux: vec![0.0; n] }
+    }
+
+    /// Take half of the last update back, leaving the other half applied.
+    fn halve_back(&mut self, face_temperature_k: &mut f64, char_flux: &mut f64, work: &mut Work) {
+        self.backtracks += 1;
+        self.face_temperature_k *= 0.5;
+        *face_temperature_k -= self.face_temperature_k;
+        self.char_flux *= 0.5;
+        *char_flux -= self.char_flux;
+        for i in 0..self.temperature_k.len() {
+            self.temperature_k[i] *= 0.5;
+            work.trial_temperature_k[i] -= self.temperature_k[i];
+            self.gas_flux[i] *= 0.5;
+            work.trial_gas_flux[i] -= self.gas_flux[i];
+        }
+    }
+}
+
 struct Work {
     trial_temperature_k: Vec<f64>,
     trial_gas_flux: Vec<f64>,
@@ -3661,6 +3698,7 @@ fn step(
     drive: &FaceDrive,
     lowest_k: f64,
     highest_k: f64,
+    safeguarded: bool,
 ) -> Result<(StepAccount, FaceAccount), SlabReject> {
     let material = nodes.material;
     let n = slab.cells();
@@ -3742,6 +3780,10 @@ fn step(
     let unknowns = 2 * n + 2;
     let mut passes = 0u32;
     let mut settled = false;
+    // The last Newton update, kept so that, in a safeguarded step, an iterate
+    // the equations cannot be solved at is taken back halfway
+    // (`NEWTON_BACKTRACKS_MAX`).
+    let mut update = NewtonUpdate::new(n);
     while passes < pass_limit {
         passes += 1;
 
@@ -4047,26 +4089,58 @@ fn step(
             }
         }
 
-        if !band.solve() {
-            return Err(SlabReject::NonFiniteValue { time_s });
-        }
-        let mut largest_temperature_change = band.right[FACE_T].abs();
-        let mut largest_flux_change = band.right[CHAR].abs();
-        if !band.right[FACE_T].is_finite() || !band.right[CHAR].is_finite() {
-            return Err(SlabReject::NonFiniteValue { time_s });
-        }
-        face_temperature_k += band.right[FACE_T];
-        char_flux += band.right[CHAR];
-        for i in 0..n {
-            let dt = band.right[cell_t(i)];
-            let dm = band.right[cell_m(i)];
-            if !dt.is_finite() || !dm.is_finite() {
-                return Err(SlabReject::NonFiniteValue { time_s });
+        let solved = band.solve() && band.right[..unknowns].iter().all(|value| value.is_finite());
+        if !solved {
+            // The equations could not be solved at this iterate. In a
+            // safeguarded step the last update is taken back halfway and the
+            // pass is made again.
+            if safeguarded && update.taken && update.backtracks < NEWTON_BACKTRACKS_MAX {
+                update.halve_back(&mut face_temperature_k, &mut char_flux, work);
+                continue;
             }
+            return Err(SlabReject::NonFiniteValue { time_s });
+        }
+        // A safeguarded step keeps every temperature inside the band the
+        // run's states lie in, from the colder of the start and the
+        // surroundings to the top of the material's tables: an update that
+        // would leave it is shortened to go halfway to its edge.
+        let mut share = 1.0_f64;
+        if safeguarded {
+            // The edges are those of the check a settled state is held to.
+            let top_k = highest_k + TEMPERATURE_BOUND_TOLERANCE_K;
+            let bottom_k = lowest_k - TEMPERATURE_BOUND_TOLERANCE_K;
+            let mut keep = |temperature_k: f64, change_k: f64| {
+                if temperature_k + change_k > top_k && change_k > 0.0 {
+                    share = share.min(0.5 * (top_k - temperature_k).max(0.0) / change_k);
+                } else if temperature_k + change_k < bottom_k && change_k < 0.0 {
+                    share = share.min(0.5 * (bottom_k - temperature_k).min(0.0) / change_k);
+                }
+            };
+            keep(face_temperature_k, band.right[FACE_T]);
+            for i in 0..n {
+                keep(work.trial_temperature_k[i], band.right[cell_t(i)]);
+            }
+        }
+        let mut largest_temperature_change = share * band.right[FACE_T].abs();
+        let mut largest_flux_change = share * band.right[CHAR].abs();
+        update.face_temperature_k = share * band.right[FACE_T];
+        update.char_flux = share * band.right[CHAR];
+        face_temperature_k += update.face_temperature_k;
+        char_flux += update.char_flux;
+        for i in 0..n {
+            let dt = share * band.right[cell_t(i)];
+            let dm = share * band.right[cell_m(i)];
             work.trial_temperature_k[i] += dt;
             work.trial_gas_flux[i] += dm;
+            update.temperature_k[i] = dt;
+            update.gas_flux[i] = dm;
             largest_temperature_change = largest_temperature_change.max(dt.abs());
             largest_flux_change = largest_flux_change.max(dm.abs());
+        }
+        update.taken = true;
+        if share < 1.0 {
+            // A shortened update is not a settled one.
+            continue;
         }
         if largest_temperature_change <= NEWTON_TEMPERATURE_TOLERANCE_K
             && largest_flux_change <= NEWTON_GAS_FLUX_TOLERANCE_KG_PER_M2_S
@@ -4985,71 +5059,145 @@ fn heating_between(a: &StreamRow, b: &StreamRow, cold_wall_j_per_kg: f64, from_s
     ))
 }
 
+/// Why a question is outside a compared envelope: the words of the first
+/// reason found, and, where that reason is a number past a limit, the
+/// number and the limit (`exceedances` of the answer).
+#[derive(Clone, Debug, PartialEq)]
+pub struct EnvelopeMiss {
+    pub words: String,
+    pub past: Option<EnvelopePast>,
+}
+
+/// A number of a question past a limit of a compared envelope.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct EnvelopePast {
+    pub quantity: &'static str,
+    pub unit: &'static str,
+    pub side: genesis_kernel::exceedance::Side,
+    pub limit: f64,
+    pub value: f64,
+}
+
+impl EnvelopeMiss {
+    fn past(past: EnvelopePast, words: String) -> Self {
+        Self { words, past: Some(past) }
+    }
+
+    fn plain(words: String) -> Self {
+        Self { words, past: None }
+    }
+}
+
+impl EnvelopePast {
+    fn above(quantity: &'static str, unit: &'static str, limit: f64, value: f64) -> Self {
+        Self { quantity, unit, side: genesis_kernel::exceedance::Side::Above, limit, value }
+    }
+
+    fn below(quantity: &'static str, unit: &'static str, limit: f64, value: f64) -> Self {
+        Self { quantity, unit, side: genesis_kernel::exceedance::Side::Below, limit, value }
+    }
+
+    fn other_than(quantity: &'static str, unit: &'static str, limit: f64, value: f64) -> Self {
+        Self { quantity, unit, side: genesis_kernel::exceedance::Side::OtherThan, limit, value }
+    }
+
+    /// A value outside `lowest` to `highest`: below the one or above the other.
+    fn outside(quantity: &'static str, unit: &'static str, value: f64, lowest: f64, highest: f64) -> Self {
+        if value < lowest { Self::below(quantity, unit, lowest, value) } else { Self::above(quantity, unit, highest, value) }
+    }
+}
+
+/// Why a question of `material_name` is outside each compared envelope, the
+/// arc-jet one, the Stardust one and the thermocouple-block one, in that
+/// order: `None` for an envelope it lies inside, as
+/// [`Summary::inside_arc_jet_comparison`] and its two companions are 1.
+/// TACOT 3.0, a held face and a face that does not wear lie in none.
+pub fn envelope_misses_of(material_name: &str, question: &SlabQuestion) -> Result<[Option<EnvelopeMiss>; 3], SlabReject> {
+    compared_envelopes(material_name, question)?;
+    let all = |words: &str| {
+        let miss = Some(EnvelopeMiss::plain(words.to_string()));
+        [miss.clone(), miss.clone(), miss]
+    };
+    if material_name == MATERIAL_TACOT {
+        return Ok(all("TACOT 3.0 was compared with other codes only, with no measurement"));
+    }
+    match &question.surface {
+        SurfaceCondition::HeldTemperature { .. } => Ok(all("a held face: every compared case was a gas stream on a face that wore")),
+        SurfaceCondition::GasStream { face_wears: false, .. } => {
+            Ok(all("a face that does not wear: every compared case was a gas stream on a face that wore"))
+        }
+        SurfaceCondition::GasStream { history, surroundings_temperature_k, stream_gas, .. } => {
+            let (arc_jet, stardust, thermocouple_blocks) = envelope_misses(question, history, *surroundings_temperature_k, stream_gas)?;
+            Ok([arc_jet, stardust, thermocouple_blocks])
+        }
+    }
+}
+
 /// Why a gas stream is outside the arc-jet envelope, the first reason found;
 /// `None` when it is inside.
-fn arc_jet_miss(history: &[StreamRow], stream_gas: &StreamGas) -> Result<Option<String>, SlabReject> {
+fn arc_jet_miss(history: &[StreamRow], stream_gas: &StreamGas) -> Result<Option<EnvelopeMiss>, SlabReject> {
     if !within(
         stream_gas.oxygen_mass_fraction,
         ARC_JET_STREAM_OXYGEN_MASS_FRACTION_MIN,
         ARC_JET_STREAM_OXYGEN_MASS_FRACTION_MAX,
     ) {
-        return Ok(Some(format!(
+        return Ok(Some(EnvelopeMiss::past(EnvelopePast::outside("oxygen_mass_fraction", "1", stream_gas.oxygen_mass_fraction, ARC_JET_STREAM_OXYGEN_MASS_FRACTION_MIN, ARC_JET_STREAM_OXYGEN_MASS_FRACTION_MAX), format!(
             "oxygen mass fraction {} is outside {ARC_JET_STREAM_OXYGEN_MASS_FRACTION_MIN} to {ARC_JET_STREAM_OXYGEN_MASS_FRACTION_MAX}",
             stream_gas.oxygen_mass_fraction
-        )));
+        ))));
     }
     if !within(stream_gas.argon_mass_fraction, 0.0, ARC_JET_STREAM_ARGON_MASS_FRACTION_MAX) {
-        return Ok(Some(format!(
+        return Ok(Some(EnvelopeMiss::past(EnvelopePast::above("argon_mass_fraction", "1", ARC_JET_STREAM_ARGON_MASS_FRACTION_MAX, stream_gas.argon_mass_fraction), format!(
             "argon mass fraction {} is above {ARC_JET_STREAM_ARGON_MASS_FRACTION_MAX}",
             stream_gas.argon_mass_fraction
-        )));
+        ))));
     }
     let end_s = history[history.len() - 1].time_s;
     if end_s > ARC_JET_DURATION_MAX_S {
-        return Ok(Some(format!(
+        return Ok(Some(EnvelopeMiss::past(EnvelopePast::above("history_end_s", "s", ARC_JET_DURATION_MAX_S, end_s), format!(
             "the heating history lasts {end_s} s, longer than {ARC_JET_DURATION_MAX_S} s"
-        )));
+        ))));
     }
     for (row, entry) in history.iter().enumerate() {
         if !within(entry.pressure_pa, ARC_JET_PRESSURE_MIN_PA, ARC_JET_PRESSURE_MAX_PA) {
-            return Ok(Some(format!(
+            return Ok(Some(EnvelopeMiss::past(EnvelopePast::outside("wall_pressure_pa", "Pa", entry.pressure_pa, ARC_JET_PRESSURE_MIN_PA, ARC_JET_PRESSURE_MAX_PA), format!(
                 "row {row} has wall pressure {} Pa, outside {ARC_JET_PRESSURE_MIN_PA} to {ARC_JET_PRESSURE_MAX_PA} Pa",
                 entry.pressure_pa
-            )));
+            ))));
         }
         if !within(
             entry.flow_enthalpy_j_per_kg,
             ARC_JET_FLOW_ENTHALPY_MIN_J_PER_KG,
             ARC_JET_FLOW_ENTHALPY_MAX_J_PER_KG,
         ) {
-            return Ok(Some(format!(
+            return Ok(Some(EnvelopeMiss::past(EnvelopePast::outside("flow_enthalpy_j_per_kg", "J/kg", entry.flow_enthalpy_j_per_kg, ARC_JET_FLOW_ENTHALPY_MIN_J_PER_KG, ARC_JET_FLOW_ENTHALPY_MAX_J_PER_KG), format!(
                 "row {row} has flow enthalpy {} J/kg, outside {ARC_JET_FLOW_ENTHALPY_MIN_J_PER_KG} to {ARC_JET_FLOW_ENTHALPY_MAX_J_PER_KG} J/kg",
                 entry.flow_enthalpy_j_per_kg
-            )));
+            ))));
         }
         if entry.radiative_heating_w_per_m2 != 0.0 {
-            return Ok(Some(format!(
+            return Ok(Some(EnvelopeMiss::past(EnvelopePast::other_than("radiative_heating_w_per_m2", "W/m2", 0.0, entry.radiative_heating_w_per_m2), format!(
                 "row {row} has radiative heating {} W/m2; no arc-jet test had any",
                 entry.radiative_heating_w_per_m2
-            )));
+            ))));
         }
     }
     let cold_wall = stream_enthalpy_at_cold_wall_j_per_kg(stream_gas)?;
     for pair in history.windows(2) {
         if let Some((_, highest)) = heating_between(&pair[0], &pair[1], cold_wall, 0.0) {
             if !within(highest, 0.0, ARC_JET_HEATING_MAX_W_PER_M2) {
-                return Ok(Some(format!(
+                return Ok(Some(EnvelopeMiss::past(EnvelopePast::above("cold_wall_heating_w_per_m2", "W/m2", ARC_JET_HEATING_MAX_W_PER_M2, highest), format!(
                     "the cold-wall heating reaches {highest} W/m2 between {} and {} s, above {ARC_JET_HEATING_MAX_W_PER_M2} W/m2",
                     pair[0].time_s, pair[1].time_s
-                )));
+                ))));
             }
         }
         if let Some((lowest, _)) = heating_between(&pair[0], &pair[1], cold_wall, ARC_JET_SWING_IN_S) {
             if !within(lowest, ARC_JET_HEATING_MIN_W_PER_M2, f64::INFINITY) {
-                return Ok(Some(format!(
+                return Ok(Some(EnvelopeMiss::past(EnvelopePast::below("cold_wall_heating_w_per_m2", "W/m2", ARC_JET_HEATING_MIN_W_PER_M2, lowest), format!(
                     "the cold-wall heating falls to {lowest} W/m2 between {} and {} s, below {ARC_JET_HEATING_MIN_W_PER_M2} W/m2 after the first {ARC_JET_SWING_IN_S} s",
                     pair[0].time_s.max(ARC_JET_SWING_IN_S), pair[1].time_s
-                )));
+                ))));
             }
         }
     }
@@ -5058,48 +5206,48 @@ fn arc_jet_miss(history: &[StreamRow], stream_gas: &StreamGas) -> Result<Option<
 
 /// Why a gas stream is outside the Stardust envelope, the first reason
 /// found; `None` when it is inside.
-fn stardust_miss(history: &[StreamRow], stream_gas: &StreamGas) -> Result<Option<String>, SlabReject> {
+fn stardust_miss(history: &[StreamRow], stream_gas: &StreamGas) -> Result<Option<EnvelopeMiss>, SlabReject> {
     if !stream_gas.is_air() {
-        return Ok(Some("the stream is not air".to_string()));
+        return Ok(Some(EnvelopeMiss::plain("the stream is not air".to_string())));
     }
     for (row, entry) in history.iter().enumerate() {
         if !within(entry.pressure_pa, STARDUST_PRESSURE_MIN_PA, STARDUST_PRESSURE_MAX_PA) {
-            return Ok(Some(format!(
+            return Ok(Some(EnvelopeMiss::past(EnvelopePast::outside("wall_pressure_pa", "Pa", entry.pressure_pa, STARDUST_PRESSURE_MIN_PA, STARDUST_PRESSURE_MAX_PA), format!(
                 "row {row} has wall pressure {} Pa, outside {STARDUST_PRESSURE_MIN_PA} to {STARDUST_PRESSURE_MAX_PA} Pa",
                 entry.pressure_pa
-            )));
+            ))));
         }
         if !within(
             entry.flow_enthalpy_j_per_kg,
             STARDUST_FLOW_ENTHALPY_MIN_J_PER_KG,
             STARDUST_FLOW_ENTHALPY_MAX_J_PER_KG,
         ) {
-            return Ok(Some(format!(
+            return Ok(Some(EnvelopeMiss::past(EnvelopePast::outside("flow_enthalpy_j_per_kg", "J/kg", entry.flow_enthalpy_j_per_kg, STARDUST_FLOW_ENTHALPY_MIN_J_PER_KG, STARDUST_FLOW_ENTHALPY_MAX_J_PER_KG), format!(
                 "row {row} has flow enthalpy {} J/kg, outside {STARDUST_FLOW_ENTHALPY_MIN_J_PER_KG} to {STARDUST_FLOW_ENTHALPY_MAX_J_PER_KG} J/kg",
                 entry.flow_enthalpy_j_per_kg
-            )));
+            ))));
         }
         if !within(entry.heat_transfer_coefficient_kg_per_m2_s, 0.0, STARDUST_COEFFICIENT_MAX_KG_PER_M2_S) {
-            return Ok(Some(format!(
+            return Ok(Some(EnvelopeMiss::past(EnvelopePast::above("heat_transfer_coefficient_kg_per_m2_s", "kg/m2/s", STARDUST_COEFFICIENT_MAX_KG_PER_M2_S, entry.heat_transfer_coefficient_kg_per_m2_s), format!(
                 "row {row} has heat-transfer coefficient {} kg/m2/s, above {STARDUST_COEFFICIENT_MAX_KG_PER_M2_S}",
                 entry.heat_transfer_coefficient_kg_per_m2_s
-            )));
+            ))));
         }
         if !within(entry.radiative_heating_w_per_m2, 0.0, STARDUST_RADIATIVE_HEATING_MAX_W_PER_M2) {
-            return Ok(Some(format!(
+            return Ok(Some(EnvelopeMiss::past(EnvelopePast::above("radiative_heating_w_per_m2", "W/m2", STARDUST_RADIATIVE_HEATING_MAX_W_PER_M2, entry.radiative_heating_w_per_m2), format!(
                 "row {row} has radiative heating {} W/m2, above {STARDUST_RADIATIVE_HEATING_MAX_W_PER_M2} W/m2",
                 entry.radiative_heating_w_per_m2
-            )));
+            ))));
         }
     }
     let cold_wall = stream_enthalpy_at_cold_wall_j_per_kg(stream_gas)?;
     for pair in history.windows(2) {
         if let Some((_, highest)) = heating_between(&pair[0], &pair[1], cold_wall, 0.0) {
             if !within(highest, 0.0, STARDUST_HEATING_MAX_W_PER_M2) {
-                return Ok(Some(format!(
+                return Ok(Some(EnvelopeMiss::past(EnvelopePast::above("cold_wall_heating_w_per_m2", "W/m2", STARDUST_HEATING_MAX_W_PER_M2, highest), format!(
                     "the cold-wall heating reaches {highest} W/m2 between {} and {} s, above {STARDUST_HEATING_MAX_W_PER_M2} W/m2",
                     pair[0].time_s, pair[1].time_s
-                )));
+                ))));
             }
         }
     }
@@ -5108,16 +5256,16 @@ fn stardust_miss(history: &[StreamRow], stream_gas: &StreamGas) -> Result<Option
         .collect();
     if let (Some(&first), Some(&last)) = (on.first(), on.last()) {
         if let Some(gap) = (first..=last).find(|row| !on.contains(row)) {
-            return Ok(Some(format!(
+            return Ok(Some(EnvelopeMiss::plain(format!(
                 "the stream stops at row {gap} ({} s) and comes back on; the flight had one stretch of stream",
                 history[gap].time_s
-            )));
+            ))));
         }
         let ends_s = history[(last + 1).min(history.len() - 1)].time_s;
         if ends_s > STARDUST_STREAM_ENDS_BY_S {
-            return Ok(Some(format!(
+            return Ok(Some(EnvelopeMiss::past(EnvelopePast::above("stream_end_s", "s", STARDUST_STREAM_ENDS_BY_S, ends_s), format!(
                 "the stream is on until {ends_s} s, later than {STARDUST_STREAM_ENDS_BY_S} s"
-            )));
+            ))));
         }
     }
     Ok(None)
@@ -5125,83 +5273,83 @@ fn stardust_miss(history: &[StreamRow], stream_gas: &StreamGas) -> Result<Option
 
 /// Why a gas stream is outside the thermocouple-block envelope, the first
 /// reason found; `None` when it is inside.
-fn thermocouple_block_miss(history: &[StreamRow], stream_gas: &StreamGas) -> Result<Option<String>, SlabReject> {
+fn thermocouple_block_miss(history: &[StreamRow], stream_gas: &StreamGas) -> Result<Option<EnvelopeMiss>, SlabReject> {
     if !stream_gas.is_air() {
-        return Ok(Some("the stream is not air".to_string()));
+        return Ok(Some(EnvelopeMiss::plain("the stream is not air".to_string())));
     }
     let pressure_pa = history[0].pressure_pa;
     if !within(pressure_pa, THERMOCOUPLE_BLOCK_PRESSURE_MIN_PA, THERMOCOUPLE_BLOCK_PRESSURE_MAX_PA) {
-        return Ok(Some(format!(
+        return Ok(Some(EnvelopeMiss::past(EnvelopePast::outside("wall_pressure_pa", "Pa", pressure_pa, THERMOCOUPLE_BLOCK_PRESSURE_MIN_PA, THERMOCOUPLE_BLOCK_PRESSURE_MAX_PA), format!(
             "row 0 has wall pressure {pressure_pa} Pa, outside {THERMOCOUPLE_BLOCK_PRESSURE_MIN_PA} to {THERMOCOUPLE_BLOCK_PRESSURE_MAX_PA} Pa"
-        )));
+        ))));
     }
     let end_s = history[history.len() - 1].time_s;
     if end_s > THERMOCOUPLE_BLOCK_HISTORY_ENDS_BY_S {
-        return Ok(Some(format!(
+        return Ok(Some(EnvelopeMiss::past(EnvelopePast::above("history_end_s", "s", THERMOCOUPLE_BLOCK_HISTORY_ENDS_BY_S, end_s), format!(
             "the heating history lasts {end_s} s, longer than {THERMOCOUPLE_BLOCK_HISTORY_ENDS_BY_S} s"
-        )));
+        ))));
     }
     for (row, entry) in history.iter().enumerate() {
         if entry.pressure_pa != pressure_pa {
-            return Ok(Some(format!(
+            return Ok(Some(EnvelopeMiss::past(EnvelopePast::other_than("wall_pressure_pa", "Pa", pressure_pa, entry.pressure_pa), format!(
                 "row {row} has wall pressure {} Pa, not the {pressure_pa} Pa of row 0; each block was held at one pressure",
                 entry.pressure_pa
-            )));
+            ))));
         }
         if !within(
             entry.flow_enthalpy_j_per_kg,
             THERMOCOUPLE_BLOCK_FLOW_ENTHALPY_J_PER_KG,
             THERMOCOUPLE_BLOCK_FLOW_ENTHALPY_J_PER_KG,
         ) {
-            return Ok(Some(format!(
+            return Ok(Some(EnvelopeMiss::past(EnvelopePast::other_than("flow_enthalpy_j_per_kg", "J/kg", THERMOCOUPLE_BLOCK_FLOW_ENTHALPY_J_PER_KG, entry.flow_enthalpy_j_per_kg), format!(
                 "row {row} has flow enthalpy {} J/kg, not the {THERMOCOUPLE_BLOCK_FLOW_ENTHALPY_J_PER_KG} J/kg compared",
                 entry.flow_enthalpy_j_per_kg
-            )));
+            ))));
         }
         if entry.radiative_heating_w_per_m2 != 0.0 {
-            return Ok(Some(format!(
+            return Ok(Some(EnvelopeMiss::past(EnvelopePast::other_than("radiative_heating_w_per_m2", "W/m2", 0.0, entry.radiative_heating_w_per_m2), format!(
                 "row {row} has radiative heating {} W/m2; no block had any",
                 entry.radiative_heating_w_per_m2
-            )));
+            ))));
         }
     }
     let on: Vec<usize> = (0..history.len())
         .filter(|&row| history[row].heat_transfer_coefficient_kg_per_m2_s > 0.0)
         .collect();
     let (Some(&first), Some(&last)) = (on.first(), on.last()) else {
-        return Ok(Some("the stream is never on".to_string()));
+        return Ok(Some(EnvelopeMiss::plain("the stream is never on".to_string())));
     };
     if let Some(gap) = (first..=last).find(|row| !on.contains(row)) {
-        return Ok(Some(format!(
+        return Ok(Some(EnvelopeMiss::plain(format!(
             "the stream stops at row {gap} ({} s) and comes back on; each block had one stretch of stream",
             history[gap].time_s
-        )));
+        ))));
     }
     if last == history.len() - 1 {
-        return Ok(Some(format!(
+        return Ok(Some(EnvelopeMiss::plain(format!(
             "the stream is still on at {end_s} s, the end of the history; each block's stream fell to zero over {THERMOCOUPLE_BLOCK_RAMP_DOWN_S} s and the block cooled"
-        )));
+        ))));
     }
     let held_until_s = history[last].time_s;
     if !within(held_until_s, THERMOCOUPLE_BLOCK_EXPOSURE_MIN_S, THERMOCOUPLE_BLOCK_EXPOSURE_MAX_S) {
-        return Ok(Some(format!(
+        return Ok(Some(EnvelopeMiss::past(EnvelopePast::outside("stream_held_until_s", "s", held_until_s, THERMOCOUPLE_BLOCK_EXPOSURE_MIN_S, THERMOCOUPLE_BLOCK_EXPOSURE_MAX_S), format!(
             "the stream is held until {held_until_s} s, outside the exposures compared, {THERMOCOUPLE_BLOCK_EXPOSURE_MIN_S} to {THERMOCOUPLE_BLOCK_EXPOSURE_MAX_S} s"
-        )));
+        ))));
     }
     let ramp_s = history[last + 1].time_s - held_until_s;
     if !within(ramp_s, THERMOCOUPLE_BLOCK_RAMP_DOWN_S, THERMOCOUPLE_BLOCK_RAMP_DOWN_S) {
-        return Ok(Some(format!(
+        return Ok(Some(EnvelopeMiss::past(EnvelopePast::other_than("ramp_down_s", "s", THERMOCOUPLE_BLOCK_RAMP_DOWN_S, ramp_s), format!(
             "the stream falls to zero over {ramp_s} s from {held_until_s} s; each block's fell over {THERMOCOUPLE_BLOCK_RAMP_DOWN_S} s"
-        )));
+        ))));
     }
     let cold_wall = stream_enthalpy_at_cold_wall_j_per_kg(stream_gas)?;
     for (row, pair) in history.windows(2).enumerate() {
         if let Some((_, highest)) = heating_between(&pair[0], &pair[1], cold_wall, 0.0) {
             if !within(highest, 0.0, THERMOCOUPLE_BLOCK_HEATING_MAX_W_PER_M2) {
-                return Ok(Some(format!(
+                return Ok(Some(EnvelopeMiss::past(EnvelopePast::above("cold_wall_heating_w_per_m2", "W/m2", THERMOCOUPLE_BLOCK_HEATING_MAX_W_PER_M2, highest), format!(
                     "the cold-wall heating reaches {highest} W/m2 between {} and {} s, above {THERMOCOUPLE_BLOCK_HEATING_MAX_W_PER_M2} W/m2",
                     pair[0].time_s, pair[1].time_s
-                )));
+                ))));
             }
         }
         if row + 1 > last {
@@ -5209,10 +5357,10 @@ fn thermocouple_block_miss(history: &[StreamRow], stream_gas: &StreamGas) -> Res
         }
         if let Some((lowest, _)) = heating_between(&pair[0], &pair[1], cold_wall, THERMOCOUPLE_BLOCK_SWING_IN_S) {
             if !within(lowest, THERMOCOUPLE_BLOCK_HEATING_MIN_W_PER_M2, f64::INFINITY) {
-                return Ok(Some(format!(
+                return Ok(Some(EnvelopeMiss::past(EnvelopePast::below("cold_wall_heating_w_per_m2", "W/m2", THERMOCOUPLE_BLOCK_HEATING_MIN_W_PER_M2, lowest), format!(
                     "the cold-wall heating falls to {lowest} W/m2 between {} and {} s, below {THERMOCOUPLE_BLOCK_HEATING_MIN_W_PER_M2} W/m2 while the stream is held",
                     pair[0].time_s.max(THERMOCOUPLE_BLOCK_SWING_IN_S), pair[1].time_s
-                )));
+                ))));
             }
         }
     }
@@ -5227,26 +5375,36 @@ fn slab_miss(
     (thickness_min_m, thickness_max_m): (f64, f64),
     start_temperature_k: f64,
     compared_surroundings_k: f64,
-) -> Option<String> {
+) -> Option<EnvelopeMiss> {
     if !within(question.thickness_m, thickness_min_m, thickness_max_m) {
         return Some(if thickness_min_m == thickness_max_m {
-            format!("thickness {} m is not the {thickness_min_m} m compared", question.thickness_m)
+            EnvelopeMiss::past(
+                EnvelopePast::other_than("thickness_m", "m", thickness_min_m, question.thickness_m),
+                format!("thickness {} m is not the {thickness_min_m} m compared", question.thickness_m),
+            )
         } else {
-            format!(
-                "thickness {} m is outside {thickness_min_m} to {thickness_max_m} m",
-                question.thickness_m
+            EnvelopeMiss::past(
+                EnvelopePast::outside("thickness_m", "m", question.thickness_m, thickness_min_m, thickness_max_m),
+                format!(
+                    "thickness {} m is outside {thickness_min_m} to {thickness_max_m} m",
+                    question.thickness_m
+                ),
             )
         });
     }
     if !within(question.start_temperature_k, start_temperature_k, start_temperature_k) {
-        return Some(format!(
-            "start temperature {} K is not the {start_temperature_k} K compared",
-            question.start_temperature_k
+        return Some(EnvelopeMiss::past(
+            EnvelopePast::other_than("start_temperature_k", "K", start_temperature_k, question.start_temperature_k),
+            format!(
+                "start temperature {} K is not the {start_temperature_k} K compared",
+                question.start_temperature_k
+            ),
         ));
     }
     if !within(surroundings_temperature_k, compared_surroundings_k, compared_surroundings_k) {
-        return Some(format!(
-            "surroundings temperature {surroundings_temperature_k} K is not the {compared_surroundings_k} K compared"
+        return Some(EnvelopeMiss::past(
+            EnvelopePast::other_than("surroundings_temperature_k", "K", compared_surroundings_k, surroundings_temperature_k),
+            format!("surroundings temperature {surroundings_temperature_k} K is not the {compared_surroundings_k} K compared"),
         ));
     }
     None
@@ -5260,7 +5418,7 @@ fn envelope_misses(
     history: &[StreamRow],
     surroundings_temperature_k: f64,
     stream_gas: &StreamGas,
-) -> Result<(Option<String>, Option<String>, Option<String>), SlabReject> {
+) -> Result<(Option<EnvelopeMiss>, Option<EnvelopeMiss>, Option<EnvelopeMiss>), SlabReject> {
     let arc_jet = match slab_miss(
         question,
         surroundings_temperature_k,
@@ -5925,20 +6083,37 @@ fn run_model(
                     FaceDrive::Stream(stream)
                 }
             };
-            let (account, face) = step(
-                &mut slab,
-                &mut work,
-                &nodes,
-                &lookup,
-                terms,
-                numerics.newton_pass_limit,
-                next_s,
-                step_s,
-                &drive,
-                lowest_k,
-                highest_k,
-            )
-            ?;
+            let mut take = |slab: &mut Slab, safeguarded: bool| {
+                step(
+                    slab,
+                    &mut work,
+                    &nodes,
+                    &lookup,
+                    terms,
+                    numerics.newton_pass_limit,
+                    next_s,
+                    step_s,
+                    &drive,
+                    lowest_k,
+                    highest_k,
+                    safeguarded,
+                )
+            };
+            // A step is taken by plain Newton passes. One whose passes could
+            // not be solved or did not settle (a face struck cold by a strong
+            // stream: FIX_014, "Found here, not changed", 2) is taken again
+            // from the same state, safeguarded: its temperatures kept inside
+            // the band of the run's states and an unsolvable iterate taken
+            // back halfway. A step that settled plainly is never retaken, so
+            // its numbers are as they were.
+            let before = slab.clone();
+            let (account, face) = match take(&mut slab, false) {
+                Err(SlabReject::NonFiniteValue { .. } | SlabReject::StepNotConverged { .. }) => {
+                    slab = before;
+                    take(&mut slab, true)
+                }
+                taken => taken,
+            }?;
             total.heat_in_j += account.heat_in_j;
             total.heat_stored_j += account.heat_stored_j;
             total.heat_taken_by_gas_j += account.heat_taken_by_gas_j;
@@ -10370,9 +10545,9 @@ mod served_tests {
                 let (a, b, c) = envelope_misses(q, history, *surroundings_temperature_k, stream_gas).unwrap();
                 format!(
                     "for the arc-jet tests, {}; for the Stardust flight, {}; for the thermocouple blocks, {}",
-                    a.unwrap_or_default(),
-                    b.unwrap_or_default(),
-                    c.unwrap_or_default()
+                    a.map(|miss| miss.words).unwrap_or_default(),
+                    b.map(|miss| miss.words).unwrap_or_default(),
+                    c.map(|miss| miss.words).unwrap_or_default()
                 )
             }
             SurfaceCondition::HeldTemperature { .. } => String::new(),
@@ -12321,5 +12496,63 @@ mod lifted_tests {
                 assert!(reject.to_string().contains("add to more than 1, the whole stream"), "{reject}");
             }
         }
+    }
+}
+
+/// The engine work orders of 18 October 2026: a cold face struck at once by
+/// a strong stream (FIX_014, "Found here, not changed", 2).
+#[cfg(test)]
+mod cold_face_struck_at_once {
+    use super::*;
+
+    /// The arc-jet example of describe_solver with the whole stream from
+    /// t = 0: `coefficient` kg/m²/s at `enthalpy` J/kg in every row.
+    pub(super) fn struck_at_once(coefficient: f64, enthalpy: f64) -> SlabQuestion {
+        let row = |time_s: f64| StreamRow {
+            time_s,
+            pressure_pa: 2300.0,
+            heat_transfer_coefficient_kg_per_m2_s: coefficient,
+            flow_enthalpy_j_per_kg: enthalpy,
+            radiative_heating_w_per_m2: 0.0,
+        };
+        SlabQuestion {
+            thickness_m: 0.06,
+            start_temperature_k: 300.0,
+            surface: SurfaceCondition::GasStream {
+                history: vec![row(0.0), row(0.5), row(55.0)],
+                surroundings_temperature_k: 300.0,
+                face_wears: true,
+                stream_gas: StreamGas { oxygen_mass_fraction: 0.16753359999999998, argon_mass_fraction: 0.276 },
+            },
+            continue_after_s: 0.0,
+            thermocouple_depths_m: vec![],
+        }
+    }
+
+    /// On 0.14.3 each of these was refused NonFiniteValue at the first step,
+    /// 0.00005 s: the plain Newton passes of that step, from a face at 300 K,
+    /// went to 30,409 K and then to -16,346 K, where the tables give no
+    /// finite value. Taken again safeguarded, the step settles: at 5 kg/m²/s
+    /// the face at 3,367.0 K with 5.387 kg/m²/s of char leaving.
+    #[test]
+    fn a_cold_face_struck_at_once_is_computed_or_refused_by_its_limit() {
+        for coefficient in [0.5, 1.0] {
+            let answer = solve_material(MATERIAL_PICA_VERSION_5, &struck_at_once(coefficient, 1e8))
+                .unwrap_or_else(|reject| panic!("{coefficient}: {reject:?}"));
+            assert!(answer.energy_account_residual_j_per_m2.abs() <= answer.energy_account_tolerance_j_per_m2, "{coefficient}");
+            assert!(answer.recession_m.last().is_some_and(|worn| *worn > 0.0), "{coefficient}");
+        }
+        // The strongest: the first step settles, and the run stops where a
+        // temperature leaves its band, as the same stream reached over a
+        // tenth of a second does on 0.14.3 (a cell under the 300 K start).
+        let struck = solve_material(MATERIAL_PICA_VERSION_5, &struck_at_once(5.0, 1e8)).unwrap_err();
+        assert!(matches!(struck, SlabReject::TemperatureOutOfBounds { time_s, .. } if time_s > 0.05), "{struck:?}");
+        let mut ramped = struck_at_once(5.0, 1e8);
+        if let SurfaceCondition::GasStream { history, .. } = &mut ramped.surface {
+            history[0].heat_transfer_coefficient_kg_per_m2_s = 0.0;
+            history[1].time_s = 0.1;
+        }
+        let ramped = solve_material(MATERIAL_PICA_VERSION_5, &ramped).unwrap_err();
+        assert_eq!(ramped.name(), "TemperatureOutOfBounds", "{ramped:?}");
     }
 }

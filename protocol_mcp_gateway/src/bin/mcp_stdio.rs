@@ -13,20 +13,35 @@ const PIPE_BYTES: usize = 32 * 1024 * 1024;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let dataset_dir = match protocol_mcp_gateway::dataset_dir_from_args(std::env::args().skip(1)) {
+    let (arguments, key_args) = match protocol_mcp_gateway::answer_key::take_key_args(std::env::args().skip(1)) {
+        Ok(taken) => taken,
+        Err(sentence) => {
+            eprintln!("The gateway did not start: {sentence}");
+            std::process::exit(2);
+        }
+    };
+    let dataset_dir = match protocol_mcp_gateway::dataset_dir_from_args(arguments) {
         Ok(dir) => dir,
         Err(sentence) => {
             eprintln!("The gateway did not start: {sentence}");
             std::process::exit(2);
         }
     };
+    let answer_key = match protocol_mcp_gateway::answer_key::load(&key_args) {
+        Ok(key) => key,
+        Err(sentence) => {
+            eprintln!("The gateway did not start: {sentence}");
+            std::process::exit(2);
+        }
+    };
+    eprintln!("{}", protocol_mcp_gateway::answer_key::start_line("mcp_stdio", answer_key.as_deref()));
     let (client_write, server_read) = tokio::io::duplex(PIPE_BYTES);
     let (client_read, server_write) = tokio::io::duplex(PIPE_BYTES);
     let stdout = Arc::new(Mutex::new(tokio::io::stdout()));
     let stdout_for_copy = Arc::clone(&stdout);
 
     let server = tokio::spawn(async move {
-        let running = McpGateway::with_dataset_dir(dataset_dir)
+        let running = McpGateway::with_dataset_dir_and_key(dataset_dir, answer_key)
             .serve((server_read, server_write))
             .await?;
         running.waiting().await?;

@@ -18,33 +18,28 @@
 //! they spell it, except for the spellings in [`UNIT_SPELLINGS`]: a unit is
 //! in every chain seal its coupling gives, so a spelling once served stays.
 //!
-//! Served: the SPERT III E-core burst between the two SPERT III cards, both
-//! compared with IDO-17281 (Phillips Petroleum Company, 1969). What is handed
-//! is the test itself, the inlet water temperature at the start and the
-//! reactivity inserted, so the two cards' answers are sealed as answers about
-//! one burst. And cell m80 of the Tesla Model 3 2170 dataset, rested in its
-//! 40 degC block, between the dataset's two cards of it: the charge removed
-//! since the laboratory's full recharge from the physical model to the table
-//! card, and the charge level from the table card to the physical model.
-//! And one pulse of the JSI TRIGA Mark II reactor from the card
+//! Served: one pulse of the JSI TRIGA Mark II reactor from the card
 //! reactor_triga_jsi into the solver fuel_rod_triga_jsi, its instrumented
 //! element 6753: the start temperature, and from every recorded frame of the
 //! card's sealed run its time and the core energy released, each carried bit
 //! for bit (the energy is the frame's 32-bit slot, widened to 64 bits, which
 //! is exact) into the solve's history. The element's share of the core's
 //! energy, 1.387/56, is the solver's own constant and is not applied here.
-//! Both pieces were compared with the institute's pulse records. No
-//! coupling of capsule_stardust into ablator_slab is served: the card
-//! publishes one stagnation-point convective heat flux, while ablator_slab's
-//! Stardust stream takes wall pressure, a heat-transfer coefficient, flow
-//! enthalpy and radiative heating at the core, which the card does not
-//! compute; turning one into the others would be physics added in the
-//! coupling, and the slab's Stardust comparison was made with NASA's
-//! heating, not the card's. (Besides: the card's compared entry reaches
-//! 12,573.44 m/s, a kinetic enthalpy of 79.05 MJ/kg, above the slab's
-//! compared 78.31 MJ/kg in the first part of the entry.)
+//! Both pieces were compared with the institute's pulse records. And the
+//! Stardust capsule's entry from the card capsule_stardust into the solver
+//! ablator_slab on a PICA model: from every recorded frame of the card's
+//! sealed run its time and the stagnation-point environment the card
+//! computes from its own air and speed (the stagnation pressure, the
+//! recovery enthalpy u²/2 and the heat-transfer coefficient of its
+//! Sutton-Graves heat flux), each carried bit for bit into rows 1 to n of
+//! the slab's heating history. Row 0 and the rows after the handed ones are
+//! the request's own, held by the coupling's conditions to carry no
+//! heating. Both pieces were compared with the Stardust flight: the card
+//! with NASA's reconstruction of the entry, the slab with the cores cut
+//! from the recovered shield. The card computes no radiative heating, so
+//! the history carries none.
 
-use genesis_kernel::{cell_2170_m80, cell_2170_model3, reactor_spert3, reactor_spert3_fuel};
+use genesis_solvers::ablator_slab as slab;
 use genesis_solvers::fuel_rod_triga_jsi as rod;
 use serde_json::Value;
 
@@ -58,7 +53,11 @@ pub(crate) struct Mapping {
     /// Where it stands in a downstream run request: `initial.<name>` or
     /// `segments[*].load.<name>`. A step request takes it at
     /// `parameters.<name>`, and a solve request at `parameters.<name>` as
-    /// written here.
+    /// written here, or, for an array from the frames, at
+    /// `parameters.<name>[k..]`: the handed values stand at places k to
+    /// k + n - 1 of that array, n the frames handed, and the places before
+    /// and after them are the request's own, held by the coupling's
+    /// [`RowCondition`]s.
     pub to: &'static str,
     pub unit: &'static str,
     /// `Some(sentence)` when the value is outside the downstream card's
@@ -71,6 +70,10 @@ pub(crate) struct Mapping {
 /// upstream run_trajectory request and the downstream request, each without
 /// its `from`, and whether the downstream piece is one step, whose start
 /// fields stand in its `parameters`.
+// The upstream request and the downstream piece's kind are read by the
+// conditions of a coupling between two cards; the couplings served now go
+// from a card into a solver.
+#[allow(dead_code)]
 pub(crate) struct Joined<'a> {
     pub upstream: &'a Value,
     pub downstream: &'a Value,
@@ -78,59 +81,7 @@ pub(crate) struct Joined<'a> {
 }
 
 impl Joined<'_> {
-    /// A start field of the upstream run as its request states it.
-    fn upstream_start(&self, name: &str) -> Option<f64> {
-        self.upstream.get("initial")?.get(name)?.as_f64()
-    }
 
-    /// A start field of the downstream piece as its request states it.
-    fn downstream_start(&self, name: &str) -> Option<f64> {
-        let section = if self.step { "parameters" } else { "initial" };
-        self.downstream.get(section)?.get(name)?.as_f64()
-    }
-
-    /// The seconds at the end of the upstream run at a current of zero: the
-    /// segments at its end whose load holds `current` at zero, their steps
-    /// times its step.
-    fn upstream_rest_at_end_s(&self, current: &str) -> f64 {
-        let dt_s = self.upstream.get("dt_s").and_then(Value::as_f64).unwrap_or(0.0);
-        let mut steps = 0.0;
-        for segment in self.upstream_rest_segments(current) {
-            steps += segment.get("steps").and_then(Value::as_u64).unwrap_or(0) as f64;
-        }
-        steps * dt_s
-    }
-
-    /// The segments at the end of the upstream run whose load holds
-    /// `current` at zero, the last first.
-    fn upstream_rest_segments<'b>(&'b self, current: &'b str) -> impl Iterator<Item = &'b Value> + 'b {
-        let segments = self.upstream.get("segments").and_then(Value::as_array).map(Vec::as_slice).unwrap_or(&[]);
-        segments
-            .iter()
-            .rev()
-            .take_while(move |segment| segment.get("load").and_then(|load| load.get(current)).and_then(Value::as_f64) == Some(0.0))
-    }
-
-    /// The `temperature` of each load of the upstream run's last `span_s`
-    /// seconds at a current of zero: every segment at its end whose load
-    /// holds `current` at zero, the last first, until those seconds are
-    /// covered, a segment that reaches into them counted whole. A segment
-    /// whose load leaves the temperature out gives none.
-    fn upstream_rest_temperatures(&self, current: &str, temperature: &str, span_s: f64) -> Vec<f64> {
-        let dt_s = self.upstream.get("dt_s").and_then(Value::as_f64).unwrap_or(0.0);
-        let mut covered_s = 0.0;
-        let mut temperatures = Vec::new();
-        for segment in self.upstream_rest_segments(current) {
-            if covered_s >= span_s {
-                break;
-            }
-            if let Some(held) = segment.get("load").and_then(|load| load.get(temperature)).and_then(Value::as_f64) {
-                temperatures.push(held);
-            }
-            covered_s += segment.get("steps").and_then(Value::as_u64).unwrap_or(0) as f64 * dt_s;
-        }
-        temperatures
-    }
 }
 
 /// A condition a coupling holds on the two requests it joins, decided before
@@ -145,6 +96,18 @@ pub(crate) struct Condition {
     pub unmet: fn(&Joined) -> Option<String>,
 }
 
+/// A condition a coupling into a solver holds on the places of a downstream
+/// array that no frame was handed to, decided once the upstream run is
+/// computed again and its values handed, before the solver runs: the
+/// request alone does not say how many frames the upstream records.
+pub(crate) struct RowCondition {
+    /// What the condition holds, as `describe_solver` states it.
+    pub says: &'static str,
+    /// `Some(what the request holds instead)` when it is not met, given the
+    /// downstream `parameters` and the first place after the handed ones.
+    pub unmet: fn(&Value, usize) -> Option<String>,
+}
+
 /// The downstream piece of a coupling into a solver is named `("solver",
 /// <name>)`.
 pub(crate) const SOLVER: &str = "solver";
@@ -156,6 +119,9 @@ pub(crate) struct Coupling {
     pub mappings: &'static [Mapping],
     /// The conditions on the two requests, each decided before any physics.
     pub conditions: &'static [Condition],
+    /// The conditions on the places of a downstream array no frame was
+    /// handed to, decided after the values are handed.
+    pub row_conditions: &'static [RowCondition],
     /// What is handed and why the pairing is served, in one sentence.
     pub meaning: &'static str,
 }
@@ -168,6 +134,20 @@ impl Coupling {
             (condition.unmet)(joined).map(|instead| {
                 format!(
                     "the coupling '{}' joins two runs only where {}; {instead}, and outside its conditions the values it hands do not carry one meaning in both cards, so neither run is computed",
+                    self.name, condition.says
+                )
+            })
+        })
+    }
+
+    /// The first row condition the downstream request does not meet, given
+    /// the first place after the handed ones, as the sentence of the refusal
+    /// `CouplingConditionNotMet`.
+    pub(crate) fn rows_unmet(&self, parameters: &Value, after: usize) -> Option<String> {
+        self.row_conditions.iter().find_map(|condition| {
+            (condition.unmet)(parameters, after).map(|instead| {
+                format!(
+                    "the coupling '{}' hands on only where {}; {instead}, and outside its conditions the values it hands do not carry one meaning in both pieces, so the solver is not run",
                     self.name, condition.says
                 )
             })
@@ -205,168 +185,6 @@ fn outside_span(value: f64, min: f64, max: f64, unit: &str, what: &str) -> Optio
     }
 }
 
-fn spert3_coolant(value: f64, _: &[(&'static str, f64)]) -> Option<String> {
-    outside_span(
-        value,
-        reactor_spert3::WATER_FREEZING_K,
-        reactor_spert3::WATER_CRITICAL_K,
-        "K",
-        "reactor_spert3's declared coolant temperature, liquid water",
-    )
-}
-
-/// A reactivity the card takes for the step in reactivity: above zero.
-fn above_zero(value: f64, what: &str) -> Option<String> {
-    if value > 0.0 {
-        None
-    } else {
-        Some(format!("{value} dollars is not above zero, {what}"))
-    }
-}
-
-fn spert3_reactivity(value: f64, _: &[(&'static str, f64)]) -> Option<String> {
-    above_zero(value, "reactor_spert3's declared reactivity of the step in reactivity")
-}
-
-fn fuel_band(inlet_k: f64) -> Option<usize> {
-    (0..3).find(|&band| {
-        inlet_k >= reactor_spert3_fuel::BAND_INLET_MIN_K[band] && inlet_k <= reactor_spert3_fuel::BAND_INLET_MAX_K[band]
-    })
-}
-
-fn fuel_inlet(value: f64, _: &[(&'static str, f64)]) -> Option<String> {
-    match fuel_band(value) {
-        Some(_) => None,
-        None => Some(format!(
-            "{value} K is in none of reactor_spert3_fuel's three inlet bands, {:?} to {:?} K",
-            reactor_spert3_fuel::BAND_INLET_MIN_K,
-            reactor_spert3_fuel::BAND_INLET_MAX_K
-        )),
-    }
-}
-
-fn fuel_reactivity(value: f64, _: &[(&'static str, f64)]) -> Option<String> {
-    above_zero(value, "reactor_spert3_fuel's declared reactivity")
-}
-
-/// Cell m80 in each card: the 40 degC block of cell_2170_m80, the first of
-/// its six; the 40 degC block of cell_2170_model3, the last of its five; and
-/// cell m80, the first row of cell_2170_model3's cells.
-const M80_BLOCK_40: usize = 0;
-#[cfg(test)]
-const MODEL3_BLOCK_40: usize = 4;
-const MODEL3_CELL_M80: usize = 0;
-
-/// An hour at zero current: the rest the dataset's pulse test gives before
-/// each charge level, and the rests after which cell_2170_m80's rest-voltage
-/// tables were read. Each card starts a cell at rest, so the upstream run
-/// ends with such an hour, at the case temperatures of
-/// [`m80_block_40_case_c`].
-pub(crate) const CELL_RESTED_S: f64 = 3_600.0;
-
-/// The case temperatures the upstream's hour of rest is held to: those of
-/// the compared tests of cell_2170_m80's 40 degC block, 39.063 to 45.535
-/// degC. An hour is a rest only where the cell's memories fade inside it,
-/// and how fast they fade hangs on the case temperature. By
-/// cell_2170_model3's own constants the slowest diffusion mode takes 34 s at
-/// 39.063 degC and the electrolyte drop 108 s, so an hour there leaves under
-/// 1e-14 of either; at -12.9 degC, the coldest case that card was compared
-/// at, they take 20.6 and 12.8 minutes, and an hour leaves 5.4 and 0.94
-/// percent of them (an hour after 1C, 8.8 mV at the terminal and 0.85
-/// percent of capacity between the surface and the bulk). cell_2170_m80's
-/// relaxing branch reads its time constant at the case temperature too, and
-/// its tables of the 40 degC block were read from tests in this band. The
-/// test `the_40_degc_block_s_rest_leaves_no_memory_and_a_cold_hour_does`
-/// holds the numbers to the kernel.
-fn m80_block_40_case_c() -> (f64, f64) {
-    (cell_2170_m80::BLOCK_CASE_MIN_C[M80_BLOCK_40], cell_2170_m80::BLOCK_CASE_MAX_C[M80_BLOCK_40])
-}
-
-fn m80_cell_number() -> f64 {
-    cell_2170_model3::CELLS[MODEL3_CELL_M80].cell_number
-}
-
-fn m80_block_40_c() -> f64 {
-    cell_2170_m80::BLOCK_CHAMBER_C[M80_BLOCK_40]
-}
-
-/// The capacity of cell m80 in its 40 degC block, the same 64-bit number in
-/// both cards: cell_2170_m80's capacity of the block and cell_2170_model3's
-/// reference capacity of the cell, each the ampere-hours of the block's
-/// capacity test, which began at the laboratory's full recharge.
-fn m80_capacity_40_ah() -> f64 {
-    cell_2170_m80::CAPACITY_AH[M80_BLOCK_40]
-}
-
-fn stated(value: f64, name: &str, side: &str) -> String {
-    format!("the {side} request states {name} {value}")
-}
-
-fn upstream_cell_is_m80(joined: &Joined) -> Option<String> {
-    let cell = joined.upstream_start("cell_number")?;
-    (cell != m80_cell_number()).then(|| stated(cell, "cell_number", "upstream"))
-}
-
-fn downstream_cell_is_m80(joined: &Joined) -> Option<String> {
-    let cell = joined.downstream_start("cell_number")?;
-    (cell != m80_cell_number()).then(|| stated(cell, "cell_number", "downstream"))
-}
-
-fn upstream_capacity_of_block_40(joined: &Joined) -> Option<String> {
-    let capacity = joined.upstream_start("capacity_ah")?;
-    (capacity.to_bits() != m80_capacity_40_ah().to_bits()).then(|| stated(capacity, "capacity_ah", "upstream"))
-}
-
-fn downstream_capacity_of_block_40(joined: &Joined) -> Option<String> {
-    let capacity = joined.downstream_start("capacity_ah")?;
-    (capacity.to_bits() != m80_capacity_40_ah().to_bits()).then(|| stated(capacity, "capacity_ah", "downstream"))
-}
-
-fn upstream_in_block_40(joined: &Joined) -> Option<String> {
-    let block = joined.upstream_start("block_chamber_c")?;
-    (block != m80_block_40_c()).then(|| stated(block, "block_chamber_c", "upstream"))
-}
-
-fn downstream_in_block_40(joined: &Joined) -> Option<String> {
-    let block = joined.downstream_start("block_chamber_c")?;
-    (block != m80_block_40_c()).then(|| stated(block, "block_chamber_c", "downstream"))
-}
-
-fn upstream_ends_rested(joined: &Joined) -> Option<String> {
-    let rested_s = joined.upstream_rest_at_end_s("current_a");
-    (rested_s < CELL_RESTED_S).then(|| format!("the upstream run ends with {rested_s} s at a current_a of zero"))
-}
-
-fn upstream_rests_in_block_40(joined: &Joined) -> Option<String> {
-    let (least, most) = m80_block_40_case_c();
-    joined
-        .upstream_rest_temperatures("current_a", "case_temperature_c", CELL_RESTED_S)
-        .into_iter()
-        .find(|held| !(*held >= least && *held <= most))
-        .map(|held| format!("the upstream request holds a case_temperature_c of {held} in its last {CELL_RESTED_S} s at a current_a of zero"))
-}
-
-fn m80_block_40_charge(value: f64, _: &[(&'static str, f64)]) -> Option<String> {
-    outside_span(
-        value,
-        cell_2170_m80::CHARGE_TOP_AH[M80_BLOCK_40],
-        cell_2170_m80::CHARGE_DEEP_AH[M80_BLOCK_40],
-        "Ah",
-        "the tables of cell_2170_m80's 40 degC block",
-    )
-}
-
-fn model3_start_charge(value: f64, _: &[(&'static str, f64)]) -> Option<String> {
-    let (first, last) = (cell_2170_model3::CURVE_FIRST_STATE_OF_CHARGE, cell_2170_model3::CURVE_LAST_STATE_OF_CHARGE);
-    if value >= first && value <= last {
-        None
-    } else {
-        Some(format!(
-            "a state of charge of {value} is outside the ends of cell_2170_model3's rest-voltage curves, {first} to {last}"
-        ))
-    }
-}
-
 fn rod_start(value: f64, _: &[(&'static str, f64)]) -> Option<String> {
     if value > rod::POOL_FREEZING_K && value < rod::SATURATION_TEMPERATURE_K {
         None
@@ -391,116 +209,94 @@ fn rod_energy(value: f64, _: &[(&'static str, f64)]) -> Option<String> {
     (value < 0.0).then(|| format!("{value} MW*s is below zero; energy released does not fall"))
 }
 
-const UPSTREAM_CELL_M80: Condition = Condition {
-    says: "the upstream cell is m80, cell_number 80",
-    unmet: upstream_cell_is_m80,
-};
-const DOWNSTREAM_CELL_M80: Condition = Condition {
-    says: "the downstream cell is m80, cell_number 80",
-    unmet: downstream_cell_is_m80,
-};
-const UPSTREAM_ENDS_RESTED: Condition = Condition {
-    says: "the upstream run ends with at least 3600 s at a current_a of zero, a cell at rest",
-    unmet: upstream_ends_rested,
-};
-const UPSTREAM_RESTS_IN_BLOCK_40: Condition = Condition {
-    says: "the upstream run's last 3600 s at a current_a of zero hold a case_temperature_c from 39.063 to 45.535 degC, the case temperatures of the 40 degC block's compared tests: there an hour leaves under 1e-14 of the cell's slowest diffusion mode and of its electrolyte drop, and colder they outlast an hour",
-    unmet: upstream_rests_in_block_40,
-};
+/// The PICA model's surface table, which every PICA version reads: the wall
+/// pressures it takes.
+fn slab_pressure(value: f64, _: &[(&'static str, f64)]) -> Option<String> {
+    outside_span(
+        value,
+        slab::PICA_STREAM_PRESSURE_MIN_PA,
+        slab::STREAM_PRESSURE_MAX_PA,
+        "Pa",
+        "the ends of ablator_slab's PICA surface table",
+    )
+}
+
+fn slab_time(value: f64, _: &[(&'static str, f64)]) -> Option<String> {
+    if value > 0.0 && value <= slab::HISTORY_DURATION_MAX_S {
+        None
+    } else {
+        Some(format!("{value} s is not after 0 s and within the {} s of ablator_slab's heating history", slab::HISTORY_DURATION_MAX_S))
+    }
+}
+
+fn slab_coefficient(value: f64, _: &[(&'static str, f64)]) -> Option<String> {
+    (!(value >= 0.0)).then(|| format!("{value} kg/m²/s is below zero; ablator_slab takes a heat-transfer coefficient of zero or more"))
+}
+
+fn slab_enthalpy(value: f64, _: &[(&'static str, f64)]) -> Option<String> {
+    (!(value >= 0.0)).then(|| format!("{value} J/kg is below zero; ablator_slab takes a flow enthalpy of zero or more"))
+}
+
+/// A word of the downstream solve's parameters.
+fn parameter_word<'a>(parameters: &'a Value, name: &str) -> Option<&'a str> {
+    parameters.get(name)?.as_str()
+}
+
+/// The numbers of a downstream solve's array, as far as they are numbers.
+fn parameter_column(parameters: &Value, name: &str) -> Option<Vec<f64>> {
+    parameters.get(name)?.as_array()?.iter().map(Value::as_f64).collect()
+}
+
+fn solve_parameters<'a>(joined: &'a Joined) -> Option<&'a Value> {
+    joined.downstream.get("parameters")
+}
+
+fn slab_is_pica(joined: &Joined) -> Option<String> {
+    let material = parameter_word(solve_parameters(joined)?, "material")?;
+    (!material.starts_with(slab::MATERIAL_PICA)).then(|| format!("the solve states material '{material}'"))
+}
+
+fn slab_face_in_air(joined: &Joined) -> Option<String> {
+    let parameters = solve_parameters(joined)?;
+    let face = parameter_word(parameters, "face")?;
+    if face != "gas_stream" {
+        return Some(format!("the solve states face '{face}'"));
+    }
+    let gas = parameter_word(parameters, "stream_gas")?;
+    (gas != "air").then(|| format!("the solve states stream_gas '{gas}'"))
+}
+
+fn slab_starts_unheated(joined: &Joined) -> Option<String> {
+    let parameters = solve_parameters(joined)?;
+    let time = parameter_column(parameters, "history_time_s")?;
+    let coefficient = parameter_column(parameters, "history_heat_transfer_coefficient_kg_per_m2_s")?;
+    match (time.first(), coefficient.first()) {
+        (Some(&t), Some(&c)) if t == 0.0 && c == 0.0 => None,
+        (Some(&t), Some(&c)) => Some(format!("the history's first row is at {t} s with a coefficient of {c} kg/m²/s")),
+        _ => None,
+    }
+}
+
+fn slab_no_radiation(joined: &Joined) -> Option<String> {
+    let radiative = parameter_column(solve_parameters(joined)?, "history_radiative_heating_w_per_m2")?;
+    radiative
+        .iter()
+        .enumerate()
+        .find(|(_, value)| **value != 0.0)
+        .map(|(row, value)| format!("row {row} of the history holds a radiative heating of {value} W/m²"))
+}
+
+fn slab_unheated_after(parameters: &Value, after: usize) -> Option<String> {
+    let coefficient = parameter_column(parameters, "history_heat_transfer_coefficient_kg_per_m2_s")?;
+    coefficient
+        .iter()
+        .enumerate()
+        .skip(after)
+        .find(|(_, value)| **value != 0.0)
+        .map(|(row, value)| format!("row {row}, after the {} rows handed, holds a coefficient of {value} kg/m²/s", after - 1))
+}
 
 pub(crate) static COUPLINGS: &[Coupling] = &[
-    Coupling {
-        name: "spert3_burst_to_fuel_card",
-        upstream: ("energy", "reactor_spert3"),
-        downstream: ("energy", "reactor_spert3_fuel"),
-        mappings: &[
-            Mapping {
-                from: "final_state.coolant_temperature_k",
-                to: "initial.inlet_temperature_k",
-                unit: "K",
-                outside: fuel_inlet,
-            },
-            Mapping {
-                from: "inputs.segments[*].load.reactivity_inserted_dollar",
-                to: "segments[*].load.reactivity_inserted_dollar",
-                unit: "dollars",
-                outside: fuel_reactivity,
-            },
-        ],
-        conditions: &[],
-        meaning: "One SPERT III E-core burst (IDO-17281) handed from the point-kinetics card to the card with fuel and water temperature: the water temperature the burst started at and the reactivity inserted, each carried bit for bit. Both cards were compared with the same report's tests; the coupling carries the test, not a computed field. The reactivity is taken from the upstream request, which holds one value of it in every segment: an upstream burst whose segments insert more than one reactivity is refused as CouplingSourceNotOneValue, decided after the upstream run is computed again and its seal held, before the downstream card runs.",
-    },
-    Coupling {
-        name: "spert3_fuel_burst_to_point_card",
-        upstream: ("energy", "reactor_spert3_fuel"),
-        downstream: ("energy", "reactor_spert3"),
-        mappings: &[
-            Mapping {
-                from: "final_state.inlet_temperature_k",
-                to: "initial.coolant_temperature_k",
-                unit: "K",
-                outside: spert3_coolant,
-            },
-            Mapping {
-                from: "inputs.segments[*].load.reactivity_inserted_dollar",
-                to: "segments[*].load.reactivity_inserted_dollar",
-                unit: "dollars",
-                outside: spert3_reactivity,
-            },
-        ],
-        conditions: &[],
-        meaning: "One SPERT III E-core burst (IDO-17281) handed from the card with fuel and water temperature to the point-kinetics card: the inlet water temperature and the reactivity inserted, each carried bit for bit. It carries the test, not a computed field: the inlet temperature is the start value, held unchanged through the run. The point-kinetics card is compared with the cold-startup tests, at a primary coolant of 56 to 92 degF, and the hot-startup tests with the card with fuel and water temperature; the point-kinetics card's feedback does not depend on the coolant temperature, so a hot-startup burst handed to it is the same burst it gives cold, computed with the same equations. The reactivity is taken from the upstream request, which holds one value of it in every segment: an upstream burst whose segments insert more than one reactivity is refused as CouplingSourceNotOneValue, decided after the upstream run is computed again and its seal held, before the downstream card runs.",
-    },
-    Coupling {
-        name: "cell_2170_model3_to_m80",
-        upstream: ("energy", "cell_2170_model3"),
-        downstream: ("energy", "cell_2170_m80"),
-        mappings: &[Mapping {
-            from: "final_state.charge_removed_ah",
-            to: "initial.charge_removed_ah",
-            unit: "Ah",
-            outside: m80_block_40_charge,
-        }],
-        conditions: &[
-            UPSTREAM_CELL_M80,
-            Condition {
-                says: "the upstream capacity_ah is 4.67683635335689 Ah, the capacity of the 40 degC block, the same 64-bit number",
-                unmet: upstream_capacity_of_block_40,
-            },
-            Condition {
-                says: "the downstream run is in the 40 degC block, block_chamber_c 40",
-                unmet: downstream_in_block_40,
-            },
-            UPSTREAM_ENDS_RESTED,
-            UPSTREAM_RESTS_IN_BLOCK_40,
-        ],
-        meaning: "Cell m80 of the Tesla Model 3 2170 dataset, rested in its 40 degC block, handed from the physical model to the table card: the charge removed since the laboratory's full recharge, 4.2 V held at 25 degC until the current falls to about 0.02 A, in Ah, carried bit for bit. Both cards were compared with this cell's tests and both count the charge removed from that full. In the 40 degC block the capacity test that fixes the table card's capacity and the shape of its rest-voltage table began at that full, and its capacity, 4.67683635335689 Ah, is the physical model's reference capacity of cell m80, the same 64-bit number; in each of the other five blocks that test began from a top-up 22 to 52 mAh above full, so the table card counts its charge there from another start, and the coupling joins the 40 degC block alone. The physical model is given that capacity, so the two cards hold the cell with one capacity, one full and one charge level; the table card holds one capacity for the block and does not follow the cell's ageing inside it. The table card starts a cell at rest, nothing held by its relaxing branch, so the upstream run ends with an hour at zero current, held at the case temperatures of the 40 degC block's compared tests, 39.063 to 45.535 degC, where by the physical model's own constants the slowest diffusion mode takes 34 s or less and the electrolyte drop 108 s or less; at -12.9 degC they take 21 and 13 minutes, and an hour leaves 5.4 percent of the slowest mode. The current is not handed, since the table card takes a charging current as positive and the physical model a discharging one; nor is the case temperature, which each card is given as measured at every step.",
-    },
-    Coupling {
-        name: "cell_2170_m80_to_model3",
-        upstream: ("energy", "cell_2170_m80"),
-        downstream: ("energy", "cell_2170_model3"),
-        mappings: &[Mapping {
-            from: "final_state.charge_level",
-            to: "initial.state_of_charge",
-            unit: "1",
-            outside: model3_start_charge,
-        }],
-        conditions: &[
-            Condition {
-                says: "the upstream run is in the 40 degC block, block_chamber_c 40",
-                unmet: upstream_in_block_40,
-            },
-            UPSTREAM_ENDS_RESTED,
-            UPSTREAM_RESTS_IN_BLOCK_40,
-            DOWNSTREAM_CELL_M80,
-            Condition {
-                says: "the downstream capacity_ah is 4.67683635335689 Ah, the capacity of the 40 degC block, the same 64-bit number",
-                unmet: downstream_capacity_of_block_40,
-            },
-        ],
-        meaning: "Cell m80 of the Tesla Model 3 2170 dataset, rested in its 40 degC block, handed from the table card to the physical model: the table card's charge level, carried bit for bit as the physical model's state of charge. In the 40 degC block the charge level is 1 less the charge removed since the laboratory's full recharge over 4.67683635335689 Ah, the capacity of the block's capacity test, which began at that full; the state of charge is 1 at the same full and falls by the charge removed over the capacity the physical model is given. The two are one quantity where the physical model is given cell m80 and that capacity, its reference capacity of the cell, and nowhere else; in each of the other five blocks the table card's capacity was read from a test that began 22 to 52 mAh above full, and the coupling does not join them. The physical model starts a cell at rest, every memory at zero, so the upstream run ends with an hour at zero current, held at the case temperatures of the 40 degC block's compared tests, 39.063 to 45.535 degC, where by the physical model's own constants the slowest diffusion mode takes 34 s or less and the electrolyte drop 108 s or less; at -12.9 degC they take 21 and 13 minutes, and an hour leaves 5.4 percent of the slowest mode. The current is not handed, since the two cards take its sign opposite ways; nor is the case temperature, which each card is given as measured at every step.",
-    },
     Coupling {
         name: TRIGA_PULSE_TO_ELEMENT_6753,
         upstream: ("energy", "reactor_triga_jsi"),
@@ -511,14 +307,59 @@ pub(crate) static COUPLINGS: &[Coupling] = &[
             Mapping { from: "frames[*].pos[1]", to: "parameters.core_energy_released_mws", unit: "MW*s", outside: rod_energy },
         ],
         conditions: &[],
+        row_conditions: &[],
         meaning: TRIGA_MEANING,
     },
+    Coupling {
+        name: STARDUST_ENTRY_TO_PICA_SLAB,
+        upstream: ("aerospace", "capsule_stardust"),
+        downstream: (SOLVER, "ablator_slab"),
+        mappings: &[
+            Mapping { from: "frames[*].t", to: "parameters.history_time_s[1..]", unit: "s", outside: slab_time },
+            Mapping { from: "frames[*].pos[1]", to: "parameters.history_pressure_pa[1..]", unit: "Pa", outside: slab_pressure },
+            Mapping {
+                from: "frames[*].vel[1]",
+                to: "parameters.history_heat_transfer_coefficient_kg_per_m2_s[1..]",
+                unit: "kg/m²/s",
+                outside: slab_coefficient,
+            },
+            Mapping { from: "frames[*].vel[0]", to: "parameters.history_flow_enthalpy_j_per_kg[1..]", unit: "J/kg", outside: slab_enthalpy },
+        ],
+        conditions: &[
+            Condition {
+                says: "the slab is a PICA model, a material that begins 'PICA, open record'",
+                unmet: slab_is_pica,
+            },
+            Condition {
+                says: "the face sits in a gas stream of air, face 'gas_stream' and stream_gas 'air', the air the capsule flew in",
+                unmet: slab_face_in_air,
+            },
+            Condition {
+                says: "the history's first row, before the first frame handed, is at 0 s with a heat-transfer coefficient of 0",
+                unmet: slab_starts_unheated,
+            },
+            Condition {
+                says: "every row of the history holds a radiative heating of 0, since the card computes none",
+                unmet: slab_no_radiation,
+            },
+        ],
+        row_conditions: &[RowCondition {
+            says: "every row of the history after the rows handed holds a heat-transfer coefficient of 0: the card's entry ends there, and the shield cools with the stream off",
+            unmet: slab_unheated_after,
+        }],
+        meaning: STARDUST_MEANING,
+    },
 ];
+
+/// The name of the coupling of the Stardust entry into the PICA slab.
+pub(crate) const STARDUST_ENTRY_TO_PICA_SLAB: &str = "stardust_entry_to_pica_slab";
+
+const STARDUST_MEANING: &str = "The Stardust entry of 15 January 2006 handed from capsule_stardust to ablator_slab on a PICA model under one chain proof: each recorded frame's time, stagnation pressure, heat-transfer coefficient and recovery enthalpy (32-bit slots widened exactly), bit for bit into rows 1 to n of the history. The card computes them at the nose from its own air and speed: Rayleigh's pitot pressure for gamma 1.4, u²/2, and the coefficient of its Sutton-Graves heat flux, which times u²/2 is that heat flux. Row 0 and the rows after the handed ones are the request's own and carry no heating; the card computes no radiation. Use record_every 30 or more at dt_s 0.05: at 1 s the pressure is 0.99 Pa, below the PICA table's 1.01325. It stands for the near-nose core, not the flank. Against the recovered shield: wear 4.65 mm against 5.7 (6.1 by X-ray); core density within 10.5 kg/m³ RMS over 28 slices; face temperature within 156 K RMS of the airborne spectra over 22 times, against 376 K with NASA's bare-wall heating. No temperature inside the shield was measured in flight. Worked: from entry interface, dt_s 0.05, 2779 steps, record_every 30, 93 frames in a 96-row history, PICA version 5, 0.0582 m from 260 K, thermocouples at 5, 10, 20 and 58.2 mm asked, radiating to 266.48 K, stream off at 139.95 s, cooling to 600 s: wear 4.648 mm, chain_seal 21a8ace2dc1223ed33f32f97173269980e469ca11d23bed4ccbcf41544fee9e55a3228621dd12a52452ffec09ddf80b1.";
 
 /// The name of the coupling of the TRIGA card into the element solver.
 pub(crate) const TRIGA_PULSE_TO_ELEMENT_6753: &str = "triga_pulse_to_element_6753";
 
-const TRIGA_MEANING: &str = "One pulse of the JSI TRIGA Mark II reactor handed from the card reactor_triga_jsi to the solver of its instrumented fuel element 6753, under one chain proof: the start temperature, and from every recorded frame of the card's sealed run its time since the fire signal (s) and the core energy released (energy_mws, MW*s, the frame's 32-bit slot widened exactly to 64 bits), each carried bit for bit into the solve's start_temperature_k, time_s and core_energy_released_mws. The card's energy released and the solver's input are one quantity, the core's thermal energy since the fire signal, the integral of the card's power; energy is handed and not the frames' power, because a frame samples the power at one step and the pulse is narrower than the frames, while the energy at a frame is the card's integral of all of it. The solver takes 1.387/56 of it for the element, its own constant; the coupling converts nothing. Record the card's run with frames 10 ms apart (dt_s 5e-5 and record_every 200), the history the element was compared on. On 16 pulses of cores 217 and 231 left out of the element's fit, chained this way: the thermocouple's maximum rise 9.8 to 4.3 percent low, its time after the power peak 19.9 to 4.2 percent early, its rise 10 s after the peak 11.2 to 5.0 percent low (7 of 8 within 10 percent); the card's peak power was 149 to 525 MW against the records' 158 to 558. Worked: reactor_triga_jsi from 296.15 K on core 231's rod table at 2.5 dollars, rods dropped after 60,000 steps of 5e-5 s, 279,000 steps, record_every 200, handed as 1,395 points: peak fuel temperature 598.8 K, chain_seal 33ade1157d386682fbc625459e0a14a2b05e724023759989a7fea23df778db53.";
+const TRIGA_MEANING: &str = "One pulse of the JSI TRIGA Mark II reactor handed from the card reactor_triga_jsi to the solver of its instrumented fuel element 6753, under one chain proof: the start temperature, and from every recorded frame of the card's sealed run its time since the fire signal (s) and the core energy released (energy_mws, MW*s, the frame's 32-bit slot widened exactly to 64 bits), each carried bit for bit into the solve's start_temperature_k, time_s and core_energy_released_mws. The card's energy released and the solver's input are one quantity, the core's thermal energy since the fire signal, the integral of the card's power; energy is handed and not the frames' power, because a frame samples the power at one step and the pulse is narrower than the frames, while the energy at a frame is the card's integral of all of it. The solver takes 1.387/56 of it for the element, its own constant; the coupling converts nothing. Record the card's run with frames 10 ms apart (dt_s 5e-5 and record_every 200), the history the element was compared on. On 16 pulses of cores 217 and 231 left out of the element's fit, chained this way: the thermocouple's maximum rise 9.8 to 4.3 percent low, its time after the power peak 19.9 to 4.2 percent early, its rise 10 s after the peak 11.2 to 5.0 percent low (7 of 8 within 10 percent); the card's peak power was 149 to 525 MW against the records' 158 to 558. Worked: reactor_triga_jsi from 296.15 K on core 231's rod table at 2.5 dollars, rods dropped after 60,000 steps of 5e-5 s, 279,000 steps, record_every 200, handed as 1,395 points: peak fuel temperature 598.8 K, chain_seal 3ee0bd22021ae709fec8afa93ea1a709a1e41387c5d1ee1e4d1a7b77edb29effb27d40a9236b1e029df0a01fb21fe527.";
 
 /// Whether the view holds a piece a coupling names: a card, or a solver.
 pub(crate) fn sees(view: &crate::view::View, piece: (&str, &str)) -> bool {
@@ -565,10 +406,16 @@ pub(crate) fn table_in(view: &crate::view::View, domain: &str, card: &str) -> Va
                         .into(),
                 );
                 // A coupling with no condition is listed as it was before conditions were served.
-                if !coupling.conditions.is_empty() {
+                if !coupling.conditions.is_empty() || !coupling.row_conditions.is_empty() {
                     entry.insert(
                         "conditions".into(),
-                        coupling.conditions.iter().map(|condition| Value::from(condition.says)).collect::<Vec<_>>().into(),
+                        coupling
+                            .conditions
+                            .iter()
+                            .map(|condition| Value::from(condition.says))
+                            .chain(coupling.row_conditions.iter().map(|condition| Value::from(condition.says)))
+                            .collect::<Vec<_>>()
+                            .into(),
                     );
                 }
                 entry.insert("meaning".into(), coupling.meaning.into());
@@ -614,6 +461,7 @@ mod tests {
                         assert!(up.phase_names.contains(&name), "{}", mapping.from);
                     }
                     let name = mapping.to.strip_prefix("parameters.").expect("a solve takes parameters");
+                    let name = name.split_once('[').map_or(name, |(name, _)| name);
                     assert!(solver.inputs.iter().any(|input| input.name == name), "{}", mapping.to);
                 }
                 assert_eq!(COUPLINGS.iter().filter(|other| other.name == coupling.name).count(), 1);
@@ -657,11 +505,8 @@ mod tests {
         assert_eq!(
             names,
             [
-                "spert3_burst_to_fuel_card",
-                "spert3_fuel_burst_to_point_card",
-                "cell_2170_model3_to_m80",
-                "cell_2170_m80_to_model3",
-                "triga_pulse_to_element_6753"
+                "triga_pulse_to_element_6753",
+                "stardust_entry_to_pica_slab"
             ]
         );
     }
@@ -682,8 +527,9 @@ mod tests {
     }
 
     /// Each coupling's unit is the unit both cards' descriptions give the
-    /// value, as they spell it, or a spelling in UNIT_SPELLINGS, each of
-    /// which a served coupling carries.
+    /// value, as they spell it, or a spelling in UNIT_SPELLINGS. A spelling
+    /// once served stays there: since 0.15.0 no served coupling carries
+    /// "dollars" (the SPERT III couplings are removed).
     #[test]
     fn every_unit_is_the_unit_both_cards_give_the_value() {
         for coupling in COUPLINGS.iter().filter(|coupling| coupling.downstream.0 != SOLVER) {
@@ -696,10 +542,9 @@ mod tests {
                 assert_eq!(described, field(down, to).unit, "{} {}", coupling.name, mapping.to);
             }
         }
-        // Every other spelling is served, and none is a descriptions' own.
+        // No other spelling is a descriptions' own.
         for (served, described) in UNIT_SPELLINGS {
             assert_ne!(served, described);
-            assert!(COUPLINGS.iter().flat_map(|coupling| coupling.mappings).any(|mapping| mapping.unit == *served), "{served}");
         }
         assert_eq!(unit_as_described("dollars"), "dollar");
         assert_eq!(unit_as_described("Ah"), "Ah");
@@ -709,237 +554,54 @@ mod tests {
         Joined { upstream, downstream, step }
     }
 
-    /// What the cell m80 couplings rest on, held to the kernel: the 40 degC
-    /// block in both cards, cell m80 in the physical model, and one capacity
-    /// of the block, the same 64-bit number in both; the table card's tables
-    /// of that block reach its capacity.
+    /// The Stardust coupling's conditions on the slab's question: a PICA
+    /// model in air, unheated before the first frame, no radiation, and no
+    /// heating after the last frame handed.
     #[test]
-    fn cell_m80_in_its_40_degc_block_is_one_capacity_in_both_cards() {
-        assert_eq!(cell_2170_m80::BLOCK_CHAMBER_C[M80_BLOCK_40], 40.0);
-        assert_eq!(cell_2170_model3::BLOCK_CHAMBER_C[MODEL3_BLOCK_40], 40.0);
-        let m80 = cell_2170_model3::CELLS[MODEL3_CELL_M80];
-        assert_eq!((m80.name, m80.cell_number), ("m80", 80.0));
-        assert_eq!(m80.reference_capacity_ah.to_bits(), cell_2170_m80::CAPACITY_AH[M80_BLOCK_40].to_bits());
-        assert_eq!(cell_2170_m80::CHARGE_DEEP_AH[M80_BLOCK_40].to_bits(), cell_2170_m80::CAPACITY_AH[M80_BLOCK_40].to_bits());
-        // The capacity is one the physical model compared in its 40 degC block.
-        let least = cell_2170_model3::BLOCK_CAPACITY_LEAST_AH[MODEL3_BLOCK_40];
-        let most = cell_2170_model3::BLOCK_CAPACITY_MOST_AH[MODEL3_BLOCK_40];
-        assert!(least <= m80_capacity_40_ah() && m80_capacity_40_ah() <= most);
-        // In every other block the table card's capacity is not the physical
-        // model's reference capacity: those capacity tests began above full.
-        for block in 1..cell_2170_m80::BLOCK_COUNT {
-            assert!(cell_2170_m80::CAPACITY_AH[block] < m80.reference_capacity_ah, "{block}");
-        }
-        // The conditions say the numbers they hold.
-        let says = |name: &str, index: usize| find(name).unwrap().conditions[index].says;
-        assert!(says("cell_2170_model3_to_m80", 1).contains(&format!("{} Ah", m80_capacity_40_ah())));
-        assert!(says("cell_2170_model3_to_m80", 2).contains(&format!("block_chamber_c {}", m80_block_40_c())));
-        assert!(says("cell_2170_model3_to_m80", 3).contains(&format!("at least {CELL_RESTED_S} s")));
-        let (least, most) = m80_block_40_case_c();
-        assert_eq!((least, most), (39.063, 45.535));
-        let band = format!("last {CELL_RESTED_S} s at a current_a of zero hold a case_temperature_c from {least} to {most} degC");
-        assert!(says("cell_2170_model3_to_m80", 4).contains(&band));
-        assert!(says("cell_2170_m80_to_model3", 1).contains(&format!("at least {CELL_RESTED_S} s")));
-        assert!(says("cell_2170_m80_to_model3", 2).contains(&band));
-        assert!(says("cell_2170_m80_to_model3", 4).contains(&format!("{} Ah", m80_capacity_40_ah())));
-        assert!(says("cell_2170_m80_to_model3", 3).contains(&format!("cell_number {}", m80_cell_number())));
-        for name in ["cell_2170_model3_to_m80", "cell_2170_m80_to_model3"] {
-            let meaning = find(name).unwrap().meaning;
-            assert!(meaning.contains(&format!("{} Ah", m80_capacity_40_ah())), "{name}");
-            assert!(meaning.contains(&format!("{least} to {most} degC")), "{name}");
-        }
-    }
-
-    /// The time of a memory of cell_2170_model3 at a case temperature, by
-    /// the card's own law: its time at 25 degC times exp(activation (1/T -
-    /// 1/298.15 K)).
-    fn model3_time_s(time_at_25_c_s: f64, activation_k: f64, case_c: f64) -> f64 {
-        let x = 1.0 / (case_c + cell_2170_model3::KELVIN_OFFSET) - 1.0 / cell_2170_model3::REFERENCE_TEMPERATURE_K;
-        time_at_25_c_s * (activation_k * x).exp()
-    }
-
-    /// Why the hour of rest is held to the 40 degC block's case
-    /// temperatures, from the kernel's constants: there an hour leaves under
-    /// 1e-14 of cell_2170_model3's slowest diffusion mode and of its
-    /// electrolyte drop, whose times fall as the case warms; at -12.9 degC,
-    /// the coldest case that card was compared at, an hour leaves 5.4
-    /// percent of the slowest mode and 0.94 percent of the drop. The numbers
-    /// are the ones the doc of m80_block_40_case_c and the couplings'
-    /// meanings give.
-    #[test]
-    fn the_40_degc_block_s_rest_leaves_no_memory_and_a_cold_hour_does() {
-        let slowest = |case_c: f64| {
-            model3_time_s(
-                cell_2170_model3::DIFFUSION_TIME_S * cell_2170_model3::DIFFUSION_MODE_TIME_FRACTION[0],
-                cell_2170_model3::DIFFUSION_ACTIVATION_K,
-                case_c,
-            )
+    fn the_stardust_conditions_hold_the_slab_s_question() {
+        let coupling = find(STARDUST_ENTRY_TO_PICA_SLAB).unwrap();
+        let up = serde_json::json!({ "domain": "aerospace", "card": "capsule_stardust" });
+        let solve = |change: &dyn Fn(&mut Value)| {
+            let mut parameters = serde_json::json!({
+                "material": "PICA, open record, version 5", "face": "gas_stream", "stream_gas": "air",
+                "history_time_s": [0.0, 1.5, 3.0, 4.0, 600.0],
+                "history_heat_transfer_coefficient_kg_per_m2_s": [0.0, 0.001, 0.002, 0.0, 0.0],
+                "history_radiative_heating_w_per_m2": [0.0, 0.0, 0.0, 0.0, 0.0]
+            });
+            change(&mut parameters);
+            serde_json::json!({ "solver": "ablator_slab", "parameters": parameters })
         };
-        let drop = |case_c: f64| model3_time_s(cell_2170_model3::ELECTROLYTE_TIME_S, cell_2170_model3::ELECTROLYTE_ACTIVATION_K, case_c);
-        // The slowest mode is the first.
-        for fraction in &cell_2170_model3::DIFFUSION_MODE_TIME_FRACTION[1..] {
-            assert!(*fraction < cell_2170_model3::DIFFUSION_MODE_TIME_FRACTION[0]);
+        let named = |down: &Value| coupling.unmet(&joined(&up, down, true));
+        assert_eq!(named(&solve(&|_| {})), None);
+        for material in slab::MATERIAL_NAMES {
+            let down = solve(&|p| p["material"] = serde_json::json!(material));
+            assert_eq!(named(&down).is_none(), material.starts_with("PICA"), "{material}");
         }
-        let left = |time_s: f64| (-CELL_RESTED_S / time_s).exp();
-        let (least, most) = m80_block_40_case_c();
-        assert!(slowest(least) > slowest(most) && drop(least) > drop(most));
-        assert_eq!((slowest(least).round(), drop(least).round()), (34.0, 108.0));
-        assert!(left(slowest(least)) < 1e-14 && left(drop(least)) < 1e-14);
-        // The band is inside the physical model's 40 degC block and its compared case temperatures.
-        assert!(cell_2170_model3::BLOCK_CASE_TEMPERATURE_LEAST_C[MODEL3_BLOCK_40] <= least);
-        assert!(most <= cell_2170_model3::BLOCK_CASE_TEMPERATURE_MOST_C[MODEL3_BLOCK_40]);
-        // At -12.9 degC: 20.6 and 12.8 minutes, and an hour leaves 5.4 and 0.94 percent.
-        let cold = cell_2170_model3::CASE_TEMPERATURE_MIN_C;
-        assert_eq!(cold, -12.9);
-        assert_eq!(((slowest(cold) / 6.0).round() / 10.0, (drop(cold) / 6.0).round() / 10.0), (20.6, 12.8));
-        assert_eq!(((left(slowest(cold)) * 1000.0).round() / 10.0, (left(drop(cold)) * 10_000.0).round() / 100.0), (5.4, 0.94));
-    }
-
-    /// Each condition is met by the requests that meet it and named on any
-    /// that does not; a field a request leaves out decides nothing.
-    #[test]
-    fn each_condition_holds_its_requests_and_names_the_others() {
-        let model3 = |cell: f64, capacity: f64, rest: u64| {
-            serde_json::json!({
-                "domain": "energy", "card": "cell_2170_model3",
-                "initial": { "cell_number": cell, "state_of_charge": 1.0, "capacity_ah": capacity, "case_temperature_least_c": 40.0, "case_temperature_most_c": 40.0 },
-                "dt_s": 1.0,
-                "segments": [
-                    { "steps": 600, "load": { "current_a": 4.5, "case_temperature_c": 40.0 } },
-                    { "steps": rest, "load": { "current_a": 0.0, "case_temperature_c": 40.0 } }
-                ],
-                "record_every": 600
-            })
-        };
-        let m80 = |block: f64, rest: u64| {
-            serde_json::json!({
-                "domain": "energy", "card": "cell_2170_m80",
-                "initial": { "block_chamber_c": block, "charge_removed_ah": 0.5 },
-                "dt_s": 1.0,
-                "segments": [
-                    { "steps": 600, "load": { "current_a": -4.5, "case_temperature_c": 40.0 } },
-                    { "steps": rest, "load": { "current_a": 0.0, "case_temperature_c": 40.0 } }
-                ],
-                "record_every": 600
-            })
-        };
-        let forward = find("cell_2170_model3_to_m80").unwrap();
-        let reverse = find("cell_2170_m80_to_model3").unwrap();
-        let named = |coupling: &Coupling, up: &Value, down: &Value, step: bool| coupling.unmet(&joined(up, down, step));
-        let capacity = m80_capacity_40_ah();
-        // Met.
-        for step in [false, true] {
-            let (up, mut down) = (model3(80.0, capacity, 3600), m80(40.0, 0));
-            if step {
-                down = serde_json::json!({ "domain": "energy", "card": "cell_2170_m80", "parameters": down["initial"] });
-            }
-            assert_eq!(named(forward, &up, &down, step), None);
-            let (up, mut down) = (m80(40.0, 3600), model3(80.0, capacity, 0));
-            if step {
-                down = serde_json::json!({ "domain": "energy", "card": "cell_2170_model3", "parameters": down["initial"] });
-            }
-            assert_eq!(named(reverse, &up, &down, step), None);
-        }
-        // An hour in two segments at the end is an hour.
-        let mut split = model3(80.0, capacity, 1800);
-        split["segments"].as_array_mut().unwrap().push(serde_json::json!({ "steps": 1800, "load": { "current_a": 0.0, "case_temperature_c": 45.535 } }));
-        assert_eq!(named(forward, &split, &m80(40.0, 0), false), None);
-        // The rest's case temperature: the band's two ends are inside it.
-        let rest_at = |mut request: Value, case_c: f64| {
-            let segments = request["segments"].as_array_mut().unwrap();
-            segments.last_mut().unwrap()["load"]["case_temperature_c"] = serde_json::json!(case_c);
-            request
-        };
-        for case_c in [39.063, 40.0, 45.535] {
-            assert_eq!(named(forward, &rest_at(model3(80.0, capacity, 3600), case_c), &m80(40.0, 0), false), None, "{case_c}");
-            assert_eq!(named(reverse, &rest_at(m80(40.0, 3600), case_c), &model3(80.0, capacity, 0), false), None, "{case_c}");
-        }
-        // A cold rest before the last hour is not in it; an hour's rest
-        // whose last half hour is cold is not a rest in the band.
-        let mut warmed = rest_at(model3(80.0, capacity, 1800), -12.9);
-        warmed["segments"].as_array_mut().unwrap().push(serde_json::json!({ "steps": 3600, "load": { "current_a": 0.0, "case_temperature_c": 40.0 } }));
-        assert_eq!(named(forward, &warmed, &m80(40.0, 0), false), None);
-        let mut cooled = model3(80.0, capacity, 3600);
-        cooled["segments"].as_array_mut().unwrap().push(serde_json::json!({ "steps": 1800, "load": { "current_a": 0.0, "case_temperature_c": -12.9 } }));
-        assert!(named(forward, &cooled, &m80(40.0, 0), false).unwrap().contains("holds a case_temperature_c of -12.9 in its last 3600 s"));
-        // A segment that reaches into the last hour is counted whole.
-        let mut reaching = rest_at(model3(80.0, capacity, 1800), 25.0);
-        reaching["segments"].as_array_mut().unwrap().push(serde_json::json!({ "steps": 3599, "load": { "current_a": 0.0, "case_temperature_c": 40.0 } }));
-        assert!(named(forward, &reaching, &m80(40.0, 0), false).unwrap().contains("holds a case_temperature_c of 25 in its last 3600 s"));
-        // Not met, each named with what the request holds.
-        let cases: [(&Coupling, Value, Value, &str); 15] = [
-            (forward, model3(1000.0, capacity, 3600), m80(40.0, 0), "the upstream request states cell_number 1000"),
-            (forward, model3(80.0, 4.6768, 3600), m80(40.0, 0), "the upstream request states capacity_ah 4.6768"),
-            (forward, model3(80.0, capacity.next_down(), 3600), m80(40.0, 0), "the upstream request states capacity_ah 4.676836353356889"),
-            (forward, model3(80.0, capacity, 3600), m80(25.0, 0), "the downstream request states block_chamber_c 25"),
-            (forward, model3(80.0, capacity, 3599), m80(40.0, 0), "the upstream run ends with 3599 s at a current_a of zero"),
-            (reverse, m80(25.0, 3600), model3(80.0, capacity, 0), "the upstream request states block_chamber_c 25"),
-            (reverse, m80(40.0, 0), model3(80.0, capacity, 0), "the upstream run ends with 0 s at a current_a of zero"),
-            (reverse, m80(40.0, 3600), model3(448.0, capacity, 0), "the downstream request states cell_number 448"),
-            (reverse, m80(40.0, 3600), model3(80.0, 4.6768, 0), "the downstream request states capacity_ah 4.6768"),
-            // A cold rest, and one past the block's warmest compared case.
-            (forward, rest_at(model3(80.0, capacity, 3600), -12.9), m80(40.0, 0), "the upstream request holds a case_temperature_c of -12.9 in its last 3600 s at a current_a of zero"),
-            (forward, rest_at(model3(80.0, capacity, 3600), 25.0), m80(40.0, 0), "the upstream request holds a case_temperature_c of 25 in its last 3600 s"),
-            (forward, rest_at(model3(80.0, capacity, 3600), 39.063_f64.next_down()), m80(40.0, 0), "the upstream request holds a case_temperature_c of 39.062999999999995"),
-            (reverse, rest_at(m80(40.0, 3600), -20.0), model3(80.0, capacity, 0), "the upstream request holds a case_temperature_c of -20 in its last 3600 s at a current_a of zero"),
-            (reverse, rest_at(m80(40.0, 3600), 25.0), model3(80.0, capacity, 0), "the upstream request holds a case_temperature_c of 25 in its last 3600 s"),
-            (reverse, rest_at(m80(40.0, 3600), 45.535_f64.next_up()), model3(80.0, capacity, 0), "the upstream request holds a case_temperature_c of 45.535000000000004"),
+        let cases: [(&dyn Fn(&mut Value), &str); 5] = [
+            (&|p| p["material"] = serde_json::json!("TACOT 3.0"), "the solve states material 'TACOT 3.0'"),
+            (&|p| p["face"] = serde_json::json!("held_temperature"), "the solve states face 'held_temperature'"),
+            (&|p| p["stream_gas"] = serde_json::json!("mixture"), "the solve states stream_gas 'mixture'"),
+            (&|p| p["history_time_s"][0] = serde_json::json!(0.5), "the history's first row is at 0.5 s"),
+            (&|p| p["history_radiative_heating_w_per_m2"][2] = serde_json::json!(5.0), "row 2 of the history holds a radiative heating of 5 W/m²"),
         ];
-        for (coupling, up, down, instead) in cases {
-            let sentence = named(coupling, &up, &down, false).unwrap_or_else(|| panic!("{instead}"));
+        for (change, instead) in cases {
+            let sentence = named(&solve(change)).unwrap_or_else(|| panic!("{instead}"));
             assert!(sentence.contains(instead), "{sentence}");
-            assert!(sentence.starts_with(&format!("the coupling '{}' joins two runs only where ", coupling.name)), "{sentence}");
         }
-        // A rest that is not at the end is no rest at the end.
-        let mut early = model3(80.0, capacity, 3600);
-        early["segments"].as_array_mut().unwrap().push(serde_json::json!({ "steps": 1, "load": { "current_a": 0.5, "case_temperature_c": 40.0 } }));
-        assert!(named(forward, &early, &m80(40.0, 0), false).unwrap().contains("ends with 0 s"));
-        // A field left out decides nothing: the request is refused for it when it is read.
-        let mut bare = m80(40.0, 0);
-        bare["initial"].as_object_mut().unwrap().shift_remove("block_chamber_c");
-        assert_eq!(named(forward, &model3(80.0, capacity, 3600), &bare, false), None);
-        // The SPERT III couplings hold no condition. Their one refusal of a
-        // reactivity that is not one value is named where they are
-        // described, with when it is decided: after the upstream run.
-        for name in ["spert3_burst_to_fuel_card", "spert3_fuel_burst_to_point_card"] {
-            assert!(find(name).unwrap().conditions.is_empty(), "{name}");
-            let meaning = find(name).unwrap().meaning;
-            assert!(meaning.contains("refused as CouplingSourceNotOneValue, decided after the upstream run is computed again and its seal held, before the downstream card runs"), "{meaning}");
-        }
+        // After two rows handed (rows 1 and 2), rows 3 and 4 carry no heating.
+        let parameters = solve(&|_| {})["parameters"].clone();
+        assert_eq!(coupling.rows_unmet(&parameters, 3), None);
+        let sentence = coupling.rows_unmet(&parameters, 2).unwrap();
+        assert!(sentence.contains("row 2, after the 1 rows handed, holds a coefficient of 0.002"), "{sentence}");
+        // A field left out decides nothing.
+        let mut bare = solve(&|_| {});
+        bare["parameters"].as_object_mut().unwrap().shift_remove("material");
+        assert_eq!(named(&bare), None);
+        // What is handed is in range from the card's own entry, and the slab's ends are named.
+        assert!(slab_pressure(slab::PICA_STREAM_PRESSURE_MIN_PA, &[]).is_none());
+        assert!(slab_pressure(0.99, &[]).unwrap().contains("1.01325 to 101325 Pa"));
+        assert!(slab_time(0.0, &[]).is_some() && slab_time(1.5, &[]).is_none());
+        assert!(slab_coefficient(-1e-9, &[]).is_some() && slab_enthalpy(-1.0, &[]).is_some());
     }
 
-    #[test]
-    fn a_cell_value_outside_the_downstream_range_is_named() {
-        assert!(m80_block_40_charge(cell_2170_m80::CHARGE_TOP_AH[0], &[]).is_none());
-        assert!(m80_block_40_charge(cell_2170_m80::CHARGE_DEEP_AH[0], &[]).is_none());
-        assert!(m80_block_40_charge(cell_2170_m80::CHARGE_TOP_AH[0].next_down(), &[]).is_some());
-        assert!(m80_block_40_charge(cell_2170_m80::CHARGE_DEEP_AH[0].next_up(), &[]).is_some());
-        assert!(model3_start_charge(cell_2170_model3::CURVE_LAST_STATE_OF_CHARGE, &[]).is_none());
-        assert!(model3_start_charge(cell_2170_model3::CURVE_FIRST_STATE_OF_CHARGE, &[]).is_none());
-        let past = model3_start_charge(cell_2170_model3::CURVE_LAST_STATE_OF_CHARGE.next_up(), &[]).unwrap();
-        assert!(past.contains("rest-voltage curves, -0.05 to 1.05"), "{past}");
-    }
-
-    #[test]
-    fn a_value_outside_the_downstream_range_is_named_and_one_inside_is_not() {
-        let cold = reactor_spert3::COOLANT_TEMPERATURE_MIN_K;
-        assert!(fuel_inlet(cold, &[]).is_none());
-        assert!(fuel_inlet(400.0, &[]).is_some(), "between the fuel card's bands");
-        // The point card takes any liquid water, the fuel card's hot bands included.
-        let hot = reactor_spert3_fuel::BAND_INLET_MIN_K[2];
-        assert!(spert3_coolant(hot, &[]).is_none());
-        assert!(spert3_coolant(cold, &[]).is_none());
-        assert!(spert3_coolant(reactor_spert3::WATER_CRITICAL_K.next_up(), &[]).is_some());
-        assert!(spert3_coolant(reactor_spert3::WATER_FREEZING_K.next_down(), &[]).is_some());
-        let handed = [("initial.inlet_temperature_k", cold)];
-        // Both cards take any reactivity above zero.
-        assert!(fuel_reactivity(reactor_spert3::REACTIVITY_MAX_DOLLAR.next_up(), &handed).is_none());
-        assert!(fuel_reactivity(0.0, &handed).is_some());
-        assert!(spert3_reactivity(reactor_spert3_fuel::BAND_REACTIVITY_MAX_DOLLAR[2], &[]).is_none());
-        assert!(spert3_reactivity(-1.0, &[]).is_some());
-        // Every tested coolant temperature of reactor_spert3 the fuel card admits.
-        for t in [reactor_spert3::COOLANT_TEMPERATURE_MIN_K, reactor_spert3::COOLANT_TEMPERATURE_MAX_K] {
-            assert!(fuel_inlet(t, &[]).is_none(), "{t}");
-        }
-    }
 }

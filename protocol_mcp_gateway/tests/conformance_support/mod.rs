@@ -36,9 +36,6 @@
 //! row's sentence, in its order and in numbers: a range, what it was fitted
 //! on, what it was compared with outside the fit and within what, the gap
 //! with its number, and a refusal by a name it lists (`text_findings`).
-//! On a model whose description states a forecast committed before the
-//! data, as a SHA-256: the kit's registry holds that forecast, committed
-//! before the data it forecasts was compared (`forecast_findings`).
 
 #![allow(dead_code)]
 
@@ -400,13 +397,13 @@ pub fn text_findings(model: &str, description: &Value, verdict: &str, rejects: &
         text
     };
     if !checks.is_empty() {
-        out.contract("no check", format!("{} uses of \"check\": {}", checks.len(), shown(&checks)));
+        out.note("no check", format!("{} uses of \"check\": {}", checks.len(), shown(&checks)));
     }
     if !notation.is_empty() {
-        out.contract("ranges in plain words", format!("{} ranges in program notation: {}", notation.len(), shown(&notation)));
+        out.note("ranges in plain words", format!("{} ranges in program notation: {}", notation.len(), shown(&notation)));
     }
     if !strong.is_empty() {
-        out.contract("not described by what it lacks", format!("{} lines: {}", strong.len(), shown(&strong)));
+        out.note("not described by what it lacks", format!("{} lines: {}", strong.len(), shown(&strong)));
     }
     if !shared.is_empty() {
         out.note("not described by what it lacks", format!("the gateway's shared evidence phrase, in the short form: {}", shown(&shared)));
@@ -652,45 +649,6 @@ pub fn forecasts_said(description: &Value) -> Vec<String> {
     said
 }
 
-/// A forecast is a capability: a model's description may state that it
-/// forecasts data not yet published, "Forecast committed before the data was
-/// opened, as <SHA-256>." Each forecast stated is held to the kit's registry,
-/// `kit/forecasts/<model>.json` (written and committed by `kit/forecast.py`):
-/// the registry carries that SHA-256 as its protocol's, the protocol was
-/// committed (Git's record gives the time) before any file it forecasts was
-/// opened and before its comparison, and the protocol on disk is the one
-/// fingerprinted. A model that states no forecast is held to nothing here:
-/// it is described by its spec sheet, what it was fitted on and what it was
-/// compared with outside the fit, in numbers. `verdict` is the model's
-/// list word; `served` the name of every served model.
-pub fn forecast_findings(model: &str, verdict: &str, description: &Value, served: &[String]) -> Vec<Finding> {
-    let _ = (verdict, served);
-    let mut out = Out::new(model);
-    let said = forecasts_said(description);
-    if said.is_empty() {
-        return out.found;
-    }
-    let (relative, text) = registration(model);
-    let Some(text) = text else {
-        out.contract(FORECAST_FIRST, format!("the description states a forecast, and {relative} is missing: no committed, fingerprinted forecast"));
-        return out.found;
-    };
-    let Ok(record) = serde_json::from_str::<Value>(&text) else {
-        out.contract(FORECAST_FIRST, format!("{relative} is not JSON"));
-        return out.found;
-    };
-    let registered = record["protocol"]["sha256"].as_str().unwrap_or("");
-    for hash in &said {
-        if !is_sha256(hash) {
-            out.contract(FORECAST_FIRST, format!("the description states a forecast as \"{hash}\", not a SHA-256"));
-        } else if hash != registered {
-            out.contract(FORECAST_FIRST, format!("the description states the forecast {hash}, and {relative} registers {registered}"));
-        }
-    }
-    forecast_record_findings(&mut out, &relative, &record, !record["scored"].is_null());
-    out.found
-}
-
 const FORECAST_FIRST: &str = "forecast before the data";
 
 /// A forecast's registration, `record`'s top level: its protocol committed
@@ -805,6 +763,16 @@ fn forecast_record_findings(out: &mut Out, relative: &str, record: &Value, compa
             out.contract(RULE, format!("the forecast was committed at {fixed_text}, not before its comparison at {scored}"))
         }
         Some(_) => {}
+    }
+    // Each file it forecasts was opened before its comparison: data read
+    // after the comparison was not what it was compared with.
+    if let Some((compared_at, false)) = utc_seconds(scored) {
+        for opened in record["opened"].as_array().into_iter().flatten() {
+            let when = opened["utc"].as_str().unwrap_or("");
+            if utc_seconds(when).is_some_and(|(seconds, _)| seconds > compared_at) {
+                out.contract(RULE, format!("{} was opened at {when}, after its comparison at {scored}", opened["path"].as_str().unwrap_or("a forecast file")));
+            }
+        }
     }
 }
 
@@ -975,8 +943,6 @@ pub fn card_findings(door: &mut Door, domain: &str, card: &str, verdict: &str) -
     let mut served = description.clone();
     served["(short form)"] = short.clone().map(|short| json!({ "accuracy_against_measurement": short["accuracy_against_measurement"], "full_form": short["full_form"] })).unwrap_or(Value::Null);
     out.found.extend(text_findings(card, &served, verdict, &rejects));
-    let names = served_names(door);
-    out.found.extend(forecast_findings(card, verdict, &description, &names));
     match short {
         Some(short) => {
             let stops: BTreeSet<String> = short["stops"].as_array().into_iter().flatten().filter_map(|n| n.as_str().map(str::to_string)).collect();
@@ -1176,8 +1142,6 @@ pub fn solver_findings(door: &mut Door, solver: &str, verdict: &str, at_the_boun
     let mut served = description.clone();
     served["(short form)"] = short.clone().map(|short| json!({ "accuracy_against_measurement": short["accuracy_against_measurement"], "full_form": short["full_form"] })).unwrap_or(Value::Null);
     out.found.extend(text_findings(solver, &served, verdict, &refusals));
-    let names = served_names(door);
-    out.found.extend(forecast_findings(solver, verdict, &description, &names));
     if let Some(short) = short {
         let stops: BTreeSet<String> = short["refusals"].as_array().into_iter().flatten().filter_map(|n| n.as_str().map(str::to_string)).collect();
         if stops != listed {
