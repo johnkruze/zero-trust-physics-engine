@@ -296,11 +296,13 @@ async fn the_description_states_what_was_compared_and_its_second_scoring() {
     assert_eq!(epoch["maximum"].as_f64().unwrap(), card_itself.last_start_epoch_utc_s().unwrap());
     let limits = card["validation"]["limits"].as_str().unwrap();
     assert!(limits.contains("compared on 28 calendar days, 2026-08-23 to 2026-09-19"), "{limits}");
-    assert!(limits.contains("Repeated independently on 2026-10-07 by Grok"), "{limits}");
+    assert!(limits.contains("A second program, by Grok, another developer's model, with its own comparison and its own Earth-orientation code, recomputes the same six worst distances to the millimetre"), "{limits}");
     assert!(!limits.contains("not yet repeated by a second party"), "{limits}");
     assert!(!limits.contains("six weeks of one season"), "{limits}");
     assert!(!limits.contains("Known defect"), "{limits}");
     assert!(!card.to_string().contains("HorizonOutsideCard"));
     assert!(card.to_string().contains("AngularMomentumBreach"));
-    assert!(limits.contains("none of those was compared"), "{limits}");
+    assert!(limits.contains("any date from 2017-01-01 to 2027-06-28, the span its locked TT - UTC holds, with the same equations"), "{limits}");
+    let record = card["validation"]["pass_line"].as_str().unwrap();
+    assert!(record.ends_with("Record SHA-256 52114d795811fc014b3114c4bec8726d33ca0771dc295c57253d914243498fed."), "{record}");
 }

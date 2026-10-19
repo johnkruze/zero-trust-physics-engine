@@ -543,7 +543,7 @@ async fn every_field_of_every_card_states_its_range_or_its_reach() {
     let client = Client::new();
     let list: Value = client.get(format!("{base}/cards")).send().await.unwrap().json().await.unwrap();
     let cards = list["cards"].as_array().unwrap();
-    assert_eq!(cards.len(), 37);
+    assert_eq!(cards.len(), 40);
     let mut fields = 0;
     for item in cards {
         let card = describe(&base, item["domain"].as_str().unwrap(), item["card"].as_str().unwrap()).await;
@@ -563,8 +563,10 @@ async fn every_field_of_every_card_states_its_range_or_its_reach() {
     // the three of the grasped object, 177 with the nine of the JWST
     // momentum card, 182 with the five of the MAST VDE card, 191 with the nine
     // of the JWST momentum card on the two slopes of its sunshield, 192 with
-    // the mission time of the generator in the Seebeck matched-load form.
-    assert_eq!(fields, 192);
+    // the mission time of the generator in the Seebeck matched-load form, 194
+    // with the two pump speeds of the molten-salt reactor, 199 with the five fields
+    // of the SPERT III E-core twin, 203 with the four of the C-core twin.
+    assert_eq!(fields, 203);
 }
 
 /// The fields that publish no bound state their reach, and what each states
@@ -666,11 +668,11 @@ async fn each_statement_of_reach_is_in_the_description_and_holds() {
         for words in [
             "The speed through the air is the square root of the sum of the squares of radial_speed_m_s and of transverse_speed_m_s less the air's own turning, 5.4197601852574874e-05 rad/s times radius_m.",
             "the speed through the air must be from 11900 to 12620 m/s, the top the highest speed the table was computed at, and a state outside is refused as AirSpeedOutsideCard",
-            "The locked entry, which met all three lines, passed through 11911.98 to 12573.44 m/s there at every step from 0.05 s to 0.0005 s",
-            "12487 to 12620 m/s in Table 1, 12173 m/s at the 68.96 km row from Table 4, of Mitcheltree, Wilmoth, Cheatwood, Brauckmann and Greene, Aerodynamics of Stardust Sample Return Capsule, AIAA 97-2304, 1997; that paper does not say whether these speeds are inertial or through the air",
+            "The locked entry, compared with the flight, runs through 11911.98 to 12573.44 m/s there at every step from 0.05 s to 0.0005 s",
+            "12487 to 12620 m/s in the first table of AIAA 97-2304 and 12173 m/s at the 68.96 km row of its fourth; that paper does not say whether these speeds are inertial or through the air",
             "the Mach number must be from 0.16 to 40, the ends of that table, and a state outside is refused as MachOutsideCard",
             "Any path is computed on the same equations and ledger.",
-            "a state off it was not compared, and engines 0.7 to 0.9 refused it as OffComparedCorridor",
+            "a state off it is computed on the same equations and ledger",
             "(at 40 km 1147.51 to 1350.11 m/s)",
             "Above 86 km the speed of sound is held at its 86 km value, 274.096 m/s",
             "is refused as PastFlightDeployment",

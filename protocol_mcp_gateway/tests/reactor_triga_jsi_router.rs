@@ -41,8 +41,8 @@ use tokio::process::{Child, ChildStdin, ChildStdout, Command};
 
 const CARD: &str = "reactor_triga_jsi";
 /// The number of cards served, and this card's place among them.
-const CARDS: usize = 37;
-const PLACE: usize = 32;
+const CARDS: usize = 40;
+const PLACE: usize = 34;
 
 async fn spawn_app() -> String {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -789,13 +789,16 @@ async fn the_three_connections_give_the_same_bytes_and_the_hosted_door_hides_the
     assert_eq!(cards.len(), CARDS);
     assert_eq!(cards[PLACE]["domain"], "energy");
     assert_eq!(cards[PLACE]["card"], CARD);
-    // The one line an agent sees in the list carries the standing.
+    // The one line an agent sees in the list is the spec sheet: what was
+    // fitted, the comparison outside the fit in numbers, and the gap.
     let line = cards[PLACE]["specimen"].as_str().unwrap();
     for words in [
-        "Ten constants are fitted to 36 pulses of this reactor",
-        "added after the twelve fixed beforehand had failed",
+        "Fitted on 36 of the 43 recorded pulses",
+        "ten constants",
         "one thermocouple of one element",
-        "the comparison with the 20 rows held back failed",
+        "Compared with the 20 table rows of the same cores not in the fit",
+        "peak power within 1.21 RMS (target 1.5",
+        "Gap: peak power reads 44 and 23 percent low",
     ] {
         assert!(line.contains(words), "the list's line lacks: {words}");
     }

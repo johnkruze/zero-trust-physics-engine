@@ -32,12 +32,13 @@
 //! on a second connection; a converged answer's invariants are inside the
 //! tolerances the description states; and the description's words.
 //!
-//! On every model compared with measurements: forecast first, its protocol
-//! committed with its fingerprint before its scoring (`forecast_findings`).
-//! On every model calibrated to the record: its calibration, the companion
-//! it stands beside and the fingerprint and scoring of the record it was
-//! compared with, and forecast first for a blind registration beside it
-//! (`calibration_findings`).
+//! On every model compared with measurement: its spec sheet, in its list
+//! row's sentence, in its order and in numbers: a range, what it was fitted
+//! on, what it was compared with outside the fit and within what, the gap
+//! with its number, and a refusal by a name it lists (`text_findings`).
+//! On a model whose description states a forecast committed before the
+//! data, as a SHA-256: the kit's registry holds that forecast, committed
+//! before the data it forecasts was compared (`forecast_findings`).
 
 #![allow(dead_code)]
 
@@ -124,6 +125,17 @@ impl Door {
     pub fn call(&mut self, tool: &str, arguments: &Value) -> (bool, String) {
         self.next += 1;
         let body = json!({"jsonrpc":"2.0","id":self.next,"method":"tools/call","params":{"name":tool,"arguments":arguments}}).to_string();
+        let answer = self.line(&body);
+        let value: Value = serde_json::from_str(&answer).unwrap_or(Value::Null);
+        (value["result"]["isError"] == json!(true), value["result"]["content"][0]["text"].as_str().unwrap_or("").to_string())
+    }
+
+    /// `(is_error, text)` of one tool call whose arguments are sent as the
+    /// text given, byte for byte: an answer sent back as it came.
+    #[allow(dead_code)]
+    pub fn call_text(&mut self, tool: &str, arguments: &str) -> (bool, String) {
+        self.next += 1;
+        let body = format!(r#"{{"jsonrpc":"2.0","id":{},"method":"tools/call","params":{{"name":{},"arguments":{arguments}}}}}"#, self.next, Value::String(tool.to_string()));
         let answer = self.line(&body);
         let value: Value = serde_json::from_str(&answer).unwrap_or(Value::Null);
         (value["result"]["isError"] == json!(true), value["result"]["content"][0]["text"].as_str().unwrap_or("").to_string())
@@ -360,7 +372,7 @@ pub fn text_findings(model: &str, description: &Value, verdict: &str, rejects: &
         }
         for phrase in LACKS_STRONG {
             for at in word_starts(text, phrase) {
-                // The short form's verdict phrase is the gateway's, shared by
+                // The short form's evidence phrase is the gateway's, shared by
                 // every model of its kind: a note on each, not the model's own.
                 if path.starts_with(".(short form)") {
                     shared.push(format!("{path}: {}", around(text, at, 50)));
@@ -397,7 +409,7 @@ pub fn text_findings(model: &str, description: &Value, verdict: &str, rejects: &
         out.contract("not described by what it lacks", format!("{} lines: {}", strong.len(), shown(&strong)));
     }
     if !shared.is_empty() {
-        out.note("not described by what it lacks", format!("the gateway's shared verdict phrase, in the short form: {}", shown(&shared)));
+        out.note("not described by what it lacks", format!("the gateway's shared evidence phrase, in the short form: {}", shown(&shared)));
     }
     if !weak.is_empty() {
         out.note("not described by what it lacks", format!("{} lines to look at: {}", weak.len(), shown(&weak)));
@@ -437,17 +449,105 @@ pub fn text_findings(model: &str, description: &Value, verdict: &str, rejects: &
             (None, false) => {}
         }
     }
-    // A model compared with measurements states the range it was compared on,
-    // blind or calibrated to the record.
-    if BLIND_WORDS.contains(&verdict) || verdict == CALIBRATED {
+    // A model compared with measurement states the range it was compared on,
+    // and is described by its spec sheet.
+    if verdict == COMPARED {
         let record = description.get("validation").map(Value::to_string).unwrap_or_default();
         if record.is_empty() {
             out.contract("compared range in numbers", format!("the list says {verdict}, and the description has no validation record"));
         } else if !has_range_in_numbers(&record) {
             out.contract("compared range in numbers", "the validation record states no range in numbers (\"a to b\")".to_string());
         }
+        let sentence = description.get("specimen").or_else(|| description.get("summary")).and_then(Value::as_str).unwrap_or("");
+        let names: Vec<&str> = rejects.iter().map(|(name, _)| name.as_str()).collect();
+        for wrong in spec_sheet_findings(sentence, &names) {
+            out.contract(SPEC_SHEET, wrong);
+        }
+    }
+    // The evidence is said in numbers, not in the words of a ritual: a note
+    // on any served string, a contract on the spec sheet (above).
+    let mut said = Vec::new();
+    for (path, text) in &all {
+        for word in UNSAID {
+            if says(text, word) && !path.ends_with("(key)") {
+                said.push(format!("{path}: \"{word}\""));
+            }
+        }
+    }
+    if !said.is_empty() {
+        out.note("evidence in numbers", format!("{} words of the old record: {}", said.len(), shown(&said)));
     }
     out.found
+}
+
+/// The rule of a compared model's list sentence.
+pub const SPEC_SHEET: &str = "spec sheet";
+
+/// Words no served sentence of a model's evidence says (the gateway's
+/// `spec_sheet::UNSAID`, held here as the sweep's own copy).
+pub const UNSAID: &[&str] = &[
+    "blind", "pre-regist", "registered", "registration", "pass mark", "pass line", "fixed before", "beforehand",
+    "amendment", "held-back", "held back", "scored", "scoring", "verdict", "not a test", "calibrated to the record", "met in part",
+    "met", "missed", "passed", "failed", "research record", "gated",
+];
+
+/// Whether `text` says `word` as a word of its own, ignoring case.
+pub fn says(text: &str, word: &str) -> bool {
+    let lower = text.to_lowercase();
+    word_starts(&lower, word).into_iter().any(|at| {
+        let after = lower[at + word.len()..].chars().next();
+        !after.is_some_and(char::is_alphanumeric)
+    })
+}
+
+/// The spec sheet in a compared model's list sentence: its six parts in
+/// their order ("Range: ", "Fitted on " or "Nothing fitted", "Compared with "
+/// with "within ", "Gap: ", "Refuses "), the range a span in numbers, the
+/// comparison and the gap with a number, a refusal named that the model
+/// lists, and none of the old record's words. Each finding is a sentence.
+pub fn spec_sheet_findings(sentence: &str, refusals: &[&str]) -> Vec<String> {
+    let mut wrong = Vec::new();
+    let at = |mark: &str| sentence.find(mark);
+    let range = at(" Range: ");
+    let fitted = at(" Fitted on ").or_else(|| at(" Nothing fitted"));
+    let compared = at(" Compared with ");
+    let gap = at(" Gap: ");
+    let refuses = at(" Refuses ");
+    let marks = [("Range: ", range), ("Fitted on / Nothing fitted", fitted), ("Compared with ", compared), ("Gap: ", gap), ("Refuses ", refuses)];
+    for (mark, place) in marks {
+        if place.is_none() {
+            wrong.push(format!("the list sentence has no \"{mark}\" part"));
+        }
+    }
+    let places: Vec<usize> = marks.iter().filter_map(|(_, place)| *place).collect();
+    if places.len() == marks.len() {
+        if places.windows(2).any(|pair| pair[0] >= pair[1]) {
+            wrong.push("the parts are not in the order computes, range, fitted on, compared, gap, refuses".to_string());
+        } else {
+            let part = |from: usize, to: usize| &sentence[from..to];
+            let digit = |text: &str| text.chars().any(|c| c.is_ascii_digit());
+            let (range, fitted, compared, gap, refuses) = (places[0], places[1], places[2], places[3], places[4]);
+            if !has_range_in_numbers(part(range, fitted)) {
+                wrong.push("the range is not a span in numbers (\"a to b\")".to_string());
+            }
+            if !digit(part(compared, gap)) || !part(compared, gap).contains("within ") {
+                wrong.push("the comparison gives no number within which".to_string());
+            }
+            if !digit(part(gap, refuses)) {
+                wrong.push("the gap gives no number".to_string());
+            }
+            let named: Vec<&str> = part(refuses, sentence.len()).split(|c: char| !c.is_ascii_alphanumeric()).filter(|word| refusals.contains(word)).collect();
+            if named.is_empty() {
+                wrong.push("the refusals name none of the model's own refusal names".to_string());
+            }
+        }
+    }
+    for word in UNSAID {
+        if says(sentence, word) {
+            wrong.push(format!("the list sentence says \"{word}\""));
+        }
+    }
+    wrong
 }
 
 // ----- forecast first ---------------------------------------------------------
@@ -513,13 +613,12 @@ fn spectrum_root() -> Option<std::path::PathBuf> {
     }
 }
 
-/// The word of a model calibrated to the record.
-pub const CALIBRATED: &str = "calibrated to the record";
-/// The words of a comparison made blind, each held to forecast first.
-pub const BLIND_WORDS: [&str; 3] = ["met", "missed", "met in part"];
-/// What the served description of a model calibrated to the record says of
-/// its comparison.
-pub const NOT_A_BLIND_TEST: &str = "not a blind test";
+/// The word of a model compared with measurement.
+pub const COMPARED: &str = "compared with measurement";
+/// The three words of the evidence behind a model.
+pub const EVIDENCE_WORDS: [&str; 3] = [COMPARED, "held to a reference calculation", "company specimen"];
+/// How a served description states a forecast of data not yet published.
+pub const FORECAST_SAID: &str = "Forecast committed before the data was opened, as ";
 
 fn is_sha256(text: &str) -> bool {
     text.len() == 64 && text.bytes().all(|b| b.is_ascii_hexdigit())
@@ -533,60 +632,76 @@ fn registration(model: &str) -> (String, Option<String>) {
     (relative, text)
 }
 
-/// Forecast first. A model whose list row says met, missed or met in part
-/// was compared with measurements; its protocol (the pass marks and the
-/// forecast) must have been fixed, fingerprinted and committed before its
-/// scoring. The kit's registry, `kit/forecasts/<model>.json` (written and
-/// committed by `kit/forecast.py`, or backfilled from an older record),
-/// says so, and Git's record is read for the order: the commit that carried
-/// the protocol's SHA-256 or the protocol itself (`protocol.committed`), or
-/// the registration's own first commit. A compared model fails when it has
-/// no registration, when the registration does not show a committed
-/// fingerprint older than its scoring, when a held-back file was opened
-/// before the protocol was fixed, or when the protocol on disk is not the
-/// one fingerprinted.
-///
-/// A model calibrated to the record (its row says so, or its registration
-/// carries a `calibration`) is held to `calibration_findings` instead, and
-/// to forecast first only for a blind registration in the same record.
-/// `description` is the model's full description and `served` the name of
-/// every served model.
-pub fn forecast_findings(model: &str, verdict: &str, description: &Value, served: &[String]) -> Vec<Finding> {
-    let mut out = Out::new(model);
-    let (relative, text) = registration(model);
-    let record = text.as_deref().and_then(|text| serde_json::from_str::<Value>(text).ok());
-    if verdict == CALIBRATED || record.as_ref().is_some_and(|record| !record["calibration"].is_null()) {
-        return calibration_findings(model, verdict, record.as_ref(), description, served);
+/// The forecasts a description states: each SHA-256 after "Forecast
+/// committed before the data was opened, as ".
+pub fn forecasts_said(description: &Value) -> Vec<String> {
+    let mut all = Vec::new();
+    strings(description, "", &mut all);
+    let mut said = Vec::new();
+    for (_, text) in &all {
+        let mut from = 0;
+        while let Some(at) = text[from..].find(FORECAST_SAID) {
+            let start = from + at + FORECAST_SAID.len();
+            let hash: String = text[start..].chars().take_while(char::is_ascii_hexdigit).collect();
+            if !said.contains(&hash) {
+                said.push(hash);
+            }
+            from = start;
+        }
     }
-    if !BLIND_WORDS.contains(&verdict) {
+    said
+}
+
+/// A forecast is a capability: a model's description may state that it
+/// forecasts data not yet published, "Forecast committed before the data was
+/// opened, as <SHA-256>." Each forecast stated is held to the kit's registry,
+/// `kit/forecasts/<model>.json` (written and committed by `kit/forecast.py`):
+/// the registry carries that SHA-256 as its protocol's, the protocol was
+/// committed (Git's record gives the time) before any file it forecasts was
+/// opened and before its comparison, and the protocol on disk is the one
+/// fingerprinted. A model that states no forecast is held to nothing here:
+/// it is described by its spec sheet, what it was fitted on and what it was
+/// compared with outside the fit, in numbers. `verdict` is the model's
+/// list word; `served` the name of every served model.
+pub fn forecast_findings(model: &str, verdict: &str, description: &Value, served: &[String]) -> Vec<Finding> {
+    let _ = (verdict, served);
+    let mut out = Out::new(model);
+    let said = forecasts_said(description);
+    if said.is_empty() {
         return out.found;
     }
+    let (relative, text) = registration(model);
     let Some(text) = text else {
-        out.contract(FORECAST_FIRST, format!("the list says {verdict}, and {relative} is missing: no committed, fingerprinted protocol older than its scoring"));
+        out.contract(FORECAST_FIRST, format!("the description states a forecast, and {relative} is missing: no committed, fingerprinted forecast"));
         return out.found;
     };
     let Ok(record) = serde_json::from_str::<Value>(&text) else {
         out.contract(FORECAST_FIRST, format!("{relative} is not JSON"));
         return out.found;
     };
-    blind_findings(&mut out, verdict, &relative, &record, true, false);
+    let registered = record["protocol"]["sha256"].as_str().unwrap_or("");
+    for hash in &said {
+        if !is_sha256(hash) {
+            out.contract(FORECAST_FIRST, format!("the description states a forecast as \"{hash}\", not a SHA-256"));
+        } else if hash != registered {
+            out.contract(FORECAST_FIRST, format!("the description states the forecast {hash}, and {relative} registers {registered}"));
+        }
+    }
+    forecast_record_findings(&mut out, &relative, &record, !record["scored"].is_null());
     out.found
 }
 
-const FORECAST_FIRST: &str = "forecast first";
+const FORECAST_FIRST: &str = "forecast before the data";
 
-/// A blind registration, `record`'s top level, held to forecast first. A
-/// scoring is required where the list gives the scoring's word; a blind
-/// registration beside a calibration may be pending. In a record that also
-/// carries a calibration the protocol was fixed by the first commit of the
-/// registration that carries its SHA-256, which a calibration recorded
-/// before it does not.
-fn blind_findings(out: &mut Out, verdict: &str, relative: &str, record: &Value, scoring_required: bool, calibrated: bool) {
+/// A forecast's registration, `record`'s top level: its protocol committed
+/// before any file it forecasts was opened, and before its comparison where
+/// it has been compared (`compared`).
+fn forecast_record_findings(out: &mut Out, relative: &str, record: &Value, compared: bool) {
     const RULE: &str = FORECAST_FIRST;
     let gateway = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
     let sha256 = record["protocol"]["sha256"].as_str().unwrap_or("");
     if !is_sha256(sha256) {
-        out.contract(RULE, format!("{relative} names no SHA-256 of the protocol"));
+        out.contract(RULE, format!("{relative} names no SHA-256 of the forecast"));
         return;
     }
     // When the protocol was fixed, from Git.
@@ -597,7 +712,7 @@ fn blind_findings(out: &mut Out, verdict: &str, relative: &str, record: &Value, 
             let crate_dir = gateway.join("..").join(crate_name);
             match git(&crate_dir, &["show", "-s", "--format=%cI", commit]) {
                 None => {
-                    out.contract(RULE, format!("the commit {commit} that is to carry the protocol is not in {crate_name}'s Git"));
+                    out.contract(RULE, format!("the commit {commit} that is to carry the forecast is not in {crate_name}'s Git"));
                     return;
                 }
                 Some(when) => {
@@ -631,7 +746,7 @@ fn blind_findings(out: &mut Out, verdict: &str, relative: &str, record: &Value, 
                     };
                     let carried = manifest().filter(|fingerprint| shown.contains(&fingerprint[..8]));
                     if !shown.contains(&sha256[..8]) && carried.is_none() && !adds() {
-                        out.contract(RULE, format!("the commit {commit} of {crate_name} carries neither the protocol's SHA-256 nor the protocol, nor a manifest's fingerprint that holds it"));
+                        out.contract(RULE, format!("the commit {commit} of {crate_name} carries neither the forecast's SHA-256 nor the forecast, nor a manifest's fingerprint that holds it"));
                         return;
                     }
                     utc_seconds(&when).map(|(seconds, _)| (seconds, when))
@@ -641,12 +756,12 @@ fn blind_findings(out: &mut Out, verdict: &str, relative: &str, record: &Value, 
         // A registration backfilled from an older record with no commit of
         // the protocol: its own commit is of today, and fixes nothing.
         None if record["registered_by"].as_str().unwrap_or("").contains("backfill") => {
-            out.contract(RULE, format!("the list says {verdict}, and no commit carries the protocol's SHA-256 or the protocol: the record {relative} was backfilled from names none before the scoring at {}", record["scored"]["utc"].as_str().unwrap_or("an unstated time")));
+            out.contract(RULE, format!("no commit carries the forecast's SHA-256 or the forecast: the record {relative} was backfilled, and its comparison was at {}", record["scored"]["utc"].as_str().unwrap_or("an unstated time")));
             return;
         }
-        // Beside a calibration, the first commit of the registration whose
-        // record carries this protocol's SHA-256.
-        None if calibrated => git(gateway, &["log", "--format=%H %cI", "--", relative]).and_then(|log| {
+        // The first commit of the registration whose record carries this
+        // forecast's SHA-256.
+        None => git(gateway, &["log", "--format=%H %cI", "--", relative]).and_then(|log| {
             log.lines().rev().find_map(|line| {
                 let (commit, when) = line.split_once(' ')?;
                 let body = git(gateway, &["show", &format!("{commit}:{relative}")])?;
@@ -654,12 +769,9 @@ fn blind_findings(out: &mut Out, verdict: &str, relative: &str, record: &Value, 
                 (then["protocol"]["sha256"].as_str() == Some(sha256)).then(|| utc_seconds(when).map(|(seconds, _)| (seconds, when.to_string()))).flatten()
             })
         }),
-        None => git(gateway, &["log", "--format=%cI", "--", relative])
-            .and_then(|log| log.lines().last().map(str::to_string))
-            .and_then(|when| utc_seconds(&when).map(|(seconds, _)| (seconds, when))),
     };
     let Some((fixed, fixed_text)) = fixed else {
-        out.contract(RULE, format!("{relative} is not committed: the protocol's fingerprint is in no commit"));
+        out.contract(RULE, format!("{relative} is not committed: the forecast's fingerprint is in no commit"));
         return;
     };
     // The protocol on disk is the one fingerprinted.
@@ -668,134 +780,32 @@ fn blind_findings(out: &mut Out, verdict: &str, relative: &str, record: &Value, 
         Some(full) => {
             let on_disk = sha256_hex(&std::fs::read(&full).unwrap_or_default());
             if on_disk != sha256 {
-                out.contract(RULE, format!("the protocol on disk, {path}, is not the one fingerprinted ({on_disk}, against {sha256})"));
+                out.contract(RULE, format!("the forecast on disk, {path}, is not the one fingerprinted ({on_disk}, against {sha256})"));
             }
         }
-        None => out.note(RULE, format!("the protocol {path} is not on this disk, so its fingerprint is not compared")),
+        None => out.note(RULE, format!("the forecast {path} is not on this disk, so its fingerprint is not compared")),
     }
     for opened in record["opened"].as_array().into_iter().flatten() {
         let when = opened["utc"].as_str().unwrap_or("");
         if !utc_seconds(when).is_some_and(|(seconds, _)| seconds > fixed) {
-            out.contract(RULE, format!("{} was opened at {when}, not after the protocol was fixed at {fixed_text}", opened["path"].as_str().unwrap_or("a held-back file")));
+            out.contract(RULE, format!("{} was opened at {when}, not after the forecast was committed at {fixed_text}", opened["path"].as_str().unwrap_or("a forecast file")));
         }
     }
-    if !scoring_required && record["scored"].is_null() {
+    if !compared {
         return;
     }
     let scored = record["scored"]["utc"].as_str().unwrap_or("");
     match utc_seconds(scored) {
-        None => out.contract(RULE, format!("the list says {verdict}, and {relative} gives no time of the scoring")),
+        None => out.contract(RULE, format!("{relative} gives no time of its comparison")),
         Some((seconds, true)) if seconds == fixed - fixed.rem_euclid(86_400) => out.contract(
             RULE,
-            format!("the protocol was fixed at {fixed_text} and the model scored on the same day, {scored}, and the record gives no time to order them"),
+            format!("the forecast was committed at {fixed_text} and compared on the same day, {scored}, and the record gives no time to order them"),
         ),
         Some((seconds, _)) if seconds <= fixed => {
-            out.contract(RULE, format!("the protocol was fixed at {fixed_text}, not before the scoring at {scored}"))
+            out.contract(RULE, format!("the forecast was committed at {fixed_text}, not before its comparison at {scored}"))
         }
         Some(_) => {}
     }
-}
-
-/// Calibrated to the record. A model whose structure or constants were
-/// chosen with the record it is compared with open is served under the
-/// sixth word, beside the model compared blind, and its registration's
-/// `calibration` (written by `kit/forecast.py calibrate`) holds:
-///
-/// 1. `companion_to` names a served model, not itself, whose own record has
-///    been scored (`scored.utc`);
-/// 2. `calibration.protocol.sha256` is 64 hex characters and is the
-///    SHA-256 of the file on disk (on a disk with the company's records);
-/// 3. `calibration.scored` gives the time of the comparison, with the
-///    output's and the program's SHA-256;
-/// 4. the list's word is `calibrated to the record`, and the served
-///    description's validation result says it is not a blind test;
-/// 5. a blind registration in the same record is held to every rule of
-///    forecast first.
-///
-/// The word is `calibrated to the record` until that blind registration is
-/// scored; then it is the scoring's, met, met in part or missed, as the
-/// record's `verdict` states it, and forecast first holds the whole of it.
-pub fn calibration_findings(model: &str, verdict: &str, record: Option<&Value>, description: &Value, served: &[String]) -> Vec<Finding> {
-    const RULE: &str = CALIBRATED;
-    let mut out = Out::new(model);
-    let relative = format!("kit/forecasts/{model}.json");
-    let Some(record) = record else {
-        out.contract(RULE, format!("the list says {verdict}, and {relative} is missing or not JSON: no calibration names its companion, the fingerprint of the record it is compared with and its scoring"));
-        return out.found;
-    };
-    let calibration = &record["calibration"];
-    if !calibration.is_object() {
-        out.contract(RULE, format!("the list says {verdict}, and {relative} carries no calibration: none names its companion, the fingerprint of the record it is compared with and its scoring"));
-    } else {
-        // 1. The companion: served, not itself, its own record scored.
-        let companion = calibration["companion_to"].as_str().unwrap_or("");
-        if companion.is_empty() || companion == model {
-            out.contract(RULE, "calibration.companion_to names no served model beside it".to_string());
-        } else {
-            if !served.iter().any(|name| name == companion) {
-                out.contract(RULE, format!("calibration.companion_to, {companion}, is not a served model"));
-            }
-            let (companion_relative, text) = registration(companion);
-            let scored = text.as_deref().and_then(|text| serde_json::from_str::<Value>(text).ok()).is_some_and(|own| own["scored"]["utc"].is_string());
-            if !scored {
-                out.contract(RULE, format!("calibration.companion_to, {companion}: its own record, {companion_relative}, is not scored (no scored.utc)"));
-            }
-        }
-        // 2. The fingerprint of the record it is compared with.
-        let sha256 = calibration["protocol"]["sha256"].as_str().unwrap_or("");
-        let path = calibration["protocol"]["path"].as_str().unwrap_or("");
-        if !is_sha256(sha256) {
-            out.contract(RULE, "calibration.protocol.sha256 is not 64 hex characters".to_string());
-        } else {
-            match spectrum_root() {
-                None => out.note(RULE, format!("calibration.protocol, {path}: the company's records are not on this disk, so its fingerprint is not compared")),
-                Some(root) => match std::fs::read(root.join(path)) {
-                    Err(_) => out.contract(RULE, format!("calibration.protocol, {path}, is not on this disk, so it is not the file fingerprinted")),
-                    Ok(bytes) => {
-                        let on_disk = sha256_hex(&bytes);
-                        if on_disk != sha256 {
-                            out.contract(RULE, format!("calibration.protocol on disk, {path}, is not the one fingerprinted ({on_disk}, against {sha256})"));
-                        }
-                    }
-                },
-            }
-        }
-        // 3. The comparison's scoring: its time, the output's and the program's SHA-256.
-        if utc_seconds(calibration["scored"]["utc"].as_str().unwrap_or("")).is_none() {
-            out.contract(RULE, "calibration.scored gives no time of the comparison".to_string());
-        }
-        for part in ["output", "program"] {
-            if !is_sha256(calibration["scored"][part]["sha256"].as_str().unwrap_or("")) {
-                out.contract(RULE, format!("calibration.scored.{part} gives no SHA-256"));
-            }
-        }
-    }
-    // 4, and the word: calibrated to the record until a blind registration
-    // in the same record is scored, then that scoring's.
-    let blind = record["protocol"].is_object();
-    let scored = blind && !record["scored"].is_null();
-    let stated = record["verdict"].as_str();
-    if scored {
-        match stated.filter(|word| BLIND_WORDS.contains(word)) {
-            None => out.contract(RULE, format!("its blind registration is scored, and {relative} gives no verdict of that scoring (met, met in part or missed)")),
-            Some(word) if word != verdict => out.contract(RULE, format!("its blind registration is scored, {word}, and the list says {verdict}: the word served is that scoring's")),
-            Some(_) => {}
-        }
-    } else {
-        if let Some(word) = stated.filter(|word| *word != CALIBRATED) {
-            out.contract(RULE, format!("{relative} gives the verdict {word}, and no blind registration of it is scored: until one is, the verdict is calibrated to the record"));
-        }
-        if verdict != CALIBRATED {
-            out.contract(RULE, format!("the list says {verdict}, and no blind registration of it is scored: until one is, the word served is calibrated to the record"));
-        } else if !description["validation"]["result"].as_str().unwrap_or("").contains(NOT_A_BLIND_TEST) {
-            out.contract(RULE, "the served description's validation result does not say it is not a blind test".to_string());
-        }
-    }
-    // 5. A blind registration beside it keeps every rule of forecast first.
-    if blind {
-        blind_findings(&mut out, verdict, &relative, record, scored, true);
-    }
-    out.found
 }
 
 /// The name of every served model, from `list_cards` and `list_solvers`.
@@ -915,7 +925,7 @@ fn came(door: &mut Door, tool: &str, request: &Value) -> Came {
 
 // ----- a card -------------------------------------------------------------------
 
-/// The verdict word of every model, from `list_cards` and `list_solvers`.
+/// The evidence word of every model, from `list_cards` and `list_solvers`.
 pub fn verdicts(door: &mut Door) -> Vec<(String, String, String)> {
     let mut rows = Vec::new();
     if let Some(list) = door.value("list_cards", &json!({})) {

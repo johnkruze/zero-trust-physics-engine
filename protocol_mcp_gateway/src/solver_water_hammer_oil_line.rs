@@ -171,7 +171,7 @@ pub const WATER_HAMMER_OIL_LINE: Solver = Solver {
     solve,
 };
 
-const SUMMARY: &str = "Water hammer in the company's own specimen, a 4.0 m steel hydraulic line (12 x 1.5 mm tube, 9 mm bore) of mineral oil (870 kg/m^3, 1.72 GPa) between a held supply and a valve that closes: the steady flow, then the transient by the method of characteristics on 40 sections with Churchill's friction, free air lumped at the nodes as isothermal gas (the wave speed falls by Wood's relation) and column separation where the pressure would fall below the vapour pressure; the Joukowsky rise as tangent and chord of the gas law; energy (kinetic, oil compression, wall strain, cavities, friction, valve) and volume ledgers closed at every step; stops by name at the tube's first yield (51.41 MPa gauge), at Mach 0.1 and where the free air passes a void fraction of 0.25. Its method was run on two measured lines with their own constants. On the Gdansk copper water rig, given the rig's measured wave speeds, it gave the free-oscillation period within 0.28 percent in four runs; its own wave speed law is 6.1 to 8.6 percent high there, and with it the period is 5.5 to 7.7 percent short. On DLR's liquid-nitrogen line Joukowsky's closed form missed the mark posted for it (6 of 9 within 5 percent, low by up to 6.9 percent); that line is served, and was scored blind, as ln2_line_dlr_fttf.";
+const SUMMARY: &str = "Company specimen: water hammer in a 4.0 m steel hydraulic line (12 x 1.5 mm tube, 9 mm bore) of mineral oil (870 kg/m^3, 1.72 GPa) between a held supply and a valve that closes: the steady flow, then the transient by the method of characteristics on 40 sections with Churchill's friction, free air lumped at the nodes as isothermal gas (the wave speed falls by Wood's relation) and column separation where the pressure would fall below the vapour pressure; the Joukowsky rise as tangent and chord of the gas law; energy (kinetic, oil compression, wall strain, cavities, friction, valve) and volume ledgers closed at every step; stops by name at the tube's first yield (51.41 MPa gauge), at Mach 0.1 and where the free air exceeds a void fraction of 0.25. Its method was run on two measured lines with their own constants. On the Gdansk copper water rig, given the rig's measured wave speeds, it gives the free-oscillation period within 0.28 percent in four runs; its own wave speed law is 6.1 to 8.6 percent high there, and with it the period is 5.5 to 7.7 percent short. On DLR's liquid-nitrogen line Joukowsky's closed form is within 5 percent in 6 of 9 tests, low by up to 6.9 percent (target 8 of 9); that line is served as ln2_line_dlr_fttf.";
 
 /// Each `HammerReject` variant with the sentence from its doc comment. A
 /// refusal the request itself shows is not sealed.
@@ -237,7 +237,7 @@ fn field_words() -> String {
 fn sections() -> Sections {
     Sections {
         locked: json!({
-            "specimen": "The company's own specimen: 4.0 m of seamless steel tube, 12 mm outside and 1.5 mm wall (9 mm bore, E235, Young's modulus 210 GPa, Poisson 0.3, bore roughness 1.5 um), anchored against axial movement, level, from a supply held at one pressure to a valve whose open area falls linearly to zero; filled with the mineral oil of the hydraulic_fluid card (870 kg/m^3, bulk modulus 1.72 GPa, vapour pressure 10 Pa) at the viscosity of ISO VG 32 at 40 degC, 32 mm^2/s.",
+            "specimen": "Company specimen: 4.0 m of seamless steel tube, 12 mm outside and 1.5 mm wall (9 mm bore, E235, Young's modulus 210 GPa, Poisson 0.3, bore roughness 1.5 um), anchored against axial movement, level, from a supply held at one pressure to a valve whose open area falls linearly to zero; filled with the mineral oil of the hydraulic_fluid card (870 kg/m^3, bulk modulus 1.72 GPa, vapour pressure 10 Pa) at the viscosity of ISO VG 32 at 40 degC, 32 mm^2/s.",
             "line_length_m": hammer::LINE_LENGTH_M,
             "bore_m": hammer::BORE_M,
             "wall_thickness_m": hammer::WALL_THICKNESS_M,
@@ -277,7 +277,7 @@ fn sections() -> Sections {
             },
         ]),
         convergence: json!({
-            "rule": "A transient is a march of fixed steps, one section's crossing time each. Each section's friction is a fixed point settled to a part in 1e13 (it contracts by under 1e-3 a pass); a node with air between two sections is the root of a quadratic; the valve's node is found by false position on a function that rises strictly, and past its passes by halving to the bracket's last bit. A node at rest at the supply pressure whose flows balance there keeps that state exactly, so a line at rest stays at rest to the bit. Nothing is returned that has not held at every step.",
+            "rule": "A transient is a march of fixed steps, one section's crossing time each. Each section's friction is a fixed point settled to a part in 1e13 (it contracts by under 1e-3 an iteration); a node with air between two sections is the root of a quadratic; the valve's node is found by false position on a function that rises strictly, and, when those iterations run out, by halving to the bracket's last bit. A node at rest at the supply pressure whose flows balance there keeps that state exactly, so a line at rest stays at rest to the bit. Nothing is returned that has not held at every step.",
             "time_step_s": hammer::time_step_s(),
             "friction_settled": line::FRICTION_SETTLED,
             "max_friction_passes": line::MAX_FRICTION_PASSES,
@@ -292,23 +292,23 @@ fn sections() -> Sections {
             "retrieved": hammer::REFERENCE_RETRIEVED,
             "test": "gdansk_free_oscillation_period",
             "covers": hammer::GDANSK_FINDINGS,
-            "second_name": "S. Klein, T. Traudt and J. Deeken, Liquid Nitrogen Fluid Hammer: PS-LN2-Set1, DLR Institute of Space Propulsion, Zenodo 15526459 (CC BY 4.0), with nitrogen's properties from the NIST Chemistry WebBook (Span et al. 2000)",
+            "second_name": "Liquid Nitrogen Fluid Hammer: PS-LN2-Set1, DLR Institute of Space Propulsion, Zenodo 15526459, with nitrogen's properties from the NIST Chemistry WebBook",
             "second_url": "https://doi.org/10.5281/zenodo.15526459",
             "second_retrieved": "2026-10-14",
             "second_tests": "dlr_first_surge_by_joukowsky, dlr_first_surge_by_the_transient, dlr_front_speed",
             "second_covers": hammer::DLR_FINDINGS,
-            "kind": "Measurements of two other lines, a copper water rig and a stainless liquid-nitrogen line, run through this solver's method and wave speed law with each line's own constants. This line's own comparison comes later. Record: evidence/research/hydraulics_robotics/.",
+            "kind": "Measurements of two other lines, a copper water rig and a stainless liquid-nitrogen line, run through this solver's method and wave speed law with each line's own constants.",
         }),
     }
 }
 
 fn validation() -> [String; 5] {
     [
-        "The company's own specimen: 4.0 m of seamless steel tube, 12 x 1.5 mm, of mineral oil between a held supply and a valve that closes. The solver computes the steady flow and the transient of the closure, with free air and column separation.".to_string(),
-        "The company's own specimen, its constants declared in its description; its own comparison with measurement comes later. Its method and its wave speed law were run, each with that line's own constants, on two measured lines: the copper water rig of Lewandowski and Adamkowski (2024) and the liquid-nitrogen line of DLR Lampoldshausen (Klein, Traudt and Deeken, Zenodo 15526459). What they found is under reference.".to_string(),
-        "For this line, the ledgers stated under invariants: energy and volume closed at every step within 1e-9 of their scales, and friction and the cavities never giving energy. For the DLR line a mark was posted before it was scored: Joukowsky's rho a v0 with Korteweg's wave speed, nitrogen at the line thermometer's temperature, within 5 percent of the measured first surge in at least 8 of 9 tests.".to_string(),
+        "Company specimen: 4.0 m of seamless steel tube, 12 x 1.5 mm, of mineral oil between a held supply and a valve that closes. The solver computes the steady flow and the transient of the closure, with free air and column separation.".to_string(),
+        "Company specimen, every constant declared in its description. Its method and its wave speed law were run, each with that line's own constants, on two measured lines: the Gdansk copper water rig of Lewandowski and Adamkowski and the liquid-nitrogen line of DLR Lampoldshausen (Zenodo 15526459); reference gives what they found.".to_string(),
+        "For this line, the ledgers stated under invariants: energy and volume closed at every step within 1e-9 of their scales, and friction and the cavities never giving energy. For the DLR line, Joukowsky's rho a v0 with Korteweg's wave speed, nitrogen at the line thermometer's temperature: target within 5 percent of the measured first surge in at least 8 of 9 tests.".to_string(),
         crate::descriptor::OWN_SPECIMEN_SOLVER_RESULT.to_string(),
-        "The line's constants are the company's, declared in its description. The oil's modulus is one value at every pressure; friction is quasi-steady, which damps a water hammer more slowly than it is measured to damp; air neither leaves nor enters solution; the tube does not move; the line is level. The lumped air is damped at the grid's scale by the backward step of its cavities, and that energy is reported as cavity_loss_j: with 1 percent of air at 2 MPa it is 12 percent of the starting energy over the first 50 ms, against friction's 40. On the DLR line the closed form missed its posted mark (6 of 9 within 5 percent) and the transient, after the fact and with one fitted friction roughness, met it on all 9, read 1.10 m before the valve and with the record's pressures as absolute, where the sensor is at 0.60 m and the pressures are gauge (ln2_line_dlr_fttf reads both right); on the Gdansk rig the wave speed law was 6.1 to 8.6 percent high. A proof shows that an answer was not changed, not that the model matches a line.".to_string(),
+        "The line's constants are the company's, declared in its description. The oil's modulus is one value at every pressure; friction is quasi-steady, which damps a water hammer more slowly than it is measured to damp; air neither leaves nor enters solution; the tube does not move; the line is level. The lumped air is damped at the grid's scale by the backward step of its cavities, and that energy is reported as cavity_loss_j: with 1 percent of air at 2 MPa it is 12 percent of the starting energy over the first 50 ms, against friction's 40. On the DLR line the closed form is within 5 percent in 6 of 9 tests (target 8 of 9), and the transient, with one fitted friction roughness, in all 9, read 1.10 m before the valve and with the record's pressures as absolute, where the sensor is at 0.60 m and the pressures are gauge (ln2_line_dlr_fttf reads both right); on the Gdansk rig the wave speed law is 6.1 to 8.6 percent high. A proof confirms an answer is unchanged; this line is a company specimen, with no measurement of its own.".to_string(),
     ]
 }
 

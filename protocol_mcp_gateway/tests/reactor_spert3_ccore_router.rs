@@ -34,8 +34,8 @@ use tokio::net::TcpListener;
 
 const CARD: &str = "reactor_spert3_ccore";
 /// The number of cards served, and this card's place among them.
-const CARDS: usize = 37;
-const PLACE: usize = 33;
+const CARDS: usize = 40;
+const PLACE: usize = 35;
 
 async fn spawn_app() -> String {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -526,12 +526,15 @@ async fn the_card_is_listed_and_described_with_its_failed_comparison_and_its_end
     assert_eq!(status, 200, "{described}");
     for words in [
         "plate SURFACE temperature",
-        "failed on all three lines",
+        "Compared with the 39 transients not in the fit",
+        "33.3 percent",
+        "56.7 percent",
+        "71.0 percent",
         "6403.73",
         "0.551915",
         "no pressure term",
-        "230 psig only",
-        "not the physical share",
+        "at 230 psig",
+        "The physical share is a few percent",
         "IDO-16918",
         "PastPlateTemperatureMaximum",
         "InitialTemperatureNotLiquidWater",

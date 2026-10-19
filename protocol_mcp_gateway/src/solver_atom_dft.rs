@@ -26,7 +26,7 @@ const fn hartree(name: &'static str) -> Output {
 
 pub const ATOM_DFT: Solver = Solver {
     name: "atom_dft",
-    summary: "Spin-unpolarized, non-relativistic local-density ground state of one spherical neutral atom, atomic number 1 through 18: total energy, its four parts, and each orbital eigenvalue. It reproduces the NIST spin-unpolarized LDA tables and is not the measured energy of the atom.",
+    summary: "Spin-unpolarized, non-relativistic local-density ground state of one spherical neutral atom: total energy, its four parts, and each orbital eigenvalue. Range: atomic number 1 through 18, every one held to the reference. Nothing fitted. Held to the NIST spin-unpolarized local-density tables within 1e-5 hartree, on the total energy, its four parts and every orbital eigenvalue of every atom. Gap: it is the local-density ground state, which carries the approximation's own difference from the measured energy of the atom; spin polarization and relativity are left out. Refuses an atomic number outside 1 to 18 (AtomicNumberOutOfRange).",
     inputs: &[Input {
         name: "atomic_number",
         kind: Kind::Count {

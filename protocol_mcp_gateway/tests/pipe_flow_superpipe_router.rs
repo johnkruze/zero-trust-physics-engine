@@ -277,11 +277,12 @@ async fn the_description_carries_the_standing_and_its_example_runs_unchanged() {
     let listed = reqwest::get(format!("{base}/solvers")).await.unwrap();
     let listed: Value = serde_json::from_str(&listed.text().await.unwrap()).unwrap();
     let solvers = listed["solvers"].as_array().expect("solvers");
-    assert_eq!(solvers.len(), 24);
+    assert_eq!(solvers.len(), 25);
     assert_eq!(solvers[12]["solver"], "pipe_flow_superpipe");
     let summary = solvers[12]["summary"].as_str().expect("a sentence");
-    assert!(summary.contains("nothing fitted"), "{summary}");
-    assert!(summary.contains("by the rule fixed beforehand the comparison failed"), "{summary}");
+    assert!(summary.contains("Nothing fitted"), "{summary}");
+    assert!(summary.contains("friction factor within 1.38 percent RMS, worst 2.69"), "{summary}");
+    assert!(summary.contains("2.99 percent low on the NSTAP profile at 81,330"), "{summary}");
 
     let (status, text) = post(&base, "/describe_solver", &json!({ "solver": "pipe_flow_superpipe" })).await;
     assert_eq!(status, 200, "{text}");
@@ -295,10 +296,10 @@ async fn the_description_carries_the_standing_and_its_example_runs_unchanged() {
     assert!(pass_line.contains("704700a99d27cdd566d47a92182d363f31ad8d1ee774c1e75c84a8de75b26893"), "{pass_line}");
     let result = described["validation"]["result"].as_str().unwrap();
     for words in [
-        "rms 1.38 percent, worst 2.69 percent",
-        "pooled rms of u+ 1.59 percent",
-        "the NSTAP profile at 81,330 is 2.99 percent low against the 2 percent line",
-        "By the rule fixed beforehand the comparison failed",
+        "RMS 1.38 percent (target 3), worst 2.69 percent",
+        "pooled RMS of u+ 1.59 percent (target 2)",
+        "the NSTAP profile at 81,330 is 2.99 percent low (target 2)",
+        "20 profiles are 0.75 to 1.79 percent low",
     ] {
         assert!(result.contains(words), "{words}: {result}");
     }

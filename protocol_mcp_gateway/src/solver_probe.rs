@@ -516,8 +516,8 @@ mod tests {
             .iter()
             .map(|row| row["solver"].as_str().expect("a name"))
             .collect();
-        assert_eq!(names, ["atom_dft", "ablator_slab", "journal_bearing_sheffield", "propeller_apc_10x7e", "modulus_bam_s355", "seawater_column", "argon_pair_gas", "fusion_pb11_lhd", "fusion_pb11_thermal", "step_flow_armaly", "culture_trichoderma_ambr250", "tokamak_dt_beam_target", "pipe_flow_superpipe", "culture_trichoderma_atp", "junction_nist_b7_s2", "water_hammer_oil_line", "orifice_air_chamber", "pneumatic_hose_resonance", "blast_wave_tnt_air", "stress_plate_hole_s235", "stress_plate_hole_s235_elastic", "icf_hotspot_burn", "ln2_line_dlr_fttf", "plasma_sheath_ram_c2", "stand_in"]);
-        assert_eq!(listed["solvers"][24]["summary"], STAND_IN.summary);
+        assert_eq!(names, ["atom_dft", "ablator_slab", "journal_bearing_sheffield", "propeller_apc_10x7e", "modulus_bam_s355", "seawater_column", "argon_pair_gas", "fusion_pb11_lhd", "fusion_pb11_thermal", "step_flow_armaly", "culture_trichoderma_ambr250", "tokamak_dt_beam_target", "pipe_flow_superpipe", "fuel_rod_triga_jsi", "culture_trichoderma_atp", "junction_nist_b7_s2", "water_hammer_oil_line", "orifice_air_chamber", "pneumatic_hose_resonance", "blast_wave_tnt_air", "stress_plate_hole_s235", "stress_plate_hole_s235_elastic", "icf_hotspot_burn", "ln2_line_dlr_fttf", "plasma_sheath_ram_c2", "stand_in"]);
+        assert_eq!(listed["solvers"][25]["summary"], STAND_IN.summary);
         assert!(solvers::is_known("stand_in"));
         // A view lists what it holds, in the engine's order.
         let one = View::limited([], ["stand_in".to_string()]);
@@ -646,6 +646,8 @@ mod tests {
             json!(format!("{} {}", crate::mcp_server::SOLVE_MISSING_WORDS, crate::signed_load::SOLVE_SAYS));
         // An instrument's signature may stand beside the inputs.
         solve["properties"]["parameters"]["properties"]["signed"] = crate::signed_load::schema();
+        // A sealed card run handed in through a coupling into a solver.
+        solve["properties"]["from"] = crate::chain::solve_from_schema(false);
         assert_eq!(schema_of(&one, "solve"), solve);
         // A whole solution's inputs are hashed, not solved: a plain object.
         assert_eq!(schema_of(&one, "verify_solution")["properties"]["inputs"]["type"], "object");
@@ -657,9 +659,12 @@ mod tests {
 
         // The atom alone: the schema a served build gives, byte for byte.
         let atom = View::limited([], ["atom_dft".to_string()]);
-        // The schema of signed and its words stand beside the atom's one field.
+        // The schema of signed and its words stand beside the atom's one field,
+        // and from, a sealed card run handed in through a coupling, beside them.
+        let mut atom_solve = schema_of(&atom, "solve");
+        assert!(atom_solve["properties"].as_object_mut().unwrap().shift_remove("from").is_some());
         assert_eq!(
-            serde_json::to_string(&schema_of(&atom, "solve")).unwrap(),
+            serde_json::to_string(&atom_solve).unwrap(),
             format!(
                 r#"{{"type":"object","properties":{{"solver":{{"const":"atom_dft"}},"parameters":{{"type":"object","properties":{{"atomic_number":{{"type":"integer","minimum":1,"maximum":18}},"signed":{}}},"required":["atomic_number"],"additionalProperties":false,"description":"A required input left out is refused as InputMissing, and an input given with a choice it does not go with as InputNotWithChoice, each in a sentence that names the input, and a solver the engine does not serve as UnknownSolver; nothing is filled in. {}"}},"example":{{"type":"string","description":"In place of parameters: the name of one of the solver's worked examples as describe_solver keys it (example_solve, or a key that begins example_solve_). The request is filled with that example's parameters, and the filled request is the one solved, sealed and returned as inputs."}}}},"required":["solver"],"additionalProperties":false,"description":"One sealed solution."}}"#,
                 serde_json::to_string(&crate::signed_load::schema()).unwrap(),

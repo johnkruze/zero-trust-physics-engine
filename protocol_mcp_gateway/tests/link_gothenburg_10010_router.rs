@@ -874,12 +874,12 @@ async fn the_three_connections_list_the_link_and_give_the_same_bytes_for_its_des
     assert!(!error);
     let listed: Value = serde_json::from_str(&listed).unwrap();
     let cards = listed["cards"].as_array().unwrap();
-    assert_eq!(cards.len(), 37);
-    assert_eq!(cards[24]["domain"], "signal");
-    assert_eq!(cards[24]["card"], "link_gothenburg_10010");
-    let line = cards[24]["specimen"].as_str().unwrap();
+    assert_eq!(cards.len(), 40);
+    assert_eq!(cards[26]["domain"], "signal");
+    assert_eq!(cards[26]["card"], "link_gothenburg_10010");
+    let line = cards[26]["specimen"].as_str().unwrap();
     assert!(line.contains("Recommendation ITU-R P.838-3 with nothing fitted"), "{line}");
-    assert!(line.contains("fitted to this link's own readings of June and July 2015"), "{line}");
+    assert!(line.contains("Fitted on this link's own readings in the 18 rain events of June and July 2015"), "{line}");
     let on_web: Value = Client::new().get(format!("{web}/cards")).send().await.unwrap().json().await.unwrap();
     assert_eq!(on_web, listed);
 
@@ -937,7 +937,7 @@ async fn the_three_connections_list_the_link_and_give_the_same_bytes_for_its_des
     let record = description["validation"].as_object().unwrap();
     let parts: Vec<&str> = record.keys().map(String::as_str).collect();
     assert_eq!(parts, ["object", "data", "pass_line", "result", "limits"]);
-    assert!(record["data"].as_str().unwrap().contains("doi 10.5281/zenodo.7107689"));
+    assert!(record["data"].as_str().unwrap().contains("10.5281/zenodo.7107689"));
     assert!(record["pass_line"].as_str().unwrap().contains("f60bfcc70553f95fef5d35963b6550120de3c67e712c057e40c5d37c51784625"));
 
     // The four tools that compute: the same bytes on the three connections.

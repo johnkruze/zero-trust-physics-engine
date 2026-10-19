@@ -138,9 +138,9 @@ fn the_norms_decimal_edges_land_on_both_sides() {
 /// The served words agree with the record: the slews' departure is up to
 /// 3.5 N m s (RESULT.md), in every sentence that gives it; the ledgers
 /// confirm the arithmetic of one rotation and one balance; the edges of the
-/// norm and the Sun's radius are stated; and the two blind months after the
-/// held-back month are stated as the ledger of 2026-10-16 scored them
-/// (ledger_2026-10-16/RESULT.md), not the first month alone.
+/// norm and the Sun's radius are stated; and all three months after the fit
+/// are stated with each measure beside its target, the third as
+/// ledger_2026-10-16/RESULT.md gives it, not the first month alone.
 #[test]
 fn the_served_words_agree_with_the_record() {
     let mut door = Door::start();
@@ -152,10 +152,11 @@ fn the_served_words_agree_with_the_record() {
         "a norm from 0.999999 to 1.000001, both inclusive",
         "SunDistanceInsideSun",
         "with nothing pulled back",
-        "it met two of five on 15 July to 14 August 2023",
-        "three of five on 15 August to 14 September 2023",
-        "9 of 15 marks in its three blind months",
-        "on 2023-08-15 to 2023-09-14, three of five, missed as forecast, A 17 of 30 days, B 8 of 30",
+        "on 23 of 28, 15 of 28 and 17 of 30 days (target 80 percent)",
+        "within that allowance on 14 of 28, 8 of 28 and 8 of 30 days (target 80 percent)",
+        "within 0.437, 0.384 and 0.421 of its spread RMS (target 0.5)",
+        "On 15 August to 14 September 2023: A 17 of 30 days; B 8 of 30",
+        "Fitted on the 34 days 12 May to 14 June 2023",
     ] {
         assert!(text.contains(words), "{words}");
     }

@@ -383,12 +383,12 @@ async fn the_description_says_what_is_fitted_and_its_example_runs_unchanged() {
     let listed = reqwest::get(format!("{base}/solvers")).await.unwrap();
     let listed: Value = serde_json::from_str(&listed.text().await.unwrap()).unwrap();
     let solvers = listed["solvers"].as_array().expect("solvers");
-    assert_eq!(solvers.len(), 24);
+    assert_eq!(solvers.len(), 25);
     assert_eq!(solvers[10]["solver"], "culture_trichoderma_ambr250");
     let summary = solvers[10]["summary"].as_str().expect("a sentence");
-    assert!(summary.contains("six constants are fitted to this organism's own measurements"), "{summary}");
-    assert!(summary.contains("it met three of its six lines and missed three (galacturonate 4.60 g/L against 2.74, mucic acid 6.45 g/L against 4.51, carbon dioxide 0.01125 mol against 0.00265), a second scoring confirmed it, and it is not validated against measurement."), "{summary}");
-    assert!(summary.ends_with("it was compared on the twelve cultures' own starts, feeds and schedule, to 312 h."), "{summary}");
+    assert!(summary.contains("Fitted on 8 of the 12 cultures, fed 29.375 to 34.676 g/L glucose with 0 to 2 g/L yeast extract: six constants."), "{summary}");
+    assert!(summary.contains("oxygen taken up within 0.0108 mol (target 0.0153), dry biomass to 170 h within 1.05 g/L (target 2.15), glucose within 0.51 g/L (target 0.85); galacturonate 4.60 g/L RMS (target 2.74), mucic acid 6.45 g/L (target 4.51), carbon dioxide 0.01125 mol (target 0.00265)."), "{summary}");
+    assert!(summary.contains("Range: compared on the twelve cultures' own starts, feeds (glucose 10.077 to 52.101 g/L) and schedule, to 312 h"), "{summary}");
 
     let (status, text) =
         post(&base, "/describe_solver", &json!({ "solver": "culture_trichoderma_ambr250" })).await;
@@ -400,35 +400,36 @@ async fn the_description_says_what_is_fitted_and_its_example_runs_unchanged() {
         assert!(!words.is_empty(), "{part}");
     }
     let limits = described["validation"]["limits"].as_str().unwrap();
-    assert!(limits.contains("extrapolation in the glucose of the feed"), "{limits}");
+    assert!(limits.contains("extend the fit in the glucose of the feed"), "{limits}");
     assert!(limits.contains("The carbon and electron ledgers close for any constants: they test the arithmetic."));
     let pass_line = described["validation"]["pass_line"].as_str().unwrap();
-    assert!(pass_line.contains("68b833108c589ce7a6e063ec84b21483fa50c7cffa145108e69ed0de816c92db"));
-    assert!(pass_line.contains("is not evidence for the model"));
+    assert!(pass_line.contains("Record SHA-256 68b833108c589ce7a6e063ec84b21483fa50c7cffa145108e69ed0de816c92db."));
+    assert!(pass_line.contains("dry biomass to 170 h at most 2.15 g/L; glucose 0.85 g/L; galacturonate 2.74 g/L; mucic acid 4.51 g/L; carbon dioxide made 0.00265 mol; oxygen taken up 0.0153 mol"));
+    assert!(pass_line.contains("Four baselines are computed on the same points"));
     let result = described["validation"]["result"].as_str().unwrap();
     for words in [
-        "it did not pass: three of the six lines were met and three were missed",
-        "galacturonate, root-mean-square error 4.60 g/L against 2.74 allowed",
-        "mucic acid, 6.45 g/L against 4.51",
-        "carbon dioxide made, 0.01125 mol against 0.00265",
-        "only the oxygen line is evidence for the model",
-        "It therefore misses the glucose and the carbon dioxide lines on its own fitted data",
+        "oxygen taken up 0.0108 mol (target 0.0153); dry biomass to 170 h 1.05 g/L (target 2.15); glucose 0.51 g/L (target 0.85)",
+        "galacturonate 4.60 g/L (target 2.74)",
+        "mucic acid 6.45 g/L (target 4.51)",
+        "carbon dioxide made 0.01125 mol (target 0.00265)",
+        "Oxygen is within its target where the baselines are not",
+        "On its own fitted data, glucose and carbon dioxide are above their targets",
         "572ce3bedbb195b637045a60c5e2452f5b939315fc6fa699a9545949c5c63f71",
-        "evidence/verification/second_party/V-41",
-        "The form fails, not the constants",
+        "A second, independent run recomputes every number of the comparison",
+        "The form, not the constants, sets the gap",
         "4.30 g/L, 5.21 g/L and 0.0108 mol",
         "one level cannot identify any dependence of galacturonate oxidation on the glucose supplied",
-        "five to six times the line of 0.00265",
+        "five to six times the target of 0.00265",
         "3.33 g/L in galacturonate and 0.0063 mol in carbon dioxide",
-        "the held-back error is 10.6 g/L in place of 6.45",
-        "Since engine 0.9.0 the solver answers its four held-back questions",
+        "the error outside the fit is 10.6 g/L in place of 6.45",
+        "The solver answers the four questions of the comparison, fed 10.077, 11.06, 48.32 and 52.101 g/L",
         "and on seven of them 0.0088 and 0.0111 mol of gas: T2 pH 4 (2) has a blank online volume",
         "slowed to as little as 0.009 mL/h from 211.28 h",
     ] {
         assert!(result.contains(words), "{words}: {result}");
     }
     let data = described["validation"]["data"].as_str().unwrap();
-    assert!(data.contains("Zenodo record 5846028, CC BY 4.0"));
+    assert!(data.contains("Zenodo record 5846028"));
     assert!(data.contains("The measurements do not close on their own"));
     assert!(data.contains("0.78 to 1.15 between 40 and 215 h"), "{data}");
     assert_eq!(described["locked"]["glucose_uptake_max_g_per_g_h"], culture::GLUCOSE_UPTAKE_MAX_G_PER_G_H);
@@ -452,10 +453,10 @@ async fn the_description_says_what_is_fitted_and_its_example_runs_unchanged() {
     // Each output says in its own note how its comparison came out.
     let returns = serde_json::to_string(&described["returns"]).unwrap();
     for words in [
-        "Not held anywhere: 0.0088 mol",
-        "misses it after, to the records' end at 312 h",
-        "Compared with measurement to 170 h only",
-        "evidence for the bookkeeping of glucose and not for the kinetics",
+        "0.0088 mol RMS on seven of the fitted cultures",
+        "and above it after, to the records' end at 312 h",
+        "Compared with measurement to 170 h:",
+        "it tests the bookkeeping of glucose and not the kinetics",
     ] {
         assert!(returns.contains(words), "{words}");
     }

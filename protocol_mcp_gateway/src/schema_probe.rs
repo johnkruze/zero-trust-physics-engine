@@ -73,6 +73,7 @@ fn parser_keys(tool: &str) -> (BTreeSet<String>, BTreeSet<String>) {
         "solve" => {
             let mut accepted = solution::TOP_LEVEL.to_vec();
             accepted.push(solution::EXAMPLE);
+            accepted.push(crate::chain::FROM);
             (accepted, vec!["solver"])
         }
         "verify_solution" => {
@@ -88,6 +89,7 @@ fn parser_keys(tool: &str) -> (BTreeSet<String>, BTreeSet<String>) {
                 "seal_parts",
                 "solution_seal",
                 "request",
+                crate::chain::FROM,
             ];
             (keys, vec![])
         }
@@ -343,7 +345,7 @@ fn the_pair_and_the_solver_are_strings_and_no_declaration_lists_the_catalogue() 
     }
     // Outside its worked examples no declaration names a card or a solver, in any view.
     let all_cards: BTreeSet<String> = View::full().cards().iter().map(|c| c.card.to_string()).collect();
-    assert_eq!(all_cards.len(), 37);
+    assert_eq!(all_cards.len(), 40);
     let all_solvers: Vec<String> = View::full().solver_names().iter().map(|name| name.to_string()).collect();
     for (label, view) in views() {
         for tool in tools_in(&view) {

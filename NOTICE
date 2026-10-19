@@ -257,6 +257,72 @@ src/reactor_triga_jsi.rs
   (http://creativecommons.org/licenses/by-nc-nd/4.0/)." The thesis and the
   pulse database state no licence.
 
+src/reactor_spert3_twin.rs
+  McCardell, R. K.; Herborn, D. I.; Houghtaling, J. E. (1969). Reactivity
+  Accident Test Results and Analyses for the SPERT III E-Core: A Small,
+  Oxide-Fueled, Pressurized-Water Reactor. Report IDO-17281, Phillips
+  Petroleum Co., Atomic Energy Division, for the U.S. Atomic Energy
+  Commission. OSTI 4792676. https://doi.org/10.2172/4792676
+  In the source: the report's design data (Appendix A), kinetics, gap,
+  heat-source and rod data (Appendix B, Table II) and the rod worth curves of
+  Fig. B-4 as two fitted numbers per temperature, which the code needs; and,
+  in tests only, the conditions of some of its 70 tests. No measured outcome
+  of the report is in the source.
+  The source states no licence. The report's cover reads: "Distribution of
+  this document is unlimited."
+  Fink, J. K. (2000). Thermophysical properties of uranium dioxide. Journal
+  of Nuclear Materials 279 (1), 1-18.
+  https://doi.org/10.1016/S0022-3115(99)00273-1 : the heat capacity and
+  conductivity of UO2, which the code needs. Wagner, W. et al. (2000). The
+  IAPWS Industrial Formulation 1997 for the Thermodynamic Properties of Water
+  and Steam. Journal of Engineering for Gas Turbines and Power 122 (1),
+  150-182. https://doi.org/10.1115/1.483186 : the ten coefficients of the
+  saturation line (region 4), which the code needs. The terms of these two
+  articles are not recorded in the company's records.
+  Four polynomials of the water's properties at 10.44 MPa, fitted to the
+  NIST Chemistry WebBook, NIST Standard Reference Database 69, National
+  Institute of Standards and Technology, https://doi.org/10.18434/T4D303 ;
+  the code needs them. The WebBook's page reads: "(c) 2026 by the U.S.
+  Secretary of Commerce on behalf of the United States of America. All
+  rights reserved."
+
+src/reactor_spert3_ccore_twin.rs
+  Toole, C. R. (1964). The Effects of Pressure and Flow on Room Temperature
+  Power Excursions in Spert III. Report IDO-16918. OSTI 4042264.
+  https://doi.org/10.2172/4042264 ; Condit, C. M.; Scott, J. F.; Johnson, R.
+  L. (1967). Report IDO-17138. OSTI 4389198. https://doi.org/10.2172/4389198 .
+  Both: Phillips Petroleum Co., Atomic Energy Division, for the U.S. Atomic
+  Energy Commission. Keepin, G. R. (1965). Physics of Nuclear Kinetics.
+  In the source: core constants of the two reports (IDO-17138 Table B-1,
+  IDO-16918 Table I) and Keepin's six-group delayed-neutron set, which the
+  code needs; and, in tests only, the conditions of some transients of
+  IDO-16918. No measured outcome of either report is in the source.
+  The reports state no licence; both are distributed without restriction by
+  the Department of Energy's Office of Scientific and Technical Information.
+  The saturation line of IAPWS-IF97 region 4 (Wagner et al. 2000, above) and
+  the IAPWS auxiliary equations of Wagner, W. and Pruss, A. (1993),
+  International equations for the saturation properties of ordinary water
+  substance, J. Phys. Chem. Ref. Data 22, 783; the boiling laws of Thom, of
+  Zuber and of Ivey and Morris, by their published constants. The code needs
+  them. Their terms are not recorded in the company's records.
+
+src/reactor_msre_pump.rs
+  Prince, B. E.; Engel, J. R.; Ball, S. J.; Haubenreich, P. N.; Kerlin, T. W.
+  (1968). Zero-Power Physics Experiments on the Molten-Salt Reactor
+  Experiment. ORNL-4233, Oak Ridge National Laboratory. Prince, B. E. (1966).
+  Period Measurements on the Molten Salt Reactor Experiment During Fuel
+  Circulation: Theory and Experiment. ORNL-TM-1626, Oak Ridge National
+  Laboratory. Both for the U.S. Atomic Energy Commission.
+  In the source: the delayed-neutron constants (ORNL-4233 Table 2), the
+  vessel's elevations (Fig. 2) and the residence times round the loop
+  (ORNL-TM-1626 Table 1), which the code needs; and, in tests only, the
+  digitised pump-speed schedules of Figs. 22 and 23. ORNL-TM-1070 was read as
+  background and nothing of it is in the source.
+  US AEC contractor reports, distributed without restriction; the copies
+  carry the Commission's legal notice and state no licence. They were
+  fetched from the openmsr/msr-archive repository on GitHub, whose own
+  licence (GPL-3.0) covers the repository and not the reports.
+
 src/capsule_stardust.rs
   NASA documents on the NASA Technical Reports Server: Mitcheltree, Wilmoth,
   Cheatwood, Brauckmann, Greene (1997), Aerodynamics of Stardust Sample Return
@@ -347,6 +413,28 @@ src/grid_node.rs
 
 genesis_solvers
 ===============
+
+src/fuel_rod_triga_jsi.rs
+  Švajger, I.; Čalič, D.; Pungerčič, A.; Trkov, A.; Snoj, L. (2024).
+  Evaluation of reactor pulse experiments. Nuclear Engineering and Technology
+  56(4), 1165-1203. https://doi.org/10.1016/j.net.2023.11.021 : the radii and
+  densities of the element (Table 1) and the meat's specific heat (eq. 7.2).
+  Vavtar, Ingrid (2019), master's thesis, University of Ljubljana: the
+  hot-rod factor 1.387. Ravnik, M., Description of TRIGA Reactor, Table 4:
+  the meat's length. The University of Texas NETL TRIGA safety analysis
+  report (1991), Table 4-1 and section 4.4.5.1: the meat's conductivity and
+  the thermocouple's radius. Incropera and DeWitt, Fundamentals of Heat and
+  Mass Transfer, Tables A.1, A.6 and 10.1; Churchill and Chu (1975); Rohsenow
+  (1952); Zuber: the properties and correlations of the clad, rod and water.
+  The code needs them all. No measured value of the pulse database of the
+  "Jožef Stefan" Institute, https://trigapulse.ijs.si/ (Švajger, Snoj), is in
+  the source; its two fitted constants come from 39 of its records.
+  Licence of the article, in its own words: "This is an open access article
+  under the CC BY-NC-ND license
+  (http://creativecommons.org/licenses/by-nc-nd/4.0/)." The thesis, the
+  reactor description and the pulse database state no licence; the terms of
+  the NETL report and of the textbook and correlations are not recorded in
+  the company's records.
 
 src/tacot.rs
 (and src/wall_gas.rs, src/pica.rs, a test of src/ablator_slab.rs)

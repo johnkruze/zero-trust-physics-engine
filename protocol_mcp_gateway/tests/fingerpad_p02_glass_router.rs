@@ -474,7 +474,7 @@ async fn the_local_connection_lists_the_finger_pad_and_gives_the_bytes_of_the_we
     assert!(!error);
     let listed: Value = serde_json::from_str(&listed).unwrap();
     let cards = listed["cards"].as_array().unwrap();
-    assert_eq!(cards.len(), 37);
+    assert_eq!(cards.len(), 40);
     let entry = cards
         .iter()
         .find(|card| card["card"] == "fingerpad_p02_glass")
@@ -495,13 +495,13 @@ async fn the_local_connection_lists_the_finger_pad_and_gives_the_bytes_of_the_we
     assert_eq!(status, 200);
     assert_eq!(described, over_web);
     let description: Value = serde_json::from_str(&described).unwrap();
-    // The line in the list carries the standing: fitted, compared, missed,
-    // and the range that is left.
+    // The line in the list carries the standing: fitted, compared, the gap,
+    // and the range it computes.
     let line = entry["specimen"].as_str().unwrap();
     for words in [
-        "and missed",
+        "slip torque within 9.4, 29.3 and 13.0 percent of the mean of ten trials (target 5.62)",
         "+9.4, +29.3 and -13.0 percent",
-        "It answers at every force and rate above zero with those misses stated",
+        "computes every force and rate above zero and the twist past 75 degrees with the same equations",
     ] {
         assert!(line.contains(words), "{words}: {line}");
     }
@@ -512,16 +512,16 @@ async fn the_local_connection_lists_the_finger_pad_and_gives_the_bytes_of_the_we
     let result = description["validation"]["result"].as_str().unwrap();
     assert!(result.contains("no fitted constant moved") && !result.contains("no constant moved"), "{result}");
     for words in [
-        "by the rule fixed beforehand the comparison failed: of the twelve lines three were met and nine missed",
+        "On the 30 trials of this finger outside the fit, three of the twelve targets hold",
         "35.63 against 27.55 at 10 N (+29.3 percent)",
-        "A simpler rule did better than the card on the slip torque at each condition",
-        "this one answers at every force and rate above zero, with these misses stated",
+        "A simpler rule comes closer than the card on the slip torque at each condition",
+        "this one answers at every force and rate above zero, with these gaps stated",
         "At 2 N and 10 degrees a second it is just outside",
         "numerically a two-constant power law of load",
         "n = 0.76 +/- 0.06 and k = 6.74 +/- 1.31 mm",
         "with the paper's own k, the mean of seven fingers, they read +22.3 and +40.8 percent",
-        "evidence/verification/second_party/V-40/",
-        "SHA-256 9b7ad4088cd7af1b3255eba36cc99cc2f7297c779f76bbdc8432920f13ff7c0a",
+        "A second comparison program, on the same machine, from its own reduction of all 768 files, gives the same twelve results",
+        "The compared binary is kept: 9b7ad4088cd7af1b3255eba36cc99cc2f7297c779f76bbdc8432920f13ff7c0a",
     ] {
         assert!(result.contains(words), "{words}: {result}");
     }
@@ -541,8 +541,8 @@ async fn the_local_connection_lists_the_finger_pad_and_gives_the_bytes_of_the_we
         "differ by 0.67 percent at 100",
         "closes for any value of the eight constants",
         "cannot catch a wrong constant",
-        "A miss, and it stays on the record",
-        "it was scored twice, the second time by a second scorer",
+        "at the three conditions outside the fit the slip torque is 9.4 to 29.3 percent off (target 5.62)",
+        "a second comparison program, on one machine, gives the same results",
     ] {
         assert!(limits.contains(words), "{words}: {limits}");
     }

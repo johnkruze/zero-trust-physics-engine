@@ -251,11 +251,11 @@ async fn the_description_runs_its_examples_and_states_what_is_fitted() {
     let (status, text) = post(&base, "/describe_solver", &json!({ "solver": "propeller_apc_10x7e" })).await;
     assert_eq!(status, 200, "{text}");
     let described: Value = serde_json::from_str(&text).unwrap();
-    assert!(described["summary"].as_str().unwrap().contains("two blade-section constants fitted to this propeller's own measured thrust and power"));
+    assert!(described["summary"].as_str().unwrap().contains("two blade-section constants, the zero-lift angle (-2.77 degrees)"));
     assert!(described["validation"]["limits"].as_str().unwrap().contains("extrapolation in rotational speed"));
     assert!(described["validation"]["limits"].as_str().unwrap().contains("interpolation in advance ratio"));
-    assert!(described["summary"].as_str().unwrap().contains("it missed both of its lines"));
-    assert!(described["validation"]["result"].as_str().unwrap().contains("both lines were missed"));
+    assert!(described["summary"].as_str().unwrap().contains("at rest, 9 rows at 4144 to 6542 rev/min, within 6.02 on average (target 4.0), worst 11.76 (target 10.0)"));
+    assert!(described["validation"]["result"].as_str().unwrap().contains("mean 6.02 (target 4.0), worst 11.76 (target 10.0)"));
     assert_eq!(described["refusals"].as_array().unwrap().len(), 11);
     for key in ["example_solve", "example_solve_at_rest"] {
         let (status, text) = post(&base, "/solve", &described[key]).await;

@@ -1,0 +1,23 @@
+{
+ "model": "reactor_spert3_twin",
+ "verdict": "calibrated to the record",
+ "calibration": {
+  "companion_to": "reactor_spert3_fuel",
+  "protocol": {
+   "path": "evidence/research/reactor_spert3/twin/COMPARISON.md",
+   "sha256": "1f20ff51ef2ff50879731ea2a05451e3397bc6572585fd605871b5766eccbb56"
+  },
+  "scored": {
+   "utc": "2026-10-18T20:34:39Z",
+   "output": {
+    "path": "evidence/research/reactor_spert3/twin/out/scored.json",
+    "sha256": "8a30e1c4749aee218d3c9d1d4ce39f16b027c48786816ea9faaeae3887c747b5"
+   },
+   "program": {
+    "path": "evidence/research/reactor_spert3/twin/score.py",
+    "sha256": "125d9ec70a0aa49066c061105c18ba6870e66715869cb78bf41cc98aa4d497db"
+   }
+  },
+  "not_blind": "All 70 tabulated tests of IDO-17281 Tables III, V and VII were open when the structure was chosen and the twelve numbers were fitted on them; the left-out comparison refits the twelve on the other 69 tests for each test in turn."
+ }
+}

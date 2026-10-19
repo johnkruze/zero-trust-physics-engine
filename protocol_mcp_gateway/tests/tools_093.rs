@@ -148,7 +148,16 @@ const KEY: &str = "tools-093-key";
 /// say its forecast was registered before any of its days' values was
 /// published as a number, and the pass line names the protocol's four tiers
 /// (item 15).
-const FULL_DESCRIPTIONS: &str = "ebf5814ded225cc00aba9662f4b0aa6a8d4e16fc537290254983f6291be8021b";
+/// Set for 0.14.3, the words of the evidence, from ebf5814d...021b by the
+/// same rule (evidence/verification/next_engine_version_2026-10-15/pins.py
+/// on the words_0143 copy's cargo build --release binary): against_measurement
+/// in three words, every model compared with measurement described by its
+/// spec sheet, and every description's record in numbers.
+/// Then f00238f8...b5b8 on integration_0143, by the same pins.py on its
+/// merged binary: 40 cards and 25 solvers, the four models of 0.14.3
+/// (reactor_spert3_twin, reactor_spert3_ccore_twin, reactor_msre_pump,
+/// fuel_rod_triga_jsi) described by their spec sheets, and superseded_by.
+const FULL_DESCRIPTIONS: &str = "f00238f88dc00b7fca2f6e980fb3d9dcecb517f42b6bf4f06068ff6d332fb5b8";
 
 /// The one card whose short form is longer than a page: thirty vector fields
 /// and a worked run that states all thirty.
@@ -158,7 +167,13 @@ const SHORT_CARD_CHARS: usize = 4_000;
 /// How many of the thirty-one cards have a short form under 2,500 characters.
 // 25 since 0.11.0: the fuse link's short form carries a loaded worked run
 // and a worked refusal, and is 2,875 characters.
-const SHORT_CARDS_UNDER_2500: usize = 25;
+// 11 since 0.14.3: a card compared with measurement gives its spec sheet in
+// its short form, what it computes, its range, what it was fitted on and
+// where it refuses as its specimen, and the comparison and the gap as its
+// accuracy; the company specimens and the shortest sheets stay under 2,500.
+// 10 on integration_0143: reactor_spert3 says superseded_by (succession::TABLE),
+// 2,535 characters.
+const SHORT_CARDS_UNDER_2500: usize = 10;
 
 struct Open {
     child: Child,
@@ -273,7 +288,7 @@ fn keys(value: &Value) -> Vec<&str> {
 fn with_no_form_or_full_every_description_is_the_whole_description_as_it_was() {
     let mut door = Stdio2::start(None);
     let (cards, solvers) = served(&mut door);
-    assert_eq!((cards.len(), solvers.len()), (37, 24));
+    assert_eq!((cards.len(), solvers.len()), (40, 25));
     let mut all = Sha256::new();
     for (tool, named) in cards.iter().map(|card| ("describe_card", card)).chain(solvers.iter().map(|solver| ("describe_solver", solver))) {
         let plain = text(&mut door, tool, named);
@@ -300,14 +315,18 @@ fn a_cards_short_form_holds_the_full_forms_own_names_units_and_bounds() {
         // has it after its worked run.
         let mut expected = vec!["domain", "card", "form", "specimen", "against_measurement", "accuracy_against_measurement", "phase_fields", "load_fields",
              "dt_s", "stops", "declared_ends", "continues_with_from", "example_run_trajectory"];
-        // A card calibrated to the record gives, after its word, the card it
-        // stands beside and what of the record was seen first, as its record does.
+        // A second form of a served card's object gives, after its evidence,
+        // the card it stands beside, as its record does.
         if full["validation"].get("companion_to").is_some() {
-            expected.insert(6, "not_blind");
             expected.insert(6, "companion_to");
-            for key in ["companion_to", "not_blind"] {
-                assert_eq!(short[key], full["validation"][key], "{card} {key}");
-            }
+            assert_eq!(short["companion_to"], full["validation"]["companion_to"], "{card}");
+        }
+        assert!(short.get("not_blind").is_none() && full["validation"].get("not_blind").is_none(), "{card}");
+        // A superseded card names its successor after its name, in both forms
+        // (succession::TABLE).
+        if let Some(by) = full.get("superseded_by") {
+            expected.insert(2, "superseded_by");
+            assert_eq!(&short["superseded_by"], by, "{card}");
         }
         if card["card"] == "grid_node" {
             expected.push("example_refused");
@@ -321,19 +340,19 @@ fn a_cards_short_form_holds_the_full_forms_own_names_units_and_bounds() {
             assert!(answered.ends_with("(TemperatureOutsideCard). That state is not sealed."), "{card}: {answered}");
         }
         assert_eq!(short["form"], "short");
-        for same in ["domain", "card", "specimen", "example_run_trajectory"] {
+        for same in ["domain", "card", "example_run_trajectory"] {
             assert_eq!(short[same], full[same], "{card} {same}");
         }
-        // The verdict is the word on the card's row of list_cards, and its phrase begins as a match of find_model begins.
+        // The spec sheet once: the full form's paragraph is the short form's
+        // specimen and accuracy together, in its own order.
+        within(&full["specimen"], &short["specimen"], &short["accuracy_against_measurement"], card);
+        // The evidence is the word on the card's row of list_cards, and its phrase begins as a match of find_model begins.
         assert_eq!(short["against_measurement"], row["against_measurement"], "{card}");
         let phrase = short["accuracy_against_measurement"].as_str().unwrap();
         let opening = match short["against_measurement"].as_str().unwrap() {
-            "met" => "passed the pass marks its record states: ",
-            "missed" => "failed the pass marks its record states: ",
-            "met in part" => "passed in part the pass marks its record states: ",
-            "not held to a measurement" => "the company's own specimen: ",
-            "held to a reference calculation" => "held to a reference calculation, not compared with a measurement: ",
-            "calibrated to the record" => "calibrated to the record, not a blind test: ",
+            "compared with measurement" => "Compared with ",
+            "company specimen" => "Company specimen: ",
+            "held to a reference calculation" => "Held to a reference calculation: ",
             other => panic!("{card}: {other}"),
         };
         assert!(phrase.starts_with(opening), "{card}: {phrase}");
@@ -408,15 +427,13 @@ fn a_solvers_short_form_holds_the_full_forms_own_inputs_names_and_example() {
         // A solver that gives a worked refusal, the hot spot's since 0.12.0,
         // has it after its worked example, as a card's short form does.
         let mut expected = vec!["solver", "form", "summary", "against_measurement", "accuracy_against_measurement", "inputs", "returns", "refusals", "examples", "example_solve"];
-        // A solver calibrated to the record gives, after its word, the solver
-        // it stands beside and what of the record was seen first, as its record does.
+        // A second form of a served solver's object gives, after its
+        // evidence, the solver it stands beside, as its record does.
         if full["validation"].get("companion_to").is_some() {
-            expected.insert(5, "not_blind");
             expected.insert(5, "companion_to");
-            for key in ["companion_to", "not_blind"] {
-                assert_eq!(short[key], full["validation"][key], "{solver} {key}");
-            }
+            assert_eq!(short["companion_to"], full["validation"]["companion_to"], "{solver}");
         }
+        assert!(short.get("not_blind").is_none() && full["validation"].get("not_blind").is_none(), "{solver}");
         if full.get("example_refused").is_some() {
             expected.push("example_refused");
             assert_eq!(short["example_refused"], full["example_refused"], "{solver}");
@@ -426,7 +443,8 @@ fn a_solvers_short_form_holds_the_full_forms_own_inputs_names_and_example() {
         expected.push("full_form");
         assert_eq!(keys(&short), expected, "{solver}");
         assert_eq!(short["form"], "short");
-        for same in ["solver", "summary", "example_solve"] {
+        within(&full["summary"], &short["summary"], &short["accuracy_against_measurement"], solver);
+        for same in ["solver", "example_solve"] {
             assert_eq!(short[same], full[same], "{solver} {same}");
         }
         assert_eq!(short["against_measurement"], row["against_measurement"], "{solver}");
@@ -450,7 +468,9 @@ fn a_solvers_short_form_holds_the_full_forms_own_inputs_names_and_example() {
         for proof in ["seal", "receipt", "sha256"] {
             assert!(!keys(&short).iter().any(|key| key.contains(proof)), "{solver}: {proof}");
         }
-        assert!(short_text.len() < 7_000, "{solver}: {} characters", short_text.len());
+        // Under 7,500 since 0.14.3: the spec sheet is in the short form, and
+        // ablator_slab's, the longest, is 7,310.
+        assert!(short_text.len() < 7_500, "{solver}: {} characters", short_text.len());
     }
     // The worked example runs as it is, and by its name.
     let short = ok(&mut door, "describe_solver", &json!({ "solver": "atom_dft", "form": "short" }));
@@ -503,22 +523,26 @@ fn the_tools_say_what_the_word_is_and_that_the_short_form_exists() {
     let said = |name: &str| tool(name).description.as_deref().unwrap_or("").to_string();
     for name in ["list_cards", "list_solvers"] {
         assert!(
-            said(name).ends_with("against_measurement says in one of six words how the model stands against measurement. \"met\", \"met in part\" and \"missed\" say how it did against the pass marks its record states, and its validation record, in describe_card or describe_solver, says whether that comparison was blind and, where it was not, what was seen and when. \"calibrated to the record\" is a companion whose structure or constants were chosen with the record of a scored original open, so its comparison is not a blind test; the original is served beside it under its own word. \"held to a reference calculation\" is compared with a published calculation, and \"not held to a measurement\" is the company's own specimen. It is accuracy and not fit, and a model that missed is still the served model of its thing."),
+            said(name).ends_with("against_measurement names the evidence behind the model, in one of three words: \"compared with measurement\" (a real object; its description says what it was fitted on, what it was compared with outside the fit and within what, the gap, and where it refuses), \"held to a reference calculation\" (compared with a published calculation), or \"company specimen\" (an object the company specified, every constant stated). The numbers say how good it is."),
             "{name}: {}",
             said(name)
         );
     }
-    assert!(said("find_model").contains("against_measurement gives that verdict in one of six words") && said("find_model").contains("It is accuracy and not fit"));
-    assert!(said("find_model").contains("\"met\", \"met in part\" and \"missed\" say how the model did against the pass marks its record states, and its validation record says whether that comparison was blind and, where it was not, what was seen and when"));
-    assert!(said("find_model").contains("\"calibrated to the record\" is a companion whose structure or constants were chosen with the record of a scored original open, so its comparison is not a blind test, and the original is served beside it under its own word"));
-    // No tool says that the three words name blind tests.
-    for name in ["list_cards", "list_solvers", "find_model"] {
-        assert!(!said(name).contains("compared blind") && !said(name).contains("fixed before"), "{name}: {}", said(name));
+    for word in ["\"compared with measurement\"", "\"held to a reference calculation\"", "\"company specimen\""] {
+        assert!(said("find_model").contains(word), "{word}");
+    }
+    assert!(said("find_model").contains("Fit and accuracy are separate: a model with a gap is still the served model of its thing."));
+    assert!(said("find_model").contains("A model a newer one supersedes carries superseded_by and comes after it, still served under its own ID."));
+    // No tool says the words of the old record.
+    for name in ["list_cards", "list_solvers", "find_model", "describe_card", "describe_solver"] {
+        for word in ["blind", "pass mark", "fixed before", "met in part", "\"met\"", "\"missed\"", "calibrated to the record", "verdict"] {
+            assert!(!said(name).contains(word), "{name} says {word}: {}", said(name));
+        }
     }
     for name in ["describe_card", "describe_solver"] {
         let text = said(name);
         // Since 0.10.1 the second sentence says what is so of the full form, where it told the agent to read it.
-        assert!(text.contains("With form \"short\" the answer is a page, enough to write a first request") && text.contains("Only the full form, the answer when form is left out, has each bound's reason, the validation record and each stop's meaning: it is the form that explains a refusal and the form a result is relied on with."), "{name}: {text}");
+        assert!(text.contains("With form \"short\" the answer is a page, enough to write a first request") && text.contains("The full form, the answer when form is left out, adds each bound's reason, the validation record and each stop's meaning."), "{name}: {text}");
         let form = &Value::Object(tool(name).input_schema.as_ref().clone())["properties"]["form"];
         assert_eq!((form["type"].as_str(), &form["enum"]), (Some("string"), &json!(["short", "full"])), "{name}");
         assert!(!Value::Object(tool(name).input_schema.as_ref().clone())["required"].as_array().unwrap().contains(&json!("form")));
@@ -552,14 +576,14 @@ async fn every_connection_gives_the_same_bytes_for_the_lists_the_matches_and_the
     );
     let open = Open::start();
     // The two lists: every row with its word, the same bytes where every model is seen.
-    for (tool, path, rows, count) in [("list_cards", "cards", "cards", 37), ("list_solvers", "solvers", "solvers", 24)] {
+    for (tool, path, rows, count) in [("list_cards", "cards", "cards", 40), ("list_solvers", "solvers", "solvers", 25)] {
         let local = text(&mut stdio, tool, &json!({}));
         assert_eq!(get(&base, path).await, local, "{tool} web");
         assert_eq!(open.tool(tool, &json!({})), (false, local.clone()), "{tool} open");
         let listed = parsed(&local);
         assert_eq!(listed[rows].as_array().unwrap().len(), count);
         for row in listed[rows].as_array().unwrap() {
-            assert!(["met", "missed", "met in part", "calibrated to the record", "held to a reference calculation", "not held to a measurement"].contains(&row["against_measurement"].as_str().unwrap()), "{row}");
+            assert!(["compared with measurement", "held to a reference calculation", "company specimen"].contains(&row["against_measurement"].as_str().unwrap()), "{row}");
         }
         // A key sees its own rows, each as the others see it.
         let (status, error, through_key) = keyed.tool(KEY, tool, &json!({}));
@@ -605,5 +629,20 @@ async fn every_connection_gives_the_same_bytes_for_the_lists_the_matches_and_the
         let listed = cards["cards"].as_array().unwrap().iter().find(|card| card["card"] == row["card"]).unwrap();
         assert_eq!(row["against_measurement"], listed["against_measurement"], "{row}");
     }
-    assert_eq!(names(&found["matches"], "against_measurement"), [json!("met"), json!("met in part")]);
+    assert_eq!(names(&found["matches"], "against_measurement"), [json!("compared with measurement"), json!("compared with measurement")]);
+}
+
+/// The short form says a description's one sentence once: its specimen (or
+/// summary) is the full form's where the model has no spec sheet; where it
+/// has one, the full paragraph is made of the short form's specimen and its
+/// accuracy, every sentence of each in it.
+fn within(full: &Value, short: &Value, accuracy: &Value, model: &Value) {
+    let (full, short) = (full.as_str().unwrap(), short.as_str().unwrap());
+    if full == short {
+        return;
+    }
+    let accuracy = accuracy.as_str().unwrap();
+    assert!(full.contains(" Gap: ") && accuracy.starts_with("Compared with ") && full.contains(accuracy), "{model}: {accuracy}");
+    let rest = full.replacen(accuracy, "", 1);
+    assert_eq!(rest.split_whitespace().collect::<Vec<_>>(), short.split_whitespace().collect::<Vec<_>>(), "{model}");
 }

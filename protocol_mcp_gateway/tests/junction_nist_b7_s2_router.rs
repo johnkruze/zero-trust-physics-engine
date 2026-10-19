@@ -267,12 +267,12 @@ async fn the_description_carries_the_standing_and_its_examples_run_unchanged() {
     let listed = reqwest::get(format!("{base}/solvers")).await.unwrap();
     let listed: Value = serde_json::from_str(&listed.text().await.unwrap()).unwrap();
     let solvers = listed["solvers"].as_array().expect("solvers");
-    assert_eq!(solvers.len(), 24);
-    assert_eq!(solvers[14]["solver"], "junction_nist_b7_s2");
-    assert_eq!(solvers[14]["against_measurement"], "missed");
-    let summary = solvers[14]["summary"].as_str().expect("a sentence");
-    assert!(summary.contains("11.84 percent of I_c R_n rms against 5"), "{summary}");
-    assert!(summary.contains("by the rule fixed beforehand the comparison failed"), "{summary}");
+    assert_eq!(solvers.len(), 25);
+    assert_eq!(solvers[15]["solver"], "junction_nist_b7_s2");
+    assert_eq!(solvers[15]["against_measurement"], "compared with measurement");
+    let summary = solvers[15]["summary"].as_str().expect("a sentence");
+    assert!(summary.contains("within 11.84 percent of I_c R_n RMS"), "{summary}");
+    assert!(summary.contains("0 to 0.91847 mA") && summary.contains("up to 19.5 percent high"), "{summary}");
 
     let (status, text) = post(&base, "/describe_solver", &json!({ "solver": "junction_nist_b7_s2" })).await;
     assert_eq!(status, 200, "{text}");
@@ -281,7 +281,7 @@ async fn the_description_carries_the_standing_and_its_examples_run_unchanged() {
     let pass_line = described["validation"]["pass_line"].as_str().unwrap();
     assert!(pass_line.contains("27ad14413a30eed6e939afd1e1603ddaf4fb3d829d6823b8f5887a0f03e6238b"), "{pass_line}");
     let result = described["validation"]["result"].as_str().unwrap();
-    for words in ["11.84 percent of I_c R_n against a mark of 5", "the comparison failed", "worst -36.3 at 0.1113 mA falling", "10.5 to 16.2 percent"] {
+    for words in ["11.84 percent of I_c R_n (target 5)", "rising sweep 7.10, falling 15.13", "worst -36.3 at 0.1113 mA falling", "10.5 to 16.2 percent"] {
         assert!(result.contains(words), "{words}: {result}");
     }
     assert_eq!(described["inputs"].as_array().expect("inputs").len(), 5);

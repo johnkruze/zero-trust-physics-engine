@@ -844,7 +844,7 @@ async fn the_three_connections_list_the_system_and_give_the_same_bytes_for_its_d
     let entry = cards.iter().find(|card| card["card"] == "solar_system").expect("the system is listed");
     assert_eq!(entry["domain"], "aerospace");
     let summary = entry["specimen"].as_str().unwrap();
-    assert!(summary.contains("nothing fitted") && summary.contains("The caller supplies every position and velocity"), "{summary}");
+    assert!(summary.contains("Nothing fitted") && summary.contains("The caller supplies every position and velocity"), "{summary}");
 
     let all_pairs: Vec<Value> = cards.iter().map(|card| json!([card["domain"], card["card"]])).collect();
     let keys = json!([
@@ -896,11 +896,11 @@ async fn the_three_connections_list_the_system_and_give_the_same_bytes_for_its_d
     assert!(rule.contains("359 m for the Moon, 90 m for Mercury, 4.3 m for the Earth, 0.30 m for Venus, 0.21 m for Mars and under 0.2 m for each other body, the three asteroids among them"), "{rule}");
     assert!(!rule.contains("under 0.2 m for every other body"));
     assert!(!rule.contains("are refused as BodiesTooClose") && !rule.contains("is refused as OriginOutsideCard"));
-    assert!(rule.contains("A state outside those distances, inside the bands, is computed") && rule.contains("until engine 0.9 it was refused 5,934.6 days from the 1999 state"));
-    assert!(rule.contains("Mars Odyssey to 2006 met its line (695 m at most against 700 m)"));
+    assert!(rule.contains("A state outside those distances, inside the bands, is computed") && rule.contains("the compared run goes on, past day 5,934.6 from the 1999 state"));
+    assert!(rule.contains("Mars Odyssey to 2006 within 695 m at most (target 700 m)"));
     assert!(rule.contains("Saturn 9.03 to 9.97, Uranus 19.88 to 20.10, Neptune 29.96 to 30.14"));
     assert!(rule.contains("up to the last range compared with measurement, 16.2 years after the 1999 state"));
-    assert!(rule.contains("From 16.2 to 21 years the run was compared only with DE441, a calculation"));
+    assert!(rule.contains("From 16.2 to 21 years the run is compared with DE441, a calculation"));
     assert!(rule.contains("Its distance from the Sun is from 18.0 to 20.4 au; the compared run, to the last range compared with measurement, went through 19.88 to 20.10 au, and a distance outside that, inside the band, is computed"));
     assert!(rule.contains("Mercury and Venus at 0.2631 au") && rule.contains("the compared run's stayed 98 409 to 114 929 m from it"));
     assert!(!rule.contains("7,739") && !rule.contains("10.07") && !rule.contains("19.81") && !rule.contains("200000 m"));
@@ -913,40 +913,41 @@ async fn the_three_connections_list_the_system_and_give_the_same_bytes_for_its_d
     assert!(record["limits"].as_str().unwrap().contains("interpolation") && record["limits"].as_str().unwrap().contains("extrapolation"));
     // Sentences held in the one line of the list, the data, the result and
     // the limits.
-    assert!(summary.ends_with(
-        "The comparison started from JPL's own state of 1999 and was made with range measurements that state was fitted to: over 16.2 years one Mars file, Mars Odyssey up to 2006, and MESSENGER at Mercury met their lines, two Mars files missed by at most 10 percent in mid-2007, and the Jupiter and Saturn files were not compared."
+    assert!(summary.contains(
+        "Compared with 10,134 ranges of three spacecraft in four files, not used to choose it, in one run of 7,670 days: Mars Odyssey to 2006 within 695 m (target 700 m), 270 m RMS;"
     ), "{summary}");
-    assert!(record["data"].as_str().unwrap().contains("Park et al. 2021 for DE440 and DE441, Giorgini et al. for Horizons"));
+    assert!(summary.contains("by at most 8 and 10 percent, from the 340 asteroids the card leaves out"), "{summary}");
+    assert!(record["data"].as_str().unwrap().contains("The constants are those of DE440 and the start state is DE441's, through JPL Horizons"));
     let result = record["result"].as_str().unwrap();
     for words in [
-        "Two files met their lines, two missed and two comparisons were not made.",
-        "equals the card's distance from JPL's DE441 ephemeris to about 5 m, so every verdict follows from DE441 without a measurement",
+        "In one run of 7,670 days from the 1999 state, none refused.",
+        "equals the card's distance from JPL's DE441 ephemeris to about 5 m: this simpler model",
         "stays within 0.69 km of JPL's Earth-to-Mars distance over 7.75 years and 1.9 km over 21, within 2.7 km for Mercury, 3.2 km for Jupiter and 2.1 km for Saturn",
-        "met, 270 m rms and 695 m at most against 700 m",
-        "44 ranges were outside the line, all in mid-2007, by at most 8 percent",
+        "(2,389 ranges): 270 m rms and 695 m at most (target 700 m)",
+        "44 ranges are outside the target, all in mid-2007, by at most 8 percent",
         "34 ranges outside, all in mid-2007, by at most 10 percent",
-        "left out the station term of TDB - TT, up to 48 m one way and 22 m rms",
-        "Odyssey up to 2006-10 met, 689 m at most against 700 m; Odyssey after missed, 45 of 4,939 ranges outside, the worst 1.095 of the line",
-        "33 of 1,993 outside, the worst 1.093; MESSENGER met, 2,054 m at most, 0.640 of its line",
-        "inside by 5 to 11 m of a line that is 678.3 m rounded up to 700, and with 678.3 m, 11 to 13 ranges are outside",
-        "the 340 asteroids the card leaves out, 730 of the 933 m at the misses of mid-2007, and no single asteroid does it",
+        "leaves out the station term of TDB - TT, up to 48 m one way and 22 m rms",
+        "Odyssey up to 2006-10, 689 m at most (target 700 m); Odyssey after, 45 of 4,939 ranges outside, the worst 1.095 of the target",
+        "33 of 1,993 outside, the worst 1.093; MESSENGER, 2,054 m at most, 0.640 of its target",
+        "inside by 5 to 11 m of a target that is 678.3 m rounded up to 700; with 678.3 m, 11 to 13 ranges are outside",
+        "the 340 asteroids the card leaves out, 730 of the 933 m in mid-2007, and no single asteroid does it",
         "the Sun's oblateness, 2,591 of 2,661 m",
         "the Earth's remaining 69 to 183 m is the Moon's error of 6 to 16 km",
         "Newton alone would be 351 km off by 2006-10",
-        "end 5 to 24 m apart on the Moon after 21 years, so the 10 m line could not have been held",
+        "end 5 to 24 m apart on the Moon after 21 years, so no 64-bit run holds the Moon to 10 m",
         "Against a 32-digit run the engine is 9.5 m off on the Moon and 0.92 m on the Earth",
         "78 m on the Moon, 17.9 m on Mercury and under 1 m on the Earth",
-        "evidence/verification/second_party/V-31/",
+        "A second comparison program, on the same machine, with an independent reduction and an independent integrator, gives the same results",
     ] {
         assert!(result.contains(words), "{words}: {result}");
     }
     let limits = record["limits"].as_str().unwrap();
     for words in [
         "a reduction that has the term has a floor of about 5 m, and 1.3 m at Mercury",
-        "grows about in proportion to time (T^0.96), so the line is too tight just after the opened span and twice too loose at 15 years",
+        "grows about in proportion to time (T^0.96), so the target is too tight just after that span and twice too loose at 15 years",
         "leave about 20 km and 10 km with JPL's own ephemeris through this reduction",
         "this is an inference from DE441 and is not stated in the files' headers",
-        "No registered comparison was made for Jupiter or Saturn, and after that correction the Cassini file still fails the test of the reduction, at 590 m rms",
+        "After that correction the Cassini file still leaves 590 m rms with JPL's own positions, so Jupiter and Saturn are outside the comparison",
         "FrameOutsideCard tests the speed of the centre of mass and nothing else",
         "AxesOutsideCard: the orbit of the Earth-Moon barycentre about the Sun must be inclined 21 to 27 degrees to the z axis",
         "falls from 24.94 to 22.56 degrees from 9999 BC to AD 9999",
@@ -956,9 +957,9 @@ async fn the_three_connections_list_the_system_and_give_the_same_bytes_for_its_d
         "Two bodies at exactly one point are refused by a name of the card, BodiesCoincide",
         "Where the centre of mass is, is not held",
         "any pair but the Earth and the Moon under 0.26 au or any two asteroids under 0.38 au, are computed as point masses",
-        "passes day 5,934.6, where Saturn goes farther from the Sun than 9.97 au",
-        "carry that one state forward for up to 16.2 years to where the stations measured (the run went on to 21 years, compared only with DE441)",
-        "Neptune at another longitude for instance, was not itself compared",
+        "goes past day 5,934.6, where Saturn goes farther from the Sun than 9.97 au",
+        "carry that one state forward for up to 16.2 years to where the stations measured (the run went on to 21 years, compared with DE441 alone)",
+        "Neptune at another longitude for instance, has no comparison of its own",
     ] {
         assert!(limits.contains(words), "{words}: {limits}");
     }

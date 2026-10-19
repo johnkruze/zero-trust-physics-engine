@@ -470,7 +470,7 @@ async fn the_cell_names_a_step_of_zero_or_less_and_takes_any_discharge_current()
     // The two behaviours the description now states.
     let rule = d["dt_s"]["rule"].as_str().unwrap();
     assert!(rule.contains("refuses the whole run before its first step"), "{rule}");
-    assert!(rule.contains("takes the state of charge and held_current_a only"), "{rule}");
+    assert!(rule.contains("takes the state of charge and held_current_a alone"), "{rule}");
     let (status, text) = post(
         &base,
         "/run_trajectory",
@@ -495,8 +495,8 @@ async fn all_twenty_one_cards_carry_a_validation_of_five_parts_and_nine_are_the_
     assert_eq!(status, 200);
     let list: Value = serde_json::from_str(&text).unwrap();
     let cards = list["cards"].as_array().unwrap_or_else(|| list.as_array().unwrap());
-    assert_eq!(cards.len(), 37);
-    let fitted = ["cell_18650pf", "generator_mmrtg_f1", "generator_mmrtg_seebeck", "capsule_stardust", "satellite_lageos1", "cantilever_eth", "creep_cmsx6", "capsule_insight", "reactor_spert3_fuel", "crater_ryugu_sci", "momentum_jwst_dihedral", "momentum_jwst_srp", "link_gothenburg_10010", "solar_system", "los_jwst_fine_guide", "tokamak_jet_dte1", "fingerpad_p02_glass", "accumulator_sbo450", "reactor_triga_jsi", "reactor_spert3_ccore", "runaway_18650_lco", "grasp_lift_glass_4tu", "tokamak_vde_mast"];
+    assert_eq!(cards.len(), 40);
+    let fitted = ["cell_18650pf", "generator_mmrtg_f1", "generator_mmrtg_seebeck", "capsule_stardust", "satellite_lageos1", "cantilever_eth", "creep_cmsx6", "capsule_insight", "reactor_spert3_fuel", "reactor_spert3_twin", "crater_ryugu_sci", "reactor_spert3_ccore_twin", "momentum_jwst_dihedral", "momentum_jwst_srp", "link_gothenburg_10010", "solar_system", "los_jwst_fine_guide", "tokamak_jet_dte1", "fingerpad_p02_glass", "accumulator_sbo450", "reactor_triga_jsi", "reactor_spert3_ccore", "runaway_18650_lco", "grasp_lift_glass_4tu", "tokamak_vde_mast", "reactor_msre_pump"];
     // The reactor is fitted and has not been compared yet: its result says so.
     let awaiting = "reactor_spert3";
     // The 2170 cell was compared with its held-back tests and missed: its result says so.
@@ -510,10 +510,10 @@ async fn all_twenty_one_cards_carry_a_validation_of_five_parts_and_nine_are_the_
         let d = describe(&base, domain, card).await;
         let record = d["validation"].as_object().unwrap_or_else(|| panic!("{card} has no validation"));
         let mut keys: Vec<&str> = record.keys().map(String::as_str).collect();
-        // A card calibrated to the record gives, after its five parts, the
-        // card it stands beside and what of the record was seen first.
+        // The second form of a generator gives, after its five parts, the
+        // card it stands beside.
         if record.contains_key("companion_to") {
-            assert_eq!(keys.split_off(5), ["companion_to", "not_blind"], "{card}");
+            assert_eq!(keys.split_off(5), ["companion_to"], "{card}");
             assert_eq!(card, "generator_mmrtg_seebeck");
             assert_eq!(record["companion_to"], "generator_mmrtg_f1");
         }
@@ -524,34 +524,34 @@ async fn all_twenty_one_cards_carry_a_validation_of_five_parts_and_nine_are_the_
         if card == run_once_on_two_further_cells {
             let result = record["result"].as_str().unwrap();
             assert!(
-                result.starts_with("Run once, on 2026-10-09, on runs of two further cells of the same type that no model had seen"),
+                result.starts_with("Run once on runs of two further cells of the same type that no model had seen"),
                 "{card}"
             );
             for words in [
-                "Third cell, m448-N: 51 of 60 runs were inside the marks",
-                "Second cell, m1000: 31 of 45 runs were inside the marks, below the 36 to 41 expected",
-                "three of the five conditions were not met",
+                "Third cell, m448-N: 51 of 60 runs within every target",
+                "Second cell, m1000: 31 of 45 runs within every target, under the 36 to 41 expected",
+                "two of the five conditions hold",
                 "All ten hill-climb cycles",
             ] {
                 assert!(result.contains(words), "{card}: {words}");
             }
-            assert!(record["limits"].as_str().unwrap().contains("are now spent"), "{card}");
-            assert!(record["data"].as_str().unwrap().contains("doi 10.5683/SP3/ZVTR4B"), "{card}");
-            assert!(record["limits"].as_str().unwrap().contains("not a blind test"), "{card}");
+            assert!(record["limits"].as_str().unwrap().contains("have now been read"), "{card}");
+            assert!(record["data"].as_str().unwrap().contains("Borealis 10.5683/SP3/ZVTR4B"), "{card}");
+            assert!(record["limits"].as_str().unwrap().contains("The model was developed on all the tests of the first cell, m80."), "{card}");
             assert!(!record.values().any(|part| part.as_str().unwrap().contains("seal")), "{card}");
         } else if card == compared_and_missed {
             assert!(
                 record["result"].as_str().is_some_and(|text| text.starts_with(
-                    "Compared with the 60 held-back tests on 2026-10-08, and by the rule fixed beforehand the comparison failed"
+                    "On the 60 tests: 27 runs within every target, and no temperature with every run within."
                 )),
                 "{card}"
             );
-            assert!(record["data"].as_str().unwrap().contains("doi 10.5683/SP3/ZVTR4B"), "{card}");
+            assert!(record["data"].as_str().unwrap().contains("Borealis 10.5683/SP3/ZVTR4B"), "{card}");
             assert!(!record.values().any(|part| part.as_str().unwrap().contains("seal")), "{card}");
         } else if card == awaiting {
             assert!(
                 record["result"].as_str().is_some_and(|text| text.starts_with(
-                    "Compared with the ten held-back tests on 2026-10-08, and by the rule fixed beforehand the comparison failed"
+                    "On the 10 tests not in the fit. Peak power: RMS 0.58 of the report's standard deviation (target 1.5)"
                 )),
                 "{card}"
             );
@@ -561,34 +561,37 @@ async fn all_twenty_one_cards_carry_a_validation_of_five_parts_and_nine_are_the_
             // limits say that it missed on the opened trips.
             let result = record["result"].as_str().unwrap();
             assert!(
-                result.starts_with("Compared with the held-back trips on 2026-10-09, run once through the engine: all seven lines were met on 12 trips."),
+                result.starts_with("On the 12 trips outside the fit, run once through the engine: every target held."),
                 "{card}"
             );
-            for words in ["dropped before scoring", "0.166", "0.182", "0.046 Hz", "No trip was refused"] {
+            for words in ["dropped by the quality rule", "0.166", "0.182", "0.046 Hz", "No trip was refused"] {
                 assert!(result.contains(words), "{card}: {words}");
             }
             let limits = record["limits"].as_str().unwrap();
-            assert!(limits.contains("are now spent") && limits.contains("missed its mark"), "{card}");
-            assert!(record["data"].as_str().unwrap().contains("NESO Open Data Licence"), "{card}");
+            assert!(limits.contains("are an easier set than the 28 in it") && limits.contains("the depth error is 0.302 (target 0.25)"), "{card}");
+            assert!(record["data"].as_str().unwrap().contains("NESO Open Data"), "{card}");
             assert!(!record.values().any(|part| part.as_str().unwrap().contains("seal")), "{card}");
         } else if card == "tire_eve_r19_ice" {
-            // The tyre is fitted and was scored once on its held-back runs: its result gives the errors.
+            // The tyre is fitted and was compared once on its runs outside the fit: its result gives the errors.
             let result = record["result"].as_str().unwrap();
             assert!(
-                result.starts_with("Ninety runs were held back. On 2026-10-09 the card was compared with the 60 of them that hold a scored slip, as 60 cells of three repeats each, and all five lines fixed beforehand were met"),
+                result.starts_with("On the 60 of the 90 runs outside the fit that hold a slip of 5 to 20 percent, as 60 cells of three repeats each"),
                 "{card}"
             );
-            assert!(result.contains("0.034 over the 60 held-back cells against a line of 0.045"), "{card}");
+            assert!(result.contains("0.034 over the 60 cells (target 0.045)"), "{card}");
             assert!(result.contains("number 153"), "{card}");
             assert!(record["data"].as_str().unwrap().contains("doi 10.5281/zenodo.1009017"), "{card}");
         } else if fitted.contains(&card) {
             assert_ne!(record["result"], "not compared with a measurement", "{card}");
         } else if ["cable_stretch", "hydraulic_fluid", "resonance", "swing", "tesseract", "thermal", "ti64_lattice", "grid_node", "battery_sag"].contains(&card) {
-            // The company's own specimens: each record names it so, and says what
+            // The company specimens: each record names it so, and says what
             // its runs are held to.
             generic += 1;
-            assert!(record["object"].as_str().unwrap().contains("The company's own specimen"), "{card}");
-            assert!(record["result"].as_str().unwrap().starts_with("Reproduced:"), "{card}");
+            assert!(record["object"].as_str().unwrap().starts_with("Company specimen: "), "{card}");
+            assert!(record["object"].as_str().unwrap().contains("every constant is stated in this description"), "{card}");
+            let result = record["result"].as_str().unwrap();
+            assert!(result.starts_with("An outside recomputation in arithmetic of 50 digits or more gives the card's runs"), "{card}");
+            assert!(result.contains("conservation ledger to its stated limit"), "{card}");
         } else {
             generic += 1;
             assert_eq!(record["result"], "not compared with a measurement", "{card}");
@@ -597,7 +600,7 @@ async fn all_twenty_one_cards_carry_a_validation_of_five_parts_and_nine_are_the_
     assert_eq!(generic, 9);
     let generator = describe(&base, "energy", "generator_mmrtg_f1").await;
     let result = generator["validation"]["result"].as_str().unwrap();
-    assert!(result.contains("missed") && result.contains("the comparison failed") && result.contains("+0.010094, about 1.16 W high, outside the line"), "{result}");
+    assert!(result.contains("RMS error 0.008129, about 0.94 W (target 0.010)") && result.contains("+0.010094, about 1.16 W high (target 0.010 in size), 0.0000936, about 0.011 W, past the target"), "{result}");
     // No seal of a current run is quoted in a record.
     for card in fitted {
         let domain = cards.iter().find(|e| e["card"] == card).unwrap()["domain"].as_str().unwrap();
@@ -761,5 +764,5 @@ async fn a_cell_run_whose_current_changes_is_refused_whole_by_name() {
     let rule = described["dt_s"]["rule"].as_str().unwrap();
     assert!(rule.contains("every segment's current_a must lie within 0.00083 A (HELD_CURRENT_BAND_A) of the held current"), "{rule}");
     let limits = described["validation"]["limits"].as_str().unwrap();
-    assert!(limits.contains("The comparison that passed covered discharges from full charge only, at 1C only, 2.899 to 2.89982 A."), "{limits}");
+    assert!(limits.contains("Compared at 1C on discharges from full charge, 2.899 to 2.89982 A;"), "{limits}");
 }

@@ -658,11 +658,12 @@ async fn the_description_lists_the_card_its_limits_and_examples_that_run() {
     assert_eq!(tape["steps_landed"], 1000);
     let (state, _, _, _) = kernel_run(4.0e6, 0.5e6, even_mix(), 1.0e-3, 1000);
     assert_state_is(&tape["final_state"], &state, "example");
-    // The list line states the failure and the envelope.
+    // The list line states the fusion-energy ratio against its target and the envelope.
     let client = Client::new();
     let list: Value = serde_json::from_str(&client.get(format!("{base}/cards")).send().await.unwrap().text().await.unwrap()).unwrap();
     let cards = list["cards"].as_array().unwrap_or_else(|| list.as_array().unwrap());
     let line = cards.iter().find(|entry| entry["card"] == "tokamak_jet_dte1").unwrap().to_string();
-    assert!(line.contains("the comparison failed"), "{line}");
-    assert!(line.contains("0.743 of the measured"), "{line}");
+    assert!(line.contains("a ratio of 0.743 (target 0.75 to 1.25)"), "{line}");
+    assert!(line.contains("1.65 to 3.84 MA"), "{line}");
+    assert!(line.contains("(DensityAboveGreenwald)"), "{line}");
 }

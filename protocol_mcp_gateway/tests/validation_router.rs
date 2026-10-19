@@ -121,7 +121,7 @@ async fn the_run_inside_carries_the_run_seal_of_the_same_run_alone_on_all_thirty
     assert_eq!(status, 200);
     let listed: Value = serde_json::from_str(&listed).unwrap();
     let cards = listed["cards"].as_array().unwrap();
-    assert_eq!(cards.len(), 37);
+    assert_eq!(cards.len(), 40);
     let mut quantities_checked = 0;
     for pair in cards {
         let (domain, card) = (pair["domain"].as_str().unwrap(), pair["card"].as_str().unwrap());

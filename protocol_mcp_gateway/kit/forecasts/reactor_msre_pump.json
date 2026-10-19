@@ -1,0 +1,42 @@
+{
+ "model": "reactor_msre_pump",
+ "verdict": "calibrated to the record",
+ "registered_by": "by hand on the msre_port branch, 2026-10-18: no original of the card is served, so forecast.py calibrate (which names a served companion) was not used",
+ "calibration": {
+  "companion_to": "",
+  "original": {
+   "what": "the same equations with the constants read from the sources alone (79 in effective core from z = 0, no fuel-flow lag), compared once with the whole record: steady loss 0.2546 % dk/k, rod curves 72.4 and 36.7 pcm root mean square, ledger residual 1.2e-6",
+   "protocol": {
+    "path": "evidence/research/reactor_msre_pump/validation_protocol.md",
+    "sha256": "4ae20c7be1a82366dc379986e06efee9dc154b76548001bea0480e9ef7710748"
+   },
+   "scored": {
+    "utc": "2026-10-11T12:54:54Z",
+    "output": {
+     "path": "evidence/research/reactor_msre_pump/analysis/out/comparison.json",
+     "sha256": "eb4e26b6d2e5bf74bbe1a668fd580f7e4d24cdcde2f69de0a5cdf38f4cd7f938"
+    },
+    "program": {
+     "path": "evidence/research/reactor_msre_pump/analysis/compare.py",
+     "sha256": "8814bdaa6a717f0bcbbaaacb8ed286101438be09a9aea3b2923038fe58a8f29a"
+    }
+   }
+  },
+  "protocol": {
+   "path": "evidence/research/reactor_msre_pump/calibration_2026-10-18/CALIBRATION.md",
+   "sha256": "e7730fcb9e3abecb97603ac856dc16f487405e5d73fbe01503a1580995852670"
+  },
+  "scored": {
+   "utc": "2026-10-18T19:27:06Z",
+   "output": {
+    "path": "evidence/research/reactor_msre_pump/calibration_2026-10-18/out/comparison.json",
+    "sha256": "902faa8cfb4093db16deab87f23b90973ac3b3358967655d76c66d56e1980330"
+   },
+   "program": {
+    "path": "evidence/research/reactor_msre_pump/calibration_2026-10-18/compare.py",
+    "sha256": "74b8fde19ae186348faf4ec920a699ea0a986ad0d5dc6993c658727ee3886d30"
+   }
+  },
+  "not_blind": "The whole ORNL-4233 record was open: the card with its constants read from the sources alone had been compared with all of it on 2026-10-11 (steady loss 0.2546 % dk/k, rod curves 72.4 and 36.7 pcm root mean square), before the flux shape's height was fitted on the steady loss and the fuel-flow lag on the 48 start-up readings; the 73 coast-down readings were left out of the fit."
+ }
+}

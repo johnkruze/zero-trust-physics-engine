@@ -146,7 +146,8 @@ async fn the_list_and_the_description_say_what_the_solver_is() {
     let listed: Value = serde_json::from_str(&listed.text().await.unwrap()).unwrap();
     let solvers = listed["solvers"].as_array().expect("solvers");
     assert_eq!(solvers[5]["solver"], "seawater_column");
-    assert!(solvers[5]["summary"].as_str().unwrap().ends_with("no constant is fitted."));
+    let summary = solvers[5]["summary"].as_str().unwrap();
+    assert!(summary.contains("Nothing fitted") && summary.contains("within a median of +4.59 m (target 10)"), "{summary}");
 
     let (status, text) = post(&base, "/describe_solver", &json!({ "solver": "seawater_column" })).await;
     assert_eq!(status, 200, "{text}");
@@ -185,7 +186,7 @@ async fn the_list_and_the_description_say_what_the_solver_is() {
         assert!(!refusal["meaning"].as_str().unwrap().contains("..="), "{refusal}");
     }
     assert_eq!(described["reference"]["retrieved"], "2026-10-09");
-    assert_eq!(described["reference"]["kind"], "A reference calculation. It is not a measurement.");
+    assert!(described["reference"]["kind"].as_str().unwrap().starts_with("A reference calculation"));
     for part in ["object", "data", "pass_line", "result", "limits"] {
         assert!(described["validation"][part].as_str().is_some_and(|text| !text.is_empty()), "{part}");
     }
@@ -194,19 +195,19 @@ async fn the_list_and_the_description_say_what_the_solver_is() {
     // temperature.
     let result = described["validation"]["result"].as_str().unwrap();
     for words in [
-        "and all three lines were met",
-        "the five legs' own medians were +4.30 to +4.92 m against 15 allowed",
-        "The 0.80 line was met by two stations and is thin: the binomial standard error of the fraction is 0.016",
+        "the median difference from the echo sounder is +4.59 m (target 10); 0.804 of the stations are within 20 m (target 0.80)",
+        "the five legs' own medians are +4.30 to +4.92 m (target 15)",
+        "The 0.80 target is held by two stations: the binomial standard error of the fraction is 0.016",
         "with leg 9, 10 or 13 left out it falls under 0.80 (0.790, 0.789, 0.798)",
         "a constant shift of the solver's depth between -14.55 m and +0.10 m, so the solver sits at the deep edge",
         "governed by the roughness of the sea floor, not by the model: on flat sea floor the scatter is 2.7 m",
-        "a worse measurement (0.769 within 20 m on the scored stations), and give 0.775",
+        "a worse measurement (0.769 within 20 m on the compared stations), give 0.775",
         "the fraction would be 632 of 792, 0.798",
-        "EOS-80, also meets all three lines on the same stations (+3.72 m, 509 of 632)",
-        "a quadratic in the maximum pressure with three constants fitted on the opened leg (511 of 632)",
+        "EOS-80, also holds all three targets on the same stations (+3.72 m, 509 of 632)",
+        "a quadratic in the maximum pressure with three constants fitted on the read leg (511 of 632)",
         "48 m off, and does not separate equations of state",
-        "spreading over 0.6 m for the solver against 12 m for the quadratic, and the three lines do not measure that",
-        "evidence/verification/second_party/V-29/",
+        "spreading over 0.6 m for the solver against 12 m for the quadratic, which the three targets do not measure",
+        "A second program, from its own cut of the raw files, recomputes the same numbers.",
     ] {
         assert!(result.contains(words), "{words}: {result}");
     }
@@ -222,9 +223,9 @@ async fn the_list_and_the_description_say_what_the_solver_is() {
         "With a transducer depth of 4.27 or 5.0 m applied, 515 or 516 of the 632 stations are within 20 m",
         "A cast whose levels lie close together at depth is answered: any pressures that rise from level to level are taken",
         "no least spacing of levels is declared",
-        "the balance now allows each layer that rounding, half the spacing of 64-bit numbers at its depth",
+        "the balance allows each layer the rounding of its depth, half the spacing of 64-bit numbers there",
         "The casts compared span latitudes -34.0023 to +26.4108, the last level no deeper than 6108 dbar",
-        "Polar water, trenches, fresh and brackish water, and hot or hypersaline water are answered and were not compared",
+        "Polar water, trenches, fresh and brackish water, and hot or hypersaline water are answered, outside the compared envelope",
         "The compared casts had 8 to 612 levels, 1 to 66 dbar apart",
         "Seawater below its freezing temperature is refused as TemperatureBelowFreezing",
         "The water between the last level and the sea floor is taken at the last level's sound speed.",

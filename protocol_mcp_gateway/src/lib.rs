@@ -45,6 +45,9 @@ pub mod dataset;
 mod descriptor;
 pub mod json_text;
 mod live;
+mod card_reactor_msre_pump;
+mod card_reactor_spert3_twin;
+mod card_reactor_spert3_ccore_twin;
 mod card_generator_mmrtg_seebeck;
 mod card_momentum_jwst_dihedral;
 mod card_grasp_lift_glass_4tu;
@@ -58,6 +61,8 @@ mod verify_by_request;
 mod rebuild;
 mod cite;
 mod find_model;
+mod spec_sheet;
+mod succession;
 mod flip;
 mod design;
 pub mod identity;
@@ -77,6 +82,7 @@ mod solver_ablator_slab_stardust;
 mod solver_argon_pair_gas;
 mod solver_step_flow_armaly;
 mod solver_pipe_flow_superpipe;
+mod solver_fuel_rod_triga_jsi;
 mod solver_culture_trichoderma_atp;
 mod solver_junction_nist_b7_s2;
 mod solver_water_hammer_oil_line;
@@ -808,6 +814,13 @@ fn published_reject(card: &str, field: &str, upper: bool) -> Option<&'static str
         ("cell_2170_m80", "case_temperature_c", _) => "CaseTemperatureOutsideCard",
         ("crater_ryugu_sci", "radius_m", false) => "RadiusBelowLedgerResolution",
         ("crater_ryugu_sci", "radius_m", true) => "RadiusAboveFinal",
+        ("reactor_msre_pump", "pump_speed_at_start" | "pump_speed_fraction", _) => "FlowOutsideCard",
+        ("reactor_spert3_twin", "inlet_temperature_k" | "system_pressure_mpa" | "coolant_flow_m_per_s" | "initial_power_mw", _) => "StateOutsideCard",
+        ("reactor_spert3_twin", "reactivity_inserted_dollar", false) => "ReactivityNegative",
+        ("reactor_spert3_ccore_twin", "initial_temperature_k", _) => "InitialTemperatureNotLiquidWater",
+        ("reactor_spert3_ccore_twin", "system_pressure_psig", _) => "PressureOutsideSteamTables",
+        ("reactor_spert3_ccore_twin", "reactivity_inserted_dollar", _) => "ReactivityNotPositive",
+        ("reactor_spert3_ccore_twin", "coolant_flow_m_per_s", _) => "NegativeFlow",
         ("generator_mmrtg_seebeck", "mission_time_s", false) => "MissionTimeBeforeLanding",
         ("generator_mmrtg_seebeck", "mission_time_s", true) => "DecayHeatBelowLedgerResolution",
         ("momentum_jwst_dihedral", "q1" | "q2" | "q3" | "q4", _) => "QuaternionNotUnit",
@@ -4630,6 +4643,9 @@ fn with_rest_entries<T>(
         ("aerospace", "momentum_jwst_srp") => Some(card_momentum_jwst_srp::rest(finish)),
         ("aerospace", "momentum_jwst_dihedral") => Some(card_momentum_jwst_dihedral::rest(finish)),
         ("energy", "generator_mmrtg_seebeck") => Some(card_generator_mmrtg_seebeck::rest(finish)),
+        ("energy", "reactor_msre_pump") => Some(card_reactor_msre_pump::rest(finish)),
+        ("energy", "reactor_spert3_twin") => Some(card_reactor_spert3_twin::rest(finish)),
+        ("energy", "reactor_spert3_ccore_twin") => Some(card_reactor_spert3_ccore_twin::rest(finish)),
         ("aerospace", "crater_ryugu_sci") => {
             let crater = crater_ryugu_sci::CraterRyuguSci::sci_impact();
             let state = crater_ryugu_sci::CraterState::try_radius(
@@ -7596,6 +7612,9 @@ fn advisory_flags(domain: &str, card: &str) -> u64 {
                 | reactor_triga_jsi::FLAG_RODS_DROPPED
         }
         ("aerospace", "crater_ryugu_sci") => crater_ryugu_sci::FLAG_STOPPED,
+        ("energy", "reactor_msre_pump") => card_reactor_msre_pump::FLAGS,
+        ("energy", "reactor_spert3_twin") => card_reactor_spert3_twin::FLAGS,
+        ("energy", "reactor_spert3_ccore_twin") => card_reactor_spert3_ccore_twin::FLAGS,
         ("energy", "generator_mmrtg_seebeck") => card_generator_mmrtg_seebeck::FLAGS,
         ("aerospace", "momentum_jwst_dihedral") => card_momentum_jwst_dihedral::FLAGS,
         ("aerospace", "momentum_jwst_srp") => card_momentum_jwst_srp::FLAGS,
@@ -7921,6 +7940,21 @@ async fn compute_step_plain(
         }
         ("energy", "generator_mmrtg_seebeck") => {
             let call = card_generator_mmrtg_seebeck::GeneratorMmrtgSeebeckCall::from_parameters(&payload.parameters)
+                .map_err(DoorError::Unprocessable)?;
+            on_pool(state, move || call.run(proof)).await?
+        }
+        ("energy", "reactor_msre_pump") => {
+            let call = card_reactor_msre_pump::ReactorMsrePumpCall::from_parameters(&payload.parameters)
+                .map_err(DoorError::Unprocessable)?;
+            on_pool(state, move || call.run(proof)).await?
+        }
+        ("energy", "reactor_spert3_twin") => {
+            let call = card_reactor_spert3_twin::ReactorSpert3TwinCall::from_parameters(&payload.parameters)
+                .map_err(DoorError::Unprocessable)?;
+            on_pool(state, move || call.run(proof)).await?
+        }
+        ("energy", "reactor_spert3_ccore_twin") => {
+            let call = card_reactor_spert3_ccore_twin::ReactorSpert3CcoreTwinCall::from_parameters(&payload.parameters)
                 .map_err(DoorError::Unprocessable)?;
             on_pool(state, move || call.run(proof)).await?
         }

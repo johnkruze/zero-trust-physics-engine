@@ -164,8 +164,8 @@ async fn the_description_states_the_clock_the_totals_and_the_second_party() {
     let limits = card["validation"]["limits"].as_str().unwrap();
     assert!(!limits.contains("not yet repeated by a second party"), "{limits}");
     assert!(!limits.contains("Known defect"), "{limits}");
-    assert!(limits.contains("Repeated by a second party, Grok, on 2026-10-07"), "{limits}");
-    assert!(limits.contains("evidence/verification/second_party/V-11"), "{limits}");
+    assert!(limits.contains("A second program, written from the protocol by Grok"), "{limits}");
+    assert!(limits.contains("recomputes the same RMS error, 0.008129, the same final-year mean, +0.010094, and the same run proof"), "{limits}");
     // The published top is where the decay heat left is the ledger's resolution.
     let mission = card["phase_fields"]
         .as_array()
@@ -177,14 +177,18 @@ async fn the_description_states_the_clock_the_totals_and_the_second_party() {
     let generator = generator_mmrtg_f1::GeneratorMmrtgF1::curiosity();
     assert_eq!(top, generator.ledger_end_mission_time_s().unwrap());
     let bound = mission["bound"].as_str().unwrap();
-    assert!(bound.contains("about 2,070 years after landing"), "{bound}");
+    assert!(bound.contains("about 2,060 years after landing"), "{bound}");
     assert!(bound.contains("DecayHeatBelowLedgerResolution"), "{bound}");
-    // The summary says the miss, and the record says what is served.
+    // The summary says the comparison and the gap in numbers, and the record
+    // says what is served.
     let summary = card["specimen"].as_str().unwrap();
-    assert!(summary.starts_with("One radioisotope generator, flight unit F1, on the Curiosity rover: its daily-average electrical output from landing on, with no load. Compared on the 1,279 held-back days 2,809 to 4,087"), "{summary}");
-    assert!(summary.contains("so it failed by the rule fixed beforehand"), "{summary}");
+    assert!(summary.starts_with("Daily-average electrical output of one radioisotope generator, flight unit F1 on the Curiosity rover, from landing on, with no load"), "{summary}");
+    assert!(summary.contains("Compared with the 1,279 days 2,809 to 4,087, outside the fit and the choice of structure: within 0.008129 of 115.4 W RMS"), "{summary}");
+    assert!(summary.contains("the mean over the final 365 days is +0.010094 (about 1.16 W; target 0.010)"), "{summary}");
     assert!(summary.contains("FLAG_PAST_RECORD"), "{summary}");
-    assert!(limits.contains("The card serves mission days 2,809 to 4,087, the days it was scored on, as the model that was scored, with no constant changed since"), "{limits}");
+    assert!(limits.contains("the card keeps the structure chosen without them, every constant as compared"), "{limits}");
+    let record = card["validation"]["pass_line"].as_str().unwrap();
+    assert!(record.ends_with("Record SHA-256 ea2f70ec6b58a237d9df8ace08f62e90370114aeadce482eeb00fa99cad56cc7."), "{record}");
     assert!(!limits.contains("ends at mission day 2,808"), "{limits}");
     assert!(card["declared_ends"].as_array().is_none_or(|ends| ends.is_empty()), "{}", card["declared_ends"]);
 }

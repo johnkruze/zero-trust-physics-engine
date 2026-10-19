@@ -1153,12 +1153,12 @@ async fn each_band_answers_any_flow_and_each_tested_edge_lands_by_either_convers
     assert_eq!(reactor.band_inlet_max_k[0], 306.48333333333335);
     assert_eq!(reactor.band_inlet_max_k[1], 399.2611111111111);
     assert_eq!(reactor.band_inlet_max_k[2], 533.7055555555556);
-    // The description says what each band was tested at.
+    // The description says what each band was compared at.
     let (_, described) = post(&base, "/describe_card", &json!({"domain": "energy", "card": CARD})).await;
     // Re-pinned for 0.10.1: the bands are named by their spans. The middle band ends at 259 degF, and 260 degF
     // itself, the report's round name for the series, is above it and is refused.
     assert!(
-        described.contains("The cold band was tested with no flow, 251 to 259 degF at 2.4 to 22 ft/s and 498 to 501 degF at 4.8 to 24 ft/s; the flow enters only through the sweep of the water temperature."),
+        described.contains("The cold band was compared with no flow, 251 to 259 degF at 2.4 to 22 ft/s and 498 to 501 degF at 4.8 to 24 ft/s; the flow enters through the sweep of the water temperature alone."),
         "{described}"
     );
     for gone in ["260 degF band", "the 500 degF band", "at 260 degF and", "FlowOutsideCard", "ReactivityOutsideCard", "FlowChangedDuringBurst", "TimeBeyondCard", "EnergyBeyondCard", "PowerBeyondCard"] {
@@ -1475,7 +1475,7 @@ async fn the_three_connections_give_the_same_bytes_and_the_hosted_door_hides_the
     let cards = listed["cards"].as_array().unwrap();
     // Thirty cards, this one the twentieth, in the energy domain, with
     // the first card of the reactor still served beside it.
-    assert_eq!(cards.len(), 37);
+    assert_eq!(cards.len(), 40);
     assert_eq!(cards[19]["domain"], "energy");
     assert_eq!(cards[19]["card"], CARD);
     assert!(cards.iter().any(|card| card["domain"] == "energy" && card["card"] == "reactor_spert3"));
@@ -1529,9 +1529,11 @@ async fn the_three_connections_give_the_same_bytes_and_the_hosted_door_hides_the
     // The full view and the key that lists it get the bytes of the stdio door.
     for key in [KEY_ALL, KEY_FUEL] {
         // A key that holds this card alone sees no coupling naming the other
-        // SPERT III card: the couplings, last in the answer, are left out.
+        // SPERT III card: the couplings, last in the answer, are left out; nor
+        // does it hold reactor_spert3_twin, so it is told no superseded_by
+        // (succession::TABLE says a successor only where it is served).
         let expected = if key == KEY_FUEL {
-            format!("{}}}", &described[..described.find(",\"couplings\":").expect("the couplings")])
+            format!("{}}}", &described[..described.find(",\"couplings\":").expect("the couplings")]).replace("\"superseded_by\":\"reactor_spert3_twin\",", "")
         } else {
             described.clone()
         };

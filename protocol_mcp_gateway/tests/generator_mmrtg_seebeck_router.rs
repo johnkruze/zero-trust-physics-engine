@@ -1,11 +1,12 @@
-//! The generator_mmrtg_seebeck card, the companion of generator_mmrtg_f1,
-//! through the local connection. Stamped from the kit: the whole served
-//! contract, attacked from the card's own description by
+//! The generator_mmrtg_seebeck card, the second form of the generator beside
+//! generator_mmrtg_f1, through the local connection. Stamped from the kit:
+//! the whole served contract, attacked from the card's own description by
 //! `conformance_support`, and each refusal's sentence word for word from the
 //! card's source. Then the card's own answers: the end of the record and its
-//! tolerance as generator_mmrtg_f1 serves them, the registered forecast
-//! served as it was registered, and a description that says the card is
-//! calibrated to the record, not a blind test, and names generator_mmrtg_f1.
+//! tolerance as generator_mmrtg_f1 serves them, the forecast served as it was
+//! published, and a description that gives the days it is fitted on, its
+//! error across all of them, the forecast's hash, and names
+//! generator_mmrtg_f1.
 //!
 //! No measurement is read here.
 
@@ -171,7 +172,7 @@ fn steps_past_the_last_day_of_the_record_complete_with_both_flags() {
     assert!(text.contains("DecayHeatBelowLedgerResolution"), "{text}");
 }
 
-/// The card serves the registered forecast: from the last day of the record,
+/// The card serves the published forecast: from the last day of the record,
 /// in daily steps, it gives on days 4,088, 4,452, 4,818 and 5,183 the
 /// forecast table's numbers (companion_seebeck/forecast_table.csv, column
 /// primary_D_0_4087) to its twelve decimals, in 64 bits.
@@ -207,39 +208,61 @@ fn the_companion_shares_the_fuel_of_generator_mmrtg_f1_and_not_its_output() {
     assert_ne!(original["sha256_seal"], companion["sha256_seal"]);
 }
 
-/// The description says, first, what the card is: calibrated to the record,
-/// not a blind test, the companion of generator_mmrtg_f1; its result opens
-/// with the same words and gives the after-the-fact numbers as such; and
-/// generator_mmrtg_f1's own description is the one it was.
+/// The description says, first, what the card is: the second form of the
+/// generator beside generator_mmrtg_f1, fitted on all 4,088 published days
+/// and within 0.00319 of 115.4 W RMS across them, in the six parts of its
+/// spec sheet; its pass line ends with the hash of the forecast as the kit
+/// holds it; its result gives the numbers on the fitted days, the form's
+/// numbers with its constants fitted on days 0 to 2,060 alone, and the
+/// forecast; and generator_mmrtg_f1's own description does not name it.
 #[test]
 fn the_description_says_calibrated_to_the_record_and_names_its_companion() {
     let mut door = Door::start();
     let card = describe(&mut door, "generator_mmrtg_seebeck");
     let summary = card["specimen"].as_str().unwrap();
-    assert!(summary.starts_with("One radioisotope generator, flight unit F1, on the Curiosity rover, in the Seebeck matched-load form, the companion of generator_mmrtg_f1"), "{summary}");
-    assert!(summary.contains("Calibrated to the record and not a blind test"), "{summary}");
-    let result = card["validation"]["result"].as_str().unwrap();
-    assert!(result.starts_with("Calibrated to the record, not a blind test: the companion of generator_mmrtg_f1"), "{result}");
+    assert!(summary.starts_with("Daily-average electrical output of the radioisotope generator on the Curiosity rover, flight unit F1, in the Seebeck matched-load form, the second form of this generator beside generator_mmrtg_f1"), "{summary}");
     for words in [
-        "missed its final-365 line by 0.000094 of 115.4 W on the held-back days 2,809 to 4,087",
-        "a root mean square error of 0.00507 and a final-365 mean of +0.00468 on days 2,809 to 4,087",
-        "0.00572 and +0.00187 on Perseverance's generator F2, its days 0 to 985",
-        "the card's root mean square error there is 0.00319 of 115.4 W",
-        "None of these is a test.",
+        " Range: compared on mission days 0 to 4,087, every published day; computes from landing to 6.502e10 s",
+        " Fitted on all 4,088 published days, mission days 0 to 4,087",
+        " Compared with all 4,088 days, all in the fit: within 0.00319 of 115.4 W RMS across all 4,088",
+        " Gap: its largest error on one day is +0.0160 of 115.4 W, 1.85 W, on mission day 3,546",
+        "(MissionTimeBeforeLanding)",
+        "(DecayHeatBelowLedgerResolution)",
+    ] {
+        assert!(summary.contains(words), "{words}: {summary}");
+    }
+    // The forecast's hash is the kit's own record of it.
+    let forecast: Value = serde_json::from_str(include_str!("../kit/forecasts/generator_mmrtg_seebeck.json")).expect("the forecast is JSON");
+    let hash = forecast["protocol"]["sha256"].as_str().expect("its hash");
+    assert_eq!(hash, "0afc18e0e7af9b4405b4ce5b16764226ee917774d72253a1590cc179e76d86d1");
+    let pass_line = card["validation"]["pass_line"].as_str().unwrap();
+    assert!(pass_line.ends_with(&format!("Forecast committed before the data was opened, as {hash}.")), "{pass_line}");
+    assert!(pass_line.contains("each at most 0.010 of 115.4 W, 1.154 W, on 365 days or more"), "{pass_line}");
+    let result = card["validation"]["result"].as_str().unwrap();
+    assert!(result.starts_with("On mission days 0 to 4,087, all in the fit, run through the engine in daily steps from landing: RMS error 0.00319 of 115.4 W"), "{result}");
+    for words in [
+        "+0.010094, 0.000094 over its target of 0.010",
+        "an RMS error of 0.00507 and a final-365 mean of +0.00468",
+        "0.00572 and +0.00187",
+        "on Perseverance's generator F2, its days 0 to 985",
         "commit a0aff5e",
-        "0afc18e0e7af9b4405b4ce5b16764226ee917774d72253a1590cc179e76d86d1",
+        "0.677319 of 115.4 W on day 4,088, 0.661798 on day 4,452, 0.647187 on day 4,818 and 0.633481 on day 5,183",
     ] {
         assert!(result.contains(words), "{words}: {result}");
     }
     let limits = card["validation"]["limits"].as_str().unwrap();
-    assert!(limits.contains("an agent that needs a model compared blind on days 2,809 to 4,087 has generator_mmrtg_f1"), "{limits}");
-    assert!(limits.contains("CALIBRATION.md"), "{limits}");
+    for words in [
+        "Its form was chosen with all 4,088 days read",
+        "generator_mmrtg_f1 is the form compared on days 2,809 to 4,087 with its constants fitted on days 0 to 2,060",
+        "0.6602 to 0.6662 of 115.4 W on day 4,452 and 0.6308 to 0.6390 on day 5,183",
+    ] {
+        assert!(limits.contains(words), "{words}: {limits}");
+    }
     let flags = card["advisory_flags"].to_string();
     assert!(flags.contains("FLAG_PAST_FITTING_SPAN") && flags.contains("FLAG_PAST_RECORD"), "{flags}");
     assert!(card["declared_ends"].as_array().is_none_or(|ends| ends.is_empty()), "{}", card["declared_ends"]);
-    // The original says what it said, its miss first.
+    // The original gives its own days and does not name this form.
     let original = describe(&mut door, "generator_mmrtg_f1");
-    let summary = original["specimen"].as_str().unwrap();
-    assert!(summary.starts_with("One radioisotope generator, flight unit F1, on the Curiosity rover: its daily-average electrical output from landing on, with no load. Compared on the 1,279 held-back days 2,809 to 4,087"), "{summary}");
+    assert!(original["validation"].to_string().contains("2,809 to 4,087"), "{}", original["validation"]);
     assert!(!original.to_string().contains("generator_mmrtg_seebeck"));
 }

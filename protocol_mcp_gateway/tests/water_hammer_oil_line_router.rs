@@ -241,19 +241,19 @@ async fn the_description_carries_the_standing_and_its_examples_run_unchanged() {
     let listed = reqwest::get(format!("{base}/solvers")).await.unwrap();
     let listed: Value = serde_json::from_str(&listed.text().await.unwrap()).unwrap();
     let row = listed["solvers"].as_array().unwrap().iter().find(|row| row["solver"] == "water_hammer_oil_line").expect("listed").clone();
-    assert_eq!(row["against_measurement"], "not held to a measurement");
+    assert_eq!(row["against_measurement"], "company specimen");
     let summary = row["summary"].as_str().unwrap();
-    assert!(summary.contains("the company's own specimen"), "{summary}");
+    assert!(summary.starts_with("Company specimen: "), "{summary}");
     assert!(summary.contains("within 0.28 percent"), "{summary}");
 
     let (status, text) = post(&base, "/describe_solver", &json!({ "solver": "water_hammer_oil_line" })).await;
     assert_eq!(status, 200, "{text}");
     let described: Value = serde_json::from_str(&text).unwrap();
-    assert_eq!(described["validation"]["result"], "The company's own specimen: its constants are the company's, stated in its description, and every answer holds the conservation ledgers stated under invariants to their tolerances; what its method was held to, and how it did there, is under reference.");
+    assert_eq!(described["validation"]["result"], "Company specimen: its constants are the company's, stated in its description, and every answer holds the conservation ledgers stated under invariants to their tolerances; what its method is held to, and within what, is under reference.");
     let covers = described["reference"]["covers"].as_str().unwrap();
     assert!(covers.contains("0.13 percent long, 0.11 short, 0.26 long and 0.28 long"), "{covers}");
     let dlr = described["reference"]["second_covers"].as_str().unwrap();
-    assert!(dlr.contains("was missed: 6 of 9"), "{dlr}");
+    assert!(dlr.contains("6 of 9 within 5 percent, all low, by 0.4 to 6.9 percent"), "{dlr}");
     assert!(dlr.contains("within 5 percent in all 9 tests"), "{dlr}");
     assert_eq!(described["inputs"].as_array().unwrap().len(), 7);
     assert_eq!(described["inputs"][0]["maximum"], hammer::WALL_YIELD_PRESSURE_PA);

@@ -719,29 +719,30 @@ async fn the_slivers_outside_tests_22_and_43_are_answered() {
     }
 }
 
-/// The description says what was compared: the held-back span, the opened tests outside it,
-/// that the rising side was compared only with digitised plots, and where the cause is.
+/// The description says what was compared: the span of the tests not in the fit, the fitted
+/// tests at its ends, the rising side compared with digitised plots, and where the card runs early.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn the_description_says_what_was_compared_and_where_the_card_runs_early() {
     let base = spawn_app().await;
     let (_, described) = post(&base, "/describe_card", &json!({"domain": "energy", "card": "reactor_spert3"})).await;
     for sentence in [
-        "The ten held-back tests span 0.890 to 1.128 dollars, 4.3 to 110 MW at the peak and 56 to 82 degrees Fahrenheit.",
-        "test 22 below it, tests 42 and 43 above it.",
-        "Only the peak power, the energy released to the peak and the time of the peak were compared with the held-back tests.",
-        "The states the card seals before the peak were compared only with digitised plots of 19 opened tests; on 18 of them the card reaches a tenth of its peak about 26 percent early.",
-        "held-back tests on 2026-10-08",
-        "evidence/research/reactor_spert3/analysis/10_peak_timing_cause.md",
+        "Compared with the other 10, every third test in the order run, not in the fit: 0.890 to 1.128 dollars, 4.3 to 110 MW at the peak, 56 to 82 degF.",
+        "Tests 22 and 43, both in the fit, set the ends of the compared span, 0.769 to 1.210 dollars",
+        "Peak power, energy released to the peak and time of the peak are the quantities compared with the 10 tests outside the fit.",
+        "on 18 of them the card reaches a tenth of its peak about 26 percent early.",
+        "On the 10 tests not in the fit. Peak power: RMS 0.58 of the report's standard deviation (target 1.5)",
+        "a fit to the plots puts the starting power near 9 W.",
         "energy/reactor_spert3_fuel carries the ramp.",
         "1010 ms (test 22) and 10 ms (test 43), IDO-17281 Table III, not rounded",
         "At the ceiling the slowest compared reactivity takes 17,098 steps to the first maximum",
-        "Compared on reactivity 0.769 to 1.210 dollars ([0.7686211839115998, 1.2102315121058187]",
-        "on the ten held-back tests, 0.890 to 1.128 dollars, it met five of eight lines; peak power and energy to peak were within the report's standard deviations and the peaks came about 21 percent early. Outside that span the card computes the same equations and nothing was compared",
+        "Compared at 0.769 to 1.210 dollars ([0.7686211839115998, 1.2102315121058187]",
+        "On the 10 tests not in the fit, 0.890 to 1.128 dollars: peak power within 0.58 of the report's standard deviation RMS and energy to the peak within 1.01 RMS, the peak 23 percent early RMS. Outside 0.769 to 1.210 dollars the card computes the same equations",
         "The latest first maximum the card reaches inside its compared span is at 12.2 s; the longest in Table III is 13.7 s.",
         "The largest energy to peak in Table III is 6.9 MW s, and the card reaches 7.2 MW s at the bottom of its compared span.",
         "The largest peak power in Table III is 280 MW, and the card reaches about 296 MW at the top of its compared span.",
-        "Every tested burst was one step in reactivity, held to the first maximum; a burst whose reactivity changes was not compared.",
-        "Tested at a primary coolant of 56 to 92 degF",
+        "Every burst compared with the report is one step in reactivity, held to the first maximum; a burst whose reactivity changes is computed with the same equations.",
+        "Compared at a primary coolant of 56 to 92 degF",
+        "The card's generation time is the report's value for 70 degF and its delayed groups the report's set for 500 degF",
         "the report's hot-startup tests at 260 and 500 degF are in reactor_spert3_fuel",
         "Past the compared span the step ceiling follows the state",
     ] {
@@ -1099,7 +1100,7 @@ async fn the_hosted_door_hides_the_reactor_from_a_key_without_it_and_shows_it_to
     let listed = result_text(&stdio.raw(r#"{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"list_cards","arguments":{}}}"#).await);
     let listed: Value = serde_json::from_str(&listed).unwrap();
     let all_pairs: Vec<Value> = listed["cards"].as_array().unwrap().iter().map(|c| json!([c["domain"], c["card"]])).collect();
-    assert_eq!(all_pairs.len(), 37);
+    assert_eq!(all_pairs.len(), 40);
     let keys = json!([
         client_entry("all", KEY_ALL, Value::Array(all_pairs)),
         client_entry("reactor", KEY_REACTOR, json!([["energy", "reactor_spert3"]])),
@@ -1116,9 +1117,11 @@ async fn the_hosted_door_hides_the_reactor_from_a_key_without_it_and_shows_it_to
     // The full view and the key that lists it get the bytes of the stdio door.
     for key in [KEY_ALL, KEY_REACTOR] {
         // A key that holds this card alone sees no coupling naming the other
-        // SPERT III card: the couplings, last in the answer, are left out.
+        // SPERT III card: the couplings, last in the answer, are left out; nor
+        // does it hold reactor_spert3_twin, so it is told no superseded_by
+        // (succession::TABLE says a successor only where it is served).
         let expected = if key == KEY_REACTOR {
-            format!("{}}}", &described[..described.find(",\"couplings\":").expect("the couplings")])
+            format!("{}}}", &described[..described.find(",\"couplings\":").expect("the couplings")]).replace("\"superseded_by\":\"reactor_spert3_twin\",", "")
         } else {
             described.clone()
         };

@@ -120,6 +120,9 @@ pub enum Live {
     CapsuleInsight(Box<CapsuleInsightCall>),
     ReactorFuel(ReactorFuelCall),
     Crater(CraterCall),
+    ReactorMsrePump(crate::card_reactor_msre_pump::ReactorMsrePumpCall),
+    ReactorSpert3Twin(crate::card_reactor_spert3_twin::ReactorSpert3TwinCall),
+    ReactorSpert3CcoreTwin(crate::card_reactor_spert3_ccore_twin::ReactorSpert3CcoreTwinCall),
     GeneratorMmrtgSeebeck(crate::card_generator_mmrtg_seebeck::GeneratorMmrtgSeebeckCall),
     MomentumJwstDihedral(crate::card_momentum_jwst_dihedral::MomentumJwstDihedralCall),
     GraspLiftGlass4tu(crate::card_grasp_lift_glass_4tu::GraspLiftGlass4tuCall),
@@ -160,6 +163,9 @@ pub(crate) enum PhaseSnap {
     CapsuleInsight(capsule_insight::CapsuleState),
     ReactorFuel(reactor_spert3_fuel::ReactorState),
     Crater(crater_ryugu_sci::CraterState),
+    ReactorMsrePump(genesis_kernel::reactor_msre_pump::ReactorMsrePumpState),
+    ReactorSpert3Twin(genesis_kernel::reactor_spert3_twin::ReactorState),
+    ReactorSpert3CcoreTwin(genesis_kernel::reactor_spert3_ccore_twin::ReactorState),
     GeneratorMmrtgSeebeck(genesis_kernel::generator_mmrtg_seebeck::GeneratorMmrtgSeebeckState),
     MomentumJwstDihedral(genesis_kernel::momentum_jwst_dihedral::MomentumJwstDihedralState),
     GraspLiftGlass4tu(genesis_kernel::grasp_lift_glass_4tu::GraspLiftGlass4tuState),
@@ -240,6 +246,9 @@ impl Live {
             ("aerospace", "momentum_jwst_srp") => Ok(Live::MomentumJwstSrp(crate::card_momentum_jwst_srp::MomentumJwstSrpCall::from_parameters(params)?)),
             ("aerospace", "momentum_jwst_dihedral") => Ok(Live::MomentumJwstDihedral(crate::card_momentum_jwst_dihedral::MomentumJwstDihedralCall::from_parameters(params)?)),
             ("energy", "generator_mmrtg_seebeck") => Ok(Live::GeneratorMmrtgSeebeck(crate::card_generator_mmrtg_seebeck::GeneratorMmrtgSeebeckCall::from_parameters(params)?)),
+            ("energy", "reactor_msre_pump") => Ok(Live::ReactorMsrePump(crate::card_reactor_msre_pump::ReactorMsrePumpCall::from_parameters(params)?)),
+            ("energy", "reactor_spert3_twin") => Ok(Live::ReactorSpert3Twin(crate::card_reactor_spert3_twin::ReactorSpert3TwinCall::from_parameters(params)?)),
+            ("energy", "reactor_spert3_ccore_twin") => Ok(Live::ReactorSpert3CcoreTwin(crate::card_reactor_spert3_ccore_twin::ReactorSpert3CcoreTwinCall::from_parameters(params)?)),
             ("aerospace", "crater_ryugu_sci") => {
                 Ok(Live::Crater(CraterCall::from_parameters(params)?))
             }
@@ -290,6 +299,9 @@ impl Live {
             Live::ReactorCcore(call) => call.replace_load(params),
             Live::Runaway(call) => call.replace_load(params),
             Live::Crater(call) => call.replace_load(params),
+            Live::ReactorMsrePump(call) => call.replace_load(params),
+            Live::ReactorSpert3Twin(call) => call.replace_load(params),
+            Live::ReactorSpert3CcoreTwin(call) => call.replace_load(params),
             Live::GeneratorMmrtgSeebeck(call) => call.replace_load(params),
             Live::MomentumJwstDihedral(call) => call.replace_load(params),
             Live::GraspLiftGlass4tu(call) => call.replace_load(params),
@@ -332,6 +344,9 @@ impl Live {
             Live::ReactorCcore(call) => PhaseSnap::ReactorCcore(call.state),
             Live::Runaway(call) => PhaseSnap::Runaway(call.state),
             Live::Crater(call) => PhaseSnap::Crater(call.state),
+            Live::ReactorMsrePump(call) => PhaseSnap::ReactorMsrePump(call.state),
+            Live::ReactorSpert3Twin(call) => PhaseSnap::ReactorSpert3Twin(call.state),
+            Live::ReactorSpert3CcoreTwin(call) => PhaseSnap::ReactorSpert3CcoreTwin(call.state),
             Live::GeneratorMmrtgSeebeck(call) => PhaseSnap::GeneratorMmrtgSeebeck(call.state),
             Live::MomentumJwstDihedral(call) => PhaseSnap::MomentumJwstDihedral(call.state),
             Live::GraspLiftGlass4tu(call) => PhaseSnap::GraspLiftGlass4tu(call.state),
@@ -374,6 +389,9 @@ impl Live {
             (Live::ReactorCcore(call), PhaseSnap::ReactorCcore(state)) => call.state = state,
             (Live::Runaway(call), PhaseSnap::Runaway(state)) => call.state = state,
             (Live::Crater(call), PhaseSnap::Crater(state)) => call.state = state,
+            (Live::ReactorMsrePump(call), PhaseSnap::ReactorMsrePump(state)) => call.state = state,
+            (Live::ReactorSpert3Twin(call), PhaseSnap::ReactorSpert3Twin(state)) => call.state = state,
+            (Live::ReactorSpert3CcoreTwin(call), PhaseSnap::ReactorSpert3CcoreTwin(state)) => call.state = state,
             (Live::GeneratorMmrtgSeebeck(call), PhaseSnap::GeneratorMmrtgSeebeck(state)) => call.state = state,
             (Live::MomentumJwstDihedral(call), PhaseSnap::MomentumJwstDihedral(state)) => call.state = state,
             (Live::GraspLiftGlass4tu(call), PhaseSnap::GraspLiftGlass4tu(state)) => call.state = state,
@@ -417,6 +435,9 @@ impl Live {
             Live::ReactorCcore(call) => call.step_into(frame),
             Live::Runaway(call) => call.step_into(frame),
             Live::Crater(call) => call.step_into(frame),
+            Live::ReactorMsrePump(call) => call.step_into(frame),
+            Live::ReactorSpert3Twin(call) => call.step_into(frame),
+            Live::ReactorSpert3CcoreTwin(call) => call.step_into(frame),
             Live::GeneratorMmrtgSeebeck(call) => call.step_into(frame),
             Live::MomentumJwstDihedral(call) => call.step_into(frame),
             Live::GraspLiftGlass4tu(call) => call.step_into(frame),
@@ -687,6 +708,18 @@ impl Live {
                 crate::card_generator_mmrtg_seebeck::published_is_finite(&call.state).map_err(StepFailure::flag)?;
                 finish_audit(frame, "energy", "generator_mmrtg_seebeck", call.state.residual_conservation_error)
             }
+            Live::ReactorMsrePump(call) => {
+                crate::card_reactor_msre_pump::published_is_finite(&call.state).map_err(StepFailure::flag)?;
+                finish_audit(frame, "energy", "reactor_msre_pump", call.state.residual_conservation_error)
+            }
+            Live::ReactorSpert3Twin(call) => {
+                crate::card_reactor_spert3_twin::published_is_finite(&call.state).map_err(StepFailure::flag)?;
+                finish_audit(frame, "energy", "reactor_spert3_twin", call.state.residual_conservation_error)
+            }
+            Live::ReactorSpert3CcoreTwin(call) => {
+                crate::card_reactor_spert3_ccore_twin::published_is_finite(&call.state).map_err(StepFailure::flag)?;
+                finish_audit(frame, "energy", "reactor_spert3_ccore_twin", call.state.residual_conservation_error)
+            }
             Live::Crater(call) => {
                 crater_published_is_finite(&call.state).map_err(StepFailure::flag)?;
                 finish_audit(
@@ -792,6 +825,9 @@ impl Live {
             Live::ReactorCcore(call) => reactor_ccore_state(&call.state).map_err(StepFailure::flag),
             Live::Runaway(call) => runaway_state(&call.state).map_err(StepFailure::flag),
             Live::Crater(call) => crater_state(&call.state).map_err(StepFailure::flag),
+            Live::ReactorMsrePump(call) => crate::card_reactor_msre_pump::state(&call.state).map_err(StepFailure::flag),
+            Live::ReactorSpert3Twin(call) => crate::card_reactor_spert3_twin::state(&call.state).map_err(StepFailure::flag),
+            Live::ReactorSpert3CcoreTwin(call) => crate::card_reactor_spert3_ccore_twin::state(&call.state).map_err(StepFailure::flag),
             Live::GeneratorMmrtgSeebeck(call) => crate::card_generator_mmrtg_seebeck::state(&call.state).map_err(StepFailure::flag),
             Live::MomentumJwstDihedral(call) => crate::card_momentum_jwst_dihedral::state(&call.state).map_err(StepFailure::flag),
             Live::GraspLiftGlass4tu(call) => crate::card_grasp_lift_glass_4tu::state(&call.state).map_err(StepFailure::flag),

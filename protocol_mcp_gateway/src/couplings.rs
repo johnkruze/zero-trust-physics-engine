@@ -25,7 +25,15 @@
 //! one burst. And cell m80 of the Tesla Model 3 2170 dataset, rested in its
 //! 40 degC block, between the dataset's two cards of it: the charge removed
 //! since the laboratory's full recharge from the physical model to the table
-//! card, and the charge level from the table card to the physical model. No
+//! card, and the charge level from the table card to the physical model.
+//! And one pulse of the JSI TRIGA Mark II reactor from the card
+//! reactor_triga_jsi into the solver fuel_rod_triga_jsi, its instrumented
+//! element 6753: the start temperature, and from every recorded frame of the
+//! card's sealed run its time and the core energy released, each carried bit
+//! for bit (the energy is the frame's 32-bit slot, widened to 64 bits, which
+//! is exact) into the solve's history. The element's share of the core's
+//! energy, 1.387/56, is the solver's own constant and is not applied here.
+//! Both pieces were compared with the institute's pulse records. No
 //! coupling of capsule_stardust into ablator_slab is served: the card
 //! publishes one stagnation-point convective heat flux, while ablator_slab's
 //! Stardust stream takes wall pressure, a heat-transfer coefficient, flow
@@ -37,21 +45,25 @@
 //! compared 78.31 MJ/kg in the first part of the entry.)
 
 use genesis_kernel::{cell_2170_m80, cell_2170_model3, reactor_spert3, reactor_spert3_fuel};
+use genesis_solvers::fuel_rod_triga_jsi as rod;
 use serde_json::Value;
 
 /// Where a handed value is read in the upstream run: `final_state.<name>`
-/// (its sealed final value) or `inputs.initial.<name>` /
+/// (its sealed final value), `inputs.initial.<name>` /
 /// `inputs.segments[*].load.<name>` (its sealed request, every segment
-/// holding the same value).
+/// holding the same value), or `frames[*].<slot>` (that slot of every
+/// recorded frame of the sealed run, in order: an array, into a solver).
 pub(crate) struct Mapping {
     pub from: &'static str,
     /// Where it stands in a downstream run request: `initial.<name>` or
     /// `segments[*].load.<name>`. A step request takes it at
-    /// `parameters.<name>`.
+    /// `parameters.<name>`, and a solve request at `parameters.<name>` as
+    /// written here.
     pub to: &'static str,
     pub unit: &'static str,
     /// `Some(sentence)` when the value is outside the downstream card's
-    /// declared range, given the values already handed by this coupling.
+    /// declared range, given the values already handed by this coupling. A
+    /// frame slot's array is held to it value by value.
     pub outside: fn(f64, &[(&'static str, f64)]) -> Option<String>,
 }
 
@@ -132,6 +144,10 @@ pub(crate) struct Condition {
     /// refused by name when it is read.
     pub unmet: fn(&Joined) -> Option<String>,
 }
+
+/// The downstream piece of a coupling into a solver is named `("solver",
+/// <name>)`.
+pub(crate) const SOLVER: &str = "solver";
 
 pub(crate) struct Coupling {
     pub name: &'static str,
@@ -351,6 +367,30 @@ fn model3_start_charge(value: f64, _: &[(&'static str, f64)]) -> Option<String> 
     }
 }
 
+fn rod_start(value: f64, _: &[(&'static str, f64)]) -> Option<String> {
+    if value > rod::POOL_FREEZING_K && value < rod::SATURATION_TEMPERATURE_K {
+        None
+    } else {
+        Some(format!(
+            "{value} K is not above {} K and below {} K, fuel_rod_triga_jsi's liquid pool",
+            rod::POOL_FREEZING_K,
+            rod::SATURATION_TEMPERATURE_K
+        ))
+    }
+}
+
+fn rod_time(value: f64, _: &[(&'static str, f64)]) -> Option<String> {
+    if value > 0.0 && value <= rod::HISTORY_SPAN_MAX_S {
+        None
+    } else {
+        Some(format!("{value} s is not after 0 s and within the {} s of one solve", rod::HISTORY_SPAN_MAX_S))
+    }
+}
+
+fn rod_energy(value: f64, _: &[(&'static str, f64)]) -> Option<String> {
+    (value < 0.0).then(|| format!("{value} MW*s is below zero; energy released does not fall"))
+}
+
 const UPSTREAM_CELL_M80: Condition = Condition {
     says: "the upstream cell is m80, cell_number 80",
     unmet: upstream_cell_is_m80,
@@ -409,7 +449,7 @@ pub(crate) static COUPLINGS: &[Coupling] = &[
             },
         ],
         conditions: &[],
-        meaning: "One SPERT III E-core burst (IDO-17281) handed from the card with fuel and water temperature to the point-kinetics card: the inlet water temperature and the reactivity inserted, each carried bit for bit. It carries the test, not a computed field: the inlet temperature is the start value, held unchanged through the run. The point-kinetics card was compared on the cold-startup tests only, at a primary coolant of 56 to 92 degF; its feedback does not depend on the coolant temperature, so a hot-startup burst handed to it is the same burst it gives cold, and nothing was compared there. The reactivity is taken from the upstream request, which holds one value of it in every segment: an upstream burst whose segments insert more than one reactivity is refused as CouplingSourceNotOneValue, decided after the upstream run is computed again and its seal held, before the downstream card runs.",
+        meaning: "One SPERT III E-core burst (IDO-17281) handed from the card with fuel and water temperature to the point-kinetics card: the inlet water temperature and the reactivity inserted, each carried bit for bit. It carries the test, not a computed field: the inlet temperature is the start value, held unchanged through the run. The point-kinetics card is compared with the cold-startup tests, at a primary coolant of 56 to 92 degF, and the hot-startup tests with the card with fuel and water temperature; the point-kinetics card's feedback does not depend on the coolant temperature, so a hot-startup burst handed to it is the same burst it gives cold, computed with the same equations. The reactivity is taken from the upstream request, which holds one value of it in every segment: an upstream burst whose segments insert more than one reactivity is refused as CouplingSourceNotOneValue, decided after the upstream run is computed again and its seal held, before the downstream card runs.",
     },
     Coupling {
         name: "cell_2170_model3_to_m80",
@@ -434,7 +474,7 @@ pub(crate) static COUPLINGS: &[Coupling] = &[
             UPSTREAM_ENDS_RESTED,
             UPSTREAM_RESTS_IN_BLOCK_40,
         ],
-        meaning: "Cell m80 of the Tesla Model 3 2170 dataset (Kollmeyer et al., Borealis, doi 10.5683/SP3/ZVTR4B), rested in its 40 degC block, handed from the physical model to the table card: the charge removed since the laboratory's full recharge, 4.2 V held at 25 degC until the current falls to about 0.02 A, in Ah, carried bit for bit. Both cards were compared with this cell's tests and both count the charge removed from that full. In the 40 degC block the capacity test that fixes the table card's capacity and the shape of its rest-voltage table began at that full, and its capacity, 4.67683635335689 Ah, is the physical model's reference capacity of cell m80, the same 64-bit number; in each of the other five blocks that test began from a top-up 22 to 52 mAh above full, so the table card counts its charge there from another start, and the coupling joins only the 40 degC block. The physical model is given that capacity, so the two cards hold the cell with one capacity, one full and one charge level; the table card holds one capacity for the block and does not follow the cell's ageing inside it. The table card starts a cell at rest, nothing held by its relaxing branch, so the upstream run ends with an hour at zero current, held at the case temperatures of the 40 degC block's compared tests, 39.063 to 45.535 degC, where by the physical model's own constants the slowest diffusion mode takes 34 s or less and the electrolyte drop 108 s or less; at -12.9 degC they take 21 and 13 minutes, and an hour leaves 5.4 percent of the slowest mode. The current is not handed, since the table card takes a charging current as positive and the physical model a discharging one; nor is the case temperature, which each card is given as measured at every step.",
+        meaning: "Cell m80 of the Tesla Model 3 2170 dataset, rested in its 40 degC block, handed from the physical model to the table card: the charge removed since the laboratory's full recharge, 4.2 V held at 25 degC until the current falls to about 0.02 A, in Ah, carried bit for bit. Both cards were compared with this cell's tests and both count the charge removed from that full. In the 40 degC block the capacity test that fixes the table card's capacity and the shape of its rest-voltage table began at that full, and its capacity, 4.67683635335689 Ah, is the physical model's reference capacity of cell m80, the same 64-bit number; in each of the other five blocks that test began from a top-up 22 to 52 mAh above full, so the table card counts its charge there from another start, and the coupling joins the 40 degC block alone. The physical model is given that capacity, so the two cards hold the cell with one capacity, one full and one charge level; the table card holds one capacity for the block and does not follow the cell's ageing inside it. The table card starts a cell at rest, nothing held by its relaxing branch, so the upstream run ends with an hour at zero current, held at the case temperatures of the 40 degC block's compared tests, 39.063 to 45.535 degC, where by the physical model's own constants the slowest diffusion mode takes 34 s or less and the electrolyte drop 108 s or less; at -12.9 degC they take 21 and 13 minutes, and an hour leaves 5.4 percent of the slowest mode. The current is not handed, since the table card takes a charging current as positive and the physical model a discharging one; nor is the case temperature, which each card is given as measured at every step.",
     },
     Coupling {
         name: "cell_2170_m80_to_model3",
@@ -459,9 +499,40 @@ pub(crate) static COUPLINGS: &[Coupling] = &[
                 unmet: downstream_capacity_of_block_40,
             },
         ],
-        meaning: "Cell m80 of the Tesla Model 3 2170 dataset (Kollmeyer et al., Borealis, doi 10.5683/SP3/ZVTR4B), rested in its 40 degC block, handed from the table card to the physical model: the table card's charge level, carried bit for bit as the physical model's state of charge. In the 40 degC block the charge level is 1 less the charge removed since the laboratory's full recharge over 4.67683635335689 Ah, the capacity of the block's capacity test, which began at that full; the state of charge is 1 at the same full and falls by the charge removed over the capacity the physical model is given. The two are one quantity only where the physical model is given cell m80 and that capacity, its reference capacity of the cell; in each of the other five blocks the table card's capacity was read from a test that began 22 to 52 mAh above full, and the coupling does not join them. The physical model starts a cell at rest, every memory at zero, so the upstream run ends with an hour at zero current, held at the case temperatures of the 40 degC block's compared tests, 39.063 to 45.535 degC, where by the physical model's own constants the slowest diffusion mode takes 34 s or less and the electrolyte drop 108 s or less; at -12.9 degC they take 21 and 13 minutes, and an hour leaves 5.4 percent of the slowest mode. The current is not handed, since the two cards take its sign opposite ways; nor is the case temperature, which each card is given as measured at every step.",
+        meaning: "Cell m80 of the Tesla Model 3 2170 dataset, rested in its 40 degC block, handed from the table card to the physical model: the table card's charge level, carried bit for bit as the physical model's state of charge. In the 40 degC block the charge level is 1 less the charge removed since the laboratory's full recharge over 4.67683635335689 Ah, the capacity of the block's capacity test, which began at that full; the state of charge is 1 at the same full and falls by the charge removed over the capacity the physical model is given. The two are one quantity where the physical model is given cell m80 and that capacity, its reference capacity of the cell, and nowhere else; in each of the other five blocks the table card's capacity was read from a test that began 22 to 52 mAh above full, and the coupling does not join them. The physical model starts a cell at rest, every memory at zero, so the upstream run ends with an hour at zero current, held at the case temperatures of the 40 degC block's compared tests, 39.063 to 45.535 degC, where by the physical model's own constants the slowest diffusion mode takes 34 s or less and the electrolyte drop 108 s or less; at -12.9 degC they take 21 and 13 minutes, and an hour leaves 5.4 percent of the slowest mode. The current is not handed, since the two cards take its sign opposite ways; nor is the case temperature, which each card is given as measured at every step.",
+    },
+    Coupling {
+        name: TRIGA_PULSE_TO_ELEMENT_6753,
+        upstream: ("energy", "reactor_triga_jsi"),
+        downstream: (SOLVER, "fuel_rod_triga_jsi"),
+        mappings: &[
+            Mapping { from: "inputs.initial.start_temperature_k", to: "parameters.start_temperature_k", unit: "K", outside: rod_start },
+            Mapping { from: "frames[*].t", to: "parameters.time_s", unit: "s", outside: rod_time },
+            Mapping { from: "frames[*].pos[1]", to: "parameters.core_energy_released_mws", unit: "MW*s", outside: rod_energy },
+        ],
+        conditions: &[],
+        meaning: TRIGA_MEANING,
     },
 ];
+
+/// The name of the coupling of the TRIGA card into the element solver.
+pub(crate) const TRIGA_PULSE_TO_ELEMENT_6753: &str = "triga_pulse_to_element_6753";
+
+const TRIGA_MEANING: &str = "One pulse of the JSI TRIGA Mark II reactor handed from the card reactor_triga_jsi to the solver of its instrumented fuel element 6753, under one chain proof: the start temperature, and from every recorded frame of the card's sealed run its time since the fire signal (s) and the core energy released (energy_mws, MW*s, the frame's 32-bit slot widened exactly to 64 bits), each carried bit for bit into the solve's start_temperature_k, time_s and core_energy_released_mws. The card's energy released and the solver's input are one quantity, the core's thermal energy since the fire signal, the integral of the card's power; energy is handed and not the frames' power, because a frame samples the power at one step and the pulse is narrower than the frames, while the energy at a frame is the card's integral of all of it. The solver takes 1.387/56 of it for the element, its own constant; the coupling converts nothing. Record the card's run with frames 10 ms apart (dt_s 5e-5 and record_every 200), the history the element was compared on. On 16 pulses of cores 217 and 231 left out of the element's fit, chained this way: the thermocouple's maximum rise 9.8 to 4.3 percent low, its time after the power peak 19.9 to 4.2 percent early, its rise 10 s after the peak 11.2 to 5.0 percent low (7 of 8 within 10 percent); the card's peak power was 149 to 525 MW against the records' 158 to 558. Worked: reactor_triga_jsi from 296.15 K on core 231's rod table at 2.5 dollars, rods dropped after 60,000 steps of 5e-5 s, 279,000 steps, record_every 200, handed as 1,395 points: peak fuel temperature 598.8 K, chain_seal 33ade1157d386682fbc625459e0a14a2b05e724023759989a7fea23df778db53.";
+
+/// Whether the view holds a piece a coupling names: a card, or a solver.
+pub(crate) fn sees(view: &crate::view::View, piece: (&str, &str)) -> bool {
+    if piece.0 == SOLVER {
+        view.sees_solver(piece.1) && crate::solvers::find(piece.1).is_some()
+    } else {
+        view.find(piece.0, piece.1).is_some()
+    }
+}
+
+/// The couplings into a solver, as `describe_solver` states them.
+pub(crate) fn table_into_solver(view: &crate::view::View, solver: &str) -> Value {
+    table_in(view, SOLVER, solver)
+}
 
 pub(crate) fn find(name: &str) -> Option<&'static Coupling> {
     COUPLINGS.iter().find(|coupling| coupling.name == name)
@@ -475,10 +546,10 @@ pub(crate) fn table_in(view: &crate::view::View, domain: &str, card: &str) -> Va
         COUPLINGS
             .iter()
             .filter(|coupling| coupling.upstream == (domain, card) || coupling.downstream == (domain, card))
-            .filter(|coupling| {
-                view.find(coupling.upstream.0, coupling.upstream.1).is_some()
-                    && view.find(coupling.downstream.0, coupling.downstream.1).is_some()
-            })
+            .filter(|coupling| sees(view, coupling.upstream) && sees(view, coupling.downstream))
+            // A coupling into a solver is listed by describe_solver alone, so a
+            // card's description is the same in every view that holds the card.
+            .filter(|coupling| coupling.downstream.0 != SOLVER || domain == SOLVER)
             .map(|coupling| {
                 let mut entry = serde_json::Map::new();
                 entry.insert("name".into(), coupling.name.into());
@@ -528,8 +599,27 @@ mod tests {
     fn every_coupling_names_cards_the_engine_serves_and_fields_they_take() {
         for coupling in COUPLINGS {
             let up = crate::descriptor::find(coupling.upstream.0, coupling.upstream.1).expect("upstream card");
-            let down = crate::descriptor::find(coupling.downstream.0, coupling.downstream.1).expect("downstream card");
             let published = crate::state_fields(up.domain, up.card).expect("the upstream publishes a state");
+            if coupling.downstream.0 == SOLVER {
+                let solver = crate::solvers::find(coupling.downstream.1).expect("downstream solver");
+                for mapping in coupling.mappings {
+                    if let Some(slot) = mapping.from.strip_prefix("frames[*].") {
+                        assert!(
+                            genesis_kernel::frame::FRAME_LAYOUT.iter().any(|row| row.slot == slot && (row.kind == "f64" || row.kind == "f32")),
+                            "{}",
+                            mapping.from
+                        );
+                    } else {
+                        let name = mapping.from.strip_prefix("inputs.initial.").expect("a start field");
+                        assert!(up.phase_names.contains(&name), "{}", mapping.from);
+                    }
+                    let name = mapping.to.strip_prefix("parameters.").expect("a solve takes parameters");
+                    assert!(solver.inputs.iter().any(|input| input.name == name), "{}", mapping.to);
+                }
+                assert_eq!(COUPLINGS.iter().filter(|other| other.name == coupling.name).count(), 1);
+                continue;
+            }
+            let down = crate::descriptor::find(coupling.downstream.0, coupling.downstream.1).expect("downstream card");
             for mapping in coupling.mappings {
                 if let Some(name) = mapping.from.strip_prefix("inputs.initial.") {
                     assert!(up.phase_names.contains(&name), "{}", mapping.from);
@@ -566,7 +656,13 @@ mod tests {
         let names: Vec<&str> = COUPLINGS.iter().map(|coupling| coupling.name).collect();
         assert_eq!(
             names,
-            ["spert3_burst_to_fuel_card", "spert3_fuel_burst_to_point_card", "cell_2170_model3_to_m80", "cell_2170_m80_to_model3"]
+            [
+                "spert3_burst_to_fuel_card",
+                "spert3_fuel_burst_to_point_card",
+                "cell_2170_model3_to_m80",
+                "cell_2170_m80_to_model3",
+                "triga_pulse_to_element_6753"
+            ]
         );
     }
 
@@ -590,7 +686,7 @@ mod tests {
     /// which a served coupling carries.
     #[test]
     fn every_unit_is_the_unit_both_cards_give_the_value() {
-        for coupling in COUPLINGS {
+        for coupling in COUPLINGS.iter().filter(|coupling| coupling.downstream.0 != SOLVER) {
             let up = crate::descriptor::find(coupling.upstream.0, coupling.upstream.1).unwrap();
             let down = crate::descriptor::find(coupling.downstream.0, coupling.downstream.1).unwrap();
             for mapping in coupling.mappings {

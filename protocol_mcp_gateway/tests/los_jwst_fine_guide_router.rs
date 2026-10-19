@@ -712,7 +712,7 @@ async fn the_card_is_listed_and_its_description_says_what_is_fitted_and_what_was
     let client = Client::new();
     let cards: Value = client.get(format!("{base}/cards")).send().await.unwrap().json().await.unwrap();
     let cards = cards["cards"].as_array().unwrap();
-    assert_eq!(cards.len(), 37);
+    assert_eq!(cards.len(), 40);
     let mine = cards.iter().find(|card| card["card"] == "los_jwst_fine_guide").expect("listed");
     assert_eq!(mine["domain"], "aerospace");
     assert!(mine["specimen"].as_str().unwrap().contains("fitted to this observatory's own centroids"));
@@ -742,7 +742,7 @@ async fn the_card_is_listed_and_its_description_says_what_is_fitted_and_what_was
     // What was compared of the lock point and of the gaps, and that the card computes past both.
     let limits = validation["limits"].as_str().unwrap();
     assert!(limits.contains("span -61.1512947 to 60.4564934 arcsec on x and -64.2767 to 50.1812668 arcsec on y"), "{limits}");
-    assert!(limits.contains("10 frames on the fitted files and 2 on the held-back files"), "{limits}");
+    assert!(limits.contains("10 frames on the fitted files and 2 on the files outside the fit"), "{limits}");
     let fields = body["phase_fields"].as_array().unwrap();
     let field = |name: &str| fields.iter().find(|f| f["name"] == name).unwrap_or_else(|| panic!("{name}"));
     assert_eq!(field("lock_x_arcsec")["minimum"], json!(-70.0));
@@ -752,8 +752,8 @@ async fn the_card_is_listed_and_its_description_says_what_is_fitted_and_what_was
     assert_eq!(field("quiet_before_start_s")["minimum"], json!(0.0));
     // Sentences held in the one line of the list, the data, the result and
     // the limits.
-    assert!(mine["specimen"].as_str().unwrap().ends_with(
-        "Inside disturbances it was measured worse than taking the last centroid, 2.03 against 1.00 mas on x and 1.57 against 0.78 on y, with its stated variance 12 to 17 times too small; it answers those frames and flags them."
+    assert!(mine["specimen"].as_str().unwrap().contains(
+        "Gap: inside disturbances it is worse than the last centroid, 2.03 against 1.00 mas on x and 1.57 against 0.78 on y, its stated variance 12 to 17 times too small; it flags those frames."
     ));
     let rule = body["dt_s"]["rule"].as_str().unwrap();
     for words in [
@@ -762,7 +762,7 @@ async fn the_card_is_listed_and_its_description_says_what_is_fitted_and_what_was
         "FLAG_RECOVERING on a frame that ends less than 30 s after the last centroid that carried either",
         "2.03 mas against 1.00 for the last centroid on x and 1.57 against 0.78 on y",
         "once in about 7,900 measured frames",
-        "the longest run of such frames a compared run crossed was 10 frames on the fitted files and 2 on the held-back files",
+        "the longest run of such frames a compared run crossed was 10 frames on the fitted files and 2 on the files outside the fit",
         "one beyond it is refused as LockOutsideSensorField before the first step",
     ] {
         assert!(rule.contains(words), "{words}: {rule}");
@@ -779,39 +779,38 @@ async fn the_card_is_listed_and_its_description_says_what_is_fitted_and_what_was
     }
     let result = validation["result"].as_str().unwrap();
     for words in [
-        "the comparison passed: all five marks were met on both axes. The marks are on quiet frames. The card as it was scored answered every frame of a file, and on a whole file the outcome was the other way.",
-        "What follows was done after the scoring and is not a blind test",
-        "The three numbers are the protocol's own and none was fitted to a held-back file",
-        "Over all 973,388 measured held-back frames, quiet and disturbed together, the card's error one frame ahead was 1.35 on x and 1.26 on y of the error of taking the last centroid",
-        "the squared error over the variance it states was 3.9 and 3.0",
+        "against 0.644 and 0.584 for taking the last centroid (0.790 and 0.807 of it; target 0.85) and 0.660 and 0.748 for taking the lock point (0.772 and 0.631 of it; target 0.85)",
+        "With the disturbed frames taken out, as a chain set with the numbers above read",
+        "The three numbers are the record's own and none is fitted to a file outside the fit",
+        "Over all 973,388 measured frames outside the fit, quiet and disturbed together, the card's error one frame ahead is 1.35 on x and 1.26 on y of the error of taking the last centroid",
+        "the squared error over the variance it states is 3.9 and 3.0",
         "Disturbances are in 121 of the 134 files and make up 18.3 percent of the measured frames",
-        "lies in 0.5 to 2.0 in only 39 of the 134 files",
-        "Engines 0.7 to 0.9 refused those frames",
-        "The card now answers them again",
+        "lies in 0.5 to 2.0 in 39 of the 134 files",
+        "The card answers those frames and marks them with three flags",
         "0.510 mas on x and 0.472 mas on y",
-        "A random walk with the same power-law sensor noise, three constants an axis fitted on the same April data, meets all five marks, at 0.808 and 0.837",
+        "A random walk with the same power-law sensor noise, three constants an axis fitted on the same April data, is inside all five targets, at 0.808 and 0.837",
         "lower the error by 2 and 4 percent: 0.510 and 0.472 mas against 0.521 and 0.489",
-        "The marks do not test the mode frequencies: with both moved 20 percent up or down every mark is still met",
-        "a second-order autoregression with one variance misses the per-file mark",
-        "1.045 fitted there against the card's 1.273, where x gave 1.134 against 1.151",
-        "differ by +27 to -21 percent in variance, which the variance mark cannot resolve",
-        "each number within 0.04 of the scored one, and the lock-point mark is no longer a test",
+        "The targets do not test the mode frequencies: with both moved 20 percent up or down every target still holds",
+        "a second-order autoregression with one variance is outside the per-file target",
+        "the y noise exponent comes out 1.045 against the card's 1.273, where x gives 1.134 against 1.151",
+        "differ by +27 to -21 percent in variance, which the variance target cannot resolve",
+        "each number within 0.04 of the one above, and the lock-point target is no longer a test",
         "43 files, which lose 12 percent of the set's frames",
-        "evidence/verification/second_party/V-35/",
+        "A second comparison program, with its own filter on whole files and its own FITS reader, on the same machine, gives the same numbers",
     ] {
         assert!(result.contains(words), "{words}: {result}");
     }
     let limits = validation["limits"].as_str().unwrap();
     for words in [
-        "It was scored twice, the second time by a second scorer, on one machine",
+        "a second comparison program, on one machine, gives the same numbers",
         "The card answers there and flags the frames",
         "the visits of March 2022 are unopened",
         "the Nyquist frequency is 7.81 Hz, and the card cannot see or state jitter above it, nor tell a folded line from a true one",
         "a narrow line at 0.290 to 0.294 Hz with a shoulder at 0.32 to 0.34 Hz; the card's 0.3025 Hz is one damped mode laid across both",
-        "Rigby et al., arXiv:2207.05632, section 3",
+        "(arXiv:2207.05632, section 3)",
         "a 0.045 Hz oscillation attributed to fuel slosh; the card has no part for the 0.045 Hz one",
         "a broad hump at 0.50 to 0.60 Hz, for which no published attribution was found",
-        "it passes with a wrong mode frequency, wrong noise or the two axes swapped, and it says nothing about the telescope",
+        "it holds with a wrong mode frequency, wrong noise or the two axes swapped, and it says nothing about the telescope",
     ] {
         assert!(limits.contains(words), "{words}: {limits}");
     }

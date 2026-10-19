@@ -275,9 +275,10 @@ async fn the_description_carries_the_standing() {
         assert!(!described["validation"][part].as_str().unwrap_or_else(|| panic!("{part}")).is_empty(), "{part}");
     }
     let pass_line = described["validation"]["pass_line"].as_str().unwrap();
-    assert!(pass_line.contains("e8f3ac5d85277fd482b81c8a8c2d9eb586e85a6406c3635117a34b82e03f9416"), "{pass_line}");
+    assert!(pass_line.contains("Record SHA-256 e8f3ac5d85277fd482b81c8a8c2d9eb586e85a6406c3635117a34b82e03f9416."), "{pass_line}");
+    assert!(pass_line.contains("the peak within 15 percent, the impulse within 20 percent and the arrival within 5 percent"), "{pass_line}");
     let result = described["validation"]["result"].as_str().unwrap();
-    for words in ["0 of 24 held-back traces meet every line", "33 to 72 percent above the measured", "43 to 78 percent above", "5.2 to 25.4 percent early"] {
+    for words in ["0 of 24 within every target (target 20)", "33 to 72 percent above the measured", "43 to 78 percent above", "5.2 to 25.4 percent early"] {
         assert!(result.contains(words), "{words}: {result}");
     }
     let object = described["validation"]["object"].as_str().unwrap();

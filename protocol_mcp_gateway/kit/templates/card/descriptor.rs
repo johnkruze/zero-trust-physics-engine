@@ -19,7 +19,7 @@ const DOMAIN: &str = "{{domain}}";
 const CARD: &str = "{{name}}";
 
 /// What the card is, in one sentence of the list.
-const SPECIMEN: &str = "{{Title}}, the company's own specimen: a body of 500 J/K warmed by a heater and cooled through 0.5 W/K to a bath, from above absolute zero to its melting point of 933.47 K.";
+const SPECIMEN: &str = "Company specimen: {{Title}}, a body of 500 J/K warmed by a heater and cooled through 0.5 W/K to a bath, from above absolute zero to its melting point of 933.47 K.";
 
 pub(super) fn card() -> Card {
     let specimen = {{name}}::{{Name}}::specimen();
@@ -105,15 +105,15 @@ pub(super) fn examples() -> (Value, Value) {
 /// The record, in the five parts every card gives: the object, the data, the
 /// pass line, the result and the limits, in the words of engine 0.11.0. A
 /// card compared with measurements states the range compared on and the
-/// result there in numbers; the company's own specimen says what it is and
+/// result there in numbers; a company specimen says what it is and
 /// what it holds.
 pub(super) fn validation(_specimen: &str) -> [String; 5] {
     [
-        format!("{CARD}, the company's own specimen: {SPECIMEN} Every constant of it is stated in this description and fixed in the card."),
+        format!("{SPECIMEN} Every constant of it is stated in this description and fixed in the card."),
         "The company's own constants for this specimen, fixed in the card and listed in its description and in its step rule.".to_string(),
         "Every step holds the card's own equations and its conservation ledger to 1e-6 of the heat from 293.15 to 933.47 K, from the step floor to the ceiling.".to_string(),
         "Held: the card's tests run it from the floor to the ceiling, and every step holds its conservation ledger to its stated limit.".to_string(),
-        "The company's own specimen: its numbers are those of the body the company specified, from above 0 K to its melting point, 933.47 K, where it stops by name.".to_string(),
+        "Company specimen: its numbers are those of the body the company specified, from above 0 K to its melting point, 933.47 K, where it stops by name.".to_string(),
     ]
 }
 

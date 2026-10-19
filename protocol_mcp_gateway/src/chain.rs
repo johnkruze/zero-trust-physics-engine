@@ -37,11 +37,13 @@ const FROM_KEYS: &[&str] = &["request", "run_seal", "coupling"];
 /// included: the engine's limit for one run.
 pub const MAX_CHAIN_STEPS: u64 = trajectory::MAX_TRAJECTORY_STEPS;
 
-/// The downstream piece of a chain: a run or a step.
+/// The downstream piece of a chain: a run, a step, or a solve (only through
+/// a coupling into a solver).
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Target {
     Run,
     Step,
+    Solve,
 }
 
 /// Take `from` out of a request. The request without it is the one that is
@@ -110,6 +112,27 @@ pub(crate) fn from_schema(full: bool) -> Value {
     })
 }
 
+/// The declaration of `from` in the schema of `solve`: a sealed card run
+/// handed in through a coupling into a solver.
+pub(crate) fn solve_from_schema(full: bool) -> Value {
+    let description = if full {
+        "Optional: a sealed card run handed in through a coupling into this solver (describe_solver lists them under couplings). request: that run_trajectory request as sent, less its readout; run_seal: its seal; coupling: the coupling's name. The run is computed again and its seal compared, and each handed value must equal its sealed value bit for bit in parameters. The solution_seal is that of this request without from; chain.chain_seal commits it to the upstream run."
+    } else {
+        "Optional: a sealed card run handed in through a coupling, as run_trajectory takes it."
+    };
+    serde_json::json!({
+        "type": "object",
+        "description": description,
+        "properties": {
+            "request": { "type": "object" },
+            "run_seal": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+            "coupling": { "type": "string" }
+        },
+        "required": ["request", "run_seal", "coupling"],
+        "additionalProperties": false
+    })
+}
+
 /// The cards a continuation through `from` is refused on, each with why:
 /// their start fields do not carry the state a run goes on from, so a
 /// "continuation" would be another run and not the same run cut in two.
@@ -117,12 +140,15 @@ pub(crate) static NOT_CONTINUED: &[(&str, &str)] = &[
     ("reactor_triga_jsi", "its start fields are the start temperature and the rod table, which its final state carries unchanged, so a run sent from a returned state is the same pulse again from its start; the power, the precursors and the fuel temperature a pulse reaches are not start fields"),
     ("reactor_spert3", "its one start field is the coolant temperature, which a burst does not change, so a run sent from a returned state is the same burst again from the step in reactivity; the power and the precursors are not start fields. The coupling spert3_burst_to_fuel_card hands the burst to the other SPERT III card"),
     ("reactor_spert3_fuel", "its one start field is the inlet temperature, which a burst does not change, so a run sent from a returned state is the same burst again from the start of the rod's motion; the power, the precursors and the fuel and water temperature rises are not start fields. The coupling spert3_fuel_burst_to_point_card hands the burst to the other SPERT III card"),
+    ("reactor_spert3_twin", "its start fields are the inlet temperature, the system pressure, the flow and the initial power, from which it starts the steady reactor, so a run sent from a returned state is the same ejection again from the steady start; the power, the precursors, the ring, clad and water temperatures and the rod's travel are not start fields"),
     ("reactor_spert3_ccore", "its start fields are the initial temperature and the system pressure, which a transient does not change, so a run sent from a returned state is the same transient again from the step in reactivity; the power, the precursors and the plate and water temperature rises are not start fields"),
+    ("reactor_spert3_ccore_twin", "its start fields are the initial temperature and the system pressure, which a transient does not change, so a run sent from a returned state is the same transient again from the step in reactivity; the power, the precursors, the plate, film and water temperature rises and the vapour are not start fields"),
     ("los_jwst_fine_guide", "its start fields are the lock point and the quiet time; the pointing filter's estimates, covariances and disturbance modes are not start fields, so a run cut in two is not the uncut run"),
     ("cell_2170_model3", "its start fields are the cell, the state of charge and the capacity; the surface state of charge, the diffusion lags, the hysteresis and the electrolyte voltage are not start fields, so a run cut in two is not the uncut run"),
     ("cell_2170_m80", "its start fields are the block's chamber temperature and the charge removed; the voltage of its RC branch is not a start field, so a run cut in two is not the uncut run"),
     ("grid_gb", "the card takes only the start of its event: a returned state is refused as a start by the card itself"),
     ("fingerpad_p02_glass", "the card takes only a twist from zero: a returned state is refused as a start by the card itself"),
+    ("reactor_msre_pump", "its one start field is the pump speed of the starting equilibrium; the precursor content of the 252 parcels of salt, the fuel flow behind the pump and the ledger are not start fields, so a run sent from a returned state starts again from an equilibrium"),
     ("grasp_lift_glass_4tu", "its one start field is the hand's velocity at the grip; the object's height and velocity, the force of each of the 32 elements of a pad's contact and the ledgers are not start fields, so a run sent from a returned state is a new grip on an object at rest on the table"),
 ];
 
@@ -154,7 +180,7 @@ fn continued_only_from(card: &str, request: &Value, target: Target) -> Option<St
     }
     let section = match target {
         Target::Run => "initial",
-        Target::Step => "parameters",
+        Target::Step | Target::Solve => "parameters",
     };
     let stated = request.get(section)?.get("radius_m")?;
     let bits = request_value_hex(stated)?;
@@ -365,12 +391,23 @@ pub(crate) fn read(
     target: Target,
     downstream_steps: u64,
 ) -> Result<Plan, DoorError> {
-    let pair = pair_of(downstream).ok_or_else(|| {
-        DoorError::Unprocessable("Physical Violation: a request with 'from' names its 'domain' and 'card' as strings.".to_string())
-    })?;
-    if view.find(&pair.0, &pair.1).is_none() {
-        return Err(DoorError::NotFound(crate::CARD_NOT_RECOGNIZED.to_string()));
-    }
+    let pair = if target == Target::Solve {
+        let name = downstream.get("solver").and_then(Value::as_str).ok_or_else(|| {
+            DoorError::Unprocessable("Physical Violation: a solve request with 'from' names its 'solver' as a string.".to_string())
+        })?;
+        if !couplings::sees(view, (couplings::SOLVER, name)) {
+            return Err(DoorError::NotFound(crate::SOLVER_NOT_RECOGNIZED.to_string()));
+        }
+        (couplings::SOLVER.to_string(), name.to_string())
+    } else {
+        let pair = pair_of(downstream).ok_or_else(|| {
+            DoorError::Unprocessable("Physical Violation: a request with 'from' names its 'domain' and 'card' as strings.".to_string())
+        })?;
+        if view.find(&pair.0, &pair.1).is_none() {
+            return Err(DoorError::NotFound(crate::CARD_NOT_RECOGNIZED.to_string()));
+        }
+        pair
+    };
     // Nearest upstream first, as `from` nests.
     let mut levels = Vec::new();
     let mut next = Some(from);
@@ -521,7 +558,7 @@ pub(crate) fn read(
                 let joined = couplings::Joined {
                     upstream: &levels[index].request,
                     downstream: if last { downstream } else { &levels[index + 1].request },
-                    step: last && target == Target::Step,
+                    step: last && target != Target::Run,
                 };
                 if let Some(sentence) = coupling.unmet(&joined) {
                     return Err(violation(sentence, "CouplingConditionNotMet"));
@@ -645,7 +682,7 @@ impl Settled {
 /// The path a run request's value stands at, in the downstream request.
 fn target_path(to: &str, target: Target) -> String {
     match target {
-        Target::Run => to.to_string(),
+        Target::Run | Target::Solve => to.to_string(),
         Target::Step => {
             let name = to
                 .strip_prefix("initial.")
@@ -747,7 +784,7 @@ fn continuation(
 ) -> Result<Vec<Handed>, String> {
     let section = match target {
         Target::Run => "initial",
-        Target::Step => "parameters",
+        Target::Step | Target::Solve => "parameters",
     };
     let stated = down.get(section).and_then(Value::as_object);
     let phases = crate::descriptor::phase_names(&pair.0, &pair.1);
@@ -810,6 +847,8 @@ fn coupled(
     for mapping in coupling.mappings {
         let value_hex = if let Some(name) = mapping.from.strip_prefix("final_state.") {
             state.get(&format!("{name}_hex")).cloned()
+        } else if let Some(slot) = mapping.from.strip_prefix("frames[*].") {
+            frame_values(up, slot).map(|values| Value::Array(values.iter().map(|value| Value::String(hex_of_bits(*value))).collect()))
         } else {
             let path = mapping.from.strip_prefix("inputs.").unwrap_or(mapping.from);
             let values = values_at(&up.inputs, path).map_err(|error| refused(error, "CouplingLedgerBreach"))?;
@@ -833,8 +872,12 @@ fn coupled(
                 "CouplingSourceNotOneValue",
             ));
         };
-        let value = value_of_hex(&value_hex).expect("a handed value is one exact number");
-        if let Some(sentence) = (mapping.outside)(value, &so_far) {
+        let values: Vec<f64> = match &value_hex {
+            Value::Array(items) => items.iter().map(|item| value_of_hex(item).expect("a handed value is an exact number")).collect(),
+            one => vec![value_of_hex(one).expect("a handed value is one exact number")],
+        };
+        let value = values[0];
+        if let Some(sentence) = values.iter().find_map(|value| (mapping.outside)(*value, &so_far)) {
             return Err(refused(
                 format!(
                     "the coupling '{}' hands '{}' on to '{}': {sentence}. That value is outside the downstream card's range, so the downstream card is not run",
@@ -849,6 +892,20 @@ fn coupled(
             let bits = given.and_then(request_value_hex);
             if bits.as_ref() != Some(&value_hex) {
                 let place = if received.len() > 1 { format!(" in segment {at}") } else { String::new() };
+                if values.len() > 1 || value_hex.is_array() {
+                    return Err(refused(
+                        format!(
+                            "the coupling '{}' hands {} values in {} from '{}' to '{}', and the request holds {}{place}; each value handed over and the value received must be one number, bit for bit",
+                            coupling.name,
+                            values.len(),
+                            mapping.unit,
+                            mapping.from,
+                            to,
+                            first_difference(&value_hex, bits.as_ref())
+                        ),
+                        "CouplingLedgerBreach",
+                    ));
+                }
                 return Err(refused(
                     format!(
                         "the coupling '{}' hands {} {} ({}) from '{}' to '{}', and the request holds {}{place}; the value handed over and the value received must be one number, bit for bit",
@@ -873,4 +930,35 @@ fn coupled(
         });
     }
     Ok(handed)
+}
+
+/// The exact values of one slot of every recorded frame of the upstream run,
+/// in order: a 32-bit slot is widened to 64 bits, which is exact.
+fn frame_values(up: &TrajectoryResponse, slot: &str) -> Option<Vec<f64>> {
+    let row = genesis_kernel::frame::FRAME_LAYOUT.iter().find(|row| row.slot == slot)?;
+    let mut values = Vec::with_capacity(up.frames.len());
+    for frame in &up.frames {
+        let bytes = hex::decode(&frame.frame_hex).ok()?;
+        let at = bytes.get(row.offset..row.offset + row.width)?;
+        let value = match row.kind {
+            "f64" => f64::from_le_bytes(at.try_into().ok()?),
+            "f32" => f64::from(f32::from_le_bytes(at.try_into().ok()?)),
+            _ => return None,
+        };
+        values.push(value);
+    }
+    (!values.is_empty()).then_some(values)
+}
+
+/// What the request holds where an array was handed, for a sentence: its
+/// length, or where it first differs.
+fn first_difference(handed: &Value, received: Option<&Value>) -> String {
+    match (handed, received) {
+        (Value::Array(left), Some(Value::Array(right))) => match left.iter().zip(right).position(|(a, b)| a != b) {
+            Some(at) => format!("another value at index {at} ({} handed, {} received)", left[at], right[at]),
+            None => format!("{} values where {} were handed", right.len(), left.len()),
+        },
+        (_, Some(other)) => format!("{other}"),
+        (_, None) => "nothing".to_string(),
+    }
 }

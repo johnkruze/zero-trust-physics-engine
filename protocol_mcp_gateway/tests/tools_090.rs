@@ -124,8 +124,8 @@ async fn same_on_every_connection(calls: &[(&str, Value, bool)]) {
         // find_model says how much it compared the description with: what
         // this key sees, three cards and one solver, where the others see all.
         let through_key = local
-            .replace("\"searched\":{\"cards\":37,\"solvers\":24}", "\"searched\":{\"cards\":3,\"solvers\":1}")
-            .replace("(37 cards and 24 solvers)", "(3 cards and 1 solver)");
+            .replace("\"searched\":{\"cards\":40,\"solvers\":25}", "\"searched\":{\"cards\":3,\"solvers\":1}")
+            .replace("(40 cards and 25 solvers)", "(3 cards and 1 solver)");
         assert_eq!((status, hosted_error, hosted.as_str()), (200, *error_due, through_key.as_str()), "{tool} hosted");
         let (open_error, opened) = open.tool(tool, arguments);
         assert_eq!((open_error, opened.as_str()), (*error_due, local.as_str()), "{tool} open");
@@ -239,25 +239,27 @@ fn find_model_gives_fit_first_and_then_how_the_model_did_against_measurement() {
     let mut door = Stdio2::start(None);
     let found = ok(&mut door, "find_model", &json!({ "description": "a lithium cell discharging in the cold" }));
     assert_eq!(found["count"], 3);
-    assert_eq!(found["searched"], json!({ "cards": 37, "solvers": 24 }));
+    assert_eq!(found["searched"], json!({ "cards": 40, "solvers": 25 }));
     let first = &found["matches"][0];
     assert_eq!((first["domain"].as_str(), first["card"].as_str()), (Some("energy"), Some("cell_2170_model3")));
     assert!(first["fit"].as_str().unwrap().starts_with("matches your description on the words ") && first["fit"].as_str().unwrap().contains("\"lithium\"") && first["fit"].as_str().unwrap().contains("\"cold\""));
     assert!(first["model_of"].as_str().unwrap().contains("2170"));
-    assert!(first["compared_with"].as_str().unwrap().contains("doi"), "{first}");
-    assert!(first["accuracy_against_measurement"].as_str().unwrap().starts_with("passed in part the pass marks its record states: "));
+    assert!(first["compared_with"].as_str().unwrap().starts_with("Fitted on ") || first["compared_with"].as_str().unwrap().starts_with("Nothing fitted"), "{first}");
+    assert_eq!(first["against_measurement"], "compared with measurement");
+    let accuracy = first["accuracy_against_measurement"].as_str().unwrap();
+    assert!(accuracy.starts_with("Compared with ") && accuracy.contains("within ") && accuracy.contains(" Gap: "), "{accuracy}");
     // The earlier names are gone, and so is any excerpt of the record's limits.
     for gone in ["met_its_marks", "marks", "tested_on", "cannot_answer", "why", "what", "limits"] {
         assert!(first.get(gone).is_none(), "{gone}");
     }
-    // A model that failed its pass marks is found, with the failure stated as accuracy and not as fit.
+    // A model with a gap is found, with the gap stated as accuracy and not as fit.
     let strip = ok(&mut door, "find_model", &json!({ "description": "a thin aluminium strip clamped at one end, ringing after I flick it" }));
     assert_eq!(strip["matches"][0]["card"], "cantilever_eth");
-    assert_eq!(strip["matches"][0]["accuracy_against_measurement"], "failed the pass marks its record states: met three of four pass lines; the comparison was not blind, as its validation says");
-    assert!(strip["about"].as_str().unwrap().contains("a model that failed its pass marks is still the served model of its thing"));
+    assert!(strip["matches"][0]["accuracy_against_measurement"].as_str().unwrap().contains(" Gap: "), "{strip}");
+    assert!(strip["about"].as_str().unwrap().contains("a model with a gap") || strip["about"].as_str().unwrap().contains("is still the served model of its thing"));
     let burst = ok(&mut door, "find_model", &json!({ "description": "something falling into an atmosphere", "limit": 2 }));
     assert_eq!(burst["matches"][0]["card"], "capsule_stardust");
-    assert_eq!(burst["matches"][0]["accuracy_against_measurement"], "passed the pass marks its record states: met all three pass lines; the comparison was not blind, as its validation says");
+    assert!(burst["matches"][0]["accuracy_against_measurement"].as_str().unwrap().starts_with("Compared with "), "{burst}");
     assert_eq!(burst["matches"][1]["card"], "capsule_insight");
     let grid = ok(&mut door, "find_model", &json!({ "description": "power grid frequency after losing a link" }));
     assert_eq!(grid["matches"][0]["card"], "grid_gb");
@@ -265,12 +267,13 @@ fn find_model_gives_fit_first_and_then_how_the_model_did_against_measurement() {
     let cable = ok(&mut door, "find_model", &json!({ "description": "how far the mains frequency in Britain drops when the undersea power cable from France suddenly fails" }));
     assert_eq!((cable["count"].as_u64(), cable["matches"][0]["card"].as_str()), (Some(1), Some("grid_gb")));
     let pack = ok(&mut door, "find_model", &json!({ "description": "a 12S battery pack under load" }));
-    assert!(pack["matches"][0]["accuracy_against_measurement"].as_str().unwrap().starts_with("the company's own specimen: its constants are the company's"));
+    assert_eq!(pack["matches"][0]["against_measurement"], "company specimen");
+    assert!(pack["matches"][0]["accuracy_against_measurement"].as_str().unwrap().starts_with("Company specimen: an object the company specified, every constant stated"));
     // Nothing fits: the answer is complete in itself, and sends no one to the lists.
     let none = ok(&mut door, "find_model", &json!({ "description": "the temperature of the brake discs of a freight train after an emergency stop from 100 km/h" }));
     assert_eq!(none["matches"], json!([]));
     let said = none["none_fits"].as_str().unwrap();
-    assert!(said.starts_with("Nothing served fits this description. It was compared with everything this connection serves (37 cards and 24 solvers), and no served model fits it; list_cards and list_solvers name everything served."), "{said}");
+    assert!(said.starts_with("Nothing served fits this description. It was compared with everything this connection serves (40 cards and 25 solvers), and no served model fits it; list_cards and list_solvers name everything served."), "{said}");
     // Where a request for a model goes: the maker, by name and address, said
     // as what is so. It read "write to John Kruze of Protocol Company at ...
     // and name an open dataset of it" until the instruction became a

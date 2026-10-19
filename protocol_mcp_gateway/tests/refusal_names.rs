@@ -103,7 +103,7 @@ fn worked(description: &Value) -> (Value, Value) {
 fn a_step_outside_a_cards_floor_or_ceiling_is_refused_by_a_name_the_card_lists() {
     let mut door = Stdio2::start(None);
     let pairs = cards(&mut door);
-    assert_eq!(pairs.len(), 37);
+    assert_eq!(pairs.len(), 40);
     for (domain, card) in &pairs {
         let named = json!({ "domain": domain, "card": card });
         let description = described(&mut door, "describe_card", &named);
@@ -650,7 +650,7 @@ fn the_corrected_facts_are_as_the_models_compute() {
         capsule["declared_ends"][0]["end"],
         "the flown parachute deployment, the last row of the flight's record, altitude under 6164.62 m and speed through the air under 352.1169 m/s at once, where the card's entry ends; the step that first crosses both lands, and with the flight's lift that step is at 5793 m and Mach 1.470, the lowest state the compared run reached"
     );
-    assert!(capsule["phase_fields"][0]["bound"].as_str().unwrap().contains("The compared run with the flight's lift reached down to 5793 m"));
+    assert!(capsule["phase_fields"][0]["bound"].as_str().unwrap().contains("The compared run with the flight's lift reaches down to 5793 m"));
 
     // accumulator_sbo450: the worked examples carry the 40 bar charge typed to four figures, and the text says so.
     let accumulator = described(&mut door, "describe_card", &json!({ "domain": "energy", "card": "accumulator_sbo450" }));

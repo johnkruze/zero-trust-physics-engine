@@ -1,0 +1,176 @@
+{
+ "model": "fuel_rod_triga_jsi",
+ "protocol": {
+  "path": "evidence/research/reactor_triga_jsi_element_6753/validation_protocol.md",
+  "sha256": "c128c9e7c7cba4895c41b461df9df4c0ee1233e3de351fd1ec280de87ffb5bc3",
+  "committed": null
+ },
+ "held_back": [
+  {
+   "path": "evidence/research/reactor_triga_jsi_element_6753/raw/series/pulse315.bin",
+   "sha256": "b0e00b4548aa11e29ab56dd3c40805556e09987eae4de3af4bc7beb6c875c8d5"
+  },
+  {
+   "path": "evidence/research/reactor_triga_jsi_element_6753/raw/series/pulse320.bin",
+   "sha256": "23d45b4850c9efb8e9ef6e1f81b9a2f371e03f7ec8598c4d538d4dcefaa6508a"
+  },
+  {
+   "path": "evidence/research/reactor_triga_jsi_element_6753/raw/series/pulse321.bin",
+   "sha256": "8a6465f8df7a88b0a5e2e6d9ff3f103e71405d8449bc2d4bd76e483cc66b3cc5"
+  },
+  {
+   "path": "evidence/research/reactor_triga_jsi_element_6753/raw/series/pulse322.bin",
+   "sha256": "6ac09977504426b9f80b2c2fbe9c268cabea31d4562a0b383320566a12ccb8fb"
+  },
+  {
+   "path": "evidence/research/reactor_triga_jsi_element_6753/raw/series/pulse323.bin",
+   "sha256": "7ab4e014c2f2eeb96e452979601eb72a4f5cff7f8199b67aa883a175e1b818c7"
+  },
+  {
+   "path": "evidence/research/reactor_triga_jsi_element_6753/raw/series/pulse324.bin",
+   "sha256": "4d4e74cff41e525c1df15c23f8146ae4b072e714ce5fdb1b578b301f94facf30"
+  },
+  {
+   "path": "evidence/research/reactor_triga_jsi_element_6753/raw/series/pulse325.bin",
+   "sha256": "a389b9a2a0ccf46d426774fc2c5c6ab6a01be64192c20f5ee0c4de87653266de"
+  },
+  {
+   "path": "evidence/research/reactor_triga_jsi_element_6753/raw/series/pulse336.bin",
+   "sha256": "ee523a942e2dbc76408165cbc12ad1f97a8b16657f8af4fd9595a5980e3b42b6"
+  },
+  {
+   "path": "evidence/research/reactor_triga_jsi_element_6753/raw/series/pulse337.bin",
+   "sha256": "c4b19e5c3ccc2ccc0b63a54a104979db32ea517378c3df6f16507bb403be545b"
+  },
+  {
+   "path": "evidence/research/reactor_triga_jsi_element_6753/raw/series/pulse338.bin",
+   "sha256": "43f8dd07d63ecf8428c29ef11d758c56a3431e74ef788cb7837b3fa54a4f8e18"
+  },
+  {
+   "path": "evidence/research/reactor_triga_jsi_element_6753/raw/series/pulse339.bin",
+   "sha256": "c7e78eb67f93ebea1bef76c8a499a0dd646ef504663d92939226bffd1e8c0bf3"
+  },
+  {
+   "path": "evidence/research/reactor_triga_jsi_element_6753/raw/series/pulz0224.bin",
+   "sha256": "35f63ea3c3de82088e8a9120c651bff81bd66fecc45abfe6e79f247769bd98f5"
+  },
+  {
+   "path": "evidence/research/reactor_triga_jsi_element_6753/raw/series/pulz0225.bin",
+   "sha256": "5cd5d31b803e86ded8d9c847484ec7da50881a56fc2f6955531d78f1c5569ebc"
+  },
+  {
+   "path": "evidence/research/reactor_triga_jsi_element_6753/raw/series/pulz0226.bin",
+   "sha256": "3852987329acf16219ee0752d7baa4d4424cbefc365b45b965ad205592750d4a"
+  },
+  {
+   "path": "evidence/research/reactor_triga_jsi_element_6753/raw/series/pulz0227.bin",
+   "sha256": "75c056389e7c9ceab3361179a63e55f33a38bf74dd3caa9642b7f22851dbc799"
+  },
+  {
+   "path": "evidence/research/reactor_triga_jsi_element_6753/raw/series/pulz0228.bin",
+   "sha256": "5c52bd0e3e0722729b3c4de70e006c407435bdb2455a8ebeca65842987530139"
+  },
+  {
+   "path": "evidence/research/reactor_triga_jsi_element_6753/raw/series/pulz0229.bin",
+   "sha256": "36a06de804a517c48898eebe8fabdcb236234232bc2442b1f8d6d7787260746f"
+  },
+  {
+   "path": "evidence/research/reactor_triga_jsi_element_6753/raw/series/pulz0230.bin",
+   "sha256": "186b62807968c8ce59d5e1cfea0e6a66b1d2a6b3ec1126386f877f9424791776"
+  },
+  {
+   "path": "evidence/research/reactor_triga_jsi_element_6753/raw/series/pulz0231.bin",
+   "sha256": "62533812b08bff42b7c4862d64dea7cff1bfe79024719495ccc06fd9b271a383"
+  }
+ ],
+ "registered": {
+  "utc": "2026-10-18T19:27:57Z"
+ },
+ "opened": [
+  {
+   "path": "evidence/research/reactor_triga_jsi_element_6753/raw/series/pulse315.bin",
+   "utc": "2026-10-18T19:27:58Z"
+  },
+  {
+   "path": "evidence/research/reactor_triga_jsi_element_6753/raw/series/pulse320.bin",
+   "utc": "2026-10-18T19:27:59Z"
+  },
+  {
+   "path": "evidence/research/reactor_triga_jsi_element_6753/raw/series/pulse321.bin",
+   "utc": "2026-10-18T19:28:00Z"
+  },
+  {
+   "path": "evidence/research/reactor_triga_jsi_element_6753/raw/series/pulse322.bin",
+   "utc": "2026-10-18T19:28:01Z"
+  },
+  {
+   "path": "evidence/research/reactor_triga_jsi_element_6753/raw/series/pulse323.bin",
+   "utc": "2026-10-18T19:28:02Z"
+  },
+  {
+   "path": "evidence/research/reactor_triga_jsi_element_6753/raw/series/pulse324.bin",
+   "utc": "2026-10-18T19:28:03Z"
+  },
+  {
+   "path": "evidence/research/reactor_triga_jsi_element_6753/raw/series/pulse325.bin",
+   "utc": "2026-10-18T19:28:04Z"
+  },
+  {
+   "path": "evidence/research/reactor_triga_jsi_element_6753/raw/series/pulse336.bin",
+   "utc": "2026-10-18T19:28:05Z"
+  },
+  {
+   "path": "evidence/research/reactor_triga_jsi_element_6753/raw/series/pulse337.bin",
+   "utc": "2026-10-18T19:28:06Z"
+  },
+  {
+   "path": "evidence/research/reactor_triga_jsi_element_6753/raw/series/pulse338.bin",
+   "utc": "2026-10-18T19:28:07Z"
+  },
+  {
+   "path": "evidence/research/reactor_triga_jsi_element_6753/raw/series/pulse339.bin",
+   "utc": "2026-10-18T19:28:08Z"
+  },
+  {
+   "path": "evidence/research/reactor_triga_jsi_element_6753/raw/series/pulz0224.bin",
+   "utc": "2026-10-18T19:28:09Z"
+  },
+  {
+   "path": "evidence/research/reactor_triga_jsi_element_6753/raw/series/pulz0225.bin",
+   "utc": "2026-10-18T19:28:10Z"
+  },
+  {
+   "path": "evidence/research/reactor_triga_jsi_element_6753/raw/series/pulz0226.bin",
+   "utc": "2026-10-18T19:28:11Z"
+  },
+  {
+   "path": "evidence/research/reactor_triga_jsi_element_6753/raw/series/pulz0227.bin",
+   "utc": "2026-10-18T19:28:12Z"
+  },
+  {
+   "path": "evidence/research/reactor_triga_jsi_element_6753/raw/series/pulz0228.bin",
+   "utc": "2026-10-18T19:28:13Z"
+  },
+  {
+   "path": "evidence/research/reactor_triga_jsi_element_6753/raw/series/pulz0229.bin",
+   "utc": "2026-10-18T19:28:14Z"
+  },
+  {
+   "path": "evidence/research/reactor_triga_jsi_element_6753/raw/series/pulz0230.bin",
+   "utc": "2026-10-18T19:28:15Z"
+  },
+  {
+   "path": "evidence/research/reactor_triga_jsi_element_6753/raw/series/pulz0231.bin",
+   "utc": "2026-10-18T19:28:16Z"
+  }
+ ],
+ "scored": {
+  "utc": "2026-10-18T19:32:13Z",
+  "output": "evidence/research/reactor_triga_jsi_element_6753/analysis/out/04_scored.json",
+  "output_sha256": "93896381a09ddc3efffa365cdeed0c7d6476f3f05ef5f75636d8e13692d1d864",
+  "program": "evidence/research/reactor_triga_jsi_element_6753/analysis/04b_run_score.py",
+  "program_sha256": "033303bb8ed5b2d57c0080a1eccfdf8a0fb1f7cb84f0f079beed46699e1ec0c2"
+ },
+ "registered_by": "forecast.py register",
+ "verdict": "met in part"
+}

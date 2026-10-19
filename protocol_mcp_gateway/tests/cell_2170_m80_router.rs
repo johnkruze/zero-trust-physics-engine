@@ -854,7 +854,7 @@ async fn a_negative_kelvin_is_refused_on_every_card_and_a_negative_celsius_is_he
     let base = spawn_app().await;
     let list: Value = Client::new().get(format!("{base}/cards")).send().await.unwrap().json().await.unwrap();
     let cards = list["cards"].as_array().unwrap();
-    assert_eq!(cards.len(), 37);
+    assert_eq!(cards.len(), 40);
 
     let mut ends_in_c: Vec<(String, String)> = Vec::new();
     let mut in_celsius: Vec<(String, String)> = Vec::new();
@@ -987,6 +987,8 @@ async fn a_negative_kelvin_is_refused_on_every_card_and_a_negative_celsius_is_he
             pair("thermal", "ambient_k"),
             pair("reactor_spert3", "coolant_temperature_k"),
             pair("reactor_spert3_fuel", "inlet_temperature_k"),
+            pair("reactor_spert3_twin", "inlet_temperature_k"),
+            pair("reactor_spert3_ccore_twin", "initial_temperature_k"),
             pair("accumulator_sbo450", "gas_temperature_k"),
             pair("accumulator_sbo450", "wall_temperature_k"),
             pair("reactor_triga_jsi", "start_temperature_k"),
@@ -1280,11 +1282,11 @@ async fn the_agent_door_lists_the_cell_and_gives_the_bytes_of_the_routes_for_the
     assert!(!error);
     let listed: Value = serde_json::from_str(&listed).unwrap();
     let cards = listed["cards"].as_array().unwrap();
-    assert_eq!(cards.len(), 37);
+    assert_eq!(cards.len(), 40);
     let entry = cards.iter().find(|card| card["card"] == "cell_2170_m80").expect("the cell is listed");
     assert_eq!(entry["domain"], "energy");
     assert!(
-        entry["specimen"].as_str().unwrap().starts_with("One Tesla Model 3 2170 lithium-ion cell, cell m80 alone, in six blocks of tests from -20 to 40 degC"),
+        entry["specimen"].as_str().unwrap().starts_with("Terminal voltage of one Tesla Model 3 2170 lithium-ion cell, cell m80, in each of six blocks of tests from -20 to 40 degC"),
         "{}", entry["specimen"]
     );
     assert!(entry["specimen"].as_str().unwrap().contains("17.4 mV"));
@@ -1297,7 +1299,7 @@ async fn the_agent_door_lists_the_cell_and_gives_the_bytes_of_the_routes_for_the
     assert_eq!(described, http);
     let description: Value = serde_json::from_str(&described).unwrap();
     assert!(description["validation"]["result"].as_str().unwrap().starts_with(
-        "Compared with the 60 held-back tests on 2026-10-08, and by the rule fixed beforehand the comparison failed: 27 of 60 runs met their marks"
+        "On the 60 tests: 27 runs within every target"
     ));
     // After the kernel's 13 names the list holds ContinuationNotOnCard; a step other than 1 s is the kernel's own StepNotOneSecond, so the two step names are not listed.
     assert_eq!(description["rejects"].as_array().unwrap().len(), 14);

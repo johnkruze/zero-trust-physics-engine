@@ -311,23 +311,23 @@ async fn the_description_states_what_was_compared_and_both_scorings() {
     let limits = card["validation"]["limits"].as_str().unwrap();
     for words in [
         "the 0.87 A holds of the pulse test, which set the resistance",
-        "The comparison that passed covered discharges from full charge only",
+        "Compared at 1C on discharges from full charge, 2.899 to 2.89982 A",
         "04-27-17 3541_dis5_10p.mat",
-        "the voltage error during the holds was 56.7 millivolts root mean square against the line of 50",
-        "left its table at soc 0.03 and 2.66 V (StateOfChargeOutsideCard)",
-        "0.87 A is answered with that miss stated",
-        "Run by one party and scored twice, the second time by a second party",
-        "evidence/verification/second_party/V-07",
+        "voltage error during the holds 56.7 millivolts RMS (target 50)",
+        "leaves its table at soc 0.03 and 2.66 V (StateOfChargeOutsideCard)",
+        "0.87 A is answered with that gap stated",
+        "A start below full charge is a rested cell at the rest-voltage table's value, or a continuation",
+        "A second program, written by another party, recomputes the same results on all eleven discharges",
     ] {
         assert!(limits.contains(words), "{words}: {limits}");
     }
     let rule = card["dt_s"]["rule"].as_str().unwrap();
-    assert!(rule.contains("Every discharge that passed the comparison started at full charge"), "{rule}");
+    assert!(rule.contains("Every compared 1C discharge started at full charge"), "{rule}");
     assert!(rule.contains("04-27-17 3541_dis5_10p.mat"), "{rule}");
     assert!(rule.contains("A returned state does not carry held_current_a"), "{rule}");
     assert!(rule.contains("FLAG_CURRENT_OUTSIDE_PASSED_SPAN"), "{rule}");
     let result = card["validation"]["result"].as_str().unwrap();
-    assert!(result.contains("+0.04 percent at steps of 0.1 s and by +0.014 percent at the protocol's step of 1 s"), "{result}");
+    assert!(result.contains("+0.04 percent (target 3) at steps of 0.1 s, and +0.014 percent at the protocol's step of 1 s"), "{result}");
     assert!(rule.contains("lands its last step"), "{rule}");
     // the worked examples run as published
     for (key, path) in [("example_compute_step", "/verify_physics"), ("example_run_trajectory", "/run_trajectory")] {

@@ -261,10 +261,10 @@ async fn the_description_carries_the_standing_and_its_example_runs_unchanged() {
     let listed = reqwest::get(format!("{base}/solvers")).await.unwrap();
     let listed: Value = serde_json::from_str(&listed.text().await.unwrap()).unwrap();
     let solvers = listed["solvers"].as_array().expect("solvers");
-    assert_eq!(solvers.len(), 24);
+    assert_eq!(solvers.len(), 25);
     assert_eq!(solvers[9]["solver"], "step_flow_armaly");
     let summary = solvers[9]["summary"].as_str().expect("a sentence");
-    assert!(summary.contains("nothing fitted"), "{summary}");
+    assert!(summary.contains("Nothing fitted"), "{summary}");
     assert!(summary.contains("Reynolds number above 0 to 400"), "{summary}");
 
     let (status, text) = post(&base, "/describe_solver", &json!({ "solver": "step_flow_armaly" })).await;
@@ -277,26 +277,26 @@ async fn the_description_carries_the_standing_and_its_example_runs_unchanged() {
     }
     let data = described["validation"]["data"].as_str().unwrap();
     for words in [
-        "Journal of Fluid Mechanics 127, 473-496 (1983), doi 10.1017/S0022112083002839. It had not been read when the comparison was made",
+        "Journal of Fluid Mechanics 127, 473-496, doi 10.1017/S0022112083002839",
         "Re = VD/ν, where V is two-thirds of the measured maximum inlet velocity",
         "the data's own floor is about 0.03",
-        "7 are false and 20 were missed",
+        "7 are false and 20 were not found",
         "NASA Technical Memorandum 106248",
         "second-hand and digitised, two steps from the instrument",
-        "Held back: Figure 4, the whole condition at Reynolds number 389",
+        "Compared outside it: Figure 4, the whole condition at Reynolds number 389",
     ] {
         assert!(data.contains(words), "{words}: {data}");
     }
     let pass_line = described["validation"]["pass_line"].as_str().unwrap();
     assert!(pass_line.contains("dd3abc9bbc833852f0a53c3201994edaf23a2bd45edccf3ae3016136c3afce1a"), "{pass_line}");
-    assert!(pass_line.contains("The two reattachment lengths are not held back"), "{pass_line}");
+    assert!(pass_line.contains("The two reattachment lengths were read before the solver was built; their target is 10 percent"), "{pass_line}");
     let limits = described["validation"]["limits"].as_str().unwrap();
     assert!(limits.contains("No measured velocity profile between 100 and 389 was compared"), "{limits}");
-    assert!(limits.contains("the reattachment length was compared there only after the fact, with Armaly's Figure 14 at 149 and 298"), "{limits}");
+    assert!(limits.contains("the reattachment length is compared there with Armaly's Figure 14 at 149 and 298, read after the solver was built"), "{limits}");
     assert!(!limits.contains("No measurement between"), "{limits}");
     assert!(limits.contains("Between 7.76 and 12.04 at 100 no circle lies"), "{limits}");
     assert!(!limits.contains("relaxes toward"), "{limits}");
-    assert!(summary.contains("and at 100 also first-hand from Armaly's Figure 15 out to 30.31 step heights"), "{summary}");
+    assert!(summary.contains("at 100, on 80 circles of Armaly's Figure 15 at 12.04 to 30.31 step heights, within 0.019 RMS"), "{summary}");
     let station_bound = described["inputs"][1]["bound"].as_str().unwrap();
     for words in [
         "at Reynolds number 100 at stations from 0 to 7.76",
@@ -308,33 +308,33 @@ async fn the_description_carries_the_standing_and_its_example_runs_unchanged() {
     }
     assert!(!station_bound.contains("The open measurements are at stations from 0 to 13.57"), "{station_bound}");
     assert!(limits.contains("closes for any viscosity"), "{limits}");
-    assert!(summary.contains("all three lines met at 389"), "{summary}");
-    assert!(summary.contains("the reattachment length at 100 is 14 percent below the sentence of NASA Technical Memorandum 106248 that quotes the measurement, a miss of that sentence, and 6 percent below Armaly's own plot"), "{summary}");
-    assert!(summary.ends_with("at 389 it is 6 to 7 percent below that plot."), "{summary}");
+    assert!(summary.contains("within 0.0437 of the largest inlet speed RMS (target 0.05), worst station 0.052 (target 0.08)"), "{summary}");
+    assert!(summary.contains("the reattachment length reads 6 to 7 percent short of Armaly's plot at 389 (8.07 against about 8.6 step heights) and 5.8 percent short at 97"), "{summary}");
+    assert!(summary.ends_with("(StationOutOfRange)."), "{summary}");
     assert!(limits.contains("1.3 to 1.5 percent at Reynolds number 100 and under 0.6 percent from 200 up"), "{limits}");
     assert!(limits.contains("from about 350 to 445"), "{limits}");
     assert_eq!(described["reference"]["tolerance_fraction"], 0.02);
     assert_eq!(described["reference"]["test"], "erturk_2008_table_1_reattachment");
     let result = described["validation"]["result"].as_str().unwrap();
     for words in [
-        "All three lines were met on the held-back profiles at Reynolds number 389, 174 circles",
-        "root mean square difference 0.0437 of the largest inlet speed against a line of 0.05",
+        "On the 174 circles of Figure 4 at Reynolds number 389",
+        "RMS difference 0.0437 of the largest inlet speed (target 0.05)",
         "the solver's 0.043 is above the floor",
         "where Armaly's own plot has about 8.6",
         "3.01 step heights at Reynolds number 97, 4.00 at 149, 6.60 at 298 and 8.60 at 387",
-        "evidence/verification/second_party/V-38",
-        "No baseline met a line",
-        "2.83 step heights against a quoted approximately 3.3, 14 percent low and outside the 10 percent mark, a miss",
+        "own digitisation of 187 circles gives 0.0430, 0.0514 and 0.238",
+        "the solver at 259.33 (the other reading of the memorandum's Reynolds number) 0.088",
+        "2.83 step heights against a quoted approximately 3.3, 14 percent low (target 10)",
         "SHA-256 042bb92d94119f5d684998d7d7ff9b88134188dda06baa6e2aea8be7884bd616",
-        "on 80 circles of Armaly's Figure 15 at 12.04, 16.33, 20.92 and 30.31 step heights met all three lines",
+        "on 80 circles of Armaly's Figure 15 at 12.04, 16.33, 20.92 and 30.31 step heights",
         "the parabola itself is 0.019 from the circles and the solver at 259.33 is 0.023",
-        "(evidence/research/fluid_armaly_backward_step/fix_0.7.0), opened and not blind, the third line taken against the solver at Reynolds number 389",
+        "the third measure taken against the solver at Reynolds number 389",
     ] {
         assert!(result.contains(words), "{words}: {result}");
     }
     assert_eq!(described["locked"]["step_height_mm"], step::STEP_HEIGHT_MM);
     assert_eq!(described["locked"]["inlet_height_mm"], step::INLET_HEIGHT_MM);
-    assert!(described["reference"]["kind"].as_str().unwrap().contains("It is not a measurement"));
+    assert!(described["reference"]["kind"].as_str().unwrap().starts_with("A reference calculation of the same two-dimensional equations"));
     assert!(described["convergence"]["run_time"].as_str().unwrap().contains("Reynolds number 400, takes 2.2 s on one core"));
     let inputs = described["inputs"].as_array().expect("inputs");
     assert_eq!(inputs.len(), 2);

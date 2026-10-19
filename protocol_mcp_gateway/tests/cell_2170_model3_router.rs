@@ -1185,12 +1185,12 @@ async fn the_local_connection_lists_the_cell_and_gives_the_bytes_of_the_routes_f
     assert!(!error);
     let listed: Value = serde_json::from_str(&listed).unwrap();
     let cards = listed["cards"].as_array().unwrap();
-    assert_eq!(cards.len(), 37);
+    assert_eq!(cards.len(), 40);
     let entry = &cards[16];
     assert_eq!(entry["card"], "cell_2170_model3");
     assert_eq!(entry["domain"], "energy");
     let specimen = entry["specimen"].as_str().unwrap();
-    assert!(specimen.starts_with("One Tesla Model 3 2170 lithium-ion cell, any of the three cells m80, m1000 and m448-N of its dataset, as a physical model with memory"), "{specimen}");
+    assert!(specimen.starts_with("Terminal voltage of one Tesla Model 3 2170 lithium-ion cell, cell m80, m1000 or m448-N, as a physical model with memory"), "{specimen}");
     assert!(specimen.contains("cell_2170_m80 reads 17.4 mV higher"), "{specimen}");
     // The table card of the same cell is served beside it, and names this one.
     let earlier = cards.iter().find(|card| card["card"] == "cell_2170_m80").expect("the earlier card is listed");
@@ -1207,9 +1207,9 @@ async fn the_local_connection_lists_the_cell_and_gives_the_bytes_of_the_routes_f
     let parts: Vec<&str> = record.keys().map(String::as_str).collect();
     assert_eq!(parts, ["object", "data", "pass_line", "result", "limits"]);
     let result = record["result"].as_str().unwrap();
-    assert!(result.starts_with("Run once, on 2026-10-09, on runs of two further cells of the same type that no model had seen"), "{result}");
+    assert!(result.starts_with("Run once on runs of two further cells of the same type that no model had seen"), "{result}");
     assert!(result.contains("51 of 60") && result.contains("31 of 45") && result.contains("untested on new cells"), "{result}");
-    assert!(record["limits"].as_str().unwrap().contains("are now spent"));
+    assert!(record["limits"].as_str().unwrap().contains("have now been read"));
     // After the kernel's 14 names the list holds the gateway's own four for this card, DtBelowFloor and DtAboveCeiling, ContinuationWithoutUpstream and ContinuationNotOnCard.
     assert_eq!(description["rejects"].as_array().unwrap().len(), 18);
     for reject in description["rejects"].as_array().unwrap() {

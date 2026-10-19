@@ -525,8 +525,9 @@ async fn the_description_states_what_the_second_scoring_found() {
         .find(|card| card["card"] == "grid_gb")
         .expect("listed");
     let specimen = mine["specimen"].as_str().unwrap();
-    assert!(specimen.starts_with("The Great Britain synchronous area, the 50 Hz transmission system of England, Scotland and Wales as one rotating mass, after an importing interconnector trips. Compared on trips of 693 to 1402 MW over their first 60 s"), "{specimen}");
-    assert!(specimen.contains("on the six compared trips since November 2025 its fall is 39 to 80 percent deeper than the measured fall"), "{specimen}");
+    assert!(specimen.starts_with("Frequency of the Great Britain synchronous area, the 50 Hz transmission system of England, Scotland and Wales as one rotating mass, after an importing interconnector trips"), "{specimen}");
+    assert!(specimen.contains("Range: compared on single trips of 693 to 1402 MW over their first 60 s"), "{specimen}");
+    assert!(specimen.contains("the six compared trips since November 2025 fall 39 to 80 percent deeper than measured"), "{specimen}");
     let (status, described) =
         post(&base, "/describe_card", &json!({"domain": "energy", "card": "grid_gb"})).await;
     assert_eq!(status, 200, "{described}");
@@ -539,50 +540,50 @@ async fn the_description_states_what_the_second_scoring_found() {
     );
     let result = record["result"].as_str().unwrap();
     for words in [
-        "all seven lines were met on 12 trips",
+        "On the 12 trips outside the fit, run once through the engine: every target held",
         "That was two opposite losses at once, an export link and an import link, and not one trip",
-        "root mean square relative error 0.166 and mean -0.018",
-        "The held-back twelve were the easiest third of three",
-        "the depth error is 0.258 and 0.326 with three lines missed each",
-        "18.7 percent of random twelves of the forty meet all seven lines",
+        "RMS relative error 0.166 (target 0.25) and mean -0.018 (0.10)",
+        "The twelve were the easiest third of three",
+        "the depth error is 0.258 and 0.326, three targets outside in each",
+        "18.7 percent of random twelves of the forty are within all seven",
         "is 0.015: depth proportional to loss 0.182, a fall to one fixed frequency 0.180, a straight line 0.171, the card 0.166",
-        "The comparison is not blind: the loss and the lowest frequency of every trip, the held-back ones included, were on screen once",
-        "before the protocol was fingerprinted and the trips were split, and the depth line scores that lowest frequency",
+        "The loss and the lowest frequency of every trip, the twelve included, were seen once",
+        "before the trips were split, and the depth target is computed from that lowest frequency",
         "A further 39 trips of the same kind",
-        "36 were inside the card as served through engine 0.6.0 and were scored after the fact, and six of them, of 500 to 692 MW, are under the losses the card takes from engine 0.7.0",
-        "All 36: depth 0.269 and near 60 s 0.067 Hz, two lines missed",
-        "May 2018 to February 2025, 23 trips: depth 0.136, all lines met",
-        "2024 to 2026, 15 trips: depth 0.345, six lines missed",
+        "36 lie inside the card's range as it then stood, and six of them, of 500 to 692 MW, are under the 693 MW where the compared span now starts",
+        "All 36: depth 0.269 (target 0.25) and near 60 s 0.067 Hz (0.06), the other five within",
+        "May 2018 to February 2025, 23 trips: depth 0.136, all seven within",
+        "2024 to 2026, 15 trips: depth 0.345, six outside",
         "The six trips since November 2025 run 39 to 80 percent too deep",
-        "SHA-256 da8ee131279452aa4f1f56afb71e801f622a050882554fb6d632dd23f9b7384c) was overwritten by a later build, which returned all 41 saved answers byte for byte. Since engine 0.7.0 the final state no longer carries below_statutory_limit, so the saved answers no longer come back byte for byte.",
-        "evidence/verification/second_party/V-32/",
+        "SHA-256 da8ee131279452aa4f1f56afb71e801f622a050882554fb6d632dd23f9b7384c) was replaced by a later build, which returned all 41 saved answers byte for byte; the final state no longer carries below_statutory_limit, so the saved answers no longer come back byte for byte.",
+        "A second program, on the same machine and from its own scan of the monthly files, recomputes the same numbers",
     ] {
         assert!(result.contains(words), "{words}: {result}");
     }
     let limits = record["limits"].as_str().unwrap();
     for words in [
-        "0.337 on the opened 28 with the card's constants (0.35 with each trip left out of the fit in turn)",
-        "moves by +0.066 a year (standard error 0.013), from -0.30 in 2018 to +0.17 in 2025, nearly twice the 0.25 mark",
+        "0.337 on the 28 with the card's constants (0.35 with each trip left out of the fit in turn)",
+        "moves by +0.066 a year (standard error 0.013), from -0.30 in 2018 to +0.17 in 2025, nearly twice the 0.25 target",
         "Dynamic Containment from October 2020, 500 MW rising to 1,576 MW by July 2023",
         "The card has one gain and one lag for all of it",
-        "0.9 or 1.2 times the published inertia misses the line on the mean of the steepest second",
+        "0.9 or 1.2 times the published inertia puts the mean of the steepest second outside its target",
         "The size of the loss is steady to 0.35 percent by the steadiness rule",
         "System Operability Framework 2016, p. 70, and the NESO webinar of 12 March 2025; the documented range is 2.0 to 2.5",
-        "The 49.8 Hz knee is Dynamic Containment's (NESO, Response Services Service Terms v6; Dynamic Containment testing guidelines, August 2020)",
+        "The 49.8 Hz knee is Dynamic Containment's (NESO, Response Services Service Terms v6; Dynamic Containment testing guidelines of August 2020)",
         "before it there were static blocks at 49.7 and 49.6 Hz",
-        "a relief from 0 to 5 percent per hertz changes no verdict, and the pass holds for a knee of 49.80 to 49.90 Hz and is lost at 49.75",
-        "Every compared trip was one loss: through engine 0.9.0 a later segment's other loss was refused as LossChangedDuringRun",
-        "No changing loss was compared with a measurement",
-        "failed against its criterion as first written, in 39 of 80 runs",
-        "the response by at most 4.2e-10 MW, and the frequency was never above 0.05 of the bound",
-        "The yardstick was changed afterwards by the card's author",
-        "A run of exactly 60 s in decimal lands every step: 3,000 steps of 0.02 s land 3,000 and read 60.00000000000378 s.",
-        "Known defect of the scan that found the trips: its rule of 0.15 Hz or more lost four falls of exactly 0.150 Hz to rounding.",
-        "It was scored twice, the second time by a second scorer, on one machine",
-        "The range was narrowed on 2026-10-10, after the scoring and with every trip seen, so the narrowing is not a new test",
-        "missed three of the seven: depth 0.2512 against 0.25, and against 0.2509 for the proportional rule, steepest second 0.273 against 0.25",
-        "A loss under 693 MW was refused as LossOutsideCard through engine 0.9.0; now it lands with FLAG_OUTSIDE_COMPARED_TRIPS",
-        "now it lands with FLAG_BELOW_COMPARED_FREQUENCY, down to 48.8 Hz",
+        "a relief from 0 to 5 percent per hertz changes no target's result, and every target holds for a knee of 49.80 to 49.90 Hz; at 49.75 Hz one does not",
+        "Every compared trip was one loss: the ledger books each step's own loss",
+        "No changing loss is in the comparison",
+        "held to its tolerance as first written, differs in 39 of 80 runs",
+        "the response by at most 4.2e-10 MW, the frequency never above 0.05 of the bound",
+        "the card's author widened that tolerance afterwards",
+        "A run of exactly 60 s in decimal lands every step: 3,000 steps of 0.02 s land 3,000 and read 60.00000000000378 s;",
+        "The scan that found the trips, by its rule of 0.15 Hz or more, lost four falls of exactly 0.150 Hz to rounding.",
+        "a second program, by another author, recomputes it on the same machine",
+        "Every trip had been read when the compared range was set",
+        "depth 0.2512 (target 0.25; 0.2509 for the proportional rule) and steepest second 0.273 (0.25), three of the seven outside",
+        "A loss under 693 MW lands with FLAG_OUTSIDE_COMPARED_TRIPS",
+        "lands with FLAG_BELOW_COMPARED_FREQUENCY, down to 48.8 Hz",
     ] {
         assert!(limits.contains(words), "{words}: {limits}");
     }
