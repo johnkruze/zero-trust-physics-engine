@@ -34,15 +34,15 @@ use genesis_kernel::reactor_triga_jsi::{
 use protocol_mcp_gateway::app;
 use reqwest::Client;
 use serde_json::{Value, json};
-use sha2::{Digest, Sha256};
+use sha2::{Digest, Sha384};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::TcpListener;
 use tokio::process::{Child, ChildStdin, ChildStdout, Command};
 
 const CARD: &str = "reactor_triga_jsi";
 /// The number of cards served, and this card's place among them.
-const CARDS: usize = 40;
-const PLACE: usize = 34;
+const CARDS: usize = protocol_mcp_gateway::CARDS;
+const PLACE: usize = 30;
 
 async fn spawn_app() -> String {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -81,8 +81,8 @@ async fn post(base: &str, path: &str, body: &Value) -> (u16, String) {
     panic!("{path} never accepted a connection: {last_error:?}");
 }
 
-fn sha256_hex(bytes: &[u8]) -> String {
-    hex::encode(Sha256::digest(bytes))
+fn sha384_hex(bytes: &[u8]) -> String {
+    hex::encode(Sha384::digest(bytes))
 }
 
 fn below(x: f64) -> f64 {
@@ -349,10 +349,10 @@ async fn a_pulse_with_its_scram_is_the_kernel_loop_on_each_rod_table_and_keeps_i
             if let Some(before) = &link_before {
                 assert_eq!(bytes[48..], before[..16], "{label} step {step}: the proof");
             }
-            assert_eq!(link, Sha256::digest(&bytes).to_vec(), "{label} step {step}: the link");
+            assert_eq!(link, Sha384::digest(&bytes).to_vec(), "{label} step {step}: the link");
             link_before = Some(link);
         }
-        assert!(tape["run_seal"].as_str().is_some_and(|seal| seal.len() == 64), "{label}");
+        assert!(tape["run_seal"].as_str().is_some_and(|seal| seal.len() == 96), "{label}");
 
         let (status, report) = post(&base, "/verify_tape", &tape).await;
         assert_eq!(status, 200, "{report}");
@@ -669,7 +669,7 @@ const KEY_TRIGA: &str = "key-for-the-triga-reactor-client";
 const KEY_THERMAL: &str = "key-for-the-thermal-client";
 
 fn client_entry(label: &str, key: &str, cards: Value) -> Value {
-    json!({ "client": label, "key_sha256": sha256_hex(key.as_bytes()), "cards": cards, "solvers": [], "max_in_flight": 8, "max_permits": 1 })
+    json!({ "client": label, "key_sha256": key_sha256_hex(key.as_bytes()), "cards": cards, "solvers": [], "max_in_flight": 8, "max_permits": 1 })
 }
 
 struct StdioDoor {
@@ -725,7 +725,7 @@ impl Hosted {
         std::fs::create_dir_all(&dir).unwrap();
         let file = dir.join("keys.json");
         std::fs::write(&file, serde_json::to_string_pretty(keys).unwrap()).unwrap();
-        let mut child = Command::new(env!("CARGO_BIN_EXE_hosted_door"))
+        let mut child = Command::new(env!("CARGO_BIN_EXE_hosted_door")).arg("--unsigned")
             .arg("--port")
             .arg("0")
             .arg("--keys")
@@ -789,12 +789,12 @@ async fn the_three_connections_give_the_same_bytes_and_the_hosted_door_hides_the
     assert_eq!(cards.len(), CARDS);
     assert_eq!(cards[PLACE]["domain"], "energy");
     assert_eq!(cards[PLACE]["card"], CARD);
-    // The one line an agent sees in the list is the spec sheet: what was
-    // fitted, the comparison outside the fit in numbers, and the gap.
+    // The one line an agent sees in the list is the spec sheet's row: what
+    // it computes, the comparison outside the fit in numbers, and the gap.
+    // What was fitted is the description's (0.14.4).
     let line = cards[PLACE]["specimen"].as_str().unwrap();
+    assert!(!line.contains("Fitted on"), "{line}");
     for words in [
-        "Fitted on 36 of the 43 recorded pulses",
-        "ten constants",
         "one thermocouple of one element",
         "Compared with the 20 table rows of the same cores not in the fit",
         "peak power within 1.21 RMS (target 1.5",
@@ -970,4 +970,11 @@ async fn the_three_connections_give_the_same_bytes_and_the_hosted_door_hides_the
     );
     assert_eq!(u64::from_str_radix(hex, 16).unwrap(), whole.state.fuel_temperature_k.to_bits());
     assert_eq!(result_text(&hosted.tool(KEY_TRIGA, "validate_series", &validation).await), text);
+}
+
+/// SHA-256 of a client's key, as the hosted door's keys file holds it: an
+/// authentication hash, not a seal, so it stays SHA-256 under seal rule v2.
+fn key_sha256_hex(bytes: &[u8]) -> String {
+    use sha2::{Digest, Sha256};
+    hex::encode(Sha256::digest(bytes))
 }

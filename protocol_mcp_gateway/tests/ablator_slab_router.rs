@@ -20,7 +20,7 @@ use protocol_mcp_gateway::mcp_server::tools_in;
 use protocol_mcp_gateway::view::View;
 use protocol_mcp_gateway::{app, app_with_permits};
 use serde_json::{Value, json};
-use sha2::{Digest, Sha256};
+use sha2::{Digest, Sha384};
 
 const KEY: &str = "key-that-sees-both-solvers";
 const KEY_ATOM: &str = "key-that-sees-the-atom-alone";
@@ -139,7 +139,15 @@ impl Connections {
         };
         let hosted = Hosted::start(
             vec![
-                entry("all", KEY, json!(["atom_dft", "ablator_slab", "journal_bearing_sheffield", "propeller_apc_10x7e", "modulus_bam_s355", "seawater_column", "argon_pair_gas", "fusion_pb11_lhd", "fusion_pb11_thermal", "step_flow_armaly", "culture_trichoderma_ambr250", "tokamak_dt_beam_target", "pipe_flow_superpipe", "fuel_rod_triga_jsi", "culture_trichoderma_atp", "junction_nist_b7_s2", "water_hammer_oil_line", "orifice_air_chamber", "pneumatic_hose_resonance", "blast_wave_tnt_air", "stress_plate_hole_s235", "stress_plate_hole_s235_elastic", "icf_hotspot_burn", "ln2_line_dlr_fttf", "plasma_sheath_ram_c2"])),
+                // The first key also holds the Stardust capsule, so it sees the
+                // coupling into the slab as the web and local connections do
+                // (describe_solver lists a coupling only where the key holds both
+                // of its pieces, since 0.15.0, as describe_card does).
+                {
+                    let mut all = entry("all", KEY, json!(["atom_dft", "ablator_slab", "journal_bearing_sheffield", "propeller_apc_10x7e", "modulus_bam_s355", "seawater_column", "argon_pair_gas", "fusion_pb11_lhd", "fusion_pb11_thermal", "step_flow_armaly", "culture_trichoderma_ambr250", "tokamak_dt_beam_target", "pipe_flow_superpipe", "blast_wave_tnt_air", "fuel_rod_triga_jsi", "culture_trichoderma_atp", "junction_nist_b7_s2", "water_hammer_oil_line", "orifice_air_chamber", "pneumatic_hose_resonance", "stress_plate_hole_s235", "stress_plate_hole_s235_elastic", "icf_hotspot_burn", "ln2_line_dlr_fttf", "plasma_sheath_ram_c2"]));
+                    all["cards"] = json!([["aerospace", "capsule_stardust"]]);
+                    all
+                },
                 entry("atom", KEY_ATOM, json!(["atom_dft"])),
                 entry("slab", KEY_SLAB, json!(["ablator_slab"])),
             ],
@@ -239,8 +247,8 @@ impl Connections {
     }
 }
 
-fn sha256_hex(bytes: &[u8]) -> String {
-    hex::encode(Sha256::digest(bytes))
+fn sha384_hex(bytes: &[u8]) -> String {
+    hex::encode(Sha384::digest(bytes))
 }
 
 fn hex_of(value: f64) -> String {
@@ -525,7 +533,7 @@ fn assert_matches_the_solver(
     for kelvin in &profile.temperature_k {
         field.extend_from_slice(&kelvin.to_le_bytes());
     }
-    assert_eq!(body["field_sha256"], sha256_hex(&field));
+    assert_eq!(body["field_sha384"], sha384_hex(&field));
 }
 
 /// The proof of a solution, rebuilt from the response alone by the rule in
@@ -534,7 +542,7 @@ fn assert_proof(text: &str, body: &Value) {
     let request = sealed_text(&body["inputs"]);
     let invariants = hex_lines("invariants", &body["invariants"]);
     let result = hex_lines("result", &body["result"]);
-    let field = body["field_sha256"].as_str().expect("a field hash");
+    let field = body["field_sha384"].as_str().expect("a field hash");
     // When the profile was returned, the field hash is its temperatures.
     if let Some(points) = body["result"]["final_profile_temperature_k_hex"].as_array() {
         let mut bytes = (points.len() as u64).to_le_bytes().to_vec();
@@ -542,7 +550,7 @@ fn assert_proof(text: &str, body: &Value) {
             let bits = u64::from_str_radix(point.as_str().expect("a hex"), 16).expect("16 hex digits");
             bytes.extend_from_slice(&bits.to_le_bytes());
         }
-        assert_eq!(field, sha256_hex(&bytes));
+        assert_eq!(field, sha384_hex(&bytes));
     }
     let tail = format!(
         r#"{{"outcome":"converged","iterations":{},"reject":null}}"#,
@@ -552,12 +560,12 @@ fn assert_proof(text: &str, body: &Value) {
     assert_eq!(
         body["seal_parts"],
         json!({
-            "inputs": sha256_hex(request.as_bytes()),
-            "engine_version": sha256_hex(version.as_bytes()),
-            "result": sha256_hex(result.as_bytes()),
-            "invariants": sha256_hex(invariants.as_bytes()),
-            "field_sha256": sha256_hex(field.as_bytes()),
-            "outcome": sha256_hex(tail.as_bytes()),
+            "inputs": sha384_hex(request.as_bytes()),
+            "engine_version": sha384_hex(version.as_bytes()),
+            "result": sha384_hex(result.as_bytes()),
+            "invariants": sha384_hex(invariants.as_bytes()),
+            "field_sha384": sha384_hex(field.as_bytes()),
+            "outcome": sha384_hex(tail.as_bytes()),
         })
     );
     let mut seal = Vec::new();
@@ -567,12 +575,12 @@ fn assert_proof(text: &str, body: &Value) {
     seal.extend_from_slice(result.as_bytes());
     seal.extend_from_slice(field.as_bytes());
     seal.extend_from_slice(tail.as_bytes());
-    assert_eq!(body["solution_seal"], sha256_hex(&seal));
+    assert_eq!(body["solution_seal"], sha384_hex(&seal));
     // The receipt covers every byte before it.
     let (before, receipt) = text
-        .rsplit_once(",\"receipt_sha256\":\"")
+        .rsplit_once(",\"receipt_sha384\":\"")
         .expect("a receipt at the end");
-    assert_eq!(receipt.trim_end_matches("\"}"), sha256_hex(format!("{before}}}").as_bytes()));
+    assert_eq!(receipt.trim_end_matches("\"}"), sha384_hex(format!("{before}}}").as_bytes()));
 }
 
 /// A short question under a gas stream: 6 cm of PICA version 5, the
@@ -694,19 +702,24 @@ fn the_list_shows_thirteen_solvers_and_the_description_publishes_fields_bounds_r
     assert_eq!(status, 200, "{text}");
     let listed: Value = serde_json::from_str(&text).unwrap();
     let solvers = listed["solvers"].as_array().expect("solvers");
-    assert_eq!(solvers.len(), 25);
+    assert_eq!(solvers.len(), protocol_mcp_gateway::SOLVERS);
     assert_eq!(solvers[0]["solver"], "atom_dft");
     assert_eq!(solvers[1]["solver"], "ablator_slab");
     assert_eq!(solvers[3]["solver"], "propeller_apc_10x7e");
     assert_eq!(solvers[6]["solver"], "argon_pair_gas");
+    // Since 0.14.4 a row gives what the model computes, the comparison and
+    // the gap; the whole spec sheet is the description's.
     let summary = solvers[1]["summary"].as_str().expect("a sentence");
+    assert!(!summary.contains("Range: "), "{summary}");
     assert!(summary.starts_with("A flat slab of charring heat-shield material"), "{summary}");
     assert!(summary.ends_with('.'));
 
     let described = connections.described();
     assert_eq!(described["solver"], "ablator_slab");
-    assert_eq!(described["summary"], summary);
-    assert_eq!(described["engine_version"], "genesis_solvers_v0.12.0");
+    let (computes, comparison) = summary.split_once(" Compared with ").expect("a comparison");
+    let sheet = described["summary"].as_str().unwrap();
+    assert!(sheet.starts_with(computes) && sheet.contains(&format!("Compared with {comparison} Refuses")), "{sheet}");
+    assert_eq!(described["engine_version"], "genesis_solvers_v0.13.0");
     let keys: Vec<&String> = described.as_object().unwrap().keys().collect();
     assert_eq!(
         keys,
@@ -720,6 +733,7 @@ fn the_list_shows_thirteen_solvers_and_the_description_publishes_fields_bounds_r
             "open_connection",
             "example_solve",
             "example_solve_arc_jet_test",
+            "couplings",
             "more",
         ]
     );
@@ -736,8 +750,9 @@ fn the_list_shows_thirteen_solvers_and_the_description_publishes_fields_bounds_r
     // every solver, which adds about 470 characters; since 0.13.1 the record
     // also says what was seen before the lines were fixed; since 0.14.0 rc2
     // its open_connection says how many of its worked solve one inline answer
-    // holds (rc2 item 6).
-    assert!(text.chars().count() < 21_000, "{}", text.chars().count());
+    // holds (rc2 item 6); since the coupling stardust_entry_to_pica_slab,
+    // its couplings add about 2,800.
+    assert!(text.chars().count() < 24_000, "{}", text.chars().count());
     // What it keeps for asking, each said in a sentence.
     let more = described["more"].as_object().expect("more");
     assert_eq!(
@@ -774,7 +789,7 @@ fn the_list_shows_thirteen_solvers_and_the_description_publishes_fields_bounds_r
         assert_eq!(
             text,
             format!(
-                "Physical Violation: 'part' must be one of \"validation\", \"inputs\", \"number_rule\", \"locked\", \"returns\", \"invariants\", \"convergence\", \"open_connection\", \"refusals\", \"reference\", \"example_solve\", \"example_solve_arc_jet_test\", \"example_solve_stardust_near_nose\"; this request has {wrong}."
+                "Physical Violation: 'part' must be one of \"validation\", \"inputs\", \"number_rule\", \"locked\", \"returns\", \"invariants\", \"convergence\", \"open_connection\", \"refusals\", \"reference\", \"example_solve\", \"example_solve_arc_jet_test\", \"example_solve_stardust_near_nose\", \"couplings\"; this request has {wrong}."
             )
         );
     }
@@ -1258,7 +1273,7 @@ fn workshop_test_case_1_lands_seals_and_is_the_same_bytes_on_three_connections_a
     let request = example.to_string();
     let (text, body) = connections.solved(&request);
     assert_eq!(body["inputs"], *example);
-    assert_eq!(body["engine_version"], "genesis_solvers_v0.12.0");
+    assert_eq!(body["engine_version"], "genesis_solvers_v0.13.0");
 
     let everything = Wanted {
         face_history: true,
@@ -1292,7 +1307,7 @@ fn workshop_test_case_1_lands_seals_and_is_the_same_bytes_on_three_connections_a
     assert_eq!(again, text);
     let respelled = r#"{"parameters":{"return_final_profile":false,"return_thermocouple_histories":false,"return_face_history":false,"continue_after_s":0,"hold_duration_s":6e1,"held_temperature_k":1644,"face":"held_temperature","thermocouple_depths_m":[1e-3,0.002,0.004,0.008,0.016,0.05],"start_temperature_k":298,"thickness_m":0.05,"material":"TACOT 3.0"},"solver":"ablator_slab"}"#;
     let (_, other) = connections.solved_on_the_web(respelled);
-    for key in ["result", "invariants", "field_sha256", "seal_parts", "solution_seal", "iterations"] {
+    for key in ["result", "invariants", "field_sha384", "seal_parts", "solution_seal", "iterations"] {
         assert_eq!(other[key], body[key], "{key}");
     }
     connections.assert_holds(&other);
@@ -1515,7 +1530,7 @@ fn the_stardust_example_lands_with_the_recorded_wear_and_holds_one_permit_while_
     }
     let (text, waited) = turned_away.expect("the run never held the permit");
     assert!(text.contains("Too many concurrent physics tasks."), "{text}");
-    assert!(!text.contains("sha256_seal"), "{text}");
+    assert!(!text.contains("sha384_seal"), "{text}");
     assert!(waited < Duration::from_secs(5), "a request waited {waited:?}");
     // Everything that takes no permit is answered while the run computes.
     let (status, _) = web(port, "GET", "/health", "", 60);
@@ -1697,7 +1712,7 @@ fn histories_come_back_when_asked_for_and_every_element_is_sealed() {
     assert_matches_the_solver(&summary, &direct, Some(StreamGas::AIR), &Wanted::default());
     assert_proof(&summary_text, &summary);
     assert!(summary["result"].as_object().unwrap().values().all(|value| !value.is_array()));
-    assert_eq!(summary["field_sha256"], body["field_sha256"]);
+    assert_eq!(summary["field_sha384"], body["field_sha384"]);
     assert_eq!(summary["invariants"], body["invariants"]);
     assert_ne!(summary["solution_seal"], body["solution_seal"]);
     for (flag, wanted) in [
@@ -2358,7 +2373,7 @@ fn each_fault_of_a_request_is_named_and_carries_no_proof() {
         let shown = &request[..request.len().min(400)];
         assert_eq!(&text, message, "{shown}");
         assert_eq!(answered, *status, "{shown}");
-        for proof in ["solution_seal", "receipt_sha256", "seal_parts", "field_sha256"] {
+        for proof in ["solution_seal", "receipt_sha384", "seal_parts", "field_sha384"] {
             assert!(!text.contains(proof), "{shown}: {text}");
         }
     }
@@ -2487,7 +2502,7 @@ fn a_refusal_met_while_computing_is_named_and_carries_no_result() {
         assert!(body["iterations"].is_null());
         assert!(body["result"].is_null());
         assert!(body["invariants"].is_null());
-        assert!(body["field_sha256"].is_null());
+        assert!(body["field_sha384"].is_null());
         assert!(!text.contains("wear_m"), "{text}");
         // The seal is the request, no lines, the word null and the refusal.
         let request_text = sealed_text(&body["inputs"]);
@@ -2495,7 +2510,7 @@ fn a_refusal_met_while_computing_is_named_and_carries_no_result() {
         let version = format!("engine_version:{}\n", body["engine_version"].as_str().expect("a version"));
         assert_eq!(
             body["solution_seal"],
-            sha256_hex(format!("{request_text}{version}null{tail}").as_bytes())
+            sha384_hex(format!("{request_text}{version}null{tail}").as_bytes())
         );
         connections.assert_holds(&body);
         // A refusal cannot be turned into another, or into an answer.

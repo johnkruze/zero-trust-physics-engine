@@ -60,6 +60,10 @@
 //! carries every error of the water side and of the assumption about the power
 //! density at the thermocouple; the second every lag of the recording chain.
 //! Neither is the element's own value of that quantity.
+//! Refitted on all 55 pulses, the 39 and the 16 compared outside the fit, the
+//! same pair is the best on a grid of 7.5 percent steps about it; a gap
+//! conductance per core does not take out the 2014-15 cores' low maximum rise
+//! (record `evidence/research/reactor_triga_jsi_element_6753/analysis/06_refit_55.py`).
 //!
 //! **The energy account.** Finite volumes on the radius (4 cells in the rod, 30
 //! in the meat, 4 in the clad) and a surface node of no heat capacity; each

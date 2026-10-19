@@ -80,11 +80,19 @@ impl GeneratorMmrtgSeebeckCall {
             .map_err(|reject| StepFailure::from_reject(reject, reject_sentence(reject)))
     }
 
+    /// The limits the step from `before` to the state now held is past
+    /// (`crate::exceedance`).
+    pub(crate) fn exceedances(&self, before: &generator_mmrtg_seebeck::GeneratorMmrtgSeebeckState) -> genesis_kernel::exceedance::Exceedances {
+        genesis_kernel::generator_mmrtg_seebeck::exceedances(&self.card, before, &self.state, self.load, self.dt_s)
+    }
+
     pub(crate) fn run(mut self, proof: [u8; 16]) -> Result<IntegratedFrame, String> {
+        let before = self.state;
         let mut frame = blank_frame(proof);
         self.step_into(&mut frame).map_err(|failure| failure.detail)?;
         Ok(IntegratedFrame {
             frame,
+            exceedances: self.exceedances(&before),
             residual_conservation_error: self.state.residual_conservation_error,
             state: state(&self.state)?,
         })

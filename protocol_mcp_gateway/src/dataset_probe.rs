@@ -210,7 +210,7 @@ fn the_sealed_form_here_is_the_sealed_form_of_the_crate() {
     assert_eq!(genesis_seal::sealed_form::sealed_form(&worked), expected);
     assert_eq!(
         genesis_seal::sealed_form::digest_hex(expected.as_bytes()),
-        "dced576688495b353ee304b7b8400f3fab60536a2deeb86932cb744039703da0"
+        "8615887c32e2e2edb7d4be74b822e7f64ea384173a9332d97be6278dec255c3d57c9249ca16c5a5d5dfa6c2e43d9baf9"
     );
 
     let requests = [

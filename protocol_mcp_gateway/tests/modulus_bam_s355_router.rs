@@ -18,7 +18,7 @@ use genesis_solvers::modulus_bam_s355::{self as modulus, Bar, Mode, Reading};
 use protocol_mcp_gateway::app;
 use reqwest::Client;
 use serde_json::{Value, json};
-use sha2::{Digest, Sha256};
+use sha2::{Digest, Sha384};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::TcpListener;
 use tokio::process::{Child, ChildStdin, ChildStdout, Command};
@@ -132,16 +132,16 @@ fn flip_hex(text: &str) -> String {
     format!("{}{last}", &text[..text.len() - 1])
 }
 
-fn sha256_hex(bytes: &[u8]) -> String {
-    hex::encode(Sha256::digest(bytes))
+fn sha384_hex(bytes: &[u8]) -> String {
+    hex::encode(Sha384::digest(bytes))
 }
 
 /// The receipt covers the wire bytes before it.
 fn assert_receipt(text: &str, body: &Value) {
-    let receipt = body["receipt_sha256"].as_str().expect("receipt");
-    let tail = format!(",\"receipt_sha256\":\"{receipt}\"}}");
+    let receipt = body["receipt_sha384"].as_str().expect("receipt");
+    let tail = format!(",\"receipt_sha384\":\"{receipt}\"}}");
     let document = text.strip_suffix(&tail).expect("the receipt is last");
-    assert_eq!(sha256_hex(format!("{document}}}").as_bytes()), receipt);
+    assert_eq!(sha384_hex(format!("{document}}}").as_bytes()), receipt);
 }
 
 #[tokio::test]
@@ -153,7 +153,7 @@ async fn the_four_published_scans_match_the_solver_bit_for_bit() {
         let direct = direct(index);
 
         assert_eq!(body["inputs"], request);
-        assert_eq!(body["engine_version"], "genesis_solvers_v0.12.0");
+        assert_eq!(body["engine_version"], "genesis_solvers_v0.13.0");
         assert_eq!(body["outcome"], "converged");
         assert!(body["reject"].is_null());
         assert!(body["reject_detail"].is_null());
@@ -207,7 +207,7 @@ async fn the_four_published_scans_match_the_solver_bit_for_bit() {
             bytes.extend_from_slice(&sample.to_le_bytes());
         }
         assert_eq!(direct.mode_shapes.len(), 2 * 4 * (modulus::MODE_INTERVALS + 1));
-        assert_eq!(body["field_sha256"], sha256_hex(&bytes));
+        assert_eq!(body["field_sha384"], sha384_hex(&bytes));
 
         // The steel of the sheet: 209 to 213 GPa and 78 to 81 GPa, and the
         // resonance that was not used is predicted within 0.25 %.
@@ -385,7 +385,7 @@ async fn a_limit_the_physics_finds_is_a_sealed_refusal_with_no_result() {
         );
         assert!(body["result"].is_null());
         assert!(body["invariants"].is_null());
-        assert!(body["field_sha256"].is_null());
+        assert!(body["field_sha384"].is_null());
         assert_receipt(&text, &body);
         assert_eq!(verdict(&base, &body).await, json!({ "holds": true, "values_hold": true, "cause": null, "compared": protocol_mcp_gateway::WHOLE_SOLUTION_COMPUTED }));
 
@@ -437,8 +437,8 @@ async fn every_edit_of_a_sealed_solution_is_named() {
     assert_fails(&base, &exchanged, "inputs", "two frequencies exchanged").await;
 
     let mut other_field = body.clone();
-    other_field["field_sha256"] = json!(flip_hex(body["field_sha256"].as_str().unwrap()));
-    assert_fails(&base, &other_field, "field_sha256", "field").await;
+    other_field["field_sha384"] = json!(flip_hex(body["field_sha384"].as_str().unwrap()));
+    assert_fails(&base, &other_field, "field_sha384", "field").await;
     let mut other_count = body.clone();
     other_count["iterations"] = json!(body["iterations"].as_u64().unwrap() + 1);
     assert_fails(&base, &other_count, "outcome", "iterations").await;
@@ -482,7 +482,7 @@ async fn the_proof_is_over_the_values_of_the_series() {
         hex_of(8950.895),
         hex_of(4700.015)
     );
-    assert_eq!(body["seal_parts"]["inputs"], sha256_hex(sealed_form.as_bytes()));
+    assert_eq!(body["seal_parts"]["inputs"], sha384_hex(sealed_form.as_bytes()));
 
     // Another spelling of the same numbers, other spacing and another key
     // order: the same question, the same proof.
@@ -502,7 +502,7 @@ async fn the_proof_is_over_the_values_of_the_series() {
     // the answer the engine writes, and a request spelled another way has
     // another receipt, which is the first place it names.
     let report: Value = serde_json::from_str(&report).unwrap();
-    assert_eq!((report["holds"].clone(), report["cause"].clone(), report["differs_at"].clone()), (json!(false), json!("answer_text"), json!("receipt_sha256")), "{report}");
+    assert_eq!((report["holds"].clone(), report["cause"].clone(), report["differs_at"].clone()), (json!(false), json!("answer_text"), json!("receipt_sha384")), "{report}");
 
     // A number never seals the same as the string of its bits.
     for forged in [json!(format!("x{}", hex_of(1588.627))), json!("1588.627"), json!([1588.627])] {
@@ -529,15 +529,19 @@ async fn the_described_example_runs_unchanged_and_the_description_holds_its_limi
     let listed = reqwest::get(format!("{base}/solvers")).await.unwrap();
     let listed: Value = serde_json::from_str(&listed.text().await.unwrap()).unwrap();
     let solvers = listed["solvers"].as_array().expect("solvers");
-    assert_eq!(solvers.len(), 25);
+    assert_eq!(solvers.len(), protocol_mcp_gateway::SOLVERS);
     assert_eq!(solvers[4]["solver"], SOLVER);
     assert!(solvers[4]["summary"].as_str().unwrap().ends_with('.'));
 
     let (status, text) = post(&base, "/describe_solver", &json!({ "solver": SOLVER })).await;
     assert_eq!(status, 200, "{text}");
     let described: Value = serde_json::from_str(&text).unwrap();
-    assert_eq!(described["summary"], solvers[4]["summary"]);
-    assert_eq!(described["engine_version"], "genesis_solvers_v0.12.0");
+    // Since 0.14.4 the row gives what the solver computes, the comparison
+    // and the gap, each as the description's spec sheet says it.
+    let (computes, comparison) = solvers[4]["summary"].as_str().unwrap().split_once(" Compared with ").expect("a comparison");
+    let sheet = described["summary"].as_str().unwrap();
+    assert!(sheet.starts_with(computes) && sheet.contains(&format!("Compared with {comparison} Refuses")), "{sheet}");
+    assert_eq!(described["engine_version"], "genesis_solvers_v0.13.0");
     assert_eq!(described["inputs"][0]["name"], "bar");
     assert_eq!(described["inputs"][0]["allowed"], json!(["ERX1", "ERX2", "ERY1", "ERY2"]));
     assert_eq!(described["inputs"][1]["name"], "frequencies_hz");
@@ -751,7 +755,7 @@ const KEY_BAR: &str = "key-for-the-bar-client";
 const KEY_ATOM: &str = "key-for-the-atom-client";
 
 fn client_entry(label: &str, key: &str, solvers: Value) -> Value {
-    json!({ "client": label, "key_sha256": sha256_hex(key.as_bytes()), "cards": [], "solvers": solvers, "max_in_flight": 8, "max_permits": 1 })
+    json!({ "client": label, "key_sha256": key_sha256_hex(key.as_bytes()), "cards": [], "solvers": solvers, "max_in_flight": 8, "max_permits": 1 })
 }
 
 /// The local connection: `mcp_stdio` as a child process.
@@ -810,7 +814,7 @@ impl Hosted {
         std::fs::create_dir_all(&dir).unwrap();
         let file = dir.join("keys.json");
         std::fs::write(&file, serde_json::to_string_pretty(keys).unwrap()).unwrap();
-        let mut child = Command::new(env!("CARGO_BIN_EXE_hosted_door"))
+        let mut child = Command::new(env!("CARGO_BIN_EXE_hosted_door")).arg("--unsigned")
             .arg("--port")
             .arg("0")
             .arg("--keys")
@@ -889,7 +893,7 @@ async fn the_three_connections_give_the_same_bytes_and_a_key_sees_only_its_solve
     let web = spawn_app().await;
     let mut local = Local::start().await;
     let hosted = Hosted::start(&json!([
-        client_entry("all", KEY_ALL, json!(["atom_dft", "ablator_slab", "journal_bearing_sheffield", "propeller_apc_10x7e", "modulus_bam_s355", "seawater_column", "argon_pair_gas", "fusion_pb11_lhd", "fusion_pb11_thermal", "step_flow_armaly", "culture_trichoderma_ambr250", "tokamak_dt_beam_target", "pipe_flow_superpipe", "fuel_rod_triga_jsi", "culture_trichoderma_atp", "junction_nist_b7_s2", "water_hammer_oil_line", "orifice_air_chamber", "pneumatic_hose_resonance", "blast_wave_tnt_air", "stress_plate_hole_s235", "stress_plate_hole_s235_elastic", "icf_hotspot_burn", "ln2_line_dlr_fttf", "plasma_sheath_ram_c2"])),
+        client_entry("all", KEY_ALL, json!(["atom_dft", "ablator_slab", "journal_bearing_sheffield", "propeller_apc_10x7e", "modulus_bam_s355", "seawater_column", "argon_pair_gas", "fusion_pb11_lhd", "fusion_pb11_thermal", "step_flow_armaly", "culture_trichoderma_ambr250", "tokamak_dt_beam_target", "pipe_flow_superpipe", "blast_wave_tnt_air", "fuel_rod_triga_jsi", "culture_trichoderma_atp", "junction_nist_b7_s2", "water_hammer_oil_line", "orifice_air_chamber", "pneumatic_hose_resonance", "stress_plate_hole_s235", "stress_plate_hole_s235_elastic", "icf_hotspot_burn", "ln2_line_dlr_fttf", "plasma_sheath_ram_c2"])),
         client_entry("bar", KEY_BAR, json!([SOLVER])),
         client_entry("atom", KEY_ATOM, json!(["atom_dft"])),
     ]))
@@ -970,4 +974,11 @@ async fn the_three_connections_give_the_same_bytes_and_a_key_sees_only_its_solve
     let for_all = schema_of(&hosted.tools(KEY_ALL).await);
     // With more than one solver in view the schema names none: list_solvers does.
     assert!(!for_all.contains(SOLVER) && !for_all.contains("atom_dft"), "{for_all}");
+}
+
+/// SHA-256 of a client's key, as the hosted door's keys file holds it: an
+/// authentication hash, not a seal, so it stays SHA-256 under seal rule v2.
+fn key_sha256_hex(bytes: &[u8]) -> String {
+    use sha2::{Digest, Sha256};
+    hex::encode(Sha256::digest(bytes))
 }

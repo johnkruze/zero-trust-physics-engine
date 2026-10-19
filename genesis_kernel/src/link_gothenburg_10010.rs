@@ -155,6 +155,7 @@ extern crate core;
 
 use core::prelude::v1::*;
 
+use crate::exceedance::{Exceedance, ExceedanceKind, Side};
 use crate::frame::LastStateFrame64;
 use crate::normal::normal_or_zero;
 
@@ -572,6 +573,26 @@ pub fn step(
     load: LinkLoad,
     dt_s: f64,
 ) -> Result<(), StepReject> {
+    #[cfg(any(test, debug_assertions, feature = "check_exceedances"))]
+    let before = *state;
+    let stepped = step_landed(link, state, frame, load, dt_s);
+    #[cfg(any(test, debug_assertions, feature = "check_exceedances"))]
+    if stepped.is_ok() {
+        crate::exceedance::debug_check("link_gothenburg_10010", exceedances(link, &before, state, load, dt_s), frame.flags);
+    }
+    stepped
+}
+
+/// The step itself; [`step`] is it with, in a build that checks
+/// (`crate::exceedance::CHECKED`), the check that [`exceedances`] stands for
+/// the flags it wrote.
+fn step_landed(
+    link: &LinkGothenburg10010,
+    state: &mut LinkState,
+    frame: &mut LastStateFrame64,
+    load: LinkLoad,
+    dt_s: f64,
+) -> Result<(), StepReject> {
     step_as_computed(link, state, frame, load, dt_s)?;
     normal_or_zero_state(state);
     Ok(())
@@ -919,6 +940,37 @@ fn state_is_finite(state: &LinkState) -> bool {
         && state.rain_rate_margin_mm_h.is_finite()
         && state.gauge_minute_elapsed_s.is_finite()
         && state.gauge_minute_rain_mm_h.is_finite()
+}
+
+/// Every limit a flag of this card can mark: what [`exceedances`] reports
+/// beside a flag's bit (`crate::exceedance`).
+pub const EXCEEDANCE_KINDS: &[crate::exceedance::ExceedanceKind] = &[
+    RAIN_KIND,
+];
+
+const RAIN_KIND: ExceedanceKind = ExceedanceKind::fixed(
+    "FLAG_RAINING",
+    FLAG_RAINING,
+    "rain_rate_mm_h",
+    "mm/h",
+    Side::Above,
+    0.0,
+    "no rain: a rain rate of zero; the extent is the step's rain rate",
+);
+
+/// The limits the step from `before` to `after` under `load` over `dt_s`
+/// is past: one record for each limit a flag set on its frame marks.
+pub fn exceedances(
+    link: &LinkGothenburg10010,
+    before: &LinkState,
+    after: &LinkState,
+    load: LinkLoad,
+    dt_s: f64,
+) -> crate::exceedance::Exceedances {
+    let _ = (link, before, dt_s);
+    let mut records = crate::exceedance::Exceedances::new();
+    records.push_if(after.raining, Exceedance::fixed(RAIN_KIND, load.rain_rate_mm_h));
+    records
 }
 
 #[cfg(test)]

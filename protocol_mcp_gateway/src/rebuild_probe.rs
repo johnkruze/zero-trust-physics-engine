@@ -11,7 +11,7 @@
 //! No seal of a run, a step, a solution or a chain is moved by any of it.
 
 use serde_json::{Map, Value, json};
-use sha2::{Digest, Sha256};
+use sha2::{Digest, Sha384};
 
 use crate::mcp_server::dispatch_text;
 use crate::{AppState, descriptor, new_gateway_state, solvers};
@@ -42,7 +42,7 @@ async fn answer(state: &AppState, tool: &str, arguments: &Value) -> Value {
 }
 
 fn sha(bytes: &[u8]) -> String {
-    hex::encode(Sha256::digest(bytes))
+    hex::encode(Sha384::digest(bytes))
 }
 
 /// The text of an answer with its receipt worked out again over that text,
@@ -55,16 +55,16 @@ fn text_with_receipt(answer: &Value) -> String {
 /// `answer`: what anyone can work out again after changing a field.
 fn with_receipt_worked_out(mut answer: Value) -> Value {
     let object = answer.as_object_mut().unwrap();
-    object.shift_remove("receipt_sha256");
+    object.shift_remove("receipt_sha384");
     let text = serde_json::to_string(&Value::Object(object.clone())).unwrap();
-    object.insert("receipt_sha256".into(), json!(sha(text.as_bytes())));
+    object.insert("receipt_sha384".into(), json!(sha(text.as_bytes())));
     answer
 }
 
 /// A text's receipt worked out again over its own bytes, its other bytes as
 /// they are.
 fn resigned(text: &str) -> String {
-    let tail = ",\"receipt_sha256\":\"";
+    let tail = ",\"receipt_sha384\":\"";
     let at = text.rfind(tail).expect("a receipt");
     let receipt = sha(format!("{}}}", &text[..at]).as_bytes());
     format!("{}{tail}{receipt}\"}}", &text[..at])
@@ -126,7 +126,7 @@ fn solution_resealed(answer: &Value) -> String {
     let version = format!("engine_version:{}\n", answer["engine_version"].as_str().unwrap());
     let result = lines("result");
     let invariants = lines("invariants");
-    let field = answer["field_sha256"].as_str().unwrap_or("null").to_string();
+    let field = answer["field_sha384"].as_str().unwrap_or("null").to_string();
     let mut tail = Map::new();
     tail.insert("outcome".into(), answer["outcome"].clone());
     tail.insert("iterations".into(), answer["iterations"].clone());
@@ -134,7 +134,7 @@ fn solution_resealed(answer: &Value) -> String {
     let tail = serde_json::to_string(&Value::Object(tail)).unwrap();
     answer["seal_parts"] = json!({
         "inputs": sha(inputs.as_bytes()), "engine_version": sha(version.as_bytes()), "result": sha(result.as_bytes()),
-        "invariants": sha(invariants.as_bytes()), "field_sha256": sha(field.as_bytes()), "outcome": sha(tail.as_bytes())
+        "invariants": sha(invariants.as_bytes()), "field_sha384": sha(field.as_bytes()), "outcome": sha(tail.as_bytes())
     });
     answer["solution_seal"] = json!(sha(format!("{inputs}{version}{invariants}{result}{field}{tail}").as_bytes()));
     text_with_receipt(&answer)
@@ -267,7 +267,7 @@ fn plate_run() -> Value {
 async fn the_three_attacks_of_the_red_team_fail_by_name_and_move_no_seal() {
     let state = new_gateway_state();
     let (run, text) = answered(&state, "run_trajectory", &plate_run()).await;
-    assert_eq!(run["run_seal"], "97ceec4dc7cabb70f8dae3ba002e252974d499c550fe8a1e3f188f27e9850b34");
+    assert_eq!(run["run_seal"], "91f1583da91c09dfffbd9d15c553e59aa6a111ef179602b696b819490bf21d09e818d3d512dfb43585307616db8f98b5");
     holds(&state, "verify_tape", &text, "as returned").await;
 
     let named = |report: &Value| (report["holds"].clone(), report["cause"].clone(), report["differs_at"].clone());
@@ -301,7 +301,7 @@ async fn the_three_attacks_of_the_red_team_fail_by_name_and_move_no_seal() {
     // The short form of the same request still holds, with the same seal.
     let short = answer(&state, "verify_tape", &json!({ "request": plate_run(), "run_seal": run["run_seal"] })).await;
     assert_eq!(short["holds"], true, "{short}");
-    assert_eq!(short["recomputed_receipt_sha256"], run["receipt_sha256"], "{short}");
+    assert_eq!(short["recomputed_receipt_sha384"], run["receipt_sha384"], "{short}");
 }
 
 /// Every place in `value` with its path, the leaves and the containers.
@@ -577,7 +577,7 @@ async fn an_unknown_card_or_solver_is_refused_by_name_on_every_tool() {
         ("compute_step", json!({ "domain": "energy", "card": "not_a_card", "parameters": { "dt_s": 0.1 } })),
         ("verify_step", json!({ "domain": "energy", "card": "not_a_card", "parameters": { "dt_s": 0.1 } })),
         ("run_trajectory", run.clone()),
-        ("verify_tape", json!({ "request": run, "run_seal": "ab".repeat(32) })),
+        ("verify_tape", json!({ "request": run, "run_seal": "ab".repeat(48) })),
         ("cite", card.clone()),
     ];
     for (tool, arguments) in cases {
@@ -589,7 +589,7 @@ async fn an_unknown_card_or_solver_is_refused_by_name_on_every_tool() {
     for (tool, arguments) in [
         ("describe_solver", solver.clone()),
         ("solve", json!({ "solver": "not_a_solver", "parameters": {} })),
-        ("verify_solution", json!({ "request": { "solver": "not_a_solver", "parameters": {} }, "solution_seal": "ab".repeat(32) })),
+        ("verify_solution", json!({ "request": { "solver": "not_a_solver", "parameters": {} }, "solution_seal": "ab".repeat(48) })),
         ("cite", solver),
     ] {
         let (is_error, text) = call(&state, tool, &arguments).await;
@@ -724,7 +724,7 @@ async fn a_dataset_written_again_by_the_published_rules_fails_by_name_when_its_p
     // A plan of solves has no long form: its head with rows written for it
     // is refused, with no verdict, and pointed to the short form.
     let solves = answer(&state, "run_dataset", &json!({ "solver": "atom_dft", "plan": { "kind": "list", "solves": [{ "parameters": { "atomic_number": 1 } }] } })).await;
-    let forged_rows = json!([{ "row": 0, "outcome": "converged", "solution_seal": "ab".repeat(32) }]);
+    let forged_rows = json!([{ "row": 0, "outcome": "converged", "solution_seal": "ab".repeat(48) }]);
     let refused = long_form(&state, "verify_dataset", &json!({ "head": solves["head"], "rows": forged_rows, "frames_hex": null })).await.unwrap_err();
     assert_eq!(refused, crate::solve_plan::VERIFY_SOLVES_BY_REQUEST);
 }
@@ -815,7 +815,7 @@ async fn a_design_is_designed_again_to_itself_and_every_edit_of_it_fails_by_name
     assert_eq!(named(&report), ("design_seal".to_string(), "design_seal".to_string()), "{report}");
     // The design seal itself changed.
     let mut edited = designed.clone();
-    edited["design_seal"] = json!("ab".repeat(32));
+    edited["design_seal"] = json!("ab".repeat(48));
     let report = answer(&state, "verify_tape", &with_receipt_worked_out(edited)).await;
     assert_eq!(named(&report).0, "design_seal", "{report}");
     // Another engine version.
@@ -904,7 +904,7 @@ async fn the_red_teams_forged_solutions_fail_by_name() {
     );
     // Its receipt worked out again over its bytes is not the engine's receipt: a value.
     let report = long_form_text(&state, "verify_solution", &resigned(&escaped)).await.unwrap();
-    assert_eq!((report["values_hold"].clone(), report["cause"].clone(), report["differs_at"].clone()), (json!(false), json!("answer_text"), json!("receipt_sha256")), "{report}");
+    assert_eq!((report["values_hold"].clone(), report["cause"].clone(), report["differs_at"].clone()), (json!(false), json!("answer_text"), json!("receipt_sha384")), "{report}");
     // D. A decimal spelled another way: the same 64-bit number, the
     // junction's first mean voltage written with 25 digits.
     let (solved, text) = answered(&state, "solve", &worked("junction_nist_b7_s2")).await;
@@ -922,7 +922,7 @@ async fn the_red_teams_forged_solutions_fail_by_name() {
     );
     assert!(report["difference"].as_str().unwrap().contains(&format!("is written {:.25e}", value)), "{report}");
     let report = long_form_text(&state, "verify_solution", &resigned(&respelled)).await.unwrap();
-    assert_eq!((report["values_hold"].clone(), report["cause"].clone(), report["differs_at"].clone()), (json!(false), json!("answer_text"), json!("receipt_sha256")), "{report}");
+    assert_eq!((report["values_hold"].clone(), report["cause"].clone(), report["differs_at"].clone()), (json!(false), json!("answer_text"), json!("receipt_sha384")), "{report}");
     // The honest text holds, and its JSON text, every value the engine's, holds its values and not its bytes.
     holds(&state, "verify_solution", &text, "the junction as it came").await;
     let report = long_form(&state, "verify_solution", &solved).await.unwrap();
@@ -991,7 +991,7 @@ fn javascript_writes_numbers_as_its_json_stringify_does() {
 /// 1.0 by another client and its answer written again by JSON.stringify is
 /// another request to a reader of values' spelling: the engine's answer to it
 /// echoes 1 and carries another receipt, so its values do not hold, named at
-/// receipt_sha256.
+/// receipt_sha384.
 #[tokio::test]
 async fn an_honest_answer_written_again_by_a_client_holds_its_values_and_not_its_bytes() {
     let state = new_gateway_state();
@@ -1038,7 +1038,7 @@ async fn an_honest_answer_written_again_by_a_client_holds_its_values_and_not_its
     let report = long_form_text(&state, "verify_tape", &as_javascript_writes(&run)).await.unwrap();
     assert_eq!(
         (report["holds"].clone(), report["values_hold"].clone(), report["differs_at"].clone()),
-        (json!(false), json!(false), json!("receipt_sha256")),
+        (json!(false), json!(false), json!("receipt_sha384")),
         "{report}"
     );
     // A chain's second link written again: the chain's values hold, its bytes do not, at the link.

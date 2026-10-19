@@ -6,10 +6,10 @@
 //! base request. Every row is an ordinary `solve` request, solved by the code
 //! `solve` uses and sealed with the `solution_seal` it carries alone. The
 //! rows are sealed under one dataset seal by the rules of `genesis_seal`: the
-//! plan hash is SHA-256 of the sealed form of the request, the leaf of a row
-//! is the compact JSON of `row`, `request_sha256`, `outcome`, the row's
-//! seal and `reject_detail_sha256`, the leaves form the row tree of RFC
-//! 6962, and `dataset_seal` is SHA-256 of the plan hash, the root and the compact JSON of the counts.
+//! plan hash is SHA-384 of the sealed form of the request, the leaf of a row
+//! is the compact JSON of `row`, `request_sha384`, `outcome`, the row's
+//! seal and `reject_detail_sha384`, the leaves form the row tree of RFC
+//! 6962, and `dataset_seal` is SHA-384 of the plan hash, the root and the compact JSON of the counts.
 //!
 //! The comparison (`validate_series` given `solves`) runs such a plan and
 //! compares one published number of each solve's result with the caller's
@@ -21,7 +21,7 @@ use genesis_seal::plan::with_sorted_keys;
 use genesis_seal::sealed_form::{digest_hex, sealed_form};
 use genesis_seal::tree;
 use genesis_seal::validation::{
-    DOES_NOT_SHOW, SealParts, Statistics, bits_hex, measurements_sha256, statistics, validation_seal,
+    DOES_NOT_SHOW, SealParts, Statistics, bits_hex, measurements_sha384, statistics, validation_seal,
 };
 use serde::Serialize;
 use serde_json::{Map, Value};
@@ -45,7 +45,7 @@ pub(crate) const VERIFY_SOLVES_BY_REQUEST: &str = "Physical Violation: the head 
 pub(crate) const SOLVES_SUMMARY_ABOUT: &str = "One summary row per solve: its solution_seal, outcome, refusal name and every single number of its result in decimals, and for a grid the values the row sets. The head and the dataset_seal are those of the full rows. Send the request again with \"answer\": \"full\" for every solution whole, or verify the seal with verify_dataset given this request and the dataset_seal.";
 
 /// How the seal of a comparison of solves is taken, said in its answer.
-pub(crate) const SOLVES_SEALED_AS: &str = "validation_seal is the validation seal of genesis_seal, taken with the dataset_seal of the solves in the place of a run seal, each measured row number in the place of a step, outcome \"solves\", steps_landed the count of solves that converged and reject null. The statistics and measurements_sha256 follow the rules of a run's comparison. A measured row whose solve did not converge is not compared and is counted in not_reached. genesis_seal verify-validation reads this comparison as it reads a run's, from the answer alone; the same request sent again gives the same seal.";
+pub(crate) const SOLVES_SEALED_AS: &str = "validation_seal is the validation seal of genesis_seal, taken with the dataset_seal of the solves in the place of a run seal, each measured row number in the place of a step, outcome \"solves\", steps_landed the count of solves that converged and reject null. The statistics and measurements_sha384 follow the rules of a run's comparison. A measured row whose solve did not converge is not compared and is counted in not_reached. genesis_seal verify-validation reads this comparison as it reads a run's, from the answer alone; the same request sent again gives the same seal.";
 
 const PLAN_FIELDS: &str = "Its fields are solver, plan and answer.";
 
@@ -254,19 +254,19 @@ struct Sealed {
     solutions: Vec<Option<SolutionResponse>>,
 }
 
-/// The leaf of a row: the compact JSON of `row`, `request_sha256`, `outcome`,
-/// `solution_seal` and `reject_detail_sha256`, in that order. The last is the
-/// SHA-256 of the row's refusal sentence, or null when it has none, as in the
+/// The leaf of a row: the compact JSON of `row`, `request_sha384`, `outcome`,
+/// `solution_seal` and `reject_detail_sha384`, in that order. The last is the
+/// SHA-384 of the row's refusal sentence, or null when it has none, as in the
 /// leaf of a row of runs: the sentence of a row turned away before solving is
 /// covered by no solution seal, and is sealed here.
 fn leaf_of(row: u64, request: &Value, outcome: &str, seal: Option<&str>, reject_detail: Option<&str>) -> Value {
     let mut leaf = Map::new();
     leaf.insert("row".to_string(), Value::from(row));
-    leaf.insert("request_sha256".to_string(), Value::from(digest_hex(sealed_form(request).as_bytes())));
+    leaf.insert("request_sha384".to_string(), Value::from(digest_hex(sealed_form(request).as_bytes())));
     leaf.insert("outcome".to_string(), Value::from(outcome));
     leaf.insert("solution_seal".to_string(), seal.map_or(Value::Null, Value::from));
     leaf.insert(
-        "reject_detail_sha256".to_string(),
+        "reject_detail_sha384".to_string(),
         reject_detail.map_or(Value::Null, |sentence| Value::from(digest_hex(sentence.as_bytes()))),
     );
     Value::Object(leaf)
@@ -294,7 +294,9 @@ fn encode_failed(error: impl std::fmt::Display) -> DoorError {
 /// permits, and seal the rows.
 fn execute(view: &View, plan: &SolvePlan) -> Result<Sealed, DoorError> {
     let mut counts = Counts {
-        engine_version: crate::ENGINE_VERSION.to_string(),
+        // The rows are solves: the version the solvers write, as each row's
+        // solution seal does (RT3 W1 of 0.14.0 rc1).
+        engine_version: crate::solvers::engine_version(),
         rows: plan.rows.len() as u64,
         completed: 0,
         ended: 0,
@@ -350,7 +352,7 @@ fn execute(view: &View, plan: &SolvePlan) -> Result<Sealed, DoorError> {
             }
             Err(sentence) => {
                 counts.unadmitted += 1;
-                for key in ["outcome", "iterations", "reject", "reject_detail", "result", "invariants", "field_sha256", "seal_parts", "solution_seal"] {
+                for key in ["outcome", "iterations", "reject", "reject_detail", "result", "invariants", "field_sha384", "seal_parts", "solution_seal"] {
                     row.insert(key.to_string(), Value::Null);
                 }
                 row.insert("outcome".to_string(), Value::from("unadmitted"));
@@ -368,17 +370,17 @@ fn execute(view: &View, plan: &SolvePlan) -> Result<Sealed, DoorError> {
         rows.push(row);
         solutions.push(solved.ok());
     }
-    let plan_sha256 = digest_hex(sealed_form(&plan.request).as_bytes());
+    let plan_sha384 = digest_hex(sealed_form(&plan.request).as_bytes());
     let merkle_root = hex::encode(tree::root(&leaves).expect("a plan has at least one row"));
-    let seal = dataset_seal(&plan_sha256, &merkle_root, &counts);
+    let seal = dataset_seal(&plan_sha384, &merkle_root, &counts);
     let head = Head {
         request: plan.request.clone(),
         counts,
-        plan_sha256,
+        plan_sha384,
         merkle_root,
         dataset_seal: seal,
-        rows_sha256: Some(digest_hex(&rows_text)),
-        frames_sha256: None,
+        rows_sha384: Some(digest_hex(&rows_text)),
+        frames_sha384: None,
     };
     Ok(Sealed { head, rows, summary, solutions })
 }
@@ -449,7 +451,7 @@ fn summary_bounds(plan: &SolvePlan, replaced: &[String]) -> (u64, u64) {
     let head = |most: bool| {
         let counted = if most { rows } else { 0 };
         let counts = Counts {
-            engine_version: crate::ENGINE_VERSION.to_string(),
+            engine_version: crate::solvers::engine_version(),
             rows,
             completed: counted,
             ended: 0,
@@ -457,15 +459,15 @@ fn summary_bounds(plan: &SolvePlan, replaced: &[String]) -> (u64, u64) {
             unadmitted: counted,
             frames: 0,
         };
-        let hash = "0".repeat(64);
+        let hash = "0".repeat(96);
         Head {
             request: plan.request.clone(),
             counts,
-            plan_sha256: hash.clone(),
+            plan_sha384: hash.clone(),
             merkle_root: hash.clone(),
             dataset_seal: hash.clone(),
-            rows_sha256: Some(hash),
-            frames_sha256: None,
+            rows_sha384: Some(hash),
+            frames_sha384: None,
         }
         .wire()
         .len() as u64
@@ -499,7 +501,7 @@ fn summary_bounds(plan: &SolvePlan, replaced: &[String]) -> (u64, u64) {
     };
     let (most_numbers, least_numbers) = (numbers(true), numbers(false));
     let sealed: Vec<&str> = plan.solver.refusals.iter().filter(|refusal| refusal.sealed).map(|refusal| refusal.name).collect();
-    let seal = "0".repeat(64);
+    let seal = "0".repeat(96);
     let (mut least, mut most) = (head(false) + around, head(true) + around);
     for (index, request) in plan.rows.iter().enumerate() {
         let index = index as u64;
@@ -626,7 +628,7 @@ fn seal_under(plan: &SolvePlan, sealed: &Sealed, kernel: &str, solvers: &str) ->
     }
     let root = hex::encode(tree::root(&leaves)?);
     let counts = Counts { engine_version: kernel.to_string(), ..sealed.head.counts.clone() };
-    Some(dataset_seal(&sealed.head.plan_sha256, &root, &counts))
+    Some(dataset_seal(&sealed.head.plan_sha384, &root, &counts))
 }
 
 /// What a check by request of a plan of solves says when the seal given is
@@ -654,7 +656,7 @@ fn version_words_of(plan: &SolvePlan, sealed: &Sealed, given: &str, ours_kernel:
         .find(|(kernel, solvers)| seal_under(plan, sealed, kernel, solvers).as_deref() == Some(given));
     match theirs {
         Some((kernel, solvers)) => format!(
-            "The dataset_seal covers engine_version, through its counts and each row's solution_seal: the seal given is this plan's dataset seal with engine_version {kernel} in its counts and {solvers} in its solution seals, another engine version's, and this engine writes {ours_kernel} and {ours_solvers}, so it does not hold here."
+            "The dataset_seal covers engine_version, through its counts and each row's solution_seal: the seal given is this plan's dataset seal with engine_version {kernel} in its counts and {solvers} in its solution seals, another engine version's, and this engine writes {ours_kernel} in its counts and {ours_solvers} in its solution seals, so it does not hold here."
         ),
         None => format!(
             "The dataset_seal covers engine_version, through its counts ({ours_kernel} on this engine) and each row's solution_seal ({ours_solvers}): the seal of a plan another engine version solved does not hold here."
@@ -665,11 +667,16 @@ fn version_words_of(plan: &SolvePlan, sealed: &Sealed, given: &str, ours_kernel:
 /// The kernel and solvers versions an engine release paired otherwise than
 /// each kernel with the solvers one minor version before it. Engine 0.14.0
 /// moved the solvers to 0.12.0 (canonical math) and kept the kernel at
-/// 0.12.0. The pairs of every earlier release follow the rule: 0.8.0 with
-/// 0.7.0 (0.8.1 to 0.9.3), 0.9.0 with 0.8.0 (0.10.x), 0.12.0 with 0.11.0
-/// (0.13.x). A release whose pair breaks the rule adds it here; a test holds
-/// this engine's own pair to the pairs a later engine tries.
-const PAIRS_OFF_THE_RULE: &[(&str, &str)] = &[("genesis_kernel_v0.12.0", "genesis_solvers_v0.12.0")];
+/// 0.12.0 (0.14.0 to 0.14.3); the next engine sets both to 0.13.0, the
+/// three cards and the solver of 0.14.3 counted. The pairs of every earlier
+/// release follow the rule: 0.8.0 with 0.7.0 (0.8.1 to 0.9.3), 0.9.0 with
+/// 0.8.0 (0.10.x), 0.12.0 with 0.11.0 (0.13.x). A release whose pair breaks
+/// the rule adds it here; a test holds this engine's own pair to the pairs a
+/// later engine tries.
+const PAIRS_OFF_THE_RULE: &[(&str, &str)] = &[
+    ("genesis_kernel_v0.12.0", "genesis_solvers_v0.12.0"),
+    ("genesis_kernel_v0.13.0", "genesis_solvers_v0.13.0"),
+];
 
 /// The kernel and solvers versions a plan's seal is tried under, for an
 /// engine that writes `ours_kernel` and `ours_solvers`: each kernel with the
@@ -684,6 +691,10 @@ fn version_pairs(ours_kernel: &str, ours_solvers: &str) -> Vec<(String, String)>
         }
         pairs.push((kernel, ours_solvers.to_string()));
         pairs.push((ours_kernel.to_string(), format!("genesis_solvers_v0.{minor}.0")));
+        // From the work orders of 18 October 2026 a plan's counts name the
+        // solvers' version, the one its solution seals carry.
+        let solvers = format!("genesis_solvers_v0.{minor}.0");
+        pairs.push((solvers.clone(), solvers));
     }
     for (kernel, solvers) in PAIRS_OFF_THE_RULE {
         let pair = (kernel.to_string(), solvers.to_string());
@@ -724,13 +735,14 @@ struct Comparison<'a> {
     /// Present only when a measurement carries an instrument's signature.
     #[serde(skip_serializing_if = "Option::is_none")]
     measurement_source: Option<Value>,
-    measurements_sha256: &'a str,
+    measurements_sha384: &'a str,
     /// Present only when the request opened a commitment.
     #[serde(skip_serializing_if = "Option::is_none")]
     commitment_opened: Option<&'static str>,
     validation_seal: &'a str,
     sealed_as: &'static str,
     does_not_show: &'static str,
+    seal_rule: &'static str,
 }
 
 /// `validate_series` given `solves`: one published number of each solve's
@@ -861,11 +873,12 @@ pub(crate) async fn validate(state: &AppState, request: Value) -> Result<String,
     let stats: Option<Statistics> = statistics(&compared_rows, &model, &measured)
         .map_err(|error| DoorError::Unprocessable(error.to_string()))?;
     let model_values_hex: Vec<String> = model.iter().map(|value| bits_hex(*value)).collect();
-    let hash = measurements_sha256(&measurements);
+    let hash = measurements_sha384(&measurements);
     let counts = &sealed.head.counts;
+    let engine_version = crate::solvers::engine_version();
     let seal = validation_seal(&SealParts {
         run_seal: &sealed.head.dataset_seal,
-        measurements_sha256: &hash,
+        measurements_sha384: &hash,
         quantity: &quantity,
         component: None,
         outcome: "solves",
@@ -879,7 +892,7 @@ pub(crate) async fn validate(state: &AppState, request: Value) -> Result<String,
     });
     let document = serde_json::to_string(&Comparison {
         inputs: &request,
-        engine_version: crate::ENGINE_VERSION,
+        engine_version: &engine_version,
         dataset_seal: &sealed.head.dataset_seal,
         solves: counts.rows,
         converged: counts.completed,
@@ -898,11 +911,12 @@ pub(crate) async fn validate(state: &AppState, request: Value) -> Result<String,
         model_values: model.iter().map(|value| crate::readout::Exact(*value)).collect(),
         model_values_hex: &model_values_hex,
         measurement_source,
-        measurements_sha256: &hash,
+        measurements_sha384: &hash,
         commitment_opened: commitment.as_ref().map(|_| genesis_seal::commitment::OPENED),
         validation_seal: &seal,
         sealed_as: SOLVES_SEALED_AS,
         does_not_show: DOES_NOT_SHOW,
+        seal_rule: crate::SEAL_RULE,
     })
     .map_err(encode_failed)?;
     let receipt = crate::digest_hex(document.as_bytes());
@@ -994,16 +1008,18 @@ mod tests {
     /// The fix pass of 0.14.0 (INTEGRATION_0.14.md, note 3): engine 0.14.0
     /// pairs kernel 0.12.0 with solvers 0.12.0, not with the solvers one
     /// minor version before, so a later engine that moves both crates must
-    /// still name 0.14.0's pair for a plan's seal of 0.14.0. Read here as an
-    /// engine writing kernel 0.13.0 and solvers 0.13.0 would read it; and
-    /// every pair this engine and the served ones wrote is named.
+    /// still name 0.14.0's pair for a plan's seal of 0.14.0. This engine moves
+    /// both to 0.13.0, a pair off the rule as well. Read here as an engine
+    /// writing solvers 0.14.0 in its counts and its solution seals would read
+    /// it, as plans of solves are counted since the work orders of 18 October
+    /// 2026; and every pair this engine and the served ones wrote is named.
     #[test]
     fn a_later_engine_names_the_version_pair_of_0_14_0_for_a_plan_seal() {
         let view = View::full();
         let example = (view.solvers().into_iter().find(|s| s.name == "propeller_apc_10x7e").unwrap().example)();
         let plan = read(&view, list("propeller_apc_10x7e", vec![example])).expect("a plan");
         let sealed = execute(&view, &plan).expect("solved");
-        let (later_kernel, later_solvers) = ("genesis_kernel_v0.13.0", "genesis_solvers_v0.13.0");
+        let (later_kernel, later_solvers) = ("genesis_solvers_v0.14.0", "genesis_solvers_v0.14.0");
         for (kernel, solvers) in [
             ("genesis_kernel_v0.12.0", "genesis_solvers_v0.12.0"),
             ("genesis_kernel_v0.12.0", "genesis_solvers_v0.11.0"),
@@ -1013,12 +1029,12 @@ mod tests {
             let given = seal_under(&plan, &sealed, kernel, solvers).expect("a seal under that pair");
             let said = version_words_of(&plan, &sealed, &given, later_kernel, later_solvers);
             assert!(
-                said.contains(&format!("with engine_version {kernel} in its counts and {solvers} in its solution seals, another engine version's, and this engine writes {later_kernel} and {later_solvers}")),
+                said.contains(&format!("with engine_version {kernel} in its counts and {solvers} in its solution seals, another engine version's, and this engine writes {later_kernel} in its counts and {later_solvers} in its solution seals")),
                 "{kernel} {solvers}: {said}"
             );
         }
         // This engine's own pair is one a later engine tries.
-        let ours = (crate::ENGINE_VERSION.to_string(), crate::solvers::engine_version());
+        let ours = (crate::solvers::engine_version(), crate::solvers::engine_version());
         assert!(version_pairs(later_kernel, later_solvers).contains(&ours), "{ours:?}");
         // The seals this engine writes are as before: its own pair holds.
         assert_eq!(seal_under(&plan, &sealed, &ours.0, &ours.1).as_deref(), Some(sealed.head.dataset_seal.as_str()));
@@ -1039,7 +1055,7 @@ mod tests {
         let (least, most) = summary_bounds(&plan, &[]);
         assert!(least > MAX_INLINE_ANSWER_CHARS && least < most, "{least} {most}");
         let sentence = too_large_before(least, most, Form::Summary);
-        assert!(sentence.contains(&format!("at least {least} characters and at most {most}, more than the 40000")), "{sentence}");
+        assert!(sentence.contains(&format!("at least {least} characters and at most {most}, more than the 42500")), "{sentence}");
         assert!(sentence.ends_with("nothing was solved. To make it smaller: send fewer solves."), "{sentence}");
         let whole = too_large_before(least, most, Form::Full);
         assert!(whole.contains(&format!("at least {least} characters, more than")) && whole.ends_with("or send fewer solves."), "{whole}");

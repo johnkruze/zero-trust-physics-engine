@@ -1,10 +1,10 @@
-//! The entry for `{{name}}`: {{Title}}, the company's own specimen. The
+//! The entry for `{{name}}`: {{Title}}, a company specimen. The
 //! numbers come from the `genesis_solvers` constants and the sentence of each
 //! refusal from the solver's source. Stamped from the kit.
 //!
 //! The description skeleton. Every sentence here is served, so each keeps
 //! the rules a description is held to (`tests/conformance_support`): the
-//! company's own specimen is named so, never by what it lacks; a range is
+//! company specimen is named so, never by what it lacks; a range is
 //! written in plain words; no word "check"; and where the solver is compared
 //! with measurements, `validation` states the range compared on and the
 //! result there in numbers.
@@ -31,7 +31,7 @@ const fn temperature_end(name: &'static str, bound: &'static str) -> Input {
 
 pub const {{NAME}}: Solver = Solver {
     name: "{{name}}",
-    summary: "{{Title}}, the company's own specimen: steady heat conduction along a 0.5 m aluminium rod with its ends held from above 0 K to 933.47 K and heat generated inside it, settled to 1e-13 of its largest temperature: the peak temperature and the heat leaving each end.",
+    summary: "Company specimen: {{Title}}, steady heat conduction along a 0.5 m aluminium rod with its ends held from above 0 K to 933.47 K and heat generated inside it, settled to 1e-13 of its largest temperature: the peak temperature and the heat leaving each end.",
     inputs: &[
         Input { refusal: Some("EndOutsideSolid"), ..temperature_end("left_temperature_k", "The temperature held at the left end, above 0 K and at most 933.47 K, the rod's melting point.") },
         Input { refusal: Some("EndOutsideSolid"), ..temperature_end("right_temperature_k", "The temperature held at the right end, above 0 K and at most 933.47 K, the rod's melting point.") },
@@ -118,17 +118,20 @@ fn sections() -> Sections {
     }
 }
 
-/// The record in the five parts, in the words of engine 0.12.0: the
-/// company's own specimen says what it is and what it holds, and claims no
+/// The record in the five parts: the object, the data, the tolerance, the
+/// result and the limits. A solver compared with measurements gives its
+/// result as its spec line in numbers (`new_model.py --fitted-on
+/// --compared-with --within --gap`, which also stamps its spec sheet row);
+/// a company specimen says what it is and what it holds, and claims no
 /// outside recomputation it does not have (`OWN_SPECIMEN_SOLVER_RESULT`,
-/// which find_model's test holds an own-specimen solver to).
+/// which find_model's test holds a company-specimen solver to).
 fn validation() -> [String; 5] {
     [
-        "{{Title}}, the company's own specimen: a 0.5 m aluminium rod with its ends held from above 0 K to 933.47 K and heat generated inside it.".to_string(),
+        "Company specimen: {{Title}}, a 0.5 m aluminium rod with its ends held from above 0 K to 933.47 K and heat generated inside it.".to_string(),
         "The company's own constants for this specimen, stated in its description under locked.".to_string(),
         "The ledgers stated under invariants: the heat leaving through the two ends equals the heat generated inside, on every settled field.".to_string(),
         crate::descriptor::OWN_SPECIMEN_SOLVER_RESULT.to_string(),
-        "The company's own specimen: its numbers are those of the rod the company specified, and an answer is that rod's under the solver's equations and inside its stated limits.".to_string(),
+        "Company specimen: its numbers are those of the rod the company specified, and an answer is that rod's under the solver's equations and inside its stated limits.".to_string(),
     ]
 }
 

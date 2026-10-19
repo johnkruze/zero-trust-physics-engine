@@ -573,6 +573,26 @@ pub fn step(
     load: GridLoad,
     dt_s: f64,
 ) -> Result<(), StepReject> {
+    #[cfg(any(test, debug_assertions, feature = "check_exceedances"))]
+    let before = *state;
+    let stepped = step_landed(card, state, frame, load, dt_s);
+    #[cfg(any(test, debug_assertions, feature = "check_exceedances"))]
+    if stepped.is_ok() {
+        crate::exceedance::debug_check("grid_gb", exceedances(card, &before, state, load, dt_s), frame.flags);
+    }
+    stepped
+}
+
+/// The step itself; [`step`] is it with, in a build that checks
+/// (`crate::exceedance::CHECKED`), the check that [`exceedances`] stands for
+/// the flags it wrote.
+fn step_landed(
+    card: &GridGb,
+    state: &mut GridState,
+    frame: &mut LastStateFrame64,
+    load: GridLoad,
+    dt_s: f64,
+) -> Result<(), StepReject> {
     step_as_computed(card, state, frame, load, dt_s)?;
     normal_or_zero_state(state);
     Ok(())
@@ -860,6 +880,102 @@ fn state_is_finite(state: &GridState) -> bool {
         && state.lowest_frequency_hz.is_finite()
         && state.lowest_time_s.is_finite()
         && state.run_loss_mw.is_finite()
+}
+
+/// Every limit a flag of this card can mark: what [`exceedances`] reports
+/// beside a flag's bit (`crate::exceedance`).
+pub const EXCEEDANCE_KINDS: &[crate::exceedance::ExceedanceKind] = &[
+    TRIPS_START_LOW,
+    TRIPS_START_HIGH,
+    TRIPS_INERTIA_LOW,
+    TRIPS_INERTIA_HIGH,
+    TRIPS_DEMAND_LOW,
+    TRIPS_DEMAND_HIGH,
+    TRIPS_LOSS_LOW,
+    TRIPS_LOSS_HIGH,
+    TRIPS_LOSS_CHANGED,
+    PAST_MINUTE,
+    BELOW_FREQUENCY,
+];
+
+use crate::exceedance::{Exceedance, ExceedanceKind, Exceedances, Side};
+
+const TRIPS_WORDS_START: &str = "the span of start frequencies of the compared trips, 49.85 to 50.15 Hz";
+const TRIPS_WORDS_INERTIA: &str = "the span of inertia of the compared trips, 111,000 to 337,000 MW s";
+const TRIPS_WORDS_DEMAND: &str = "the span of demand of the compared trips, 18,163 to 40,829 MW";
+const TRIPS_WORDS_LOSS: &str = "the span of losses of the compared trips, 693 to 1402 MW";
+const TRIPS_START_LOW: ExceedanceKind = ExceedanceKind::fixed("FLAG_OUTSIDE_COMPARED_TRIPS", FLAG_OUTSIDE_COMPARED_TRIPS, "start_frequency_hz", "Hz", Side::Below, START_FREQUENCY_MIN_HZ, TRIPS_WORDS_START);
+const TRIPS_START_HIGH: ExceedanceKind = ExceedanceKind::fixed("FLAG_OUTSIDE_COMPARED_TRIPS", FLAG_OUTSIDE_COMPARED_TRIPS, "start_frequency_hz", "Hz", Side::Above, START_FREQUENCY_MAX_HZ, TRIPS_WORDS_START);
+const TRIPS_INERTIA_LOW: ExceedanceKind = ExceedanceKind::fixed("FLAG_OUTSIDE_COMPARED_TRIPS", FLAG_OUTSIDE_COMPARED_TRIPS, "inertia_mw_s", "MW s", Side::Below, INERTIA_MIN_MW_S, TRIPS_WORDS_INERTIA);
+const TRIPS_INERTIA_HIGH: ExceedanceKind = ExceedanceKind::fixed("FLAG_OUTSIDE_COMPARED_TRIPS", FLAG_OUTSIDE_COMPARED_TRIPS, "inertia_mw_s", "MW s", Side::Above, INERTIA_MAX_MW_S, TRIPS_WORDS_INERTIA);
+const TRIPS_DEMAND_LOW: ExceedanceKind = ExceedanceKind::fixed("FLAG_OUTSIDE_COMPARED_TRIPS", FLAG_OUTSIDE_COMPARED_TRIPS, "demand_mw", "MW", Side::Below, DEMAND_MIN_MW, TRIPS_WORDS_DEMAND);
+const TRIPS_DEMAND_HIGH: ExceedanceKind = ExceedanceKind::fixed("FLAG_OUTSIDE_COMPARED_TRIPS", FLAG_OUTSIDE_COMPARED_TRIPS, "demand_mw", "MW", Side::Above, DEMAND_MAX_MW, TRIPS_WORDS_DEMAND);
+const TRIPS_LOSS_LOW: ExceedanceKind = ExceedanceKind::fixed("FLAG_OUTSIDE_COMPARED_TRIPS", FLAG_OUTSIDE_COMPARED_TRIPS, "loss_mw", "MW", Side::Below, LOSS_MIN_MW, TRIPS_WORDS_LOSS);
+const TRIPS_LOSS_HIGH: ExceedanceKind = ExceedanceKind::fixed("FLAG_OUTSIDE_COMPARED_TRIPS", FLAG_OUTSIDE_COMPARED_TRIPS, "loss_mw", "MW", Side::Above, LOSS_MAX_MW, TRIPS_WORDS_LOSS);
+const TRIPS_LOSS_CHANGED: ExceedanceKind = ExceedanceKind::varying(
+    "FLAG_OUTSIDE_COMPARED_TRIPS",
+    FLAG_OUTSIDE_COMPARED_TRIPS,
+    "loss_mw",
+    "MW",
+    Side::OtherThan,
+    "the run's first loss: each compared trip held one loss",
+);
+const PAST_MINUTE: ExceedanceKind = ExceedanceKind::fixed(
+    "FLAG_PAST_COMPARED_MINUTE",
+    FLAG_PAST_COMPARED_MINUTE,
+    "t_s",
+    "s",
+    Side::Above,
+    TIME_MAX_S,
+    "the minute after the trip compared with measurement, 60 s; set past it by more than the clock's rounding allowance",
+);
+const BELOW_FREQUENCY: ExceedanceKind = ExceedanceKind::fixed(
+    "FLAG_BELOW_COMPARED_FREQUENCY",
+    FLAG_BELOW_COMPARED_FREQUENCY,
+    "frequency_hz",
+    "Hz",
+    Side::Below,
+    FREQUENCY_COMPARED_MIN_HZ,
+    "the lowest frequency compared with measurement, 49.55 Hz",
+);
+
+/// The limits the step from `before` to `after` under `load` over `dt_s`
+/// is past: one record for each limit a flag set on its frame marks. The
+/// conditions are those of [`compared_flags`], each with its own number.
+pub fn exceedances(
+    card: &GridGb,
+    before: &GridState,
+    after: &GridState,
+    load: GridLoad,
+    dt_s: f64,
+) -> Exceedances {
+    let mut records = Exceedances::new();
+    let start = before.start_frequency_hz;
+    records.push_if(start < card.start_frequency_min_hz, Exceedance::at(TRIPS_START_LOW, card.start_frequency_min_hz, start));
+    records.push_if(start > card.start_frequency_max_hz, Exceedance::at(TRIPS_START_HIGH, card.start_frequency_max_hz, start));
+    let inertia = before.inertia_mw_s;
+    records.push_if(inertia < card.inertia_min_mw_s, Exceedance::at(TRIPS_INERTIA_LOW, card.inertia_min_mw_s, inertia));
+    records.push_if(inertia > card.inertia_max_mw_s, Exceedance::at(TRIPS_INERTIA_HIGH, card.inertia_max_mw_s, inertia));
+    let demand = before.demand_mw;
+    records.push_if(demand < card.demand_min_mw, Exceedance::at(TRIPS_DEMAND_LOW, card.demand_min_mw, demand));
+    records.push_if(demand > card.demand_max_mw, Exceedance::at(TRIPS_DEMAND_HIGH, card.demand_max_mw, demand));
+    let loss = load.loss_mw;
+    records.push_if(loss < card.loss_min_mw, Exceedance::at(TRIPS_LOSS_LOW, card.loss_min_mw, loss));
+    records.push_if(loss > card.loss_max_mw, Exceedance::at(TRIPS_LOSS_HIGH, card.loss_max_mw, loss));
+    records.push_if(
+        before.t_s != 0.0 && loss != before.run_loss_mw,
+        Exceedance::at(TRIPS_LOSS_CHANGED, before.run_loss_mw, loss),
+    );
+    let landed_s = before.t_s + dt_s;
+    records.push_if(
+        !(landed_s <= card.time_max_s + card.time_end_allowance_s(dt_s)),
+        Exceedance::at(PAST_MINUTE, card.time_max_s, landed_s),
+    );
+    records.push_if(
+        after.frequency_hz < card.frequency_compared_min_hz,
+        Exceedance::at(BELOW_FREQUENCY, card.frequency_compared_min_hz, after.frequency_hz),
+    );
+    records
 }
 
 #[cfg(test)]

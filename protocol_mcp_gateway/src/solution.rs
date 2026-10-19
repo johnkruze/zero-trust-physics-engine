@@ -10,7 +10,7 @@
 
 use serde::Serialize;
 use serde_json::{Map, Value};
-use sha2::{Digest, Sha256};
+use sha2::{Digest, Sha384};
 
 use crate::DoorError;
 use crate::solvers::{self, Given, GivenValue, Input, Kind, Published, Shape, Solved, Solver};
@@ -76,11 +76,11 @@ const PART_INPUTS: &str = "inputs";
 const PART_VERSION: &str = "engine_version";
 const PART_RESULT: &str = "result";
 const PART_INVARIANTS: &str = "invariants";
-const PART_FIELD: &str = "field_sha256";
+const PART_FIELD: &str = "field_sha384";
 const PART_OUTCOME: &str = "outcome";
 const CAUSE_SEAL: &str = "solution_seal";
 
-/// SHA-256 of each ingredient of `solution_seal`, taken alone. The seal does
+/// SHA-384 of each ingredient of `solution_seal`, taken alone. The seal does
 /// not depend on these. They let a check name the ingredient that changed.
 #[derive(Serialize, Clone)]
 pub struct SealParts {
@@ -88,11 +88,11 @@ pub struct SealParts {
     pub engine_version: String,
     pub result: String,
     pub invariants: String,
-    pub field_sha256: String,
+    pub field_sha384: String,
     pub outcome: String,
 }
 
-/// Every response field except `receipt_sha256`.
+/// Every response field except `receipt_sha384`.
 #[derive(Serialize, Clone)]
 pub struct SolutionDocument {
     pub inputs: Value,
@@ -103,9 +103,16 @@ pub struct SolutionDocument {
     pub iterations: Option<u64>,
     #[serde(serialize_with = "crate::trajectory::serialize_optional_state")]
     pub result: Option<Value>,
+    /// Present only when a flag of `result` is 1 (an envelope of
+    /// `ablator_slab` at 0): for each limit the question is past, the limit,
+    /// the value and the extent past it
+    /// (`src/solver_exceedance.rs`). Outside the solution seal; fixed by the
+    /// sealed request, and covered by the receipt.
+    #[serde(skip_serializing_if = "Vec::is_empty", serialize_with = "crate::serialize_exact_values")]
+    pub exceedances: Vec<Value>,
     #[serde(serialize_with = "crate::trajectory::serialize_optional_state")]
     pub invariants: Option<Value>,
-    pub field_sha256: Option<String>,
+    pub field_sha384: Option<String>,
     /// Present only when the request's parameters carry an instrument's
     /// signature: whose it is. A solve answer without it is the caller's
     /// number. Outside the solution seal, which covers the signature in its
@@ -118,19 +125,21 @@ pub struct SolutionDocument {
     /// chain commitment, outside the solution seal.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub chain: Option<Value>,
+    /// The seal rule, `zero-trust-physics/seal/v2`, just before the receipt.
+    pub seal_rule: &'static str,
 }
 
 #[derive(Serialize)]
 pub struct SolutionResponse {
     #[serde(flatten)]
     pub document: SolutionDocument,
-    pub receipt_sha256: String,
+    pub receipt_sha384: String,
 }
 
 #[derive(Serialize)]
 pub struct SolutionReport {
     pub holds: bool,
-    /// `inputs`, `engine_version`, `result`, `invariants`, `field_sha256`,
+    /// `inputs`, `engine_version`, `result`, `invariants`, `field_sha384`,
     /// `outcome`, `solution_seal`, or null when the solution holds.
     pub cause: Option<String>,
     /// What the check of a whole solution compared, and what it did not.
@@ -201,7 +210,7 @@ pub async fn verify(state: &crate::AppState, body: &Value, text: Option<&str>) -
         "solve",
         given,
         &response.document.solution_seal,
-        Some(&response.receipt_sha256),
+        Some(&response.receipt_sha384),
         &crate::verify_by_request::compared_with_receipt("solved", CAUSE_SEAL),
         crate::verify_by_request::TEXT_NOT_COMPARED,
         version,
@@ -256,7 +265,7 @@ pub(crate) fn seal_with_version(document: &SolutionDocument, version: &str) -> O
         version: version_text(version),
         result_text: values_text(PART_RESULT, document.result.as_ref().and_then(Value::as_object)).ok()?,
         invariants_text: values_text(PART_INVARIANTS, document.invariants.as_ref().and_then(Value::as_object)).ok()?,
-        field: field_text(document.field_sha256.as_deref()),
+        field: field_text(document.field_sha384.as_deref()),
         tail: tail_bytes(&document.outcome, document.iterations, document.reject.as_deref()),
     };
     Some(ingredients.seal())
@@ -596,7 +605,7 @@ pub fn check_in(view: &crate::view::View, body: &Value) -> Result<SolutionReport
         &parts.engine_version,
         &parts.result,
         &parts.invariants,
-        &parts.field_sha256,
+        &parts.field_sha384,
         &parts.outcome,
     ];
     for ((part, posted_digest), digest) in posted_parts.iter().zip(recomputed) {
@@ -654,6 +663,12 @@ impl Prepared {
 #[cfg(test)]
 pub(crate) fn prepare(request: &Value) -> Result<Prepared, DoorError> {
     prepare_in(&crate::view::View::full(), request)
+}
+
+/// The parameters of a request as its solver reads them, or `None` where
+/// the request does not reach its solver (`src/solver_exceedance.rs`).
+pub(crate) fn given_of(request: &Value) -> Option<Given> {
+    prepare_in(&crate::view::View::full(), request).ok().map(|prepared| prepared.given)
 }
 
 pub(crate) fn prepare_in(view: &crate::view::View, request: &Value) -> Result<Prepared, DoorError> {
@@ -1069,6 +1084,7 @@ fn sealed(
         tail: tail_bytes(outcome, iterations, reject),
     };
     let load_source = crate::signed_load::solve_source_of(&request);
+    let exceedances = crate::solver_exceedance::of(&request, result.as_ref());
     let document = SolutionDocument {
         inputs: request,
         engine_version: version,
@@ -1077,12 +1093,14 @@ fn sealed(
         reject_detail,
         iterations,
         result,
+        exceedances,
         invariants,
-        field_sha256: field,
+        field_sha384: field,
         load_source,
         seal_parts: ingredients.parts(),
         solution_seal: ingredients.seal(),
         chain: None,
+        seal_rule: crate::SEAL_RULE,
     };
     let mut document = document;
     if let Some(chain) = chain {
@@ -1093,12 +1111,12 @@ fn sealed(
     })?;
     let response = SolutionResponse {
         document,
-        receipt_sha256: crate::digest_hex(text.as_bytes()),
+        receipt_sha384: crate::digest_hex(text.as_bytes()),
     };
     let wire = serde_json::to_string(&response).map_err(|error| {
         format!("Physical Violation: the response could not be encoded. {error}")
     })?;
-    if wire != crate::append_receipt(&text, &response.receipt_sha256) {
+    if wire != crate::append_receipt(&text, &response.receipt_sha384) {
         return Err(
             "Physical Violation: the receipt does not cover the response bytes.".to_string(),
         );
@@ -1202,7 +1220,7 @@ impl Ingredients {
     /// key (`invariants.` sorts before `result.`), then the field hash, then
     /// the tail.
     fn seal(&self) -> String {
-        let mut hasher = Sha256::new();
+        let mut hasher = Sha384::new();
         hasher.update(&self.request);
         hasher.update(self.version.as_bytes());
         hasher.update(self.invariants_text.as_bytes());
@@ -1218,7 +1236,7 @@ impl Ingredients {
             engine_version: crate::digest_hex(self.version.as_bytes()),
             result: crate::digest_hex(self.result_text.as_bytes()),
             invariants: crate::digest_hex(self.invariants_text.as_bytes()),
-            field_sha256: crate::digest_hex(self.field.as_bytes()),
+            field_sha384: crate::digest_hex(self.field.as_bytes()),
             outcome: crate::digest_hex(&self.tail),
         }
     }
@@ -1240,15 +1258,15 @@ fn tail_bytes(outcome: &str, iterations: Option<u64>, reject: Option<&str>) -> V
     .expect("seal tail encodes")
 }
 
-/// The field hash as it enters the seal: its 64 hex characters, or `null`.
+/// The field hash as it enters the seal: its 96 hex characters, or `null`.
 fn field_text(field: Option<&str>) -> String {
     field.unwrap_or("null").to_string()
 }
 
-/// SHA-256 of the point count as a little-endian `u64`, then each sample as
+/// SHA-384 of the point count as a little-endian `u64`, then each sample as
 /// little-endian `f64` bytes.
 fn field_digest(density: &[f64]) -> String {
-    let mut hasher = Sha256::new();
+    let mut hasher = Sha384::new();
     hasher.update((density.len() as u64).to_le_bytes());
     for sample in density {
         hasher.update(sample.to_le_bytes());
@@ -1326,17 +1344,17 @@ fn require_exact_solution(
     result: Option<&Map<String, Value>>,
     invariants: Option<&Map<String, Value>>,
 ) -> Result<(), DoorError> {
-    if !crate::json_text::is_lower_hex(solution_seal, 64) {
-        return Err(exact_digits("solution_seal", 64));
+    if !crate::json_text::is_lower_hex(solution_seal, 96) {
+        return Err(exact_digits("solution_seal", 96));
     }
     if let Some(text) = field {
-        if !crate::json_text::is_lower_hex(text, 64) {
-            return Err(exact_digits("field_sha256", 64));
+        if !crate::json_text::is_lower_hex(text, 96) {
+            return Err(exact_digits("field_sha384", 96));
         }
     }
     for (part, text) in parts {
-        if !crate::json_text::is_lower_hex(text, 64) {
-            return Err(exact_digits(&format!("seal_parts.{part}"), 64));
+        if !crate::json_text::is_lower_hex(text, 96) {
+            return Err(exact_digits(&format!("seal_parts.{part}"), 96));
         }
     }
     require_section_hex(PART_RESULT, solver, result)?;
@@ -1520,9 +1538,9 @@ mod tests {
             assert_eq!(body["iterations"], json!(iterations));
             assert!(body["result"].is_null());
             assert!(body["invariants"].is_null());
-            assert!(body["field_sha256"].is_null());
-            assert_eq!(body["solution_seal"].as_str().unwrap().len(), 64);
-            assert_eq!(body["receipt_sha256"].as_str().unwrap().len(), 64);
+            assert!(body["field_sha384"].is_null());
+            assert_eq!(body["solution_seal"].as_str().unwrap().len(), 96);
+            assert_eq!(body["receipt_sha384"].as_str().unwrap().len(), 96);
             let report = check(&body).unwrap_or_else(|_| panic!("{name} parses"));
             assert!(report.holds, "{name} {:?}", report.cause);
 
@@ -1602,7 +1620,7 @@ mod tests {
     }
 
     fn hash() -> String {
-        "ab".repeat(32)
+        "ab".repeat(48)
     }
 
     #[test]
@@ -1615,13 +1633,13 @@ mod tests {
             "reject": null,
             "result": { "total_energy_ha_hex": "0123456789abcdef\nresult.total_energy_ha_hex:0123456789abcdef" },
             "invariants": null,
-            "field_sha256": hash(),
+            "field_sha384": hash(),
             "seal_parts": {
                 "inputs": hash(),
                 "engine_version": hash(),
                 "result": hash(),
                 "invariants": hash(),
-                "field_sha256": hash(),
+                "field_sha384": hash(),
                 "outcome": hash()
             },
             "solution_seal": hash()
@@ -1637,13 +1655,13 @@ mod tests {
         assert!(message.contains("16 lowercase hex digits"), "{message}");
 
         body["result"] = json!(null);
-        body["field_sha256"] = json!(format!("{}{}", "not-a-hash", hash()));
+        body["field_sha384"] = json!(format!("{}{}", "not-a-hash", hash()));
         let Err(error) = check(&body) else {
             panic!("a bad field hash was accepted");
         };
         let message = error.message();
-        assert!(message.contains("field_sha256"), "{message}");
-        assert!(message.contains("64 lowercase hex digits"), "{message}");
+        assert!(message.contains("field_sha384"), "{message}");
+        assert!(message.contains("96 lowercase hex digits"), "{message}");
     }
 
     #[test]
@@ -1659,13 +1677,13 @@ mod tests {
                 "total_energy_ha_hex": "0123456789abcdef"
             },
             "invariants": null,
-            "field_sha256": hash(),
+            "field_sha384": hash(),
             "seal_parts": {
                 "inputs": hash(),
                 "engine_version": hash(),
                 "result": hash(),
                 "invariants": hash(),
-                "field_sha256": hash(),
+                "field_sha384": hash(),
                 "outcome": hash()
             },
             "solution_seal": hash()
@@ -1714,7 +1732,7 @@ mod tests {
             version: version_text(forged["engine_version"].as_str().expect("version")),
             result_text: String::new(),
             invariants_text: packed_text,
-            field: field_text(forged["field_sha256"].as_str()),
+            field: field_text(forged["field_sha384"].as_str()),
             tail: tail_bytes(
                 forged["outcome"].as_str().expect("outcome"),
                 forged["iterations"].as_u64(),
@@ -1772,7 +1790,7 @@ mod tests {
     /// inputs gained a floor: the `engine_version`
     /// field, and the six
     /// receipts, each of which covers that field. The new receipts were
-    /// computed outside this code each time, as the SHA-256 of each
+    /// computed outside this code each time, as the SHA-384 of each
     /// response's text before its receipt, closed with a brace; each text
     /// with the earlier version put back gives the earlier receipt. In 0.7.0
     /// the seal came to cover the engine version, a line of its own after the
@@ -1802,28 +1820,36 @@ mod tests {
     /// engine 0.14.0, the same rule, run on this test's own answer texts,
     /// reproduces every 0.11.0 pin with the version put back (seal
     /// 10688f6c...5ff0, engine_version part eb36a60b...f390, receipt
-    /// c5b6d0b6...6878) and gives the 0.12.0 values pinned here. The hash of
+    /// c5b6d0b6...6878) and gives the 0.12.0 values. In the solvers' 0.13.0
+    /// the same rule reproduces every 0.12.0 pin with the version put back
+    /// (seal 6fd55b35...35ea, engine_version part e54ba43c...a2b0, receipt
+    /// 99912ec5...4446) and gives the 0.13.0 values pinned here. The hash of
     /// the request, of the result, of the invariants, of the field and of the
     /// outcome have not moved: of the six seal parts only `engine_version`
-    /// has.
+    /// has. Under seal rule v2 (engine 0.15.0) every hash is SHA-384: the
+    /// texts hashed are the 0.12.0 ones, and `seal_rule` stands before the
+    /// receipt. The first SHA-384 pins hashed the version line of 0.12.0
+    /// (engine_version part 9f2ee72a...d140); they are now taken with this
+    /// answer's own version, 0.13.0 (e1d5205f...694b), and only that part,
+    /// the seals and the receipts moved.
     #[test]
     fn the_proof_of_an_atom_is_bit_for_bit_the_proof_before_solvers_were_named() {
         let request = json!({ "solver": "atom_dft", "parameters": { "atomic_number": 3 } });
         let response = seal_atom(request, Ok(made_up_state())).expect("sealed");
         assert_eq!(
             response.document.solution_seal,
-            "6fd55b35beeb5d4c27adf07c2968ef25f846a871a2f4cddb00a7365d64ae35ea"
+            "9f6d076a8f6483ed821c90d15439ae56f0e7262880caec5e191cfb1c78d5dce159e062abecdc700f7da8a0ba2ca16874"
         );
         assert_eq!(
             serde_json::to_string(&response).unwrap(),
             concat!(
-                r#"{"inputs":{"solver":"atom_dft","parameters":{"atomic_number":3}},"engine_version":"genesis_solvers_v0.12.0","outcome":"converged","reject":null,"reject_detail":null,"iterations":7,"#,
+                r#"{"inputs":{"solver":"atom_dft","parameters":{"atomic_number":3}},"engine_version":"genesis_solvers_v0.13.0","outcome":"converged","reject":null,"reject_detail":null,"iterations":7,"#,
                 r#""result":{"total_energy_ha":-7.25e0,"total_energy_ha_hex":"c01d000000000000","kinetic_energy_ha":7.125e0,"kinetic_energy_ha_hex":"401c800000000000","electron_nucleus_energy_ha":-1.65e1,"electron_nucleus_energy_ha_hex":"c030800000000000","hartree_energy_ha":3.875e0,"hartree_energy_ha_hex":"400f000000000000","exchange_correlation_energy_ha":-1.75e0,"exchange_correlation_energy_ha_hex":"bffc000000000000","#,
                 r#""eigenvalue_1s_ha":-1.875e0,"eigenvalue_1s_ha_hex":"bffe000000000000","occupation_1s":2.0e0,"occupation_1s_hex":"4000000000000000","eigenvalue_2s_ha":-1.0e-1,"eigenvalue_2s_ha_hex":"bfb999999999999a","occupation_2s":1.0e0,"occupation_2s_hex":"3ff0000000000000","eigenvalue_2p_ha":-0.0e0,"eigenvalue_2p_ha_hex":"8000000000000000","occupation_2p":0.0e0,"occupation_2p_hex":"0000000000000000"},"#,
                 r#""invariants":{"electron_count":3.0000000001e0,"electron_count_hex":"4008000000036f9c","virial_residual_ha":-1.953125e-6,"virial_residual_ha_hex":"bec0624dd2f1a9fc"},"#,
-                r#""field_sha256":"1a9df62a92e88e4a0cf1cd97fa0cedfde9535f809f238b045b96e8c6033923c5","#,
-                r#""seal_parts":{"inputs":"e57be020a41482d3fc714652587ebb43e497ba6ce06e40cb8c3b6e2e2693c98b","engine_version":"e54ba43c1f265471435c46a330ca4e5ef1e80b1e6c44fb8e3a664f4ba299a2b0","result":"1c15b61ca9b42bdba55397c2dceb2da92eca1b61e58d22fd42cd34163afdf58e","invariants":"590bcb8e8f0d5b8941c276f3a620b5a9960996cdd65a05a0a297305d75a975c1","field_sha256":"fec27d21016c7846505738c86f771be21347f175fdc1108680e8e6df46db079c","outcome":"daec2f73173111450f5ffd61d25450b3e9da9d0d55f370590d4ad61736c4bdea"},"#,
-                r#""solution_seal":"6fd55b35beeb5d4c27adf07c2968ef25f846a871a2f4cddb00a7365d64ae35ea","receipt_sha256":"99912ec592a889d009af7464a0fe0daab0a44a941ab1ac432d368639d8a84446"}"#,
+                r#""field_sha384":"9dc6e363c42bd13f21e18c52c81eb70db770967b443c6855185108f9ae8da22a7aa7ef1648e154e7cba9f02405b3f5c5","#,
+                r#""seal_parts":{"inputs":"05fa7a4c2abe6c50fe76964dd7374b5b8edef9a2c857a7a202a0636e7a2d41ff92d0fb9c72bacf739df16dfaeef40ab6","engine_version":"e1d5205f69c5c047b8c0392c50bba522e78a68efa665d8a81aa4fe4cc22a9a4b795c2b5768558d9aace9b3af0a3c694b","result":"6c06f9029b019cbccf521435dd9cfeb1385f914abc4109ac37d0c5242b5c9d254be9d7fdd1cb01976611f396b94c68ca","invariants":"4f4cea2415dc8732af268bfc4d9d6ae562e774d76ccd9057f94dde2eccf7e1a766cbe256831e7b1b301959684e4fe50c","field_sha384":"121afca9192465ce4d9774dcef41b94af0cbffe8355d40c2a621673c168f16de6e47c7d53d79cf4b8a95cbe6c85943b2","outcome":"013a8cd60aa8cf52545258a4e6e1e73645211c1c57871bd71cb3e5fb92857066c28dda80569adbc42bb0ebf9237c46f7"},"#,
+                r#""solution_seal":"9f6d076a8f6483ed821c90d15439ae56f0e7262880caec5e191cfb1c78d5dce159e062abecdc700f7da8a0ba2ca16874","seal_rule":"zero-trust-physics/seal/v2","receipt_sha384":"af18ff4869863c4b9daf0734775c3d1dbe61bfce6af778ca6c5a40cc5efe1711f3d9ed563dfca3a30a56a83aa839afdc"}"#,
             )
         );
         let report = check(&posted(&response)).unwrap_or_else(|_| panic!("the solution parses"));
@@ -1833,39 +1859,39 @@ mod tests {
             (
                 AtomReject::NotConverged { iterations: 80 },
                 "Solver Refusal: atom_dft did not return a ground state (NotConverged). not converged after 80 iterations.",
-                "31405c831bc56e30b64f2520998b0a0d937a2b2618fbd2ef052381e04c6a3179",
-                "3d94cce52ec2e2f70cf9318ea489075160594b26aa879a065563e861234794ed",
+                "b5301a8214651409e6e3477ae5ee1996e93fd3d5bf15d686ef16ed57ca8cfcbe8915bbee669f990a094262a0bf160ffd",
+                "b0f3225063a2199f6c65d23fc187733d659d7a0ed569e83ecf30d689b044e3ce6cbc7e03d467ff40e2ab02b7a99f5156",
             ),
             (
                 AtomReject::VirialBroken { residual_ha: 0.5 },
                 "Solver Refusal: atom_dft did not return a ground state (VirialBroken). virial residual 0.5 Ha.",
-                "0564435477fbe0888db5ee10ed2e41070daae67b3069af3b41a8566f34c32254",
-                "65b4b727cfb71431653689a676043b9c02fae5f6effb1f8017538abc7abea218",
+                "c2a92c44db26a6f6e02589b4ea8f12f6cc359b8648779f297e6ef33aed1ae9f7f442af41ebca4c91e5d9dbb17260de22",
+                "b2084d3200597ac9402092df1d5accafa5109bdb51c82b8df95c8645cd8db40d7fb88d80a95e8fb13dd800cdfda585d5",
             ),
             (
                 AtomReject::ElectronCountBroken { electron_count: 4.0, atomic_number: 2 },
                 "Solver Refusal: atom_dft did not return a ground state (ElectronCountBroken). electron count 4 is not atomic number 2.",
-                "004207555228a9489081a85c2b3df6e0655b9ded5c46008d332c74d4a352c5d2",
-                "e9bba7708be346e3ed36b4db752030ce49bd023749f2b913eef6b1d55edebeaf",
+                "f909739b8c61f012d81b12711f512473808ed1c9b4d983f84dbcc72e21aebfe71bcac7452f0dd9f9f2ec695be178b2fa",
+                "8e2224342876f249cabc40780a82622b4b4dee8c7e0b6d4248f35c3b3706e7f0bdf1039697ba3290c8a25e6a946e81d9",
             ),
             (
                 AtomReject::NegativeDensity,
                 "Solver Refusal: atom_dft did not return a ground state (NegativeDensity). electron density was negative.",
-                "68c36f6425250f0098e896cb60892c4f45532c2e3f14105c6518c76091a180d2",
-                "03deb8f089456393b34abfd4b7cde1327e3109a204ed90cf2baafcbb11059e88",
+                "607f07fea41ecb44316c884f671eb28f1cf10b2b629650d85b4de4cc2eeabe0071e0606de798b301776d2b84e5523d6e",
+                "6bc4290e139554da56475dfe55f5ec9ae814a1984347c9b6b0eb95cb7fb49d0a1c60b3d77825d52c5a80dee721d3df08",
             ),
             (
                 AtomReject::OrbitalNotBound { n: 3, l: 1 },
                 "Solver Refusal: atom_dft did not return a ground state (OrbitalNotBound). no bound orbital for n=3 l=1.",
-                "db60f94fc0d9cf8cf664782f107bf21f14fb1081caef1bb740b0d4c8b7d32f97",
-                "d9f5266c81a03e50790dedc669e65e3f6968dcece9cec15ad6fd4e132508f784",
+                "231c89b7abbfad77eb8bd50c7151e40251cc14d0bc130676a3dfbf7a568f0575e5ccb8df10989ddd1fd02eb29fb1eb90",
+                "fe5b7cff933a0757a80d151aab3a40f4774bdb4a4abb4d6b0b53878d4105b600e2bf9566c34154f6b2d60a86865b1aeb",
             ),
         ];
         for (reject, detail, solution_seal, receipt) in refusals {
             let response = seal_atom(self::request(), Err(reject)).expect("a refusal is sealed");
             assert_eq!(response.document.reject_detail.as_deref(), Some(detail));
             assert_eq!(response.document.solution_seal, solution_seal, "{detail}");
-            assert_eq!(response.receipt_sha256, receipt, "{detail}");
+            assert_eq!(response.receipt_sha384, receipt, "{detail}");
         }
     }
 
@@ -1976,11 +2002,11 @@ mod tests {
         let said = version_words(document, &theirs);
         assert_eq!(
             said,
-            "The solution_seal covers engine_version: the seal given is this request's solution under engine_version genesis_solvers_v0.10.0, another engine version's, and this engine writes genesis_solvers_v0.12.0, so it does not hold here. The long form, given that answer whole, compares it value by value and names both versions."
+            "The solution_seal covers engine_version: the seal given is this request's solution under engine_version genesis_solvers_v0.10.0, another engine version's, and this engine writes genesis_solvers_v0.13.0, so it does not hold here. The long form, given that answer whole, compares it value by value and names both versions."
         );
         assert_eq!(
             version_words(document, &"0".repeat(64)),
-            "The solution_seal covers engine_version, genesis_solvers_v0.12.0 on this engine: the seal of an answer another engine version gave does not hold here."
+            "The solution_seal covers engine_version, genesis_solvers_v0.13.0 on this engine: the seal of an answer another engine version gave does not hold here."
         );
     }
 

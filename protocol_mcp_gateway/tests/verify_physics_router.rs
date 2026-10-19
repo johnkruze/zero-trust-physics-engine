@@ -1,8 +1,8 @@
 //! The HTTP router seals the LastStateFrame64 the compiled step writes.
 //!
 //! The 16-byte proof is the input commitment, written before `step`.
-//! `sha256_seal` is the frame seal: SHA-256 of all 64 frame bytes.
-//! `receipt_sha256` is SHA-256 of the exact JSON of every other field.
+//! `sha384_seal` is the frame seal: SHA-384 of all 64 frame bytes.
+//! `receipt_sha384` is SHA-384 of the exact JSON of every other field.
 //! A yield, a melt, or a First Law failure is 422 and has neither seal.
 //! Thermodynamic constants are not request fields.
 
@@ -10,24 +10,22 @@ use std::time::Duration;
 
 use genesis_kernel::frame::LastStateFrame64;
 use genesis_kernel::{
-    battery_sag, cable_stretch, cantilever_eth, capsule_stardust, cell_18650pf, cell_2170_m80,
-    tokamak_jet_dte1,
-    cell_2170_model3, crater_ryugu_sci, generator_mmrtg_f1, grid_node,
+    battery_sag, cable_stretch, cantilever_eth, capsule_stardust, cell_18650pf,
+    crater_ryugu_sci, generator_mmrtg_f1, grid_node,
     creep_cmsx6,
     capsule_insight,
-    hydraulic_fluid, reactor_spert3, reactor_spert3_ccore, reactor_spert3_fuel, reactor_triga_jsi, resonance, satellite_lageos1, swing,
+    hydraulic_fluid, reactor_triga_jsi, resonance, satellite_lageos1, swing,
     tesseract, thermal,
     link_gothenburg_10010,
     fingerpad_p02_glass, ti64_lattice, tire_eve_r19_ice,
     accumulator_sbo450,
-    grid_gb,
     solar_system,
     los_jwst_fine_guide,
 };
 use protocol_mcp_gateway::{VerifyPhysicsResponse, app, commit_request_proof};
 use reqwest::Client;
 use serde_json::{Value, json};
-use sha2::{Digest, Sha256};
+use sha2::{Digest, Sha384};
 use tokio::net::TcpListener;
 
 async fn spawn_app() -> String {
@@ -100,8 +98,8 @@ fn blank_frame() -> LastStateFrame64 {
     }
 }
 
-fn sha256_hex(bytes: &[u8]) -> String {
-    let mut hasher = Sha256::new();
+fn sha384_hex(bytes: &[u8]) -> String {
+    let mut hasher = Sha384::new();
     hasher.update(bytes);
     hex::encode(hasher.finalize())
 }
@@ -325,18 +323,6 @@ fn cell_parameters() -> Value {
     })
 }
 
-/// One second of a 4.5 A discharge in the 0 degC block, with the case
-/// between the temperatures of two blocks.
-fn cell_2170_parameters() -> Value {
-    json!({
-        "block_chamber_c": 0.0,
-        "charge_removed_ah": 1.25,
-        "current_a": -4.5,
-        "case_temperature_c": 6.5,
-        "dt_s": cell_2170_m80::Cell2170M80::cell().gate_dt_s().unwrap(),
-    })
-}
-
 /// One step at the ceiling from the start of the scored ring-down, the
 /// compared run's state after 595 steps: both the deflection and the speed
 /// are at work.
@@ -345,21 +331,6 @@ fn cantilever_parameters() -> Value {
         "deflection_m": -0.00104914043915228,
         "velocity_m_s": 0.7408030982848752,
         "dt_s": cantilever_eth::CantileverEth::first_bending_mode().gate_dt_s().unwrap(),
-    })
-}
-
-/// One second of a 7 A discharge of the second cell, part discharged and
-/// aged, with the case below freezing.
-fn cell_2170_model3_parameters() -> Value {
-    json!({
-        "cell_number": 1000.0,
-        "state_of_charge": 0.62,
-        "capacity_ah": 4.25,
-        "case_temperature_least_c": -3.5,
-        "case_temperature_most_c": -3.5,
-        "current_a": 7.0,
-        "case_temperature_c": -3.5,
-        "dt_s": cell_2170_model3::Cell2170Model3::cell().gate_dt_s().unwrap(),
     })
 }
 
@@ -758,76 +729,6 @@ fn battery_probes(state: &battery_sag::PackState) -> Vec<(&'static str, Probe)> 
     ]
 }
 
-fn cell_2170_probes(state: &cell_2170_m80::CellState) -> Vec<(&'static str, Probe)> {
-    vec![
-        num("t_s", state.t_s),
-        num("block_chamber_c", state.block_chamber_c),
-        num("charge_removed_ah", state.charge_removed_ah),
-        num("charge_level", state.charge_level),
-        num("current_a", state.current_a),
-        num("case_temperature_c", state.case_temperature_c),
-        num("terminal_v", state.terminal_v),
-        num("open_circuit_v", state.open_circuit_v),
-        num("branch_v", state.branch_v),
-        num("resistance_at_once_ohm", state.resistance_at_once_ohm),
-        num("resistance_branch_ohm", state.resistance_branch_ohm),
-        num("time_constant_s", state.time_constant_s),
-        num("chemical_energy_j", state.chemical_energy_j),
-        num("energy_anchor_j", state.energy_anchor_j),
-        num("electrical_work_j", state.electrical_work_j),
-        num("heat_at_once_j", state.heat_at_once_j),
-        num("branch_energy_j", state.branch_energy_j),
-        num("energy_defect_j", state.energy_defect_j),
-        num(
-            "residual_conservation_error",
-            state.residual_conservation_error,
-        ),
-        num("lower_limit_margin_v", state.lower_limit_margin_v),
-        num("upper_limit_margin_v", state.upper_limit_margin_v),
-    ]
-}
-
-/// One step at the ceiling after the loss of 996 MW on the system of the
-/// card's worked example: 49.942 Hz, 241,000 MW s, 27,132 MW of demand.
-fn grid_gb_parameters() -> Value {
-    json!({
-        "frequency_hz": 49.942,
-        "inertia_mw_s": 241_000.0,
-        "demand_mw": 27_132.0,
-        "loss_mw": 996.0,
-        "dt_s": grid_gb::GridGb::interconnector_loss().gate_dt_s().unwrap(),
-    })
-}
-
-fn grid_gb_probes(state: &grid_gb::GridState) -> Vec<(&'static str, Probe)> {
-    vec![
-        num("t_s", state.t_s),
-        num("frequency_hz", state.frequency_hz),
-        num("response_mw", state.response_mw),
-        num("relief_mw", state.relief_mw),
-        num("net_power_mw", state.net_power_mw),
-        num("frequency_rate_hz_per_s", state.frequency_rate_hz_per_s),
-        num("lowest_frequency_hz", state.lowest_frequency_hz),
-        num("lowest_time_s", state.lowest_time_s),
-        num("start_frequency_hz", state.start_frequency_hz),
-        num("inertia_mw_s", state.inertia_mw_s),
-        num("demand_mw", state.demand_mw),
-        num("kinetic_energy_mw_s", state.kinetic_energy_mw_s),
-        num("kinetic_energy_anchor_mw_s", state.kinetic_energy_anchor_mw_s),
-        num("energy_lost_mw_s", state.energy_lost_mw_s),
-        num("energy_response_mw_s", state.energy_response_mw_s),
-        num(
-            "frequency_deficit_integral_hz_s",
-            state.frequency_deficit_integral_hz_s,
-        ),
-        num("energy_defect_mw_s", state.energy_defect_mw_s),
-        num(
-            "residual_conservation_error",
-            state.residual_conservation_error,
-        ),
-    ]
-}
-
 /// The phase fields of the solar_system card, a position and a velocity for
 /// each of the thirteen bodies, in the card's own order.
 const SOLAR_SYSTEM_POSITION_KEYS: [&str; solar_system::BODIES] = [
@@ -967,51 +868,6 @@ fn link_probes(state: &link_gothenburg_10010::LinkState) -> Vec<(&'static str, P
         num("gauge_minute_elapsed_s", state.gauge_minute_elapsed_s),
         num("gauge_minute_rain_mm_h", state.gauge_minute_rain_mm_h),
         flag("raining", state.raining),
-    ]
-}
-
-fn cell_2170_model3_probes(state: &cell_2170_model3::CellState) -> Vec<(&'static str, Probe)> {
-    let lag = &state.diffusion_lag;
-    vec![
-        num("t_s", state.t_s),
-        num("cell_number", state.cell_number),
-        num("capacity_ah", state.capacity_ah),
-        num("state_of_charge", state.state_of_charge),
-        num("surface_state_of_charge", state.surface_state_of_charge),
-        num("charge_removed_ah", state.charge_removed_ah),
-        num("current_a", state.current_a),
-        num("case_temperature_c", state.case_temperature_c),
-        num("case_temperature_least_c", state.case_temperature_least_c),
-        num("case_temperature_most_c", state.case_temperature_most_c),
-        num("terminal_v", state.terminal_v),
-        num("rest_v", state.rest_v),
-        num("resistance_at_once_ohm", state.resistance_at_once_ohm),
-        num("reaction_overpotential_v", state.reaction_overpotential_v),
-        num("near_full_overpotential_v", state.near_full_overpotential_v),
-        num("hysteresis_v", state.hysteresis_v),
-        num("electrolyte_v", state.electrolyte_v),
-        num("current_mean_a", state.current_mean_a),
-        num("diffusion_lag_1", lag[0]),
-        num("diffusion_lag_2", lag[1]),
-        num("diffusion_lag_3", lag[2]),
-        num("diffusion_lag_4", lag[3]),
-        num("diffusion_lag_5", lag[4]),
-        num("diffusion_lag_6", lag[5]),
-        num("diffusion_lag_7", lag[6]),
-        num("diffusion_lag_8", lag[7]),
-        num("diffusion_lag_9", lag[8]),
-        num("diffusion_lag_10", lag[9]),
-        num("diffusion_lag_11", lag[10]),
-        num("chemical_energy_j", state.chemical_energy_j),
-        num("energy_anchor_j", state.energy_anchor_j),
-        num("electrical_work_j", state.electrical_work_j),
-        num("heat_j", state.heat_j),
-        num("energy_defect_j", state.energy_defect_j),
-        num(
-            "residual_conservation_error",
-            state.residual_conservation_error,
-        ),
-        flag("sustained_above_1c", state.sustained_above_1c),
     ]
 }
 
@@ -1173,51 +1029,6 @@ fn los_probes(state: &los_jwst_fine_guide::LosState) -> Vec<(&'static str, Probe
     ]
 }
 
-/// One step at the ceiling of a 4.5 MJ plasma under 20 MW in an even D-T mix,
-/// at the start of the heated window (a later start carries a pulse on and
-/// arrives with from).
-fn tokamak_parameters() -> Value {
-    json!({
-        "thermal_energy_j": 4.0e6,
-        "fast_ion_energy_j": 0.5e6,
-        "elapsed_time_s": 0.0,
-        "heating_power_w": 20.0e6,
-        "ohmic_power_w": 0.5e6,
-        "line_density_per_m3": 6.0e19,
-        "plasma_current_a": 3.8e6,
-        "toroidal_field_t": 4.0,
-        "tritium_fraction": 0.5,
-        "dt_s": tokamak_jet_dte1::TokamakJetDte1::elmy_h_mode().gate_dt_s().unwrap(),
-    })
-}
-
-fn tokamak_probes(state: &tokamak_jet_dte1::TokamakState) -> Vec<(&'static str, Probe)> {
-    vec![
-        num("t_s", state.t_s),
-        num("thermal_energy_j", state.thermal_energy_j),
-        num("fast_ion_energy_j", state.fast_ion_energy_j),
-        num("fusion_energy_j", state.fusion_energy_j),
-        num("temperature_kev", state.temperature_kev),
-        num("loss_power_w", state.loss_power_w),
-        num("confinement_time_s", state.confinement_time_s),
-        num("slowing_time_s", state.slowing_time_s),
-        num("fusion_power_w", state.fusion_power_w),
-        num("fusion_power_thermal_w", state.fusion_power_thermal_w),
-        num("beta_normalised", state.beta_normalised),
-        num("greenwald_fraction", state.greenwald_fraction),
-        num("safety_factor", state.safety_factor),
-        num("energy_anchor_j", state.energy_anchor_j),
-        num("energy_supplied_j", state.energy_supplied_j),
-        num("energy_lost_j", state.energy_lost_j),
-        num("energy_defect_j", state.energy_defect_j),
-        num(
-            "residual_conservation_error",
-            state.residual_conservation_error,
-        ),
-        flag("near_density_limit", state.near_density_limit),
-    ]
-}
-
 fn cantilever_probes(state: &cantilever_eth::CantileverState) -> Vec<(&'static str, Probe)> {
     vec![
         num("t_s", state.t_s),
@@ -1299,6 +1110,9 @@ fn capsule_probes(state: &capsule_stardust::CapsuleState) -> Vec<(&'static str, 
         num("mach", state.mach),
         num("load_g", state.load_g),
         num("heat_flux_w_m2", state.heat_flux_w_m2),
+        num("stagnation_pressure_pa", state.stagnation_pressure_pa),
+        num("recovery_enthalpy_j_kg", state.recovery_enthalpy_j_kg),
+        num("heat_transfer_coefficient_kg_m2_s", state.heat_transfer_coefficient_kg_m2_s),
         num("drag_loss_j_kg", state.drag_loss_j_kg),
         num("energy_anchor_j_kg", state.energy_anchor_j_kg),
         num("energy_defect_j_kg", state.energy_defect_j_kg),
@@ -1429,32 +1243,6 @@ fn satellite_example_parameters() -> Value {
     )
 }
 
-/// One step at the card's ceiling from cold start, at the reactivity of
-/// opened test 51 (coolant 82 degF).
-fn reactor_parameters() -> Value {
-    json!({
-        "coolant_temperature_k": (82.0 - 32.0) / 1.8 + 273.15,
-        "reactivity_inserted_dollar": 0.9982818460448638,
-        "dt_s": reactor_spert3::ReactorSpert3::e_core_cold_startup().gate_dt_s().unwrap(),
-    })
-}
-
-/// One step at the card's ceiling from the start in the hottest band, at the
-/// middle of that band's span of reactivity and of flow.
-fn reactor_fuel_parameters() -> Value {
-    let reactor = reactor_spert3_fuel::ReactorSpert3Fuel::e_core_low_initial_power();
-    let middle = |low: f64, high: f64| (0.5 * (low + high)).clamp(low, high);
-    json!({
-        "inlet_temperature_k": middle(reactor.band_inlet_min_k[2], reactor.band_inlet_max_k[2]),
-        "reactivity_inserted_dollar": middle(
-            reactor.band_reactivity_min_dollar[2],
-            reactor.band_reactivity_max_dollar[2],
-        ),
-        "coolant_flow_m_per_s": middle(reactor.band_flow_min_m_per_s[2], reactor.band_flow_max_m_per_s[2]),
-        "dt_s": reactor.gate_dt_s().unwrap(),
-    })
-}
-
 /// One step at the card's ceiling from 22 degC with 2.2 printed dollars on the
 /// rod-worth table of core 231, inside the starts compared on that table.
 fn reactor_triga_parameters() -> Value {
@@ -1466,57 +1254,6 @@ fn reactor_triga_parameters() -> Value {
         "rods_dropped": 0.0,
         "dt_s": reactor.gate_dt_s().unwrap(),
     })
-}
-
-/// One step at the card's ceiling from 28 degC at 230 psig with 5000 gpm and 1.1 dollars.
-fn reactor_ccore_parameters() -> Value {
-    let reactor = reactor_spert3_ccore::ReactorSpert3Ccore::c_core_step_transients();
-    json!({
-        "initial_temperature_k": 301.15,
-        "system_pressure_psig": 230.0,
-        "reactivity_inserted_dollar": 1.1,
-        "coolant_flow_m_per_s": 5000.0 * (18.0 / 20000.0) * 0.3048,
-        "dt_s": reactor.gate_dt_s().unwrap(),
-    })
-}
-
-fn reactor_ccore_probes(state: &reactor_spert3_ccore::ReactorState) -> Vec<(&'static str, Probe)> {
-    vec![
-        num("t_s", state.t_s),
-        num("power_mw", state.power_mw),
-        num("energy_mws", state.energy_mws),
-        num("power_rate_mw_per_s", state.power_rate_mw_per_s),
-        num("hot_spot_plate_rise_k", state.hot_spot_plate_rise_k),
-        num("hot_spot_plate_rate_k_per_s", state.hot_spot_plate_rate_k_per_s),
-        num("hot_spot_water_rise_k", state.hot_spot_water_rise_k),
-        num("plate_rise_k", state.plate_rise_k),
-        num("water_rise_k", state.water_rise_k),
-        num("reactivity_net_dollar", state.reactivity_net_dollar),
-        num("initial_temperature_k", state.initial_temperature_k),
-        num("system_pressure_psig", state.system_pressure_psig),
-        num("precursor_1_mw", state.precursor_mw[0]),
-        num("precursor_2_mw", state.precursor_mw[1]),
-        num("precursor_3_mw", state.precursor_mw[2]),
-        num("precursor_4_mw", state.precursor_mw[3]),
-        num("precursor_5_mw", state.precursor_mw[4]),
-        num("precursor_6_mw", state.precursor_mw[5]),
-        num("population_anchor_mw", state.population_anchor_mw),
-        num("feedback_integral_dollar_mws", state.feedback_integral_dollar_mws),
-        num("swept_energy_mws", state.swept_energy_mws),
-        num("hot_spot_swept_energy_mws", state.hot_spot_swept_energy_mws),
-        num("population_defect_mw", state.population_defect_mw),
-        num("energy_defect_mws", state.energy_defect_mws),
-        num("hot_spot_energy_defect_mws", state.hot_spot_energy_defect_mws),
-        num("residual_conservation_error", state.residual_conservation_error),
-        num("peak_power_mw", state.peak_power_mw),
-        num("peak_energy_mws", state.peak_energy_mws),
-        num("peak_time_s", state.peak_time_s),
-        num("plate_rise_max_k", state.plate_rise_max_k),
-        num("plate_rise_max_time_s", state.plate_rise_max_time_s),
-        flag("past_power_peak", state.past_power_peak),
-        flag("past_plate_maximum", state.past_plate_maximum),
-        flag("prompt_supercritical", state.prompt_supercritical),
-    ]
 }
 
 fn reactor_triga_probes(state: &reactor_triga_jsi::ReactorState) -> Vec<(&'static str, Probe)> {
@@ -1550,78 +1287,6 @@ fn reactor_triga_probes(state: &reactor_triga_jsi::ReactorState) -> Vec<(&'stati
         flag("prompt_supercritical", state.prompt_supercritical),
         flag("rod_moving", state.rod_moving),
         flag("rods_dropped", state.rods_dropped),
-    ]
-}
-
-fn reactor_fuel_probes(state: &reactor_spert3_fuel::ReactorState) -> Vec<(&'static str, Probe)> {
-    vec![
-        num("t_s", state.t_s),
-        num("power_mw", state.power_mw),
-        num("energy_mws", state.energy_mws),
-        num("power_rate_mw_per_s", state.power_rate_mw_per_s),
-        num("fuel_temperature_rise_k", state.fuel_temperature_rise_k),
-        num("water_temperature_rise_k", state.water_temperature_rise_k),
-        num("reactivity_net_dollar", state.reactivity_net_dollar),
-        num(
-            "reactivity_inserted_now_dollar",
-            state.reactivity_inserted_now_dollar,
-        ),
-        num("inlet_temperature_k", state.inlet_temperature_k),
-        num("precursor_1_mw", state.precursor_mw[0]),
-        num("precursor_2_mw", state.precursor_mw[1]),
-        num("precursor_3_mw", state.precursor_mw[2]),
-        num("precursor_4_mw", state.precursor_mw[3]),
-        num("precursor_5_mw", state.precursor_mw[4]),
-        num("precursor_6_mw", state.precursor_mw[5]),
-        num("population_anchor_mw", state.population_anchor_mw),
-        num(
-            "insertion_integral_dollar_mws",
-            state.insertion_integral_dollar_mws,
-        ),
-        num("sweep_integral_k2", state.sweep_integral_k2),
-        num("population_defect_mw", state.population_defect_mw),
-        num(
-            "residual_conservation_error",
-            state.residual_conservation_error,
-        ),
-        num("peak_power_mw", state.peak_power_mw),
-        num("peak_energy_mws", state.peak_energy_mws),
-        num("peak_time_s", state.peak_time_s),
-        flag("past_first_maximum", state.past_first_maximum),
-        flag("prompt_supercritical", state.prompt_supercritical),
-        flag("rod_moving", state.rod_moving),
-    ]
-}
-
-fn reactor_probes(state: &reactor_spert3::ReactorState) -> Vec<(&'static str, Probe)> {
-    vec![
-        num("t_s", state.t_s),
-        num("power_mw", state.power_mw),
-        num("energy_mws", state.energy_mws),
-        num("power_rate_mw_per_s", state.power_rate_mw_per_s),
-        num("reactivity_net_dollar", state.reactivity_net_dollar),
-        num("coolant_temperature_k", state.coolant_temperature_k),
-        num("precursor_1_mw", state.precursor_mw[0]),
-        num("precursor_2_mw", state.precursor_mw[1]),
-        num("precursor_3_mw", state.precursor_mw[2]),
-        num("precursor_4_mw", state.precursor_mw[3]),
-        num("precursor_5_mw", state.precursor_mw[4]),
-        num("precursor_6_mw", state.precursor_mw[5]),
-        num("population_anchor_mw", state.population_anchor_mw),
-        num(
-            "reactivity_energy_integral_dollar_mws",
-            state.reactivity_energy_integral_dollar_mws,
-        ),
-        num("population_defect_mw", state.population_defect_mw),
-        num(
-            "residual_conservation_error",
-            state.residual_conservation_error,
-        ),
-        num("peak_power_mw", state.peak_power_mw),
-        num("peak_energy_mws", state.peak_energy_mws),
-        num("peak_time_s", state.peak_time_s),
-        flag("past_first_maximum", state.past_first_maximum),
-        flag("prompt_supercritical", state.prompt_supercritical),
     ]
 }
 
@@ -1991,35 +1656,6 @@ fn integrate(domain: &str, card: &str, params: &Value, proof: [u8; 16]) -> Oracl
                 probes: cell_probes(&state),
             }
         }
-        ("energy", "cell_2170_m80") => {
-            let specimen = cell_2170_m80::Cell2170M80::cell();
-            let mut state = cell_2170_m80::CellState::try_start(
-                &specimen,
-                scalar(params, "block_chamber_c"),
-                scalar(params, "charge_removed_ah"),
-            )
-            .unwrap();
-            let load = cell_2170_m80::CellLoad {
-                current_a: scalar(params, "current_a"),
-                case_temperature_c: scalar(params, "case_temperature_c"),
-            };
-            cell_2170_m80::step(
-                &specimen,
-                &mut state,
-                &mut frame,
-                load,
-                scalar(params, "dt_s"),
-            )
-            .unwrap();
-            // The card sets no flag.
-            assert_eq!(frame.flags, 0);
-            let residual = state.residual_conservation_error;
-            Oracle {
-                frame,
-                residual,
-                probes: cell_2170_probes(&state),
-            }
-        }
         ("energy", "generator_mmrtg_f1") => {
             let generator = generator_mmrtg_f1::GeneratorMmrtgF1::curiosity();
             let mut state = generator_mmrtg_f1::GeneratorState::try_mission_time(
@@ -2132,31 +1768,6 @@ fn integrate(domain: &str, card: &str, params: &Value, proof: [u8; 16]) -> Oracl
                 probes: satellite_probes(&state),
             }
         }
-        ("energy", "reactor_spert3") => {
-            let reactor = reactor_spert3::ReactorSpert3::e_core_cold_startup();
-            let mut state = reactor_spert3::ReactorState::try_cold_start(
-                &reactor,
-                scalar(params, "coolant_temperature_k"),
-            )
-            .unwrap();
-            reactor_spert3::step(
-                &reactor,
-                &mut state,
-                &mut frame,
-                reactor_spert3::ReactorLoad {
-                    reactivity_inserted_dollar: scalar(params, "reactivity_inserted_dollar"),
-                },
-                scalar(params, "dt_s"),
-            )
-            .unwrap();
-            assert_eq!(frame.flags & !reactor_spert3::FLAG_PROMPT_SUPERCRITICAL, 0);
-            let residual = state.residual_conservation_error;
-            Oracle {
-                frame,
-                residual,
-                probes: reactor_probes(&state),
-            }
-        }
         ("signal", "cantilever_eth") => {
             let beam = cantilever_eth::CantileverEth::first_bending_mode();
             let mut state = cantilever_eth::CantileverState::try_phase(
@@ -2179,42 +1790,6 @@ fn integrate(domain: &str, card: &str, params: &Value, proof: [u8; 16]) -> Oracl
                 frame,
                 residual,
                 probes: cantilever_probes(&state),
-            }
-        }
-        ("energy", "cell_2170_model3") => {
-            let specimen = cell_2170_model3::Cell2170Model3::cell();
-            let mut state = cell_2170_model3::CellState::try_rested(
-                &specimen,
-                scalar(params, "cell_number"),
-                scalar(params, "state_of_charge"),
-                scalar(params, "capacity_ah"),
-            )
-            .and_then(|rested| {
-                rested.with_case_span(
-                    &specimen,
-                    scalar(params, "case_temperature_least_c"),
-                    scalar(params, "case_temperature_most_c"),
-                )
-            })
-            .unwrap();
-            let load = cell_2170_model3::CellLoad {
-                current_a: scalar(params, "current_a"),
-                case_temperature_c: scalar(params, "case_temperature_c"),
-            };
-            cell_2170_model3::step(
-                &specimen,
-                &mut state,
-                &mut frame,
-                load,
-                scalar(params, "dt_s"),
-            )
-            .unwrap();
-            assert_eq!(frame.flags & !cell_2170_model3::FLAG_SUSTAINED_ABOVE_1C, 0);
-            let residual = state.residual_conservation_error;
-            Oracle {
-                frame,
-                residual,
-                probes: cell_2170_model3_probes(&state),
             }
         }
         ("materials", "creep_cmsx6") => {
@@ -2242,38 +1817,6 @@ fn integrate(domain: &str, card: &str, params: &Value, proof: [u8; 16]) -> Oracl
                 frame,
                 residual,
                 probes: creep_probes(&state),
-            }
-        }
-        ("energy", "reactor_spert3_ccore") => {
-            let reactor = reactor_spert3_ccore::ReactorSpert3Ccore::c_core_step_transients();
-            let mut state = reactor_spert3_ccore::ReactorState::try_start(
-                &reactor,
-                scalar(params, "initial_temperature_k"),
-                scalar(params, "system_pressure_psig"),
-            )
-            .unwrap();
-            reactor_spert3_ccore::step(
-                &reactor,
-                &mut state,
-                &mut frame,
-                reactor_spert3_ccore::ReactorLoad {
-                    reactivity_inserted_dollar: scalar(params, "reactivity_inserted_dollar"),
-                    coolant_flow_m_per_s: scalar(params, "coolant_flow_m_per_s"),
-                },
-                scalar(params, "dt_s"),
-            )
-            .unwrap();
-            assert_eq!(
-                frame.flags
-                    & !(reactor_spert3_ccore::FLAG_PROMPT_SUPERCRITICAL
-                        | reactor_spert3_ccore::FLAG_PAST_POWER_PEAK),
-                0
-            );
-            let residual = state.residual_conservation_error;
-            Oracle {
-                frame,
-                residual,
-                probes: reactor_ccore_probes(&state),
             }
         }
         ("energy", "reactor_triga_jsi") => {
@@ -2307,37 +1850,6 @@ fn integrate(domain: &str, card: &str, params: &Value, proof: [u8; 16]) -> Oracl
                 frame,
                 residual,
                 probes: reactor_triga_probes(&state),
-            }
-        }
-        ("energy", "reactor_spert3_fuel") => {
-            let reactor = reactor_spert3_fuel::ReactorSpert3Fuel::e_core_low_initial_power();
-            let mut state = reactor_spert3_fuel::ReactorState::try_start(
-                &reactor,
-                scalar(params, "inlet_temperature_k"),
-            )
-            .unwrap();
-            reactor_spert3_fuel::step(
-                &reactor,
-                &mut state,
-                &mut frame,
-                reactor_spert3_fuel::ReactorLoad {
-                    reactivity_inserted_dollar: scalar(params, "reactivity_inserted_dollar"),
-                    coolant_flow_m_per_s: scalar(params, "coolant_flow_m_per_s"),
-                },
-                scalar(params, "dt_s"),
-            )
-            .unwrap();
-            assert_eq!(
-                frame.flags
-                    & !(reactor_spert3_fuel::FLAG_PROMPT_SUPERCRITICAL
-                        | reactor_spert3_fuel::FLAG_ROD_MOVING),
-                0
-            );
-            let residual = state.residual_conservation_error;
-            Oracle {
-                frame,
-                residual,
-                probes: reactor_fuel_probes(&state),
             }
         }
         ("aerospace", "crater_ryugu_sci") => {
@@ -2386,34 +1898,6 @@ fn integrate(domain: &str, card: &str, params: &Value, proof: [u8; 16]) -> Oracl
                 frame,
                 residual,
                 probes: link_probes(&state),
-            }
-        }
-        ("energy", "grid_gb") => {
-            let specimen = grid_gb::GridGb::interconnector_loss();
-            let mut state = grid_gb::GridState::try_start(
-                &specimen,
-                scalar(params, "frequency_hz"),
-                scalar(params, "inertia_mw_s"),
-                scalar(params, "demand_mw"),
-            )
-            .unwrap();
-            let load = grid_gb::GridLoad {
-                loss_mw: scalar(params, "loss_mw"),
-            };
-            grid_gb::step(
-                &specimen,
-                &mut state,
-                &mut frame,
-                load,
-                scalar(params, "dt_s"),
-            )
-            .unwrap();
-            assert_eq!(frame.flags, 0);
-            let residual = state.residual_conservation_error;
-            Oracle {
-                frame,
-                residual,
-                probes: grid_gb_probes(&state),
             }
         }
         ("aerospace", "solar_system") => {
@@ -2543,38 +2027,6 @@ fn integrate(domain: &str, card: &str, params: &Value, proof: [u8; 16]) -> Oracl
                 probes: fingerpad_probes(&state),
             }
         }
-        ("energy", "tokamak_jet_dte1") => {
-            let tokamak = tokamak_jet_dte1::TokamakJetDte1::elmy_h_mode();
-            let mut state = tokamak_jet_dte1::TokamakState::try_continue(
-                &tokamak,
-                scalar(params, "elapsed_time_s"),
-                scalar(params, "thermal_energy_j"),
-                scalar(params, "fast_ion_energy_j"),
-            )
-            .unwrap();
-            tokamak_jet_dte1::step(
-                &tokamak,
-                &mut state,
-                &mut frame,
-                tokamak_jet_dte1::TokamakLoad {
-                    heating_power_w: scalar(params, "heating_power_w"),
-                    ohmic_power_w: scalar(params, "ohmic_power_w"),
-                    line_density_per_m3: scalar(params, "line_density_per_m3"),
-                    plasma_current_a: scalar(params, "plasma_current_a"),
-                    toroidal_field_t: scalar(params, "toroidal_field_t"),
-                    tritium_fraction: scalar(params, "tritium_fraction"),
-                },
-                scalar(params, "dt_s"),
-            )
-            .unwrap();
-            assert_eq!(frame.flags & !tokamak_jet_dte1::FLAG_NEAR_DENSITY_LIMIT, 0);
-            let residual = state.residual_conservation_error;
-            Oracle {
-                frame,
-                residual,
-                probes: tokamak_probes(&state),
-            }
-        }
         _ => panic!("oracle has no route for {domain}/{card}"),
     }
 }
@@ -2589,7 +2041,7 @@ fn forged_frame_seal(residual: f64) -> String {
         flags: 0,
         proof: [0; 16],
     };
-    sha256_hex(&forged.to_bytes())
+    sha384_hex(&forged.to_bytes())
 }
 
 async fn assert_real_seal(
@@ -2609,7 +2061,7 @@ async fn assert_real_seal(
     let response: VerifyPhysicsResponse = serde_json::from_str(&text).unwrap();
     assert_eq!(
         response.engine_version,
-        "genesis_kernel_v0.12.0"
+        "genesis_kernel_v0.13.0"
     );
     assert_eq!(response.inputs, parsed);
     assert_eq!(
@@ -2625,59 +2077,59 @@ async fn assert_real_seal(
         residual.to_bits(),
         "response residual is not the f64 thermodynamic residual"
     );
-    let seal = sha256_hex(&frame.to_bytes());
+    let seal = sha384_hex(&frame.to_bytes());
     // The proof covers the pair with the parameters, not the parameters alone.
     let mut unnamed = frame;
     unnamed.proof = commit_request_proof(&parsed["parameters"]);
     assert_ne!(
         seal,
-        sha256_hex(&unnamed.to_bytes()),
+        sha384_hex(&unnamed.to_bytes()),
         "seal hashed the parameters without the domain and the card"
     );
     let mut naked = frame;
     naked.proof = [0; 16];
     assert_ne!(
         seal,
-        sha256_hex(&naked.to_bytes()),
+        sha384_hex(&naked.to_bytes()),
         "seal hashed the frame with a zero proof slot"
     );
-    assert_eq!(response.sha256_seal, seal);
-    assert_eq!(response.sha256_seal.len(), 64);
+    assert_eq!(response.sha384_seal, seal);
+    assert_eq!(response.sha384_seal.len(), 96);
     assert!(
         response
-            .sha256_seal
+            .sha384_seal
             .chars()
             .all(|c| matches!(c, '0'..='9' | 'a'..='f'))
     );
-    assert_ne!(response.sha256_seal, forged_frame_seal(residual));
+    assert_ne!(response.sha384_seal, forged_frame_seal(residual));
     let (document, receipt) = split_receipt(&text);
-    assert_eq!(receipt, response.receipt_sha256);
-    assert_eq!(sha256_hex(document.as_bytes()), receipt);
-    assert_ne!(receipt, response.sha256_seal);
-    assert!(document.contains(&format!("\"sha256_seal\":\"{seal}\"")));
-    assert!(!document.contains("receipt_sha256"));
+    assert_eq!(receipt, response.receipt_sha384);
+    assert_eq!(sha384_hex(document.as_bytes()), receipt);
+    assert_ne!(receipt, response.sha384_seal);
+    assert!(document.contains(&format!("\"sha384_seal\":\"{seal}\"")));
+    assert!(!document.contains("receipt_sha384"));
     let needle = "\"t_s_hex\":\"";
     let at = document.find(needle).expect("t_s hex") + needle.len();
     let mut forged = document.into_bytes();
     forged[at] = if forged[at] == b'0' { b'1' } else { b'0' };
     let forged = String::from_utf8(forged).unwrap();
-    assert!(forged.contains(&format!("\"sha256_seal\":\"{seal}\"")));
+    assert!(forged.contains(&format!("\"sha384_seal\":\"{seal}\"")));
     assert_ne!(
-        sha256_hex(forged.as_bytes()),
+        sha384_hex(forged.as_bytes()),
         receipt,
         "a state-bit change left the receipt intact while the frame seal still matched"
     );
-    response.sha256_seal
+    response.sha384_seal
 }
 
 fn split_receipt(text: &str) -> (String, String) {
-    const MARKER: &str = ",\"receipt_sha256\":\"";
+    const MARKER: &str = ",\"receipt_sha384\":\"";
     let pos = text
         .rfind(MARKER)
         .unwrap_or_else(|| panic!("receipt missing from {text}"));
     assert!(text.ends_with("\"}"), "{text}");
     let receipt = text[pos + MARKER.len()..text.len() - 2].to_string();
-    assert_eq!(receipt.len(), 64, "{receipt}");
+    assert_eq!(receipt.len(), 96, "{receipt}");
     assert!(
         receipt.chars().all(|c| matches!(c, '0'..='9' | 'a'..='f')),
         "{receipt}"
@@ -2687,11 +2139,11 @@ fn split_receipt(text: &str) -> (String, String) {
 
 fn assert_no_seal(text: &str) {
     assert!(
-        !text.contains("sha256_seal"),
+        !text.contains("sha384_seal"),
         "rejected response wrote a frame seal: {text}"
     );
     assert!(
-        !text.contains("receipt_sha256"),
+        !text.contains("receipt_sha384"),
         "rejected response wrote a receipt: {text}"
     );
 }
@@ -3016,23 +2468,16 @@ async fn v2_cards_seal_the_integrated_frame() {
             "satellite_lageos1",
             satellite_example_parameters(),
         ),
-        ("energy", "reactor_spert3", reactor_parameters()),
-        ("energy", "cell_2170_m80", cell_2170_parameters()),
         ("signal", "cantilever_eth", cantilever_parameters()),
-        ("energy", "cell_2170_model3", cell_2170_model3_parameters()),
         ("materials", "creep_cmsx6", creep_parameters()),
         ("aerospace", "capsule_insight", capsule_insight_parameters()),
-        ("energy", "reactor_spert3_fuel", reactor_fuel_parameters()),
         ("energy", "reactor_triga_jsi", reactor_triga_parameters()),
-        ("energy", "reactor_spert3_ccore", reactor_ccore_parameters()),
         ("aerospace", "crater_ryugu_sci", crater_parameters()),
         ("signal", "link_gothenburg_10010", link_parameters()),
-        ("energy", "grid_gb", grid_gb_parameters()),
         ("aerospace", "solar_system", solar_system_parameters()),
         ("materials", "tire_eve_r19_ice", tire_parameters()),
         ("energy", "accumulator_sbo450", accumulator_parameters()),
         ("aerospace", "los_jwst_fine_guide", los_parameters()),
-        ("energy", "tokamak_jet_dte1", tokamak_parameters()),
         ("materials", "fingerpad_p02_glass", fingerpad_parameters()),
     ];
     let mut seals = Vec::new();
@@ -3398,7 +2843,7 @@ async fn a_sealed_step_names_its_card() {
     assert!(text.starts_with(&format!("{{\"inputs\":{cell},")), "{text}");
 }
 
-/// The worked step in the map: the request, its sealed text, its SHA-256, and
+/// The worked step in the map: the request, its sealed text, its SHA-384, and
 /// the 16 proof bytes at its head.
 #[test]
 fn the_step_proof_is_the_head_of_the_hash_of_the_whole_request() {
@@ -3407,8 +2852,8 @@ fn the_step_proof_is_the_head_of_the_hash_of_the_whole_request() {
     )
     .unwrap();
     let sealed = r#"{"card":"thermal","domain":"energy","parameters":{"ambient_k":x4072526666666666,"dt_s":x3fb999999999999a,"heat_power_w":x3ff0000000000000,"temperature_k":x4072526666666666}}"#;
-    let digest = sha256_hex(sealed.as_bytes());
-    assert_eq!(digest, "f7a263c5660593ffa2a9cb60eed8b70f108b70485725b694f59321a2a0dc70e1");
+    let digest = sha384_hex(sealed.as_bytes());
+    assert_eq!(digest, "4a23f3716ec13d3ba102e1cc87ef110874c8ca3b46a01a8b6970281aa79e3db2de38071b7e8601a4ec4871897d2863be");
     assert_eq!(hex::encode(commit_request_proof(&request)), &digest[..32]);
 }
 
@@ -3817,8 +3262,14 @@ async fn an_unknown_pair_in_aerospace_is_404() {
     .await;
 }
 
-/// Each of the thirty-one cards with a request it lands, and its own step floor.
-fn every_card_with_its_floor() -> [(&'static str, &'static str, Value, f64); 31] {
+/// Each of the twenty-four cards with a request it lands, and its own step
+/// floor. From 0.15.0 the seven cards whose served model is a twin kernel
+/// (reactor_spert3, reactor_spert3_ccore, grid_gb, cell_2170_model3,
+/// tokamak_jet_dte1) or is retired (cell_2170_m80, reactor_spert3_fuel) are
+/// not here: this file's oracle steps the retired kernels, and the served
+/// twins are held by their own router tests and by refusal_names' floor test
+/// on every card.
+fn every_card_with_its_floor() -> [(&'static str, &'static str, Value, f64); 24] {
     [
         (
             "materials",
@@ -3913,32 +3364,10 @@ fn every_card_with_its_floor() -> [(&'static str, &'static str, Value, f64); 31]
                 .unwrap(),
         ),
         (
-            "energy",
-            "reactor_spert3",
-            reactor_parameters(),
-            reactor_spert3::ReactorSpert3::e_core_cold_startup()
-                .floor_dt_s()
-                .unwrap(),
-        ),
-        (
-            "energy",
-            "cell_2170_m80",
-            cell_2170_parameters(),
-            cell_2170_m80::Cell2170M80::cell().floor_dt_s().unwrap(),
-        ),
-        (
             "signal",
             "cantilever_eth",
             cantilever_parameters(),
             cantilever_eth::CantileverEth::first_bending_mode()
-                .floor_dt_s()
-                .unwrap(),
-        ),
-        (
-            "energy",
-            "cell_2170_model3",
-            cell_2170_model3_parameters(),
-            cell_2170_model3::Cell2170Model3::cell()
                 .floor_dt_s()
                 .unwrap(),
         ),
@@ -3958,25 +3387,9 @@ fn every_card_with_its_floor() -> [(&'static str, &'static str, Value, f64); 31]
         ),
         (
             "energy",
-            "reactor_spert3_fuel",
-            reactor_fuel_parameters(),
-            reactor_spert3_fuel::ReactorSpert3Fuel::e_core_low_initial_power()
-                .floor_dt_s()
-                .unwrap(),
-        ),
-        (
-            "energy",
             "reactor_triga_jsi",
             reactor_triga_parameters(),
             reactor_triga_jsi::ReactorTrigaJsi::core_56_pulse_mode()
-                .floor_dt_s()
-                .unwrap(),
-        ),
-        (
-            "energy",
-            "reactor_spert3_ccore",
-            reactor_ccore_parameters(),
-            reactor_spert3_ccore::ReactorSpert3Ccore::c_core_step_transients()
                 .floor_dt_s()
                 .unwrap(),
         ),
@@ -3995,12 +3408,6 @@ fn every_card_with_its_floor() -> [(&'static str, &'static str, Value, f64); 31]
             link_gothenburg_10010::LinkGothenburg10010::sublink_587()
                 .floor_dt_s()
                 .unwrap(),
-        ),
-        (
-            "energy",
-            "grid_gb",
-            grid_gb_parameters(),
-            grid_gb::GridGb::interconnector_loss().floor_dt_s().unwrap(),
         ),
         (
             "aerospace",
@@ -4029,14 +3436,6 @@ fn every_card_with_its_floor() -> [(&'static str, &'static str, Value, f64); 31]
             "los_jwst_fine_guide",
             los_parameters(),
             los_jwst_fine_guide::LosJwstFineGuide::observatory()
-                .floor_dt_s()
-                .unwrap(),
-        ),
-        (
-            "energy",
-            "tokamak_jet_dte1",
-            tokamak_parameters(),
-            tokamak_jet_dte1::TokamakJetDte1::elmy_h_mode()
                 .floor_dt_s()
                 .unwrap(),
         ),
@@ -4073,10 +3472,11 @@ async fn a_step_at_each_card_floor_lands_and_the_next_number_down_is_refused() {
             text,
             format!(
                 // Re-pinned for 0.10.1: a step below the floor carries a name, StepNotOneSecond on the 2170 cell and DtBelowFloor on every other card.
+                // From 0.15.0 the retired cell_2170_m80 is not in the list, and every card here names DtBelowFloor.
                 "Physical Violation: 'dt_s' {} is below {} s, the step floor of the {card} card ({}).",
                 protocol_mcp_gateway::message_number(below),
                 protocol_mcp_gateway::message_number(floor),
-                if card == "cell_2170_m80" { "StepNotOneSecond" } else { "DtBelowFloor" }
+                "DtBelowFloor"
             )
         );
         assert_no_seal(&text);

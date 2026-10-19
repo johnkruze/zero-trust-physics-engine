@@ -216,7 +216,7 @@ const REFUSALS: &[Refusal] = &[
 ];
 
 fn field_words() -> String {
-    "SHA-256 of the level count as 8 little-endian bytes, then the settled depth of each level in metres as little-endian f64 bytes.".to_string()
+    "SHA-384 of the level count as 8 little-endian bytes, then the settled depth of each level in metres as little-endian f64 bytes.".to_string()
 }
 
 fn sections() -> Sections {
@@ -246,7 +246,7 @@ fn sections() -> Sections {
             "compared_salinity_min": column::COMPARED_SALINITY_MIN,
             "compared_salinity_max": column::COMPARED_SALINITY_MAX,
             "compared_height_above_bottom_max_m": column::COMPARED_HEIGHT_ABOVE_BOTTOM_MAX_M,
-            "compared": "The envelope of the 761 casts compared with measurement, every level as the compared request gave it: 632 on legs 7, 8, 9, 10 and 13 of Knorr cruise 145, not used to set the comparison, and 129 on leg 6, which set it. A cast outside it is answered with the same equations.",
+            "compared": "The envelope of the 761 casts compared with measurement, every level as the compared request gave it: 632 on legs 7, 8, 9, 10 and 13 of Knorr cruise 145, not used to set the comparison, and 129 on leg 6, which set it. A cast outside it is answered as a cast inside it is: by the same equations, outcome converged, with its solution_seal and the same result fields, and no flag or field marks it as outside. Inside the envelope or outside it, a cast is refused only by name, at the limits the inputs and refusals state: the range of the Gibbs function, 0 to 10000 dbar, Practical Salinity 0 to 41.8 and up to 40 degC (PressureOutOfRange, SalinityOutOfRange, TemperatureOutOfRange); the freezing temperature of the level's water (TemperatureBelowFreezing); a latitude outside -90 to 90 degrees (LatitudeOutOfRange); a last level more than 100 m above the sea floor (HeightAboveBottomOutOfRange); the count and spacing of the levels; and a column that does not settle (ColumnNotSettled, HydrostaticBalanceBroken).",
             "layer": "The layer between two levels has the mean of their specific volumes, gravity at its middle depth, and the mean of their 1/c for the echo. The layer from the sea surface to the first level has the first level's water, and the water from the last level to the sea floor the last level's sound speed. The height above bottom is given in metres, so no density enters below the last level.",
             "fitted": "Nothing.",
         }),

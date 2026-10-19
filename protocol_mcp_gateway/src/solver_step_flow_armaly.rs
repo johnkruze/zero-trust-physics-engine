@@ -146,7 +146,7 @@ pub fn reject_name(reject: &StepReject) -> &'static str {
 }
 
 fn field_words() -> String {
-    "SHA-256 of the count of the numbers that follow as 8 little-endian bytes, which is twice the number of grid nodes (321 columns of 51), then the stream function at every node, column by column from the inlet and floor to upper wall within a column, in mm times the mean inlet speed, then the vorticity at every node in the same order, in mean inlet speeds per mm, all as little-endian f64 bytes. Nodes inside the step hold zero.".to_string()
+    "SHA-384 of the count of the numbers that follow as 8 little-endian bytes, which is twice the number of grid nodes (321 columns of 51), then the stream function at every node, column by column from the inlet and floor to upper wall within a column, in mm times the mean inlet speed, then the vorticity at every node in the same order, in mean inlet speeds per mm, all as little-endian f64 bytes. Nodes inside the step hold zero.".to_string()
 }
 
 fn sections() -> Sections {

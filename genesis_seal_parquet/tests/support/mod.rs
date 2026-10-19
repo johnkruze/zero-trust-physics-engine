@@ -163,7 +163,7 @@ pub fn fabricated_run(request: Value, steps: u64, mark: u8, state: Value) -> Val
 pub fn fabricated_ended_run(request: Value, asked: u64, landed: u64, mark: u8, state: Value, end: &str) -> Value {
     let mut run = fabricated_run(request, landed, mark, state);
     let last = run["frames"].as_array().unwrap().last().unwrap()["link"].as_str().unwrap().to_string();
-    let mut link = [0_u8; 32];
+    let mut link = [0_u8; 48];
     link.copy_from_slice(&hex::decode(last).unwrap());
     let digest = run["state_digest"].as_str().unwrap().to_string();
     run["outcome"] = json!("ended");
@@ -238,8 +238,8 @@ pub fn edit_row(rows: &[u8], row: usize, edit: impl FnOnce(&mut Value)) -> Vec<u
 /// A head that names `rows` (and `frames`) by hash, with a receipt that matches.
 pub fn head_naming(head: &[u8], rows: &[u8], frames: Option<&[u8]>) -> Vec<u8> {
     let mut head = Head::read(head).unwrap();
-    head.rows_sha256 = Some(digest_hex(rows));
-    head.frames_sha256 = frames.map(digest_hex);
+    head.rows_sha384 = Some(digest_hex(rows));
+    head.frames_sha384 = frames.map(digest_hex);
     head.wire().into_bytes()
 }
 
@@ -271,6 +271,18 @@ pub fn convert(
     frames: Option<&[u8]>,
     out: &Path,
 ) -> Ran {
+    convert_with(dir, head, rows, frames, out, &[])
+}
+
+/// `convert` with options after the files, such as `--public-key <file>`.
+pub fn convert_with(
+    dir: &Path,
+    head: &[u8],
+    rows: &[u8],
+    frames: Option<&[u8]>,
+    out: &Path,
+    options: &[&str],
+) -> Ran {
     let head = write(dir, "head.json", head);
     let rows = write(dir, "rows.jsonl", rows);
     let mut arguments = vec![head, rows];
@@ -278,6 +290,7 @@ pub fn convert(
         arguments.push(write(dir, "frames.bin", frames));
     }
     arguments.push(out.display().to_string());
+    arguments.extend(options.iter().map(|option| option.to_string()));
     let output = Command::new(env!("CARGO_BIN_EXE_genesis_seal_parquet"))
         .args(&arguments)
         .output()

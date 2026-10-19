@@ -250,6 +250,11 @@ pub struct Options {
     pub allowed_origins: Vec<String>,
     /// The open door's rules: `Some` when `--open` was given.
     pub open: Option<OpenRules>,
+    /// The operator's answer key, as the arguments name it.
+    pub key_args: crate::answer_key::KeyArgs,
+    /// `--unsigned`: a door that serves its answers with no signature, said
+    /// at start. Without a key and without it the door does not start.
+    pub unsigned: bool,
 }
 
 const USAGE: &str = "It reads --port <number>, --keys <file>, --dataset-dir <path> and --allowed-origin <origin>. --port and --keys are required. --allowed-origin may be given more than once. In place of --keys it reads --open, which asks no caller for a key, and with --open it reads --client-address-header <name>, --requests-per-minute <number>, --max-in-flight <number>, --max-in-flight-per-address <number>, --physics-permits <number>, --permits-per-address <number> and --request-seconds <number>.";
@@ -267,6 +272,8 @@ const OPEN_ONLY: [&str; 7] = [
 
 impl Options {
     pub fn from_args(arguments: impl IntoIterator<Item = String>) -> Result<Options, String> {
+        let (arguments, key_args) = crate::answer_key::take_key_args(arguments)?;
+        let mut unsigned = false;
         let mut port: Option<u16> = None;
         let mut keys: Option<PathBuf> = None;
         let mut dataset_dir: Option<PathBuf> = None;
@@ -276,6 +283,13 @@ impl Options {
         let mut open_only: Vec<&'static str> = Vec::new();
         let mut arguments = arguments.into_iter();
         while let Some(argument) = arguments.next() {
+            if argument == "--unsigned" {
+                if unsigned {
+                    return Err("--unsigned was given more than once.".to_string());
+                }
+                unsigned = true;
+                continue;
+            }
             if argument == "--open" {
                 if open {
                     return Err("--open was given more than once.".to_string());
@@ -342,7 +356,7 @@ impl Options {
                 return Err("--dataset-dir cannot be given with --open: without a key no caller has a folder of its own, so the open door stores no dataset and returns every dataset inline.".to_string());
             }
             rules.check()?;
-            return Ok(Options { port, keys: None, dataset_dir: None, allowed_origins: origins, open: Some(rules) });
+            return Ok(Options { port, keys: None, dataset_dir: None, allowed_origins: origins, open: Some(rules), key_args, unsigned });
         }
         if let Some(flag) = open_only.first() {
             return Err(format!("{flag} is an argument of the open door and needs --open."));
@@ -353,6 +367,8 @@ impl Options {
             dataset_dir,
             allowed_origins: origins,
             open: None,
+            key_args,
+            unsigned,
         })
     }
 }
@@ -421,6 +437,7 @@ pub fn router_limited(
                 .with_share(Arc::clone(&client.permit_share)),
         );
     }
+    let answer_key = crate::answer_key::answer_key_response(base.answer_key());
     let door = Arc::new(Door {
         keys,
         states,
@@ -434,6 +451,7 @@ pub fn router_limited(
     });
     Ok(Router::new()
         .route("/health", get(|| async { StatusCode::OK }))
+        .route("/answer-key", get(move || async move { answer_key }))
         .route("/mcp", any(mcp))
         .layer(axum::middleware::from_fn(refuse_both_lengths))
         .with_state(door))
@@ -456,6 +474,18 @@ pub(crate) async fn refuse_both_lengths(request: Request<Body>, next: axum::midd
         .extensions()
         .get::<Arc<crate::framing::Framing>>()
         .is_some_and(|framing| framing.next_carries_both());
+    // MAX_HEADER_BYTES is held here, to the byte: the library stops reading
+    // at its buffer, but its last read may bring up to one buffer more, so a
+    // header section of 100,000 bytes was answered 200 (G4's Sector 9 red
+    // team of 0.14.3, responses/0257.json).
+    if header_section_bytes(&request) > MAX_HEADER_BYTES {
+        let mut response = Response::new(Body::empty());
+        *response.status_mut() = StatusCode::REQUEST_HEADER_FIELDS_TOO_LARGE;
+        response
+            .headers_mut()
+            .insert(header::CONNECTION, HeaderValue::from_static("close"));
+        return response;
+    }
     if both {
         let mut response = plain(StatusCode::BAD_REQUEST, BOTH_LENGTHS);
         response
@@ -464,6 +494,16 @@ pub(crate) async fn refuse_both_lengths(request: Request<Body>, next: axum::midd
         return response;
     }
     next.run(request).await
+}
+
+/// The bytes of a request's header section as an HTTP/1.1 client writes it:
+/// the request line, each header line as `name: value` and its line break,
+/// and the blank line that ends the section.
+fn header_section_bytes(request: &Request<Body>) -> usize {
+    let target = request.uri().path_and_query().map_or(1, |target| target.as_str().len());
+    let line = request.method().as_str().len() + 1 + target + " HTTP/1.1\r\n".len();
+    let headers: usize = request.headers().iter().map(|(name, value)| name.as_str().len() + 2 + value.len() + 2).sum();
+    line + headers + 2
 }
 
 /// A client's dataset folder, readable by the account that runs the door and
@@ -475,12 +515,27 @@ fn make_private_folder(folder: &std::path::Path) -> std::io::Result<()> {
 }
 
 pub async fn serve(options: Options) -> Result<(), String> {
+    let answer_key = crate::answer_key::load(&options.key_args)?;
+    match (&answer_key, options.unsigned) {
+        (None, false) => {
+            return Err(format!(
+                "it signs every answer it serves, and was given no signing key (SigningKeyNotGiven): give --signing-key <file>, {} or {}, or --unsigned for a door whose answers carry no signature.",
+                crate::answer_key::KEY_FILE_ENV,
+                crate::answer_key::KEY_ENV
+            ));
+        }
+        (Some(_), true) => return Err("--unsigned was given with a signing key: a door signs every answer or none.".to_string()),
+        _ => {}
+    }
+    let start_line = crate::answer_key::start_line("hosted_door", answer_key.as_deref());
     if let Some(rules) = options.open {
-        return crate::open_door::serve(options.port, rules, options.allowed_origins).await;
+        eprintln!("{start_line}");
+        return crate::open_door::serve(options.port, rules, options.allowed_origins, answer_key).await;
     }
     let keys = Keys::load(options.keys.as_deref().expect("a door that is not open has a keys file"))?;
     let labels: Vec<String> = keys.clients().iter().map(|client| client.label.clone()).collect();
-    let app = router(keys, options.dataset_dir, options.allowed_origins)?;
+    let app = router_over(new_gateway_state().with_answer_key(answer_key), keys, options.dataset_dir, options.allowed_origins)?;
+    eprintln!("{start_line}");
     let address = SocketAddr::from(([127, 0, 0, 1], options.port));
     let listener = tokio::net::TcpListener::bind(address)
         .await
@@ -1235,7 +1290,9 @@ pub(crate) async fn answer(call: Call<'_>, bytes: BodyBuffer) -> Response {
                     drop(long_place);
                     drop(permit);
                     let text = match ended {
-                        crate::long_work::Ended::Answered(result) => rpc_result(id, result, modern),
+                        crate::long_work::Ended::Answered(result) => {
+                            rpc_result(id, crate::answer_key::sign_result_value(state.answer_key(), &name, result), modern)
+                        }
                         crate::long_work::Ended::Stopped => {
                             let late = rmcp::model::CallToolResult::error(vec![rmcp::model::ContentBlock::text(rules.stopped_at_the_limit())]);
                             rpc_result(id, serde_json::to_value(late).expect("the result encodes"), modern)
@@ -1426,7 +1483,7 @@ mod tests {
         assert!(busy.contains("Too many concurrent physics tasks."), "{busy}");
         drop(held);
         let (_, ran) = post(&url, Some("k-thermal"), &step("energy", "thermal")).await;
-        assert!(ran.contains("sha256_seal"), "{ran}");
+        assert!(ran.contains("sha384_seal"), "{ran}");
         assert_eq!(pool.available_permits(), 2);
     }
 }

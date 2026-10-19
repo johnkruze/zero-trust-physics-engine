@@ -73,9 +73,9 @@ fn a_plan_sent_again_with_a_whole_number_respelled_is_answered_from_the_stored_f
     let (typed, written) = (head(&request), head(&other));
     assert_eq!(typed["dataset_seal"], written["dataset_seal"]);
     assert_eq!(typed["merkle_root"], written["merkle_root"]);
-    assert_eq!(typed["plan_sha256"], written["plan_sha256"]);
-    assert_ne!(typed["rows_sha256"], written["rows_sha256"]);
-    assert_eq!(typed["frames_sha256"], written["frames_sha256"]);
+    assert_eq!(typed["plan_sha384"], written["plan_sha384"]);
+    assert_ne!(typed["rows_sha384"], written["rows_sha384"]);
+    assert_eq!(typed["frames_sha384"], written["frames_sha384"]);
 
     let (_, error, first) = door.tool(KEY, "run_dataset", &request);
     assert!(!error, "{first}");
@@ -122,14 +122,14 @@ fn a_plan_sent_again_with_a_whole_number_respelled_is_answered_from_the_stored_f
     assert_eq!(backwards, first);
 }
 
-/// The receipt of a head: SHA-256 of the head without its receipt.
+/// The receipt of a head: SHA-384 of the head without its receipt.
 fn with_receipt(document: &str) -> String {
     assert!(document.ends_with('}'));
-    format!("{},\"receipt_sha256\":\"{}\"}}", &document[..document.len() - 1], sha(document))
+    format!("{},\"receipt_sha384\":\"{}\"}}", &document[..document.len() - 1], seal_sha(document))
 }
 
 fn without_receipt(head: &str) -> String {
-    let at = head.rfind(",\"receipt_sha256\":\"").expect("a receipt");
+    let at = head.rfind(",\"receipt_sha384\":\"").expect("a receipt");
     format!("{}}}", &head[..at])
 }
 
@@ -154,8 +154,8 @@ fn a_repeat_is_still_held_to_the_stored_rows_value_for_value() {
     };
     let rewrite = |changed_rows: &str| {
         std::fs::write(&rows_path, changed_rows).unwrap();
-        let old_hash = serde_json::from_str::<Value>(&head).unwrap()["rows_sha256"].as_str().unwrap().to_string();
-        let document = without_receipt(&head).replace(&old_hash, &sha(changed_rows));
+        let old_hash = serde_json::from_str::<Value>(&head).unwrap()["rows_sha384"].as_str().unwrap().to_string();
+        let document = without_receipt(&head).replace(&old_hash, &seal_sha(changed_rows));
         std::fs::write(&head_path, with_receipt(&document)).unwrap();
     };
 
@@ -202,7 +202,7 @@ fn a_repeat_is_still_held_to_the_stored_rows_value_for_value() {
     rewrite(&other_rows);
     let (_, error, again) = door.tool(KEY, "run_dataset", &request);
     assert!(!error, "refused: {again}");
-    assert!(again.contains(&sha(&other_rows)), "the answer carries the stored head: {again}");
+    assert!(again.contains(&seal_sha(&other_rows)), "the answer carries the stored head: {again}");
 }
 
 // ------------------------------------------------------------ a stored file of a huge apparent size
@@ -268,12 +268,12 @@ fn a_stored_file_larger_than_the_heads_counts_allow_is_refused_before_it_is_read
     assert!(door.tool(OTHER, "verify_dataset", &json!({"dataset_seal": seal_b})).2.contains("\"holds\":true"));
     assert!(door.alive());
 
-    // The frame file is read up to twice its true size, which is 64 bytes for the header and for each frame, and no
+    // The frame file is read up to twice its true size, which is 80 bytes for the header and 64 for each frame, and no
     // further. A wrong length inside that is a broken dataset, named by the check as before.
     let frames = folder.join("frames.bin");
     let true_size = std::fs::metadata(&frames).unwrap().len();
     let head: Value = serde_json::from_str(&std::fs::read_to_string(folder.join("head.json")).unwrap()).unwrap();
-    assert_eq!(true_size, 64 * (head["frames"].as_u64().unwrap() + 1));
+    assert_eq!(true_size, 80 + 64 * head["frames"].as_u64().unwrap());
     set_apparent_size(&frames, 2 * true_size + 1);
     let (_, error, text) = check(&door);
     assert!(error && text.contains(&format!("It is {} bytes, more than the {} bytes", 2 * true_size + 1, 2 * true_size)), "{text}");

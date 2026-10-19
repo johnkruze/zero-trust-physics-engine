@@ -41,7 +41,7 @@ use genesis_kernel::frame::LastStateFrame64;
 use protocol_mcp_gateway::{VerifyPhysicsResponse, app, commit_request_proof};
 use reqwest::Client;
 use serde_json::{Value, json};
-use sha2::{Digest, Sha256};
+use sha2::{Digest, Sha384};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::TcpListener;
 use tokio::process::{Child, ChildStdin, ChildStdout, Command};
@@ -89,8 +89,8 @@ async fn post(base: &str, path: &str, body: &Value) -> (u16, String) {
     post_text(base, path, &answer_text::as_sent(body)).await
 }
 
-fn sha256_hex(bytes: &[u8]) -> String {
-    hex::encode(Sha256::digest(bytes))
+fn sha384_hex(bytes: &[u8]) -> String {
+    hex::encode(Sha384::digest(bytes))
 }
 
 /// The next 64-bit number toward zero from a positive `x`.
@@ -271,7 +271,7 @@ fn assert_state_is(published_state: &Value, state: &CantileverState, label: &str
 }
 
 fn split_receipt(text: &str) -> (String, String) {
-    const MARKER: &str = ",\"receipt_sha256\":\"";
+    const MARKER: &str = ",\"receipt_sha384\":\"";
     let at = text.rfind(MARKER).expect("a receipt");
     (format!("{}}}", &text[..at]), text[at + MARKER.len()..text.len() - 2].to_string())
 }
@@ -279,7 +279,7 @@ fn split_receipt(text: &str) -> (String, String) {
 /// The refusal is named and the answer carries no proof.
 fn names(text: &str, name: &str) -> bool {
     text.contains(&format!("({name}). That state is not sealed."))
-        && !text.contains("sha256_seal")
+        && !text.contains("sha384_seal")
         && !text.contains("run_seal")
 }
 
@@ -362,14 +362,14 @@ async fn a_step_of_the_beam_matches_the_compiled_step_with_the_same_proof_bytes_
             response.residual_conservation_error.to_bits(),
             state.residual_conservation_error.to_bits()
         );
-        assert_eq!(response.sha256_seal, sha256_hex(&frame.to_bytes()));
+        assert_eq!(response.sha384_seal, sha384_hex(&frame.to_bytes()));
         // The proof covers the request: the same frame with a zero proof seals apart.
         let mut naked = frame;
         naked.proof = [0; 16];
-        assert_ne!(response.sha256_seal, sha256_hex(&naked.to_bytes()));
+        assert_ne!(response.sha384_seal, sha384_hex(&naked.to_bytes()));
         let (document, receipt) = split_receipt(&answer);
-        assert_eq!(receipt, response.receipt_sha256);
-        assert_eq!(sha256_hex(document.as_bytes()), receipt);
+        assert_eq!(receipt, response.receipt_sha384);
+        assert_eq!(sha384_hex(document.as_bytes()), receipt);
         // The answer verifies as it was returned, and not with one digit changed.
         let (status, report) = post(&base, "/verify_receipt", &json!({ "response_text": answer })).await;
         assert_eq!(status, 200, "{report}");
@@ -383,7 +383,7 @@ async fn a_step_of_the_beam_matches_the_compiled_step_with_the_same_proof_bytes_
         // The same request again gives the same bytes.
         let (_, again) = post_text(&base, "/verify_physics", &text).await;
         assert_eq!(again, answer);
-        seals.push(response.sha256_seal);
+        seals.push(response.sha384_seal);
     }
     seals.sort();
     seals.dedup();
@@ -486,7 +486,7 @@ async fn the_first_second_of_the_scored_ring_down_ends_on_the_reference_state_of
     assert_eq!(status, 200, "{receipt}");
     let receipt: Value = serde_json::from_str(&receipt).unwrap();
     assert_eq!(receipt["matches"], true, "{receipt}");
-    assert_eq!(receipt["receipt_sha256"], tape["receipt_sha256"]);
+    assert_eq!(receipt["receipt_sha384"], tape["receipt_sha384"]);
 
     // The same request gives the same bytes.
     let (_, again) = post(&base, "/run_trajectory", &request).await;
@@ -588,7 +588,7 @@ async fn the_compared_run_and_the_scored_ring_down_land_through_the_floor_and_on
         assert_eq!(flags, flags_for(state), "frame {index}");
     }
 
-    assert!(tape["run_seal"].as_str().is_some_and(|seal| seal.len() == 64));
+    assert!(tape["run_seal"].as_str().is_some_and(|seal| seal.len() == 96));
     let (status, report) = post(&base, "/verify_tape", &tape).await;
     assert_eq!(status, 200, "{report}");
     let report: Value = serde_json::from_str(&report).unwrap();
@@ -639,7 +639,7 @@ async fn a_start_near_the_ceiling_is_refused_part_way_and_the_run_keeps_its_proo
     assert!(margin < 0.0);
     assert_eq!(flags, FLAG_ENVELOPE_ABOVE_COMPARED);
     // The run has a proof, and the tape verifies.
-    assert!(tape["run_seal"].as_str().is_some_and(|seal| seal.len() == 64));
+    assert!(tape["run_seal"].as_str().is_some_and(|seal| seal.len() == 96));
     let (status, report) = post(&base, "/verify_tape", &tape).await;
     assert_eq!(status, 200, "{report}");
     let report: Value = serde_json::from_str(&report).unwrap();
@@ -687,7 +687,7 @@ async fn above_the_compared_envelope_a_run_lands_flagged_with_its_ledger_closed_
         let mut frame = blank_frame(commit_request_proof(&request));
         cantilever_eth::step(&beam, &mut state, &mut frame, NO_LOAD, ceiling()).unwrap();
         assert_eq!(frame.flags, FLAG_ENVELOPE_ABOVE_COMPARED, "{label}");
-        assert_eq!(response.sha256_seal, sha256_hex(&frame.to_bytes()), "{label}");
+        assert_eq!(response.sha384_seal, sha384_hex(&frame.to_bytes()), "{label}");
         assert!(response.residual_conservation_error <= limit, "{label}");
 
         // A run of 2,000 steps, half a second, lands on the kernel loop's
@@ -720,7 +720,7 @@ async fn above_the_compared_envelope_a_run_lands_flagged_with_its_ledger_closed_
         }
         assert!(flagged > 0, "{label}");
         // The tape verifies.
-        assert!(tape["run_seal"].as_str().is_some_and(|seal| seal.len() == 64));
+        assert!(tape["run_seal"].as_str().is_some_and(|seal| seal.len() == 96));
         let (status, report) = post(&base, "/verify_tape", &tape).await;
         assert_eq!(status, 200, "{report}");
         let report: Value = serde_json::from_str(&report).unwrap();
@@ -776,7 +776,7 @@ async fn a_start_under_the_compared_envelope_lands_flagged_and_a_ring_down_goes_
         let mut frame = blank_frame(commit_request_proof(&request));
         cantilever_eth::step(&beam, &mut state, &mut frame, NO_LOAD, ceiling()).unwrap();
         assert_eq!(frame.flags, FLAG_ENVELOPE_BELOW_COMPARED, "{label}");
-        assert_eq!(response.sha256_seal, sha256_hex(&frame.to_bytes()), "{label}");
+        assert_eq!(response.sha384_seal, sha384_hex(&frame.to_bytes()), "{label}");
         let (status, text) = post(&base, "/run_trajectory", &run_body(deflection_m, velocity_m_s, ceiling(), 10, 1)).await;
         assert_eq!(status, 200, "{label}: {text}");
         let tape: Value = serde_json::from_str(&text).unwrap();
@@ -802,7 +802,7 @@ async fn a_start_under_the_compared_envelope_lands_flagged_and_a_ring_down_goes_
         let mut frame = blank_frame(commit_request_proof(&request));
         cantilever_eth::step(&beam, &mut state, &mut frame, NO_LOAD, ceiling()).unwrap();
         assert_eq!(frame.flags, 0);
-        assert_eq!(response.sha256_seal, sha256_hex(&frame.to_bytes()));
+        assert_eq!(response.sha384_seal, sha384_hex(&frame.to_bytes()));
     }
 
     // A ring-down from 0.1 mm at rest: through engine 0.9 it was refused after
@@ -826,7 +826,7 @@ async fn a_start_under_the_compared_envelope_lands_flagged_and_a_ring_down_goes_
     }
     let flagged = frames.iter().filter(|frame| slots(frame["frame_hex"].as_str().unwrap()).5 != 0).count();
     assert!(flagged >= 8, "{flagged}");
-    assert!(tape["run_seal"].as_str().is_some_and(|seal| seal.len() == 64));
+    assert!(tape["run_seal"].as_str().is_some_and(|seal| seal.len() == 96));
     let (status, report) = post(&base, "/verify_tape", &tape).await;
     assert_eq!(status, 200, "{report}");
     let report: Value = serde_json::from_str(&report).unwrap();
@@ -1006,7 +1006,7 @@ async fn each_bound_lands_at_the_last_number_inside_and_is_refused_by_name_at_th
     ] {
         let (status, text) = post(&base, "/verify_physics", &step_body(1.0e-3, 0.0, dt_s)).await;
         assert_eq!(status, 422, "{dt_s}: {text}");
-        assert!(text.contains(words) && !text.contains("sha256_seal"), "{dt_s}: {text}");
+        assert!(text.contains(words) && !text.contains("sha384_seal"), "{dt_s}: {text}");
         let (status, text) = post(&base, "/run_trajectory", &run_body(1.0e-3, 0.0, dt_s, 3, 1)).await;
         assert_eq!(status, 422, "{dt_s}: {text}");
         assert!(text.contains(words) && !text.contains("run_seal"), "{dt_s}: {text}");
@@ -1056,7 +1056,7 @@ async fn a_missing_input_a_load_the_card_does_not_have_and_a_card_constant_are_r
         assert!(body.contains(raw), "{body}");
         let (status, text) = post_text(&base, "/verify_physics", &body).await;
         assert!(status == 400 || status == 422, "{raw}: {status} {text}");
-        assert!(!text.contains("sha256_seal"), "{text}");
+        assert!(!text.contains("sha384_seal"), "{text}");
     }
     let (status, text) = post_text(
         &base,
@@ -1318,7 +1318,7 @@ const KEY_BEAM: &str = "key-for-the-cantilever-client";
 const KEY_THERMAL: &str = "key-for-the-thermal-client";
 
 fn client_entry(label: &str, key: &str, cards: Value) -> Value {
-    json!({ "client": label, "key_sha256": sha256_hex(key.as_bytes()), "cards": cards, "solvers": [], "max_in_flight": 8, "max_permits": 1 })
+    json!({ "client": label, "key_sha256": key_sha256_hex(key.as_bytes()), "cards": cards, "solvers": [], "max_in_flight": 8, "max_permits": 1 })
 }
 
 /// The local connection: `mcp_stdio` as a child process.
@@ -1378,7 +1378,7 @@ impl Hosted {
         std::fs::create_dir_all(&dir).unwrap();
         let file = dir.join("keys.json");
         std::fs::write(&file, serde_json::to_string_pretty(keys).unwrap()).unwrap();
-        let mut child = Command::new(env!("CARGO_BIN_EXE_hosted_door"))
+        let mut child = Command::new(env!("CARGO_BIN_EXE_hosted_door")).arg("--unsigned")
             .arg("--port")
             .arg("0")
             .arg("--keys")
@@ -1441,14 +1441,14 @@ async fn the_three_connections_list_the_beam_and_give_the_same_bytes_for_its_des
     let web = spawn_app().await;
     let mut local = Local::start().await;
 
-    // Thirty cards, the beam the sixteenth, in the signal domain.
+    // The beam is the fifteenth card (the fold of 0.15.0 left 36), in the signal domain.
     let (listed, error) = result_text(&local.call("list_cards", &json!({})).await);
     assert!(!error);
     let listed: Value = serde_json::from_str(&listed).unwrap();
     let cards = listed["cards"].as_array().unwrap();
-    assert_eq!(cards.len(), 40);
-    assert_eq!(cards[15]["domain"], "signal");
-    assert_eq!(cards[15]["card"], "cantilever_eth");
+    assert_eq!(cards.len(), protocol_mcp_gateway::CARDS);
+    assert_eq!(cards[14]["domain"], "signal");
+    assert_eq!(cards[14]["card"], "cantilever_eth");
     let on_web: Value = Client::new().get(format!("{web}/cards")).send().await.unwrap().json().await.unwrap();
     assert_eq!(on_web, listed);
 
@@ -1618,4 +1618,11 @@ async fn the_three_connections_list_the_beam_and_give_the_same_bytes_for_its_des
     for word in ["cantilever", "deflection", "envelope", "zürich", "aluminium", "fitted_amplitude"] {
         assert!(!text.contains(word), "the word '{word}' of the hidden card was sent");
     }
+}
+
+/// SHA-256 of a client's key, as the hosted door's keys file holds it: an
+/// authentication hash, not a seal, so it stays SHA-256 under seal rule v2.
+fn key_sha256_hex(bytes: &[u8]) -> String {
+    use sha2::{Digest, Sha256};
+    hex::encode(Sha256::digest(bytes))
 }

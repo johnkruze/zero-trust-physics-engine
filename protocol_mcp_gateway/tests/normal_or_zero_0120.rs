@@ -96,12 +96,12 @@ fn the_srp_card_under_a_grazing_sun_answers_normal_or_zero_and_its_sealed_state_
     assert_eq!(verified["holds"], json!(true), "{verified}");
 }
 
-/// Cell m80 through the rest both m80 couplings require: 600 s at 4.5 A and
-/// 3600 s at zero current at 40 degC. diffusion_lag_3 was 5e-324 in every
-/// honest upstream; it is +0, the answer is normal or zero, and the coupling
-/// to cell_2170_m80 takes it as its upstream and hands the charge removed.
+/// The 2170 cell through the rest the m80 couplings required (removed in
+/// 0.15.0, one model for each real object): 600 s at 4.5 A and 3600 s at
+/// zero current at 40 degC. In 0.12.0 diffusion_lag_3 was 5e-324 here; the
+/// served twin's answer is normal or zero.
 #[test]
-fn the_m80_couplings_rest_answers_normal_or_zero_and_couples() {
+fn the_cells_rest_at_40_degc_answers_normal_or_zero() {
     let mut door = Door::start();
     let upstream = json!({
         "domain": "energy", "card": "cell_2170_model3",
@@ -112,16 +112,6 @@ fn the_m80_couplings_rest_answers_normal_or_zero_and_couples() {
     });
     let rested = answered(&mut door, "run_trajectory", &upstream);
     assert_eq!(rested["outcome"], "completed", "{rested}");
-    assert_eq!(rested["final_state"]["diffusion_lag_3_hex"], "0000000000000000");
-    let removed = exact(&rested["final_state"]["charge_removed_ah_hex"]);
-    let downstream = json!({
-        "domain": "energy", "card": "cell_2170_m80", "initial": { "block_chamber_c": 40.0, "charge_removed_ah": removed },
-        "dt_s": 1.0, "segments": [{ "steps": 60, "load": { "current_a": -2.25, "case_temperature_c": 40.0 } }], "record_every": 60,
-        "from": { "request": upstream, "run_seal": rested["run_seal"], "coupling": "cell_2170_model3_to_m80" }
-    });
-    let coupled = answered(&mut door, "run_trajectory", &downstream);
-    assert_eq!(coupled["outcome"], "completed", "{coupled}");
-    assert_eq!(coupled["chain"]["handed"][0]["value_hex"], rested["final_state"]["charge_removed_ah_hex"]);
 }
 
 /// The red team's traction on stress_plate_hole_s235 (2.06e-313 J of strain

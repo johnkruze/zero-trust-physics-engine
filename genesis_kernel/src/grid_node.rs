@@ -59,6 +59,7 @@ extern crate core;
 
 use core::prelude::v1::*;
 
+use crate::exceedance::{Exceedance, ExceedanceKind, Side};
 use crate::frame::LastStateFrame64;
 use crate::normal::normal_or_zero;
 
@@ -446,6 +447,26 @@ pub fn step(
     load: GridLoad,
     dt_s: f64,
 ) -> Result<(), StepReject> {
+    #[cfg(any(test, debug_assertions, feature = "check_exceedances"))]
+    let before = *state;
+    let stepped = step_landed(node, state, frame, load, dt_s);
+    #[cfg(any(test, debug_assertions, feature = "check_exceedances"))]
+    if stepped.is_ok() {
+        crate::exceedance::debug_check("grid_node", exceedances(node, &before, state, load, dt_s), frame.flags);
+    }
+    stepped
+}
+
+/// The step itself; [`step`] is it with, in a build that checks
+/// (`crate::exceedance::CHECKED`), the check that [`exceedances`] stands for
+/// the flags it wrote.
+fn step_landed(
+    node: &GridNode,
+    state: &mut GridNodeState,
+    frame: &mut LastStateFrame64,
+    load: GridLoad,
+    dt_s: f64,
+) -> Result<(), StepReject> {
     step_as_computed(node, state, frame, load, dt_s)?;
     normal_or_zero_state(state);
     Ok(())
@@ -757,6 +778,37 @@ fn step_shift_temperature(
     };
     predicted[2] += delta_k;
     commit(node, state, frame, load, dt_s, predicted)
+}
+
+/// Every limit a flag of this card can mark: what [`exceedances`] reports
+/// beside a flag's bit (`crate::exceedance`).
+pub const EXCEEDANCE_KINDS: &[crate::exceedance::ExceedanceKind] = &[
+    SURGE_KIND,
+];
+
+const SURGE_KIND: ExceedanceKind = ExceedanceKind::fixed(
+    "FLAG_GRID_SURGE",
+    FLAG_GRID_SURGE,
+    "voltage_v_magnitude",
+    "V",
+    Side::AtOrAbove,
+    SURGE_WITHSTAND_V,
+    "the node's surge withstand, 120 V in magnitude",
+);
+
+/// The limits the step from `before` to `after` under `load` over `dt_s`
+/// is past: one record for each limit a flag set on its frame marks.
+pub fn exceedances(
+    node: &GridNode,
+    before: &GridNodeState,
+    after: &GridNodeState,
+    load: GridLoad,
+    dt_s: f64,
+) -> crate::exceedance::Exceedances {
+    let _ = (node, before, load, dt_s);
+    let mut records = crate::exceedance::Exceedances::new();
+    records.push_if(after.surge, Exceedance::fixed(SURGE_KIND, after.voltage_v.abs()));
+    records
 }
 
 #[cfg(test)]

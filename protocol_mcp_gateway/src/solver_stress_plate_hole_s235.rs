@@ -157,7 +157,7 @@ const REFUSALS: &[Refusal] = &[
 ];
 
 fn field_words() -> String {
-    "SHA-256 of the count of the numbers that follow as 8 little-endian bytes, which is 7 times the nodes of the accepted mesh (4,033 nodes of 1,280 elements in the quarter x, y >= 0), then for each node in turn its x and y in mm from the hole's centre, its displacement u_x and u_y in mm, and its stresses sigma_xx, sigma_yy and tau_xy in MPa (carried from the integration points and averaged over the elements that share the node), all as little-endian f64 bytes.".to_string()
+    "SHA-384 of the count of the numbers that follow as 8 little-endian bytes, which is 7 times the nodes of the accepted mesh (4,033 nodes of 1,280 elements in the quarter x, y >= 0), then for each node in turn its x and y in mm from the hole's centre, its displacement u_x and u_y in mm, and its stresses sigma_xx, sigma_yy and tau_xy in MPa (carried from the integration points and averaged over the elements that share the node), all as little-endian f64 bytes.".to_string()
 }
 
 fn sections() -> Sections {

@@ -149,11 +149,11 @@ async fn the_file_form_and_the_inline_form_of_a_plan_hold_the_same_rows_and_fram
         let (a, b) = (&inline["head"], &stored.answer["head"]);
         // `return` is part of the request, so the plan hash and the seal
         // that covers it differ. Everything the rows decide is the same.
-        assert_ne!(a["plan_sha256"], b["plan_sha256"], "{name}");
+        assert_ne!(a["plan_sha384"], b["plan_sha384"], "{name}");
         assert_ne!(a["dataset_seal"], b["dataset_seal"], "{name}");
         for key in [
             "engine_version", "rows", "completed", "refused", "unadmitted", "frames",
-            "merkle_root", "rows_sha256",
+            "merkle_root", "rows_sha384",
         ] {
             assert_eq!(a[key], b[key], "{name} {key}");
         }
@@ -167,16 +167,16 @@ async fn the_file_form_and_the_inline_form_of_a_plan_hold_the_same_rows_and_fram
             assert_eq!(*line, serde_json::to_string(row).unwrap(), "{name}");
         }
         // The frame file's header carries the dataset seal, which differs,
-        // so the two files differ in those 32 bytes and in no other.
+        // so the two files differ in those 48 bytes and in no other.
         let from_file = stored.read("frames.bin");
         let from_inline = hex::decode(inline["frames_hex"].as_str().unwrap()).unwrap();
         assert_eq!(from_file.len(), from_inline.len(), "{name}");
         assert_eq!(from_file[..24], from_inline[..24], "{name}");
-        assert_ne!(from_file[24..56], from_inline[24..56], "{name}");
-        assert_eq!(from_file[24..56], hex::decode(b["dataset_seal"].as_str().unwrap()).unwrap()[..], "{name}");
-        assert_eq!(from_inline[24..56], hex::decode(a["dataset_seal"].as_str().unwrap()).unwrap()[..], "{name}");
-        assert_eq!(from_file[56..], from_inline[56..], "{name}");
-        assert_ne!(a["frames_sha256"], b["frames_sha256"], "{name}");
+        assert_ne!(from_file[24..72], from_inline[24..72], "{name}");
+        assert_eq!(from_file[24..72], hex::decode(b["dataset_seal"].as_str().unwrap()).unwrap()[..], "{name}");
+        assert_eq!(from_inline[24..72], hex::decode(a["dataset_seal"].as_str().unwrap()).unwrap()[..], "{name}");
+        assert_eq!(from_file[72..], from_inline[72..], "{name}");
+        assert_ne!(a["frames_sha384"], b["frames_sha384"], "{name}");
         // The head file is the head the answer carries.
         let head_file: Value = serde_json::from_slice(&stored.read("head.json")).unwrap();
         assert_eq!(&head_file, b, "{name}");
@@ -208,7 +208,7 @@ async fn a_file_job_answers_with_the_head_and_the_names_of_its_files_and_no_path
     assert_eq!(stored.answer["files"]["frames"], Value::Null);
     assert!(!stored.folder.join("frames.bin").exists());
     assert!(stored.folder.join("rows.jsonl").is_file());
-    assert_eq!(stored.answer["head"]["frames_sha256"], Value::Null);
+    assert_eq!(stored.answer["head"]["frames_sha384"], Value::Null);
 }
 
 // F3
@@ -234,7 +234,7 @@ async fn a_stored_dataset_is_checked_by_its_seal_and_a_change_on_disk_is_named()
     // joining at frame 2.
     let first_row_frames = 4;
     let mut changed = frames.clone();
-    changed[64 + 64 * (first_row_frames + 1)] ^= 0x01;
+    changed[80 + 64 * (first_row_frames + 1)] ^= 0x01;
     std::fs::write(stored.folder.join("frames.bin"), &changed).unwrap();
     let report = verify_seal(&base, &seal).await;
     assert_eq!(report["holds"], false, "{report}");
@@ -305,17 +305,17 @@ async fn without_a_directory_files_are_refused_and_with_one_a_bad_seal_is_refuse
     // A check by seal on a gateway that stores nothing says how a dataset
     // returned in the answer is checked. In version 0.2.1 it gave the sentence
     // of the file job alone.
-    let (status, text) = post(&base, "/verify_dataset", &json!({ "dataset_seal": "0".repeat(64) })).await;
+    let (status, text) = post(&base, "/verify_dataset", &json!({ "dataset_seal": "0".repeat(96) })).await;
     assert_eq!((status, text), (422, format!("{NO_DIRECTORY} {VERIFY_BY_PARTS}")));
 
     let dir = TempDir::new("f4");
     let base = spawn(Some(&dir)).await;
-    let (status, text) = post(&base, "/verify_dataset", &json!({ "dataset_seal": "ab".repeat(32) })).await;
+    let (status, text) = post(&base, "/verify_dataset", &json!({ "dataset_seal": "ab".repeat(48) })).await;
     assert_eq!((status, text), (404, format!("no dataset is stored under that seal. {VERIFY_BY_PARTS}")));
 
     let stored = run_to_file(&base, &dir, &with_return(list_request("frames"), "file")).await;
     let seal = stored.seal();
-    let not_hex = "Physical Violation: 'dataset_seal' must be 64 lowercase hex digits.";
+    let not_hex = "Physical Violation: 'dataset_seal' must be 96 lowercase hex digits.";
     for bad in [
         json!("abc"),
         json!(seal.to_uppercase()),
@@ -478,7 +478,7 @@ async fn the_mcp_door_gives_the_bytes_of_the_http_door_for_files() {
         assert_eq!(tool_text(&called), http_report);
         assert!(http_report.contains("\"holds\":true"));
         // An unknown seal and a bad one give the same words.
-        for refused in [json!({ "dataset_seal": "0".repeat(64) }), json!({ "dataset_seal": "../x" })] {
+        for refused in [json!({ "dataset_seal": "0".repeat(96) }), json!({ "dataset_seal": "../x" })] {
             let (_, http_text) = post(&base, "/verify_dataset", &refused).await;
             let called = client
                 .call_tool(CallToolRequestParams::new("verify_dataset").with_arguments(arguments(&refused)))

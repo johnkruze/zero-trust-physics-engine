@@ -1,34 +1,34 @@
 //! The row tree: the Merkle tree of RFC 6962.
 //!
-//! A leaf hash is SHA-256 of the byte 0x00 followed by the leaf. A node hash
-//! is SHA-256 of the byte 0x01 followed by the left hash and the right hash.
+//! A leaf hash is SHA-384 of the byte 0x00 followed by the leaf. A node hash
+//! is SHA-384 of the byte 0x01 followed by the left hash and the right hash.
 //! A tree of more than one leaf splits at the largest power of two below its
 //! count. A leaf is never copied to fill a level, so a list of leaves and the
 //! same list with its last leaf repeated have different roots.
 
-use sha2::{Digest, Sha256};
+use sha2::{Digest, Sha384};
 
-pub type Hash = [u8; 32];
+pub type Hash = [u8; 48];
 
-/// SHA-256 of 0x00 followed by `leaf`.
+/// SHA-384 of 0x00 followed by `leaf`.
 pub fn leaf_hash(leaf: &[u8]) -> Hash {
-    let mut hasher = Sha256::new();
+    let mut hasher = Sha384::new();
     hasher.update([0x00_u8]);
     hasher.update(leaf);
     finish(hasher)
 }
 
-/// SHA-256 of 0x01 followed by `left` and `right`.
+/// SHA-384 of 0x01 followed by `left` and `right`.
 pub fn node_hash(left: &Hash, right: &Hash) -> Hash {
-    let mut hasher = Sha256::new();
+    let mut hasher = Sha384::new();
     hasher.update([0x01_u8]);
     hasher.update(left);
     hasher.update(right);
     finish(hasher)
 }
 
-fn finish(hasher: Sha256) -> Hash {
-    let mut out = [0_u8; 32];
+fn finish(hasher: Sha384) -> Hash {
+    let mut out = [0_u8; 48];
     out.copy_from_slice(&hasher.finalize());
     out
 }
@@ -103,7 +103,7 @@ pub fn root_from_path(index: u64, count: u64, leaf: &Hash, path: &[Hash]) -> Opt
 mod tests {
     use super::*;
 
-    /// Roots worked out by `outside_check.py` from RFC 6962, for the leaves
+    /// Roots worked out by `vectors/tree_outside_check.py` from RFC 6962 with SHA-384, for the leaves
     /// `leaf 0`, `leaf 1` and so on as ASCII text.
     const VECTORS: &str = include_str!("../vectors/tree.txt");
 
@@ -137,10 +137,10 @@ mod tests {
 
     #[test]
     fn the_empty_leaf_and_the_split_follow_rfc_6962() {
-        // SHA-256 of the single byte 0x00, the leaf hash of an empty leaf.
+        // SHA-384 of the single byte 0x00, the leaf hash of an empty leaf.
         assert_eq!(
             hex::encode(leaf_hash(b"")),
-            "6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d"
+            "bec021b4f368e3069134e012c2b4307083d3a9bdd206e24e5f0d86e13d6636655933ec2b413465966817a9c208a11717"
         );
         for (count, at) in [(2, 1), (3, 2), (4, 2), (5, 4), (7, 4), (8, 4), (9, 8), (100_000, 65_536)] {
             assert_eq!(split(count), at, "{count}");

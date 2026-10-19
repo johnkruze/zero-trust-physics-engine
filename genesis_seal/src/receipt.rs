@@ -1,7 +1,7 @@
 //! The receipt seal.
 //!
-//! A receipt is SHA-256 of the exact JSON of every other field of a
-//! response. The wire body is that document with `,"receipt_sha256":"<hex>"`
+//! A receipt is SHA-384 of the exact JSON of every other field of a
+//! response. The wire body is that document with `,"receipt_sha384":"<hex>"`
 //! inserted before the closing brace. A receipt covers bytes: a response that
 //! another JSON writer has written again no longer matches its receipt, though
 //! its seals still hold.
@@ -9,7 +9,10 @@
 use crate::json_text::is_lower_hex;
 use crate::sealed_form::digest_hex;
 
-const MARK: &[u8] = b",\"receipt_sha256\":\"";
+/// The key of the receipt in an answer.
+pub const RECEIPT_KEY: &str = "receipt_sha384";
+
+const MARK: &[u8] = b",\"receipt_sha384\":\"";
 
 /// What a receipt says about the bytes it travels with.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -42,7 +45,7 @@ pub fn with_receipt(document: &str) -> String {
     let receipt = receipt_of(document);
     let mut wire = String::with_capacity(document.len() + receipt.len() + 22);
     wire.push_str(document.strip_suffix('}').unwrap_or(document));
-    wire.push_str(",\"receipt_sha256\":\"");
+    wire.push_str(",\"receipt_sha384\":\"");
     wire.push_str(&receipt);
     wire.push_str("\"}");
     wire
@@ -51,9 +54,9 @@ pub fn with_receipt(document: &str) -> String {
 /// The receipt a wire body states, and the receipt its bytes make.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ReceiptRead {
-    /// The 64 hex digits at the end of the wire body.
+    /// The 96 hex digits at the end of the wire body.
     pub stated: String,
-    /// SHA-256 of the wire body with that tail replaced by the closing brace.
+    /// SHA-384 of the wire body with that tail replaced by the closing brace.
     pub recomputed: String,
 }
 
@@ -63,11 +66,22 @@ impl ReceiptRead {
     }
 }
 
-/// Read the receipt at the end of a wire body. `None` when the bytes do not
-/// end with `,"receipt_sha256":"<64 lowercase hex digits>"}`.
+/// Read the receipt at the end of a wire body, a signature after it split
+/// off first (`answer_signature`). `None` when the bytes do not end with `,"receipt_sha384":"<96 lowercase hex digits>"}`.
 pub fn read_receipt(wire: &[u8]) -> Option<ReceiptRead> {
-    // The tail is the mark, 64 hex digits, a quote and the closing brace.
-    let tail_len = MARK.len() + 64 + 2;
+    // An answer the engine signed carries its signature right after the
+    // receipt; the receipt is of the answer without it.
+    if let Some(text) = std::str::from_utf8(wire).ok().filter(|text| text.contains("\",\"signature\":{")) {
+        if let Ok(Some(split)) = crate::answer_signature::split(text) {
+            return read_unsigned(split.unsigned.as_bytes());
+        }
+    }
+    read_unsigned(wire)
+}
+
+fn read_unsigned(wire: &[u8]) -> Option<ReceiptRead> {
+    // The tail is the mark, 96 hex digits, a quote and the closing brace.
+    let tail_len = MARK.len() + 96 + 2;
     if wire.len() < tail_len + 1 {
         return None;
     }
@@ -75,7 +89,7 @@ pub fn read_receipt(wire: &[u8]) -> Option<ReceiptRead> {
     let rest = tail.strip_prefix(MARK)?;
     let hex = rest.strip_suffix(b"\"}")?;
     let hex = std::str::from_utf8(hex).ok()?;
-    if !is_lower_hex(hex, 64) {
+    if !is_lower_hex(hex, 96) {
         return None;
     }
     let mut document = head.to_vec();
@@ -106,7 +120,7 @@ mod tests {
         assert_eq!(
             wire,
             format!(
-                r#"{{"inputs":{{"dt_s":0.1}},"run_seal":"ab","receipt_sha256":"{}"}}"#,
+                r#"{{"inputs":{{"dt_s":0.1}},"run_seal":"ab","receipt_sha384":"{}"}}"#,
                 receipt_of(document)
             )
         );

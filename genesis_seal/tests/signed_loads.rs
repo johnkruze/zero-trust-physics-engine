@@ -279,7 +279,7 @@ fn a_malformed_signed_object_is_named_and_does_not_hold() {
 /// A comparison made by the rules of the crate alone, its measurements each
 /// signed by TEST KEY B.
 fn signed_comparison(values: &[f64]) -> Value {
-    use genesis_seal::validation::{SealParts, bits_hex, measurements_sha256, statistics, validation_seal};
+    use genesis_seal::validation::{SealParts, bits_hex, measurements_sha384, statistics, validation_seal};
     let key = test_key("B");
     let mut measurements = Vec::new();
     let mut prev: Option<String> = None;
@@ -297,11 +297,11 @@ fn signed_comparison(values: &[f64]) -> Value {
     let steps: Vec<u64> = (1..=values.len() as u64).collect();
     let stats = statistics(&steps, &model, values).unwrap().unwrap();
     let hexes: Vec<String> = model.iter().map(|value| bits_hex(*value)).collect();
-    let run_seal = "ab".repeat(32);
-    let hash = measurements_sha256(&measurements);
+    let run_seal = "ab".repeat(48);
+    let hash = measurements_sha384(&measurements);
     let seal = validation_seal(&SealParts {
         run_seal: &run_seal,
-        measurements_sha256: &hash,
+        measurements_sha384: &hash,
         quantity: "terminal_v",
         component: None,
         outcome: "completed",
@@ -319,7 +319,7 @@ fn signed_comparison(values: &[f64]) -> Value {
         "compared": values.len(), "not_reached": 0,
         "rms_error_hex": stats.rms_error_hex(), "mean_signed_error_hex": stats.mean_signed_error_hex(),
         "max_abs_error_hex": stats.max_abs_error_hex(), "max_abs_error_step": stats.max_abs_error_step,
-        "model_values_hex": hexes, "measurements_sha256": hash, "validation_seal": seal
+        "model_values_hex": hexes, "measurements_sha384": hash, "validation_seal": seal
     })
 }
 
@@ -334,7 +334,7 @@ fn a_comparison_with_signed_measurements_holds_and_an_edited_measurement_is_name
     // A measured voltage changed, the hash of the measurements made again: the signature names it.
     let mut edited = honest.clone();
     edited["inputs"]["measurements"][1]["value"] = json!(3.95);
-    edited["measurements_sha256"] = json!(genesis_seal::validation::measurements_sha256(&edited["inputs"]["measurements"]));
+    edited["measurements_sha384"] = json!(genesis_seal::validation::measurements_sha384(&edited["inputs"]["measurements"]));
     let report = check_validation(edited.to_string().as_bytes()).unwrap();
     assert_eq!(report.cause.map(|cause| cause.as_str()), Some("load_signature"));
     assert_eq!(report.broken_place.as_deref(), Some("measurements[1]"));
@@ -442,10 +442,10 @@ fn the_worked_signed_reading_is_the_one_the_reference_prints() {
     let verified = attest::verify_run(&request).unwrap();
     assert_eq!(verified[0].fingerprint, "3078ec6e06aecfba");
     assert_eq!(verified[0].reading_sha256, "b2be406e997511e68b044c2e0ed08356ef271c7f134ad632b85aa5c5d856a54f");
-    assert_eq!(hex::encode(genesis_seal::run::link_0(&request)), "6f8a33edbdc8ac5457a262c91ca94d54e71dd9c9c2ec28304d0296539ef01d24");
+    assert_eq!(hex::encode(genesis_seal::run::link_0(&request)), "06d82384e1e5ed7980e9d29119f951dc12e240e5e53abd0a61da69137511922fd0420f972b36460f42fe12ad73f6d244");
     let mut plain = request.clone();
     plain["segments"][0].as_object_mut().unwrap().shift_remove("signed");
-    assert_eq!(hex::encode(genesis_seal::run::link_0(&plain)), "9e4b373a5c64f62bb111163a2a4d61dac68b18a5ea49343687aa6bbf310fc244");
+    assert_eq!(hex::encode(genesis_seal::run::link_0(&plain)), "1b5c075e3b7791aa7b6cdab7dad50a2e15305803bea818cb98f26eb7fd7bbee113f8e7167b80f06221be640f69629dde");
 }
 
 /// A dataset of two signed runs, and the same dataset after a forger edited
@@ -481,11 +481,11 @@ fn a_dataset_row_whose_signed_reading_was_edited_and_every_seal_made_again_is_na
         let root = hex::encode(genesis_seal::tree::root(&leaves).unwrap());
         let mut head: Head = files.assembled.head.clone();
         head.request = plan.value().clone();
-        head.plan_sha256 = plan.plan_sha256();
+        head.plan_sha384 = plan.plan_sha384();
         head.merkle_root = root.clone();
-        head.dataset_seal = dataset_seal(&head.plan_sha256, &root, &head.counts);
+        head.dataset_seal = dataset_seal(&head.plan_sha384, &root, &head.counts);
         let rows_bytes = rows_text(&rows);
-        head.rows_sha256 = Some(genesis_seal::sealed_form::digest_hex(&rows_bytes));
+        head.rows_sha384 = Some(genesis_seal::sealed_form::digest_hex(&rows_bytes));
         check_dataset(head.wire().as_bytes(), &rows_bytes, None).unwrap()
     };
     let mut edited = honest[1]["inputs"].clone();

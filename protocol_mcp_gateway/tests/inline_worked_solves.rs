@@ -1,7 +1,7 @@
 //! What a solver says one inline answer holds of its worked solve is what
 //! the engine answers: a plan of that many worked solves (describe_solver's
 //! example_solve) is answered in summary, and one more is refused, its
-//! answer above the 40000 characters one inline answer may have (breadth
+//! answer above the 42500 characters one inline answer may have (breadth
 //! test of 2026-10-16, W3: the five solvers whose open_connection said a
 //! plan holds the engine's own 64, or 50, of it, where the inline answer
 //! held fewer; the red team of 0.14.0 rc1, RT1 W-4: ten more, whose
@@ -42,6 +42,8 @@ fn an_inline_answer_holds_the_worked_solves_its_solver_says() {
         }
     }
     let names: Vec<&str> = said.iter().map(|(solver, _, _)| solver.as_str()).collect();
+    // 16 since the fold of 0.15.0: one blast_wave_tnt_air, where the TNT
+    // model and its earlier point-source model each said theirs.
     assert_eq!(names.len(), 16, "{names:?}");
     for (solver, held, parameters) in said {
         let plan = |count: usize| json!({ "solver": solver, "plan": { "kind": "list", "solves": vec![json!({ "parameters": parameters.clone() }); count] } });
@@ -49,9 +51,9 @@ fn an_inline_answer_holds_the_worked_solves_its_solver_says() {
         assert!(!error, "{solver}, {held}: {text}");
         let answer: Value = serde_json::from_str(&text).expect("an answer");
         assert_eq!(answer["summary"].as_array().map(Vec::len), Some(held), "{solver}");
-        assert!(text.len() <= 40_000, "{solver}: {}", text.len());
+        assert!(text.len() <= 42_500, "{solver}: {}", text.len());
         let (error, text) = door.call("run_dataset", &plan(held + 1));
-        assert!(error && text.contains("more than the 40000 one inline answer may have"), "{solver}, {}: {text}", held + 1);
+        assert!(error && text.contains("more than the 42500 one inline answer may have"), "{solver}, {}: {text}", held + 1);
         // One more is solved and then refused, as the sentence says (RT1 W-3 of 0.14.0 rc1).
         assert!(text.contains("Its summary was counted once the plan was solved"), "{solver}, {}: {text}", held + 1);
         assert!(said_text(&door_said, &solver).contains("is otherwise counted once solved, so a plan of a few more of it is solved and then refused"), "{solver}");
@@ -78,7 +80,7 @@ fn every_other_solver_holds_the_engines_own_64_of_its_worked_solve_inline() {
         let plan = json!({ "solver": solver, "plan": { "kind": "list", "solves": vec![json!({ "parameters": parameters }); 64] } });
         let (error, text) = door.call("run_dataset", &plan);
         assert!(!error, "{solver}, 64: {text}");
-        assert!(text.len() <= 40_000, "{solver}: {}", text.len());
+        assert!(text.len() <= 42_500, "{solver}: {}", text.len());
         let answer: Value = serde_json::from_str(&text).expect("an answer");
         assert_eq!(answer["summary"].as_array().map(Vec::len), Some(64), "{solver}");
     }

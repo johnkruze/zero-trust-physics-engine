@@ -154,9 +154,9 @@ async fn a_step_of_the_finger_pad_is_the_compiled_step_to_the_bit() {
     // The state carries the load the twist is made under.
     assert_eq!(answer["state"]["held_normal_force_n"], 2.0);
     assert_eq!(answer["state"]["held_twist_rate_deg_s"], 20.0);
-    assert!(answer["sha256_seal"].as_str().is_some_and(|seal| seal.len() == 64));
-    assert!(answer["receipt_sha256"].as_str().is_some_and(|seal| seal.len() == 64));
-    assert_eq!(answer["engine_version"], "genesis_kernel_v0.12.0");
+    assert!(answer["sha384_seal"].as_str().is_some_and(|seal| seal.len() == 96));
+    assert!(answer["receipt_sha384"].as_str().is_some_and(|seal| seal.len() == 96));
+    assert_eq!(answer["engine_version"], "genesis_kernel_v0.13.0");
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -294,7 +294,7 @@ async fn each_limit_a_request_can_reach_is_named_and_carries_no_proof() {
         let (status, text) = post(&base, "/verify_physics", body).await;
         assert_eq!(status, 422, "{name}: {text}");
         assert!(text.contains(name), "{name}: {text}");
-        assert!(!text.contains("sha256_seal"), "{name}: {text}");
+        assert!(!text.contains("sha384_seal"), "{name}: {text}");
     }
     // The same of a run: no start but zero, and no proof.
     for twist in [1.0e-46, 30.2] {
@@ -347,7 +347,7 @@ async fn each_limit_a_request_can_reach_is_named_and_carries_no_proof() {
         extra["parameters"][key] = json!(0.9);
         let (status, text) = post(&base, "/verify_physics", &extra).await;
         assert_eq!(status, 422, "{key}: {text}");
-        assert!(text.contains(key) && !text.contains("sha256_seal"), "{key}: {text}");
+        assert!(text.contains(key) && !text.contains("sha384_seal"), "{key}: {text}");
     }
     // A force of no contact in a later segment refuses the whole run before its first step.
     let segments = json!([{ "steps": 1, "load": good }, { "steps": 1, "load": load(0.0, 20.0) }]);
@@ -392,7 +392,7 @@ async fn a_load_changed_in_a_later_segment_is_refused_by_name() {
     for held in [load(2.0, 20.0), load(2.07, 20.0)] {
         let (status, text) = post(&base, "/verify_physics", &step_body(twist, &held, 0.01)).await;
         assert_eq!(status, 422, "{text}");
-        assert!(text.contains("TwistNotStartedFromZero") && !text.contains("sha256_seal"), "{text}");
+        assert!(text.contains("TwistNotStartedFromZero") && !text.contains("sha384_seal"), "{text}");
         let segments = json!([{ "steps": 5, "load": held }]);
         let (status, text) = post(&base, "/run_trajectory", &run_body(twist, 0.01, segments, 1)).await;
         assert_eq!(status, 422, "{text}");
@@ -474,19 +474,15 @@ async fn the_local_connection_lists_the_finger_pad_and_gives_the_bytes_of_the_we
     assert!(!error);
     let listed: Value = serde_json::from_str(&listed).unwrap();
     let cards = listed["cards"].as_array().unwrap();
-    assert_eq!(cards.len(), 40);
+    assert_eq!(cards.len(), protocol_mcp_gateway::CARDS);
     let entry = cards
         .iter()
         .find(|card| card["card"] == "fingerpad_p02_glass")
         .expect("the finger pad is listed");
     assert_eq!(entry["domain"], "materials");
-    // The line an agent sees in the list says that the constants are fitted.
-    assert!(
-        entry["specimen"]
-            .as_str()
-            .unwrap()
-            .contains("eight constants fitted to this finger's own trials")
-    );
+    // Since 0.14.4 the line an agent sees in the list gives what the card
+    // computes, the comparison and the gap; the fit is the description's.
+    assert!(!entry["specimen"].as_str().unwrap().contains("Range: "));
 
     let which = json!({ "domain": "materials", "card": "fingerpad_p02_glass" });
     let (described, error) = local.tool("describe_card", &which).await;
@@ -495,9 +491,10 @@ async fn the_local_connection_lists_the_finger_pad_and_gives_the_bytes_of_the_we
     assert_eq!(status, 200);
     assert_eq!(described, over_web);
     let description: Value = serde_json::from_str(&described).unwrap();
-    // The line in the list carries the standing: fitted, compared, the gap,
-    // and the range it computes.
-    let line = entry["specimen"].as_str().unwrap();
+    // The description's sheet carries the standing: fitted, compared, the
+    // gap, and the range it computes.
+    let line = description["specimen"].as_str().unwrap();
+    assert!(line.contains("eight constants fitted to this finger's own trials"), "{line}");
     for words in [
         "slip torque within 9.4, 29.3 and 13.0 percent of the mean of ten trials (target 5.62)",
         "+9.4, +29.3 and -13.0 percent",

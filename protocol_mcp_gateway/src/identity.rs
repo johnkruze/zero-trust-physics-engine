@@ -45,7 +45,7 @@ pub const MOST_CHARS_SAID: usize = 2_000;
 /// stops is John Kruze's of 17 October 2026, word for word, as the site and
 /// Hugging Face say it. "check any proof" in the words approved was said as
 /// "check the proof of a run, a solution or a dataset":
-/// a step's `sha256_seal` is checked by computing the step again, and a
+/// a step's `sha384_seal` is checked by computing the step again, and a
 /// comparison's seal by `genesis_seal verify-validation`.
 pub const INSTRUCTIONS: &str = "Zero-Trust Physics: deterministic physics, a proof on every answer. Start with find_model (describe the real thing) or list_cards / list_solvers, and read describe_card or describe_solver (form \"short\") before a first request. Past what a model was compared with, it keeps going with the same equations and flags every step. It stops only at a physical limit, or where its equations, constants or tables no longer hold, and it names the reason. verify_tape, verify_solution and verify_dataset check the proof of a run, a solution or a dataset; cite gives sources.";
 

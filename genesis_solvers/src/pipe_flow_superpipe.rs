@@ -329,9 +329,21 @@ impl fmt::Display for PipeReject {
                 "temperature {temperature_k} K is outside {} to {} K, where Sutherland's law gives the viscosity of air, so the bulk velocity cannot be known",
                 AIR_VISCOSITY_LAW_K.0, AIR_VISCOSITY_LAW_K.1
             ),
-            Self::MachAboveIncompressible { bulk_mach_number } => write!(
+            Self::MachAboveIncompressible { bulk_mach_number } if bulk_mach_number.is_finite() && *bulk_mach_number < 1.0e15 => write!(
                 f,
                 "bulk Mach number {bulk_mach_number} is above {MACH_MAX}: the flow is compressible, and this solver's density is constant"
+            ),
+            // A Mach number of 1e15 or more is written in exponent form, and
+            // one past the largest 64-bit number, from a pressure so small
+            // that the density underflows, by that bound.
+            Self::MachAboveIncompressible { bulk_mach_number } if bulk_mach_number.is_finite() => write!(
+                f,
+                "bulk Mach number {bulk_mach_number:e} is above {MACH_MAX}: the flow is compressible, and this solver's density is constant"
+            ),
+            Self::MachAboveIncompressible { .. } => write!(
+                f,
+                "bulk Mach number is above {:e}, the largest 64-bit number, so above {MACH_MAX}: the flow is compressible, and this solver's density is constant",
+                f64::MAX
             ),
             Self::NonFiniteValue => write!(f, "a value of the field was not finite"),
             Self::SingularSystem => write!(f, "a Newton iteration had no usable pivot"),
@@ -431,6 +443,14 @@ pub fn admit(question: &PipeQuestion) -> Result<(), PipeReject> {
         return Err(PipeReject::TemperatureOutsideViscosityLaw { temperature_k: t });
     }
     let mach = bulk_mach_number(re, p, t);
+    // The pressure, the temperature and the Reynolds number are finite and
+    // in their ranges here, so a Mach number that is not finite is one past
+    // the largest 64-bit number: the density of air at a pressure under
+    // about 6.68e-302 Pa makes the bulk velocity overflow (the random
+    // conformance test of 16 October 2026, D1b, where it was NonFiniteValue).
+    if mach.is_infinite() {
+        return Err(PipeReject::MachAboveIncompressible { bulk_mach_number: mach });
+    }
     if !mach.is_finite() {
         return Err(PipeReject::NonFiniteValue);
     }
@@ -1222,5 +1242,22 @@ mod tests {
             assert!(!reject.to_string().contains("..="), "{reject}");
         }
     }
-}
 
+    /// The random conformance test of 16 October 2026, D1b: under about
+    /// 6.68e-302 Pa the density underflows, the bulk velocity overflows, and
+    /// the question was refused NonFiniteValue, where above it the same
+    /// question is MachAboveIncompressible, printed in 300 digits. Both are
+    /// MachAboveIncompressible, in a sentence with no long number.
+    #[test]
+    fn a_vanishing_pressure_is_a_compressible_flow() {
+        for p in [1e-305, 5e-324, 6.0e-302] {
+            let reject = solve(&ask(1.0e6, p)).unwrap_err();
+            assert!(matches!(reject, PipeReject::MachAboveIncompressible { .. }), "{p:e}: {reject:?}");
+            assert_eq!(reject.to_string(), "bulk Mach number is above 1.7976931348623157e308, the largest 64-bit number, so above 0.3: the flow is compressible, and this solver's density is constant", "{p:e}");
+        }
+        let reject = solve(&ask(1.0e6, 1e-300)).unwrap_err();
+        assert!(reject.to_string().starts_with("bulk Mach number 3.481034287948017e304 is above 0.3:"), "{reject}");
+        // A Mach number under 1e15 is written as before.
+        assert_eq!(PipeReject::MachAboveIncompressible { bulk_mach_number: 0.5 }.to_string(), "bulk Mach number 0.5 is above 0.3: the flow is compressible, and this solver's density is constant");
+    }
+}

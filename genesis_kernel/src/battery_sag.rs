@@ -46,6 +46,7 @@ extern crate core;
 
 use core::prelude::v1::*;
 
+use crate::exceedance::{Exceedance, ExceedanceKind, Side};
 use crate::frame::LastStateFrame64;
 use crate::normal::normal_or_zero;
 
@@ -338,6 +339,26 @@ pub fn step(
     load: PackLoad,
     dt_s: f64,
 ) -> Result<(), StepReject> {
+    #[cfg(any(test, debug_assertions, feature = "check_exceedances"))]
+    let before = *state;
+    let stepped = step_landed(pack, state, frame, load, dt_s);
+    #[cfg(any(test, debug_assertions, feature = "check_exceedances"))]
+    if stepped.is_ok() {
+        crate::exceedance::debug_check("battery_sag", exceedances(pack, &before, state, load, dt_s), frame.flags);
+    }
+    stepped
+}
+
+/// The step itself; [`step`] is it with, in a build that checks
+/// (`crate::exceedance::CHECKED`), the check that [`exceedances`] stands for
+/// the flags it wrote.
+fn step_landed(
+    pack: &LiIonPack,
+    state: &mut PackState,
+    frame: &mut LastStateFrame64,
+    load: PackLoad,
+    dt_s: f64,
+) -> Result<(), StepReject> {
     step_as_computed(pack, state, frame, load, dt_s)?;
     normal_or_zero_state(state);
     Ok(())
@@ -613,6 +634,37 @@ fn step_bias_work(
     };
     predicted[1] += extra_j;
     commit(pack, state, frame, load, dt_s, predicted)
+}
+
+/// Every limit a flag of this card can mark: what [`exceedances`] reports
+/// beside a flag's bit (`crate::exceedance`).
+pub const EXCEEDANCE_KINDS: &[crate::exceedance::ExceedanceKind] = &[
+    SAG_KIND,
+];
+
+const SAG_KIND: ExceedanceKind = ExceedanceKind::fixed(
+    "FLAG_SAG_WARNING",
+    FLAG_SAG_WARNING,
+    "terminal_v",
+    "V",
+    Side::Below,
+    PACK_WARN_V,
+    "the pack's sag warning voltage, 42 V; below cutoff, 36 V, the step stops",
+);
+
+/// The limits the step from `before` to `after` under `load` over `dt_s`
+/// is past: one record for each limit a flag set on its frame marks.
+pub fn exceedances(
+    pack: &LiIonPack,
+    before: &PackState,
+    after: &PackState,
+    load: PackLoad,
+    dt_s: f64,
+) -> crate::exceedance::Exceedances {
+    let _ = (before, load, dt_s);
+    let mut records = crate::exceedance::Exceedances::new();
+    records.push_if(after.sag_warning, Exceedance::at(SAG_KIND, pack.warn_v, after.terminal_v));
+    records
 }
 
 #[cfg(test)]

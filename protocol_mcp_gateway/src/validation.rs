@@ -12,7 +12,7 @@
 
 use genesis_seal::commitment::{self, Commitment};
 use genesis_seal::validation::{
-    DOES_NOT_SHOW, SealParts, Statistics, bits_hex, measurements_sha256, statistics,
+    DOES_NOT_SHOW, SealParts, Statistics, bits_hex, measurements_sha384, statistics,
     validation_seal,
 };
 use serde::Serialize;
@@ -30,7 +30,7 @@ pub const MAX_MEASUREMENTS: usize = 10_000;
 pub(crate) const TOP_LEVEL: &[&str] = &["run", "quantity", "component", "measurements", commitment::COMMITMENT];
 
 /// What the input schema says of `commitment`, for a run and a plan of solves.
-pub(crate) const COMMITMENT_SAYS: &str = "Optional: a commitment the measurements were locked with before this comparison, opened by this request. sha256 is the SHA-256 of these bytes: the line zero-trust-physics/measurement-commitment/v1 and a line break; the sealed form (the text a request's seal is taken over: keys sorted by their bytes, each number x and the 16 hex digits of its 64-bit float, no spaces) of {\"component\": <this request's component, or null>, \"measurements\": <this request's measurements>, \"quantity\": <this request's quantity>}; a line break; and the salt's bytes, its hex decoded. salt is 32 to 128 lowercase hex digits, 16 to 64 bytes, kept back until the comparison so that the data are not found from the sha256 by trying values. The engine makes the digest again from the request before computing: data that do not open it (a value, a step or a row changed, moved, added or dropped, another quantity or another salt) are refused as CommitmentDoesNotMatch, a salt shorter than 16 bytes as CommitmentSaltTooShort, a field of the wrong form as CommitmentMalformed, and sha256 or salt left out as InputMissing; nothing is computed and nothing is sealed. Opened, the comparison runs as it runs without one, validation_seal takes the commitment as a sixth part, and the answer says so in commitment_opened. A commitment shows that the data were not changed after it was made; when it was made is shown by where its sha256 was published before the comparison.";
+pub(crate) const COMMITMENT_SAYS: &str = "Optional: a commitment the measurements were locked with before this comparison, opened by this request. sha384 is the SHA-384 of these bytes: the line zero-trust-physics/measurement-commitment/v2 and a line break; the sealed form (the text a request's seal is taken over: keys sorted by their bytes, each number x and the 16 hex digits of its 64-bit float, no spaces) of {\"component\": <this request's component, or null>, \"measurements\": <this request's measurements>, \"quantity\": <this request's quantity>}; a line break; and the salt's bytes, its hex decoded. salt is 32 to 128 lowercase hex digits, 16 to 64 bytes, kept back until the comparison so that the data are not found from the sha384 by trying values. The engine makes the digest again from the request before computing: data that do not open it (a value, a step or a row changed, moved, added or dropped, another quantity or another salt) are refused as CommitmentDoesNotMatch, a salt shorter than 16 bytes as CommitmentSaltTooShort, a field of the wrong form as CommitmentMalformed, and sha384 or salt left out as InputMissing; nothing is computed and nothing is sealed. Opened, the comparison runs as it runs without one, validation_seal takes the commitment as a sixth part, and the answer says so in commitment_opened. A commitment shows that the data were not changed after it was made; when it was made is shown by where its sha384 was published before the comparison.";
 
 /// The commitment a request carries, read and opened by its measurements,
 /// quantity and component, before a permit. `None` when it carries none.
@@ -53,8 +53,8 @@ pub(crate) fn commitment_schema() -> Value {
     json!({
         "type": "object",
         "properties": {
-            "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$", "description": "The SHA-256 committed, 64 lowercase hex digits." },
-            "salt": { "type": "string", "description": "The salt the sha256 was made with: 32 to 128 lowercase hex digits, 16 to 64 bytes." }
+            "sha384": { "type": "string", "pattern": "^[0-9a-f]{96}$", "description": "The SHA-384 committed, 96 lowercase hex digits." },
+            "salt": { "type": "string", "description": "The salt the sha384 was made with: 32 to 128 lowercase hex digits, 16 to 64 bytes." }
         },
         "required": commitment::FIELDS,
         "additionalProperties": false,
@@ -101,13 +101,14 @@ struct Document<'a> {
     model_values_hex: &'a [String],
     load_source: &'a Value,
     measurement_source: &'a Value,
-    measurements_sha256: &'a str,
+    measurements_sha384: &'a str,
     /// Present only when the request opened a commitment, so an answer
     /// without one has the bytes it had before commitments were taken.
     #[serde(skip_serializing_if = "Option::is_none")]
     commitment_opened: Option<&'static str>,
     validation_seal: &'a str,
     does_not_show: &'static str,
+    seal_rule: &'static str,
 }
 
 /// The answer as JSON text, with its receipt. Both doors send these bytes.
@@ -319,11 +320,11 @@ fn execute(plan: Plan) -> Result<String, String> {
     let stats: Option<Statistics> =
         statistics(landed_steps, &model, measured).map_err(|error| error.to_string())?;
     let model_values_hex: Vec<String> = model.iter().map(|value| bits_hex(*value)).collect();
-    let hash = measurements_sha256(&measurements);
+    let hash = measurements_sha384(&measurements);
     let not_reached = (steps.len() - compared) as u64;
     let seal = validation_seal(&SealParts {
         run_seal: &response.run_seal,
-        measurements_sha256: &hash,
+        measurements_sha384: &hash,
         quantity: &quantity,
         component: component.map(|index| index as u64),
         outcome: &response.outcome,
@@ -356,10 +357,11 @@ fn execute(plan: Plan) -> Result<String, String> {
         model_values_hex: &model_values_hex,
         load_source: &response.load_source,
         measurement_source: &measurement_source,
-        measurements_sha256: &hash,
+        measurements_sha384: &hash,
         commitment_opened: commitment.as_ref().map(|_| commitment::OPENED),
         validation_seal: &seal,
         does_not_show: DOES_NOT_SHOW,
+        seal_rule: crate::SEAL_RULE,
     })
     .map_err(|error| format!("Physical Violation: the response could not be encoded. {error}"))?;
     let receipt = crate::digest_hex(document.as_bytes());
@@ -477,15 +479,15 @@ mod tests {
         tokio::time::sleep(Duration::from_millis(200)).await;
         let salt = "000102030405060708090a0b0c0d0e0f";
         let measurements = request(3, "temperature_k")["measurements"].clone();
-        let sha256 = commitment::commitment_sha256("temperature_k", &Value::Null, &measurements, salt);
-        let committed = |sha256: &str, salt: &str| {
+        let sha384 = commitment::commitment_sha384("temperature_k", &Value::Null, &measurements, salt);
+        let committed = |sha384: &str, salt: &str| {
             let mut body = request(3, "temperature_k");
-            body["commitment"] = json!({ "sha256": sha256, "salt": salt });
+            body["commitment"] = json!({ "sha384": sha384, "salt": salt });
             body
         };
         for (body, name) in [
-            (committed(&"ab".repeat(32), salt), commitment::DOES_NOT_MATCH),
-            (committed(&sha256, "00"), commitment::SALT_TOO_SHORT),
+            (committed(&"ab".repeat(48), salt), commitment::DOES_NOT_MATCH),
+            (committed(&sha384, "00"), commitment::SALT_TOO_SHORT),
             (committed("ab", salt), commitment::MALFORMED),
         ] {
             match run(&state, body).await {
@@ -493,8 +495,8 @@ mod tests {
                 _ => panic!("{name} is refused before the permit"),
             }
         }
-        assert!(matches!(run(&state, committed(&sha256, salt)).await, Err(DoorError::TooMany(_))));
+        assert!(matches!(run(&state, committed(&sha384, salt)).await, Err(DoorError::TooMany(_))));
         assert!(holder.await.unwrap().is_ok());
-        assert!(run(&state, committed(&sha256, salt)).await.is_ok());
+        assert!(run(&state, committed(&sha384, salt)).await.is_ok());
     }
 }

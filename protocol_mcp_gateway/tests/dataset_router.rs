@@ -165,7 +165,7 @@ async fn the_order_of_keys_at_every_depth_does_not_change_the_dataset_seal() {
             serde_json::to_string(&plan).unwrap(),
             serde_json::to_string(&reversed(&plan)).unwrap()
         );
-        for key in ["dataset_seal", "merkle_root", "plan_sha256"] {
+        for key in ["dataset_seal", "merkle_root", "plan_sha384"] {
             assert_eq!(plain["head"][key], flipped["head"][key], "{key}");
         }
         assert_eq!(plain["rows"], flipped["rows"]);
@@ -464,7 +464,7 @@ async fn verify_dataset_holds_on_a_genuine_answer_and_says_how_chains_were_check
     for plan in [list_request("none"), grid_request("none"), sample_request("none")] {
         let (_, answer) = dataset(&base, &plan).await;
         assert_eq!(answer["frames_hex"], Value::Null);
-        assert_eq!(answer["head"]["frames_sha256"], Value::Null);
+        assert_eq!(answer["head"]["frames_sha384"], Value::Null);
         let report = verify(&base, &answer["head"], &rows_of(&answer), &answer["frames_hex"]).await;
         assert_eq!(report["holds"], true, "{report}");
         assert_eq!(report["chains"], "not rebuilt: the plan stores no frames");
@@ -524,7 +524,7 @@ async fn verify_dataset_names_the_first_break_for_each_attack() {
 
     // One byte of the body of the first frame of row 0. It shows at frame 1.
     let mut text = frames.as_str().unwrap().to_string();
-    let at = 2 * 64 + 4;
+    let at = 2 * 80 + 4;
     text = flip_digit(&text, at);
     let report = verify(&base, &head, &rows, &Value::String(text)).await;
     assert_eq!(report["holds"], false, "{report}");
@@ -543,8 +543,8 @@ async fn verify_dataset_names_the_first_break_for_each_attack() {
     assert_break(&base, "a run seal", &head, &edited, &frames, Broken { cause: "run_seal", row: Some(1) }).await;
 
     let mut edited = rows.clone();
-    let leaf = edited[1]["leaf"]["request_sha256"].as_str().unwrap().to_string();
-    edited[1]["leaf"]["request_sha256"] = json!(flip_digit(&leaf, 0));
+    let leaf = edited[1]["leaf"]["request_sha384"].as_str().unwrap().to_string();
+    edited[1]["leaf"]["request_sha384"] = json!(flip_digit(&leaf, 0));
     assert_break(&base, "a leaf", &head, &edited, &frames, Broken { cause: "leaf", row: Some(1) }).await;
 
     let mut edited = head.clone();
@@ -669,7 +669,7 @@ async fn a_head_that_states_a_plan_of_a_thousand_million_rows_is_answered_at_onc
     let stated = DatasetRequest::from_value(head["request"].clone()).unwrap_or_else(|e| panic!("{e}"));
     assert_eq!(stated.totals().rows, 1_600_000_000);
     // The head carries the true hash of the plan it states, so the rows are read against that plan.
-    head["plan_sha256"] = json!(stated.plan_sha256());
+    head["plan_sha384"] = json!(stated.plan_sha384());
     head["rows"] = json!(stated.totals().rows);
     let started = Instant::now();
     let report = verify(&base, &head, &[rows[5].clone(), rows[4].clone()], &Value::Null).await;
@@ -715,8 +715,8 @@ async fn verify_dataset_names_the_row_whose_decimal_is_not_its_hex() {
         text.push(b'\n');
     }
     let mut forged = head.as_object().unwrap().clone();
-    forged.shift_remove("receipt_sha256");
-    forged.insert("rows_sha256".to_string(), json!(digest_hex(&text)));
+    forged.shift_remove("receipt_sha384");
+    forged.insert("rows_sha384".to_string(), json!(digest_hex(&text)));
     let wire = genesis_seal::receipt::with_receipt(&serde_json::to_string(&Value::Object(forged)).unwrap());
     let forged: Value = serde_json::from_str(&wire).unwrap();
     let report = verify(&base, &forged, &rows, &frames).await;
@@ -824,8 +824,8 @@ async fn a_dataset_made_without_the_engine_holds_and_a_replayed_row_exposes_it()
         })
         .collect();
     let mut made = assemble(&plan, "no_engine", &results).unwrap();
-    made.head.rows_sha256 = Some(digest_hex(&made.rows_text()));
-    made.head.frames_sha256 = made.frames_bytes().map(|bytes| digest_hex(&bytes));
+    made.head.rows_sha384 = Some(digest_hex(&made.rows_text()));
+    made.head.frames_sha384 = made.frames_bytes().map(|bytes| digest_hex(&bytes));
     let head: Value = serde_json::from_str(&made.head.wire()).unwrap();
     let rows: Vec<Value> = made.rows.iter().map(|row| row.to_value()).collect();
     let frames = Value::String(hex::encode(made.frames_bytes().unwrap()));
@@ -839,8 +839,8 @@ async fn a_dataset_made_without_the_engine_holds_and_a_replayed_row_exposes_it()
     // first place named is a text the engine does not write: the made-up
     // state has not the card's fields. Only the replay below tells its numbers.
     let mut named = assemble(&plan, protocol_mcp_gateway::ENGINE_VERSION, &results).unwrap();
-    named.head.rows_sha256 = Some(digest_hex(&named.rows_text()));
-    named.head.frames_sha256 = named.frames_bytes().map(|bytes| digest_hex(&bytes));
+    named.head.rows_sha384 = Some(digest_hex(&named.rows_text()));
+    named.head.frames_sha384 = named.frames_bytes().map(|bytes| digest_hex(&bytes));
     let named_head: Value = serde_json::from_str(&named.head.wire()).unwrap();
     let named_rows: Vec<Value> = named.rows.iter().map(|row| row.to_value()).collect();
     let named_frames = Value::String(hex::encode(named.frames_bytes().unwrap()));

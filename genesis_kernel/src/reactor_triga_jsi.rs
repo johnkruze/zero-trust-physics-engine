@@ -140,6 +140,7 @@ extern crate core;
 
 use core::prelude::v1::*;
 
+use crate::exceedance::{Exceedance, ExceedanceKind, Side};
 use crate::frame::LastStateFrame64;
 use crate::normal::{normal_or_zero, normal_or_zero_each};
 
@@ -712,6 +713,26 @@ pub fn step(
     load: ReactorLoad,
     dt_s: f64,
 ) -> Result<(), StepReject> {
+    #[cfg(any(test, debug_assertions, feature = "check_exceedances"))]
+    let before = *state;
+    let stepped = step_landed(reactor, state, frame, load, dt_s);
+    #[cfg(any(test, debug_assertions, feature = "check_exceedances"))]
+    if stepped.is_ok() {
+        crate::exceedance::debug_check("reactor_triga_jsi", exceedances(reactor, &before, state, load, dt_s), frame.flags);
+    }
+    stepped
+}
+
+/// The step itself; [`step`] is it with, in a build that checks
+/// (`crate::exceedance::CHECKED`), the check that [`exceedances`] stands for
+/// the flags it wrote.
+fn step_landed(
+    reactor: &ReactorTrigaJsi,
+    state: &mut ReactorState,
+    frame: &mut LastStateFrame64,
+    load: ReactorLoad,
+    dt_s: f64,
+) -> Result<(), StepReject> {
     step_as_computed(reactor, state, frame, load, dt_s)?;
     normal_or_zero_state(state);
     Ok(())
@@ -1248,6 +1269,60 @@ fn state_is_finite(state: &ReactorState) -> bool {
         && state.peak_fuel_temperature_k.is_finite()
 }
 
+
+/// Every limit a flag of this card can mark: what [`exceedances`] reports
+/// beside a flag's bit (`crate::exceedance`).
+pub const EXCEEDANCE_KINDS: &[crate::exceedance::ExceedanceKind] = &[
+    PROMPT_KIND,
+    ROD_KIND,
+    DROPPED_KIND,
+];
+
+const PROMPT_KIND: ExceedanceKind = ExceedanceKind::fixed(
+    "FLAG_PROMPT_SUPERCRITICAL",
+    FLAG_PROMPT_SUPERCRITICAL,
+    "reactivity_net_dollar",
+    "dollar",
+    Side::Above,
+    1.0,
+    "one dollar of net reactivity: prompt critical",
+);
+const ROD_KIND: ExceedanceKind = ExceedanceKind::varying(
+    "FLAG_ROD_MOVING",
+    FLAG_ROD_MOVING,
+    "reactivity_inserted_now_dollar",
+    "dollar",
+    Side::Below,
+    "the reactivity the load inserts: the rod is still moving while the inserted reactivity is below it",
+);
+const DROPPED_KIND: ExceedanceKind = ExceedanceKind::varying(
+    "FLAG_RODS_DROPPED",
+    FLAG_RODS_DROPPED,
+    "t_s",
+    "s",
+    Side::AtOrAbove,
+    "the time the rods were dropped (scram_time_s): the extent is the time since",
+);
+
+/// The limits the step from `before` to `after` under `load` over `dt_s`
+/// is past: one record for each limit a flag set on its frame marks.
+pub fn exceedances(
+    reactor: &ReactorTrigaJsi,
+    before: &ReactorState,
+    after: &ReactorState,
+    load: ReactorLoad,
+    dt_s: f64,
+) -> crate::exceedance::Exceedances {
+    let _ = (reactor, before, dt_s);
+    let mut records = crate::exceedance::Exceedances::new();
+    records.push_if(after.prompt_supercritical, Exceedance::fixed(PROMPT_KIND, after.reactivity_net_dollar));
+    records.push_if(
+        after.rod_moving,
+        Exceedance::at(ROD_KIND, load.reactivity_inserted_dollar, after.reactivity_inserted_now_dollar),
+    );
+    records.push_if(after.rods_dropped, Exceedance::at(DROPPED_KIND, after.scram_time_s, after.t_s));
+    records
+}
 
 #[cfg(test)]
 mod tests {

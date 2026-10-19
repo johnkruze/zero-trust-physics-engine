@@ -8,17 +8,17 @@
 //!
 //! ```text
 //! {"kind":"continuation"|"coupling","coupling":null|<name>,
-//!  "upstream_run_seal":<64 hex>,"upstream_chain_seal":null|<64 hex>,
+//!  "upstream_run_seal":<96 hex>,"upstream_chain_seal":null|<96 hex>,
 //!  "handed":[{"from":"final_state.<name>","to":<path>,"unit":null|<unit>,"value_hex":<hex>},...],
-//!  "chain_seal":<64 hex>}
+//!  "chain_seal":<96 hex>}
 //! ```
 //!
-//! `chain_seal` is SHA-256 of three texts with nothing between them: the
-//! upstream commitment as 64 hex characters (`upstream_chain_seal` when the
+//! `chain_seal` is SHA-384 of three texts with nothing between them: the
+//! upstream commitment as 96 hex characters (`upstream_chain_seal` when the
 //! upstream is itself a chained link, else `upstream_run_seal`), the compact
 //! JSON of `kind`, `coupling` and `handed` in that order ([`chain_tail`]),
-//! and the downstream seal as 64 hex characters (`run_seal` of a run,
-//! `sha256_seal` of a step).
+//! and the downstream seal as 96 hex characters (`run_seal` of a run,
+//! `sha384_seal` of a step).
 //!
 //! `from` is `final_state.<name>` (the upstream's sealed final value) or
 //! `inputs.` and a request path (a value of the upstream's sealed request).
@@ -106,7 +106,7 @@ fn hex_text(value: &Value) -> String {
     }
 }
 
-/// SHA-256 of the upstream commitment, [`chain_tail`] and the downstream seal.
+/// SHA-384 of the upstream commitment, [`chain_tail`] and the downstream seal.
 pub fn chain_seal(upstream_commitment: &str, tail: &str, downstream_seal: &str) -> String {
     let mut bytes = Vec::with_capacity(128 + tail.len());
     bytes.extend_from_slice(upstream_commitment.as_bytes());
@@ -221,7 +221,7 @@ pub struct ChainReport {
     /// The chain seal of the last link when the chain holds.
     pub chain_seal: Option<String>,
     /// True when the last link is a step, whose frame is not in its answer:
-    /// its `sha256_seal` is shown by sending its request again.
+    /// its `sha384_seal` is shown by sending its request again.
     pub last_is_step: bool,
 }
 
@@ -265,6 +265,12 @@ pub fn check_chain(body: &Value) -> Result<ChainReport, Refusal> {
     let count = links.len();
     let mut readings = Vec::with_capacity(count);
     for (index, link) in links.iter().enumerate() {
+        if let Some(object) = link.as_object() {
+            crate::refusal::refuse_other_rule(object)?;
+            if let Some(Value::Object(chain)) = object.get("chain") {
+                crate::refusal::refuse_other_rule(chain)?;
+            }
+        }
         readings.push(read_link(index, link, index + 1 == count)?);
     }
     // Every link holds alone first: a broken run is named before anything
@@ -339,7 +345,7 @@ struct Link<'a> {
     pair: (String, String),
     inputs: &'a Value,
     outcome: String,
-    /// `run_seal` of a run, `sha256_seal` of a step.
+    /// `run_seal` of a run, `sha384_seal` of a step.
     seal: String,
     final_state: Option<&'a Map<String, Value>>,
     chain: Option<ChainPart>,
@@ -361,12 +367,12 @@ fn read_link<'a>(index: usize, link: &'a Value, last: bool) -> Result<Link<'a>, 
         (Some(domain), Some(card)) => (domain.to_string(), card.to_string()),
         _ => return Err(Refusal::NamesNoCard),
     };
-    let is_step = object.contains_key("sha256_seal") && !object.contains_key("run_seal");
+    let is_step = object.contains_key("sha384_seal") && !object.contains_key("run_seal");
     if is_step && !last {
         return Err(wrong(&format!("links[{index}]"), "a run_trajectory answer: only the last link may be a step"));
     }
     let (seal, outcome, final_state) = if is_step {
-        let seal = hash_field(object, index, "sha256_seal")?;
+        let seal = hash_field(object, index, "sha384_seal")?;
         let state = object
             .get("state")
             .and_then(Value::as_object)
@@ -407,10 +413,10 @@ fn read_link<'a>(index: usize, link: &'a Value, last: bool) -> Result<Link<'a>, 
 fn hash_field(object: &Map<String, Value>, index: usize, key: &str) -> Result<String, Refusal> {
     match object.get(key) {
         None => Err(Refusal::Missing(field(index, key))),
-        Some(Value::String(text)) if is_lower_hex(text, 64) => Ok(text.clone()),
+        Some(Value::String(text)) if is_lower_hex(text, 96) => Ok(text.clone()),
         Some(_) => Err(Refusal::NotExactHex {
             field: field(index, key),
-            digits: 64,
+            digits: 96,
         }),
     }
 }
@@ -440,8 +446,8 @@ fn read_chain(index: usize, chain: &Value) -> Result<ChainPart, Refusal> {
         match object.get(key) {
             None => Err(Refusal::Missing(name(key))),
             Some(Value::Null) => Ok(None),
-            Some(Value::String(text)) if is_lower_hex(text, 64) => Ok(Some(text.clone())),
-            Some(_) => Err(Refusal::NotExactHex { field: name(key), digits: 64 }),
+            Some(Value::String(text)) if is_lower_hex(text, 96) => Ok(Some(text.clone())),
+            Some(_) => Err(Refusal::NotExactHex { field: name(key), digits: 96 }),
         }
     };
     let upstream_run_seal = hash("upstream_run_seal")?.ok_or_else(|| Refusal::Missing(name("upstream_run_seal")))?;
@@ -583,8 +589,8 @@ mod tests {
 
     #[test]
     fn the_chain_seal_is_the_hash_of_the_three_texts() {
-        let up = "ab".repeat(32);
-        let down = "cd".repeat(32);
+        let up = "ab".repeat(48);
+        let down = "cd".repeat(48);
         let tail = chain_tail(KIND_CONTINUATION, None, &[]);
         let mut joined = up.clone();
         joined.push_str(&tail);

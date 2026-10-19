@@ -9,20 +9,18 @@
 use std::time::Duration;
 
 use genesis_kernel::{
-    battery_sag, cable_stretch, cell_18650pf, grid_node, hydraulic_fluid, reactor_spert3,
-    reactor_spert3_fuel,
-    reactor_triga_jsi,
+    battery_sag, cable_stretch, cell_18650pf, grid_node, hydraulic_fluid, reactor_triga_jsi,
     resonance, satellite_lageos1, solar_system, swing, tesseract, thermal, ti64_lattice,
 };
 use protocol_mcp_gateway::app;
 use reqwest::Client;
 use serde_json::{Value, json};
-use sha2::{Digest, Sha256};
+use sha2::{Digest, Sha384};
 use tokio::net::TcpListener;
 use tokio::task::JoinSet;
 
 const REPEATS: usize = 32;
-const ROUTES: usize = 30;
+const ROUTES: usize = 28;
 const ATTACKS_PER_ROUTE: usize = 7;
 
 #[derive(Clone, Copy, Debug)]
@@ -156,7 +154,7 @@ struct Miss {
 }
 
 fn expect(kind: Kind, status: u16, body: &str) -> Result<(), String> {
-    if body.contains("sha256_seal") || body.contains("receipt_sha256") {
+    if body.contains("sha384_seal") || body.contains("receipt_sha384") {
         return Err(format!("sealed a rejected step: {status} {body}"));
     }
     match kind {
@@ -203,8 +201,8 @@ async fn assert_sealed_state(client: &Client, base_url: &str, arm: &Arm, body: &
         .unwrap_or_else(|err| panic!("{} valid control body: {err}", arm.route));
     assert_eq!(status.as_u16(), 200, "{} {text}", arm.route);
     let parsed: Value = serde_json::from_str(&text).unwrap_or_else(|err| panic!("{err}: {text}"));
-    let seal = parsed["sha256_seal"].as_str().unwrap_or("");
-    assert_eq!(seal.len(), 64, "{} {text}", arm.route);
+    let seal = parsed["sha384_seal"].as_str().unwrap_or("");
+    assert_eq!(seal.len(), 96, "{} {text}", arm.route);
     assert!(seal.chars().all(|c| c.is_ascii_hexdigit()), "{seal}");
     assert_receipt(&text);
     assert!(parsed["residual_conservation_error"].is_number(), "{text}");
@@ -225,18 +223,18 @@ async fn assert_sealed_state(client: &Client, base_url: &str, arm: &Arm, body: &
 }
 
 fn assert_receipt(text: &str) {
-    const MARKER: &str = ",\"receipt_sha256\":\"";
+    const MARKER: &str = ",\"receipt_sha384\":\"";
     let pos = text
         .rfind(MARKER)
         .unwrap_or_else(|| panic!("receipt missing from {text}"));
     assert!(text.ends_with("\"}"), "{text}");
     let receipt = &text[pos + MARKER.len()..text.len() - 2];
-    assert_eq!(receipt.len(), 64, "{receipt}");
+    assert_eq!(receipt.len(), 96, "{receipt}");
     let document = format!("{}}}", &text[..pos]);
-    let mut hasher = Sha256::new();
+    let mut hasher = Sha384::new();
     hasher.update(document.as_bytes());
     assert_eq!(hex::encode(hasher.finalize()), receipt, "{text}");
-    assert!(!document.contains("receipt_sha256"));
+    assert!(!document.contains("receipt_sha384"));
 }
 
 fn assert_state_hex(state: &Value, route: &str) {
@@ -569,28 +567,14 @@ fn arms() -> Vec<Arm> {
             poison_key: "reactivity_inserted_dollar",
             poison_vec3: false,
             state_field: "power_mw",
+            // The card's own worked example: cold startup, at its step ceiling.
             parameters: json!({
-                "coolant_temperature_k": reactor_spert3::COOLANT_TEMPERATURE_MIN_K,
+                "inlet_temperature_k": 297.5944444444445,
+                "system_pressure_mpa": 0.0853,
+                "coolant_flow_m_per_s": 0.0,
+                "initial_power_mw": 7.9949547e-6,
                 "reactivity_inserted_dollar": 1.0,
-                "dt_s": dt_in_window(
-                    reactor_spert3::ReactorSpert3::e_core_cold_startup().gate_dt_s()
-                ),
-            }),
-        },
-        Arm {
-            route: "energy/cell_2170_m80",
-            domain: "energy",
-            card: "cell_2170_m80",
-            poison_key: "current_a",
-            poison_vec3: false,
-            state_field: "terminal_v",
-            // The cell steps by one second and by no other step.
-            parameters: json!({
-                "block_chamber_c": 0.0,
-                "charge_removed_ah": 1.0,
-                "current_a": -2.25,
-                "case_temperature_c": 5.0,
-                "dt_s": 1.0,
+                "dt_s": 0.00043000000000000004,
             }),
         },
         Arm {
@@ -638,23 +622,6 @@ fn arms() -> Vec<Arm> {
                 "creep_extension_percent": 0.3,
                 "stress_mpa": 185.0,
                 "dt_s": 40.0,
-            }),
-        },
-        Arm {
-            route: "energy/reactor_spert3_fuel",
-            domain: "energy",
-            card: "reactor_spert3_fuel",
-            poison_key: "reactivity_inserted_dollar",
-            poison_vec3: false,
-            state_field: "power_mw",
-            // The cold band, where the one flow tested is none.
-            parameters: json!({
-                "inlet_temperature_k": reactor_spert3_fuel::BAND_INLET_MIN_K[0],
-                "reactivity_inserted_dollar": 1.0,
-                "coolant_flow_m_per_s": reactor_spert3_fuel::BAND_FLOW_MIN_M_PER_S[0],
-                "dt_s": dt_in_window(
-                    reactor_spert3_fuel::ReactorSpert3Fuel::e_core_low_initial_power().gate_dt_s()
-                ),
             }),
         },
         Arm {
@@ -711,13 +678,22 @@ fn arms() -> Vec<Arm> {
             poison_key: "loss_mw",
             poison_vec3: false,
             state_field: "frequency_hz",
-            // 0.01 s is under the card's step ceiling of 0.0208 s.
+            // The card's own worked example, at 0.005 s, under its step
+            // ceiling of 1/150 s.
             parameters: json!({
-                "frequency_hz": 50.0,
-                "inertia_mw_s": 200000.0,
-                "demand_mw": 28000.0,
-                "loss_mw": 1000.0,
-                "dt_s": 0.01,
+                "frequency_hz": 49.948,
+                "inertia_mw_s": 177000.0,
+                "demand_mw": 26774.0,
+                "dc_low_mw": 1145.0,
+                "dm_low_mw": 500.0,
+                "dr_low_mw": 480.0,
+                "dc_high_mw": 1080.0,
+                "dm_high_mw": 510.0,
+                "dr_high_mw": 480.0,
+                "fast_delivery_s": 1.0,
+                "regulation_delivery_s": 10.0,
+                "loss_mw": 1007.0,
+                "dt_s": 0.005,
             }),
         },
         Arm {
@@ -795,16 +771,26 @@ fn arms() -> Vec<Arm> {
             poison_vec3: false,
             state_field: "fusion_power_w",
             // 1 ms is the card's step ceiling.
+            // The card's own worked example.
             parameters: json!({
-                "thermal_energy_j": 4.0e6,
-                "fast_ion_energy_j": 0.5e6,
+                "thermal_energy_j": 9.0e6,
+                "deuterium_beam_ion_energy_j": 0.5e6,
+                "tritium_beam_ion_energy_j": 0.7e6,
+                "tail_ion_energy_j": 0.4e6,
                 "elapsed_time_s": 0.0,
-                "heating_power_w": 20.0e6,
+                "deuterium_beam_power_w": 10.5e6,
+                "tritium_beam_power_w": 9.5e6,
+                "deuterium_beam_energy_kev": 80.0,
+                "tritium_beam_energy_kev": 150.0,
+                "icrh_power_w": 2.4e6,
                 "ohmic_power_w": 0.5e6,
-                "line_density_per_m3": 6.0e19,
+                "line_density_per_m3": 6.4e19,
                 "plasma_current_a": 3.8e6,
-                "toroidal_field_t": 4.0,
-                "tritium_fraction": 0.5,
+                "toroidal_field_t": 3.9,
+                "tritium_fraction": 0.451,
+                "electron_temperature_kev": 7.4,
+                "effective_charge": 2.4,
+                "hot_ion_regime": 0.0,
                 "dt_s": 1.0e-3,
             }),
         },

@@ -107,7 +107,7 @@ async fn each_published_charging_current_is_accepted_and_the_next_one_beyond_it_
         .await;
         assert_eq!(status, 422, "soc {soc} current {beyond}: {text}");
         assert!(text.contains("OvervoltageCutoff"), "soc {soc} current {beyond}: {text}");
-        assert!(!text.contains("sha256_seal"), "{text}");
+        assert!(!text.contains("sha384_seal"), "{text}");
     }
     // The published minimum itself is the limit only as the state of charge goes to zero.
     let minimum = card["load_fields"][0]["minimum"].as_f64().unwrap();
@@ -190,12 +190,10 @@ async fn a_value_outside_a_published_bound_is_422_before_a_permit_on_every_card_
         ("signal", "resonance"),
         ("materials", "hydraulic_fluid"),
         ("energy", "reactor_spert3"),
-        ("energy", "cell_2170_m80"),
         ("signal", "cantilever_eth"),
         ("energy", "cell_2170_model3"),
         ("materials", "creep_cmsx6"),
         ("aerospace", "capsule_insight"),
-        ("energy", "reactor_spert3_fuel"),
         ("energy", "reactor_triga_jsi"),
         ("aerospace", "crater_ryugu_sci"),
         ("signal", "link_gothenburg_10010"),
@@ -225,7 +223,7 @@ async fn a_value_outside_a_published_bound_is_422_before_a_permit_on_every_card_
             let (status, text) = post(&base, "/verify_physics", &example).await;
             assert_eq!(status, 422, "{name} {field} {side} step: {text}");
             assert!(text.contains(&format!("'{field}'")), "{name} {field}: {text}");
-            assert!(!text.contains("sha256_seal"), "{text}");
+            assert!(!text.contains("sha384_seal"), "{text}");
             // The run: the value at the start, in the first segment, and in a later one.
             let positions: &[usize] = if is_load { &[0, 1] } else { &[usize::MAX] };
             for &position in positions {

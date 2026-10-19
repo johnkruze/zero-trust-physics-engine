@@ -22,7 +22,7 @@ struct Open {
 
 impl Open {
     fn start() -> Open {
-        let mut child = Command::new(env!("CARGO_BIN_EXE_hosted_door"))
+        let mut child = Command::new(env!("CARGO_BIN_EXE_hosted_door")).arg("--unsigned")
             .args(["--open", "--port", "0"])
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -232,13 +232,13 @@ fn an_inline_answer_above_its_limit_is_refused_before_anything_runs() {
     });
     let (error, text) = stdio.tool("run_dataset", &request);
     assert!(error, "{text}");
-    assert!(text.contains("more than the 40000 one inline answer may have"), "{text}");
+    assert!(text.contains("more than the 42500 one inline answer may have"), "{text}");
     assert!(text.contains("leave out 'answer'"), "{text}");
     assert!(text.contains("Nothing was run."), "{text}");
     request.as_object_mut().unwrap().remove("answer");
     let (error, text) = stdio.tool("run_dataset", &request);
     assert!(!error, "{text}");
-    assert!(text.len() < 40_000, "{}", text.len());
+    assert!(text.len() < 42_500, "{}", text.len());
 }
 
 #[test]
@@ -282,7 +282,7 @@ fn a_plan_of_solves_is_sealed_row_by_row_and_compared_with_measurements() {
     assert_eq!(compared["not_reached"], json!(1));
     assert_eq!(compared["not_reached_rows"], json!([2]));
     assert_eq!(compared["model_values_hex"][1], rows[1]["result"]["total_energy_ha_hex"]);
-    assert!(compared["validation_seal"].as_str().unwrap().len() == 64);
+    assert!(compared["validation_seal"].as_str().unwrap().len() == 96);
     assert!(compared["sealed_as"].as_str().unwrap().contains("in the place of a run seal"));
     let (error, receipt) = stdio.tool("verify_receipt", &json!({ "response_text": text }));
     assert!(!error, "{receipt}");
@@ -328,7 +328,7 @@ fn plans_of_solves_under_the_limit_are_answered_and_one_over_it_is_counted_once_
         (0..50).map(|i| json!({ "traction_mpa": 106.26 + f64::from(i) * 0.01, "points_x_mm": [], "points_y_mm": [] })).collect();
     let (error, text) = stdio.tool("run_dataset", &list("stress_plate_hole_s235_elastic", elastic));
     assert!(!error, "{text}");
-    assert!(text.len() < 40_000 && parsed(&text)["summary"].as_array().unwrap().len() == 50, "{}", text.len());
+    assert!(text.len() < 42_500 && parsed(&text)["summary"].as_array().unwrap().len() == 50, "{}", text.len());
     let (_, described) = stdio.tool("describe_solver", &json!({ "solver": "propeller_apc_10x7e", "form": "short" }));
     let example = parsed(&described)["example_solve"]["parameters"].clone();
     let (error, text) = stdio.tool("run_dataset", &list("propeller_apc_10x7e", vec![example; 64]));
@@ -339,5 +339,5 @@ fn plans_of_solves_under_the_limit_are_answered_and_one_over_it_is_counted_once_
     let (error, text) = stdio.tool("run_dataset", &list("blast_wave_tnt_air", vec![example; 64]));
     assert!(error, "{text}");
     assert!(text.starts_with("Physical Violation: the answer comes to "), "{text}");
-    assert!(text.contains("characters, more than the 40000 one inline answer may have. Its summary was counted once the plan was solved, and none is returned. To make it smaller: send fewer solves."), "{text}");
+    assert!(text.contains("characters, more than the 42500 one inline answer may have. Its summary was counted once the plan was solved, and none is returned. To make it smaller: send fewer solves."), "{text}");
 }

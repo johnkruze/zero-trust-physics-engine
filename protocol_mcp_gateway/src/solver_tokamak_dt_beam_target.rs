@@ -299,7 +299,7 @@ pub fn reject_name(reject: &SliceReject) -> &'static str {
 }
 
 fn field_words() -> String {
-    "SHA-256 of the shell count as 8 little-endian bytes, then the D-T reaction rate density of each shell from the axis outward, per cubic metre per second, as little-endian f64 bytes.".to_string()
+    "SHA-384 of the shell count as 8 little-endian bytes, then the D-T reaction rate density of each shell from the axis outward, per cubic metre per second, as little-endian f64 bytes.".to_string()
 }
 
 /// What one reaction's cross-section fit was held to.

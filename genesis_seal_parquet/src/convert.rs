@@ -23,7 +23,7 @@ use parquet::basic::Compression;
 use parquet::file::metadata::KeyValue;
 use parquet::file::properties::{EnabledStatistics, WriterProperties};
 
-use sha2::{Digest, Sha256};
+use sha2::{Digest, Sha384};
 
 use crate::verify::Verified;
 use crate::state::{Cell, Decoded, Kind, StateSchema};
@@ -75,7 +75,8 @@ fn metadata(verified: &Verified, table: &str) -> Vec<KeyValue> {
         pair("note", NOTE.into()),
         pair("dataset_seal", verified.head.dataset_seal.clone()),
         pair("merkle_root", verified.head.merkle_root.clone()),
-        pair("plan_sha256", verified.head.plan_sha256.clone()),
+        pair("plan_sha384", verified.head.plan_sha384.clone()),
+        pair("seal_rule", genesis_seal::SEAL_RULE.into()),
         pair("engine_version", counts.engine_version.clone()),
         pair("rows", counts.rows.to_string()),
         pair("completed", counts.completed.to_string()),
@@ -83,11 +84,24 @@ fn metadata(verified: &Verified, table: &str) -> Vec<KeyValue> {
         pair("refused", counts.refused.to_string()),
         pair("unadmitted", counts.unadmitted.to_string()),
         pair("frames", counts.frames.to_string()),
-        pair("source_head_sha256", verified.head_sha256.clone()),
-        pair("source_rows_sha256", verified.rows_sha256.clone()),
+        pair("source_head_sha384", verified.head_sha384.clone()),
+        pair("source_rows_sha384", verified.rows_sha384.clone()),
         pair(
-            "source_frames_sha256",
-            verified.frames_sha256.clone().unwrap_or_else(|| "not given".into()),
+            "source_frames_sha384",
+            verified.frames_sha384.clone().unwrap_or_else(|| "not given".into()),
+        ),
+        // The engine's signature on the head: absent, not checked (no key
+        // was given) or holds (checked against the key given).
+        pair("head_signature", verified.signature.said().into()),
+        pair(
+            "head_signature_key_id",
+            verified
+                .signature
+                .report
+                .envelope
+                .as_ref()
+                .map(|envelope| envelope.key_id.clone())
+                .unwrap_or_else(|| "none".into()),
         ),
     ]
 }
@@ -395,7 +409,7 @@ fn close(writer: ArrowWriter<BufWriter<File>>) -> Result<(), String> {
 /// A reader that hashes every byte it gives.
 struct Hashing<R> {
     inner: R,
-    hasher: Sha256,
+    hasher: Sha384,
 }
 
 impl<R: Read> Read for Hashing<R> {
@@ -428,7 +442,7 @@ fn write_frames(
                 .map_err(|e| e.to_string())?
                 .reader(),
         ),
-        hasher: Sha256::new(),
+        hasher: Sha384::new(),
     };
     let mut header = [0_u8; HEADER_LEN];
     input.read_exact(&mut header).map_err(|e| e.to_string())?;
@@ -481,7 +495,7 @@ fn write_frames(
     // and nothing is kept unless the hash is the one the verification computed.
     io::copy(&mut input, &mut io::sink()).map_err(|e| e.to_string())?;
     let converted = hex::encode(input.hasher.finalize());
-    if verified.frames_sha256.as_deref() != Some(converted.as_str()) {
+    if verified.frames_sha384.as_deref() != Some(converted.as_str()) {
         return Err(
             "the frame file is not the file that was verified: it changed between the verification and the conversion."
                 .into(),

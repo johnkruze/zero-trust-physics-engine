@@ -165,7 +165,7 @@ fn a_share_larger_than_the_pool_stops_the_door_at_start_by_name() {
     let dir = scratch("share_too_big");
     let keys = dir.join("keys.json");
     std::fs::write(&keys, serde_json::to_string(&json!([client_entry("big", HEAVY, 4, 33)])).unwrap()).unwrap();
-    let output = std::process::Command::new(env!("CARGO_BIN_EXE_hosted_door"))
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_hosted_door")).arg("--unsigned")
         .args(["--port", "0", "--keys"])
         .arg(&keys)
         .output()

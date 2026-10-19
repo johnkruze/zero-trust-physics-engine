@@ -158,14 +158,24 @@ async fn a_tyre_run_that_reaches_the_old_track_end_or_hold_end_lands_and_goes_on
 
 /// The Great Britain grid: the card was compared over 60 s, and a run goes
 /// on past it. Twenty step sizes, five that once came back short by a step
-/// among them.
+/// among them. From 0.15.0 the GB twin is served as grid_gb: each start
+/// carries the worked example's six service volumes and two delivery times,
+/// and every size is under the twin's step ceiling of 1/150 s.
 #[tokio::test]
 async fn a_grid_run_of_sixty_seconds_lands_every_step() {
     let base = spawn_app().await;
+    let area = |frequency_hz: f64, inertia_mw_s: f64, demand_mw: f64| {
+        json!({
+            "frequency_hz": frequency_hz, "inertia_mw_s": inertia_mw_s, "demand_mw": demand_mw,
+            "dc_low_mw": 1145.0, "dm_low_mw": 500.0, "dr_low_mw": 480.0,
+            "dc_high_mw": 1080.0, "dm_high_mw": 510.0, "dr_high_mw": 480.0,
+            "fast_delivery_s": 1.0, "regulation_delivery_s": 10.0
+        })
+    };
     let grid = |dt_s: f64, steps: u64| {
         json!({
             "domain": "energy", "card": "grid_gb",
-            "initial": { "frequency_hz": 50.0, "inertia_mw_s": 200000.0, "demand_mw": 30000.0 },
+            "initial": area(50.0, 200000.0, 30000.0),
             "dt_s": dt_s,
             "segments": [{ "steps": steps, "load": { "loss_mw": 1000.0 } }],
             "record_every": steps
@@ -173,8 +183,8 @@ async fn a_grid_run_of_sixty_seconds_lands_every_step() {
     };
     // step sizes in units of 0.000001 s
     let sizes_e6: [u64; 20] = [
-        20_000, 16_000, 15_625, 15_000, 12_500, 12_000, 10_000, 8_000, 7_500, 6_000, 5_000, 4_000,
-        3_000, 2_500, 2_000, 1_600, 1_500, 1_200, 1_000, 800,
+        6_250, 6_000, 5_000, 4_800, 4_000, 3_750, 3_200, 3_000, 2_500, 2_400, 2_000, 1_875,
+        1_600, 1_500, 1_250, 1_200, 1_000, 800, 625, 500,
     ];
     for dt_e6 in sizes_e6 {
         let steps = 60_000_000 / dt_e6;
@@ -182,18 +192,19 @@ async fn a_grid_run_of_sixty_seconds_lands_every_step() {
         let body = grid(decimal(dt_e6, 6), steps);
         lands_whole_and_one_more_lands(&base, &body, steps).await;
     }
-    // the deepest corner of the spans falls under the lowest compared
-    // frequency, 49.55 Hz: answered, flagged
+    // the deepest corner of the spans: answered. The twin's lowest there is
+    // 49.582 Hz, above the lowest compared frequency, 49.55 Hz, where the
+    // retired swing model fell under it.
     let deepest = run(&base, &json!({
         "domain": "energy", "card": "grid_gb",
-        "initial": { "frequency_hz": 49.85, "inertia_mw_s": 111000.0, "demand_mw": 18163.0 },
-        "dt_s": 0.015625,
-        "segments": [{ "steps": 3840, "load": { "loss_mw": 1402.0 } }],
-        "record_every": 3840
+        "initial": area(49.85, 111000.0, 18163.0),
+        "dt_s": 0.00625,
+        "segments": [{ "steps": 9600, "load": { "loss_mw": 1402.0 } }],
+        "record_every": 9600
     }))
     .await;
     assert_eq!(deepest["outcome"], "completed");
-    assert!(deepest["final_state"]["lowest_frequency_hz"].as_f64().unwrap() < 49.55);
+    assert_eq!(deepest["steps_landed"], 9600);
     assert!(deepest["final_state"].get("below_statutory_limit").is_none());
 }
 
@@ -205,14 +216,19 @@ async fn a_grid_run_of_sixty_seconds_lands_every_step() {
 #[tokio::test]
 async fn a_tokamak_run_past_the_longest_compared_window_lands_every_step() {
     let base = spawn_app().await;
+    // The JET twin served as tokamak_jet_dte1 from 0.15.0, on its worked
+    // example's start and heating.
     let body = |start_s: f64, dt_s: f64, steps: u64| json!({
         "domain": "energy", "card": "tokamak_jet_dte1",
-        "initial": { "thermal_energy_j": 4000000.0, "fast_ion_energy_j": 500000.0, "elapsed_time_s": start_s },
+        "initial": { "thermal_energy_j": 9000000.0, "deuterium_beam_ion_energy_j": 500000.0, "tritium_beam_ion_energy_j": 700000.0, "tail_ion_energy_j": 400000.0, "elapsed_time_s": start_s },
         "dt_s": dt_s,
         "segments": [{ "steps": steps, "load": {
-            "heating_power_w": 20000000.0, "ohmic_power_w": 500000.0,
-            "line_density_per_m3": 6e19, "plasma_current_a": 3800000.0,
-            "toroidal_field_t": 4.0, "tritium_fraction": 0.5 } }],
+            "deuterium_beam_power_w": 10500000.0, "tritium_beam_power_w": 9500000.0,
+            "deuterium_beam_energy_kev": 80.0, "tritium_beam_energy_kev": 150.0,
+            "icrh_power_w": 2400000.0, "ohmic_power_w": 500000.0,
+            "line_density_per_m3": 6.4e19, "plasma_current_a": 3800000.0,
+            "toroidal_field_t": 3.9, "tritium_fraction": 0.451,
+            "electron_temperature_kev": 7.4, "effective_charge": 2.4, "hot_ion_regime": 0.0 } }],
         "record_every": steps
     });
     // step sizes in units of 0.000001 s
@@ -247,7 +263,9 @@ async fn a_tokamak_run_past_the_longest_compared_window_lands_every_step() {
     let mut carried_on = body(0.0, 0.001, 1_000);
     carried_on["initial"] = json!({
         "thermal_energy_j": state["thermal_energy_j"],
-        "fast_ion_energy_j": state["fast_ion_energy_j"],
+        "deuterium_beam_ion_energy_j": state["deuterium_beam_ion_energy_j"],
+        "tritium_beam_ion_energy_j": state["tritium_beam_ion_energy_j"],
+        "tail_ion_energy_j": state["tail_ion_energy_j"],
         "elapsed_time_s": state["t_s"]
     });
     carried_on["from"] = json!({ "request": upstream, "run_seal": up["run_seal"] });

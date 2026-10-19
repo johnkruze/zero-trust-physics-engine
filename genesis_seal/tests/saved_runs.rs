@@ -65,7 +65,7 @@ fn the_first_link_of_the_named_run_is_in_its_first_frame() {
     assert_eq!(&first[96..], hex::encode(&link_0[..16]));
     assert_eq!(
         tape["run_seal"],
-        json!("44f398155039dcd1175f98bb6fc6c09c34cf94a261fa977a97a54c1653d2b93e")
+        json!("1ba68297a0e5186ce45d1556f2fd0cc8a3344ffb6eb03fc7388eed4409a1baaea78a8e32545d07c1c9050ea657e7768b")
     );
 }
 

@@ -6,7 +6,8 @@
 //! precursors are carried around the primary loop with the salt, and those
 //! that decay outside the core give no neutrons there. The card answers the
 //! reactivity the control rods must supply above their static critical
-//! position.
+//! position, and what they do supply: rod 1 follows that compensation no
+//! faster than its drive moves it.
 //!
 //! Sources. B. E. Prince, J. R. Engel, S. J. Ball, P. N. Haubenreich and
 //! T. W. Kerlin, "Zero-Power Physics Experiments on the Molten-Salt Reactor
@@ -22,14 +23,19 @@
 //! shape is sin(pi (z - z0) / H), centred where the 79 in effective core is
 //! centred (39.5 in) and H = 91.6 in high, so that it reaches 6.3 in into
 //! each plenum: fitted to the measured steady circulation loss, 0.212 % dk/k
-//! (ORNL-4233 section 3.6). The fuel flow follows the pump speed with a
-//! first-order lag of 2.55 s, fitted to the 48 rod readings of the start-up
-//! (Fig. 24); the lag also takes up the speed of the rod drive, which the card
-//! does not carry. The 73 rod readings of the coast-down (Fig. 24) were left
-//! out of the fit. With the constants read from the sources alone (H = 79 in
-//! from z = 0, no lag) the card gave a steady loss of 0.2546 % dk/k and rod
-//! curves 72.4 and 36.7 pcm root mean square from the readings; calibrated,
-//! 0.2120 % dk/k, 24.8 pcm on the start-up and 8.1 pcm on the coast-down.
+//! (ORNL-4233 section 3.6). The rod drive's speed, 0.526 in/s, is the slope
+//! of rod 1's own position on the start-up of Fig. 24 from 3.5 to 13.2 s,
+//! where it runs flat out, on its differential worth over that travel (14.58
+//! to 19.68 in), 0.05432 % dk/k per inch (Fig. 5 over 1.087): 0.02857 % dk/k
+//! a second. The fuel flow follows the pump speed with a first-order lag of
+//! 2.05 s, fitted to the 48 rod readings of the start-up (Fig. 24) with the
+//! drive in place (2.55 s without it). The 73 rod readings of the coast-down
+//! (Fig. 24) were left out of the fit. With the constants read from the
+//! sources alone (H = 79 in from z = 0, no lag, no drive) the card gave a
+//! steady loss of 0.2546 % dk/k and rod curves 72.4 and 36.7 pcm root mean
+//! square from the readings; calibrated with the drive, 0.2120 % dk/k, 23.9
+//! pcm on the start-up and 6.5 pcm on the coast-down (24.8 and 8.1 without
+//! the drive, record rod_drive_2026-10-18).
 //!
 //! ```text
 //! path        tau in [0, 25.2) s of residence at full flow from the lower-plenum inlet
@@ -38,19 +44,23 @@
 //! shape       phi(z) = sin(pi (z + 6.3) / 91.6) for -6.3 <= z <= 85.3 in, else 0 (flux = importance)
 //! source      s(tau) = phi / I1,   w(tau) = phi I1 / I2,   I1 = ∫ phi dtau, I2 = ∫ phi² dtau
 //! parcels     252 parcels of 0.1 s move with the salt: tau_k = (k + 1/2) 0.1 + Theta (mod 25.2)
-//! fuel flow   df/dt = (p − f) / 2.55 s, p the pump speed, linear within a step (exact)
+//! fuel flow   df/dt = (p − f) / 2.05 s, p the pump speed, linear within a step (exact)
 //! transport   dTheta/dt = f, f taken linear within a step between its two ends
 //! precursors  dC_ik/dt = beta_i P s(tau_k) 0.1 − lambda_i C_ik        (C in W s, times Lambda)
 //! answer      rho = Σ_i beta_i − Σ_i Σ_k lambda_i C_ik w(tau_k) / P   (dk/k, given as percent)
+//! asked       c = rho − rho(0)
+//! rods        r follows c, each step by c − r but by no more than 0.526 in/s × 0.05432 %/in × dt
 //! ```
 //!
 //! `P` is held by the servo at 10 W (zero power: no temperature or power
 //! feedback; the answer does not depend on `P`). The start is the
 //! equilibrium at a steady pump speed: static at 0, circulating at any speed
 //! above it, in closed form. `rho` less its value at the start is the rods'
-//! compensation. Plug flow in every region; one axial shape for flux and
-//! importance; no radial variation, no helium bubbles, no servo dynamics, no
-//! temperature.
+//! compensation the salt asks; `r` is what the rods supply, and a step on
+//! which the drive runs flat out carries `FLAG_ROD_AT_DRIVE_SPEED`. Plug flow
+//! in every region; one axial shape for flux and importance; one worth per
+//! inch for the rod over its travel; no radial variation, no helium bubbles,
+//! no servo dead band, no temperature.
 //!
 //! Range: the pump speed from stopped (0) to full speed (1), past which the
 //! card stops by name. The record compared with: starts at 0 and 1, the pump
@@ -79,6 +89,7 @@ extern crate core;
 
 use core::prelude::v1::*;
 
+use crate::exceedance::{Exceedance, ExceedanceKind, Side};
 use crate::frame::LastStateFrame64;
 use crate::normal::{normal_or_zero, normal_or_zero_each, normal_or_zero_rows};
 
@@ -114,8 +125,14 @@ pub const FLUX_BOTTOM_IN: f64 = -6.3;
 /// circulation loss at full flow is the measured 0.212 % dk/k (ORNL-4233 section 3.6).
 pub const FLUX_HEIGHT_IN: f64 = 91.6;
 /// First-order lag of the fuel flow behind the fuel-pump speed, s: calibrated on the 48 rod
-/// readings of the start-up of Fig. 24.
-pub const FUEL_FLOW_LAG_S: f64 = 2.55;
+/// readings of the start-up of Fig. 24, with the rod drive's speed carried.
+pub const FUEL_FLOW_LAG_S: f64 = 2.05;
+/// Speed of rod 1's drive, inches a second: the slope of the rod's position on the start-up of
+/// Fig. 24 from 3.5 to 13.2 s, where the rod runs at its drive's speed (0.5256, rounded).
+pub const ROD_DRIVE_SPEED_IN_PER_S: f64 = 0.526;
+/// Rod 1's differential worth over that travel, 14.58 to 19.68 in, percent dk/k per inch: the
+/// integral of Fig. 5 over the travel, over 1.087 (Fig. 6), over 5.10 in.
+pub const ROD_WORTH_PERCENT_DK_K_PER_IN: f64 = 0.05432;
 /// Fastest rise of the pump speed compared, per second: the record's 1.2231 (Fig. 22) rounded up.
 pub const PUMP_RISE_COMPARED_PER_S: f64 = 1.3;
 /// Fastest fall of the pump speed compared, per second: the record's 0.8079 (Fig. 23) rounded up.
@@ -141,6 +158,8 @@ pub const FLAG_FLOW_CHANGING: u64 = 1 << 0;
 pub const FLAG_FUEL_CIRCULATING: u64 = 1 << 1;
 /// The step lies outside the runs compared with the record: a start other than the pump stopped or at full speed, the pump speed rising faster than 1.3 or falling faster than 0.81 of full speed a second, or a landing later than 70 s after the start.
 pub const FLAG_OUTSIDE_COMPARED_RUNS: u64 = 1 << 2;
+/// The rods ran at their drive's speed over this step, short of the compensation the salt asks.
+pub const FLAG_ROD_AT_DRIVE_SPEED: u64 = 1 << 3;
 
 /// Why a step did not advance the reactor or the frame.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -177,10 +196,10 @@ pub struct ReactorMsrePumpLoad {
 pub struct ReactorMsrePump {
     pub group_fraction: [f64; 6],
     pub group_decay_per_s: [f64; 6],
-    pub constants: [f64; 25],
+    pub constants: [f64; 27],
 }
 
-const SCALARS: [f64; 25] = [
+const SCALARS: [f64; 27] = [
     POWER_W,
     LOWER_PLENUM_S,
     GRAPHITE_S,
@@ -206,6 +225,8 @@ const SCALARS: [f64; 25] = [
     PARCELS as f64,
     GROUP_FRACTION[0] + GROUP_FRACTION[1] + GROUP_FRACTION[2] + GROUP_FRACTION[3] + GROUP_FRACTION[4] + GROUP_FRACTION[5],
     1.0,
+    ROD_DRIVE_SPEED_IN_PER_S,
+    ROD_WORTH_PERCENT_DK_K_PER_IN,
 ];
 
 const K_POWER: usize = 0;
@@ -230,6 +251,8 @@ const K_RESIDUAL: usize = 19;
 const K_GATE: usize = 20;
 const K_FLOOR: usize = 21;
 const K_FULL_SPEED: usize = 24;
+const K_DRIVE_SPEED: usize = 25;
+const K_ROD_WORTH: usize = 26;
 
 const PI: f64 = 3.141592653589793;
 
@@ -420,8 +443,13 @@ pub struct ReactorMsrePumpState {
     pub circulation_loss_percent_dk_k: f64,
     /// That at the start.
     pub loss_at_start_percent_dk_k: f64,
-    /// The rods' compensation since the start: the loss less the loss at the start, percent dk/k.
+    /// The compensation the salt asks of the rods since the start: the loss less the loss at the start, percent dk/k.
     pub rod_compensation_percent_dk_k: f64,
+    /// What the rods supply since the start, percent dk/k: the compensation followed no faster than
+    /// the drive moves rod 1, `ROD_DRIVE_SPEED_IN_PER_S` on `ROD_WORTH_PERCENT_DK_K_PER_IN`.
+    pub rod_reactivity_percent_dk_k: f64,
+    /// The rods ran at their drive's speed over the last step.
+    pub rod_at_drive_speed: bool,
     /// Mean rate of change of the fuel flow over the last step, per s. Zero at the start.
     pub fuel_flow_rate_per_s: f64,
     /// The fuel flow changed during the last step.
@@ -478,6 +506,8 @@ impl ReactorMsrePumpState {
             circulation_loss_percent_dk_k: 0.0,
             loss_at_start_percent_dk_k: 0.0,
             rod_compensation_percent_dk_k: 0.0,
+            rod_reactivity_percent_dk_k: 0.0,
+            rod_at_drive_speed: false,
             fuel_flow_rate_per_s: 0.0,
             flow_changing: false,
             fuel_circulating: f > 0.0,
@@ -665,6 +695,26 @@ pub fn step(
     load: ReactorMsrePumpLoad,
     dt_s: f64,
 ) -> Result<(), StepReject> {
+    #[cfg(any(test, debug_assertions, feature = "check_exceedances"))]
+    let before = *state;
+    let stepped = step_landed(reactor, state, frame, load, dt_s);
+    #[cfg(any(test, debug_assertions, feature = "check_exceedances"))]
+    if stepped.is_ok() {
+        crate::exceedance::debug_check("reactor_msre_pump", exceedances(reactor, &before, state, load, dt_s), frame.flags);
+    }
+    stepped
+}
+
+/// The step itself; [`step`] is it with, in a build that checks
+/// (`crate::exceedance::CHECKED`), the check that [`exceedances`] stands for
+/// the flags it wrote.
+fn step_landed(
+    reactor: &ReactorMsrePump,
+    state: &mut ReactorMsrePumpState,
+    frame: &mut LastStateFrame64,
+    load: ReactorMsrePumpLoad,
+    dt_s: f64,
+) -> Result<(), StepReject> {
     step_as_computed(rk4, reactor, state, frame, load, dt_s)?;
     normal_or_zero_state(state);
     Ok(())
@@ -686,6 +736,7 @@ fn normal_or_zero_state(state: &mut ReactorMsrePumpState) {
     state.circulation_loss_percent_dk_k = normal_or_zero(state.circulation_loss_percent_dk_k);
     state.loss_at_start_percent_dk_k = normal_or_zero(state.loss_at_start_percent_dk_k);
     state.rod_compensation_percent_dk_k = normal_or_zero(state.rod_compensation_percent_dk_k);
+    state.rod_reactivity_percent_dk_k = normal_or_zero(state.rod_reactivity_percent_dk_k);
     state.fuel_flow_rate_per_s = normal_or_zero(state.fuel_flow_rate_per_s);
 }
 
@@ -817,10 +868,10 @@ fn same_bits(a: &ReactorMsrePumpState, b: &ReactorMsrePumpState) -> bool {
         }
         index += 1;
     }
-    a.flow_changing == b.flow_changing && a.fuel_circulating == b.fuel_circulating && a.outside_compared_runs == b.outside_compared_runs
+    a.flow_changing == b.flow_changing && a.rod_at_drive_speed == b.rod_at_drive_speed && a.fuel_circulating == b.fuel_circulating && a.outside_compared_runs == b.outside_compared_runs
 }
 
-fn scalar_fields(s: &ReactorMsrePumpState) -> [f64; 10] {
+fn scalar_fields(s: &ReactorMsrePumpState) -> [f64; 11] {
     [
         s.t_s,
         s.pump_speed_at_start,
@@ -831,6 +882,7 @@ fn scalar_fields(s: &ReactorMsrePumpState) -> [f64; 10] {
         s.circulation_loss_percent_dk_k,
         s.loss_at_start_percent_dk_k,
         s.rod_compensation_percent_dk_k,
+        s.rod_reactivity_percent_dk_k,
         s.fuel_flow_rate_per_s,
     ]
 }
@@ -945,6 +997,17 @@ fn commit(
     let loss = loss_percent(reactor, shape, &next);
     next.circulation_loss_percent_dk_k = loss;
     next.rod_compensation_percent_dk_k = loss - next.loss_at_start_percent_dk_k;
+    // the rod follows the compensation no faster than its drive: the step's full travel at the drive's speed
+    let reach = reactor.constants[K_DRIVE_SPEED] * reactor.constants[K_ROD_WORTH] * dt_s;
+    let asked = next.rod_compensation_percent_dk_k - state.rod_reactivity_percent_dk_k;
+    next.rod_at_drive_speed = asked > reach || asked < -reach;
+    next.rod_reactivity_percent_dk_k = if asked > reach {
+        state.rod_reactivity_percent_dk_k + reach
+    } else if asked < -reach {
+        state.rod_reactivity_percent_dk_k - reach
+    } else {
+        next.rod_compensation_percent_dk_k
+    };
     next.flow_changing = f1 != f0;
     next.fuel_circulating = f1 > 0.0;
     let start_compared = next.pump_speed_at_start == 0.0 || next.pump_speed_at_start == reactor.constants[K_FULL_SPEED];
@@ -982,7 +1045,7 @@ fn largest_defect_is_created(state: &ReactorMsrePumpState) -> bool {
 
 fn publish(state: &ReactorMsrePumpState, frame: &mut LastStateFrame64) {
     frame.t = state.t_s;
-    frame.pos[0] = state.rod_compensation_percent_dk_k as f32;
+    frame.pos[0] = state.rod_reactivity_percent_dk_k as f32;
     frame.pos[1] = state.circulation_loss_percent_dk_k as f32;
     frame.pos[2] = state.fuel_flow_fraction as f32;
     frame.vel[0] = state.pump_speed_fraction as f32;
@@ -999,6 +1062,9 @@ fn publish(state: &ReactorMsrePumpState, frame: &mut LastStateFrame64) {
     }
     if state.outside_compared_runs {
         flags |= FLAG_OUTSIDE_COMPARED_RUNS;
+    }
+    if state.rod_at_drive_speed {
+        flags |= FLAG_ROD_AT_DRIVE_SPEED;
     }
     frame.flags = flags;
 }
@@ -1055,6 +1121,126 @@ fn state_is_finite(state: &ReactorMsrePumpState) -> bool {
         index += 1;
     }
     true
+}
+
+/// Every limit a flag of this card can mark: what [`exceedances`] reports
+/// beside a flag's bit (`crate::exceedance`).
+pub const EXCEEDANCE_KINDS: &[crate::exceedance::ExceedanceKind] = &[
+    FLOW_CHANGING_KIND,
+    CIRCULATING_KIND,
+    START_KIND,
+    RISE_KIND,
+    FALL_KIND,
+    TIME_KIND,
+    DRIVE_KIND,
+];
+
+const FLOW_CHANGING_KIND: ExceedanceKind = ExceedanceKind::varying(
+    "FLAG_FLOW_CHANGING",
+    FLAG_FLOW_CHANGING,
+    "fuel_flow_fraction",
+    "1",
+    Side::OtherThan,
+    "the fuel flow at the start of the step, as a fraction of full flow",
+);
+const CIRCULATING_KIND: ExceedanceKind = ExceedanceKind::fixed(
+    "FLAG_FUEL_CIRCULATING",
+    FLAG_FUEL_CIRCULATING,
+    "fuel_flow_fraction",
+    "1",
+    Side::Above,
+    0.0,
+    "no fuel flow: the salt at rest",
+);
+const START_KIND: ExceedanceKind = ExceedanceKind::varying(
+    "FLAG_OUTSIDE_COMPARED_RUNS",
+    FLAG_OUTSIDE_COMPARED_RUNS,
+    "pump_speed_at_start",
+    "1",
+    Side::OtherThan,
+    "the nearer of the two compared starts, the pump stopped (0) or at full speed (1)",
+);
+const RISE_KIND: ExceedanceKind = ExceedanceKind::fixed(
+    "FLAG_OUTSIDE_COMPARED_RUNS",
+    FLAG_OUTSIDE_COMPARED_RUNS,
+    "pump_speed_rise_per_s",
+    "1/s",
+    Side::Above,
+    PUMP_RISE_COMPARED_PER_S,
+    "the fastest rise of the pump speed compared, 1.3 of full speed a second",
+);
+const FALL_KIND: ExceedanceKind = ExceedanceKind::fixed(
+    "FLAG_OUTSIDE_COMPARED_RUNS",
+    FLAG_OUTSIDE_COMPARED_RUNS,
+    "pump_speed_fall_per_s",
+    "1/s",
+    Side::Above,
+    PUMP_FALL_COMPARED_PER_S,
+    "the fastest fall of the pump speed compared, 0.81 of full speed a second",
+);
+const TIME_KIND: ExceedanceKind = ExceedanceKind::fixed(
+    "FLAG_OUTSIDE_COMPARED_RUNS",
+    FLAG_OUTSIDE_COMPARED_RUNS,
+    "t_s",
+    "s",
+    Side::Above,
+    TIME_COMPARED_S,
+    "the last time compared, 70 s after the start; set past it by more than its rounding allowance",
+);
+
+const DRIVE_KIND: ExceedanceKind = ExceedanceKind::fixed(
+    "FLAG_ROD_AT_DRIVE_SPEED",
+    FLAG_ROD_AT_DRIVE_SPEED,
+    "rod_compensation_asked_rate_percent_dk_k_per_s",
+    "%dk/k/s",
+    Side::Above,
+    ROD_DRIVE_SPEED_IN_PER_S * ROD_WORTH_PERCENT_DK_K_PER_IN,
+    "the fastest the drive moves the rods' reactivity, 0.526 in/s on 0.05432 %dk/k per inch: the compensation asked over the step, less what the rods supplied before it, a second",
+);
+
+/// The limits the step from `before` to `after` under `load` over `dt_s`
+/// is past: one record for each limit a flag set on its frame marks.
+/// The conditions are those the step writes `flow_changing`,
+/// `fuel_circulating`, `outside_compared_runs` and `rod_at_drive_speed` by.
+pub fn exceedances(
+    reactor: &ReactorMsrePump,
+    before: &ReactorMsrePumpState,
+    after: &ReactorMsrePumpState,
+    load: ReactorMsrePumpLoad,
+    dt_s: f64,
+) -> crate::exceedance::Exceedances {
+    let mut records = crate::exceedance::Exceedances::new();
+    let c = &reactor.constants;
+    records.push_if(
+        after.flow_changing,
+        Exceedance::at(FLOW_CHANGING_KIND, before.fuel_flow_fraction, after.fuel_flow_fraction),
+    );
+    records.push_if(after.fuel_circulating, Exceedance::fixed(CIRCULATING_KIND, after.fuel_flow_fraction));
+    let start = after.pump_speed_at_start;
+    if !(start == 0.0 || start == c[K_FULL_SPEED]) {
+        let nearer = if start - 0.0 <= c[K_FULL_SPEED] - start { 0.0 } else { c[K_FULL_SPEED] };
+        records.push(Exceedance::at(START_KIND, nearer, start));
+    }
+    let from = before.pump_speed_fraction;
+    let to = load.pump_speed_fraction;
+    records.push_if(
+        !(to - from <= c[K_RISE] * dt_s + c[K_CHANGE_ALLOW]),
+        Exceedance::at(RISE_KIND, c[K_RISE], (to - from) / dt_s),
+    );
+    records.push_if(
+        !(from - to <= c[K_FALL] * dt_s + c[K_CHANGE_ALLOW]),
+        Exceedance::at(FALL_KIND, c[K_FALL], (from - to) / dt_s),
+    );
+    records.push_if(
+        !(after.t_s <= c[K_TIME] + c[K_TIME_ALLOW]),
+        Exceedance::at(TIME_KIND, c[K_TIME], after.t_s),
+    );
+    let asked = after.rod_compensation_percent_dk_k - before.rod_reactivity_percent_dk_k;
+    records.push_if(
+        after.rod_at_drive_speed,
+        Exceedance::at(DRIVE_KIND, c[K_DRIVE_SPEED] * c[K_ROD_WORTH], asked.abs() / dt_s),
+    );
+    records
 }
 
 #[cfg(test)]
@@ -1281,14 +1467,14 @@ mod tests {
     #[test]
     fn the_fuel_flow_follows_the_pump_with_its_lag() {
         let reactor = card();
-        // the pump held at full speed from stopped: f = 1 − e^(−t / 2.55)
+        // the pump held at full speed from stopped: f = 1 − e^(−t / tau), tau = FUEL_FLOW_LAG_S
         let mut state = start(0.0);
         let mut frame = marked_frame();
         for _ in 0..51 {
             step(&reactor, &mut state, &mut frame, load(1.0), 0.05).unwrap();
         }
         // the first step's ramp from 0 to 1 is linear; afterwards the pump is held, so the flow at 2.55 s is
-        // 1 − (1 − f(0.05)) e^(−2.5 / 2.55), f(0.05) = 1 − (2.55 / 0.05)(1 − e^(−0.05 / 2.55))
+        // 1 − (1 − f(0.05)) e^(−2.5 / tau), f(0.05) = 1 − (tau / 0.05)(1 − e^(−0.05 / tau))
         let f005 = 1.0 - FUEL_FLOW_LAG_S / 0.05 * (1.0 - crate::math::exp(-0.05 / FUEL_FLOW_LAG_S));
         let held = 1.0 - (1.0 - f005) * crate::math::exp(-2.5 / FUEL_FLOW_LAG_S);
         assert!((state.fuel_flow_fraction - held).abs() < 1.0e-14, "{} {held}", state.fuel_flow_fraction);
@@ -1432,9 +1618,9 @@ mod tests {
         }
     }
 
-    /// The card's answers on the comparison's schedules as the calibration of 2026-10-18 recorded
-    /// them (calibration_2026-10-18/out/card_*.tsv), pinned so that a change to the shape, the
-    /// lag, the transport or the weighting shows.
+    /// The card's answers on the comparison's schedules as the calibration with the rod drive of
+    /// 2026-10-18 recorded them (rod_drive_2026-10-18/out/card_*.tsv), pinned so that a change to the
+    /// shape, the lag, the drive, the transport or the weighting shows.
     #[test]
     fn the_comparison_runs_give_the_answers_the_calibration_recorded() {
         let reactor = card();
@@ -1450,7 +1636,7 @@ mod tests {
             let mut at = [f64::NAN; 1401];
             for n in 0..1400usize {
                 step(&reactor, &mut state, &mut frame, load(profile((n + 1) as f64 * 0.05)), 0.05).unwrap();
-                at[n + 1] = state.rod_compensation_percent_dk_k;
+                at[n + 1] = state.rod_reactivity_percent_dk_k;
             }
             for (n, value) in pins {
                 assert!((at[n] - value).abs() < 1.0e-9, "step {n}: {:.18} against {value}", at[n]);
@@ -1458,7 +1644,37 @@ mod tests {
         }
     }
 
+    /// On the start-up the rod runs at its drive's speed from 4.65 to 11.8 s, behind the compensation
+    /// the salt asks, and never moves faster; on the coast-down the drive keeps up.
+    #[test]
+    fn the_rod_follows_the_compensation_no_faster_than_its_drive() {
+        let reactor = card();
+        let reach = ROD_DRIVE_SPEED_IN_PER_S * ROD_WORTH_PERCENT_DK_K_PER_IN * 0.05;
+        for (start_speed, profile, limited) in [(0.0, startup_speed as fn(f64) -> f64, 144usize), (1.0, coastdown_speed as fn(f64) -> f64, 0)] {
+            let mut state = ReactorMsrePumpState::try_start(&reactor, start_speed).unwrap();
+            let mut frame = marked_frame();
+            let mut at_speed = 0;
+            for n in 0..1400usize {
+                let before = state.rod_reactivity_percent_dk_k;
+                step(&reactor, &mut state, &mut frame, load(profile((n + 1) as f64 * 0.05)), 0.05).unwrap();
+                let moved = state.rod_reactivity_percent_dk_k - before;
+                assert!(moved.abs() <= reach * (1.0 + 1.0e-12), "step {n}: {moved}");
+                assert_eq!(state.rod_at_drive_speed, frame.flags & FLAG_ROD_AT_DRIVE_SPEED != 0);
+                if state.rod_at_drive_speed {
+                    at_speed += 1;
+                    assert!((moved.abs() - reach).abs() < 1.0e-15 && state.rod_reactivity_percent_dk_k < state.rod_compensation_percent_dk_k);
+                } else {
+                    assert_eq!(state.rod_reactivity_percent_dk_k.to_bits(), state.rod_compensation_percent_dk_k.to_bits());
+                }
+                assert_eq!(frame.pos[0], state.rod_reactivity_percent_dk_k as f32);
+            }
+            assert_eq!(at_speed, limited);
+        }
+        // the drive's rate: 0.526 in/s on 0.05432 % dk/k per inch
+        assert!((ROD_DRIVE_SPEED_IN_PER_S * ROD_WORTH_PERCENT_DK_K_PER_IN - 0.02857232).abs() < 1.0e-12);
+    }
+
     const STEADY_PIN: f64 = 0.21198486747418477;
-    const STARTUP_PINS: [(usize, f64); 2] = [(260, 0.25963240441332736), (1400, 0.2212847388238603)];
-    const COASTDOWN_PINS: [(usize, f64); 2] = [(400, -0.14003500605054375), (1400, -0.19578704154648902)];
+    const STARTUP_PINS: [(usize, f64); 3] = [(120, 0.0865957545569521203), (260, 0.265859573208262534), (1400, 0.220082606642889506)];
+    const COASTDOWN_PINS: [(usize, f64); 3] = [(260, -0.112013243374438798), (400, -0.141924641035294674), (1400, -0.196028319950658420)];
 }

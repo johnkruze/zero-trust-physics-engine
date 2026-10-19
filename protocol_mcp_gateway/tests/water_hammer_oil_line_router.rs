@@ -10,7 +10,7 @@ use genesis_solvers::water_hammer_oil_line::{self as hammer, HammerQuestion};
 use protocol_mcp_gateway::app;
 use reqwest::Client;
 use serde_json::{Value, json};
-use sha2::{Digest, Sha256};
+use sha2::{Digest, Sha384};
 use tokio::net::TcpListener;
 
 async fn spawn_app() -> String {
@@ -132,12 +132,12 @@ async fn a_transient_matches_the_solver_bit_for_bit_and_its_proof_holds() {
     assert_number(invariants, "largest_volume_ledger_residual", direct.largest_volume_ledger_residual);
     assert!(direct.largest_energy_ledger_residual < 1e-11);
 
-    let mut hasher = Sha256::new();
+    let mut hasher = Sha384::new();
     hasher.update((direct.field.len() as u64).to_le_bytes());
     for value in &direct.field {
         hasher.update(value.to_le_bytes());
     }
-    let served = body["field_sha256"].as_str().expect("field hash");
+    let served = body["field_sha384"].as_str().expect("field hash");
     assert_eq!(served, hex::encode(hasher.finalize()));
 
     let (status, text) = post(&base, "/verify_solution", &body).await;
@@ -165,7 +165,7 @@ async fn a_transient_matches_the_solver_bit_for_bit_and_its_proof_holds() {
     let short: Value = serde_json::from_str(&text).unwrap();
     assert!(short["result"].get("valve_pressure_history_pa").is_none());
     assert_eq!(short["result"]["valve_pressure_max_pa_hex"], body["result"]["valve_pressure_max_pa_hex"]);
-    assert_eq!(short["field_sha256"], body["field_sha256"]);
+    assert_eq!(short["field_sha384"], body["field_sha384"]);
 }
 
 fn text_of(value: &Value) -> String {
@@ -230,7 +230,7 @@ async fn a_rise_to_the_tubes_yield_is_a_sealed_refusal() {
     assert_eq!(body["reject"], "WallYield");
     let direct = hammer::solve(&q).unwrap_err();
     assert_eq!(body["reject_detail"], format!("Solver Refusal: water_hammer_oil_line did not return a transient (WallYield). {direct}."));
-    assert!(body["result"].is_null() && body["invariants"].is_null() && body["field_sha256"].is_null());
+    assert!(body["result"].is_null() && body["invariants"].is_null() && body["field_sha384"].is_null());
     let (_, text) = post(&base, "/verify_solution", &body).await;
     assert_eq!(serde_json::from_str::<Value>(&text).unwrap()["holds"], true);
 }

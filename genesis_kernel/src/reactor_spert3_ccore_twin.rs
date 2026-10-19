@@ -103,6 +103,7 @@ extern crate core;
 
 use core::prelude::v1::*;
 
+use crate::exceedance::{Exceedance, ExceedanceKind, Side};
 use crate::frame::LastStateFrame64;
 use crate::normal::{normal_or_zero, normal_or_zero_each};
 
@@ -1150,6 +1151,26 @@ pub fn step(
     load: ReactorLoad,
     dt_s: f64,
 ) -> Result<(), StepReject> {
+    #[cfg(any(test, debug_assertions, feature = "check_exceedances"))]
+    let before = *state;
+    let stepped = step_landed(reactor, state, frame, load, dt_s);
+    #[cfg(any(test, debug_assertions, feature = "check_exceedances"))]
+    if stepped.is_ok() {
+        crate::exceedance::debug_check("reactor_spert3_ccore_twin", exceedances(reactor, &before, state, load, dt_s), frame.flags);
+    }
+    stepped
+}
+
+/// The step itself; [`step`] is it with, in a build that checks
+/// (`crate::exceedance::CHECKED`), the check that [`exceedances`] stands for
+/// the flags it wrote.
+fn step_landed(
+    reactor: &ReactorSpert3CcoreTwin,
+    state: &mut ReactorState,
+    frame: &mut LastStateFrame64,
+    load: ReactorLoad,
+    dt_s: f64,
+) -> Result<(), StepReject> {
     step_as_computed(reactor, state, frame, load, dt_s)?;
     normal_or_zero_state(state);
     Ok(())
@@ -1778,4 +1799,130 @@ fn state_is_finite(state: &ReactorState) -> bool {
         index += 1;
     }
     true
+}
+
+/// Every limit a flag of this card can mark: what [`exceedances`] reports
+/// beside a flag's bit (`crate::exceedance`).
+pub const EXCEEDANCE_KINDS: &[crate::exceedance::ExceedanceKind] = &[
+    PROMPT_KIND,
+    PEAK_KIND,
+    BOILING_KIND,
+    INITIAL_LOW,
+    INITIAL_HIGH,
+    PRESSURE_LOW,
+    PRESSURE_HIGH,
+    REACTIVITY_NO_FLOW_LOW,
+    REACTIVITY_HIGH,
+    FLOW_PRESSURE,
+    FLOW_LOW,
+    FLOW_HIGH,
+    REACTIVITY_FLOW_LOW,
+];
+
+const PROMPT_KIND: ExceedanceKind = ExceedanceKind::fixed(
+    "FLAG_PROMPT_SUPERCRITICAL",
+    FLAG_PROMPT_SUPERCRITICAL,
+    "reactivity_net_dollar",
+    "dollar",
+    Side::Above,
+    1.0,
+    "one dollar of net reactivity: prompt critical",
+);
+const PEAK_KIND: ExceedanceKind = ExceedanceKind::varying(
+    "FLAG_PAST_POWER_PEAK",
+    FLAG_PAST_POWER_PEAK,
+    "power_mw",
+    "MW",
+    Side::AtOrBelow,
+    "the largest power so far (peak_power_mw), passed once the power stopped rising: the extent is the fall from it",
+);
+const BOILING_KIND: ExceedanceKind = ExceedanceKind::varying(
+    "FLAG_HOT_SPOT_BOILING",
+    FLAG_HOT_SPOT_BOILING,
+    "hot_spot_plate_temperature_k",
+    "K",
+    Side::Above,
+    "the saturation temperature of water at the system pressure (IAPWS-IF97 region 4)",
+);
+const fn outside(quantity: &'static str, unit: &'static str, side: Side, limit: f64, words: &'static str) -> ExceedanceKind {
+    ExceedanceKind::fixed("FLAG_OUTSIDE_COMPARED_RANGE", FLAG_OUTSIDE_COMPARED_RANGE, quantity, unit, side, limit, words)
+}
+const INITIAL_WORDS: &str = "the initial temperatures of the fitted transients, 21 to 36 degC";
+const INITIAL_LOW: ExceedanceKind = outside("initial_temperature_k", "K", Side::Below, INITIAL_TEMPERATURE_MIN_K, INITIAL_WORDS);
+const INITIAL_HIGH: ExceedanceKind = outside("initial_temperature_k", "K", Side::Above, INITIAL_TEMPERATURE_MAX_K, INITIAL_WORDS);
+const PRESSURE_WORDS: &str = "the system pressures of the fitted transients, 0 to 2500 psig";
+const PRESSURE_LOW: ExceedanceKind = outside("system_pressure_psig", "psig", Side::Below, PRESSURE_MIN_PSIG, PRESSURE_WORDS);
+const PRESSURE_HIGH: ExceedanceKind = outside("system_pressure_psig", "psig", Side::Above, PRESSURE_MAX_PSIG, PRESSURE_WORDS);
+const REACTIVITY_NO_FLOW_LOW: ExceedanceKind = outside(
+    "reactivity_inserted_dollar",
+    "dollar",
+    Side::Below,
+    REACTIVITY_MIN_NO_FLOW_DOLLAR,
+    "the smallest inserted reactivity of the fitted transients with no flow",
+);
+const REACTIVITY_HIGH: ExceedanceKind = outside(
+    "reactivity_inserted_dollar",
+    "dollar",
+    Side::Above,
+    REACTIVITY_MAX_DOLLAR,
+    "the largest inserted reactivity of the fitted transients",
+);
+const FLOW_PRESSURE: ExceedanceKind = outside(
+    "system_pressure_psig",
+    "psig",
+    Side::OtherThan,
+    FLOW_PRESSURE_PSIG,
+    "the system pressure of every fitted transient with flow, 230 psig",
+);
+const FLOW_WORDS: &str = "the coolant flows of the fitted transients with flow, 0.18 to 18 ft/s";
+const FLOW_LOW: ExceedanceKind = outside("coolant_flow_m_per_s", "m/s", Side::Below, FLOW_MIN_M_PER_S, FLOW_WORDS);
+const FLOW_HIGH: ExceedanceKind = outside("coolant_flow_m_per_s", "m/s", Side::Above, FLOW_MAX_M_PER_S, FLOW_WORDS);
+const REACTIVITY_FLOW_LOW: ExceedanceKind = outside(
+    "reactivity_inserted_dollar",
+    "dollar",
+    Side::Below,
+    REACTIVITY_MIN_FLOW_DOLLAR,
+    "the smallest inserted reactivity of the fitted transients with flow",
+);
+
+/// The limits the step from `before` to `after` under `load` over `dt_s`
+/// is past: one record for each limit a flag set on its frame marks.
+/// The conditions are those `derive` and the step write the four flags'
+/// booleans by; the compared range is [`ReactorSpert3CcoreTwin::compared`].
+pub fn exceedances(
+    reactor: &ReactorSpert3CcoreTwin,
+    before: &ReactorState,
+    after: &ReactorState,
+    load: ReactorLoad,
+    dt_s: f64,
+) -> crate::exceedance::Exceedances {
+    let _ = (before, dt_s);
+    let mut records = crate::exceedance::Exceedances::new();
+    let s = after;
+    records.push_if(s.prompt_supercritical, Exceedance::fixed(PROMPT_KIND, s.reactivity_net_dollar));
+    records.push_if(s.past_power_peak, Exceedance::at(PEAK_KIND, s.peak_power_mw, s.power_mw));
+    records.push_if(
+        s.hot_spot_boiling,
+        Exceedance::at(BOILING_KIND, reactor.saturation_temperature_k(s.system_pressure_psig), s.hot_spot_plate_temperature_k),
+    );
+    if s.outside_compared_range {
+        let initial = s.initial_temperature_k;
+        let pressure = s.system_pressure_psig;
+        records.push_if(!(initial >= INITIAL_TEMPERATURE_MIN_K), Exceedance::fixed(INITIAL_LOW, initial));
+        records.push_if(!(initial <= INITIAL_TEMPERATURE_MAX_K), Exceedance::fixed(INITIAL_HIGH, initial));
+        records.push_if(!(pressure >= PRESSURE_MIN_PSIG), Exceedance::fixed(PRESSURE_LOW, pressure));
+        records.push_if(!(pressure <= PRESSURE_MAX_PSIG), Exceedance::fixed(PRESSURE_HIGH, pressure));
+        let v = load.coolant_flow_m_per_s;
+        let rho = load.reactivity_inserted_dollar;
+        if v == 0.0 {
+            records.push_if(!(rho >= REACTIVITY_MIN_NO_FLOW_DOLLAR), Exceedance::fixed(REACTIVITY_NO_FLOW_LOW, rho));
+        } else {
+            records.push_if(pressure != FLOW_PRESSURE_PSIG, Exceedance::fixed(FLOW_PRESSURE, pressure));
+            records.push_if(!(v >= FLOW_MIN_M_PER_S), Exceedance::fixed(FLOW_LOW, v));
+            records.push_if(!(v <= FLOW_MAX_M_PER_S), Exceedance::fixed(FLOW_HIGH, v));
+            records.push_if(!(rho >= REACTIVITY_MIN_FLOW_DOLLAR), Exceedance::fixed(REACTIVITY_FLOW_LOW, rho));
+        }
+        records.push_if(!(rho <= REACTIVITY_MAX_DOLLAR), Exceedance::fixed(REACTIVITY_HIGH, rho));
+    }
+    records
 }

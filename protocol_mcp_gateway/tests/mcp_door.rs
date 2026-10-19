@@ -282,7 +282,7 @@ fn verify_tape_refuses_capital_letters_in_a_frame_by_name_on_the_mcp_door() {
     let report = not_the_sentinel(&answers)[0]["result"]["content"][0]["text"].as_str().unwrap().to_string();
     assert!(report.contains("\"holds\":true"), "{report}");
 
-    for (frame, key, digits) in [(0, "frame_hex", 128), (2, "link", 64), (1, "frame_hex", 128)] {
+    for (frame, key, digits) in [(0, "frame_hex", 128), (2, "link", 96), (1, "frame_hex", 128)] {
         let mut edited = tape.clone();
         let low = edited["frames"][frame][key].as_str().unwrap().to_string();
         edited["frames"][frame][key] = json!(low.to_uppercase());

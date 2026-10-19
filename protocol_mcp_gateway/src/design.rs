@@ -1104,7 +1104,7 @@ pub async fn design(state: &crate::AppState, body: Value) -> Result<String, Door
     let answer = crate::on_pool(state, move || search(&view, &plan)).await?;
     let document = serde_json::to_string(&answer)
         .map_err(|error| DoorError::Internal(format!("Physical Violation: the response could not be encoded. {error}")))?;
-    Ok(genesis_seal::receipt::with_receipt(&document))
+    Ok(genesis_seal::receipt::with_receipt(&crate::with_seal_rule(&document)))
 }
 
 /// What the long form of a design compared: `verify_tape` given the whole
@@ -1263,7 +1263,7 @@ pub(crate) async fn long_form(state: &crate::AppState, body: &Value, text: Optio
     }
     let document = serde_json::to_string(&again)
         .map_err(|error| DoorError::Internal(format!("Physical Violation: the response could not be encoded. {error}")))?;
-    let engine_text = genesis_seal::receipt::with_receipt(&document);
+    let engine_text = genesis_seal::receipt::with_receipt(&crate::with_seal_rule(&document));
     let sent_text = crate::rebuild::sent_text(body, text);
     let found = crate::rebuild::compare(&engine_text, body, &sent_text)?;
     Ok(match found.difference {
@@ -1399,7 +1399,7 @@ mod tests {
         assert!(!refused.is_empty(), "{answer}");
         for row in &refused {
             assert_eq!(row["reject"], "TemperatureOutsideCard");
-            assert!(row["run_seal"].as_str().is_some_and(|seal| seal.len() == 64));
+            assert!(row["run_seal"].as_str().is_some_and(|seal| seal.len() == 96));
         }
         // The high end is in the record at 200 W as tried: not moved back.
         assert!(rows.iter().any(|row| row["set"][0] == 200.0 && row["outcome"] == "refused"));

@@ -10,7 +10,7 @@ use genesis_solvers::orifice_air_chamber::{self as chamber, ChamberQuestion};
 use protocol_mcp_gateway::app;
 use reqwest::Client;
 use serde_json::{Value, json};
-use sha2::{Digest, Sha256};
+use sha2::{Digest, Sha384};
 use tokio::net::TcpListener;
 
 async fn spawn_app() -> String {
@@ -88,12 +88,12 @@ async fn a_charge_matches_the_solver_bit_for_bit_and_its_proof_holds() {
     assert_eq!(result.as_object().unwrap().len(), 2 * 17);
     assert!(direct.mass_ledger_residual < 1e-12 && direct.energy_ledger_residual < 1e-12);
     assert_number(&body["invariants"], "energy_ledger_residual", direct.energy_ledger_residual);
-    let mut hasher = Sha256::new();
+    let mut hasher = Sha384::new();
     hasher.update((direct.field.len() as u64).to_le_bytes());
     for value in &direct.field {
         hasher.update(value.to_le_bytes());
     }
-    assert_eq!(body["field_sha256"].as_str().unwrap(), hex::encode(hasher.finalize()));
+    assert_eq!(body["field_sha384"].as_str().unwrap(), hex::encode(hasher.finalize()));
     let (_, text) = post(&base, "/verify_solution", &body).await;
     assert_eq!(serde_json::from_str::<Value>(&text).unwrap()["holds"], true);
     let mut edited = body.clone();

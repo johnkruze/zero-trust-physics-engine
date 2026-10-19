@@ -329,7 +329,7 @@ pub fn reject_name(reject: &ThermalReject) -> &'static str {
 }
 
 fn field_words() -> String {
-    "SHA-256 of the term count (9) as 8 little-endian bytes, then the terms of the settled balance in W/m^3 as little-endian f64 bytes: fusion, alpha heating of ions, alpha heating of electrons, reactant energy returned to the ions, exchange, bremsstrahlung, synchrotron, conduction, auxiliary.".to_string()
+    "SHA-384 of the term count (9) as 8 little-endian bytes, then the terms of the settled balance in W/m^3 as little-endian f64 bytes: fusion, alpha heating of ions, alpha heating of electrons, reactant energy returned to the ions, exchange, bremsstrahlung, synchrotron, conduction, auxiliary.".to_string()
 }
 
 fn sections() -> Sections {

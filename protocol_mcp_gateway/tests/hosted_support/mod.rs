@@ -27,8 +27,14 @@ pub fn scratch(name: &str) -> PathBuf {
     dir
 }
 
+/// SHA-256 of a client's key, as the keys file holds it (authentication, not a seal).
 pub fn sha(text: &str) -> String {
     hex::encode(Sha256::digest(text.as_bytes()))
+}
+
+/// SHA-384 of a text, as a receipt or a seal of seal rule v2 is taken.
+pub fn seal_sha(text: &str) -> String {
+    genesis_seal::sealed_form::digest_hex(text.as_bytes())
 }
 
 pub fn thermal_run(steps: u64, temperature_k: f64) -> Value {
@@ -145,6 +151,8 @@ impl Hosted {
         let keys = dir.join("keys.json");
         std::fs::write(&keys, serde_json::to_string(&Value::Array(entries)).unwrap()).unwrap();
         let mut command = Command::new(env!("CARGO_BIN_EXE_hosted_door"));
+        // A door with no answer key serves unsigned answers only when told so.
+        command.arg("--unsigned");
         command.arg("--port").arg("0").arg("--keys").arg(&keys);
         if let Some(path) = dataset_dir {
             command.arg("--dataset-dir").arg(path);

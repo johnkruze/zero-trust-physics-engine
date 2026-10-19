@@ -78,6 +78,7 @@ extern crate core;
 
 use core::prelude::v1::*;
 
+use crate::exceedance::{Exceedance, ExceedanceKind, Side};
 use crate::frame::LastStateFrame64;
 use crate::normal::normal_or_zero;
 
@@ -794,6 +795,26 @@ pub fn step(
     load: CellLoad,
     dt_s: f64,
 ) -> Result<(), StepReject> {
+    #[cfg(any(test, debug_assertions, feature = "check_exceedances"))]
+    let before = *state;
+    let stepped = step_landed(cell, state, frame, load, dt_s);
+    #[cfg(any(test, debug_assertions, feature = "check_exceedances"))]
+    if stepped.is_ok() {
+        crate::exceedance::debug_check("cell_18650pf", exceedances(cell, &before, state, load, dt_s), frame.flags);
+    }
+    stepped
+}
+
+/// The step itself; [`step`] is it with, in a build that checks
+/// (`crate::exceedance::CHECKED`), the check that [`exceedances`] stands for
+/// the flags it wrote.
+fn step_landed(
+    cell: &Cell18650Pf,
+    state: &mut CellState,
+    frame: &mut LastStateFrame64,
+    load: CellLoad,
+    dt_s: f64,
+) -> Result<(), StepReject> {
     step_as_computed(cell, state, frame, load, dt_s)?;
     normal_or_zero_state(state);
     Ok(())
@@ -1280,6 +1301,64 @@ fn state_is_finite(state: &CellState) -> bool {
         && state.residual_conservation_error.is_finite()
         && state.cutoff_margin_v.is_finite()
         && state.held_current_a.is_finite()
+}
+
+/// Every limit a flag of this card can mark: what [`exceedances`] reports
+/// beside a flag's bit (`crate::exceedance`).
+pub const EXCEEDANCE_KINDS: &[crate::exceedance::ExceedanceKind] = &[
+    SAG_KIND,
+    CURRENT_LOW_KIND,
+    CURRENT_HIGH_KIND,
+];
+
+const SAG_KIND: ExceedanceKind = ExceedanceKind::fixed(
+    "FLAG_SAG_WARNING",
+    FLAG_SAG_WARNING,
+    "terminal_v",
+    "V",
+    Side::Below,
+    WARN_V,
+    "the cell's sag warning voltage, 3.0 V; at cutoff the step stops",
+);
+const CURRENT_WORDS: &str = "the 1C span of currents that passed the comparison with measurement, 2.89817 to 2.90065 A";
+const CURRENT_LOW_KIND: ExceedanceKind = ExceedanceKind::fixed(
+    "FLAG_CURRENT_OUTSIDE_PASSED_SPAN",
+    FLAG_CURRENT_OUTSIDE_PASSED_SPAN,
+    "current_a",
+    "A",
+    Side::Below,
+    CURRENT_COMPARED_MIN_A,
+    CURRENT_WORDS,
+);
+const CURRENT_HIGH_KIND: ExceedanceKind = ExceedanceKind::fixed(
+    "FLAG_CURRENT_OUTSIDE_PASSED_SPAN",
+    FLAG_CURRENT_OUTSIDE_PASSED_SPAN,
+    "current_a",
+    "A",
+    Side::Above,
+    CURRENT_COMPARED_MAX_A,
+    CURRENT_WORDS,
+);
+
+/// The limits the step from `before` to `after` under `load` over `dt_s`
+/// is past: one record for each limit a flag set on its frame marks.
+pub fn exceedances(
+    cell: &Cell18650Pf,
+    before: &CellState,
+    after: &CellState,
+    load: CellLoad,
+    dt_s: f64,
+) -> crate::exceedance::Exceedances {
+    let _ = (before, load, dt_s);
+    let mut records = crate::exceedance::Exceedances::new();
+    records.push_if(after.sag_warning, Exceedance::at(SAG_KIND, cell.warn_v, after.terminal_v));
+    let current_a = after.current_a;
+    records.push_if(current_a < CURRENT_COMPARED_MIN_A, Exceedance::fixed(CURRENT_LOW_KIND, current_a));
+    records.push_if(
+        !current_was_compared(current_a) && !(current_a < CURRENT_COMPARED_MIN_A),
+        Exceedance::fixed(CURRENT_HIGH_KIND, current_a),
+    );
+    records
 }
 
 #[cfg(test)]

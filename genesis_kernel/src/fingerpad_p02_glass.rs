@@ -158,6 +158,7 @@ extern crate core;
 
 use core::prelude::v1::*;
 
+use crate::exceedance::{Exceedance, ExceedanceKind, Side};
 use crate::frame::LastStateFrame64;
 use crate::normal::normal_or_zero;
 
@@ -693,6 +694,26 @@ pub fn step(
     load: FingerPadLoad,
     dt_s: f64,
 ) -> Result<(), StepReject> {
+    #[cfg(any(test, debug_assertions, feature = "check_exceedances"))]
+    let before = *state;
+    let stepped = step_landed(pad, state, frame, load, dt_s);
+    #[cfg(any(test, debug_assertions, feature = "check_exceedances"))]
+    if stepped.is_ok() {
+        crate::exceedance::debug_check("fingerpad_p02_glass", exceedances(pad, &before, state, load, dt_s), frame.flags);
+    }
+    stepped
+}
+
+/// The step itself; [`step`] is it with, in a build that checks
+/// (`crate::exceedance::CHECKED`), the check that [`exceedances`] stands for
+/// the flags it wrote.
+fn step_landed(
+    pad: &FingerPadP02Glass,
+    state: &mut FingerPadState,
+    frame: &mut LastStateFrame64,
+    load: FingerPadLoad,
+    dt_s: f64,
+) -> Result<(), StepReject> {
     step_as_computed(pad, state, frame, load, dt_s)?;
     normal_or_zero_state(state);
     Ok(())
@@ -894,6 +915,72 @@ fn state_is_finite(state: &FingerPadState) -> bool {
         && state.held_normal_force_n.is_finite()
         && state.held_twist_rate_deg_s.is_finite()
         && state.stored_energy_at_start_j.is_finite()
+}
+
+/// Every limit a flag of this card can mark: what [`exceedances`] reports
+/// beside a flag's bit (`crate::exceedance`).
+pub const EXCEEDANCE_KINDS: &[crate::exceedance::ExceedanceKind] = &[
+    FULL_SLIP_KIND,
+    FORCE_LOW,
+    FORCE_HIGH,
+    RATE_LOW,
+    RATE_HIGH,
+    TWIST_HIGH,
+];
+
+const FULL_SLIP_KIND: ExceedanceKind = ExceedanceKind::fixed(
+    "FLAG_FULL_SLIP",
+    FLAG_FULL_SLIP,
+    "stuck_fraction",
+    "1",
+    Side::Below,
+    FULL_SLIP_STUCK_FRACTION,
+    "a stuck fraction of 0.03: under it the whole contact slides, the event the card exists to find",
+);
+const fn beyond(quantity: &'static str, unit: &'static str, side: Side, limit: f64, words: &'static str) -> ExceedanceKind {
+    ExceedanceKind::fixed("FLAG_BEYOND_COMPARED", FLAG_BEYOND_COMPARED, quantity, unit, side, limit, words)
+}
+const FORCE_WORDS: &str = "the normal forces compared with this finger, 0.5 to 10 N";
+const FORCE_LOW: ExceedanceKind = beyond("normal_force_n", "N", Side::Below, COMPARED_FORCE_FLOOR_N, FORCE_WORDS);
+const FORCE_HIGH: ExceedanceKind = beyond("normal_force_n", "N", Side::Above, COMPARED_FORCE_CEILING_N, FORCE_WORDS);
+const RATE_WORDS: &str = "the twist rates compared with this finger, 5 to 100 degrees a second";
+const RATE_LOW: ExceedanceKind = beyond("twist_rate_deg_s", "deg/s", Side::Below, COMPARED_RATE_FLOOR_DEG_S, RATE_WORDS);
+const RATE_HIGH: ExceedanceKind = beyond("twist_rate_deg_s", "deg/s", Side::Above, COMPARED_RATE_CEILING_DEG_S, RATE_WORDS);
+const TWIST_HIGH: ExceedanceKind = beyond(
+    "twist_deg",
+    "deg",
+    Side::Above,
+    COMPARED_TWIST_END_DEG,
+    "the largest twist compared, 75 degrees; set past it by more than 4e-9 degrees",
+);
+
+/// The limits the step from `before` to `after` under `load` over `dt_s`
+/// is past: one record for each limit a flag set on its frame marks.
+/// The conditions are those of the step's `full_slip` and of
+/// [`FingerPadP02Glass::beyond_compared`].
+pub fn exceedances(
+    pad: &FingerPadP02Glass,
+    before: &FingerPadState,
+    after: &FingerPadState,
+    load: FingerPadLoad,
+    dt_s: f64,
+) -> crate::exceedance::Exceedances {
+    let _ = (before, dt_s);
+    let mut records = crate::exceedance::Exceedances::new();
+    records.push_if(after.full_slip, Exceedance::at(FULL_SLIP_KIND, pad.full_slip_stuck_fraction, after.stuck_fraction));
+    if after.beyond_compared {
+        let force = load.normal_force_n;
+        let rate = load.twist_rate_deg_s;
+        records.push_if(!(force >= pad.compared_force_floor_n), Exceedance::at(FORCE_LOW, pad.compared_force_floor_n, force));
+        records.push_if(!(force <= pad.compared_force_ceiling_n), Exceedance::at(FORCE_HIGH, pad.compared_force_ceiling_n, force));
+        records.push_if(!(rate >= pad.compared_rate_floor_deg_s), Exceedance::at(RATE_LOW, pad.compared_rate_floor_deg_s, rate));
+        records.push_if(!(rate <= pad.compared_rate_ceiling_deg_s), Exceedance::at(RATE_HIGH, pad.compared_rate_ceiling_deg_s, rate));
+        records.push_if(
+            !(after.twist_deg <= pad.compared_twist_end_deg + pad.twist_end_allowance_deg),
+            Exceedance::at(TWIST_HIGH, pad.compared_twist_end_deg, after.twist_deg),
+        );
+    }
+    records
 }
 
 #[cfg(test)]

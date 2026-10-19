@@ -21,7 +21,7 @@ use genesis_kernel::tokamak_vde_mast::{self, TokamakVdeMast, VdeLoad, VdeState};
 use protocol_mcp_gateway::{VerifyPhysicsResponse, app, commit_request_proof};
 use reqwest::Client;
 use serde_json::{Value, json};
-use sha2::{Digest, Sha256};
+use sha2::{Digest, Sha384};
 use tokio::net::TcpListener;
 
 const KERNEL_SOURCE: &str = include_str!("../../genesis_kernel/src/tokamak_vde_mast.rs");
@@ -64,8 +64,8 @@ async fn post(base: &str, path: &str, body: &Value) -> (u16, String) {
     panic!("{path} never accepted a connection: {last_error:?}");
 }
 
-fn sha256_hex(bytes: &[u8]) -> String {
-    hex::encode(Sha256::digest(bytes))
+fn sha384_hex(bytes: &[u8]) -> String {
+    hex::encode(Sha384::digest(bytes))
 }
 
 fn above(x: f64) -> f64 {
@@ -174,8 +174,8 @@ async fn a_step_matches_the_compiled_step_with_the_same_proof_bytes() {
         let mut frame = blank_frame(commit_request_proof(&request));
         tokamak_vde_mast::step(&card, &mut state, &mut frame, VdeLoad { p6_voltage_v: volts }, dt_s).unwrap();
         assert_state_is(&response.state, &state, "step");
-        assert_eq!(response.sha256_seal, sha256_hex(&frame.to_bytes()));
-        seals.push(response.sha256_seal);
+        assert_eq!(response.sha384_seal, sha384_hex(&frame.to_bytes()));
+        seals.push(response.sha384_seal);
     }
     seals.sort();
     seals.dedup();
@@ -450,7 +450,9 @@ async fn the_description_carries_the_kernel_sentences_the_end_and_the_result() {
     // The list row is the spec sheet: the gap is stated with its number.
     let specimen = row["specimen"].as_str().unwrap();
     assert!(specimen.contains("Gap: the growth rate is 93.2 percent low (6.55 per second against 96.3"), "{specimen}");
-    assert!(specimen.contains("(PlasmaAtWall)"), "{specimen}");
+    // Since 0.14.4 the refusals are the description's spec sheet.
+    assert!(!specimen.contains("(PlasmaAtWall)"), "{specimen}");
+    assert!(body["specimen"].as_str().unwrap().contains("(PlasmaAtWall)"));
     // the frame's force slot carries the wall's force on the plasma, in newtons
     let slots = body["frame_slots"].as_array().unwrap();
     let force = slots.iter().find(|slot| slot["slot"] == "force_torque").unwrap().to_string();

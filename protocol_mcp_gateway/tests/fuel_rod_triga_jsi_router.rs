@@ -138,7 +138,7 @@ fn the_card_s_pulse_is_handed_to_the_element_under_one_chain_proof() {
     assert!(error && text.contains("(CouplingLedgerBreach)"), "{text}");
     // A seal that is not the card run's: refused by name.
     let mut forged = request.clone();
-    forged["from"]["run_seal"] = json!("0".repeat(64));
+    forged["from"]["run_seal"] = json!("0".repeat(96));
     let (error, text) = door.call("solve", &forged);
     assert!(error && text.contains("(UpstreamProofBroken)"), "{text}");
 }
@@ -181,14 +181,14 @@ fn the_full_check_of_a_chained_solve_holds_and_names_every_forgery() {
     assert!(error && text.contains("(AnswerCarriesNoRequest)"), "{text}");
     // A forged upstream seal: the card run computed again is not it.
     let mut forged = from.clone();
-    forged["run_seal"] = json!("0".repeat(64));
+    forged["run_seal"] = json!("0".repeat(96));
     let report = door.value("verify_solution", &with_from(&chained, &forged)).expect("a report");
     assert_eq!((report["holds"].clone(), report["cause"].clone(), report["differs_at"].clone()), (json!(false), json!("chain"), json!("from")), "{report}");
     assert!(report["difference"].as_str().unwrap().contains("(UpstreamProofBroken)"), "{report}");
     assert!(report.get("recomputed_chain_seal").is_none(), "{report}");
     // The upstream seal the answer's chain names, rewritten: not the engine's.
     let mut renamed = chained.clone();
-    renamed["chain"]["upstream_run_seal"] = json!("1".repeat(64));
+    renamed["chain"]["upstream_run_seal"] = json!("1".repeat(96));
     let report = door.value("verify_solution", &with_from(&renamed, &from)).expect("a report");
     assert_eq!((report["holds"].clone(), report["cause"].clone(), report["differs_at"].clone()), (json!(false), json!("answer_text"), json!("chain.upstream_run_seal")), "{report}");
     // A tampered handed array under a seal that holds: the request solved by

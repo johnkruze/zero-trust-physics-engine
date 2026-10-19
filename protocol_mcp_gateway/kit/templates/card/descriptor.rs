@@ -5,7 +5,7 @@
 //!
 //! The description skeleton. Every sentence here is served, so each keeps
 //! the rules a description is held to (`tests/conformance_support`): the
-//! company's own specimen is named so, never by what it lacks; a range is
+//! company specimen is named so, never by what it lacks; a range is
 //! written in plain words, "0 to 933.47 K"; no word "check"; and where the
 //! model is compared with measurements, the record states the range compared
 //! on and the result there in numbers.
@@ -103,10 +103,12 @@ pub(super) fn examples() -> (Value, Value) {
 }
 
 /// The record, in the five parts every card gives: the object, the data, the
-/// pass line, the result and the limits, in the words of engine 0.11.0. A
-/// card compared with measurements states the range compared on and the
-/// result there in numbers; a company specimen says what it is and
-/// what it holds.
+/// tolerance, the result and the limits. A card compared with measurements
+/// states what it was fitted on, what it was compared with that was not in
+/// the fit, and the result there in numbers (`new_model.py --fitted-on
+/// --compared-with --within --gap` stamps the result as that spec line, and
+/// its spec sheet row in spec_sheet.rs); a company specimen says what it is
+/// and what it holds.
 pub(super) fn validation(_specimen: &str) -> [String; 5] {
     [
         format!("{SPECIMEN} Every constant of it is stated in this description and fixed in the card."),

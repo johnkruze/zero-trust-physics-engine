@@ -1,6 +1,6 @@
 //! `POST /verify_receipt` and the MCP tool of the same name.
 //!
-//! A receipt is the SHA-256 of the exact bytes of a response before it. The
+//! A receipt is the SHA-384 of the exact bytes of a response before it. The
 //! check reads those bytes and nothing else. It does not run the engine, so a
 //! response made with no engine and given a receipt of its own matches (R5).
 
@@ -15,13 +15,13 @@ use rmcp::ServiceExt;
 use rmcp::model::CallToolRequestParams;
 use rmcp::transport::TokioChildProcess;
 use serde_json::{Map, Value, json};
-use sha2::{Digest, Sha256};
+use sha2::{Digest, Sha384};
 use tokio::net::TcpListener;
 
 const TAIL_REFUSAL: &str =
     "Physical Violation: the text does not end with a receipt as this verifier writes one.";
 const COVERS: &str = "every byte of the response before the receipt, the decimal values included.";
-const DOES_NOT_SHOW: &str = "who produced the response or when. The receipt has no key. Replaying the request through the engine shows the engine produced it.";
+const DOES_NOT_SHOW: &str = "who produced the response or when: the receipt has no key. The engine's signature after it, when the response carries one, shows which key issued it and when, and is reported under signature. Replaying the request through the engine shows the engine produced it.";
 
 async fn spawn_app() -> String {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -62,8 +62,8 @@ async fn post(base: &str, path: &str, body: &Value) -> (u16, String) {
     post_text(base, path, &serde_json::to_string(body).unwrap()).await
 }
 
-fn sha256_hex(bytes: &[u8]) -> String {
-    hex::encode(Sha256::digest(bytes))
+fn sha384_hex(bytes: &[u8]) -> String {
+    hex::encode(Sha384::digest(bytes))
 }
 
 /// The answer of the check for a text, which must be 200.
@@ -115,7 +115,7 @@ async fn genuine(base: &str, path: &str, body: &Value) -> String {
 
 /// The tail every response ends with, and the text before it as a document.
 fn split_tail(text: &str) -> (&str, &str) {
-    let at = text.rfind(",\"receipt_sha256\":\"").expect("a receipt");
+    let at = text.rfind(",\"receipt_sha384\":\"").expect("a receipt");
     (&text[..at], &text[at..])
 }
 
@@ -132,13 +132,13 @@ async fn a_genuine_response_from_each_of_the_four_builders_matches() {
         let text = genuine(&base, path, &body).await;
         let report = checked(&base, &text).await;
         assert_eq!(report["matches"], true, "{label}: {report}");
-        let stated = serde_json::from_str::<Value>(&text).unwrap()["receipt_sha256"].clone();
-        assert_eq!(report["receipt_sha256"], stated, "{label}");
-        assert_eq!(report["recomputed_sha256"], stated, "{label}");
+        let stated = serde_json::from_str::<Value>(&text).unwrap()["receipt_sha384"].clone();
+        assert_eq!(report["receipt_sha384"], stated, "{label}");
+        assert_eq!(report["recomputed_sha384"], stated, "{label}");
         let (document, _) = split_tail(&text);
         assert_eq!(
-            report["recomputed_sha256"],
-            sha256_hex(format!("{document}}}").as_bytes()),
+            report["recomputed_sha384"],
+            sha384_hex(format!("{document}}}").as_bytes()),
             "{label}"
         );
         // Since the 0.13.0 candidate's fix pass the response's engine_version
@@ -146,7 +146,7 @@ async fn a_genuine_response_from_each_of_the_four_builders_matches() {
         let keys: Vec<&str> = report.as_object().unwrap().keys().map(String::as_str).collect();
         assert_eq!(
             keys,
-            ["matches", "engine_version", "engine_version_is_this_engines", "receipt_sha256", "recomputed_sha256", "covers", "does_not_show"],
+            ["matches", "engine_version", "engine_version_is_this_engines", "receipt_sha384", "recomputed_sha384", "covers", "does_not_show", "match_proves"],
             "{label}"
         );
         assert_eq!(report["engine_version"], serde_json::from_str::<Value>(&text).unwrap()["engine_version"], "{label}");
@@ -158,8 +158,8 @@ async fn a_genuine_response_from_each_of_the_four_builders_matches() {
     // The head of an inline dataset, written as `verify_dataset` writes it:
     // the head object read and encoded again, keys in the order received. Its
     // receipt covers the head's own fields only (`request`, `engine_version`,
-    // the counts, `plan_sha256`, `merkle_root`, `dataset_seal`, `rows_sha256`
-    // and `frames_sha256`). The rows and the frames are covered by the two
+    // the counts, `plan_sha384`, `merkle_root`, `dataset_seal`, `rows_sha384`
+    // and `frames_sha384`). The rows and the frames are covered by the two
     // file hashes inside the head, not by the receipt directly.
     let plan = json!({ "kind": "list", "runs": [run(293.15, 1.0, 3), run(300.0, 2.0, 2)] });
     let answer: Value = serde_json::from_str(
@@ -169,7 +169,7 @@ async fn a_genuine_response_from_each_of_the_four_builders_matches() {
     let head_text = serde_json::to_string(&answer["head"]).unwrap();
     let report = checked(&base, &head_text).await;
     assert_eq!(report["matches"], true, "{report}");
-    assert_eq!(report["receipt_sha256"], answer["head"]["receipt_sha256"]);
+    assert_eq!(report["receipt_sha384"], answer["head"]["receipt_sha384"]);
     assert_eq!(report["engine_version"], answer["head"]["engine_version"]);
     assert_eq!(report["engine_version_is_this_engines"], true);
 }
@@ -205,8 +205,8 @@ async fn a_changed_decimal_beside_its_hex_holds_for_the_tape_and_breaks_the_rece
     // The receipt covers the decimal: it does not match.
     let report = checked(&base, &changed).await;
     assert_eq!(report["matches"], false, "{report}");
-    assert_eq!(report["receipt_sha256"], serde_json::from_str::<Value>(&text).unwrap()["receipt_sha256"]);
-    assert_ne!(report["recomputed_sha256"], report["receipt_sha256"]);
+    assert_eq!(report["receipt_sha384"], serde_json::from_str::<Value>(&text).unwrap()["receipt_sha384"]);
+    assert_ne!(report["recomputed_sha384"], report["receipt_sha384"]);
 
     // The unedited text matches, so the digit alone made the difference.
     assert_eq!(checked(&base, &text).await["matches"], true);
@@ -217,7 +217,7 @@ async fn a_changed_decimal_beside_its_hex_holds_for_the_tape_and_breaks_the_rece
 async fn any_other_change_to_the_bytes_breaks_the_receipt_or_leaves_the_form() {
     let base = spawn_app().await;
     let text = genuine(&base, "/run_trajectory", &trajectory()).await;
-    let stated = serde_json::from_str::<Value>(&text).unwrap()["receipt_sha256"].clone();
+    let stated = serde_json::from_str::<Value>(&text).unwrap()["receipt_sha384"].clone();
 
     // One byte changed anywhere else (a letter of the run seal): matches false,
     // and the receipt as stated is still the original.
@@ -227,10 +227,10 @@ async fn any_other_change_to_the_bytes_breaks_the_receipt_or_leaves_the_form() {
     assert_ne!(changed, text);
     let report = checked(&base, &changed).await;
     assert_eq!(report["matches"], false, "one byte: {report}");
-    assert_eq!(report["receipt_sha256"], stated);
+    assert_eq!(report["receipt_sha384"], stated);
 
     // A key moved: `engine_version` taken from its place and put last.
-    let version = r#""engine_version":"genesis_kernel_v0.12.0""#;
+    let version = r#""engine_version":"genesis_kernel_v0.13.0""#;
     assert!(text.contains(&format!("{version},")));
     let (document, tail) = split_tail(&text);
     let moved = format!("{},{version}{tail}", document.replacen(&format!("{version},"), "", 1));
@@ -252,8 +252,8 @@ async fn any_other_change_to_the_bytes_breaks_the_receipt_or_leaves_the_form() {
     let forged = format!("{}{other}\"}}", &text[..hex_end - 1]);
     let report = checked(&base, &forged).await;
     assert_eq!(report["matches"], false, "receipt hex: {report}");
-    assert_eq!(report["recomputed_sha256"], stated);
-    assert_ne!(report["receipt_sha256"], stated);
+    assert_eq!(report["recomputed_sha384"], stated);
+    assert_ne!(report["receipt_sha384"], stated);
 
     // Whitespace after the closing brace leaves the form: refused, 422.
     for tail in ["\n", " "] {
@@ -269,7 +269,7 @@ async fn a_text_with_no_receipt_in_form_and_a_malformed_request_are_refused() {
     let text = genuine(&base, "/solve", &solve()).await;
     let (document, tail) = split_tail(&text);
 
-    let upper = format!("{document}{}", tail.to_ascii_uppercase().replace("RECEIPT_SHA256", "receipt_sha256"));
+    let upper = format!("{document}{}", tail.to_ascii_uppercase().replace("RECEIPT_SHA256", "receipt_sha384"));
     let short = format!("{document}{}\"}}", &tail[..tail.len() - 3]);
     for (label, bad) in [
         ("no receipt", format!("{document}}}")),
@@ -323,13 +323,31 @@ async fn a_text_with_no_receipt_in_form_and_a_malformed_request_are_refused() {
 #[tokio::test]
 async fn a_response_with_a_receipt_made_by_hand_matches_so_the_receipt_is_not_proof_of_origin() {
     let base = spawn_app().await;
-    let document = r#"{"inputs":{"made":"with no engine"},"engine_version":"genesis_kernel_v0.12.0","state":{"temperature_k":1.0}}"#;
-    let receipt = sha256_hex(document.as_bytes());
-    let wire = format!("{},\"receipt_sha256\":\"{receipt}\"}}", &document[..document.len() - 1]);
+    let document = r#"{"inputs":{"made":"with no engine"},"engine_version":"genesis_kernel_v0.13.0","state":{"temperature_k":1.0}}"#;
+    let receipt = sha384_hex(document.as_bytes());
+    let wire = format!("{},\"receipt_sha384\":\"{receipt}\"}}", &document[..document.len() - 1]);
     let report = checked(&base, &wire).await;
     assert_eq!(report["matches"], true, "{report}");
-    assert_eq!(report["receipt_sha256"], receipt);
+    assert_eq!(report["receipt_sha384"], receipt);
     assert_eq!(report["does_not_show"], DOES_NOT_SHOW);
+    // Since 0.14.4 the answer says what the match proves: the bytes only.
+    let proves = report["match_proves"].as_str().unwrap();
+    assert!(proves.starts_with("Only that the bytes before the receipt are unchanged"), "{proves}");
+    assert!(proves.contains("anyone can write a matching receipt for any text"), "{proves}");
+    assert!(proves.contains("needs engine_version_is_this_engines true and a replay"), "{proves}");
+    // A receipt written by hand over an invented version, and over text that
+    // is not JSON, matches too, and the answer says what that leaves open.
+    let fake = r#"{"engine_version":"fake_v1.0","state":{"temperature_k":1.0}}"#;
+    let wire = format!("{},\"receipt_sha384\":\"{}\"}}", &fake[..fake.len() - 1], sha384_hex(fake.as_bytes()));
+    let report = checked(&base, &wire).await;
+    assert_eq!((report["matches"].clone(), report["engine_version_is_this_engines"].clone()), (json!(true), json!(false)), "{report}");
+    assert!(report["match_proves"].as_str().unwrap().contains("The text names an engine_version this engine does not write."), "{report}");
+    let not_json = "not JSON {";
+    let wire = format!("{not_json},\"receipt_sha384\":\"{}\"}}", sha384_hex(format!("{not_json}}}").as_bytes()));
+    let report = checked(&base, &wire).await;
+    assert_eq!(report["matches"], true, "{report}");
+    assert!(report.get("engine_version").is_none(), "{report}");
+    assert!(report["match_proves"].as_str().unwrap().contains("The text names no engine_version."), "{report}");
 }
 
 fn arguments(value: &Value) -> Map<String, Value> {

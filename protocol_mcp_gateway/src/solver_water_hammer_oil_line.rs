@@ -231,7 +231,7 @@ pub fn reject_name(reject: &HammerReject) -> &'static str {
 }
 
 fn field_words() -> String {
-    "SHA-256 of the count of the numbers that follow as 8 little-endian bytes, then the absolute pressure at the valve at the start and after every step, then the absolute pressure at every node at the end from the supply to the valve, then the velocity at every node at the end in the same order, all as little-endian f64 bytes.".to_string()
+    "SHA-384 of the count of the numbers that follow as 8 little-endian bytes, then the absolute pressure at the valve at the start and after every step, then the absolute pressure at every node at the end from the supply to the valve, then the velocity at every node at the end in the same order, all as little-endian f64 bytes.".to_string()
 }
 
 fn sections() -> Sections {

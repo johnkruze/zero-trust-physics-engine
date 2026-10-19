@@ -392,7 +392,7 @@ async fn the_value_at_each_new_bound_is_accepted_and_the_next_number_is_turned_a
                 let (status, text) = post(&base, "/verify_physics", &step).await;
                 assert_eq!(status, 422, "{name} {label}: {text}");
                 assert!(text.starts_with(&sentence), "{text}\n{sentence}");
-                assert!(!text.contains("sha256_seal"), "{text}");
+                assert!(!text.contains("sha384_seal"), "{text}");
 
                 // The run: at the start, or in the first segment and in a later one.
                 let positions: &[usize] = if is_load { &[0, 1] } else { &[usize::MAX] };
@@ -543,7 +543,7 @@ async fn every_field_of_every_card_states_its_range_or_its_reach() {
     let client = Client::new();
     let list: Value = client.get(format!("{base}/cards")).send().await.unwrap().json().await.unwrap();
     let cards = list["cards"].as_array().unwrap();
-    assert_eq!(cards.len(), 40);
+    assert_eq!(cards.len(), protocol_mcp_gateway::CARDS);
     let mut fields = 0;
     for item in cards {
         let card = describe(&base, item["domain"].as_str().unwrap(), item["card"].as_str().unwrap()).await;
@@ -565,8 +565,12 @@ async fn every_field_of_every_card_states_its_range_or_its_reach() {
     // of the JWST momentum card on the two slopes of its sunshield, 192 with
     // the mission time of the generator in the Seebeck matched-load form, 194
     // with the two pump speeds of the molten-salt reactor, 199 with the five fields
-    // of the SPERT III E-core twin, 203 with the four of the C-core twin.
-    assert_eq!(fields, 203);
+    // of the SPERT III E-core twin, 203 with the four of the C-core twin, 215
+    // with the twelve of the Great Britain grid twin, 222 with the seven of
+    // the 2170 cell's twin, 240 with the eighteen of the JET twin, 250 with the ten of the 18650
+    // thermal-runaway twin, 254 with the four of the C-core plate card; 209
+    // with one model for each real object (0.15.0), the earlier cards' fields gone.
+    assert_eq!(fields, 209);
 }
 
 /// The fields that publish no bound state their reach, and what each states

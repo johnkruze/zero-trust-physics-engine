@@ -47,6 +47,7 @@ extern crate core;
 
 use core::prelude::v1::*;
 
+use crate::exceedance::{Exceedance, ExceedanceKind, Side};
 use crate::frame::LastStateFrame64;
 use crate::normal::normal_or_zero;
 
@@ -393,6 +394,26 @@ pub fn step(
     load: SwingLoad,
     dt_s: f64,
 ) -> Result<(), StepReject> {
+    #[cfg(any(test, debug_assertions, feature = "check_exceedances"))]
+    let before = *state;
+    let stepped = step_landed(machine, state, frame, load, dt_s);
+    #[cfg(any(test, debug_assertions, feature = "check_exceedances"))]
+    if stepped.is_ok() {
+        crate::exceedance::debug_check("swing", exceedances(machine, &before, state, load, dt_s), frame.flags);
+    }
+    stepped
+}
+
+/// The step itself; [`step`] is it with, in a build that checks
+/// (`crate::exceedance::CHECKED`), the check that [`exceedances`] stands for
+/// the flags it wrote.
+fn step_landed(
+    machine: &SwingMachine,
+    state: &mut SwingState,
+    frame: &mut LastStateFrame64,
+    load: SwingLoad,
+    dt_s: f64,
+) -> Result<(), StepReject> {
     step_as_computed(machine, state, frame, load, dt_s)?;
     normal_or_zero_state(state);
     Ok(())
@@ -675,6 +696,37 @@ fn step_bias_work(
     };
     predicted[3] += extra_pu;
     commit(machine, state, frame, load, dt_s, predicted)
+}
+
+/// Every limit a flag of this card can mark: what [`exceedances`] reports
+/// beside a flag's bit (`crate::exceedance`).
+pub const EXCEEDANCE_KINDS: &[crate::exceedance::ExceedanceKind] = &[
+    SLIP_KIND,
+];
+
+const SLIP_KIND: ExceedanceKind = ExceedanceKind::fixed(
+    "FLAG_PLL_SLIP",
+    FLAG_PLL_SLIP,
+    "pll_err_rad_magnitude",
+    "rad",
+    Side::AtOrAbove,
+    PLL_TRIP_RAD,
+    "the phase-locked loop's trip error, 20 degrees in magnitude",
+);
+
+/// The limits the step from `before` to `after` under `load` over `dt_s`
+/// is past: one record for each limit a flag set on its frame marks.
+pub fn exceedances(
+    machine: &SwingMachine,
+    before: &SwingState,
+    after: &SwingState,
+    load: SwingLoad,
+    dt_s: f64,
+) -> crate::exceedance::Exceedances {
+    let _ = (before, load, dt_s);
+    let mut records = crate::exceedance::Exceedances::new();
+    records.push_if(after.pll_slipped, Exceedance::at(SLIP_KIND, machine.pll_trip_rad, after.pll_err_rad.abs()));
+    records
 }
 
 #[cfg(test)]

@@ -83,7 +83,7 @@ fn a_head_that_truly_differs_is_still_refused_with_the_old_sentence_and_nothing_
     let (_, error, text) = door.tool(KEY, "run_dataset", &reversed(&request));
     assert!(error && text.contains("already holds a head that is not this dataset's"), "{text}");
     // A stored head of the same dataset with the receipt damaged is not trusted either.
-    std::fs::write(&head_path, original.replace("\"receipt_sha256\":\"", "\"receipt_sha256\":\"0")[..original.len() - 1].to_string() + "\"}").unwrap();
+    std::fs::write(&head_path, original.replace("\"receipt_sha384\":\"", "\"receipt_sha384\":\"0")[..original.len() - 1].to_string() + "\"}").unwrap();
     let (_, error, text) = door.tool(KEY, "run_dataset", &reversed(&request));
     assert!(error, "{text}");
 }

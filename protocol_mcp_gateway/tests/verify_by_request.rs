@@ -23,7 +23,7 @@ struct Open {
 
 impl Open {
     fn start() -> Open {
-        let mut child = Command::new(env!("CARGO_BIN_EXE_hosted_door"))
+        let mut child = Command::new(env!("CARGO_BIN_EXE_hosted_door")).arg("--unsigned")
             .args(["--open", "--port", "0"])
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -107,7 +107,7 @@ fn parsed(text: &str) -> Value {
 fn flipped(seal: &str) -> String {
     let mut seal = seal.to_string();
     let last = if seal.ends_with('0') { "1" } else { "0" };
-    seal.replace_range(63..64, last);
+    seal.replace_range(95..96, last);
     seal
 }
 
@@ -173,12 +173,12 @@ fn a_run_and_a_solve_check_by_request_give_the_receipt_of_the_answer_sent_in_the
     let (_, written_310) = stdio.tool("run_trajectory", &run_request(json!(310)));
     let (first, second) = (parsed(&written_310_0), parsed(&written_310));
     assert_eq!(first["run_seal"], second["run_seal"]);
-    assert_ne!(first["receipt_sha256"], second["receipt_sha256"]);
+    assert_ne!(first["receipt_sha384"], second["receipt_sha384"]);
     for (request, answer) in [(run_request(json!(310.0)), &first), (run_request(json!(310)), &second)] {
         let (_, text) = stdio.tool("verify_tape", &json!({ "request": request, "run_seal": first["run_seal"] }));
         let report = parsed(&text);
         assert_eq!(report["holds"], json!(true), "{text}");
-        assert_eq!(report["recomputed_receipt_sha256"], answer["receipt_sha256"], "{text}");
+        assert_eq!(report["recomputed_receipt_sha384"], answer["receipt_sha384"], "{text}");
     }
 
     let (_, solved) = stdio.tool("solve", &solve_request());
@@ -186,9 +186,9 @@ fn a_run_and_a_solve_check_by_request_give_the_receipt_of_the_answer_sent_in_the
     let (_, text) = stdio.tool("verify_solution", &json!({ "request": solve_request(), "solution_seal": solved["solution_seal"] }));
     let report = parsed(&text);
     assert_eq!(report["holds"], json!(true), "{text}");
-    assert_eq!(report["recomputed_receipt_sha256"], solved["receipt_sha256"], "{text}");
+    assert_eq!(report["recomputed_receipt_sha384"], solved["receipt_sha384"], "{text}");
     let keys: Vec<&str> = report.as_object().unwrap().keys().map(String::as_str).collect();
-    assert_eq!(keys, ["holds", "cause", "recomputed_solution_seal", "recomputed_receipt_sha256", "compared", "text_not_compared"]);
+    assert_eq!(keys, ["holds", "cause", "recomputed_solution_seal", "recomputed_receipt_sha384", "compared", "text_not_compared"]);
 }
 
 #[test]
@@ -214,7 +214,7 @@ fn a_dataset_that_returned_files_is_checked_by_request_where_nothing_is_stored()
 #[test]
 fn a_check_by_request_is_refused_as_the_tool_that_computes_would_refuse_it() {
     let mut stdio = Stdio2::start(None);
-    let seal = "ab".repeat(32);
+    let seal = "ab".repeat(48);
 
     // A request the engine refuses before computing: the same sentence.
     let mut outside = run_request(json!(310.0));
@@ -233,8 +233,8 @@ fn a_check_by_request_is_refused_as_the_tool_that_computes_would_refuse_it() {
     assert_eq!(stdio.tool("verify_dataset", &json!({ "request": too_many, "dataset_seal": seal })), (true, computed));
 
     // The seal is held to its form, and the short form to its two keys.
-    let (error, text) = stdio.tool("verify_tape", &json!({ "request": run_request(json!(310.0)), "run_seal": "AB".repeat(32) }));
-    assert_eq!((error, text.as_str()), (true, "Physical Violation: 'run_seal' must be 64 lowercase hex digits."));
+    let (error, text) = stdio.tool("verify_tape", &json!({ "request": run_request(json!(310.0)), "run_seal": "AB".repeat(48) }));
+    assert_eq!((error, text.as_str()), (true, "Physical Violation: 'run_seal' must be 96 lowercase hex digits."));
     let (error, text) = stdio.tool("verify_solution", &json!({ "request": solve_request() }));
     assert_eq!((error, text.as_str()), (true, "Missing required parameter: 'solution_seal' (InputMissing)."));
     let (error, text) = stdio.tool("verify_tape", &json!({ "request": run_request(json!(310.0)), "run_seal": seal, "frames": [] }));
@@ -342,16 +342,16 @@ async fn the_long_form_holds_the_bytes_sent_on_every_connection() {
     let escaped = honest.replacen("\"outcome\":\"converged\"", "\"outcome\":\"\\u0063onverged\"", 1);
     assert_ne!(escaped, honest);
     let resigned = {
-        let tail = ",\"receipt_sha256\":\"";
+        let tail = ",\"receipt_sha384\":\"";
         let cut = respelled.rfind(tail).unwrap();
-        format!("{}{tail}{}\"}}", &respelled[..cut], sha(&format!("{}}}", &respelled[..cut])))
+        format!("{}{tail}{}\"}}", &respelled[..cut], seal_sha(&format!("{}}}", &respelled[..cut])))
     };
     // Since values_hold: the first three hold every value, the last carries a receipt that is not the engine's.
     for (label, text, expected) in [
         ("as it came", honest.clone(), (json!(true), json!(true), Value::Null, Value::Null)),
         ("a decimal spelled another way", respelled, (json!(false), json!(true), json!("answer_text"), json!("result.total_energy_ha"))),
         ("the outcome with an escape", escaped, (json!(false), json!(true), json!("answer_text"), json!("outcome"))),
-        ("re-spelled and its receipt worked out again", resigned, (json!(false), json!(false), json!("answer_text"), json!("receipt_sha256"))),
+        ("re-spelled and its receipt worked out again", resigned, (json!(false), json!(false), json!("answer_text"), json!("receipt_sha384"))),
     ] {
         let (error, on_local) = local.tool_raw("verify_solution", &text);
         assert!(!error, "{label}: {on_local}");

@@ -98,6 +98,7 @@ extern crate core;
 
 use core::prelude::v1::*;
 
+use crate::exceedance::{Exceedance, ExceedanceKind, Side};
 use crate::frame::LastStateFrame64;
 use crate::normal::normal_or_zero;
 
@@ -371,6 +372,26 @@ pub fn step(
     load: CraterLoad,
     dt_s: f64,
 ) -> Result<(), StepReject> {
+    #[cfg(any(test, debug_assertions, feature = "check_exceedances"))]
+    let before = *state;
+    let stepped = step_landed(crater, state, frame, load, dt_s);
+    #[cfg(any(test, debug_assertions, feature = "check_exceedances"))]
+    if stepped.is_ok() {
+        crate::exceedance::debug_check("crater_ryugu_sci", exceedances(crater, &before, state, load, dt_s), frame.flags);
+    }
+    stepped
+}
+
+/// The step itself; [`step`] is it with, in a build that checks
+/// (`crate::exceedance::CHECKED`), the check that [`exceedances`] stands for
+/// the flags it wrote.
+fn step_landed(
+    crater: &CraterRyuguSci,
+    state: &mut CraterState,
+    frame: &mut LastStateFrame64,
+    load: CraterLoad,
+    dt_s: f64,
+) -> Result<(), StepReject> {
     step_as_computed(crater, state, frame, load, dt_s)?;
     normal_or_zero_state(state);
     Ok(())
@@ -584,6 +605,37 @@ fn state_is_finite(state: &CraterState) -> bool {
         && state.given_up_j_per_kg.is_finite()
         && state.energy_defect_j_per_kg.is_finite()
         && state.residual_conservation_error.is_finite()
+}
+
+/// Every limit a flag of this card can mark: what [`exceedances`] reports
+/// beside a flag's bit (`crate::exceedance`).
+pub const EXCEEDANCE_KINDS: &[crate::exceedance::ExceedanceKind] = &[
+    STOPPED_KIND,
+];
+
+const STOPPED_KIND: ExceedanceKind = ExceedanceKind::fixed(
+    "FLAG_STOPPED",
+    FLAG_STOPPED,
+    "radius_m",
+    "m",
+    Side::AtOrAbove,
+    FINAL_RADIUS_M,
+    "the crater's final radius, reached with its wall at rest: the event the card ends on; the extent is zero",
+);
+
+/// The limits the step from `before` to `after` under `load` over `dt_s`
+/// is past: one record for each limit a flag set on its frame marks.
+pub fn exceedances(
+    crater: &CraterRyuguSci,
+    before: &CraterState,
+    after: &CraterState,
+    load: CraterLoad,
+    dt_s: f64,
+) -> crate::exceedance::Exceedances {
+    let _ = (before, load, dt_s);
+    let mut records = crate::exceedance::Exceedances::new();
+    records.push_if(after.stopped, Exceedance::at(STOPPED_KIND, crater.final_radius_m, after.radius_m));
+    records
 }
 
 #[cfg(test)]

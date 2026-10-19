@@ -20,7 +20,7 @@ fn ok(door: &mut Stdio2, tool: &str, arguments: &Value) -> Value {
 fn refused(door: &mut Stdio2, tool: &str, arguments: &Value) -> String {
     let (error, text) = door.tool(tool, arguments);
     assert!(error, "{tool} answered: {text}");
-    assert!(!text.contains("run_seal\":") && !text.contains("chain_seal\":") && !text.contains("sha256_seal"), "{text}");
+    assert!(!text.contains("run_seal\":") && !text.contains("chain_seal\":") && !text.contains("sha384_seal"), "{text}");
     text
 }
 
@@ -64,67 +64,6 @@ fn the_links_form_names_its_refusals() {
     // links form's two to sixteen answers.
     let text = refused(&mut door, "verify_tape", &json!({ "links": [first] }));
     assert_eq!(text, "Physical Violation: 'links' must be an array of at least two answers.");
-}
-
-const M80_CAPACITY_40_AH: f64 = 4.67683635335689;
-
-/// A model3 start at rest at 40 degC, its case temperatures as given.
-fn model3_start(state_of_charge: f64, least_c: f64) -> Value {
-    json!({
-        "domain": "energy", "card": "cell_2170_model3",
-        "initial": { "cell_number": 80.0, "state_of_charge": state_of_charge, "capacity_ah": M80_CAPACITY_40_AH, "case_temperature_least_c": least_c, "case_temperature_most_c": 40.0 },
-        "dt_s": 1.0, "segments": [{ "steps": 60, "load": { "current_a": 0.0, "case_temperature_c": 40.0 } }], "record_every": 60
-    })
-}
-
-/// The fresh-start rule of a coupled start is decided before the upstream
-/// is computed again (REFERENCE.md, "A chain": ContinuationWithoutUpstream
-/// "before any physics"; `couplings/repro_fresh_start_after_upstream.py`):
-/// a model3 downstream of `cell_2170_m80_to_model3` whose
-/// case_temperature_least_c is not its first case temperature is refused as
-/// ContinuationWithoutUpstream, by run and by step, and an upstream seal that
-/// does not hold is not named first, since nothing was computed. Every other
-/// order is as it was: a start the card turns away and an honest link.
-#[test]
-fn a_coupled_start_is_held_to_the_fresh_start_rule_before_the_upstream_runs() {
-    let mut door = Stdio2::start(None);
-    let up = json!({
-        "domain": "energy", "card": "cell_2170_m80",
-        "initial": { "block_chamber_c": 40.0, "charge_removed_ah": 0.0 }, "dt_s": 1.0,
-        "segments": [{ "steps": 3600, "load": { "current_a": 0.0, "case_temperature_c": 40.0 } }], "record_every": 3600
-    });
-    let answer = ok(&mut door, "run_trajectory", &up);
-    let level = f64::from_bits(u64::from_str_radix(answer["final_state"]["charge_level_hex"].as_str().unwrap(), 16).unwrap());
-    let link = |mut down: Value, seal: &Value| {
-        down["from"] = json!({ "request": up, "run_seal": seal, "coupling": "cell_2170_m80_to_model3" });
-        down
-    };
-    let forged = json!("0".repeat(64));
-    // The honest link is served, as before.
-    let honest = ok(&mut door, "run_trajectory", &link(model3_start(level, 40.0), &answer["run_seal"]));
-    assert_eq!(honest["chain"]["coupling"], "cell_2170_m80_to_model3");
-    // A forged upstream seal alone is UpstreamProofBroken, as before.
-    let text = refused(&mut door, "run_trajectory", &link(model3_start(level, 40.0), &forged));
-    assert!(text.contains("(UpstreamProofBroken)"), "{text}");
-    // The fresh-start rule broken: refused by name, the forged seal or not.
-    for seal in [&answer["run_seal"], &forged] {
-        let text = refused(&mut door, "run_trajectory", &link(model3_start(level, 39.0), seal));
-        assert!(text.ends_with("(ContinuationWithoutUpstream)."), "{text}");
-        assert!(text.contains("'initial.case_temperature_least_c' is "), "{text}");
-        let mut step = json!({
-            "domain": "energy", "card": "cell_2170_model3",
-            "parameters": { "cell_number": 80.0, "state_of_charge": level, "capacity_ah": M80_CAPACITY_40_AH, "case_temperature_least_c": 39.0, "case_temperature_most_c": 40.0, "current_a": 0.0, "case_temperature_c": 40.0, "dt_s": 1.0 }
-        });
-        step["from"] = json!({ "request": up, "run_seal": seal, "coupling": "cell_2170_m80_to_model3" });
-        let text = refused(&mut door, "compute_step", &step);
-        assert!(text.ends_with("(ContinuationWithoutUpstream)."), "{text}");
-    }
-    // A start the card itself turns away is still named after the chain is
-    // checked: with a forged upstream seal, the upstream's refusal comes first.
-    let mut beyond = model3_start(level, 39.0);
-    beyond["initial"]["capacity_ah"] = json!(-1.0);
-    let (error, text) = door.tool("run_trajectory", &link(beyond, &forged));
-    assert!(error && !text.contains("ContinuationWithoutUpstream"), "{text}");
 }
 
 /// A run of `steps` from the start the chains test cut on the declared end.
@@ -258,7 +197,7 @@ fn a_crater_is_continued_only_once_it_has_stopped() {
     let text = refused(&mut door, "run_trajectory", &next);
     assert!(text.ends_with("(ContinuationNotOnCard)."), "{text}");
     // Before any physics: a forged upstream seal is not what is named.
-    next["from"]["run_seal"] = json!("0".repeat(64));
+    next["from"]["run_seal"] = json!("0".repeat(96));
     let text = refused(&mut door, "run_trajectory", &next);
     assert!(text.ends_with("(ContinuationNotOnCard)."), "{text}");
     let step = json!({

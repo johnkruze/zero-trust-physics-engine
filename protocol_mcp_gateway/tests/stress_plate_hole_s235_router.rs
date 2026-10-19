@@ -17,7 +17,7 @@ use genesis_solvers::stress_plate_hole_s235::{self as plate, PlateQuestion};
 use protocol_mcp_gateway::app;
 use reqwest::Client;
 use serde_json::{Value, json};
-use sha2::{Digest, Sha256};
+use sha2::{Digest, Sha384};
 use tokio::net::TcpListener;
 
 const SOURCE: &str = include_str!("../../genesis_solvers/src/stress_plate_hole_s235.rs");
@@ -156,13 +156,13 @@ async fn the_laboratory_s_load_matches_the_solver_bit_for_bit_and_its_proof_hold
     assert!(direct.section_force_residual <= plate::SECTION_FORCE_TOLERANCE);
 
     // The field hash is the count of numbers, then seven numbers for each node.
-    let mut hasher = Sha256::new();
+    let mut hasher = Sha384::new();
     hasher.update((direct.nodes.len() as u64).to_le_bytes());
     for value in &direct.nodes {
         hasher.update(value.to_le_bytes());
     }
     let own = hex::encode(hasher.finalize());
-    let served = body["field_sha256"].as_str().expect("field hash");
+    let served = body["field_sha384"].as_str().expect("field hash");
     assert_eq!(served, own);
 
     // The proof holds, and an edit of a number breaks it by name.
@@ -178,7 +178,7 @@ async fn the_laboratory_s_load_matches_the_solver_bit_for_bit_and_its_proof_hold
         assert_eq!(report["cause"], section, "{key}");
     }
     let mut field = body.clone();
-    field["field_sha256"] = json!(flip_hex(served));
+    field["field_sha384"] = json!(flip_hex(served));
     let (_, text) = post(&base, "/verify_solution", &field).await;
     assert_eq!(serde_json::from_str::<Value>(&text).unwrap()["holds"], false);
 

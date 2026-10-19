@@ -42,7 +42,7 @@ const SOURCE_KEYS: &[&str] = &[
 
 const ABOUT: &str = "Cite Zero-Trust Physics: the service, then the paper. After them, data lists the people whose measurements this model stands on, each with its own citation. text and bibtex hold every entry in that order, ready to paste. requested_acknowledgment is what a source itself asks of those who use its data, and is absent where it asks nothing.";
 
-const ABOUT_THE_SERVICE: &str = "How to cite the service itself: service is its name, who made it and where it is served, with a line ready to paste, and paper is the paper. For an answer, give also the card or solver, the engine_version the answer carries, its cryptographic proof (run_seal or solution_seal) and the date you asked. cite with domain and card, or solver, adds the people whose measurements that model stands on.";
+const ABOUT_THE_SERVICE: &str = "How to cite the service itself: service is its name, who made it and where it is served, the page for agents (site_for_agents), the engine's source (engine_source), the programs that check a proof with no engine (proof_checkers) and how to reach its maker (contact, phone), with a line ready to paste, and paper is the paper. For an answer, give also the card or solver, the engine_version the answer carries, its cryptographic proof (run_seal or solution_seal) and the date you asked. cite with domain and card, or solver, adds the people whose measurements that model stands on.";
 
 /// Where an agent writes the date it asked, in the service's citation.
 const DATE_ASKED: &str = "[the date you asked]";
@@ -53,7 +53,7 @@ const DATE_ASKED: &str = "[the date you asked]";
 /// answers of the model asked about carry: the kernel's for a card, the
 /// solvers' for a solver, and both when no model was named.
 fn service(engine_version: &[String]) -> Value {
-    use crate::identity::{ADDRESS, COMPANY, EMAIL, MAKER, NAME, SITE, TITLE};
+    use crate::identity::{ADDRESS, COMPANY, CONFIRMING_PROGRAMS, EMAIL, ENGINE_SOURCE, MAKER, NAME, PHONE, SITE, SITE_FOR_AGENTS, TITLE};
     let versions = engine_version.join(" and ");
     json!({
         "name": NAME,
@@ -62,8 +62,12 @@ fn service(engine_version: &[String]) -> Value {
         "publisher": COMPANY,
         "address": ADDRESS,
         "site": SITE,
+        "site_for_agents": SITE_FOR_AGENTS,
         "paper": PAPER_DOI_URL,
+        "engine_source": ENGINE_SOURCE,
+        "proof_checkers": CONFIRMING_PROGRAMS,
         "contact": EMAIL,
+        "phone": PHONE,
         "engine_version": versions,
         "citation_text": format!("{MAKER} ({COMPANY}). {TITLE}. Served at {ADDRESS}, engine {versions}. Accessed {DATE_ASKED}."),
         "bibtex": format!("@misc{{zerotrustphysics_service,\n  author       = {{Kruze, John}},\n  title        = {{{TITLE}}},\n  organization = {{{COMPANY}}},\n  howpublished = {{\\url{{{ADDRESS}}}}},\n  note         = {{Engine {versions}. Accessed {DATE_ASKED}.}}\n}}"),

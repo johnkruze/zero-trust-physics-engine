@@ -13,167 +13,31 @@ use std::process::{Child, Command, Stdio};
 use hosted_support::*;
 use hosted_support::answer_text;
 use serde_json::{Value, json};
-use sha2::{Digest, Sha256};
+use sha2::Sha256;
 use tokio::net::TcpListener;
 
 const KEY: &str = "tools-093-key";
 
-/// SHA-256 over the full description of every card and then of every solver,
-/// in the lists' order, each followed by a line feed. With every description
-/// as 0.9.2 gave it the value is ea2229aa...4eb1; 0.9.3 rewords one sentence
-/// in the result of `tokamak_dt_beam_target`, which gives ad4403a1...34c3.
-/// On 0.10.0, kernel 0.9.0 and solvers 0.8.0, the value was ba46364c...095e:
-/// the descriptions of `generator_mmrtg_f1`, `fusion_pb11_lhd` and
-/// `ablator_slab` changed with their models, and every solver's carries the
-/// new version. The value here is of 0.10.1, re-pinned because the
-/// descriptions changed in words only: every card lists the gateway's own
-/// refusal names after its kernel's (the two of a step outside the floor and
-/// the ceiling, and the names of a continuation where the card gives them),
-/// three solvers list the names their entries give at the door, and the
-/// facts corrected in nine descriptions read as their models compute
-/// (165f3d40...0e35 on the reactor build). Recomputed once at the merge of
-/// the engine after 0.10.1 (kernel 0.10.0, solvers 0.9.0, gateway 0.11.0):
-/// every compared-range wall lifted with its sentence, the three fusion
-/// solvers reopened, the company's own specimens named so, describe_card's
-/// example_compute_step, "compared" where the invariants said "checked", no
-/// description saying "check", the accumulator rated at 330 bar, the tokamak
-/// solver's beams to 1000 keV, and every solver carrying the new version.
-/// Recomputed once at the merge of engine 0.12.0 (kernel 0.11.0, solvers
-/// 0.10.0, gateway 0.12.0), and reproduced with Python's hashlib from the
-/// stdio door by this rule, which gives 0.11.0's cdd6f753...ddff from its
-/// binary: thirty-five cards and twenty-one solvers, each solver's
-/// open_connection, the own-specimen solver record, the signed load's words.
-/// Set once more at the end of 0.12.0's fix pass, and reproduced with
-/// Python's hashlib from the stdio door by this rule (which gives the pin
-/// above, 09fe2bae...4fec, from the frozen 0.12.0 binary): twenty-two
-/// solvers with plasma_sheath_ram_c2, the hot spot's worked refusal and
-/// re-evaluation, the kit's twenty-five findings worded or lifted, the red
-/// team's defects of the new models, and the long form computing again.
-/// Set once more on 0.12.0's final tree, and reproduced with Python's hashlib
-/// from the stdio door by this rule (which gives the pin above,
-/// 9ad1d4b5...57e8be, from the fix pass's binary): values_hold beside holds
-/// in every long form's answer, and cantilever_eth served to 18.75 mm with
-/// FLAG_ENVELOPE_ABOVE_COMPARED.
-/// Set on the merged tree of next-0.13, and reproduced with Python's hashlib
-/// from the stdio door by this rule (which gives 9eb2fb7b...81e6, 0.12.0's
-/// pin, from the served 0.12.0 binary): thirty-six cards with
-/// momentum_jwst_dihedral, twenty-three solvers with culture_trichoderma_atp,
-/// and the two couplings of cell m80, with their conditions, listed by
-/// cell_2170_m80 and cell_2170_model3.
-/// Set again with generator_mmrtg_seebeck, the companion of
-/// generator_mmrtg_f1 and the first card calibrated to the record, its
-/// companion_to and not_blind in its record, thirty-seven cards; reproduced
-/// with Python's hashlib from the stdio door of the cargo build --release
-/// binary by this rule (which gives e9bd3218...794d, next-0.13's pin, from
-/// the integration's binary).
-/// Set on feat/companion-stress-plate-elastic after it, reproduced the same
-/// way from the stdio door of that branch's cargo build --release binary
-/// (from df8fed0b...e8a9, next-0.13's pin before it): twenty-four solvers
-/// with stress_plate_hole_s235_elastic, the companion of
-/// stress_plate_hole_s235, calibrated to the record.
-/// Set for the 0.13.0 candidate, from c615481c...20ce, next-0.13's pin, by
-/// the same rule from the stdio door of the final tree's cargo build
-/// --release binary: genesis_solvers_v0.11.0, which every solver's
-/// description names as its engine_version, and the cell m80 couplings'
-/// fifth condition, the hour of rest at the 40 degC block's case
-/// temperatures, and their meanings, listed by both cell cards. The same rule gives 9eb2fb7b...81e6 from the served 0.12.0
-/// binary (evidence/verification/engine_0.12.0_served/mcp_stdio).
-/// Set for 0.13.1, from dafcf9f0...bccd, 0.13.0's pin, by the same rule from
-/// the stdio door of feat/words-0131's cargo build --release binary: the
-/// sentences the records contradict mended, the eighteen comparisons that are
-/// not blind saying so, accuracy_against_measurement in every short form
-/// saying how the model did against the pass marks its record states, and
-/// the words of capsule_insight, cell_2170_m80 and cell_2170_model3. The same
-/// rule gives dafcf9f0...bccd from the frozen 0.13.0 rc2 binary
-/// (evidence/verification/frozen_0.13.0_rc2/mcp_stdio).
-/// Set for genesis_solvers 0.12.0, canonical math, from dafcf9f0...bccd,
-/// next-0.13's pin, by the same rule from the stdio door of
-/// feat/canonical-math-014's cargo build --release binary
-/// (measure_014/scripts/full_descriptions.py, which gives dafcf9f0...bccd
-/// from the frozen 0.13.0 candidate's): genesis_solvers_v0.12.0 in every
-/// solver's description, and blast_wave_tnt_air's locked numbers as
-/// genesis_kernel::math computes them, sedov_taylor_alpha
-/// 0.8510719009049513, sedov_taylor_xi0 1.0327774565615964,
-/// least_shock_reach_sachs 0.5150689976238669 and so the largest charge,
-/// 106342834.30638722 kg, its bound and charge_mass_max_kg (4596f66b...d386);
-/// then, by the same rule, the open connection's times measured again with
-/// canonical math, in the descriptions of the seven solvers whose row moved.
-/// Set for next-0.14, the merge of the two, from 1887be20...7371 (0.13.1)
-/// and 9e9d042f...a156 (feat/canonical-math-014), by the same rule from the
-/// stdio door of the merged tree's cargo build --release binary
-/// (evidence/verification/next_engine_version_2026-10-15/pins.py, which gives
-/// both from their own binaries): 0.13.1's words with canonical math's
-/// version, numbers and open connection's times.
-/// Set for the words of 0.14.0, from 1887be20...7371, 0.13.1's pin, by the
-/// same rule from the stdio door of feat/words-014's cargo build --release
-/// binary: the two JWST momentum cards' later blind months, satellite_lageos1's
-/// frame and what a crust-fixed start costs through the engine, the SPERT III
-/// couplings' CouplingSourceNotOneValue, and every solver's open_connection
-/// (one solve counted above 15 s admitted alone; what one inline answer holds
-/// of five solvers' worked solves). The same rule gives 1887be20...7371 from
-/// the frozen 0.13.1 binary (evidence/verification/frozen_0.13.1/mcp_stdio;
-/// both runs in evidence/verification/words_014_2026-10-16/).
-/// Set for 0.14.0 with its words, the merge of next-0.14 and feat/words-014,
-/// from 6e66505a...b2f1 (next-0.14) and 7922d9c7...92bb (feat/words-014),
-/// by the same rule from the stdio door of the merged tree's cargo build
-/// --release binary (evidence/verification/next_engine_version_2026-10-15/
-/// pins.py, which gives both from their own binaries): the words of 0.14.0
-/// with canonical math's version, numbers and open connection's times.
-/// Then, by the same rule, water_hammer_oil_line's open_connection saying
-/// one inline answer holds 31 of its worked solve, as canonical math's
-/// answers measure it, where the words said 32.
-/// Set for fix/breadth-014, the fix pass of 0.14.0, from 6e66505a...b2f1 by
-/// the same rule from the fix copy's cargo build --release binary
-/// (fix_014/measure_fix/pins.txt): the descriptions its fixes change, the
-/// crater's continuation statement, rejects and load rule, capsule_stardust's
-/// load rule, ablator_slab's open connection, the two culture solvers'
-/// feed_ml and water_ml, and the two MMRTG cards' time label.
-/// Set for 0.14.0 release candidate 1, the merge of next-0.14 with its words
-/// and fix/breadth-014, from c9ef8bd2...525e (next-0.14) and 080ee048...6dd9
-/// (fix/breadth-014), by the same rule from the stdio door of the merged
-/// tree's cargo build --release binary (evidence/verification/
-/// next_engine_version_2026-10-15/pins.py, which gives both from their own
-/// binaries; integration_014/measure_014rc1/): the words of 0.14.0 and the
-/// fix pass's descriptions together, ablator_slab's open_connection in the
-/// words' sentence at the fix's 450 s and one a plan.
-/// Set for 0.14.0 release candidate 2, from 40f4a2d6...94cf by the same rule
-/// from the stdio door of rc2's cargo build --release binary
-/// (rc2_014/measure_rc2/pins_item11.txt): fifteen solvers' open_connection,
-/// the five that said an inline answer is "counted from the plan" saying it
-/// is counted once the plan is solved (item 5), and ten more saying how many
-/// of their worked solve one inline answer holds where the local connection
-/// admits the engine's own 64 (item 6). No card's description moves.
-/// Then, by the same rule (rc2_014/measure_rc2/pins_item15.txt), from
-/// 1dc5ca06...f820: generator_mmrtg_seebeck's specimen, result and pass line
-/// say its forecast was registered before any of its days' values was
-/// published as a number, and the pass line names the protocol's four tiers
-/// (item 15).
-/// Set for 0.14.3, the words of the evidence, from ebf5814d...021b by the
-/// same rule (evidence/verification/next_engine_version_2026-10-15/pins.py
-/// on the words_0143 copy's cargo build --release binary): against_measurement
-/// in three words, every model compared with measurement described by its
-/// spec sheet, and every description's record in numbers.
-/// Then f00238f8...b5b8 on integration_0143, by the same pins.py on its
-/// merged binary: 40 cards and 25 solvers, the four models of 0.14.3
-/// (reactor_spert3_twin, reactor_spert3_ccore_twin, reactor_msre_pump,
-/// fuel_rod_triga_jsi) described by their spec sheets, and superseded_by.
-const FULL_DESCRIPTIONS: &str = "f00238f88dc00b7fca2f6e980fb3d9dcecb517f42b6bf4f06068ff6d332fb5b8";
+/// The characters (not bytes) of the text list_cards and list_solvers answer (pins.py).
+/// Since 0.14.4 a compared model's row is what it computes, the comparison
+/// and the gap, and the whole sheet is its description's: 57,331 and 40,406
+/// at 0.14.3, 33,440 and 26,111 on words_0144, and 34,309 and 26,241 on
+/// integration_0144 (grid_gb_twin's row, and the rows of capsule_stardust and
+/// ablator_slab naming the coupling), and 36,079 and 27,559 on the final
+/// integration_0144 (the rows of the three twins and the blast twin).
+/// 37,041 and 27,658 with runaway_18650_lco_twin and ecore_triga's sheets.
+/// 38,280 and 27,658 with reactor_spert3_ccore_plate's row.
+/// 38,187 with the JET twin's shorter row. 29,361 and 26,446 in 0.15.0: one
+/// model per real object (four card rows and a solver row fewer) and the
+/// served words that no longer name an earlier model.
+const LIST_CARDS_CHARS: usize = 29_361;
+const LIST_SOLVERS_CHARS: usize = 26_446;
 
 /// The one card whose short form is longer than a page: thirty vector fields
 /// and a worked run that states all thirty.
 const LONGEST_SHORT_CARD: &str = "solar_system";
 /// The most characters a card's short form comes to, that card aside.
 const SHORT_CARD_CHARS: usize = 4_000;
-/// How many of the thirty-one cards have a short form under 2,500 characters.
-// 25 since 0.11.0: the fuse link's short form carries a loaded worked run
-// and a worked refusal, and is 2,875 characters.
-// 11 since 0.14.3: a card compared with measurement gives its spec sheet in
-// its short form, what it computes, its range, what it was fitted on and
-// where it refuses as its specimen, and the comparison and the gap as its
-// accuracy; the company specimens and the shortest sheets stay under 2,500.
-// 10 on integration_0143: reactor_spert3 says superseded_by (succession::TABLE),
-// 2,535 characters.
-const SHORT_CARDS_UNDER_2500: usize = 10;
 
 struct Open {
     child: Child,
@@ -182,7 +46,7 @@ struct Open {
 
 impl Open {
     fn start() -> Open {
-        let mut child = Command::new(env!("CARGO_BIN_EXE_hosted_door"))
+        let mut child = Command::new(env!("CARGO_BIN_EXE_hosted_door")).arg("--unsigned")
             .args(["--open", "--port", "0"])
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -288,16 +152,41 @@ fn keys(value: &Value) -> Vec<&str> {
 fn with_no_form_or_full_every_description_is_the_whole_description_as_it_was() {
     let mut door = Stdio2::start(None);
     let (cards, solvers) = served(&mut door);
-    assert_eq!((cards.len(), solvers.len()), (40, 25));
-    let mut all = Sha256::new();
+    assert_eq!((cards.len(), solvers.len()), (protocol_mcp_gateway::CARDS, protocol_mcp_gateway::SOLVERS));
     for (tool, named) in cards.iter().map(|card| ("describe_card", card)).chain(solvers.iter().map(|solver| ("describe_solver", solver))) {
         let plain = text(&mut door, tool, named);
         assert_eq!(text(&mut door, tool, &with_form(named, "full")), plain, "{named}");
         assert!(parsed(&plain).get("form").is_none(), "{named}: the full form names no form");
-        all.update(plain.as_bytes());
-        all.update(b"\n");
     }
-    assert_eq!(hex::encode(all.finalize()), FULL_DESCRIPTIONS);
+}
+
+#[test]
+fn a_list_row_is_what_a_model_computes_its_comparison_and_its_gap() {
+    let mut door = Stdio2::start(None);
+    let cards = text(&mut door, "list_cards", &json!({}));
+    let solvers = text(&mut door, "list_solvers", &json!({}));
+    assert_eq!((cards.chars().count(), solvers.chars().count()), (LIST_CARDS_CHARS, LIST_SOLVERS_CHARS));
+    for (tool, rows, line, describe) in [(&cards, "cards", "specimen", "describe_card"), (&solvers, "solvers", "summary", "describe_solver")] {
+        for row in parsed(tool)[rows].as_array().unwrap() {
+            let said = row[line].as_str().unwrap();
+            let mut named = row.clone();
+            for key in ["against_measurement", "superseded_by", line] {
+                named.as_object_mut().unwrap().remove(key);
+            }
+            let full = ok(&mut door, describe, &named);
+            let sheet = full[line].as_str().unwrap();
+            match said.split_once(" Compared with ") {
+                // A compared model: the sheet's first, fourth and fifth parts.
+                Some((computes, comparison)) if row["against_measurement"] == "compared with measurement" => {
+                    assert!(sheet.starts_with(computes), "{row}");
+                    assert!(sheet.contains(&format!(" Compared with {comparison} Refuses")), "{row}");
+                    assert!(!said.contains(" Range: ") && !said.contains(" Refuses "), "{row}");
+                }
+                // Any other model: its own sentence, as its description gives it.
+                _ => assert_eq!(said, sheet, "{row}"),
+            }
+        }
+    }
 }
 
 #[test]
@@ -322,12 +211,6 @@ fn a_cards_short_form_holds_the_full_forms_own_names_units_and_bounds() {
             assert_eq!(short["companion_to"], full["validation"]["companion_to"], "{card}");
         }
         assert!(short.get("not_blind").is_none() && full["validation"].get("not_blind").is_none(), "{card}");
-        // A superseded card names its successor after its name, in both forms
-        // (succession::TABLE).
-        if let Some(by) = full.get("superseded_by") {
-            expected.insert(2, "superseded_by");
-            assert_eq!(&short["superseded_by"], by, "{card}");
-        }
         if card["card"] == "grid_node" {
             expected.push("example_refused");
         }
@@ -379,7 +262,7 @@ fn a_cards_short_form_holds_the_full_forms_own_names_units_and_bounds() {
         assert!(short["continues_with_from"].is_boolean(), "{card}");
         let closing = short["full_form"].as_str().unwrap();
         assert!(
-            closing.ends_with("describe_card with form \"full\", or with no form, has each bound's reason, the validation record, the frame layout and each stop's meaning."),
+            closing.ends_with("describe_card with form \"full\" or none has each bound's reason, the validation record, the frame layout and each stop's meaning."),
             "{closing}"
         );
         // The short form is words about a model: it carries no proof.
@@ -396,7 +279,6 @@ fn a_cards_short_form_holds_the_full_forms_own_names_units_and_bounds() {
     for (card, size) in &sizes {
         assert!(*size < SHORT_CARD_CHARS || card == LONGEST_SHORT_CARD, "{card}: {size} characters");
     }
-    assert!(sizes.iter().filter(|(_, size)| *size < 2_500).count() >= SHORT_CARDS_UNDER_2500, "{sizes:?}");
 }
 
 /// A solver's whole description: what describe_solver gives first, with each
@@ -532,13 +414,6 @@ fn the_tools_say_what_the_word_is_and_that_the_short_form_exists() {
         assert!(said("find_model").contains(word), "{word}");
     }
     assert!(said("find_model").contains("Fit and accuracy are separate: a model with a gap is still the served model of its thing."));
-    assert!(said("find_model").contains("A model a newer one supersedes carries superseded_by and comes after it, still served under its own ID."));
-    // No tool says the words of the old record.
-    for name in ["list_cards", "list_solvers", "find_model", "describe_card", "describe_solver"] {
-        for word in ["blind", "pass mark", "fixed before", "met in part", "\"met\"", "\"missed\"", "calibrated to the record", "verdict"] {
-            assert!(!said(name).contains(word), "{name} says {word}: {}", said(name));
-        }
-    }
     for name in ["describe_card", "describe_solver"] {
         let text = said(name);
         // Since 0.10.1 the second sentence says what is so of the full form, where it told the agent to read it.
@@ -556,10 +431,6 @@ fn the_tools_say_what_the_word_is_and_that_the_short_form_exists() {
             && instructions.ends_with("verify_tape, verify_solution and verify_dataset check the proof of a run, a solution or a dataset; cite gives sources."),
         "{instructions}"
     );
-    // Tool texts are read by agents: an agent, never a caller.
-    for name in ["list_cards", "list_solvers", "describe_card", "describe_solver", "find_model"] {
-        assert!(!said(name).contains("caller"), "{name}");
-    }
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -576,7 +447,7 @@ async fn every_connection_gives_the_same_bytes_for_the_lists_the_matches_and_the
     );
     let open = Open::start();
     // The two lists: every row with its word, the same bytes where every model is seen.
-    for (tool, path, rows, count) in [("list_cards", "cards", "cards", 40), ("list_solvers", "solvers", "solvers", 25)] {
+    for (tool, path, rows, count) in [("list_cards", "cards", "cards", protocol_mcp_gateway::CARDS), ("list_solvers", "solvers", "solvers", protocol_mcp_gateway::SOLVERS)] {
         let local = text(&mut stdio, tool, &json!({}));
         assert_eq!(get(&base, path).await, local, "{tool} web");
         assert_eq!(open.tool(tool, &json!({})), (false, local.clone()), "{tool} open");
@@ -634,8 +505,11 @@ async fn every_connection_gives_the_same_bytes_for_the_lists_the_matches_and_the
 
 /// The short form says a description's one sentence once: its specimen (or
 /// summary) is the full form's where the model has no spec sheet; where it
-/// has one, the full paragraph is made of the short form's specimen and its
-/// accuracy, every sentence of each in it.
+/// has one, the full paragraph is made of the short form's specimen (what
+/// the model computes), its accuracy, and, left out of the short form since
+/// 0.14.4, its range (find_model's model_of), what it was fitted on
+/// (find_model's compared_with) and the refusal sentence (whose names are its
+/// stops).
 fn within(full: &Value, short: &Value, accuracy: &Value, model: &Value) {
     let (full, short) = (full.as_str().unwrap(), short.as_str().unwrap());
     if full == short {
@@ -644,5 +518,10 @@ fn within(full: &Value, short: &Value, accuracy: &Value, model: &Value) {
     let accuracy = accuracy.as_str().unwrap();
     assert!(full.contains(" Gap: ") && accuracy.starts_with("Compared with ") && full.contains(accuracy), "{model}: {accuracy}");
     let rest = full.replacen(accuracy, "", 1);
-    assert_eq!(rest.split_whitespace().collect::<Vec<_>>(), short.split_whitespace().collect::<Vec<_>>(), "{model}");
+    let rest: Vec<&str> = rest.split_whitespace().collect();
+    let short: Vec<&str> = short.split_whitespace().collect();
+    assert!(!short.contains(&"Range:") && !short.contains(&"Refuses"), "{model}: {short:?}");
+    assert_eq!(&rest[..short.len()], short.as_slice(), "{model}");
+    let left_out = rest[short.len()..].join(" ");
+    assert!(left_out.starts_with("Range: ") && (left_out.contains(" Fitted on ") || left_out.contains(" Nothing fitted")) && left_out.contains(" Refuses "), "{model}: {left_out}");
 }

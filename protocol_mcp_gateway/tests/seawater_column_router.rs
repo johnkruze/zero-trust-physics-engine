@@ -146,7 +146,15 @@ async fn the_list_and_the_description_say_what_the_solver_is() {
     let listed: Value = serde_json::from_str(&listed.text().await.unwrap()).unwrap();
     let solvers = listed["solvers"].as_array().expect("solvers");
     assert_eq!(solvers[5]["solver"], "seawater_column");
-    let summary = solvers[5]["summary"].as_str().unwrap();
+    // Since 0.14.4 a row gives what the model computes, the comparison and
+    // the gap; the whole spec sheet is the description's.
+    let row_summary = solvers[5]["summary"].as_str().expect("a sentence");
+    assert!(!row_summary.contains("Range: "), "{row_summary}");
+    let (_, full) = post(&base, "/describe_solver", &json!({ "solver": "seawater_column" })).await;
+    let full: Value = serde_json::from_str(&full).unwrap();
+    let summary = full["summary"].as_str().unwrap().to_string();
+    let summary = summary.as_str();
+    assert!(summary.starts_with(row_summary.split_once(" Compared with ").map_or(row_summary, |parts| parts.0)), "{summary}");
     assert!(summary.contains("Nothing fitted") && summary.contains("within a median of +4.59 m (target 10)"), "{summary}");
 
     let (status, text) = post(&base, "/describe_solver", &json!({ "solver": "seawater_column" })).await;

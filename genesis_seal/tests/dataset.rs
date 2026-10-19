@@ -61,9 +61,9 @@ fn check_dataset(
         match (&whole, streamed) {
             (Ok(report), Ok(streamed)) => {
                 assert_eq!(report, &streamed.report);
-                assert_eq!(streamed.rows_sha256, genesis_seal::sealed_form::digest_hex(rows));
+                assert_eq!(streamed.rows_sha384, genesis_seal::sealed_form::digest_hex(rows));
                 assert_eq!(
-                    streamed.frames_sha256,
+                    streamed.frames_sha384,
                     frames.map(genesis_seal::sealed_form::digest_hex)
                 );
             }
@@ -140,9 +140,12 @@ fn every_saved_run_is_a_row_of_a_dataset_that_holds() {
 #[test]
 fn the_dataset_of_two_saved_runs_has_the_seal_worked_out_outside_this_crate() {
     needs_saved_runs!();
-    // `outside_check.py` builds this dataset from the design document with
-    // no code of this crate, and prints these three hashes. The counts gained
-    // `ended` in 0.7.0, and the leaf `reject_detail_sha256` in the version
+    // `vectors/outside_check_v2.py` (seal rule v2, ported from
+    // evidence/verification/genesis_seal/outside_check.py) builds this
+    // dataset from the design document with no code of this crate, and
+    // prints these three hashes. Under seal rule v1 they were 6e5efdfd…3b70,
+    // ca46864f…b10c and 8bdda680…35a6. The counts gained
+    // `ended` in 0.7.0, and the leaf `reject_detail_sha384` in the version
     // after 0.3.0; the root and the seal were worked out again with Python's
     // hashlib from that program's own functions, with the leaf of five keys
     // (the leaf of four keys still gives the earlier root, 217411ee…f233,
@@ -154,16 +157,16 @@ fn the_dataset_of_two_saved_runs_has_the_seal_worked_out_outside_this_crate() {
     let files = dataset_of(&tapes, "frames");
     let head = &files.assembled.head;
     assert_eq!(
-        head.plan_sha256,
-        "6e5efdfd72afdce6b641ebd41b7ab706e525eca2cf4e05ebf8dab2270ff43b70"
+        head.plan_sha384,
+        "1ca30f7cf6ab1b00a4dc709985829ab45c72996e04124b178fe1b788eac1b5a492c0b107db0ed6c21df8e2d306f1ccd5"
     );
     assert_eq!(
         head.merkle_root,
-        "ca46864f6fe87a854f75918ee8c951cbd68c544eed587f3507078323e6c7b10c"
+        "df3a8f536f426ca90f532dc215caba67f11483a17112a13262cf7879dd4b49fd0a4a325aea3d83683b72de379c05cf9d"
     );
     assert_eq!(
         head.dataset_seal,
-        "8bdda680378ecf727a433b5e6dba2160e4086696cd7318eeebfc4d5c411735a6"
+        "0f0cc3552d3b1d08537ed7580e1a230c0ffe7cc9b2329b6cf7d2a1aabfd3a86b45146d289e1b2236b58d5f4617b7c8e3"
     );
     assert_eq!(
         head.counts.text(),
@@ -189,8 +192,8 @@ fn the_files_read_back_as_they_were_written() {
     assert_eq!(file.header.rows, 8);
     assert_eq!(file.header.frames, 904);
     assert_eq!(hex::encode(file.header.dataset_seal), head.dataset_seal);
-    assert_eq!(frames_of(files).len(), 64 + 64 * 904);
-    assert_eq!(frames_of(files)[56..64], [0; 8]);
+    assert_eq!(frames_of(files).len(), 80 + 64 * 904);
+    assert_eq!(frames_of(files)[72..80], [0; 8]);
 }
 
 #[test]
@@ -226,7 +229,7 @@ fn the_order_of_keys_in_the_request_does_not_change_the_dataset_seal() {
     let results: Vec<RowResult> = tapes.iter().cloned().map(RowResult::Run).collect();
     let files = files_of(assemble(&other, "genesis_kernel_v0.1.0", &results).unwrap());
     let head = &files.assembled.head;
-    assert_eq!(head.plan_sha256, eight().assembled.head.plan_sha256);
+    assert_eq!(head.plan_sha384, eight().assembled.head.plan_sha384);
     assert_eq!(head.merkle_root, eight().assembled.head.merkle_root);
     assert_eq!(head.dataset_seal, eight().assembled.head.dataset_seal);
     assert_eq!(files.rows, eight().rows);
@@ -240,10 +243,10 @@ fn the_order_of_keys_in_the_request_does_not_change_the_dataset_seal() {
     assert!(head.is_same_dataset_as(first) && first.is_same_dataset_as(head));
     // Any other field changed, or another request, is another dataset.
     let mut other_seal = head.clone();
-    other_seal.dataset_seal = "00".repeat(32);
+    other_seal.dataset_seal = "00".repeat(48);
     assert!(!other_seal.is_same_dataset_as(first));
     let mut other_hash = head.clone();
-    other_hash.rows_sha256 = Some("11".repeat(32));
+    other_hash.rows_sha384 = Some("11".repeat(48));
     assert!(!other_hash.is_same_dataset_as(first));
     let mut other_request = head.clone();
     other_request.request["record_every_changed"] = json!(1);
@@ -303,8 +306,8 @@ fn a_refused_run_and_a_row_that_was_not_admitted_are_rows() {
     let rows = edit_row(&files.rows, 0, |row| row["reject_detail"] = json!("a note"));
     assert_eq!(first_break(&files.head, &rows, files.frames.as_deref()), (Cause::Leaf, Some(0), None));
     // The leaf carries the hash of the sentence, not the sentence.
-    assert_eq!(unadmitted.leaf["reject_detail_sha256"], json!(genesis_seal::sealed_form::digest_hex(sentence.as_bytes())));
-    assert_eq!(files.assembled.rows[0].leaf["reject_detail_sha256"], Value::Null);
+    assert_eq!(unadmitted.leaf["reject_detail_sha384"], json!(genesis_seal::sealed_form::digest_hex(sentence.as_bytes())));
+    assert_eq!(files.assembled.rows[0].leaf["reject_detail_sha384"], Value::Null);
 }
 
 #[test]
@@ -313,7 +316,7 @@ fn a_dataset_that_stores_no_frames_is_checked_from_each_last_link_on() {
     let tapes = eight_short_runs();
     let files = dataset_of(&tapes, "none");
     assert!(files.frames.is_none());
-    assert_eq!(files.assembled.head.frames_sha256, None);
+    assert_eq!(files.assembled.head.frames_sha384, None);
     // The count of recorded frames is sealed whether or not they are stored.
     assert_eq!(files.assembled.head.counts.frames, 904);
     let report = check(&files.head, &files.rows, None);
@@ -435,7 +438,7 @@ fn a_row_repeated_is_a_plan_failure_and_doubling_the_last_row_does_not_keep_the_
     );
     let head = edit_head(&seven.head, |head| {
         head["request"] = eight_rows.assembled.head.request.clone();
-        head["plan_sha256"] = json!(eight_rows.assembled.head.plan_sha256);
+        head["plan_sha384"] = json!(eight_rows.assembled.head.plan_sha384);
     });
     assert_eq!(
         first_break(&head, &eight_rows.rows, eight_rows.frames.as_deref()).0,
@@ -475,7 +478,7 @@ fn a_row_from_another_plan_is_a_plan_failure() {
     // Their plan and their plan hash put into our head: our root is not theirs.
     let head = edit_head(&ours.head, |head| {
         head["request"] = theirs.assembled.head.request.clone();
-        head["plan_sha256"] = json!(theirs.assembled.head.plan_sha256);
+        head["plan_sha384"] = json!(theirs.assembled.head.plan_sha384);
     });
     assert_eq!(
         first_break(&head, &theirs.rows, theirs.frames.as_deref()).0,
@@ -654,8 +657,8 @@ fn a_changed_leaf_is_a_leaf_failure_at_its_row() {
     let edits: [(&str, fn(&mut Value)); 5] = [
         ("leaf.row", |row| row["leaf"]["row"] = json!(5)),
         ("leaf.outcome", |row| row["leaf"]["outcome"] = json!("refused")),
-        ("leaf.run_seal", |row| row["leaf"]["run_seal"] = json!("00".repeat(32))),
-        ("leaf.request_sha256", |row| row["leaf"]["request_sha256"] = json!("00".repeat(32))),
+        ("leaf.run_seal", |row| row["leaf"]["run_seal"] = json!("00".repeat(48))),
+        ("leaf.request_sha384", |row| row["leaf"]["request_sha384"] = json!("00".repeat(48))),
         ("row", |row| row["row"] = json!(5)),
     ];
     for (name, edit) in edits {
@@ -686,7 +689,7 @@ fn a_changed_root_seal_count_or_engine_name_in_the_head_is_named() {
         let text = head[key].as_str().unwrap().to_string();
         head[key] = json!(flip_hex_digit(&text, 20));
     };
-    let head = edit_head(&files.head, |head| flipped(head, "plan_sha256"));
+    let head = edit_head(&files.head, |head| flipped(head, "plan_sha384"));
     assert_eq!(first_break(&head, &files.rows, frames), (Cause::Plan, None, None));
     let head = edit_head(&files.head, |head| head["request"]["return"] = json!("inline"));
     assert_eq!(first_break(&head, &files.rows, frames), (Cause::Plan, None, None));
@@ -787,8 +790,8 @@ fn the_first_break_is_named_in_the_stated_order() {
     );
     // A row break is named before the root and the seal.
     let head = edit_head(&files.head, |head| {
-        head["merkle_root"] = json!("00".repeat(32));
-        head["dataset_seal"] = json!("00".repeat(32));
+        head["merkle_root"] = json!("00".repeat(48));
+        head["dataset_seal"] = json!("00".repeat(48));
     });
     assert_eq!(
         first_break(&head, &files.rows, Some(&frames)),
@@ -824,10 +827,10 @@ fn a_malformed_head_row_or_frame_file_is_refused_by_name() {
         check_dataset(&head, &files.rows, frames).unwrap_err(),
         DatasetRefusal::Plan(_)
     ));
-    let rows = edit_row(&files.rows, 1, |row| row["run_seal"] = json!("AB".repeat(32)));
+    let rows = edit_row(&files.rows, 1, |row| row["run_seal"] = json!("AB".repeat(48)));
     assert_eq!(
         check_dataset(&files.head, &rows, frames).unwrap_err().to_string(),
-        "Row 1 was not read. Physical Violation: 'run_seal' must be 64 lowercase hex digits."
+        "Row 1 was not read. Physical Violation: 'run_seal' must be 96 lowercase hex digits."
     );
     let rows = edit_row(&files.rows, 1, |row| {
         row["final_state"]["radius_m_hex"] = json!("416771cd036861a6\nin_earth_shadow:true")
@@ -1008,7 +1011,7 @@ fn a_proof_of_a_row_from_another_plan_does_not_lead_to_this_dataset_seal() {
         Some(Cause::DatasetSeal)
     );
     // Our seal and our plan hash.
-    forged.plan_sha256 = ours.assembled.head.plan_sha256.clone();
+    forged.plan_sha384 = ours.assembled.head.plan_sha384.clone();
     assert_eq!(
         check_row_proof(forged.to_text().as_bytes()).unwrap().cause,
         Some(Cause::DatasetSeal)
@@ -1082,7 +1085,7 @@ fn a_malformed_proof_is_refused_by_name() {
     );
     assert_eq!(
         edited(&|proof| proof["audit_path"][0] = json!("ab")),
-        "The proof was not read. Physical Violation: 'audit_path' must be 64 lowercase hex digits."
+        "The proof was not read. Physical Violation: 'audit_path' must be 96 lowercase hex digits."
     );
     assert_eq!(
         edited(&|proof| proof["frames_hex"] = json!(["00"])),
@@ -1146,13 +1149,13 @@ fn the_writer_and_assemble_give_the_same_head_rows_and_frames() {
         // `assemble` leaves the two file hashes null for an inline job.
         let inline = list_request(&tapes, store, "inline");
         let assembled = assemble(&inline, "genesis_kernel_v0.1.0", &results).unwrap();
-        assert_eq!(assembled.head.rows_sha256, None);
+        assert_eq!(assembled.head.rows_sha384, None);
         let done = written(&inline, &results);
         let mut head = done.head.clone();
-        head.rows_sha256 = None;
-        head.frames_sha256 = None;
+        head.rows_sha384 = None;
+        head.frames_sha384 = None;
         assert_eq!(head, assembled.head, "{store}");
-        assert_eq!(done.head.frames_sha256.is_some(), store == "frames");
+        assert_eq!(done.head.frames_sha384.is_some(), store == "frames");
     }
 }
 
@@ -1322,7 +1325,7 @@ fn a_frame_file_that_ends_inside_a_frame_or_has_extra_frames_is_refused_like_the
         check_dataset(&files.head, &unended, Some(frames)).unwrap_err(),
         DatasetRefusal::RowsNotLines
     );
-    let rows = edit_row(&files.rows, 0, |row| row["run_seal"] = json!("AB".repeat(32)));
+    let rows = edit_row(&files.rows, 0, |row| row["run_seal"] = json!("AB".repeat(48)));
     assert!(matches!(
         check_dataset(&files.head, &rows, Some(short)).unwrap_err(),
         DatasetRefusal::Frames(_)
@@ -1355,7 +1358,7 @@ fn a_header_that_disagrees_with_the_dataset_is_named_the_same_way() {
     let report = check(&files.head, &files.rows, Some(&seal_changed));
     assert_eq!((report.holds, report.cause), (false, Some(Cause::DatasetSeal)));
     // The header's own refusals.
-    for (at, value) in [(0, b'X'), (4, 2), (60, 1)] {
+    for (at, value) in [(0, b'X'), (4, 1), (76, 1)] {
         let mut bytes = frames.to_vec();
         bytes[at] = value;
         assert!(matches!(
@@ -1363,7 +1366,7 @@ fn a_header_that_disagrees_with_the_dataset_is_named_the_same_way() {
             DatasetRefusal::Frames(_)
         ));
     }
-    for length in [0, 1, 63] {
+    for length in [0, 1, 79] {
         assert!(matches!(
             check_dataset(&files.head, &files.rows, Some(&frames[..length])).unwrap_err(),
             DatasetRefusal::Frames(_)
@@ -1472,7 +1475,7 @@ fn the_cases_of_the_conversion_tool_give_the_same_report_through_every_entry_poi
     swapped.swap(0, 1);
     case("plan", &files.head, &join_lines(&swapped), &frames);
     let mut head_root = files.assembled.head.clone();
-    head_root.merkle_root = "0".repeat(64);
+    head_root.merkle_root = "0".repeat(96);
     case("root", head_root.wire().as_bytes(), &files.rows, &frames);
     // a changed frame and a truncated or lengthened file, with a row also broken
     let mut short = broken_2.clone();
@@ -1516,7 +1519,7 @@ fn a_reader_that_never_ends_is_ended_by_the_caller_at_the_size_taken_at_open() {
     let frames = frames_of(files);
     let exact = check_dataset_stream(&files.head, &files.rows, Some(EndlessAfter(frames).take(frames.len() as u64))).unwrap();
     assert!(exact.report.holds);
-    assert_eq!(exact.frames_sha256, Some(genesis_seal::sealed_form::digest_hex(frames)));
+    assert_eq!(exact.frames_sha384, Some(genesis_seal::sealed_form::digest_hex(frames)));
     // One byte more than the file had: the extra byte is a length fault, by name, and the call returns.
     let more = check_dataset_stream(&files.head, &files.rows, Some(EndlessAfter(frames).take(frames.len() as u64 + 1)));
     assert!(matches!(more, Err(DatasetRefusal::Frames(genesis_seal::frames::FramesRefusal::WrongLength { .. }))), "{more:?}");

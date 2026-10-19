@@ -23,7 +23,7 @@ use genesis_kernel::frame::LastStateFrame64;
 use protocol_mcp_gateway::{VerifyPhysicsResponse, app, commit_request_proof};
 use reqwest::Client;
 use serde_json::{Value, json};
-use sha2::{Digest, Sha256};
+use sha2::{Digest, Sha384};
 use tokio::net::TcpListener;
 
 /// The start of the research record's reference run and of the worked
@@ -71,8 +71,8 @@ async fn post(base: &str, path: &str, body: &Value) -> (u16, String) {
     post_text(base, path, &answer_text::as_sent(body)).await
 }
 
-fn sha256_hex(bytes: &[u8]) -> String {
-    hex::encode(Sha256::digest(bytes))
+fn sha384_hex(bytes: &[u8]) -> String {
+    hex::encode(Sha384::digest(bytes))
 }
 
 fn below(x: f64) -> f64 {
@@ -185,14 +185,14 @@ fn assert_state_is(published_state: &Value, state: &CraterState, label: &str) {
 }
 
 fn split_receipt(text: &str) -> (String, String) {
-    const MARKER: &str = ",\"receipt_sha256\":\"";
+    const MARKER: &str = ",\"receipt_sha384\":\"";
     let at = text.rfind(MARKER).expect("a receipt");
     (format!("{}}}", &text[..at]), text[at + MARKER.len()..text.len() - 2].to_string())
 }
 
 /// The refusal is named and the answer carries no proof.
 fn names(text: &str, name: &str) -> bool {
-    text.contains(&format!("({name})")) && !text.contains("sha256_seal") && !text.contains("run_seal")
+    text.contains(&format!("({name})")) && !text.contains("sha384_seal") && !text.contains("run_seal")
 }
 
 /// Time, radius, wall speed and flag word of one recorded frame.
@@ -241,10 +241,10 @@ async fn a_step_of_the_crater_matches_the_compiled_step_with_the_same_proof_byte
             response.residual_conservation_error.to_bits(),
             state.residual_conservation_error.to_bits()
         );
-        assert_eq!(response.sha256_seal, sha256_hex(&frame.to_bytes()));
+        assert_eq!(response.sha384_seal, sha384_hex(&frame.to_bytes()));
         let (document, receipt) = split_receipt(&answer);
-        assert_eq!(receipt, response.receipt_sha256);
-        assert_eq!(sha256_hex(document.as_bytes()), receipt);
+        assert_eq!(receipt, response.receipt_sha384);
+        assert_eq!(sha384_hex(document.as_bytes()), receipt);
         let (status, report) = post(&base, "/verify_receipt", &json!({ "response_text": answer })).await;
         assert_eq!(status, 200, "{report}");
         let report: Value = serde_json::from_str(&report).unwrap();
@@ -255,7 +255,7 @@ async fn a_step_of_the_crater_matches_the_compiled_step_with_the_same_proof_byte
         assert_eq!(report["matches"], false, "{report}");
         let (_, again) = post_text(&base, "/verify_physics", &text).await;
         assert_eq!(again, answer);
-        seals.push((response.sha256_seal, state.stopped));
+        seals.push((response.sha384_seal, state.stopped));
     }
     // The last two steps end stopped; the first five do not.
     assert_eq!(seals.iter().map(|(_, stopped)| *stopped).collect::<Vec<_>>(), [false, false, false, false, false, true, true]);
@@ -392,7 +392,7 @@ async fn each_bound_lands_at_the_last_number_inside_and_is_refused_by_name_at_th
     ] {
         let (status, text) = post(&base, "/verify_physics", &step_body(4.0, dt_s)).await;
         assert_eq!(status, 422, "{dt_s}: {text}");
-        assert!(text.contains(words) && !text.contains("sha256_seal"), "{dt_s}: {text}");
+        assert!(text.contains(words) && !text.contains("sha384_seal"), "{dt_s}: {text}");
         let (status, text) = post(&base, "/run_trajectory", &run_body(4.0, dt_s, 3, 1)).await;
         assert_eq!(status, 422, "{dt_s}: {text}");
         assert!(text.contains(words) && !text.contains("run_seal"), "{dt_s}: {text}");
@@ -453,10 +453,12 @@ async fn the_card_is_listed_and_described_with_its_record() {
     let base = spawn_app().await;
     let list: Value = Client::new().get(format!("{base}/cards")).send().await.unwrap().json().await.unwrap();
     let cards = list["cards"].as_array().unwrap();
-    assert_eq!(cards.len(), 40);
-    assert_eq!(cards[20]["domain"], "aerospace");
-    assert_eq!(cards[20]["card"], "crater_ryugu_sci");
-    assert!(cards[20]["specimen"].as_str().unwrap().contains("nothing fitted to Ryugu"));
+    assert_eq!(cards.len(), protocol_mcp_gateway::CARDS);
+    assert_eq!(cards[18]["domain"], "aerospace");
+    assert_eq!(cards[18]["card"], "crater_ryugu_sci");
+    // Since 0.14.4 a row gives what the model computes, the comparison and
+    // the gap; what was fitted is in the description's spec sheet.
+    assert!(!cards[18]["specimen"].as_str().unwrap().contains("nothing fitted to Ryugu"));
     let (status, text) = post(&base, "/describe_card", &json!({ "domain": "aerospace", "card": "crater_ryugu_sci" })).await;
     assert_eq!(status, 200, "{text}");
     let body: Value = serde_json::from_str(&text).unwrap();
@@ -466,9 +468,10 @@ async fn the_card_is_listed_and_described_with_its_record() {
     // pass of 0.14.0, ContinuationNotOnCard: a continuation before the stop.
     assert_eq!(body["rejects"].as_array().map(Vec::len), Some(12));
     let record = &body["validation"];
+    assert!(body["specimen"].as_str().unwrap().contains("nothing fitted to Ryugu"));
     assert!(record["limits"].as_str().unwrap().contains("Nothing is fitted to Ryugu"));
     // Sentences held in the one line of the list, the result and the limits.
-    assert!(cards[20]["specimen"].as_str().unwrap().contains(
+    assert!(cards[18]["specimen"].as_str().unwrap().contains(
         "Gap: on Ryugu the card stops 1.32 m, 18.2 percent, above the measured apparent radius, outside the allowance of 0.97 m;"
     ));
     let result = record["result"].as_str().unwrap();

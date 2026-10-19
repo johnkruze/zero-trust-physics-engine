@@ -10,7 +10,7 @@ use genesis_solvers::icf_hotspot_burn::{self as burn, HotSpotQuestion};
 use protocol_mcp_gateway::app;
 use reqwest::Client;
 use serde_json::{Value, json};
-use sha2::{Digest, Sha256};
+use sha2::{Digest, Sha384};
 use tokio::net::TcpListener;
 
 async fn spawn_app() -> String {
@@ -136,7 +136,7 @@ async fn a_burn_matches_the_solver_bit_for_bit_and_its_proof_holds() {
     assert!((change - net).abs() <= burn::ENERGY_TOLERANCE * direct.energy_at_start_mj.max(direct.alpha_energy_mj));
 
     // The field hash is the count of numbers and the history rows.
-    let mut hasher = Sha256::new();
+    let mut hasher = Sha384::new();
     hasher.update((direct.history.len() as u64 * 5).to_le_bytes());
     for row in &direct.history {
         for value in row {
@@ -144,7 +144,7 @@ async fn a_burn_matches_the_solver_bit_for_bit_and_its_proof_holds() {
         }
     }
     let own = hex::encode(hasher.finalize());
-    let served = body["field_sha256"].as_str().expect("field hash");
+    let served = body["field_sha384"].as_str().expect("field hash");
     assert_eq!(served, own);
 
     // The proof holds, and an edit of a number breaks it by name.
@@ -161,7 +161,7 @@ async fn a_burn_matches_the_solver_bit_for_bit_and_its_proof_holds() {
         assert_eq!(report["cause"], section, "{key}");
     }
     let mut field = body.clone();
-    field["field_sha256"] = json!(flip_hex(served));
+    field["field_sha384"] = json!(flip_hex(served));
     let (_, text) = post(&base, "/verify_solution", &field).await;
     assert_eq!(serde_json::from_str::<Value>(&text).unwrap()["holds"], false);
 
@@ -237,9 +237,17 @@ async fn the_description_carries_the_standing_and_its_examples_run_unchanged() {
     let listed = reqwest::get(format!("{base}/solvers")).await.unwrap();
     let listed: Value = serde_json::from_str(&listed.text().await.unwrap()).unwrap();
     let solvers = listed["solvers"].as_array().expect("solvers");
-    assert_eq!(solvers.len(), 25);
+    assert_eq!(solvers.len(), protocol_mcp_gateway::SOLVERS);
     assert_eq!(solvers[22]["solver"], "icf_hotspot_burn");
-    let summary = solvers[22]["summary"].as_str().expect("a sentence");
+    // Since 0.14.4 a row gives what the model computes, the comparison and
+    // the gap; the whole spec sheet is the description's.
+    let row_summary = solvers[22]["summary"].as_str().expect("a sentence");
+    assert!(!row_summary.contains("Range: "), "{row_summary}");
+    let (_, full) = post(&base, "/describe_solver", &json!({ "solver": "icf_hotspot_burn" })).await;
+    let full: Value = serde_json::from_str(&full).unwrap();
+    let summary = full["summary"].as_str().unwrap().to_string();
+    let summary = summary.as_str();
+    assert!(summary.starts_with(row_summary.split_once(" Compared with ").map_or(row_summary, |parts| parts.0)), "{summary}");
     assert!(summary.contains("Nothing fitted"), "{summary}");
     assert!(summary.contains("3 of 24 targets reached and no shot within all of its own"), "{summary}");
     assert!(summary.contains("with the stagnated mass as fuel, N221204 yields 2.19 to 2.97 MJ against 3.1"), "{summary}");

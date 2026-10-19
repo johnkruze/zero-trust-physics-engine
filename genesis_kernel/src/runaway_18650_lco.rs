@@ -137,6 +137,7 @@ extern crate core;
 
 use core::prelude::v1::*;
 
+use crate::exceedance::{Exceedance, ExceedanceKind, Side};
 use crate::frame::LastStateFrame64;
 use crate::normal::normal_or_zero;
 
@@ -945,6 +946,26 @@ pub fn step(
     load: RunawayLoad,
     dt_s: f64,
 ) -> Result<(), StepReject> {
+    #[cfg(any(test, debug_assertions, feature = "check_exceedances"))]
+    let before = *state;
+    let stepped = step_landed(cell, state, frame, load, dt_s);
+    #[cfg(any(test, debug_assertions, feature = "check_exceedances"))]
+    if stepped.is_ok() {
+        crate::exceedance::debug_check("runaway_18650_lco", exceedances(cell, &before, state, load, dt_s), frame.flags);
+    }
+    stepped
+}
+
+/// The step itself; [`step`] is it with, in a build that checks
+/// (`crate::exceedance::CHECKED`), the check that [`exceedances`] stands for
+/// the flags it wrote.
+fn step_landed(
+    cell: &Runaway18650Lco,
+    state: &mut RunawayState,
+    frame: &mut LastStateFrame64,
+    load: RunawayLoad,
+    dt_s: f64,
+) -> Result<(), StepReject> {
     step_as_computed(cell, state, frame, load, dt_s)?;
     normal_or_zero_state(state);
     Ok(())
@@ -1188,6 +1209,48 @@ fn state_is_finite(state: &RunawayState) -> bool {
         && state.substeps.is_finite()
 }
 
+
+/// Every limit a flag of this card can mark: what [`exceedances`] reports
+/// beside a flag's bit (`crate::exceedance`).
+pub const EXCEEDANCE_KINDS: &[crate::exceedance::ExceedanceKind] = &[
+    SELF_HEATING_KIND,
+    RUNAWAY_KIND,
+];
+
+const SELF_HEATING_KIND: ExceedanceKind = ExceedanceKind::fixed(
+    "FLAG_SELF_HEATING",
+    FLAG_SELF_HEATING,
+    "chemical_heating_k_s",
+    "K/s",
+    Side::AtOrAbove,
+    SELF_HEATING_RATE_K_PER_S,
+    "0.02 K a minute, the self-heating an accelerating-rate calorimeter detects",
+);
+const RUNAWAY_KIND: ExceedanceKind = ExceedanceKind::fixed(
+    "FLAG_RUNAWAY",
+    FLAG_RUNAWAY,
+    "chemical_heating_k_s",
+    "K/s",
+    Side::AtOrAbove,
+    RUNAWAY_RATE_K_PER_S,
+    "10 K a minute: thermal runaway",
+);
+
+/// The limits the step from `before` to `after` under `load` over `dt_s`
+/// is past: one record for each limit a flag set on its frame marks.
+pub fn exceedances(
+    cell: &Runaway18650Lco,
+    before: &RunawayState,
+    after: &RunawayState,
+    load: RunawayLoad,
+    dt_s: f64,
+) -> crate::exceedance::Exceedances {
+    let _ = (cell, before, load, dt_s);
+    let mut records = crate::exceedance::Exceedances::new();
+    records.push_if(after.self_heating, Exceedance::fixed(SELF_HEATING_KIND, after.chemical_heating_k_s));
+    records.push_if(after.runaway, Exceedance::fixed(RUNAWAY_KIND, after.chemical_heating_k_s));
+    records
+}
 
 #[cfg(test)]
 mod tests {

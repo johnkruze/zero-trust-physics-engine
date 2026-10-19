@@ -4,7 +4,7 @@
 //! is never sent or returned.
 
 use serde_json::Value;
-use sha2::{Digest, Sha256};
+use sha2::{Digest, Sha384};
 
 /// The text a request is hashed as.
 ///
@@ -64,31 +64,31 @@ pub fn json_string(text: &str) -> String {
     serde_json::to_string(text).expect("a string encodes as JSON")
 }
 
-/// SHA-256 of `bytes`.
-pub fn digest(bytes: &[u8]) -> [u8; 32] {
-    let hashed = Sha256::digest(bytes);
-    let mut out = [0_u8; 32];
+/// SHA-384 of `bytes`.
+pub fn digest(bytes: &[u8]) -> [u8; 48] {
+    let hashed = Sha384::digest(bytes);
+    let mut out = [0_u8; 48];
     out.copy_from_slice(&hashed);
     out
 }
 
-/// SHA-256 of `bytes` as 64 lowercase hex digits.
+/// SHA-384 of `bytes` as 96 lowercase hex digits.
 pub fn digest_hex(bytes: &[u8]) -> String {
-    hex::encode(Sha256::digest(bytes))
+    hex::encode(Sha384::digest(bytes))
 }
 
-/// SHA-256 of the sealed form of `request`. For a run this is `link_0`.
-pub fn request_digest(request: &Value) -> [u8; 32] {
+/// SHA-384 of the sealed form of `request`. For a run this is `link_0`.
+pub fn request_digest(request: &Value) -> [u8; 48] {
     digest(sealed_form(request).as_bytes())
 }
 
-/// 32 bytes from 64 lowercase hex digits.
-pub fn hash_from_hex(text: &str) -> Option<[u8; 32]> {
-    if !crate::json_text::is_lower_hex(text, 64) {
+/// 32 bytes from 96 lowercase hex digits.
+pub fn hash_from_hex(text: &str) -> Option<[u8; 48]> {
+    if !crate::json_text::is_lower_hex(text, 96) {
         return None;
     }
     let bytes = hex::decode(text).ok()?;
-    let mut out = [0_u8; 32];
+    let mut out = [0_u8; 48];
     out.copy_from_slice(&bytes);
     Some(out)
 }
@@ -112,11 +112,11 @@ mod tests {
         assert_eq!(text.len(), 253);
         assert_eq!(
             digest_hex(text.as_bytes()),
-            "dced576688495b353ee304b7b8400f3fab60536a2deeb86932cb744039703da0"
+            "8615887c32e2e2edb7d4be74b822e7f64ea384173a9332d97be6278dec255c3d57c9249ca16c5a5d5dfa6c2e43d9baf9"
         );
         assert_eq!(
             hex::encode(&request_digest(&request)[..16]),
-            "dced576688495b353ee304b7b8400f3f"
+            "8615887c32e2e2edb7d4be74b822e7f6"
         );
     }
 
@@ -133,7 +133,7 @@ mod tests {
         );
         assert_eq!(
             digest_hex(text.as_bytes()),
-            "f7a263c5660593ffa2a9cb60eed8b70f108b70485725b694f59321a2a0dc70e1"
+            "4a23f3716ec13d3ba102e1cc87ef110874c8ca3b46a01a8b6970281aa79e3db2de38071b7e8601a4ec4871897d2863be"
         );
     }
 
@@ -149,7 +149,7 @@ mod tests {
         );
         assert_eq!(
             digest_hex(text.as_bytes()),
-            "1eac37e0cf92dfc49ae0d9699482e4d235b0815737d818439be116ccc464ab41"
+            "cc0f7a4eb3bc318555e9adb45607d6327cd58121ddd5e0ba212764a4492d13e0b777ca71a6c2fe290a79511cf209bf38"
         );
     }
 
@@ -249,10 +249,10 @@ mod tests {
     }
 
     #[test]
-    fn a_hash_is_read_from_64_lowercase_hex_digits_only() {
-        let text = "dced576688495b353ee304b7b8400f3fab60536a2deeb86932cb744039703da0";
+    fn a_hash_is_read_from_96_lowercase_hex_digits_only() {
+        let text = "8615887c32e2e2edb7d4be74b822e7f64ea384173a9332d97be6278dec255c3d57c9249ca16c5a5d5dfa6c2e43d9baf9";
         assert_eq!(hex::encode(hash_from_hex(text).unwrap()), text);
         assert!(hash_from_hex(&text.to_uppercase()).is_none());
-        assert!(hash_from_hex(&text[..62]).is_none());
+        assert!(hash_from_hex(&text[..94]).is_none());
     }
 }

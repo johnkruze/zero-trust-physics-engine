@@ -183,6 +183,7 @@ extern crate core;
 
 use core::prelude::v1::*;
 
+use crate::exceedance::{Exceedance, ExceedanceKind, Side};
 use crate::frame::LastStateFrame64;
 use crate::normal::{normal_or_zero, normal_or_zero_each};
 
@@ -525,6 +526,26 @@ impl ReactorState {
 /// with its sign ([`crate::normal`]).
 #[must_use]
 pub fn step(
+    reactor: &ReactorSpert3,
+    state: &mut ReactorState,
+    frame: &mut LastStateFrame64,
+    load: ReactorLoad,
+    dt_s: f64,
+) -> Result<(), StepReject> {
+    #[cfg(any(test, debug_assertions, feature = "check_exceedances"))]
+    let before = *state;
+    let stepped = step_landed(reactor, state, frame, load, dt_s);
+    #[cfg(any(test, debug_assertions, feature = "check_exceedances"))]
+    if stepped.is_ok() {
+        crate::exceedance::debug_check("reactor_spert3", exceedances(reactor, &before, state, load, dt_s), frame.flags);
+    }
+    stepped
+}
+
+/// The step itself; [`step`] is it with, in a build that checks
+/// (`crate::exceedance::CHECKED`), the check that [`exceedances`] stands for
+/// the flags it wrote.
+fn step_landed(
     reactor: &ReactorSpert3,
     state: &mut ReactorState,
     frame: &mut LastStateFrame64,
@@ -961,6 +982,37 @@ fn state_is_finite(state: &ReactorState) -> bool {
         && state.peak_energy_mws.is_finite()
         && state.peak_time_s.is_finite()
         && state.reactivity_held_dollar.is_finite()
+}
+
+/// Every limit a flag of this card can mark: what [`exceedances`] reports
+/// beside a flag's bit (`crate::exceedance`).
+pub const EXCEEDANCE_KINDS: &[crate::exceedance::ExceedanceKind] = &[
+    PROMPT_KIND,
+];
+
+const PROMPT_KIND: ExceedanceKind = ExceedanceKind::fixed(
+    "FLAG_PROMPT_SUPERCRITICAL",
+    FLAG_PROMPT_SUPERCRITICAL,
+    "reactivity_net_dollar",
+    "dollar",
+    Side::Above,
+    1.0,
+    "one dollar of net reactivity: prompt critical",
+);
+
+/// The limits the step from `before` to `after` under `load` over `dt_s`
+/// is past: one record for each limit a flag set on its frame marks.
+pub fn exceedances(
+    reactor: &ReactorSpert3,
+    before: &ReactorState,
+    after: &ReactorState,
+    load: ReactorLoad,
+    dt_s: f64,
+) -> crate::exceedance::Exceedances {
+    let _ = (reactor, before, load, dt_s);
+    let mut records = crate::exceedance::Exceedances::new();
+    records.push_if(after.prompt_supercritical, Exceedance::fixed(PROMPT_KIND, after.reactivity_net_dollar));
+    records
 }
 
 #[cfg(test)]

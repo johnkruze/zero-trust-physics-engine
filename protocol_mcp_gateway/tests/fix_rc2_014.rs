@@ -20,7 +20,7 @@ fn ok(door: &mut Stdio2, tool: &str, arguments: &Value) -> Value {
 fn refused(door: &mut Stdio2, tool: &str, arguments: &Value) -> String {
     let (error, text) = door.tool(tool, arguments);
     assert!(error, "{tool} answered: {text}");
-    assert!(!text.contains("run_seal\":") && !text.contains("chain_seal\":") && !text.contains("sha256_seal"), "{text}");
+    assert!(!text.contains("run_seal\":") && !text.contains("chain_seal\":") && !text.contains("sha384_seal"), "{text}");
     text
 }
 
@@ -69,7 +69,7 @@ fn a_link_field_of_the_wrong_type_is_a_type_error() {
         let mut link = second.clone();
         link["chain"][key] = Value::Null;
         let text = refused(&mut door, "verify_tape", &json!({ "links": [first, link] }));
-        assert_eq!(text, format!("Physical Violation: 'links[1].chain.{key}' must be 64 lowercase hex digits."));
+        assert_eq!(text, format!("Physical Violation: 'links[1].chain.{key}' must be 96 lowercase hex digits."));
         link["chain"].as_object_mut().unwrap().remove(key);
         let text = refused(&mut door, "verify_tape", &json!({ "links": [first, link] }));
         assert_eq!(text, format!("Missing required parameter: 'links[1].chain.{key}' (InputMissing)."));
@@ -168,7 +168,7 @@ fn a_link_is_named_at_its_place() {
     let mut link = second.clone();
     link["state_digest"] = json!("AB");
     let text = refused(&mut door, "verify_tape", &json!({ "links": [first, link] }));
-    assert_eq!(text, "Physical Violation: 'links[1].state_digest' must be 64 lowercase hex digits.");
+    assert_eq!(text, "Physical Violation: 'links[1].state_digest' must be 96 lowercase hex digits.");
     // An outcome that is an empty string is missing there, as in the long form of one answer.
     let mut link = first.clone();
     link["outcome"] = json!("");
@@ -206,16 +206,16 @@ fn a_link_is_named_at_its_place() {
 /// `rt1/repro/R10_about_140_rows.py`): one-step thermal runs, 141 on a grid
 /// and 107 as a list, and solar_system's worked run 15 as a list.
 #[test]
-fn about_140_summary_rows_is_said_of_a_grid_and_a_list_holds_fewer() {
+fn about_150_summary_rows_is_said_of_a_grid_and_a_list_holds_fewer() {
     let mut door = Stdio2::start(None);
     let base = json!({ "initial": { "temperature_k": 293.15 }, "dt_s": 0.1, "segments": [{ "steps": 1, "load": { "heat_power_w": 1.0, "ambient_k": 293.15 } }], "record_every": 1 });
     let grid = |n: usize| json!({ "domain": "energy", "card": "thermal", "plan": { "kind": "grid", "base": base, "axes": [{ "path": "segments[0].load.heat_power_w", "values": (0..n).map(|i| 1.0 + i as f64).collect::<Vec<_>>() }] }, "store": "none", "return": "inline" });
     let list = |n: usize| json!({ "domain": "energy", "card": "thermal", "plan": { "kind": "list", "runs": vec![base.clone(); n] }, "store": "none", "return": "inline" });
-    for (plan, held) in [(&grid as &dyn Fn(usize) -> Value, 141), (&list, 107)] {
+    for (plan, held) in [(&grid as &dyn Fn(usize) -> Value, 150), (&list, 114)] {
         let answer = ok(&mut door, "run_dataset", &plan(held));
         assert_eq!(answer["summary"].as_array().map(Vec::len), Some(held));
         let text = refused(&mut door, "run_dataset", &plan(held + 1));
-        assert!(text.contains("more than the 40000 one inline answer may have"), "{text}");
+        assert!(text.contains("more than the 42500 one inline answer may have"), "{text}");
     }
     let (_, described) = door.tool("describe_card", &json!({ "domain": "aerospace", "card": "solar_system" }));
     let mut worked = parsed(&described)["example_run_trajectory"].clone();
@@ -225,8 +225,8 @@ fn about_140_summary_rows_is_said_of_a_grid_and_a_list_holds_fewer() {
     worked["segments"] = json!([{ "steps": 1, "load": worked["segments"][0]["load"].clone() }]);
     worked["record_every"] = json!(1);
     let solar = |n: usize| json!({ "domain": "aerospace", "card": "solar_system", "plan": { "kind": "list", "runs": vec![worked.clone(); n] }, "store": "none", "return": "inline" });
-    assert_eq!(ok(&mut door, "run_dataset", &solar(15))["summary"].as_array().map(Vec::len), Some(15));
-    refused(&mut door, "run_dataset", &solar(16));
+    assert_eq!(ok(&mut door, "run_dataset", &solar(16))["summary"].as_array().map(Vec::len), Some(16));
+    refused(&mut door, "run_dataset", &solar(17));
 }
 
 /// verify_dataset's short form says what the seal of the plan it was given

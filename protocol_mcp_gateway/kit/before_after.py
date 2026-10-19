@@ -17,12 +17,18 @@ seals:
 
 Both are run on each binary into DIR (default: a new folder under /tmp), then
 every pair of answers is compared. For each answer that differs it prints the
-seals that moved (run_seal, solution_seal, receipt_sha256, state_digest, every
-seal_parts entry, every frame link, field_sha256, chain and dataset seals) and
+seals that moved (run_seal, solution_seal, receipt_sha384, state_digest, every
+seal_parts entry, every frame link, field_sha384, chain and dataset seals) and
 how many other values moved, with the first few paths. An answer whose seals
 all stayed and whose other bytes moved is called out: those are the changes
 the proof does not see (words, descriptions, keys added). The whole account
 is written to DIR/REPORT.txt as well.
+
+Between an engine of seal rule v1 (SHA-256, 0.14.3 and earlier) and one of
+v2 (SHA-384, 0.15.0), the v1 names are read as v2 names (receipt_sha256 as
+receipt_sha384, ...), and an answer whose every change is one the hash rule
+makes (a seal or a hash, seal_rule added, a frame's proof slot with its 48
+bytes of physics the same) is counted as moved by the seal rule alone.
 
 --compare reads two folders of answers saved earlier, by either program, and
 gives the same account. Exit code 0 when nothing differs, 1 when anything does.
@@ -39,7 +45,47 @@ import tempfile
 SEAL_KEYS = {
     "run_seal", "solution_seal", "receipt_sha256", "state_digest", "field_sha256", "link",
     "chain_seal", "dataset_seal", "plan_seal", "tape_seal", "series_seal", "seal", "proof",
+    "receipt_sha384", "field_sha384", "sha384_seal", "sha256_seal", "design_seal", "validation_seal",
+    "recomputed_receipt_sha384", "recomputed_receipt_sha256", "upstream_run_seal", "upstream_chain_seal",
 }
+
+# The names seal rule v2 gives the fields seal rule v1 named by their hash.
+V1_TO_V2 = {
+    "receipt_sha256": "receipt_sha384", "recomputed_receipt_sha256": "recomputed_receipt_sha384",
+    "sha256_seal": "sha384_seal", "field_sha256": "field_sha384", "measurements_sha256": "measurements_sha384",
+    "plan_sha256": "plan_sha384", "rows_sha256": "rows_sha384", "frames_sha256": "frames_sha384",
+    "request_sha256": "request_sha384", "reject_detail_sha256": "reject_detail_sha384",
+    "commitment_sha256": "commitment_sha384", "recomputed_sha256": "recomputed_sha384",
+}
+# Values that are hashes by name, which the hash rule moves.
+HASHED = {"merkle_root", "plan_sha384", "rows_sha384", "frames_sha384", "measurements_sha384",
+          "request_sha384", "reject_detail_sha384", "commitment_sha384", "recomputed_sha384",
+          "recomputed_run_seal", "recomputed_solution_seal", "recomputed_dataset_seal", "recomputed_chain_seal",
+          "audit_path", "leaf"}
+
+
+def renamed(value):
+    """A v1 answer with its hash-named keys under their v2 names."""
+    if isinstance(value, dict):
+        return {V1_TO_V2.get(key, key): renamed(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [renamed(item) for item in value]
+    return value
+
+
+def by_rule_alone(a, b, moved):
+    """True when every path that moved is one the hash rule moves."""
+    left, right = dict(leaves(a)), dict(leaves(b))
+    for path in moved:
+        last = path.split(".")[-1].split("[")[0]
+        if is_seal(path) or last in HASHED or last == "seal_rule":
+            continue
+        if last == "frame_hex" and isinstance(left.get(path), str) and isinstance(right.get(path), str) and left[path][:96] == right[path][:96]:
+            continue
+        if last == "frames_hex" and isinstance(left.get(path), str) and isinstance(right.get(path), str):
+            continue
+        return False
+    return True
 
 
 def find_spectrum(start):
@@ -85,7 +131,7 @@ def is_seal(path):
 
 def differences(a, b):
     """(seals that moved, other paths that moved), as paths."""
-    left, right = dict(leaves(a)), dict(leaves(b))
+    left, right = dict(leaves(renamed(a))), dict(leaves(b))
     moved = sorted(path for path in set(left) | set(right) if left.get(path, "<absent>") != right.get(path, "<absent>"))
     seals = [path for path in moved if is_seal(path)]
     others = [path for path in moved if not is_seal(path)]
@@ -105,18 +151,23 @@ def seal_names(paths):
 def compare(a, b, out):
     files_a = {n for n in os.listdir(a) if n.endswith(".json") and not n.startswith("_SUMMARY")}
     files_b = {n for n in os.listdir(b) if n.endswith(".json") and not n.startswith("_SUMMARY")}
-    same, seal_moved, words_only = [], [], []
+    same, seal_moved, words_only, rule_only = [], [], [], []
     for name in sorted(files_a & files_b):
         with open(os.path.join(a, name), "rb") as f, open(os.path.join(b, name), "rb") as g:
             raw_a, raw_b = f.read(), g.read()
         if raw_a == raw_b:
             same.append(name)
             continue
-        seals, others = differences(answer_value(raw_a), answer_value(raw_b))
+        value_a, value_b = answer_value(raw_a), answer_value(raw_b)
+        seals, others = differences(value_a, value_b)
+        if seals and by_rule_alone(renamed(value_a), value_b, seals + others):
+            rule_only.append(name)
         (seal_moved if seals else words_only).append((name, seals, others))
     out(f"{a}\n  against {b}")
     out(f"  {len(same)} identical byte for byte; {len(seal_moved)} with a seal moved; {len(words_only)} with bytes moved and every seal kept; "
         f"{len(files_a - files_b)} only in the first; {len(files_b - files_a)} only in the second.")
+    out(f"  Of the {len(seal_moved)} with a seal moved, {len(rule_only)} moved by the seal rule alone (a seal, a hash, seal_rule, a frame's proof slot), "
+        f"and {len(seal_moved) - len(rule_only)} with some other value too.")
     kinds = {}
     for name, seals, others in seal_moved + words_only:
         kind = (", ".join(seal_names(seals)) or "no seal") + " | " + (", ".join(others) if len(others) <= 2 else f"{len(others)} other values")

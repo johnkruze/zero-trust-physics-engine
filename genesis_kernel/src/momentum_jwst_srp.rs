@@ -201,6 +201,7 @@ extern crate core;
 
 use core::prelude::v1::*;
 
+use crate::exceedance::{Exceedance, ExceedanceKind, Side};
 use crate::frame::LastStateFrame64;
 use crate::normal::{normal_or_zero, normal_or_zero_each};
 
@@ -651,6 +652,26 @@ pub fn step(
     load: MomentumLoad,
     dt_s: f64,
 ) -> Result<(), StepReject> {
+    #[cfg(any(test, debug_assertions, feature = "check_exceedances"))]
+    let before = *state;
+    let stepped = step_landed(card, state, frame, load, dt_s);
+    #[cfg(any(test, debug_assertions, feature = "check_exceedances"))]
+    if stepped.is_ok() {
+        crate::exceedance::debug_check("momentum_jwst_srp", exceedances(card, &before, state, load, dt_s), frame.flags);
+    }
+    stepped
+}
+
+/// The step itself; [`step`] is it with, in a build that checks
+/// (`crate::exceedance::CHECKED`), the check that [`exceedances`] stands for
+/// the flags it wrote.
+fn step_landed(
+    card: &MomentumJwstSrp,
+    state: &mut MomentumState,
+    frame: &mut LastStateFrame64,
+    load: MomentumLoad,
+    dt_s: f64,
+) -> Result<(), StepReject> {
     step_as_computed(card, state, frame, load, dt_s)?;
     normal_or_zero_state(state);
     Ok(())
@@ -937,6 +958,64 @@ fn publish(state: &MomentumState, frame: &mut LastStateFrame64) {
     frame.force_torque = state.h_magnitude_nms as f32;
     frame.residual = state.residual_conservation_error as f32;
     frame.flags = if state.outside_field_of_regard { FLAG_OUTSIDE_FIELD_OF_REGARD } else { 0 };
+}
+
+/// Every limit a flag of this card can mark: what [`exceedances`] reports
+/// beside a flag's bit (`crate::exceedance`).
+pub const EXCEEDANCE_KINDS: &[crate::exceedance::ExceedanceKind] = &[
+    PITCH_LOW,
+    PITCH_HIGH,
+    ROLL_HIGH,
+];
+
+const PITCH_WORDS: &str = "the science field of regard in pitch of the Sun, -45 to +5 degrees";
+const PITCH_LOW: ExceedanceKind = ExceedanceKind::fixed(
+    "FLAG_OUTSIDE_FIELD_OF_REGARD",
+    FLAG_OUTSIDE_FIELD_OF_REGARD,
+    "sun_pitch_deg",
+    "deg",
+    Side::Below,
+    FIELD_OF_REGARD_PITCH_MIN_DEG,
+    PITCH_WORDS,
+);
+const PITCH_HIGH: ExceedanceKind = ExceedanceKind::fixed(
+    "FLAG_OUTSIDE_FIELD_OF_REGARD",
+    FLAG_OUTSIDE_FIELD_OF_REGARD,
+    "sun_pitch_deg",
+    "deg",
+    Side::Above,
+    FIELD_OF_REGARD_PITCH_MAX_DEG,
+    PITCH_WORDS,
+);
+const ROLL_HIGH: ExceedanceKind = ExceedanceKind::fixed(
+    "FLAG_OUTSIDE_FIELD_OF_REGARD",
+    FLAG_OUTSIDE_FIELD_OF_REGARD,
+    "sun_roll_deg_magnitude",
+    "deg",
+    Side::Above,
+    FIELD_OF_REGARD_ROLL_MAX_DEG,
+    "the science field of regard in roll of the Sun, -5 to +5 degrees",
+);
+
+/// The limits the step from `before` to `after` under `load` over `dt_s`
+/// is past: one record for each limit a flag set on its frame marks.
+pub fn exceedances(
+    card: &MomentumJwstSrp,
+    before: &MomentumState,
+    after: &MomentumState,
+    load: MomentumLoad,
+    dt_s: f64,
+) -> crate::exceedance::Exceedances {
+    let _ = (before, load, dt_s);
+    let mut records = crate::exceedance::Exceedances::new();
+    if after.outside_field_of_regard {
+        let pitch = after.sun_pitch_deg;
+        let roll = after.sun_roll_deg.abs();
+        records.push_if(!(pitch >= card.pitch_min_deg), Exceedance::at(PITCH_LOW, card.pitch_min_deg, pitch));
+        records.push_if(!(pitch <= card.pitch_max_deg), Exceedance::at(PITCH_HIGH, card.pitch_max_deg, pitch));
+        records.push_if(!(roll <= card.roll_max_deg), Exceedance::at(ROLL_HIGH, card.roll_max_deg, roll));
+    }
+    records
 }
 
 #[cfg(test)]

@@ -156,7 +156,7 @@ pub fn reject_name(reject: &AtomReject) -> &'static str {
 
 fn field_words() -> String {
     format!(
-        "SHA-256 of the grid point count ({}) as 8 little-endian bytes, then the converged electron density at each grid point as little-endian f64 bytes.",
+        "SHA-384 of the grid point count ({}) as 8 little-endian bytes, then the converged electron density at each grid point as little-endian f64 bytes.",
         atom_dft::GRID_POINTS
     )
 }

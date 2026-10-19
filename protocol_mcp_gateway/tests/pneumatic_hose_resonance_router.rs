@@ -10,7 +10,7 @@ use genesis_solvers::pneumatic_hose_resonance::{self as hose, HoseQuestion};
 use protocol_mcp_gateway::app;
 use reqwest::Client;
 use serde_json::{Value, json};
-use sha2::{Digest, Sha256};
+use sha2::{Digest, Sha384};
 use tokio::net::TcpListener;
 
 async fn spawn_app() -> String {
@@ -87,12 +87,12 @@ async fn a_response_matches_the_solver_bit_for_bit_and_its_proof_holds() {
     assert!(first > 23.0 && first < 25.0, "{first}");
     assert!(direct.peak_gains[0] > 9.0 && direct.peak_gains[0] < 11.0);
     assert!(direct.largest_energy_ledger_residual < 1e-12 && direct.largest_volume_ledger_residual < 1e-11);
-    let mut hasher = Sha256::new();
+    let mut hasher = Sha384::new();
     hasher.update((direct.field.len() as u64).to_le_bytes());
     for value in &direct.field {
         hasher.update(value.to_le_bytes());
     }
-    assert_eq!(body["field_sha256"].as_str().unwrap(), hex::encode(hasher.finalize()));
+    assert_eq!(body["field_sha384"].as_str().unwrap(), hex::encode(hasher.finalize()));
     let (_, text) = post(&base, "/verify_solution", &body).await;
     assert_eq!(serde_json::from_str::<Value>(&text).unwrap()["holds"], true);
     let mut edited = body.clone();

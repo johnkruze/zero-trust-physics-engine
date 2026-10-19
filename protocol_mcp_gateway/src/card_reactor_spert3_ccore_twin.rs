@@ -153,10 +153,22 @@ impl ReactorSpert3CcoreTwinCall {
         })
     }
 
+    /// The limits the step from `before` to the state now held is past
+    /// (`crate::exceedance`).
+    pub(crate) fn exceedances(&self, before: &reactor_spert3_ccore_twin::ReactorState) -> genesis_kernel::exceedance::Exceedances {
+        genesis_kernel::reactor_spert3_ccore_twin::exceedances(&self.card, before, &self.state, self.load, self.dt_s)
+    }
+
     pub(crate) fn run(mut self, proof: [u8; 16]) -> Result<IntegratedFrame, String> {
         let mut frame = blank_frame(proof);
+        let before = self.state;
         self.step_into(&mut frame).map_err(|failure| failure.detail)?;
-        Ok(IntegratedFrame { frame, residual_conservation_error: self.state.residual_conservation_error, state: state(&self.state)? })
+        Ok(IntegratedFrame {
+            frame,
+            exceedances: self.exceedances(&before),
+            residual_conservation_error: self.state.residual_conservation_error,
+            state: state(&self.state)?,
+        })
     }
 }
 

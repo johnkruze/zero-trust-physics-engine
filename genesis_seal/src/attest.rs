@@ -40,7 +40,16 @@ use std::fmt;
 use serde_json::{Map, Value};
 
 use crate::json_text::is_lower_hex;
-use crate::sealed_form::{digest_hex, sealed_form};
+use crate::sealed_form::sealed_form;
+
+/// SHA-256 of `bytes` as 64 lowercase hex digits. A signed reading is the
+/// instrument's protocol, `zero-trust-physics/signed-reading/v1`: its `prev`
+/// and the key's short name are SHA-256 as the instrument computes them, and
+/// stay so under seal rule v2, whose seals are SHA-384.
+fn digest_hex(bytes: &[u8]) -> String {
+    use sha2::{Digest, Sha256};
+    hex::encode(Sha256::digest(bytes))
+}
 
 /// The first line of every signed text: what the signature is for, and the
 /// version of the rule.

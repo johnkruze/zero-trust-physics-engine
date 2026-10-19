@@ -223,7 +223,7 @@ pub fn reject_name(reject: &PropellerReject) -> &'static str {
 
 fn field_words() -> String {
     format!(
-        "SHA-256 of the count of values ({}) as 8 little-endian bytes, then, as little-endian f64 bytes, the inflow angle of each of the {} rings in radians, the thrust of each ring in newtons and the torque of each ring in newton metres. These are the values of `ring_inflow_angle_rad`, `ring_thrust_n` and `ring_torque_n_m`, in that order.",
+        "SHA-384 of the count of values ({}) as 8 little-endian bytes, then, as little-endian f64 bytes, the inflow angle of each of the {} rings in radians, the thrust of each ring in newtons and the torque of each ring in newton metres. These are the values of `ring_inflow_angle_rad`, `ring_thrust_n` and `ring_torque_n_m`, in that order.",
         3 * propeller::ANNULI,
         propeller::ANNULI
     )
@@ -542,7 +542,7 @@ mod tests {
                 let response = sealed.expect("sealed");
                 assert_eq!(response.document.outcome, "refused");
                 assert_eq!(response.document.reject.as_deref(), Some(refusal.name));
-                assert!(response.document.result.is_none() && response.document.field_sha256.is_none());
+                assert!(response.document.result.is_none() && response.document.field_sha384.is_none());
                 assert_eq!(
                     response.document.reject_detail.as_deref(),
                     Some(format!(
@@ -622,7 +622,8 @@ mod tests {
             .iter()
             .find(|row| row["solver"] == "propeller_apc_10x7e")
             .expect("listed");
-        assert_eq!(row["summary"], summary);
+        // The row is the sheet's row since 0.14.4: what it computes, the comparison and the gap.
+        assert_eq!(row["summary"], crate::spec_sheet::of(PROPELLER_APC_10X7E.name).unwrap().row());
 
         let inputs = body["inputs"].as_array().unwrap();
         let names: Vec<&str> = inputs.iter().map(|input| input["name"].as_str().unwrap()).collect();

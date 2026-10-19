@@ -2,49 +2,39 @@
 
 use genesis_kernel::frame::LastStateFrame64;
 use genesis_kernel::{
-    battery_sag, cable_stretch, cantilever_eth, capsule_stardust, cell_18650pf, cell_2170_m80,
-    cell_2170_model3, generator_mmrtg_f1, grid_node, hydraulic_fluid, reactor_spert3,
-    reactor_spert3_fuel, reactor_spert3_ccore, reactor_triga_jsi, runaway_18650_lco, resonance, satellite_lageos1, swing, tesseract, thermal, ti64_lattice,
+    battery_sag, cable_stretch, cantilever_eth, capsule_stardust, cell_18650pf, generator_mmrtg_f1, grid_node, hydraulic_fluid, reactor_triga_jsi, resonance, satellite_lageos1, swing, tesseract, thermal, ti64_lattice,
     creep_cmsx6,
     capsule_insight,
     crater_ryugu_sci,
     link_gothenburg_10010,
-    grid_gb,
     solar_system,
     tire_eve_r19_ice,
     accumulator_sbo450,
     los_jwst_fine_guide,
-    tokamak_jet_dte1,
     tokamak_vde_mast,
     fingerpad_p02_glass,
 };
 use serde_json::Value;
 
 use crate::{
-    BatteryCall, CableCall, CantileverCall, CapsuleCall, Cell2170Call, Cell2170Model3Call, CellCall,
+    BatteryCall, CableCall, CantileverCall, CapsuleCall, CellCall,
     CraterCall, crater_published_is_finite, crater_state,
-    GeneratorCall, GridCall, GridGbCall,
-    CreepCall,
+    GeneratorCall, GridCall, CreepCall,
     CapsuleInsightCall,
-    HydraulicCall, ReactorCall, ReactorCcoreCall, RunawayCall, runaway_published_is_finite, runaway_state, ReactorFuelCall, ReactorTrigaCall, ResonanceCall, SatelliteCall, SwingCall, TesseractCall, ThermalCall, Ti64Call,
+    HydraulicCall, ReactorTrigaCall, ResonanceCall, SatelliteCall, SwingCall, TesseractCall, ThermalCall, Ti64Call,
     SolarSystemCall,
     LosCall,
-    TokamakCall,
     VdeCall,
     FingerPadCall, fingerpad_published_is_finite, fingerpad_state,
     advisory_flags, battery_published_is_finite, battery_state, cable_published_is_finite,
     cable_state, cantilever_published_is_finite, cantilever_state, capsule_insight_published_is_finite,
     capsule_insight_state, capsule_published_is_finite,
-    capsule_state, cell_2170_model3_published_is_finite, cell_2170_model3_state,
-    cell_2170_published_is_finite,
-    creep_published_is_finite, creep_state,
-    cell_2170_state, cell_published_is_finite, cell_state, frame_slots_are_finite, generator_published_is_finite, generator_state,
-    grid_gb_published_is_finite, grid_gb_state, grid_published_is_finite, grid_state, hydraulic_published_is_finite, hydraulic_state,
-    reactor_ccore_published_is_finite, reactor_ccore_state,
-    reactor_fuel_published_is_finite, reactor_fuel_state, reactor_triga_published_is_finite, reactor_triga_state, reactor_published_is_finite, reactor_state, resonance_published_is_finite, resonance_state, satellite_published_is_finite,
+    capsule_state, creep_published_is_finite, creep_state,
+    cell_published_is_finite, cell_state, frame_slots_are_finite, generator_published_is_finite, generator_state,
+    grid_published_is_finite, grid_state, hydraulic_published_is_finite, hydraulic_state,
+    reactor_triga_published_is_finite, reactor_triga_state, resonance_published_is_finite, resonance_state, satellite_published_is_finite,
     satellite_state, solar_system_published_is_finite, solar_system_state, swing_published_is_finite, swing_state, tesseract_published_is_finite,
     los_published_is_finite, los_state,
-    tokamak_published_is_finite, tokamak_state,
     vde_published_is_finite, vde_state,
     tesseract_state, thermal_published_is_finite, thermal_state,
     ti64_published_is_finite, ti64_state, tire_published_is_finite, tire_state, TireCall,
@@ -98,7 +88,6 @@ pub enum Live {
     Swing(SwingCall),
     Battery(BatteryCall),
     Cell(CellCall),
-    Cell2170(Cell2170Call),
     Thermal(ThermalCall),
     Resonance(ResonanceCall),
     Tesseract(TesseractCall),
@@ -108,33 +97,30 @@ pub enum Live {
     Capsule(CapsuleCall),
     Satellite(SatelliteCall),
     SolarSystem(SolarSystemCall),
-    Reactor(ReactorCall),
-    GridGb(GridGbCall),
     Cantilever(CantileverCall),
     Link(LinkCall),
     Los(LosCall),
-    Cell2170Model3(Cell2170Model3Call),
     Creep(CreepCall),
     /// Boxed: at 18,680 bytes it set the size of every `Live`, and each arm of
     /// `open` holds a `Live` of its own on the stack in a debug build.
     CapsuleInsight(Box<CapsuleInsightCall>),
-    ReactorFuel(ReactorFuelCall),
     Crater(CraterCall),
+    GridGbTwin(crate::card_grid_gb_twin::GridGbTwinCall),
+    TokamakJetDte1Twin(crate::card_tokamak_jet_dte1_twin::TokamakJetDte1TwinCall),
+    Runaway18650LcoTwin(crate::card_runaway_18650_lco_twin::Runaway18650LcoTwinCall),
     ReactorMsrePump(crate::card_reactor_msre_pump::ReactorMsrePumpCall),
     ReactorSpert3Twin(crate::card_reactor_spert3_twin::ReactorSpert3TwinCall),
-    ReactorSpert3CcoreTwin(crate::card_reactor_spert3_ccore_twin::ReactorSpert3CcoreTwinCall),
+    Cell2170Twin(crate::card_cell_2170_twin::Cell2170TwinCall),
+    ReactorSpert3CcorePlate(crate::card_reactor_spert3_ccore_plate::ReactorSpert3CcorePlateCall),
     GeneratorMmrtgSeebeck(crate::card_generator_mmrtg_seebeck::GeneratorMmrtgSeebeckCall),
     MomentumJwstDihedral(crate::card_momentum_jwst_dihedral::MomentumJwstDihedralCall),
     GraspLiftGlass4tu(crate::card_grasp_lift_glass_4tu::GraspLiftGlass4tuCall),
     MomentumJwstSrp(crate::card_momentum_jwst_srp::MomentumJwstSrpCall),
     Tire(TireCall),
     Accumulator(AccumulatorCall),
-    Tokamak(TokamakCall),
     Vde(VdeCall),
     FingerPad(FingerPadCall),
     ReactorTriga(ReactorTrigaCall),
-    ReactorCcore(ReactorCcoreCall),
-    Runaway(RunawayCall),
 }
 
 pub(crate) enum PhaseSnap {
@@ -143,7 +129,6 @@ pub(crate) enum PhaseSnap {
     Swing(swing::SwingState),
     Battery(battery_sag::PackState),
     Cell(cell_18650pf::CellState),
-    Cell2170(cell_2170_m80::CellState),
     Thermal(thermal::ThermalNodeState),
     Resonance(resonance::OscillatorState),
     Tesseract(tesseract::TesseractState),
@@ -153,31 +138,28 @@ pub(crate) enum PhaseSnap {
     Capsule(capsule_stardust::CapsuleState),
     Satellite(satellite_lageos1::SatelliteState),
     SolarSystem(solar_system::SolarSystemState),
-    Reactor(reactor_spert3::ReactorState),
-    GridGb(grid_gb::GridState),
     Cantilever(cantilever_eth::CantileverState),
     Link(link_gothenburg_10010::LinkState),
     Los(los_jwst_fine_guide::LosState),
-    Cell2170Model3(cell_2170_model3::CellState),
     Creep(creep_cmsx6::CreepState),
     CapsuleInsight(capsule_insight::CapsuleState),
-    ReactorFuel(reactor_spert3_fuel::ReactorState),
     Crater(crater_ryugu_sci::CraterState),
+    GridGbTwin(genesis_kernel::grid_gb_twin::GridGbTwinState),
+    TokamakJetDte1Twin(genesis_kernel::tokamak_jet_dte1_twin::TwinState),
+    Runaway18650LcoTwin(genesis_kernel::runaway_18650_lco_twin::RunawayState),
     ReactorMsrePump(genesis_kernel::reactor_msre_pump::ReactorMsrePumpState),
     ReactorSpert3Twin(genesis_kernel::reactor_spert3_twin::ReactorState),
-    ReactorSpert3CcoreTwin(genesis_kernel::reactor_spert3_ccore_twin::ReactorState),
+    Cell2170Twin(genesis_kernel::cell_2170_twin::CellState),
+    ReactorSpert3CcorePlate(genesis_kernel::reactor_spert3_ccore_plate::ReactorState),
     GeneratorMmrtgSeebeck(genesis_kernel::generator_mmrtg_seebeck::GeneratorMmrtgSeebeckState),
     MomentumJwstDihedral(genesis_kernel::momentum_jwst_dihedral::MomentumJwstDihedralState),
     GraspLiftGlass4tu(genesis_kernel::grasp_lift_glass_4tu::GraspLiftGlass4tuState),
     MomentumJwstSrp(genesis_kernel::momentum_jwst_srp::MomentumState),
     Tire(tire_eve_r19_ice::TireState),
     Accumulator(accumulator_sbo450::GasState),
-    Tokamak(tokamak_jet_dte1::TokamakState),
     Vde(tokamak_vde_mast::VdeState),
     FingerPad(fingerpad_p02_glass::FingerPadState),
     ReactorTriga(reactor_triga_jsi::ReactorState),
-    ReactorCcore(reactor_spert3_ccore::ReactorState),
-    Runaway(runaway_18650_lco::RunawayState),
 }
 
 impl Live {
@@ -188,9 +170,6 @@ impl Live {
             ("energy", "swing") => Ok(Live::Swing(SwingCall::from_parameters(params)?)),
             ("energy", "battery_sag") => Ok(Live::Battery(BatteryCall::from_parameters(params)?)),
             ("energy", "cell_18650pf") => Ok(Live::Cell(CellCall::from_parameters(params)?)),
-            ("energy", "cell_2170_m80") => {
-                Ok(Live::Cell2170(Cell2170Call::from_parameters(params)?))
-            }
             ("energy", "thermal") => Ok(Live::Thermal(ThermalCall::from_parameters(params)?)),
             ("signal", "resonance") => {
                 Ok(Live::Resonance(ResonanceCall::from_parameters(params)?))
@@ -214,8 +193,6 @@ impl Live {
             ("aerospace", "solar_system") => {
                 Ok(Live::SolarSystem(SolarSystemCall::from_parameters(params)?))
             }
-            ("energy", "reactor_spert3") => Ok(Live::Reactor(ReactorCall::from_parameters(params)?)),
-            ("energy", "grid_gb") => Ok(Live::GridGb(GridGbCall::from_parameters(params)?)),
             ("signal", "cantilever_eth") => {
                 Ok(Live::Cantilever(CantileverCall::from_parameters(params)?))
             }
@@ -225,30 +202,24 @@ impl Live {
             ("aerospace", "los_jwst_fine_guide") => {
                 Ok(Live::Los(LosCall::from_parameters(params)?))
             }
-            ("energy", "cell_2170_model3") => Ok(Live::Cell2170Model3(
-                Cell2170Model3Call::from_parameters(params)?,
-            )),
             ("materials", "creep_cmsx6") => Ok(Live::Creep(CreepCall::from_parameters(params)?)),
             ("aerospace", "capsule_insight") => Ok(Live::CapsuleInsight(Box::new(
                 CapsuleInsightCall::from_parameters(params)?,
             ))),
-            ("energy", "reactor_spert3_fuel") => {
-                Ok(Live::ReactorFuel(ReactorFuelCall::from_parameters(params)?))
-            }
             ("energy", "reactor_triga_jsi") => {
                 Ok(Live::ReactorTriga(ReactorTrigaCall::from_parameters(params)?))
-            }
-            ("energy", "runaway_18650_lco") => Ok(Live::Runaway(RunawayCall::from_parameters(params)?)),
-            ("energy", "reactor_spert3_ccore") => {
-                Ok(Live::ReactorCcore(ReactorCcoreCall::from_parameters(params)?))
             }
             ("materials", "grasp_lift_glass_4tu") => Ok(Live::GraspLiftGlass4tu(crate::card_grasp_lift_glass_4tu::GraspLiftGlass4tuCall::from_parameters(params)?)),
             ("aerospace", "momentum_jwst_srp") => Ok(Live::MomentumJwstSrp(crate::card_momentum_jwst_srp::MomentumJwstSrpCall::from_parameters(params)?)),
             ("aerospace", "momentum_jwst_dihedral") => Ok(Live::MomentumJwstDihedral(crate::card_momentum_jwst_dihedral::MomentumJwstDihedralCall::from_parameters(params)?)),
             ("energy", "generator_mmrtg_seebeck") => Ok(Live::GeneratorMmrtgSeebeck(crate::card_generator_mmrtg_seebeck::GeneratorMmrtgSeebeckCall::from_parameters(params)?)),
             ("energy", "reactor_msre_pump") => Ok(Live::ReactorMsrePump(crate::card_reactor_msre_pump::ReactorMsrePumpCall::from_parameters(params)?)),
-            ("energy", "reactor_spert3_twin") => Ok(Live::ReactorSpert3Twin(crate::card_reactor_spert3_twin::ReactorSpert3TwinCall::from_parameters(params)?)),
-            ("energy", "reactor_spert3_ccore_twin") => Ok(Live::ReactorSpert3CcoreTwin(crate::card_reactor_spert3_ccore_twin::ReactorSpert3CcoreTwinCall::from_parameters(params)?)),
+            ("energy", "reactor_spert3") => Ok(Live::ReactorSpert3Twin(crate::card_reactor_spert3_twin::ReactorSpert3TwinCall::from_parameters(params)?)),
+            ("energy", "grid_gb") => Ok(Live::GridGbTwin(crate::card_grid_gb_twin::GridGbTwinCall::from_parameters(params)?)),
+            ("energy", "cell_2170_model3") => Ok(Live::Cell2170Twin(crate::card_cell_2170_twin::Cell2170TwinCall::from_parameters(params)?)),
+            ("energy", "tokamak_jet_dte1") => Ok(Live::TokamakJetDte1Twin(crate::card_tokamak_jet_dte1_twin::TokamakJetDte1TwinCall::from_parameters(params)?)),
+            ("energy", "runaway_18650_lco") => Ok(Live::Runaway18650LcoTwin(crate::card_runaway_18650_lco_twin::Runaway18650LcoTwinCall::from_parameters(params)?)),
+            ("energy", "reactor_spert3_ccore") => Ok(Live::ReactorSpert3CcorePlate(crate::card_reactor_spert3_ccore_plate::ReactorSpert3CcorePlateCall::from_parameters(params)?)),
             ("aerospace", "crater_ryugu_sci") => {
                 Ok(Live::Crater(CraterCall::from_parameters(params)?))
             }
@@ -258,9 +229,6 @@ impl Live {
             }
             ("energy", "tokamak_vde_mast") => {
                 Ok(Live::Vde(VdeCall::from_parameters(params)?))
-            }
-            ("energy", "tokamak_jet_dte1") => {
-                Ok(Live::Tokamak(TokamakCall::from_parameters(params)?))
             }
             ("materials", "fingerpad_p02_glass") => {
                 Ok(Live::FingerPad(FingerPadCall::from_parameters(params)?))
@@ -276,7 +244,6 @@ impl Live {
             Live::Swing(call) => call.replace_load(params),
             Live::Battery(call) => call.replace_load(params),
             Live::Cell(call) => call.replace_load(params),
-            Live::Cell2170(call) => call.replace_load(params),
             Live::Thermal(call) => call.replace_load(params),
             Live::Resonance(call) => call.replace_load(params),
             Live::Tesseract(call) => call.replace_load(params),
@@ -286,29 +253,26 @@ impl Live {
             Live::Capsule(call) => call.replace_load(params),
             Live::Satellite(call) => call.replace_load(params),
             Live::SolarSystem(call) => call.replace_load(params),
-            Live::Reactor(call) => call.replace_load(params),
-            Live::GridGb(call) => call.replace_load(params),
             Live::Cantilever(call) => call.replace_load(params),
             Live::Link(call) => call.replace_load(params),
             Live::Los(call) => call.replace_load(params),
-            Live::Cell2170Model3(call) => call.replace_load(params),
             Live::Creep(call) => call.replace_load(params),
             Live::CapsuleInsight(call) => call.replace_load(params),
-            Live::ReactorFuel(call) => call.replace_load(params),
             Live::ReactorTriga(call) => call.replace_load(params),
-            Live::ReactorCcore(call) => call.replace_load(params),
-            Live::Runaway(call) => call.replace_load(params),
             Live::Crater(call) => call.replace_load(params),
+            Live::GridGbTwin(call) => call.replace_load(params),
+            Live::TokamakJetDte1Twin(call) => call.replace_load(params),
+            Live::Runaway18650LcoTwin(call) => call.replace_load(params),
             Live::ReactorMsrePump(call) => call.replace_load(params),
             Live::ReactorSpert3Twin(call) => call.replace_load(params),
-            Live::ReactorSpert3CcoreTwin(call) => call.replace_load(params),
+            Live::Cell2170Twin(call) => call.replace_load(params),
+            Live::ReactorSpert3CcorePlate(call) => call.replace_load(params),
             Live::GeneratorMmrtgSeebeck(call) => call.replace_load(params),
             Live::MomentumJwstDihedral(call) => call.replace_load(params),
             Live::GraspLiftGlass4tu(call) => call.replace_load(params),
             Live::MomentumJwstSrp(call) => call.replace_load(params),
             Live::Tire(call) => call.replace_load(params),
             Live::Accumulator(call) => call.replace_load(params),
-            Live::Tokamak(call) => call.replace_load(params),
             Live::Vde(call) => call.replace_load(params),
             Live::FingerPad(call) => call.replace_load(params),
         }
@@ -321,7 +285,6 @@ impl Live {
             Live::Swing(call) => PhaseSnap::Swing(call.state),
             Live::Battery(call) => PhaseSnap::Battery(call.state),
             Live::Cell(call) => PhaseSnap::Cell(call.state),
-            Live::Cell2170(call) => PhaseSnap::Cell2170(call.state),
             Live::Thermal(call) => PhaseSnap::Thermal(call.state),
             Live::Resonance(call) => PhaseSnap::Resonance(call.state),
             Live::Tesseract(call) => PhaseSnap::Tesseract(call.state),
@@ -331,29 +294,26 @@ impl Live {
             Live::Capsule(call) => PhaseSnap::Capsule(call.state),
             Live::Satellite(call) => PhaseSnap::Satellite(call.state),
             Live::SolarSystem(call) => PhaseSnap::SolarSystem(call.state),
-            Live::Reactor(call) => PhaseSnap::Reactor(call.state),
-            Live::GridGb(call) => PhaseSnap::GridGb(call.state),
             Live::Cantilever(call) => PhaseSnap::Cantilever(call.state),
             Live::Link(call) => PhaseSnap::Link(call.state),
             Live::Los(call) => PhaseSnap::Los(call.state),
-            Live::Cell2170Model3(call) => PhaseSnap::Cell2170Model3(call.state),
             Live::Creep(call) => PhaseSnap::Creep(call.state),
             Live::CapsuleInsight(call) => PhaseSnap::CapsuleInsight(call.state),
-            Live::ReactorFuel(call) => PhaseSnap::ReactorFuel(call.state),
             Live::ReactorTriga(call) => PhaseSnap::ReactorTriga(call.state),
-            Live::ReactorCcore(call) => PhaseSnap::ReactorCcore(call.state),
-            Live::Runaway(call) => PhaseSnap::Runaway(call.state),
             Live::Crater(call) => PhaseSnap::Crater(call.state),
+            Live::GridGbTwin(call) => PhaseSnap::GridGbTwin(call.state),
+            Live::TokamakJetDte1Twin(call) => PhaseSnap::TokamakJetDte1Twin(call.state),
+            Live::Runaway18650LcoTwin(call) => PhaseSnap::Runaway18650LcoTwin(call.state),
             Live::ReactorMsrePump(call) => PhaseSnap::ReactorMsrePump(call.state),
             Live::ReactorSpert3Twin(call) => PhaseSnap::ReactorSpert3Twin(call.state),
-            Live::ReactorSpert3CcoreTwin(call) => PhaseSnap::ReactorSpert3CcoreTwin(call.state),
+            Live::Cell2170Twin(call) => PhaseSnap::Cell2170Twin(call.state),
+            Live::ReactorSpert3CcorePlate(call) => PhaseSnap::ReactorSpert3CcorePlate(call.state),
             Live::GeneratorMmrtgSeebeck(call) => PhaseSnap::GeneratorMmrtgSeebeck(call.state),
             Live::MomentumJwstDihedral(call) => PhaseSnap::MomentumJwstDihedral(call.state),
             Live::GraspLiftGlass4tu(call) => PhaseSnap::GraspLiftGlass4tu(call.state),
             Live::MomentumJwstSrp(call) => PhaseSnap::MomentumJwstSrp(call.state),
             Live::Tire(call) => PhaseSnap::Tire(call.state),
             Live::Accumulator(call) => PhaseSnap::Accumulator(call.state),
-            Live::Tokamak(call) => PhaseSnap::Tokamak(call.state),
             Live::Vde(call) => PhaseSnap::Vde(call.state),
             Live::FingerPad(call) => PhaseSnap::FingerPad(call.state),
         }
@@ -366,7 +326,6 @@ impl Live {
             (Live::Swing(call), PhaseSnap::Swing(state)) => call.state = state,
             (Live::Battery(call), PhaseSnap::Battery(state)) => call.state = state,
             (Live::Cell(call), PhaseSnap::Cell(state)) => call.state = state,
-            (Live::Cell2170(call), PhaseSnap::Cell2170(state)) => call.state = state,
             (Live::Thermal(call), PhaseSnap::Thermal(state)) => call.state = state,
             (Live::Resonance(call), PhaseSnap::Resonance(state)) => call.state = state,
             (Live::Tesseract(call), PhaseSnap::Tesseract(state)) => call.state = state,
@@ -376,31 +335,73 @@ impl Live {
             (Live::Capsule(call), PhaseSnap::Capsule(state)) => call.state = state,
             (Live::Satellite(call), PhaseSnap::Satellite(state)) => call.state = state,
             (Live::SolarSystem(call), PhaseSnap::SolarSystem(state)) => call.state = state,
-            (Live::Reactor(call), PhaseSnap::Reactor(state)) => call.state = state,
-            (Live::GridGb(call), PhaseSnap::GridGb(state)) => call.state = state,
             (Live::Cantilever(call), PhaseSnap::Cantilever(state)) => call.state = state,
             (Live::Link(call), PhaseSnap::Link(state)) => call.state = state,
             (Live::Los(call), PhaseSnap::Los(state)) => call.state = state,
-            (Live::Cell2170Model3(call), PhaseSnap::Cell2170Model3(state)) => call.state = state,
             (Live::Creep(call), PhaseSnap::Creep(state)) => call.state = state,
             (Live::CapsuleInsight(call), PhaseSnap::CapsuleInsight(state)) => call.state = state,
-            (Live::ReactorFuel(call), PhaseSnap::ReactorFuel(state)) => call.state = state,
             (Live::ReactorTriga(call), PhaseSnap::ReactorTriga(state)) => call.state = state,
-            (Live::ReactorCcore(call), PhaseSnap::ReactorCcore(state)) => call.state = state,
-            (Live::Runaway(call), PhaseSnap::Runaway(state)) => call.state = state,
             (Live::Crater(call), PhaseSnap::Crater(state)) => call.state = state,
+            (Live::GridGbTwin(call), PhaseSnap::GridGbTwin(state)) => call.state = state,
+            (Live::TokamakJetDte1Twin(call), PhaseSnap::TokamakJetDte1Twin(state)) => call.state = state,
+            (Live::Runaway18650LcoTwin(call), PhaseSnap::Runaway18650LcoTwin(state)) => call.state = state,
             (Live::ReactorMsrePump(call), PhaseSnap::ReactorMsrePump(state)) => call.state = state,
             (Live::ReactorSpert3Twin(call), PhaseSnap::ReactorSpert3Twin(state)) => call.state = state,
-            (Live::ReactorSpert3CcoreTwin(call), PhaseSnap::ReactorSpert3CcoreTwin(state)) => call.state = state,
+            (Live::Cell2170Twin(call), PhaseSnap::Cell2170Twin(state)) => call.state = state,
+            (Live::ReactorSpert3CcorePlate(call), PhaseSnap::ReactorSpert3CcorePlate(state)) => call.state = state,
             (Live::GeneratorMmrtgSeebeck(call), PhaseSnap::GeneratorMmrtgSeebeck(state)) => call.state = state,
             (Live::MomentumJwstDihedral(call), PhaseSnap::MomentumJwstDihedral(state)) => call.state = state,
             (Live::GraspLiftGlass4tu(call), PhaseSnap::GraspLiftGlass4tu(state)) => call.state = state,
             (Live::MomentumJwstSrp(call), PhaseSnap::MomentumJwstSrp(state)) => call.state = state,
             (Live::Tire(call), PhaseSnap::Tire(state)) => call.state = state,
             (Live::Accumulator(call), PhaseSnap::Accumulator(state)) => call.state = state,
-            (Live::Tokamak(call), PhaseSnap::Tokamak(state)) => call.state = state,
             (Live::Vde(call), PhaseSnap::Vde(state)) => call.state = state,
             (Live::FingerPad(call), PhaseSnap::FingerPad(state)) => call.state = state,
+            _ => unreachable!("snapshot does not belong to this specimen"),
+        }
+    }
+
+    /// The limits the step just landed is past, from the state `before` it
+    /// (a [`Live::snapshot`] taken before the step) to the state now held
+    /// (`crate::exceedance`).
+    pub(crate) fn exceedances(&self, before: &PhaseSnap) -> genesis_kernel::exceedance::Exceedances {
+        match (self, before) {
+            (Live::Ti64(call), PhaseSnap::Ti64(before)) => call.exceedances(before),
+            (Live::Grid(call), PhaseSnap::Grid(before)) => call.exceedances(before),
+            (Live::Swing(call), PhaseSnap::Swing(before)) => call.exceedances(before),
+            (Live::Battery(call), PhaseSnap::Battery(before)) => call.exceedances(before),
+            (Live::Cell(call), PhaseSnap::Cell(before)) => call.exceedances(before),
+            (Live::Thermal(call), PhaseSnap::Thermal(before)) => call.exceedances(before),
+            (Live::Resonance(call), PhaseSnap::Resonance(before)) => call.exceedances(before),
+            (Live::Tesseract(call), PhaseSnap::Tesseract(before)) => call.exceedances(before),
+            (Live::Hydraulic(call), PhaseSnap::Hydraulic(before)) => call.exceedances(before),
+            (Live::Cable(call), PhaseSnap::Cable(before)) => call.exceedances(before),
+            (Live::Generator(call), PhaseSnap::Generator(before)) => call.exceedances(before),
+            (Live::Capsule(call), PhaseSnap::Capsule(before)) => call.exceedances(before),
+            (Live::Satellite(call), PhaseSnap::Satellite(before)) => call.exceedances(before),
+            (Live::SolarSystem(call), PhaseSnap::SolarSystem(before)) => call.exceedances(before),
+            (Live::Cantilever(call), PhaseSnap::Cantilever(before)) => call.exceedances(before),
+            (Live::Link(call), PhaseSnap::Link(before)) => call.exceedances(before),
+            (Live::Los(call), PhaseSnap::Los(before)) => call.exceedances(before),
+            (Live::Creep(call), PhaseSnap::Creep(before)) => call.exceedances(before),
+            (Live::CapsuleInsight(call), PhaseSnap::CapsuleInsight(before)) => call.exceedances(before),
+            (Live::ReactorTriga(call), PhaseSnap::ReactorTriga(before)) => call.exceedances(before),
+            (Live::Crater(call), PhaseSnap::Crater(before)) => call.exceedances(before),
+            (Live::ReactorMsrePump(call), PhaseSnap::ReactorMsrePump(before)) => call.exceedances(before),
+            (Live::ReactorSpert3Twin(call), PhaseSnap::ReactorSpert3Twin(before)) => call.exceedances(before),
+            (Live::GeneratorMmrtgSeebeck(call), PhaseSnap::GeneratorMmrtgSeebeck(before)) => call.exceedances(before),
+            (Live::MomentumJwstDihedral(call), PhaseSnap::MomentumJwstDihedral(before)) => call.exceedances(before),
+            (Live::GraspLiftGlass4tu(call), PhaseSnap::GraspLiftGlass4tu(before)) => call.exceedances(before),
+            (Live::MomentumJwstSrp(call), PhaseSnap::MomentumJwstSrp(before)) => call.exceedances(before),
+            (Live::Tire(call), PhaseSnap::Tire(before)) => call.exceedances(before),
+            (Live::Accumulator(call), PhaseSnap::Accumulator(before)) => call.exceedances(before),
+            (Live::Vde(call), PhaseSnap::Vde(before)) => call.exceedances(before),
+            (Live::FingerPad(call), PhaseSnap::FingerPad(before)) => call.exceedances(before),
+            (Live::GridGbTwin(call), PhaseSnap::GridGbTwin(before)) => call.exceedances(before),
+            (Live::TokamakJetDte1Twin(call), PhaseSnap::TokamakJetDte1Twin(before)) => call.exceedances(before),
+            (Live::Runaway18650LcoTwin(call), PhaseSnap::Runaway18650LcoTwin(before)) => call.exceedances(before),
+            (Live::Cell2170Twin(call), PhaseSnap::Cell2170Twin(before)) => call.exceedances(before),
+            (Live::ReactorSpert3CcorePlate(call), PhaseSnap::ReactorSpert3CcorePlate(before)) => call.exceedances(before),
             _ => unreachable!("snapshot does not belong to this specimen"),
         }
     }
@@ -412,7 +413,6 @@ impl Live {
             Live::Swing(call) => call.step_into(frame),
             Live::Battery(call) => call.step_into(frame),
             Live::Cell(call) => call.step_into(frame),
-            Live::Cell2170(call) => call.step_into(frame),
             Live::Thermal(call) => call.step_into(frame),
             Live::Resonance(call) => call.step_into(frame),
             Live::Tesseract(call) => call.step_into(frame),
@@ -422,29 +422,26 @@ impl Live {
             Live::Capsule(call) => call.step_into(frame),
             Live::Satellite(call) => call.step_into(frame),
             Live::SolarSystem(call) => call.step_into(frame),
-            Live::Reactor(call) => call.step_into(frame),
-            Live::GridGb(call) => call.step_into(frame),
             Live::Cantilever(call) => call.step_into(frame),
             Live::Link(call) => call.step_into(frame),
             Live::Los(call) => call.step_into(frame),
-            Live::Cell2170Model3(call) => call.step_into(frame),
             Live::Creep(call) => call.step_into(frame),
             Live::CapsuleInsight(call) => call.step_into(frame),
-            Live::ReactorFuel(call) => call.step_into(frame),
             Live::ReactorTriga(call) => call.step_into(frame),
-            Live::ReactorCcore(call) => call.step_into(frame),
-            Live::Runaway(call) => call.step_into(frame),
             Live::Crater(call) => call.step_into(frame),
+            Live::GridGbTwin(call) => call.step_into(frame),
+            Live::TokamakJetDte1Twin(call) => call.step_into(frame),
+            Live::Runaway18650LcoTwin(call) => call.step_into(frame),
             Live::ReactorMsrePump(call) => call.step_into(frame),
             Live::ReactorSpert3Twin(call) => call.step_into(frame),
-            Live::ReactorSpert3CcoreTwin(call) => call.step_into(frame),
+            Live::Cell2170Twin(call) => call.step_into(frame),
+            Live::ReactorSpert3CcorePlate(call) => call.step_into(frame),
             Live::GeneratorMmrtgSeebeck(call) => call.step_into(frame),
             Live::MomentumJwstDihedral(call) => call.step_into(frame),
             Live::GraspLiftGlass4tu(call) => call.step_into(frame),
             Live::MomentumJwstSrp(call) => call.step_into(frame),
             Live::Tire(call) => call.step_into(frame),
             Live::Accumulator(call) => call.step_into(frame),
-            Live::Tokamak(call) => call.step_into(frame),
             Live::Vde(call) => call.step_into(frame),
             Live::FingerPad(call) => call.step_into(frame),
         }
@@ -496,15 +493,6 @@ impl Live {
                     frame,
                     "energy",
                     "cell_18650pf",
-                    call.state.residual_conservation_error,
-                )
-            }
-            Live::Cell2170(call) => {
-                cell_2170_published_is_finite(&call.state).map_err(StepFailure::flag)?;
-                finish_audit(
-                    frame,
-                    "energy",
-                    "cell_2170_m80",
                     call.state.residual_conservation_error,
                 )
             }
@@ -589,24 +577,6 @@ impl Live {
                     call.state.residual_conservation_error,
                 )
             }
-            Live::Reactor(call) => {
-                reactor_published_is_finite(&call.state).map_err(StepFailure::flag)?;
-                finish_audit(
-                    frame,
-                    "energy",
-                    "reactor_spert3",
-                    call.state.residual_conservation_error,
-                )
-            }
-            Live::GridGb(call) => {
-                grid_gb_published_is_finite(&call.state).map_err(StepFailure::flag)?;
-                finish_audit(
-                    frame,
-                    "energy",
-                    "grid_gb",
-                    call.state.residual_conservation_error,
-                )
-            }
             Live::Cantilever(call) => {
                 cantilever_published_is_finite(&call.state).map_err(StepFailure::flag)?;
                 finish_audit(
@@ -631,15 +601,6 @@ impl Live {
                     frame,
                     "aerospace",
                     "los_jwst_fine_guide",
-                    call.state.residual_conservation_error,
-                )
-            }
-            Live::Cell2170Model3(call) => {
-                cell_2170_model3_published_is_finite(&call.state).map_err(StepFailure::flag)?;
-                finish_audit(
-                    frame,
-                    "energy",
-                    "cell_2170_model3",
                     call.state.residual_conservation_error,
                 )
             }
@@ -670,28 +631,6 @@ impl Live {
                     call.state.residual_conservation_error,
                 )
             }
-            Live::Runaway(call) => {
-                runaway_published_is_finite(&call.state).map_err(StepFailure::flag)?;
-                finish_audit(frame, "energy", "runaway_18650_lco", call.state.residual_conservation_error)
-            }
-            Live::ReactorCcore(call) => {
-                reactor_ccore_published_is_finite(&call.state).map_err(StepFailure::flag)?;
-                finish_audit(
-                    frame,
-                    "energy",
-                    "reactor_spert3_ccore",
-                    call.state.residual_conservation_error,
-                )
-            }
-            Live::ReactorFuel(call) => {
-                reactor_fuel_published_is_finite(&call.state).map_err(StepFailure::flag)?;
-                finish_audit(
-                    frame,
-                    "energy",
-                    "reactor_spert3_fuel",
-                    call.state.residual_conservation_error,
-                )
-            }
             Live::GraspLiftGlass4tu(call) => {
                 crate::card_grasp_lift_glass_4tu::published_is_finite(&call.state).map_err(StepFailure::flag)?;
                 finish_audit(frame, "materials", "grasp_lift_glass_4tu", call.state.residual_conservation_error)
@@ -714,11 +653,27 @@ impl Live {
             }
             Live::ReactorSpert3Twin(call) => {
                 crate::card_reactor_spert3_twin::published_is_finite(&call.state).map_err(StepFailure::flag)?;
-                finish_audit(frame, "energy", "reactor_spert3_twin", call.state.residual_conservation_error)
+                finish_audit(frame, "energy", "reactor_spert3", call.state.residual_conservation_error)
             }
-            Live::ReactorSpert3CcoreTwin(call) => {
-                crate::card_reactor_spert3_ccore_twin::published_is_finite(&call.state).map_err(StepFailure::flag)?;
-                finish_audit(frame, "energy", "reactor_spert3_ccore_twin", call.state.residual_conservation_error)
+            Live::GridGbTwin(call) => {
+                crate::card_grid_gb_twin::published_is_finite(&call.state).map_err(StepFailure::flag)?;
+                finish_audit(frame, "energy", "grid_gb", call.state.residual_conservation_error)
+            }
+            Live::Cell2170Twin(call) => {
+                crate::card_cell_2170_twin::published_is_finite(&call.state).map_err(StepFailure::flag)?;
+                finish_audit(frame, "energy", "cell_2170_model3", call.state.residual_conservation_error)
+            }
+            Live::TokamakJetDte1Twin(call) => {
+                crate::card_tokamak_jet_dte1_twin::published_is_finite(&call.state).map_err(StepFailure::flag)?;
+                finish_audit(frame, "energy", "tokamak_jet_dte1", call.state.residual_conservation_error)
+            }
+            Live::Runaway18650LcoTwin(call) => {
+                crate::card_runaway_18650_lco_twin::published_is_finite(&call.state).map_err(StepFailure::flag)?;
+                finish_audit(frame, "energy", "runaway_18650_lco", call.state.residual_conservation_error)
+            }
+            Live::ReactorSpert3CcorePlate(call) => {
+                crate::card_reactor_spert3_ccore_plate::published_is_finite(&call.state).map_err(StepFailure::flag)?;
+                finish_audit(frame, "energy", "reactor_spert3_ccore", call.state.residual_conservation_error)
             }
             Live::Crater(call) => {
                 crater_published_is_finite(&call.state).map_err(StepFailure::flag)?;
@@ -747,15 +702,6 @@ impl Live {
                     call.state.residual_conservation_error,
                 )
             }
-            Live::Tokamak(call) => {
-                tokamak_published_is_finite(&call.state).map_err(StepFailure::flag)?;
-                finish_audit(
-                    frame,
-                    "energy",
-                    "tokamak_jet_dte1",
-                    call.state.residual_conservation_error,
-                )
-            }
             Live::Vde(call) => {
                 vde_published_is_finite(&call.state).map_err(StepFailure::flag)?;
                 finish_audit(
@@ -779,13 +725,20 @@ impl Live {
 
     /// The name of the end its card declares that the landed state stands
     /// at, for a card whose end is a step that lands: the capsules, whose
-    /// step that first crosses the flown deployment lands (`src/ends.rs`).
+    /// step that first crosses the flown deployment lands, and the SPERT III
+    /// C-core card, whose step that passes its plate maximum lands
+    /// (`src/ends.rs`).
     /// A run whose last step lands there has reached that end (rule 13).
     /// Every other card's end is a step that is not taken, so `None`.
     pub(crate) fn landed_at_end(&self) -> Option<&'static str> {
         match self {
             Live::Capsule(call) => call.past_flight_deployment().then_some("PastFlightDeployment"),
             Live::CapsuleInsight(call) => call.past_flight_deployment().then_some("PastFlightDeployment"),
+            // The SPERT III C-core card sets the flag on the step that passes
+            // its plate maximum, and refuses any step from a state that
+            // carries it. The E-core card (reactor_spert3 since the fold) has
+            // no declared end: past its peak is a flag, and it steps on.
+            Live::ReactorSpert3CcorePlate(call) => call.state.past_plate_maximum.then_some("PastPlateTemperatureMaximum"),
             _ => None,
         }
     }
@@ -798,7 +751,6 @@ impl Live {
             Live::Swing(call) => swing_state(&call.state).map_err(StepFailure::flag),
             Live::Battery(call) => battery_state(&call.state).map_err(StepFailure::flag),
             Live::Cell(call) => cell_state(&call.state).map_err(StepFailure::flag),
-            Live::Cell2170(call) => cell_2170_state(&call.state).map_err(StepFailure::flag),
             Live::Thermal(call) => thermal_state(&call.state).map_err(StepFailure::flag),
             Live::Resonance(call) => resonance_state(&call.state).map_err(StepFailure::flag),
             Live::Tesseract(call) => tesseract_state(&call.state).map_err(StepFailure::flag),
@@ -808,33 +760,28 @@ impl Live {
             Live::Capsule(call) => capsule_state(&call.state).map_err(StepFailure::flag),
             Live::Satellite(call) => satellite_state(&call.state).map_err(StepFailure::flag),
             Live::SolarSystem(call) => solar_system_state(&call.state).map_err(StepFailure::flag),
-            Live::Reactor(call) => reactor_state(&call.state).map_err(StepFailure::flag),
-            Live::GridGb(call) => grid_gb_state(&call.state).map_err(StepFailure::flag),
             Live::Cantilever(call) => cantilever_state(&call.state).map_err(StepFailure::flag),
             Live::Link(call) => link_state(&call.state).map_err(StepFailure::flag),
             Live::Los(call) => los_state(&call.state).map_err(StepFailure::flag),
-            Live::Cell2170Model3(call) => {
-                cell_2170_model3_state(&call.state).map_err(StepFailure::flag)
-            }
             Live::Creep(call) => creep_state(&call.state).map_err(StepFailure::flag),
             Live::CapsuleInsight(call) => {
                 capsule_insight_state(&call.state).map_err(StepFailure::flag)
             }
-            Live::ReactorFuel(call) => reactor_fuel_state(&call.state).map_err(StepFailure::flag),
             Live::ReactorTriga(call) => reactor_triga_state(&call.state).map_err(StepFailure::flag),
-            Live::ReactorCcore(call) => reactor_ccore_state(&call.state).map_err(StepFailure::flag),
-            Live::Runaway(call) => runaway_state(&call.state).map_err(StepFailure::flag),
             Live::Crater(call) => crater_state(&call.state).map_err(StepFailure::flag),
+            Live::GridGbTwin(call) => crate::card_grid_gb_twin::state(&call.state).map_err(StepFailure::flag),
+            Live::TokamakJetDte1Twin(call) => crate::card_tokamak_jet_dte1_twin::state(&call.state).map_err(StepFailure::flag),
+            Live::Runaway18650LcoTwin(call) => crate::card_runaway_18650_lco_twin::state(&call.state).map_err(StepFailure::flag),
             Live::ReactorMsrePump(call) => crate::card_reactor_msre_pump::state(&call.state).map_err(StepFailure::flag),
             Live::ReactorSpert3Twin(call) => crate::card_reactor_spert3_twin::state(&call.state).map_err(StepFailure::flag),
-            Live::ReactorSpert3CcoreTwin(call) => crate::card_reactor_spert3_ccore_twin::state(&call.state).map_err(StepFailure::flag),
+            Live::Cell2170Twin(call) => crate::card_cell_2170_twin::state(&call.state).map_err(StepFailure::flag),
+            Live::ReactorSpert3CcorePlate(call) => crate::card_reactor_spert3_ccore_plate::state(&call.state).map_err(StepFailure::flag),
             Live::GeneratorMmrtgSeebeck(call) => crate::card_generator_mmrtg_seebeck::state(&call.state).map_err(StepFailure::flag),
             Live::MomentumJwstDihedral(call) => crate::card_momentum_jwst_dihedral::state(&call.state).map_err(StepFailure::flag),
             Live::GraspLiftGlass4tu(call) => crate::card_grasp_lift_glass_4tu::state(&call.state).map_err(StepFailure::flag),
             Live::MomentumJwstSrp(call) => crate::card_momentum_jwst_srp::state(&call.state).map_err(StepFailure::flag),
             Live::Tire(call) => tire_state(&call.state).map_err(StepFailure::flag),
             Live::Accumulator(call) => accumulator_state(&call.state).map_err(StepFailure::flag),
-            Live::Tokamak(call) => tokamak_state(&call.state).map_err(StepFailure::flag),
             Live::Vde(call) => vde_state(&call.state).map_err(StepFailure::flag),
             Live::FingerPad(call) => fingerpad_state(&call.state).map_err(StepFailure::flag),
         }

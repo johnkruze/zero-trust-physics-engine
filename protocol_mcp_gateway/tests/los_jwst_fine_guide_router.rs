@@ -31,7 +31,7 @@ use genesis_kernel::los_jwst_fine_guide::{
 use protocol_mcp_gateway::{VerifyPhysicsResponse, app, commit_request_proof};
 use reqwest::Client;
 use serde_json::{Value, json};
-use sha2::{Digest, Sha256};
+use sha2::{Digest, Sha384};
 use tokio::net::TcpListener;
 
 #[allow(dead_code)]
@@ -90,8 +90,8 @@ async fn post(base: &str, path: &str, body: &Value) -> (u16, String) {
     post_text(base, path, &answer_text::as_sent(body)).await
 }
 
-fn sha256_hex(bytes: &[u8]) -> String {
-    hex::encode(Sha256::digest(bytes))
+fn sha384_hex(bytes: &[u8]) -> String {
+    hex::encode(Sha384::digest(bytes))
 }
 
 fn card() -> LosJwstFineGuide {
@@ -232,14 +232,14 @@ fn assert_state_is(published_state: &Value, state: &LosState, label: &str) {
 }
 
 fn split_receipt(text: &str) -> (String, String) {
-    const MARKER: &str = ",\"receipt_sha256\":\"";
+    const MARKER: &str = ",\"receipt_sha384\":\"";
     let at = text.rfind(MARKER).expect("a receipt");
     (format!("{}}}", &text[..at]), text[at + MARKER.len()..text.len() - 2].to_string())
 }
 
 /// The refusal is named and the answer carries no proof.
 fn names(text: &str, name: &str) -> bool {
-    text.contains(&format!("({name})")) && !text.contains("sha256_seal") && !text.contains("run_seal")
+    text.contains(&format!("({name})")) && !text.contains("sha384_seal") && !text.contains("run_seal")
 }
 
 /// The slots of one recorded frame: time, expected x and y, variance x,
@@ -320,13 +320,13 @@ async fn a_step_matches_the_compiled_step_with_the_same_proof_bytes_and_its_rece
         );
         assert_state_is(&response.state, &state, "step");
         assert_eq!(response.residual_conservation_error.to_bits(), state.residual_conservation_error.to_bits());
-        assert_eq!(response.sha256_seal, sha256_hex(&frame.to_bytes()));
+        assert_eq!(response.sha384_seal, sha384_hex(&frame.to_bytes()));
         let mut naked = frame;
         naked.proof = [0; 16];
-        assert_ne!(response.sha256_seal, sha256_hex(&naked.to_bytes()));
+        assert_ne!(response.sha384_seal, sha384_hex(&naked.to_bytes()));
         let (document, receipt) = split_receipt(&answer);
-        assert_eq!(receipt, response.receipt_sha256);
-        assert_eq!(sha256_hex(document.as_bytes()), receipt);
+        assert_eq!(receipt, response.receipt_sha384);
+        assert_eq!(sha384_hex(document.as_bytes()), receipt);
         let (status, report) = post(&base, "/verify_receipt", &json!({ "response_text": answer })).await;
         assert_eq!(status, 200, "{report}");
         let report: Value = serde_json::from_str(&report).unwrap();
@@ -587,13 +587,13 @@ async fn each_fault_a_request_shows_is_named_and_carries_no_proof() {
     ] {
         let (status, text) = post(&base, "/verify_physics", &step_body(lock_point, row, DT_S)).await;
         assert_eq!(status, 200, "{lock_point:?}: {text}");
-        assert!(text.contains("sha256_seal"), "{text}");
+        assert!(text.contains("sha384_seal"), "{text}");
     }
     // A step outside the card's floor and ceiling.
     for dt_s in [0.0634, 0.0646, 0.032, 0.128, 1.0] {
         let (status, text) = post(&base, "/verify_physics", &step_body(lock, good, dt_s)).await;
         assert_eq!(status, 422, "{dt_s}: {text}");
-        assert!(text.contains("of the los_jwst_fine_guide card") && !text.contains("sha256_seal"), "{text}");
+        assert!(text.contains("of the los_jwst_fine_guide card") && !text.contains("sha384_seal"), "{text}");
     }
     // A missing input, and a name the card does not have.
     for missing in ["lock_x_arcsec", "quiet_before_start_s", "measured", "centroid_y_arcsec", "counts_per_s", "dt_s"] {
@@ -601,13 +601,13 @@ async fn each_fault_a_request_shows_is_named_and_carries_no_proof() {
         request["parameters"].as_object_mut().unwrap().remove(missing);
         let (status, text) = post(&base, "/verify_physics", &request).await;
         assert_eq!(status, 422, "{missing}: {text}");
-        assert!(text.contains(missing) && !text.contains("sha256_seal"), "{text}");
+        assert!(text.contains(missing) && !text.contains("sha384_seal"), "{text}");
     }
     let mut request = step_body(lock, good, DT_S);
     request["parameters"]["noise_reference_mas2"] = json!(0.01);
     let (status, text) = post(&base, "/verify_physics", &request).await;
     assert_eq!(status, 422, "{text}");
-    assert!(!text.contains("sha256_seal"), "{text}");
+    assert!(!text.contains("sha384_seal"), "{text}");
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -712,10 +712,15 @@ async fn the_card_is_listed_and_its_description_says_what_is_fitted_and_what_was
     let client = Client::new();
     let cards: Value = client.get(format!("{base}/cards")).send().await.unwrap().json().await.unwrap();
     let cards = cards["cards"].as_array().unwrap();
-    assert_eq!(cards.len(), 40);
+    assert_eq!(cards.len(), protocol_mcp_gateway::CARDS);
     let mine = cards.iter().find(|card| card["card"] == "los_jwst_fine_guide").expect("listed");
     assert_eq!(mine["domain"], "aerospace");
-    assert!(mine["specimen"].as_str().unwrap().contains("fitted to this observatory's own centroids"));
+    // Since 0.14.4 the row gives what the card computes, the comparison and
+    // the gap; what was fitted is in the description's spec sheet.
+    let (_, described) = post(&base, "/describe_card", &json!({ "domain": "aerospace", "card": "los_jwst_fine_guide" })).await;
+    let described: Value = serde_json::from_str(&described).unwrap();
+    assert!(described["specimen"].as_str().unwrap().contains("fitted to this observatory's own centroids"));
+    assert!(!mine["specimen"].as_str().unwrap().contains("Range: "));
 
     let (status, text) = post(&base, "/describe_card", &json!({"domain": "aerospace", "card": "los_jwst_fine_guide"})).await;
     assert_eq!(status, 200, "{text}");

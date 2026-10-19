@@ -66,6 +66,16 @@ impl McpGateway {
         }
     }
 
+    /// The same door with a directory for dataset files and the operator's
+    /// answer key, either of them none.
+    pub fn with_dataset_dir_and_key(dir: Option<std::path::PathBuf>, key: Option<std::sync::Arc<crate::answer_key::AnswerKey>>) -> Self {
+        Self {
+            state: new_gateway_state().with_dataset_dir(dir).with_answer_key(key),
+            #[cfg(test)]
+            unguarded: false,
+        }
+    }
+
     fn tools(&self) -> Vec<Tool> {
         tools_in(self.state.view())
     }
@@ -79,7 +89,7 @@ pub(crate) const REFUSAL_WORDS: &str = "A run can be refused in two ways, and th
 
 /// What the `compute_step` tool says of itself.
 pub(crate) fn compute_step_description() -> String {
-    "Computes one anchored step of one card and returns the state it lands on, in decimals and exact hex, with its cryptographic proof (sha256_seal) and a receipt. parameters holds the card's phase fields, its load fields and dt_s, as describe_card gives them. A step whose request or whose landing state is outside the card is refused in one sentence, with the refusal's name in round brackets when it has one, and no proof is issued for that state. With from, the step starts from a sealed run, which is computed again first.".to_string()
+    "Computes one anchored step of one card and returns the state it lands on, in decimals and exact hex, with its cryptographic proof (sha384_seal) and a receipt. parameters holds the card's phase fields, its load fields and dt_s, as describe_card gives them. A step whose request or whose landing state is outside the card is refused in one sentence, with the refusal's name in round brackets when it has one, and no proof is issued for that state. With from, the step starts from a sealed run, which is computed again first.".to_string()
 }
 
 /// The earlier name of `compute_step`, served for one version beside it: the
@@ -102,14 +112,14 @@ pub(crate) const SOLVE_MISSING_WORDS: &str = "A required input left out is refus
 /// What the `run_trajectory` tool says of itself: what it does and returns,
 /// what keeps an answer small, and how a run comes back.
 pub(crate) fn run_trajectory_description() -> String {
-    format!("Runs one card from a start state through segments of steps, each under its own load, and seals the run. The answer holds the outcome, the final state in decimals and exact hex, a frame for each recorded step, the run_seal and a receipt. record_every sets which steps are recorded, about 230 characters each; the final state comes back in full whatever is recorded. readout gives named quantities in decimals without the frames, with each one's minimum and maximum over every landed step and the first step past a level; it is not part of the sealed request. from starts the run from a sealed run, which is computed again first. A run comes back in one of four ways. outcome \"completed\": every step landed. outcome \"ended\": the run reached an end its card declares, which describe_card lists under declared_ends; reject holds the end's name. outcome \"refused\": a step part way was refused; reject holds the name (null when the cause has none) and reject_detail the sentence. An ended or a refused run is sealed up to its last landed step, steps_landed. An error, not a result: the request was turned away before computing, in one sentence with the refusal's name in round brackets when it has one, and nothing is sealed. A sentence that begins \"Physical Failure\" says the state asked for or reached is outside the card; one that begins \"Physical Violation\" says the request, or a number in it or computed from it, is not one the engine takes. {} The input schema says each of these in full.", crate::signed_load::RUN_SAYS)
+    format!("Runs one card from a start state through segments of steps, each under its own load, and seals the run. The answer holds the outcome, the final state in decimals and exact hex, a frame for each recorded step, the run_seal and a receipt. record_every sets which steps are recorded, about 262 characters each; the final state comes back in full whatever is recorded. readout gives named quantities in decimals without the frames, with each one's minimum and maximum over every landed step and the first step past a level; it is not part of the sealed request. from starts the run from a sealed run, which is computed again first. A run comes back in one of four ways. outcome \"completed\": every step landed. outcome \"ended\": the run reached an end its card declares, which describe_card lists under declared_ends; reject holds the end's name. outcome \"refused\": a step part way was refused; reject holds the name (null when the cause has none) and reject_detail the sentence. An ended or a refused run is sealed up to its last landed step, steps_landed. An error, not a result: the request was turned away before computing, in one sentence with the refusal's name in round brackets when it has one, and nothing is sealed. A sentence that begins \"Physical Failure\" says the state asked for or reached is outside the card; one that begins \"Physical Violation\" says the request, or a number in it or computed from it, is not one the engine takes. {} The input schema says each of these in full.", crate::signed_load::RUN_SAYS)
 }
 
 /// What the `record_every` input of `run_trajectory` says: which steps are
 /// recorded and how large an answer a request makes.
 pub(crate) fn record_every_says() -> String {
     format!(
-        "A state is recorded at each multiple of record_every and at the last landed step. The size of the answer follows from the request: about 230 characters for each recorded state, plus the request as it was sent, plus up to {} characters for the final state and the seals. So 10,000 steps with record_every 1 answer with about 2.3 million characters, and the same steps with record_every 10000 with one recorded state. What keeps it small: a larger record_every; the final state is returned in full whatever is recorded.",
+        "A state is recorded at each multiple of record_every and at the last landed step. The size of the answer follows from the request: about 262 characters for each recorded state, plus the request as it was sent, plus up to {} characters for the final state and the seals; a flagged state adds about 400 characters for each limit it is past (exceedances). So 10,000 steps with record_every 1 answer with about 2.3 million characters, and the same steps with record_every 10000 with one recorded state. What keeps it small: a larger record_every; the final state is returned in full whatever is recorded.",
         dataset::REST_OF_AN_ANSWER_CHARS
     )
 }
@@ -155,18 +165,18 @@ fn solution_example_request(view: &View) -> Option<Value> {
 /// the worked request of the view.
 fn by_request_example(request: Value, seal_key: &str, from: &str) -> String {
     format!(
-        "Worked example of the short form, as the whole arguments: {{\"request\":{request},\"{seal_key}\":\"<the {seal_key} of its {from} answer, 64 lowercase hex digits>\"}}."
+        "Worked example of the short form, as the whole arguments: {{\"request\":{request},\"{seal_key}\":\"<the {seal_key} of its {from} answer, 96 lowercase hex digits>\"}}."
     )
 }
 
 /// What the `verify_tape` tool says of itself: the short check first.
 pub(crate) fn verify_tape_description() -> String {
-    "Verifies the seal of a run. Short form, which needs only what is short: request is the run_trajectory request as it was sent, with its readout and its from, whose request has none, when it had them (the answer's inputs holds neither), and run_seal is the seal its answer gave. The run is computed again, under a physics permit and the limits and refusals of run_trajectory, and the answer is holds (the seal given is the seal the request runs to), cause (\"run_seal\" when it is not), recomputed_run_seal and recomputed_receipt_sha256 when it holds (else no seal: run_trajectory gives the true one), compared, and text_not_compared: no answer text the agent holds is compared. Long form: the whole run_trajectory answer sent back as it came, without request. Its state digest and run seal are recomputed from its exact hex values, then its request is computed again under a physics permit and the engine's answer compared with it, value by value and byte for byte, receipt included: holds is true only when every byte is the engine's, values_hold when every value is, else cause names the seal, load_signature (a signed load that does not verify), answer_text (with differs_at, the first field that differs) or engine_version (an answer of another version). A chain is verified by its request with from, run_seal and chain_seal, or by links, its answers in order, each computed again from the links before it; a chained answer alone is refused (AnswerCarriesNoRequest). Nothing is stored, so each form answers the same on every connection.".to_string()
+    "Verifies the seal of a run. Short form, which needs only what is short: request is the run_trajectory request as it was sent, with its readout and its from, whose request has none, when it had them (the answer's inputs holds neither), and run_seal is the seal its answer gave. The run is computed again, under a physics permit and the limits and refusals of run_trajectory, and the answer is holds (the seal given is the seal the request runs to), cause (\"run_seal\" when it is not), recomputed_run_seal and recomputed_receipt_sha384 when it holds (else no seal: run_trajectory gives the true one), compared, and text_not_compared: no answer text the agent holds is compared. Long form: the whole run_trajectory answer sent back as it came, without request. Its state digest and run seal are recomputed from its exact hex values, then its request is computed again under a physics permit and the engine's answer compared with it, value by value and byte for byte, receipt included: holds is true only when every byte is the engine's, values_hold when every value is, else cause names the seal, load_signature (a signed load that does not verify), answer_text (with differs_at, the first field that differs) or engine_version (an answer of another version). A chain is verified by its request with from, run_seal and chain_seal, or by links, its answers in order, each computed again from the links before it; a chained answer alone is refused (AnswerCarriesNoRequest). Nothing is stored, so each form answers the same on every connection.".to_string()
 }
 
 /// What the `verify_solution` tool says of itself: the short check first.
 pub(crate) fn verify_solution_description() -> String {
-    "Verifies the seal of a solution. Short form, which needs only what is short: request is the solve request as it was sent (the answer's inputs), and solution_seal is the seal its answer gave. The request is solved again, under a physics permit and the limits and refusals of solve, and the answer is holds, cause (\"solution_seal\" when the seal given is not the seal the request solves to), recomputed_solution_seal and recomputed_receipt_sha256 when it holds (else no seal: solve gives the true one), compared, and text_not_compared: no answer text the agent holds is compared. Long form: the whole solve answer sent back as it came, without request. Its solution seal is recomputed from its exact hex values and the part that fails is named, then its request is solved again under a physics permit and the engine's answer compared with it, value by value and byte for byte, receipt included: holds is true only when every byte is the engine's, values_hold when every value is, else cause names the part, solution_seal (the request solves to another seal), answer_text (with differs_at, the first field that differs) or engine_version (an answer of another version). A chained solve: its whole answer with from beside it; the upstream run is computed again and the chain held too (cause chain), with recomputed_chain_seal. Alone it is refused (AnswerCarriesNoRequest). Nothing is stored, so each form answers the same on every connection.".to_string()
+    "Verifies the seal of a solution. Short form, which needs only what is short: request is the solve request as it was sent (the answer's inputs), and solution_seal is the seal its answer gave. The request is solved again, under a physics permit and the limits and refusals of solve, and the answer is holds, cause (\"solution_seal\" when the seal given is not the seal the request solves to), recomputed_solution_seal and recomputed_receipt_sha384 when it holds (else no seal: solve gives the true one), compared, and text_not_compared: no answer text the agent holds is compared. Long form: the whole solve answer sent back as it came, without request. Its solution seal is recomputed from its exact hex values and the part that fails is named, then its request is solved again under a physics permit and the engine's answer compared with it, value by value and byte for byte, receipt included: holds is true only when every byte is the engine's, values_hold when every value is, else cause names the part, solution_seal (the request solves to another seal), answer_text (with differs_at, the first field that differs) or engine_version (an answer of another version). A chained solve: its whole answer with from beside it; the upstream run is computed again and the chain held too (cause chain), with recomputed_chain_seal. Alone it is refused (AnswerCarriesNoRequest). Nothing is stored, so each form answers the same on every connection.".to_string()
 }
 
 /// What the `verify_dataset` tool says of itself on every connection: the
@@ -187,7 +197,7 @@ pub(crate) const VERIFY_DATASET_FILES_SAYS: &str = " A dataset stored as files (
 /// What the `validate_series` tool says of itself: a run, or a plan of solves.
 pub(crate) fn validate_series_description() -> String {
     format!(
-        "Runs a run_trajectory request (without a readout) and compares one published quantity with the agent's measurements, each at a landed step. The answer is the error in numbers (rms, mean signed, greatest absolute, model minus measurement, each with its exact hex), the model value at every compared step in decimals (model_values) and exact (model_values_hex), and a hash of the measurements, under one seal. It sets no threshold: the numbers are the answer. The seal has no key, so it does not show who measured or who computed. commitment, optional, opens a salted SHA-256 the measurements were locked with before the comparison: data that are not the committed ones are refused before computing (CommitmentDoesNotMatch), and the seal covers it. genesis_seal verify-validation rebuilds the seal, the statistics and the commitment from the answer alone. In place of run, solves takes a plan of solves as run_dataset takes it (solver and plan, at most {} solves), each measurement at a row of the plan: the solves are sealed under one dataset_seal, and the comparison by the same rules with the dataset_seal in the place of the run seal and the row in the place of the step; a measured row whose solve did not converge is counted in not_reached. The same request sent again gives the same seal.",
+        "Runs a run_trajectory request (without a readout) and compares one published quantity with the agent's measurements, each at a landed step. The answer is the error in numbers (rms, mean signed, greatest absolute, model minus measurement, each with its exact hex), the model value at every compared step in decimals (model_values) and exact (model_values_hex), and a hash of the measurements, under one seal. It sets no threshold: the numbers are the answer. The seal has no key, so it does not show who measured or who computed. commitment, optional, opens a salted SHA-384 the measurements were locked with before the comparison: data that are not the committed ones are refused before computing (CommitmentDoesNotMatch), and the seal covers it. genesis_seal verify-validation rebuilds the seal, the statistics and the commitment from the answer alone. In place of run, solves takes a plan of solves as run_dataset takes it (solver and plan, at most {} solves), each measurement at a row of the plan: the solves are sealed under one dataset_seal, and the comparison by the same rules with the dataset_seal in the place of the run seal and the row in the place of the step; a measured row whose solve did not converge is counted in not_reached. The same request sent again gives the same seal.",
         crate::solve_plan::MAX_SOLVES
     )
 }
@@ -202,7 +212,7 @@ pub(crate) fn solve_description() -> String {
 /// What the `verify_receipt` tool says of itself.
 pub(crate) fn verify_receipt_description() -> String {
     format!(
-        "Verifies the receipt at the end of one response against the text before it. It takes no physics permit. The receipt covers every byte of the response before it, the decimal values included, and shows who produced the response or when in no way: it has no key. A response that names an engine_version has it said beside matches, with whether it is this engine's. {RECEIPT_FOLLOWS_THE_TEXT} Replaying the request through run_trajectory, solve or compute_step shows the engine produced it; verify_tape, verify_solution and verify_dataset with the request and its seal do that replay and compare the seals."
+        "Verifies the receipt at the end of one response against the text before it. It takes no physics permit. The receipt covers every byte of the response before it, the decimal values included, and shows who produced the response or when in no way: it has no key. matches true proves only that those bytes are unchanged since the receipt was written; anyone can write a matching receipt for any text, so it is not a verification of the answer. A response that names an engine_version has it said beside matches, with whether it is this engine's; origin needs engine_version_is_this_engines true and a replay. match_proves says this in each answer. {RECEIPT_FOLLOWS_THE_TEXT} Replaying the request through run_trajectory, solve or compute_step shows the engine produced it; verify_tape, verify_solution and verify_dataset with the request and its seal do that replay and compare the seals."
     )
 }
 
@@ -457,6 +467,10 @@ pub async fn dispatch(state: &AppState, name: &str, arguments: Map<String, Value
 /// three verifications read it, for their long form.
 pub async fn dispatch_text(state: &AppState, name: &str, arguments: Map<String, Value>, text: Option<String>) -> CallToolResult {
     let value = Value::Object(arguments);
+    // A retired model ID is refused by name, with the ID its object is served under.
+    if let Some(sentence) = crate::retired::refusal(&value) {
+        return CallToolResult::error(vec![ContentBlock::text(sentence)]);
+    }
     let text = text.as_deref();
     let result = match name {
         "list_cards" => encoded(&descriptor::list_value_in(state.view())),
@@ -469,18 +483,18 @@ pub async fn dispatch_text(state: &AppState, name: &str, arguments: Map<String, 
             Ok(response) => encoded(&response),
             Err(error) => Err(error),
         },
-        "verify_tape" => trajectory::verify(state, &value, text).await,
+        "verify_tape" => crate::answer_key::verify_signed(state, name, &value, text).await,
         "list_solvers" => encoded(&solvers::list_value_in(state.view())),
         "describe_solver" => solvers::describe_request_in(state.view(), &value).map(|body| encoded_value(&body)),
         "solve" => match solution::run(state, value).await {
             Ok(response) => encoded(&response),
             Err(error) => Err(error),
         },
-        "verify_solution" => solution::verify(state, &value, text).await,
+        "verify_solution" => crate::answer_key::verify_signed(state, name, &value, text).await,
         "run_dataset" => dataset::run(state, value).await,
-        "verify_dataset" => dataset::verify(state, &value, text).await,
+        "verify_dataset" => crate::answer_key::verify_signed(state, name, &value, text).await,
         "validate_series" => validation::run(state, value).await,
-        "verify_receipt" => match verify_receipt::verify(&value) {
+        "verify_receipt" => match verify_receipt::verify_in(state, &value) {
             Ok(report) => encoded(&report),
             Err(error) => Err(error),
         },
@@ -492,6 +506,10 @@ pub async fn dispatch_text(state: &AppState, name: &str, arguments: Map<String, 
         PANIC_FOR_TEST => panic!("a fault injected by a test inside a tool call"),
         _ => Err(DoorError::NotFound(format!("Tool not recognized: {name}"))),
     };
+    // A computed answer is signed as it leaves, when the door holds a key.
+    let result = result.and_then(|text| {
+        crate::answer_key::sign_tool_answer(state.answer_key(), name, text).map_err(DoorError::Internal)
+    });
     match result {
         Ok(text) => CallToolResult::success(vec![ContentBlock::text(text)]),
         Err(error) => CallToolResult::error(vec![ContentBlock::text(error.message())]),

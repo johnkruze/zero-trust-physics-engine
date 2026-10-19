@@ -206,6 +206,7 @@ extern crate core;
 
 use core::prelude::v1::*;
 
+use crate::exceedance::{Exceedance, ExceedanceKind, Side};
 use crate::frame::LastStateFrame64;
 use crate::normal::normal_or_zero;
 
@@ -549,6 +550,26 @@ pub fn step(
     load: CantileverLoad,
     dt_s: f64,
 ) -> Result<(), StepReject> {
+    #[cfg(any(test, debug_assertions, feature = "check_exceedances"))]
+    let before = *state;
+    let stepped = step_landed(beam, state, frame, load, dt_s);
+    #[cfg(any(test, debug_assertions, feature = "check_exceedances"))]
+    if stepped.is_ok() {
+        crate::exceedance::debug_check("cantilever_eth", exceedances(beam, &before, state, load, dt_s), frame.flags);
+    }
+    stepped
+}
+
+/// The step itself; [`step`] is it with, in a build that checks
+/// (`crate::exceedance::CHECKED`), the check that [`exceedances`] stands for
+/// the flags it wrote.
+fn step_landed(
+    beam: &CantileverEth,
+    state: &mut CantileverState,
+    frame: &mut LastStateFrame64,
+    load: CantileverLoad,
+    dt_s: f64,
+) -> Result<(), StepReject> {
     step_as_computed(beam, state, frame, load, dt_s)?;
     normal_or_zero_state(state);
     Ok(())
@@ -762,6 +783,48 @@ fn state_is_finite(state: &CantileverState) -> bool {
         && state.heat_j_per_kg.is_finite()
         && state.energy_defect_j_per_kg.is_finite()
         && state.residual_conservation_error.is_finite()
+}
+
+/// Every limit a flag of this card can mark: what [`exceedances`] reports
+/// beside a flag's bit (`crate::exceedance`).
+pub const EXCEEDANCE_KINDS: &[crate::exceedance::ExceedanceKind] = &[
+    BELOW_KIND,
+    ABOVE_KIND,
+];
+
+const BELOW_KIND: ExceedanceKind = ExceedanceKind::fixed(
+    "FLAG_ENVELOPE_BELOW_COMPARED",
+    FLAG_ENVELOPE_BELOW_COMPARED,
+    "envelope_m",
+    "m",
+    Side::Below,
+    AMPLITUDE_FLOOR_M,
+    "the smallest envelope the card was compared at on the held-back ring-down, 0.058 mm",
+);
+const ABOVE_KIND: ExceedanceKind = ExceedanceKind::fixed(
+    "FLAG_ENVELOPE_ABOVE_COMPARED",
+    FLAG_ENVELOPE_ABOVE_COMPARED,
+    "envelope_m",
+    "m",
+    Side::Above,
+    COMPARED_CEILING_M,
+    "the largest envelope the compared run held, 15.79 mm; the constants were fitted to 18.75 mm",
+);
+
+/// The limits the step from `before` to `after` under `load` over `dt_s`
+/// is past: one record for each limit a flag set on its frame marks.
+pub fn exceedances(
+    beam: &CantileverEth,
+    before: &CantileverState,
+    after: &CantileverState,
+    load: CantileverLoad,
+    dt_s: f64,
+) -> crate::exceedance::Exceedances {
+    let _ = (before, load, dt_s);
+    let mut records = crate::exceedance::Exceedances::new();
+    records.push_if(after.envelope_below_compared, Exceedance::at(BELOW_KIND, beam.amplitude_floor_m, after.envelope_m));
+    records.push_if(after.envelope_m > beam.compared_ceiling_m, Exceedance::at(ABOVE_KIND, beam.compared_ceiling_m, after.envelope_m));
+    records
 }
 
 #[cfg(test)]

@@ -147,7 +147,7 @@ impl OpenRules {
     /// the open door prints when it starts, for the one who runs it.
     pub fn statement(&self) -> String {
         format!(
-            "This is the open connection: no key is asked, and every card and every solver the engine serves is listed. It holds these limits, each before a physics permit is taken, and answers each by name. Requests: at most {rpm} a minute from one address, then HTTP 429 with Retry-After (requests-per-minute); at most {flight} in flight at once and {per} from one address, then HTTP 429 (max-in-flight, max-in-flight-per-address); a body of at most {body} bytes, then HTTP 413 (OPEN_MAX_BODY_BYTES), and a call of a tool other than {wide} at most {narrow} bytes, then HTTP 413 as well (NARROW_LIMIT, as on every connection). A run (run_trajectory, validate_series): at most {run_steps} steps and {run_frames} recorded states, the engine's own limits. A dataset (run_dataset): at most {rows} runs (OPEN_MAX_DATASET_ROWS), {steps} steps in total (OPEN_MAX_DATASET_STEPS) and {frames} recorded states, an answer counted from the plan at no more than {answer} bytes (OPEN_MAX_DATASET_ANSWER_BYTES), and returned inline, where the answer counted from the plan is at most {inline} characters, as on every connection: a plan reaches that first, a grid on one axis at about 140 summary rows and a list sooner, its head repeating each run's request, so a plan of {rows} runs is refused by it; no dataset is stored; a plan of solves holds at most the engine's own limit of solves, and fewer of a slow solver (OPEN_PLAN_SECONDS, below). A verification (verify_tape, verify_solution or verify_dataset, given the request and its seal or the whole answer) computes the request again and holds the limits of the tool that computes it. The physics pool has {pool} permits and one address holds at most {share} at a time (permits-per-address). A solve, a dataset job, a comparison of solves and a run of more than {light} steps (OPEN_LIGHT_RUN_STEPS), each also when a verification computes it again, are long work, and long work together holds at most {long} of the {pool}, so long work never takes the permit a single step or a short run needs. A request that finds no permit, or long work that finds no place, is answered \"Too many concurrent physics tasks.\" and nothing waits: the same request sent later is answered once one is free. An answer is waited for {seconds} seconds (OPEN_REQUEST_SECONDS); after that the call is answered with an error and its result is not returned.{stopped}{plans}",
+            "This is the open connection: no key is asked, and every card and every solver the engine serves is listed. It holds these limits, each before a physics permit is taken, and answers each by name. Requests: at most {rpm} a minute from one address, then HTTP 429 with Retry-After (requests-per-minute); at most {flight} in flight at once and {per} from one address, then HTTP 429 (max-in-flight, max-in-flight-per-address); a body of at most {body} bytes, then HTTP 413 (OPEN_MAX_BODY_BYTES), and a call of a tool other than {wide} at most {narrow} bytes, then HTTP 413 as well (NARROW_LIMIT, as on every connection). A run (run_trajectory, validate_series): at most {run_steps} steps and {run_frames} recorded states, the engine's own limits. A dataset (run_dataset): at most {rows} runs (OPEN_MAX_DATASET_ROWS), {steps} steps in total (OPEN_MAX_DATASET_STEPS) and {frames} recorded states, an answer counted from the plan at no more than {answer} bytes (OPEN_MAX_DATASET_ANSWER_BYTES), and returned inline, where the answer counted from the plan is at most {inline} characters, as on every connection: a plan reaches that first, a grid on one axis at about 150 summary rows and a list sooner, its head repeating each run's request, so a plan of {rows} runs is refused by it; no dataset is stored; a plan of solves holds at most the engine's own limit of solves, and fewer of a slow solver (OPEN_PLAN_SECONDS, below). A verification (verify_tape, verify_solution or verify_dataset, given the request and its seal or the whole answer) computes the request again and holds the limits of the tool that computes it. The physics pool has {pool} permits and one address holds at most {share} at a time (permits-per-address). A solve, a dataset job, a comparison of solves and a run of more than {light} steps (OPEN_LIGHT_RUN_STEPS), each also when a verification computes it again, are long work, and long work together holds at most {long} of the {pool}, so long work never takes the permit a single step or a short run needs. A request that finds no permit, or long work that finds no place, is answered \"Too many concurrent physics tasks.\" and nothing waits: the same request sent later is answered once one is free. An answer is waited for {seconds} seconds (OPEN_REQUEST_SECONDS); after that the call is answered with an error and its result is not returned.{stopped}{plans}",
             rpm = self.requests_per_minute,
             flight = self.max_in_flight,
             per = self.max_in_flight_per_address,
@@ -199,7 +199,7 @@ impl OpenRules {
     /// of `run_dataset` and of `verify_dataset`, which runs the plan again.
     fn dataset_words(&self) -> String {
         format!(
-            "a dataset is returned inline and holds at most {} runs (OPEN_MAX_DATASET_ROWS), {} steps in all (OPEN_MAX_DATASET_STEPS), {} frames and an answer counted from the plan at {} bytes (OPEN_MAX_DATASET_ANSWER_BYTES) and {} characters, up to about 140 summary rows; {}.",
+            "a dataset is returned inline and holds at most {} runs (OPEN_MAX_DATASET_ROWS), {} steps in all (OPEN_MAX_DATASET_STEPS), {} frames and an answer counted from the plan at {} bytes (OPEN_MAX_DATASET_ANSWER_BYTES) and {} characters, up to about 150 summary rows; {}.",
             self.max_dataset_rows,
             self.max_dataset_steps,
             dataset::MAX_INLINE_FRAMES,
@@ -555,13 +555,25 @@ pub fn router(rules: OpenRules, allowed_origins: Vec<String>) -> Result<Router, 
 /// wait the time the door waits.
 #[doc(hidden)]
 pub fn router_limited(rules: OpenRules, allowed_origins: Vec<String>, limits: Limits) -> Result<Router, String> {
+    router_keyed(rules, allowed_origins, limits, None)
+}
+
+/// The same with the operator's answer key, or none.
+#[doc(hidden)]
+pub fn router_keyed(
+    rules: OpenRules,
+    allowed_origins: Vec<String>,
+    limits: Limits,
+    answer_key: Option<Arc<crate::answer_key::AnswerKey>>,
+) -> Result<Router, String> {
     rules.check()?;
-    let state = AppState::new(rules.physics_permits).with_view(Arc::new(View::full()));
+    let state = AppState::new(rules.physics_permits).with_view(Arc::new(View::full())).with_answer_key(answer_key);
     router_over(state, rules, allowed_origins, limits)
 }
 
 /// The same over a given state, so a test can hold the permit pools.
 pub(crate) fn router_over(state: AppState, rules: OpenRules, allowed_origins: Vec<String>, limits: Limits) -> Result<Router, String> {
+    let answer_key = crate::answer_key::answer_key_response(state.answer_key());
     let door = Arc::new(OpenDoor {
         sources: Sources::new(rules.clone()),
         state,
@@ -578,6 +590,7 @@ pub(crate) fn router_over(state: AppState, rules: OpenRules, allowed_origins: Ve
     // metadata paths among them: this door has no authorization to discover.
     Ok(Router::new()
         .route("/health", get(|| async { StatusCode::OK }))
+        .route("/answer-key", get(move || async move { answer_key }))
         .route("/mcp", any(mcp))
         .layer(axum::middleware::from_fn(hosted::refuse_both_lengths))
         .with_state(door))
@@ -601,13 +614,18 @@ pub fn banner(bound: SocketAddr, rules: &OpenRules) -> String {
     )
 }
 
-pub(crate) async fn serve(port: u16, mut rules: OpenRules, allowed_origins: Vec<String>) -> Result<(), String> {
+pub(crate) async fn serve(
+    port: u16,
+    mut rules: OpenRules,
+    allowed_origins: Vec<String>,
+    answer_key: Option<Arc<crate::answer_key::AnswerKey>>,
+) -> Result<(), String> {
     // Long work runs in a process of its own, started from this binary.
     rules.worker = crate::long_work::worker();
     if rules.worker.is_none() {
         return Err("it cannot find its own binary to run long work in, so long work could not be stopped at the time limit.".to_string());
     }
-    let app = router(rules.clone(), allowed_origins)?;
+    let app = router_keyed(rules.clone(), allowed_origins, OPEN_CONNECTION_LIMITS, answer_key)?;
     let address = SocketAddr::from(([127, 0, 0, 1], port));
     let listener = tokio::net::TcpListener::bind(address)
         .await
@@ -909,7 +927,7 @@ mod tests {
         }
         assert_eq!(pool.available_permits(), 2);
         let (_, body) = post(&url, "10.0.0.1", step()).await;
-        assert!(body.contains("sha256_seal"), "{body}");
+        assert!(body.contains("sha384_seal"), "{body}");
     }
 
     /// An address given two permits at start computes two calls at once and
@@ -933,7 +951,7 @@ mod tests {
         assert!(body.contains(BUSY) && body.contains("\"isError\":true"), "{body}");
         assert_eq!(pool.available_permits(), 1, "a call past the share takes nothing from the pool");
         let (_, body) = post(&url, "10.0.0.2", step()).await;
-        assert!(body.contains("sha256_seal"), "{body}");
+        assert!(body.contains("sha384_seal"), "{body}");
         for joined in [first.await.unwrap(), second.await.unwrap()] {
             assert!(joined.1.contains("run_seal"), "{}", joined.1);
         }
@@ -966,7 +984,7 @@ mod tests {
         tokio::time::sleep(Duration::from_millis(250)).await;
         assert_eq!(pool.available_permits(), 0, "the step runs on the other permit while the job runs");
         let (_, body) = stepped.await.unwrap();
-        assert!(body.contains("sha256_seal"), "{body}");
+        assert!(body.contains("sha384_seal"), "{body}");
         assert!(started.elapsed() < Duration::from_secs(5));
         let (_, body) = job.await.unwrap();
         assert!(body.contains("dataset_seal"), "{body}");
@@ -1003,7 +1021,7 @@ mod tests {
         }
         // A step and a run of exactly the short limit still run, on the other permit.
         let (_, stepped) = post(&url, "10.0.0.6", step()).await;
-        assert!(stepped.contains("sha256_seal"), "{stepped}");
+        assert!(stepped.contains("sha384_seal"), "{stepped}");
         let (_, short) = post(&url, "10.0.0.7", long_run(10_000)).await;
         assert!(short.contains("run_seal"), "{short}");
         let (_, done) = first.await.unwrap();
@@ -1022,7 +1040,7 @@ mod tests {
         let rules = rules();
         let run = |steps: u64| json!({"domain":"energy","card":"thermal","initial":{"temperature_k":293.15},"dt_s":0.1,
             "segments":[{"steps":steps,"load":{"heat_power_w":1.0,"ambient_k":293.15}}],"record_every":steps});
-        let from = |upstream: Value| json!({"request": upstream, "run_seal": "ab".repeat(32)});
+        let from = |upstream: Value| json!({"request": upstream, "run_seal": "ab".repeat(48)});
         let object = |value: Value| value.as_object().unwrap().clone();
         assert!(!rules.is_long_work("run_trajectory", &object(run(6_000))));
         let mut chained = run(6_000);
@@ -1032,7 +1050,7 @@ mod tests {
         assert!(!rules.is_long_work("verify_step", &object(step.clone())));
         step["from"] = from(run(10_001));
         assert!(rules.is_long_work("verify_step", &object(step)));
-        assert!(rules.is_long_work("verify_tape", &object(json!({"request": chained, "run_seal": "ab".repeat(32)}))));
+        assert!(rules.is_long_work("verify_tape", &object(json!({"request": chained, "run_seal": "ab".repeat(48)}))));
     }
 
     /// Every long form computes the request its answer carries again, and is
@@ -1046,7 +1064,7 @@ mod tests {
         let object = |value: Value| value.as_object().unwrap().clone();
         let run = |steps: u64| json!({"domain":"energy","card":"thermal","initial":{"temperature_k":293.15},"dt_s":0.1,
             "segments":[{"steps":steps,"load":{"heat_power_w":1.0,"ambient_k":293.15}}],"record_every":steps});
-        let answer = |steps: u64| json!({"inputs": run(steps), "outcome": "completed", "frames": [], "run_seal": "ab".repeat(32)});
+        let answer = |steps: u64| json!({"inputs": run(steps), "outcome": "completed", "frames": [], "run_seal": "ab".repeat(48)});
         assert!(rules.is_long_work("verify_solution", &object(json!({"inputs": {"solver": "atom_dft", "parameters": {"atomic_number": 1}}, "outcome": "converged"}))));
         assert!(rules.is_long_work("verify_dataset", &object(json!({"head": {"request": {}}, "rows": [], "frames_hex": null}))));
         assert!(!rules.is_long_work("verify_tape", &object(answer(10_000))));
@@ -1075,8 +1093,8 @@ mod tests {
         tokio::time::sleep(Duration::from_millis(200)).await;
         let (status, body) = post(&url, "10.0.0.3", call("list_solvers", json!({}))).await;
         assert_eq!((status, body.as_str()), (429, "Too many requests in flight: the open connection runs at most 2 at once (max-in-flight). Send this one again."));
-        assert!(first.await.unwrap().1.contains("sha256_seal"));
-        assert!(second.await.unwrap().1.contains("sha256_seal"));
+        assert!(first.await.unwrap().1.contains("sha384_seal"));
+        assert!(second.await.unwrap().1.contains("sha384_seal"));
         let (status, _) = post(&url, "10.0.0.3", call("list_solvers", json!({}))).await;
         assert_eq!(status, 200);
     }
@@ -1165,7 +1183,7 @@ mod tests {
         to_file["params"]["arguments"]["return"] = json!("file");
         let (_, body) = post(&url, "10.0.0.1", to_file.to_string()).await;
         assert_eq!(refused(&body), "this connection was started without a directory for dataset files.");
-        let (_, body) = post(&url, "10.0.0.1", call("verify_dataset", json!({"dataset_seal": "ab".repeat(32)}))).await;
+        let (_, body) = post(&url, "10.0.0.1", call("verify_dataset", json!({"dataset_seal": "ab".repeat(48)}))).await;
         assert!(refused(&body).starts_with("this connection was started without a directory for dataset files."));
         assert_eq!(pool.available_permits(), 2);
     }
@@ -1223,7 +1241,7 @@ mod tests {
         drop(held);
         let (status, answer) = send(modern(step()), Some("verify_step")).await;
         assert_eq!(status, 200);
-        assert!(answer["result"]["content"][0]["text"].as_str().unwrap().contains("sha256_seal"), "{answer}");
+        assert!(answer["result"]["content"][0]["text"].as_str().unwrap().contains("sha384_seal"), "{answer}");
         assert_eq!(pool.available_permits(), 2);
     }
 

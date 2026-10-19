@@ -133,7 +133,7 @@ pub fn reject_name(reject: &ChamberReject) -> &'static str {
 }
 
 fn field_words() -> String {
-    "SHA-256 of the count of the numbers that follow as 8 little-endian bytes, then the chamber's pressure and temperature at the start and after every step, in pairs, all as little-endian f64 bytes.".to_string()
+    "SHA-384 of the count of the numbers that follow as 8 little-endian bytes, then the chamber's pressure and temperature at the start and after every step, in pairs, all as little-endian f64 bytes.".to_string()
 }
 
 fn sections() -> Sections {

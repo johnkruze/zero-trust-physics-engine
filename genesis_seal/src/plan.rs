@@ -74,6 +74,9 @@ pub enum PlanRefusal {
     Missing(String),
     /// A key is not a field of the request, the plan or a run.
     UnknownKey(String),
+    /// The request names `solver`: a plan of solves, which the engine
+    /// verifies by its request alone and this crate does not read.
+    PlanOfSolves,
     /// A value has the wrong JSON type.
     WrongType { field: String, expected: &'static str },
     /// `kind` is not `list`, `grid` or `sample`.
@@ -142,6 +145,9 @@ impl fmt::Display for PlanRefusal {
             PlanRefusal::UnknownKey(key) => {
                 write!(out, "'{key}' is not a field of this request.")
             }
+            PlanRefusal::PlanOfSolves => out.write_str(
+                "this is a plan of solves: its request names 'solver' in place of 'domain' and 'card'. A plan of solves is verified by its request alone: send the request and its dataset_seal to the engine's verify_dataset. genesis_seal reads a dataset of runs.",
+            ),
             PlanRefusal::WrongType { field, expected } => {
                 write!(out, "'{field}' must be {expected}.")
             }
@@ -724,6 +730,11 @@ impl DatasetRequest {
         let object = value
             .as_object()
             .ok_or_else(|| wrong("the request", "a JSON object"))?;
+        // A plan of solves is named for what it is, before its keys are read
+        // as a plan of runs' (RT3 W2 of 0.14.0 rc1).
+        if object.contains_key("solver") {
+            return Err(PlanRefusal::PlanOfSolves);
+        }
         refuse_unknown(object, REQUEST_KEYS)?;
         let domain = read_name(object, "domain")?;
         let card = read_name(object, "card")?;
@@ -780,8 +791,8 @@ impl DatasetRequest {
         self.totals
     }
 
-    /// SHA-256 of the sealed form of the whole request, as hex.
-    pub fn plan_sha256(&self) -> String {
+    /// SHA-384 of the sealed form of the whole request, as hex.
+    pub fn plan_sha384(&self) -> String {
         digest_hex(sealed_form(&self.value).as_bytes())
     }
 
@@ -1175,7 +1186,7 @@ mod tests {
         assert_eq!(sealed_form(&row), sealed_form(&alone));
         assert_eq!(
             digest_hex(sealed_form(&row).as_bytes()),
-            "dced576688495b353ee304b7b8400f3fab60536a2deeb86932cb744039703da0"
+            "8615887c32e2e2edb7d4be74b822e7f64ea384173a9332d97be6278dec255c3d57c9249ca16c5a5d5dfa6c2e43d9baf9"
         );
         assert_eq!(
             serde_json::to_string(&row).unwrap(),
@@ -1741,7 +1752,7 @@ mod tests {
             b"{ \"return\": \"file\", \"store\": \"frames\",\n \"plan\": { \"axes\": [ { \"values\": [0.0, 1e0, 2.00], \"path\": \"segments[0].load.heat_power_w\" } ],\n \"base\": { \"record_every\": 1, \"segments\": [ { \"load\": { \"ambient_k\": 2.9315e2 }, \"steps\": 10 } ], \"dt_s\": 1e-1, \"initial\": { \"temperature_k\": 293.150 } }, \"kind\": \"grid\" },\n \"card\": \"thermal\", \"domain\": \"energy\" }",
         )
         .unwrap();
-        assert_eq!(first.plan_sha256(), second.plan_sha256());
+        assert_eq!(first.plan_sha384(), second.plan_sha384());
         for index in 0..3 {
             assert_eq!(
                 sealed_form(&first.row(index).unwrap()),
@@ -1753,7 +1764,7 @@ mod tests {
         let mut swapped = thermal_grid();
         swapped["plan"]["axes"].as_array_mut().unwrap().swap(0, 1);
         let fourth = read(swapped).unwrap();
-        assert_ne!(third.plan_sha256(), fourth.plan_sha256());
+        assert_ne!(third.plan_sha384(), fourth.plan_sha384());
         assert_ne!(
             sealed_form(&third.row(1).unwrap()),
             sealed_form(&fourth.row(1).unwrap())

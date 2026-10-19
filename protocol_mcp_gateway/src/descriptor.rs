@@ -6,22 +6,16 @@
 use std::sync::OnceLock;
 
 use genesis_kernel::{
-    battery_sag, cable_stretch, cantilever_eth, capsule_stardust, cell_18650pf, cell_2170_m80,
-    cell_2170_model3, generator_mmrtg_f1, grid_node, hydraulic_fluid, reactor_spert3,
-    reactor_spert3_fuel, resonance, satellite_lageos1, swing, tesseract, thermal, ti64_lattice,
+    battery_sag, cable_stretch, cantilever_eth, capsule_stardust, cell_18650pf, generator_mmrtg_f1, grid_node, hydraulic_fluid, resonance, satellite_lageos1, swing, tesseract, thermal, ti64_lattice,
     reactor_triga_jsi,
-    reactor_spert3_ccore,
     creep_cmsx6,
-    runaway_18650_lco,
     capsule_insight,
     crater_ryugu_sci,
     link_gothenburg_10010,
-    grid_gb,
     solar_system,
     tire_eve_r19_ice,
     accumulator_sbo450,
     los_jwst_fine_guide,
-    tokamak_jet_dte1,
     tokamak_vde_mast,
     fingerpad_p02_glass,
 };
@@ -179,8 +173,7 @@ pub fn list_value_in(view: &View) -> Value {
             if let Some((word, _)) = crate::find_model::verdict_of_card(item.domain, item.card) {
                 row.insert("against_measurement".to_string(), json!(word));
             }
-            crate::succession::into(&mut row, view, item.card);
-            row.insert("specimen".to_string(), json!(item.specimen));
+            row.insert("specimen".to_string(), json!(crate::spec_sheet::row_of(item.card, item.specimen)));
             Value::Object(row)
         })
         .collect();
@@ -189,9 +182,6 @@ pub fn list_value_in(view: &View) -> Value {
 
 pub fn describe_value_in(view: &View, domain: &str, card: &str) -> Option<Value> {
     let mut body = describe_one(view.find(domain, card)?);
-    if let Some(by) = crate::succession::superseded_by(view, card) {
-        body = with_after(body, "card", crate::succession::KEY, json!(by));
-    }
     // The couplings the view holds both cards of.
     let couplings = crate::couplings::table_in(view, domain, card);
     if couplings.as_array().is_some_and(|list| !list.is_empty()) {
@@ -231,9 +221,6 @@ pub fn describe_short_in(view: &View, domain: &str, card: &str) -> Option<Value>
     let mut short = Map::new();
     short.insert("domain".to_string(), full["domain"].clone());
     short.insert("card".to_string(), full["card"].clone());
-    if let Some(by) = full.get(crate::succession::KEY) {
-        short.insert(crate::succession::KEY.to_string(), by.clone());
-    }
     short.insert(FORM.to_string(), json!("short"));
     short.insert("specimen".to_string(), json!(crate::spec_sheet::short_of(card, full["specimen"].as_str().unwrap_or(""))));
     if let Some((word, phrase)) = crate::find_model::verdict_of_card(domain, card) {
@@ -257,7 +244,7 @@ pub fn describe_short_in(view: &View, domain: &str, card: &str) -> Option<Value>
     short.insert(
         "full_form".to_string(),
         json!(format!(
-            "This is the short form: phase_fields are the keys of initial, load_fields the keys of each segment's load, a null minimum or maximum is a bound the full form gives in words, and stops are the names a refusal carries. describe_card with form \"full\", or with no form, has {FULL_FORM_HAS}."
+            "Short form: phase_fields are initial's keys, load_fields each segment's load keys, a null bound is given in words in full, stops are refusal names. describe_card with form \"full\" or none has {FULL_FORM_HAS}."
         )),
     );
     Some(Value::Object(short))
@@ -446,16 +433,18 @@ pub fn tape_schema_in(_view: &View) -> Map<String, Value> {
             "outcome": { "type": "string" },
             "steps_landed": { "type": "integer", "minimum": 0 },
             "reject": { "type": ["string", "null"] },
-            "run_seal": { "type": "string", "pattern": "^[0-9a-f]{64}$", "description": "The run_seal of the run_trajectory answer: with request, or as part of the whole answer." },
+            "run_seal": { "type": "string", "pattern": "^[0-9a-f]{96}$", "description": "The run_seal of the run_trajectory answer: with request, or as part of the whole answer." },
             "final_state": {},
             "final_residual_conservation_error_hex": { "type": ["string", "null"] },
             "max_residual_conservation_error_hex": { "type": ["string", "null"] },
             "state_digest": { "type": ["string", "null"] },
-            "chain_seal": { "type": "string", "pattern": "^[0-9a-f]{64}$", "description": "With request and run_seal: a chained answer's chain_seal." },
-            "links": { "type": "array", "items": { "type": "object" }, "description": "Alone: a chain's answers in order." }
+            "chain_seal": { "type": "string", "pattern": "^[0-9a-f]{96}$", "description": "With request and run_seal: a chained answer's chain_seal." },
+            "links": { "type": "array", "items": { "type": "object" }, "description": "Alone: a chain's answers in order." },
+            "public_key": { "type": "string", "description": "The base64 of the ML-DSA-87 public key (2,592 bytes) to check the answer's signature with; without it, this engine's own." },
+            "seen_nonces": { "type": "array", "items": { "type": "string", "pattern": "^[0-9a-f]{64}$" }, "description": "Nonces of signatures already seen: one of them again is SignatureNonceReplayed." }
         },
         "additionalProperties": true,
-        "description": "Either request and run_seal alone, the short form: the run is computed again and its seal compared with run_seal. Or the whole run_trajectory answer sent back as it was returned, without request, the long form: inputs, frames, outcome, steps_landed, reject, run_seal, final_state, final_residual_conservation_error_hex, max_residual_conservation_error_hex and state_digest are then all required, along with the rest of the answer. The trajectory chain, the state digest and the run seal are recomputed from its exact hex values; then its request is computed again under a physics permit and the limits of run_trajectory, and the engine's whole answer to it compared with the answer sent, value by value and then byte for byte, the receipt included, so an answer that holds is every byte the engine's. A seal has no key: an answer whose values were rewritten with its seals worked out again holds every seal, and only the computation shows it is not the engine's. An answer that continues a sealed upstream run (its chain names upstream_run_seal) carries the upstream's seal and not its request, and its long form is refused (AnswerCarriesNoRequest): its chain's answers in order, as links, carry each request, and each link is computed again from the links before it. Or links alone: a chain's answers in order, held as the long form holds one. A design_run answer sent whole is designed again and held the same way. The long form's answer carries holds, true when the answer sent is every byte the engine's, and values_hold beside it, true when every value of it is the engine's answer to its request computed again, whatever its spelling: each number by its 64-bit value, strings, flags and null exactly, keys and their order, the receipt string among them. A copy whose numbers a client wrote again in its own spelling (0.0001 for 1.0e-4, 12 for 12.0) has holds false and values_hold true, and differs_at names the first place its text differs."
+        "description": "Either request and run_seal alone, the short form: the run is computed again and its seal compared with run_seal. Or the whole run_trajectory answer sent back as it was returned, without request, the long form: inputs, frames, outcome, steps_landed, reject, run_seal, final_state, final_residual_conservation_error_hex, max_residual_conservation_error_hex and state_digest are then all required, along with the rest of the answer. The trajectory chain, the state digest and the run seal are recomputed from its exact hex values; then its request is computed again under a physics permit and the limits of run_trajectory, and the engine's whole answer to it compared with the answer sent, value by value and then byte for byte, the receipt included, so an answer that holds is every byte the engine's. A seal has no key: an answer whose values were rewritten with its seals worked out again holds every seal, and only the computation shows it is not the engine's. An answer that continues a sealed upstream run (its chain names upstream_run_seal) carries the upstream's seal and not its request, and its long form is refused (AnswerCarriesNoRequest): its chain's answers in order, as links, carry each request, and each link is computed again from the links before it. Or links alone: a chain's answers in order, held as the long form holds one. A design_run answer sent whole is designed again and held the same way. The long form's answer carries holds, true when the answer sent is every byte the engine's, and values_hold beside it, true when every value of it is the engine's answer to its request computed again, whatever its spelling: each number by its 64-bit value, strings, flags and null exactly, keys and their order, the receipt string among them. A copy whose numbers a client wrote again in its own spelling (0.0001 for 1.0e-4, 12 for 12.0) has holds false and values_hold true, and differs_at names the first place its text differs. An answer the engine signed (signature, ML-DSA-87 over its receipt, with issued_at, expires_at and nonce) has its signature checked first, against public_key or else this engine's own key: one that does not hold is cause signature, named (SignatureDoesNotVerify, SignatureExpired, SignatureNonceReplayed, SignatureKeyMismatch, ReceiptDoesNotMatch, SignatureAbsent when public_key is given and there is none), and nothing is computed."
     }))
 }
 
@@ -474,8 +463,20 @@ mod card_generator_mmrtg_seebeck_descriptor;
 mod card_reactor_msre_pump_descriptor;
 #[path = "card_reactor_spert3_twin_descriptor.rs"]
 mod card_reactor_spert3_twin_descriptor;
-#[path = "card_reactor_spert3_ccore_twin_descriptor.rs"]
-mod card_reactor_spert3_ccore_twin_descriptor;
+#[path = "card_cell_2170_twin_descriptor.rs"]
+mod card_cell_2170_twin_descriptor;
+
+#[path = "card_grid_gb_twin_descriptor.rs"]
+mod card_grid_gb_twin_descriptor;
+
+#[path = "card_tokamak_jet_dte1_twin_descriptor.rs"]
+mod card_tokamak_jet_dte1_twin_descriptor;
+
+#[path = "card_runaway_18650_lco_twin_descriptor.rs"]
+mod card_runaway_18650_lco_twin_descriptor;
+
+#[path = "card_reactor_spert3_ccore_plate_descriptor.rs"]
+mod card_reactor_spert3_ccore_plate_descriptor;
 
 fn build() -> Vec<Card> {
     let mut cards = built();
@@ -504,30 +505,26 @@ fn built() -> Vec<Card> {
         generator(),
         capsule(),
         satellite(),
-        reactor_spert3_card(),
-        cell_2170_m80_card(),
+        card_reactor_spert3_twin_descriptor::card(),
         cantilever_eth_card(),
-        cell_2170_model3_card(),
+        card_cell_2170_twin_descriptor::card(),
         creep_cmsx6_card(),
         capsule_insight_card(),
-        reactor_spert3_fuel_card(),
         crater_ryugu_sci_card(),
-        card_reactor_spert3_twin_descriptor::card(),
-        card_reactor_spert3_ccore_twin_descriptor::card(),
         card_generator_mmrtg_seebeck_descriptor::card(),
         card_momentum_jwst_dihedral_descriptor::card(),
         card_momentum_jwst_srp_descriptor::card(),
         link_gothenburg_10010_card(),
-        grid_gb_card(),
+        card_grid_gb_twin_descriptor::card(),
         solar_system_card(),
         tire_eve_r19_ice_card(),
         los_jwst_fine_guide_card(),
-        tokamak_jet_dte1_card(),
+        card_tokamak_jet_dte1_twin_descriptor::card(),
         fingerpad_p02_glass_card(),
         accumulator_sbo450_card(),
         reactor_triga_jsi_card(),
-        reactor_spert3_ccore_card(),
-        runaway_18650_lco_card(),
+        card_reactor_spert3_ccore_plate_descriptor::card(),
+        card_runaway_18650_lco_twin_descriptor::card(),
         card_grasp_lift_glass_4tu_descriptor::card(),
         tokamak_vde_mast_card(),
         card_reactor_msre_pump_descriptor::card(),
@@ -1964,532 +1961,6 @@ fn generator() -> Card {
     )
 }
 
-fn reactor_spert3_card() -> Card {
-    let specimen = reactor_spert3::ReactorSpert3::e_core_cold_startup();
-    // No frequency on the card, so no `π/ω`.
-    let gate = specimen.gate_dt_s().expect("specimen gate");
-    let floor = specimen.floor_dt_s().expect("specimen floor");
-    let coolant_min = reactor_spert3::WATER_FREEZING_K;
-    let coolant_max = reactor_spert3::WATER_CRITICAL_K;
-    let tested_min = reactor_spert3::COOLANT_TEMPERATURE_MIN_K;
-    let tested_max = reactor_spert3::COOLANT_TEMPERATURE_MAX_K;
-    let reactivity_min = reactor_spert3::REACTIVITY_MIN_DOLLAR;
-    let reactivity_max = reactor_spert3::REACTIVITY_MAX_DOLLAR;
-    finish(
-        "energy",
-        "reactor_spert3",
-        "The SPERT III E-core test reactor, cold, from a step in reactivity to the first maximum of power.",
-        vec![
-            scalar(
-                "coolant_temperature_k",
-                Role::Phase,
-                "K",
-                Some(coolant_min),
-                false,
-                Some(coolant_max),
-                false,
-                format!(
-                    "inclusive [{}, {}] K, the primary coolant at the start: liquid water, from where water freezes to its critical point, above which there is no liquid at any pressure; a temperature outside it is refused as CoolantTemperatureNotLiquidWater. Compared at a primary coolant of 56 to 92 degF ([{}, {}] K). The card's generation time is the report's value for 70 degF and its delayed groups the report's set for 500 degF, the report printing none for cold, and its feedback does not depend on the coolant temperature, so it gives the same burst at any coolant temperature; the report's hot-startup tests at 260 and 500 degF are in reactor_spert3_fuel",
-                    coolant_min, coolant_max, tested_min, tested_max
-                ),
-            ),
-            scalar(
-                "reactivity_inserted_dollar",
-                Role::Load,
-                "dollar",
-                None,
-                false,
-                None,
-                false,
-                format!(
-                    "the reactivity of the step held from the start of a segment. The first segment's is the step in reactivity at time zero and must be above zero: zero or less is refused as ReactivityNotPositive. A later segment may carry any reactivity, and each step is computed at its own. Compared at 0.769 to 1.210 dollars ([{}, {}], the inhour values for the card's set of the longest and the shortest reactor period of the tests, 1010 ms (test 22) and 10 ms (test 43), IDO-17281 Table III, not rounded). On the 10 tests not in the fit, 0.890 to 1.128 dollars: peak power within 0.58 of the report's standard deviation RMS and energy to the peak within 1.01 RMS, the peak 23 percent early RMS. Outside 0.769 to 1.210 dollars the card computes the same equations",
-                    reactivity_min,
-                    reactivity_max
-                ),
-            ),
-        ],
-        floor,
-        "a locked 1e-9 s: the smallest step that still moves the clock at 1e7 s and moves the power at the start by a part that 64-bit numbers resolve",
-        gate,
-        "0.2 of the time constant of the fastest pole the card reaches inside its compared span, the prompt pole at the smallest compared reactivity with the feedback of 10 MW s, above the 7.2 MW s the card reaches there. Past the compared span the step ceiling follows the state: the card's step refuses as DtAboveStateCeiling, the state kept, a step longer than 0.2 of the time constant of the fastest pole at the state it starts from or would land on, or 0.07 of it when that pole is growing. The poles are the prompt pole |1 - rho| / l*, with rho the net reactivity and l* 2.15 ms, and the feedback pole, the square root of a P / l*, with a 0.0369864 dollar per MW s and P the power. At this ceiling the growing pole binds above a net reactivity of 1.2104 dollars and the decaying pole below 0.3988 dollar, which a burst from below the compared span reaches as its feedback grows: a step of 0.2 l*, 0.43 ms, holds at any net reactivity from zero to one dollar, and one of 0.07 l* / (rho - 1) above one dollar",
-        None,
-        "A run is one burst from one step in reactivity at time zero: the first segment's reactivity is that step and must be above zero, refused before any step as ReactivityNotPositive otherwise. A later segment may carry another reactivity: each step is computed at the reactivity its segment holds, and the ledger books each step at the reactivity it held. Every burst compared with the report is one step in reactivity, held to the first maximum; a burst whose reactivity changes is computed with the same equations. A segment raised is a second insertion; a segment lowered below what the burst needs to keep rising, to zero or below it, turns the power down, and that step lands as the first maximum. NegativeState, NegativeTime and InconsistentState are refusals of the card's step for a state handed to it that the card did not write; this door takes one start field, the coolant temperature, and hands no state in, so no request reaches them. coolant_temperature_k is in kelvin. The reactor starts at 5e-5 MW in equilibrium. A single step takes the coolant temperature and starts again from there at each call, so single steps cannot be chained. A run ends at the first maximum of power: the step after it is refused as PastFirstMaximum and the run is sealed with that refusal. Its last landed state carries peak_power_mw, peak_energy_mws and peak_time_s, the highest landed sample, which lies within one step of the true maximum; the card does not interpolate. The latest first maximum the card reaches inside its compared span is at 12.2 s; the longest in Table III is 13.7 s. The largest energy to peak in Table III is 6.9 MW s, and the card reaches 7.2 MW s at the bottom of its compared span. The largest peak power in Table III is 280 MW, and the card reaches about 296 MW at the top of its compared span. Past the span the card has no limit of time, energy or power: at 0.3 dollar the first maximum is at 149 s, at 3 dollars it is 25,200 MW, and at 10 dollars 509,000 MW with 245 MW s released. At the ceiling the slowest compared reactivity takes 17,098 steps to the first maximum, inside the 1,000,000 steps of a run; at 0.3 dollar and 0.43 ms a burst takes about 346,000 steps; a run of 1,000,000 steps at the floor stops at one millisecond, completed, before any maximum. A step of zero or less is refused as NonPositiveDt before the step floor is tested.".into(),
-        &[
-            "NonFiniteInput",
-            "NonFiniteState",
-            "NonPositiveDt",
-            "InvalidCard",
-            "ReactivityNotPositive",
-            "CoolantTemperatureNotLiquidWater",
-            "PastFirstMaximum",
-            "NegativeTime",
-            "DtAboveStateCeiling",
-            "NegativeState",
-            "InconsistentState",
-            "SpontaneousGeneration",
-            "FirstLawBreach",
-        ],
-        vec![Advisory {
-            name: "FLAG_PROMPT_SUPERCRITICAL",
-            mask: reactor_spert3::FLAG_PROMPT_SUPERCRITICAL,
-            seals: true,
-        }],
-        slots(&[
-            ("t", "Time since the step in reactivity, in seconds."),
-            ("pos[0]", "power_mw"),
-            ("pos[1]", "energy_mws"),
-            ("pos[2]", "reactivity_net_dollar"),
-            ("vel[0]", "peak_power_mw"),
-            ("vel[1]", "peak_energy_mws"),
-            ("vel[2]", "peak_time_s"),
-            ("force_torque", "Rate of change of power, in MW per second."),
-            ("residual", "Conservation residual."),
-            (
-                "flags",
-                "FLAG_PROMPT_SUPERCRITICAL: net reactivity above one dollar. It seals.",
-            ),
-            ("proof", "Not written by the step."),
-        ]),
-    )
-}
-
-/// The result of the Great Britain card's validation record: the one run on
-/// the held-back trips, as the research record gives its results.
-const GRID_GB_RESULT: &str = "On the 12 trips outside the fit, run once through the engine: every target held. One of the 13 is dropped by the quality rule written with the targets, the trip of 2 September 2021, whose recorded frequency moves 0.275 Hz in the ten seconds before the fall. That was two opposite losses at once, an export link and an import link, and not one trip. Depth of the fall: RMS relative error 0.166 (target 0.25) and mean -0.018 (0.10), against 0.182 for the rule that depth is proportional to loss on the same trips; the worst 37 percent too shallow, on 9 May 2019. Steepest second: 0.103 (0.25) and mean +0.043 (0.10). Frequency near 60 s: 0.046 Hz (0.06). The whole trace: median 0.036 Hz (0.05). No trip was refused by the card. The twelve were the easiest third of three: on the other two thirds, each with constants refitted on the rest, the depth error is 0.258 and 0.326, three targets outside in each, and 18.7 percent of random twelves of the forty are within all seven. The card's margin over one-constant rules on the twelve is 0.015: depth proportional to loss 0.182, a fall to one fixed frequency 0.180, a straight line 0.171, the card 0.166. The loss and the lowest frequency of every trip, the twelve included, were seen once, in the scan that found the trips, before the trips were split, and the depth target is computed from that lowest frequency; no number of the twelve entered a fit or a choice. A further 39 trips of the same kind, which the scan's rule had dropped because it reads the fall at the first second to reach 0.12 Hz, were found by a second program's author; 36 lie inside the card's range as it then stood, and six of them, of 500 to 692 MW, are under the 693 MW where the compared span now starts. All 36: depth 0.269 (target 0.25) and near 60 s 0.067 Hz (0.06), the other five within. May 2018 to February 2025, 23 trips: depth 0.136, all seven within. 2024 to 2026, 15 trips: depth 0.345, six outside. The six trips since November 2025 run 39 to 80 percent too deep. The binary that made the runs (SHA-256 da8ee131279452aa4f1f56afb71e801f622a050882554fb6d632dd23f9b7384c) was replaced by a later build, which returned all 41 saved answers byte for byte; the final state no longer carries below_statutory_limit, so the saved answers no longer come back byte for byte. A second program, on the same machine and from its own scan of the monthly files, recomputes the same numbers.";
-
-fn grid_gb_card() -> Card {
-    let specimen = grid_gb::GridGb::interconnector_loss();
-    // The ceiling is a fiftieth of the fastest time scale of the card, so no `π/ω`.
-    let gate = specimen.gate_dt_s().expect("specimen gate");
-    let floor = specimen.floor_dt_s().expect("specimen floor");
-    finish(
-        "energy",
-        "grid_gb",
-        "The Great Britain synchronous area, the 50 Hz transmission system of England, Scotland and Wales as one rotating mass, after an importing interconnector trips. Compared on trips of 693 to 1402 MW over their first 60 s: on the 12 held-back trips it met all seven lines; scored after the fact, on six trips of 500 to 692 MW it missed three, and on the six compared trips since November 2025 its fall is 39 to 80 percent deeper than the measured fall. Outside the compared trips a step lands with a flag that says so.",
-        vec![
-            scalar(
-                "frequency_hz",
-                Role::Phase,
-                "Hz",
-                Some(grid_gb::FREQUENCY_MIN_HZ),
-                true,
-                Some(grid_gb::FREQUENCY_MAX_HZ),
-                false,
-                format!(
-                    "above {} Hz and at most {} Hz, the system frequency at the start, with the area in balance: at or below 48.8 Hz low-frequency demand disconnection has begun (LowFrequencyDemandDisconnection), and above 50.5 Hz, the statutory limit, the card holds no over-frequency response (FrequencyAboveCard). Compared on starts of 49.853 to 50.126 Hz, the opened trips, rounded outward to {} to {} Hz; a start outside sets FLAG_OUTSIDE_COMPARED_TRIPS",
-                    grid_gb::FREQUENCY_MIN_HZ,
-                    grid_gb::FREQUENCY_MAX_HZ,
-                    grid_gb::START_FREQUENCY_MIN_HZ,
-                    grid_gb::START_FREQUENCY_MAX_HZ
-                ),
-            ),
-            scalar(
-                "inertia_mw_s",
-                Role::Phase,
-                "MW*s",
-                Some(0.0),
-                true,
-                None,
-                false,
-                format!(
-                    "above 0 MW s, the kinetic energy the area stores at 50 Hz: the operator's published outturn inertia for the half hour, in GVA s, times 1000. The rate of change of frequency divides by it (InertiaNotPositive). Compared on {} to {} MW s, the span of the opened trips, 111 to 337 GVA s; outside it sets FLAG_OUTSIDE_COMPARED_TRIPS, and the run's step ceiling is recomputed from its own inertia and demand",
-                    grid_gb::INERTIA_MIN_MW_S,
-                    grid_gb::INERTIA_MAX_MW_S
-                ),
-            ),
-            scalar(
-                "demand_mw",
-                Role::Phase,
-                "MW",
-                Some(0.0),
-                false,
-                None,
-                false,
-                format!(
-                    "at least 0 MW (DemandNegative), generation and net imports on the transmission system just before the loss. Compared on {} to {} MW, the span of the opened trips; outside it sets FLAG_OUTSIDE_COMPARED_TRIPS, and the run's step ceiling is recomputed from its own inertia and demand",
-                    grid_gb::DEMAND_MIN_MW,
-                    grid_gb::DEMAND_MAX_MW
-                ),
-            ),
-            scalar(
-                "loss_mw",
-                Role::Load,
-                "MW",
-                None,
-                false,
-                None,
-                false,
-                format!(
-                    "the power lost, held through each step: a loss of infeed when positive, a loss of demand when negative, never larger in size than demand_mw (LossLargerThanDemand). Compared on {} to {} MW, the smallest of all 40 compared trips and the largest of the fitted trips, each one loss held from time zero. Six trips of 500 to 692 MW, run through the engine against the same targets, have three of the seven outside (depth rms 0.2512, target 0.25; steepest second rms 0.273, target 0.25). No trip under 500 MW, above 1402 MW or with a loss of demand is in the comparison. A loss outside the compared span, or one that is not the run's first, sets FLAG_OUTSIDE_COMPARED_TRIPS",
-                    grid_gb::LOSS_MIN_MW,
-                    grid_gb::LOSS_MAX_MW
-                ),
-            ),
-        ],
-        floor,
-        "a locked 1e-6 s: a step of that size still moves the clock at 60 s, and a loss of 1 MW on the largest compared inertia moves the frequency by 500 times the spacing of 64-bit numbers at 50",
-        gate,
-        "0.02 of the fastest time scale the card can reach, the swing of the rotating mass against the response, the relief pole of the demand or the response lag, at 48.8 Hz, under the lowest frequency of the card. The value here is at the corner of the compared spans, 111,000 MW s and 40,829 MW, and holds for every run inside them. A run outside them takes the same rule at its own inertia and demand where that gives a smaller ceiling, as a smaller inertia or a larger demand does, and a step above it is refused as DtAboveCeiling with the ceiling stated",
-        None,
-        "frequency_hz, inertia_mw_s and demand_mw are the area's condition at the start and are held through the run; loss_mw is the load of each segment. The ledger books each step's own loss, so a second loss, a link that comes back and a quiet period before the trip are stepped by the same equations; every compared trip was one loss held from time zero, and the one measured trip that was followed by a second loss, 22 December 2023, is the card's worst, so a step whose loss is not the run's first sets FLAG_OUTSIDE_COMPARED_TRIPS. A run starts at time zero with the area in balance at frequency_hz and no response delivered. A single step starts in the same way at each call, so single steps cannot be chained: a run is the way to follow the fall. The card was compared over the first 60 s after each trip: the frequency near 60 s was within 0.046 Hz on the 12 trips outside the fit and 0.097 Hz on the 28 in it, each left out in turn. A run goes on past 60 s until its steps run out or a limit stops it, and a step that lands later than 60 s sets FLAG_PAST_COMPARED_MINUTE; past the first minute the card holds the primary response alone, and the operator's instructed actions and the slower reserves are not in it. The clock is a running sum, t_s += dt_s in 64-bit arithmetic, and each addition rounds by up to 3.55e-15 s, half the spacing of 64-bit numbers between 32 s and 64 s. The comparison with 60 s therefore carries a named allowance, TIME_END_ALLOWANCE_PER_STEP_S: 3.55e-15 s for each step a run of this step takes to reach 60 s, and two more for the step read from a decimal, and never more than half the step. A run of exactly 60 s in decimal lands its last step without the flag. 49.55 Hz is the lowest frequency compared with measurement: the lowest measured single-loss frequency among the 41 trips, 49.553 Hz, rounded outward. The lowest among the 36 trips the scan lost is 49.596 Hz, and the lowest the card reached in any compared run is 49.563 Hz. A landing under 49.55 Hz sets FLAG_BELOW_COMPARED_FREQUENCY; below the 49.8 Hz knee the response the grid held changed over the years. A frequency at or below 48.8 Hz, where low-frequency demand disconnection begins, is refused as LowFrequencyDemandDisconnection, and one above 50.5 Hz, the statutory limit, as FrequencyAboveCard: the card holds no over-frequency response, and a loss of demand alone reaches it. The state carries lowest_frequency_hz and lowest_time_s, the lowest landed sample; the card does not interpolate. The measured frequency is one value a second, and a loss falls between two samples: the protocol reads the card at half a second, one and a half seconds and so on after the loss begins. The response is one fitted function of the frequency for nine years of days: the response the operator held on a given day is not an input. A step of zero or less is refused as NonPositiveDt".to_string(),
-        &[
-            "NonFiniteInput",
-            "NonFiniteState",
-            "NonPositiveDt",
-            "InvalidCard",
-            "InertiaNotPositive",
-            "DemandNegative",
-            "LossLargerThanDemand",
-            "NegativeTime",
-            "LowFrequencyDemandDisconnection",
-            "FrequencyAboveCard",
-            "SpontaneousGeneration",
-            "FirstLawBreach",
-        ],
-        vec![
-            Advisory {
-                name: "FLAG_OUTSIDE_COMPARED_TRIPS",
-                mask: grid_gb::FLAG_OUTSIDE_COMPARED_TRIPS,
-                seals: true,
-            },
-            Advisory {
-                name: "FLAG_PAST_COMPARED_MINUTE",
-                mask: grid_gb::FLAG_PAST_COMPARED_MINUTE,
-                seals: true,
-            },
-            Advisory {
-                name: "FLAG_BELOW_COMPARED_FREQUENCY",
-                mask: grid_gb::FLAG_BELOW_COMPARED_FREQUENCY,
-                seals: true,
-            },
-        ],
-        slots(&[
-            ("t", "Time since the start, in seconds."),
-            ("pos[0]", "frequency_hz"),
-            ("pos[1]", "response_mw"),
-            ("pos[2]", "relief_mw"),
-            ("vel[0]", "frequency_rate_hz_per_s"),
-            ("vel[1]", "lowest_frequency_hz"),
-            ("vel[2]", "lowest_time_s"),
-            (
-                "force_torque",
-                "Net power on the rotating mass, in MW: response plus relief less the loss.",
-            ),
-            ("residual", "Conservation residual."),
-            (
-                "flags",
-                "FLAG_OUTSIDE_COMPARED_TRIPS when the start, the inertia, the demand or the step's loss is outside the compared trips or the loss is not the run's first; FLAG_PAST_COMPARED_MINUTE when the step lands later than 60 s; FLAG_BELOW_COMPARED_FREQUENCY when it lands under 49.55 Hz. Each seals.",
-            ),
-            ("proof", "Not written by the step."),
-        ]),
-    )
-}
-
-fn cell_2170_m80_card() -> Card {
-    let specimen = cell_2170_m80::Cell2170M80::cell();
-    // No pole on the card, so no `π/ω`. The floor and the ceiling are the
-    // same one second.
-    let gate = specimen.gate_dt_s().expect("specimen gate");
-    let floor = specimen.floor_dt_s().expect("specimen floor");
-    // Every block is served; the two that met no mark carry a flag.
-    let served: Vec<usize> = (0..cell_2170_m80::BLOCK_COUNT).collect();
-    let least_top = served
-        .iter()
-        .map(|block| specimen.charge_top_ah[*block])
-        .fold(f64::INFINITY, f64::min);
-    let most_deep = served
-        .iter()
-        .map(|block| specimen.charge_deep_ah[*block])
-        .fold(f64::NEG_INFINITY, f64::max);
-    let coldest_block = served
-        .iter()
-        .map(|block| specimen.block_chamber_c[*block])
-        .fold(f64::INFINITY, f64::min);
-    let warmest_block = served
-        .iter()
-        .map(|block| specimen.block_chamber_c[*block])
-        .fold(f64::NEG_INFINITY, f64::max);
-    let ranges = served
-        .iter()
-        .map(|block| {
-            format!(
-                "{} degC: [{}, {}] Ah",
-                token(specimen.block_chamber_c[*block]),
-                token(specimen.charge_top_ah[*block]),
-                token(specimen.charge_deep_ah[*block])
-            )
-        })
-        .collect::<Vec<_>>()
-        .join("; ");
-    let bands = served
-        .iter()
-        .map(|block| {
-            format!(
-                "{} degC block: [{}, {}] degC",
-                specimen.block_chamber_c[*block],
-                specimen.block_case_min_c[*block],
-                specimen.block_case_max_c[*block]
-            )
-        })
-        .collect::<Vec<_>>()
-        .join("; ");
-    let currents = served
-        .iter()
-        .map(|block| {
-            format!(
-                "{} degC block: [{}, {}] A",
-                specimen.block_chamber_c[*block],
-                -specimen.block_current_discharge_max_a[*block],
-                specimen.block_current_charge_max_a[*block]
-            )
-        })
-        .collect::<Vec<_>>()
-        .join("; ");
-    finish(
-        "energy",
-        "cell_2170_m80",
-        "One Tesla Model 3 2170 lithium-ion cell, cell m80 alone, in six blocks of tests from -20 to 40 degC, under a terminal current and a measured case temperature. Compared on 60 held-back tests it failed, 27 met: C/3 met from 0 to 40 degC, 1C missed at each, and the -10 and -20 degC blocks met no mark (55.6 to 425 mV). The physical model cell_2170_model3 reads 17.4 mV lower on one 1.5 A discharge at 12 degC.",
-        vec![
-            scalar(
-                "block_chamber_c",
-                Role::Phase,
-                "degC",
-                Some(coldest_block),
-                false,
-                Some(warmest_block),
-                false,
-                "exactly one of 40, 25, 10, 0, -10 and -20 degC: the chamber setting that names the block of tests the run belongs to. It picks the capacity, the rest-voltage table and the range of charge, and in this dataset it is also the cell's age. In the 25, 10, 0, -10 and -20 degC blocks the capacity is the charge of a capacity test that began after a top-up, 33, 22, 48, 52 and 39 mAh above the laboratory's full (0.73, 0.52, 1.11, 1.23 and 0.92 percent of the block's capacity); in the 40 degC block that test began at full. In those five blocks charge_level is therefore not the state of charge counted from the laboratory's full: it is 1 at full and reads up to that share high toward empty. The tables were fitted with these capacities, and the comparison is of the card as fitted. In the -10 and -20 degC blocks no compared test is within every target: at -10 degC C/3 reads 55.6 mV rms and +0.68 percent capacity, 1C 134.2 mV and +6.92 percent, and no drive cycle is within; at -20 degC C/3 139.2 mV and +7.09 percent, 1C 207.8 mV and +15.85 percent, no drive cycle within, reading high from the first seconds. Every step in them carries FLAG_BLOCK_MET_NO_MARK. Any other value is refused as BlockNotRecognized; nothing is rounded to a block".into(),
-            ),
-            scalar(
-                "charge_removed_ah",
-                Role::Phase,
-                "Ah",
-                Some(least_top),
-                false,
-                Some(most_deep),
-                false,
-                format!(
-                    "ampere-hours removed since the recharge: 0 for a cell that has just been recharged. Each block has its own inclusive range, where its tables end: {ranges}. The published minimum and maximum are the widest of the six; a start outside the block's own range is refused as ChargeOutsideTables. A start one 64-bit number past an end is refused too: no start is read at an end point it is not at. A run that landed its last step past an end, within the rounding allowance of its running sum, returns a charge from which no new run starts, and a new run starts from the end itself"
-                ),
-            ),
-            scalar(
-                "current_a",
-                Role::Load,
-                "A",
-                Some(-cell_2170_m80::CURRENT_DISCHARGE_MAX_A),
-                false,
-                Some(cell_2170_m80::CURRENT_CHARGE_MAX_A),
-                false,
-                format!(
-                    "inclusive [-13.5, 13.5] A, the top of the pulse test and the end of the ten-second table's current axis; past it the table would hold its end value (CurrentOutsideCard). A negative current discharges the cell and a positive current charges it, as in the measurements; a charging current above 2.25 A is read on the discharge side of the tables, which were fitted on pulses to 13.5 A discharging and 2.25 A charging. Compared up to 11.374 A discharging and 9.737 A charging, for seconds in drive cycles; held currents compared at about 1.5 A (5.0 to 29.2 mV rms from 0 to 40 degC, target 42) and 4.5 A (44.1 to 88.2 mV, target 42). Each block's own compared tests ran from the largest discharging to the largest charging sample, rounded outward to the milliampere: {currents}. A current outside its block's tests sets FLAG_OUTSIDE_COMPARED_TESTS"
-                ),
-            ),
-            scalar(
-                "case_temperature_c",
-                Role::Load,
-                "degC",
-                Some(cell_2170_m80::CASE_TEMPERATURE_MIN_C),
-                false,
-                Some(cell_2170_m80::CASE_TEMPERATURE_MAX_C),
-                false,
-                format!(
-                    "inclusive [-21.898, 45.535] degC: the temperature measured on the cell's case, at the middle. The card is given it and does not predict it. The bounds are the coldest and the warmest case temperature of any block's own tests; past them the resistances and the time constant would hold the end block's value, and the card has no temperature law of its own (CaseTemperatureOutsideCard). Each block's own compared tests were run at, from the coldest to the warmest sample, rounded outward to the millikelvin: {bands}. A case temperature outside its block's band sets FLAG_OUTSIDE_COMPARED_TESTS. From 0 to 40 degC 27 of 40 runs are within every target, and in the -10 and -20 degC blocks none of 20"
-                ),
-            ),
-        ],
-        floor,
-        "a locked 1 s: the step is exactly one second, the sampling of the measurements the card was fitted to",
-        gate,
-        "the same locked 1 s: the first-second resistance has no meaning at another step, and the card refuses any other as StepNotOneSecond",
-        None,
-        "Over a step the current and the case temperature are held, and every table is read at the charge the step lands on. A current or a case temperature outside its range in any segment of a run refuses the whole run before its first step. The range compared with measurement is each block at the case temperatures and the currents of its own compared tests, and a step outside it lands with FLAG_OUTSIDE_COMPARED_TESTS. The same cell type is served as a physical model with memory, cell_2170_model3; on one discharge, cell m80 from the recharge of its 10 degC block at 1.5 A for 600 s with the case at 12 degC, this card gives 3.934 V and that one 3.917 V, 17.4 mV apart. The card bounds the size of the current, not how long it is held. The held currents compared were a third of the rated current, about 1.5 A, and the rated current, about 4.5 A; the drive cycles reach the larger currents for seconds at a time, and the held discharge at the rated current reads 44.1 to 88.2 mV rms against the target of 42 at every temperature from 0 to 40 degC. A run starts at rest: charge_removed_ah as given, nothing held by the relaxing branch, and the ledger anchored there. The first measured sample of a record is that start and each later sample is one step. A single step starts from rest in the same way at each call, so single steps cannot be chained into a run. A run ends in a sealed refusal when the terminal voltage would fall below 2.8 V (LowerVoltageLimit), would rise above 4.242 V (UpperVoltageLimit), or when the charge removed would leave the tables of the block (ChargeOutsideTables); the last landed state is the last second on the card. The charge removed is a running sum in 64-bit arithmetic, so the comparison with either end of the tables carries a rounding allowance: 2^-50 Ah for each landed step and the step being taken, and two more for the start and the end of the table, never more than half the charge of the step; a rest, or a step back toward the tables, from a state past an end lands. A run whose end in decimal is exactly an end of the tables, at the top or the bottom, lands its last step, and every table is read at the end point there. When the charge leaves the tables on the same step on which the voltage would cross a limit, the refusal named is ChargeOutsideTables, because no voltage is read outside the tables. A discharge slower than about a tenth of the capacity per hour can leave the tables before 2.8 V. A step of zero or less is refused as NonPositiveDt before the step floor is tested.".into(),
-        &[
-            "NonFiniteInput",
-            "NonFiniteState",
-            "NonPositiveDt",
-            "InvalidCell",
-            "StepNotOneSecond",
-            "BlockNotRecognized",
-            "CaseTemperatureOutsideCard",
-            "CurrentOutsideCard",
-            "ChargeOutsideTables",
-            "LowerVoltageLimit",
-            "UpperVoltageLimit",
-            "SpontaneousGeneration",
-            "FirstLawBreach",
-        ],
-        vec![
-            Advisory {
-                name: "FLAG_BLOCK_MET_NO_MARK",
-                mask: cell_2170_m80::FLAG_BLOCK_MET_NO_MARK,
-                seals: true,
-            },
-            Advisory {
-                name: "FLAG_OUTSIDE_COMPARED_TESTS",
-                mask: cell_2170_m80::FLAG_OUTSIDE_COMPARED_TESTS,
-                seals: true,
-            },
-        ],
-        slots(&[
-            ("t", "Time since the anchor, in seconds."),
-            ("pos[0]", "terminal_v"),
-            ("pos[1]", "charge_removed_ah"),
-            ("pos[2]", "current_a"),
-            ("vel[0]", "open_circuit_v"),
-            ("vel[1]", "branch_v"),
-            ("vel[2]", "case_temperature_c"),
-            ("force_torque", "Margin to the lower voltage limit, in volts."),
-            ("residual", "Conservation residual."),
-            (
-                "flags",
-                "FLAG_BLOCK_MET_NO_MARK in the -10 and -20 degC blocks; FLAG_OUTSIDE_COMPARED_TESTS when the case temperature or the current is outside its block's own tests. Both seal.",
-            ),
-            ("proof", "Not written by the step."),
-        ]),
-    )
-}
-
-/// The three inlet-temperature bands of the fuel-temperature reactor, as the
-/// report names them, in degrees Fahrenheit.
-pub(crate) const REACTOR_FUEL_BAND_DEGF: [&str; 3] = ["56 to 92", "251 to 259", "498 to 501"];
-
-/// The smallest and the largest of three numbers.
-fn span_of(values: &[f64; 3]) -> (f64, f64) {
-    (
-        values.iter().copied().fold(f64::INFINITY, f64::min),
-        values.iter().copied().fold(f64::NEG_INFINITY, f64::max),
-    )
-}
-
-fn reactor_spert3_fuel_card() -> Card {
-    let specimen = reactor_spert3_fuel::ReactorSpert3Fuel::e_core_low_initial_power();
-    // No frequency on the card, so no `π/ω`.
-    let gate = specimen.gate_dt_s().expect("specimen gate");
-    let floor = specimen.floor_dt_s().expect("specimen floor");
-    let inlet_min = specimen.band_inlet_min_k;
-    let inlet_max = specimen.band_inlet_max_k;
-    let reactivity_min = specimen.band_reactivity_min_dollar;
-    let reactivity_max = specimen.band_reactivity_max_dollar;
-    let flow_min = specimen.band_flow_min_m_per_s;
-    let flow_max = specimen.band_flow_max_m_per_s;
-    let (inlet_least, _) = span_of(&inlet_min);
-    let (_, inlet_most) = span_of(&inlet_max);
-    let per_band = |low: &[f64; 3], high: &[f64; 3], unit: &str| {
-        (0..3)
-            .map(|band| {
-                // Written as the shortest decimal that reads back to the same bits.
-                let span = if low[band] == high[band] {
-                    format!("exactly {} {unit}", low[band])
-                } else {
-                    format!("[{}, {}] {unit}", low[band], high[band])
-                };
-                format!("{} degF: {span}", REACTOR_FUEL_BAND_DEGF[band])
-            })
-            .collect::<Vec<_>>()
-            .join("; ")
-    };
-    let inlet_bands = per_band(&inlet_min, &inlet_max, "K");
-    let reactivity_bands = per_band(&reactivity_min, &reactivity_max, "dollars");
-    let flow_bands = per_band(&flow_min, &flow_max, "m/s");
-    finish(
-        "energy",
-        "reactor_spert3_fuel",
-        "The SPERT III E-core test reactor in low-initial-power bursts at three inlet temperatures, from the start of the transient rod's motion to the first maximum of power, with the fuel temperature and the water temperature as state; four constants are fitted, and by the rule fixed beforehand the comparison with its 30 held-back tests failed.",
-        vec![
-            scalar(
-                "inlet_temperature_k",
-                Role::Phase,
-                "K",
-                Some(inlet_least),
-                false,
-                Some(inlet_most),
-                false,
-                format!(
-                    "the coolant at the core inlet at the start, in one of three inclusive bands, the three the report tested: {inlet_bands}. The published minimum and maximum are the lowest and the highest of the three; a temperature between two bands is refused as InletTemperatureOutsideCard, and nothing is rounded to a band: 260 degF itself, 399.8167 K, the report's round name for the middle series, is above that band and is refused. The band picks the generation time, the insertion ramp, the moderator coefficient, the heat capacity of the water, and the spans of the reactivity and of the flow"
-                ),
-            ),
-            scalar(
-                "reactivity_inserted_dollar",
-                Role::Load,
-                "dollar",
-                Some(0.0),
-                true,
-                None,
-                false,
-                format!(
-                    "the reactivity the transient rod inserts in all, ramped in from zero as K t^2 and then held; above zero, and zero or less is refused as ReactivityNotPositive. Compared per band at the reactor periods of the tests: {reactivity_bands} (0.769 to 1.210 dollars at 56 to 92 degF, 0.919 to 1.207 at 251 to 259 degF, 0.837 to 1.227 at 498 to 501 degF). On the 30 tests not in the fit, peak power is within 0.514 to 0.796 of the report's standard deviation RMS in each band, and the time of the peak within 5.22 percent RMS (worst 12.24) at 56 to 92 degF and 8.46 percent RMS (worst 14.88) at 251 to 259 degF. Outside a band's span the card computes the same ramp and feedback at any reactivity above zero. A run is one burst and carries one reactivity: a segment with another is refused as ReactivityChangedDuringBurst"
-                ),
-            ),
-            scalar(
-                "coolant_flow_m_per_s",
-                Role::Load,
-                "m/s",
-                Some(0.0),
-                false,
-                None,
-                false,
-                format!(
-                    "the average coolant flow rate through the core, zero or more in any band, the cold band included; below zero is refused as NegativeFlow. Compared per band: {flow_bands}. The cold band was compared with no flow, 251 to 259 degF at 2.4 to 22 ft/s and 498 to 501 degF at 4.8 to 24 ft/s; the flow enters through the sweep of the water temperature alone. Outside those flows the card computes the same equations. Each segment may carry its own flow rate, booked per step in the ledger at that step's flow; every compared burst holds one flow, and a burst whose flow changes is computed with the same equations"
-                ),
-            ),
-        ],
-        floor,
-        "a locked 1e-9 s: the card's own constant, a step that still moves the clock at 1e7 s",
-        gate,
-        "0.2 of the reduced generation time of the cold band, the time constant of the prompt pole at zero net reactivity, where every run starts; the same ceiling in all three bands. Past the compared spans the step ceiling follows the state: the card's step refuses as DtAboveStateCeiling, the state kept, a step longer than 0.2 of the time constant of the fastest pole at the state it starts from or would land on, or 0.045 of it when that pole is growing. The poles are the prompt pole |1 - rho| / l*, with rho the net reactivity and l* the band's, 2.15, 2.18 or 2.25 ms; the feedback pole of the fuel and the water temperature; and the sweep of the water, 2 v / L, with L 0.9728 m. At this ceiling the growing pole binds above a net reactivity of about 1.22 dollars, and the sweep above a flow of about 226 m/s: a step of at most 0.045 l* / (rho - 1) holds through the ramp to rho dollars, 97 microseconds at 2 dollars in the cold band",
-        None,
-        format!(
-            "inlet_temperature_k picks the band. A run is one burst, with one reactivity: every segment carries the reactivity of the first, and a segment whose reactivity is not the first segment's refuses the whole run before its first step as ReactivityChangedDuringBurst, with nothing sealed. The card is one insertion, ramped in and then held, which is what the report tested: a second insertion, a withdrawal or a jump in the inserted reactivity is not on the card. The card's own step refuses the same change once the first step has landed, and keeps the state. Each segment may carry its own coolant flow rate. inlet_temperature_k is in kelvin. The reactor starts at {} MW in equilibrium, with zero net reactivity and both temperature rises zero, at the moment the transient rod begins to move. The reactivity is ramped in as K t^2 up to the load and held there, with K the band's own; FLAG_ROD_MOVING is set while the inserted reactivity is still below the load. fuel_temperature_rise_k and water_temperature_rise_k are rises above the inlet temperature. A single step takes the inlet temperature and starts again from there at each call, so single steps cannot be chained. A run ends at the first maximum of power after the insertion is complete: the step after it is refused as PastFirstMaximum and the run is sealed with that refusal. Its last landed state carries peak_power_mw, peak_energy_mws and peak_time_s, the highest landed sample, which lies within one step of the true maximum; the card does not interpolate. The longest time of peak in Tables III and V is 13.7 s; the largest energy to peak in Tables III and V is 15 MW s; the largest peak power is 410 MW. Past them the card computes the same burst to its first maximum, with no limit of time, energy or power: the fuel lump is about a fourteenth of the fuel and has no melting limit on the card. At 0.3 dollar in the cold band the first maximum is at 177 s; at 4 dollars it is 57,900 MW with 157 MW s released and a fuel_temperature_rise_k of 13,300 K. A run of 1,000,000 steps at the floor stops at one millisecond, completed, with the rod still moving. NegativeState, NegativeTime and InconsistentState are refusals of the card's step for a state handed to it that the card did not write; this door takes the inlet temperature and nothing else of a state, and starts every run and every step from the card's own start, so no request reaches them. A step of zero or less is refused as NonPositiveDt before the step floor is tested.",
-            format!("{:e}", specimen.initial_power_mw),
-        ),
-        &[
-            "NonFiniteInput",
-            "NonFiniteState",
-            "NonPositiveDt",
-            "InvalidCard",
-            "InletTemperatureOutsideCard",
-            "ReactivityNotPositive",
-            "NegativeFlow",
-            "PastFirstMaximum",
-            "NegativeTime",
-            "DtAboveStateCeiling",
-            "NegativeState",
-            "ReactivityChangedDuringBurst",
-            "InconsistentState",
-            "SpontaneousGeneration",
-            "FirstLawBreach",
-        ],
-        vec![
-            Advisory {
-                name: "FLAG_PROMPT_SUPERCRITICAL",
-                mask: reactor_spert3_fuel::FLAG_PROMPT_SUPERCRITICAL,
-                seals: true,
-            },
-            Advisory {
-                name: "FLAG_ROD_MOVING",
-                mask: reactor_spert3_fuel::FLAG_ROD_MOVING,
-                seals: true,
-            },
-        ],
-        slots(&[
-            ("t", "Time since the transient rod began to move, in seconds."),
-            ("pos[0]", "power_mw"),
-            ("pos[1]", "energy_mws"),
-            ("pos[2]", "reactivity_net_dollar"),
-            ("vel[0]", "fuel_temperature_rise_k"),
-            ("vel[1]", "water_temperature_rise_k"),
-            ("vel[2]", "peak_power_mw"),
-            ("force_torque", "Rate of change of power, in MW per second."),
-            ("residual", "Conservation residual."),
-            (
-                "flags",
-                "FLAG_PROMPT_SUPERCRITICAL: net reactivity above one dollar. FLAG_ROD_MOVING: the inserted reactivity is still below the load. Both seal.",
-            ),
-            ("proof", "Not written by the step."),
-        ]),
-    )
-}
-
 fn fingerpad_p02_glass_card() -> Card {
     let pad = fingerpad_p02_glass::FingerPadP02Glass::on_glass();
     // The model has no pole, so no `π/ω` is published.
@@ -2597,162 +2068,6 @@ fn fingerpad_p02_glass_card() -> Card {
     )
 }
 
-fn tokamak_jet_dte1_card() -> Card {
-    let tokamak = tokamak_jet_dte1::TokamakJetDte1::elmy_h_mode();
-    // The ceiling and the floor are locked constants of the card; it has no
-    // frequency, so no `π/ω` is published. Past the compared envelope the
-    // card's own step holds dt to the ceiling of the state.
-    let gate = tokamak.gate_dt_s().expect("specimen gate");
-    let floor = tokamak.floor_dt_s().expect("specimen floor");
-    finish(
-        "energy",
-        "tokamak_jet_dte1",
-        TOKAMAK_SUMMARY,
-        vec![
-            scalar(
-                "thermal_energy_j",
-                Role::Phase,
-                "J",
-                Some(0.0),
-                true,
-                None,
-                false,
-                "above 0 J: the thermal energy of the plasma at the start; zero or less is refused as EnergyOutsideCard. Compared with thermal energies of 0.462 to 9.57 MJ and fast-ion energies of 5.59 kJ to 1.62 MJ; on 42982 the thermal energy error was 7.9 percent and the fast-ion 22.5 percent of peak. Compared at plasma temperatures of 0.777 to 4.30 keV (42976 reached 6.3 keV), at normalised beta 0.224 to 2.21 and at confinement times of 0.150 to 5.72 s (42976 reached 8.5 s). Outside those spans the card computes the same equations, and nothing was compared there. Under the first load the start, and every step, is held to the limits of physics: a temperature from 0.2 keV with at most 100 keV at the centre of the profile, the range of the reactivity fit (TemperatureBelowReactivityFit, TemperatureAboveReactivityFit), and a normalised beta of the two stores of at most 2.8, the Troyon limit (BetaAboveTroyon)".into(),
-            ),
-            scalar(
-                "fast_ion_energy_j",
-                Role::Phase,
-                "J",
-                Some(0.0),
-                false,
-                None,
-                false,
-                "at least 0 J: the energy of the beam ions, the ion-cyclotron tail and the fusion alphas at the start; below zero is refused as EnergyOutsideCard. Compared at 5.59 kJ to 1.62 MJ (42976 reached 3.5 MJ); outside it the card computes the same equations. With the thermal energy it is held to the Troyon limit of the thermal_energy_j field".into(),
-            ),
-            scalar(
-                "elapsed_time_s",
-                Role::Phase,
-                "s",
-                Some(0.0),
-                false,
-                None,
-                false,
-                "at least 0 s: the time since the start of the heated window at the start of this request, and t_s of the state it starts from. It is required. A new pulse states 0; a run or a single step continued from a returned state states that state's t_s. A clock below zero is refused as NegativeTime. The card has no end in time: the longest compared heated window is 5.475 s, pulse 42982, and past it the card computes the same equations with nothing compared. A step too small to move the clock at its time, which a step of 1e-6 s first is at 2^34 s, is refused as StepBelowClockResolution".into(),
-            ),
-            scalar(
-                "heating_power_w",
-                Role::Load,
-                "W",
-                Some(0.0),
-                false,
-                None,
-                false,
-                "at least 0 W: the neutral-beam power less shine-through plus the coupled ion-cyclotron power; below zero is refused as HeatingPowerNegative. Compared at 0.124 to 24.3 MW of heating; pulse 42976, outside the fit and the card's regime, reached 25.1 MW, with errors of 19.2, 25.1 and 34.7 percent of peak in thermal energy, fast-ion energy and fusion power (targets 14.5, 25 and 25). Outside that span the card computes the same equations. It takes loads below the L-H power threshold too, where the plasma is in L-mode, outside the H-mode scaling it uses; the compared runs start their heated window at 0.124 MW".into(),
-            ),
-            scalar(
-                "ohmic_power_w",
-                Role::Load,
-                "W",
-                Some(0.0),
-                false,
-                None,
-                false,
-                "at least 0 W: the ohmic power; below zero is refused as OhmicPowerNegative. Compared at 0.173 to 2.44 MW of ohmic power; outside it the card computes the same equations".into(),
-            ),
-            scalar(
-                "line_density_per_m3",
-                Role::Load,
-                "1/m^3",
-                Some(0.0),
-                true,
-                None,
-                false,
-                "above 0 per cubic metre: the line-averaged electron density; zero or less is refused as DensityNotPositive, since the slowing-down time divides by it. It is held to the Greenwald density of the segment's current, 1e20 x Ip[MA] / (pi x 0.9386^2) per cubic metre, and refused above it as DensityAboveGreenwald. Compared at line-averaged densities of 1.65e19 to 7.85e19 per cubic metre and at up to 0.834 of the Greenwald density; outside them the card computes the same equations. A frame carries FLAG_NEAR_DENSITY_LIMIT above 0.85 of the Greenwald density".into(),
-            ),
-            scalar(
-                "plasma_current_a",
-                Role::Load,
-                "A",
-                Some(0.0),
-                true,
-                None,
-                false,
-                "above 0 A: the plasma current, as a size; zero or less is refused as PlasmaCurrentNotPositive. With the toroidal field it sets the edge safety factor, 5 a^2 Bt / (R Ip[MA]) times a shape factor of 2.428, and a pair under 2 is refused as SafetyFactorBelowLimit. Compared at 1.65 to 3.84 MA and at edge safety factors of 3.66 to 4.14 (the card's formula; JET's own equilibrium value is about a fifth higher); pulse 42976, outside the card's regime, reached 4.16 MA and 3.39, with the errors stated under heating_power_w. Outside these the card computes the same equations".into(),
-            ),
-            scalar(
-                "toroidal_field_t",
-                Role::Load,
-                "T",
-                Some(0.0),
-                true,
-                None,
-                false,
-                "above 0 T: the toroidal field at the major radius, as a size; zero or less is refused as ToroidalFieldNotPositive. With the plasma current it must keep the edge safety factor at 2 or more. Compared at 1.80 to 4.04 T; outside it the card computes the same equations".into(),
-            ),
-            scalar(
-                "tritium_fraction",
-                Role::Load,
-                "1",
-                Some(0.0),
-                false,
-                Some(1.0),
-                false,
-                "from 0 to 1, both inclusive: tritium atoms per fuel atom; outside it is refused as FuelMixOutsideCard. 0 is deuterium and 1 is tritium, and neither gives D-T fusion power. Fusion power was compared at tritium fractions 0 to 0.034 (deuterium and the trace-tritium pulse 43134) and 0.451 to 0.504 (42982, outside the fit, at 0.451 and the fitted 42762 at 0.503, rounded up by 0.001); no pulse lies from 0.034 to 0.451, and at 0.75 to 0.93 three training pulses put it off by 33 to 65 percent of its peak. On 42982 the fusion energy was 0.743 of the measured. At every fraction the card computes the same D-T power, in proportion to the deuterium fraction times the tritium fraction, and its alpha heating feeds the fast-ion store".into(),
-            ),
-        ],
-        floor,
-        "a locked 1e-6 s: at 1 MW it moves a store of 20 MJ by one joule, which 64-bit numbers resolve to nine figures, and it moves the clock up to 2^34 s",
-        gate,
-        "a locked 1 ms, the largest step the card stands behind anywhere; past the compared envelope the step ceiling follows the state. The card's own step refuses as DtAboveStateCeiling, with nothing changed, a step longer than the smallest of an eighteenth of the slowing-down time, a forty-sixth of the loss time, 0.31 times the confinement time, and a forty-eighth of the coupling time, 2 times the slowing-down time times the thermal energy over the fast-ion energy, at the state the step starts from and where its trial step lands. Each fraction is the largest whole one at which 1 ms still fits at the fastest corner of the compared envelope: a slowing-down time of 18.0 ms at 0.777 keV and 7.85e19 per cubic metre, a loss time of 46.5 ms at the smallest compared confinement time of 0.150 s, and a coupling time of 48.1 ms at 0.777 keV with 1.62 MJ of fast ions. Inside the envelope the state ceiling is at least 1.0018 ms, so it never binds on a compared run. Over the eight training pulses at 1 ms the largest conservation residual is 5.1e-10 against a limit of 2e-8, and past every edge of the envelope, at the state ceiling, at most 1.5e-9. A start with eight times the thermal energy in its fast ions at 2e20 per cubic metre and 1 keV exceeds the ledger's limit after about a hundred steps at the state ceiling and is refused as FirstLawBreach; at a quarter of the ceiling it closes. The loss time holds the step at confinement times near 37 ms, where a ceiling from the slowing-down time alone would leave a step refused as FirstLawBreach with no energy lost",
-        None,
-        "The compared envelope is that of the nine ELMy H-mode pulses, the eight fitted and 42982, outside the fit, run through the card at 1 ms, each bound the smallest or largest value of those runs rounded outward in the third figure. Pulse 42976, a hot-ion pulse outside the card's regime, is outside it; its errors are in the validation record. Outside the envelope the card computes the same equations; each field's bound states the compared span and the error there. Every load field is held through a segment and a later segment may change any of them: a run of a pulse is one segment for each interval of its measured traces. A value outside its published bound, a density above the Greenwald density of the segment's current, or a current and field whose safety factor is under 2, in any segment of a run, refuses the whole run before its first step. The state is held at the start and after every step to the limits of physics, a thermal energy above zero, the range of the reactivity fit and the Troyon limit, and every step to the ceiling of its state (DtAboveStateCeiling, under dt_s); these depend on the state, so a run that reaches one of them part way is sealed with that refusal on its last landed step. A run starts at elapsed_time_s with its ledger anchored at the two energies given and no fusion energy released. A single step starts in the same way at each call: its thermal_energy_j, fast_ion_energy_j and t_s handed back as a new start, t_s as elapsed_time_s, continue the same plasma on the same clock, and fusion_energy_j and the ledger begin again at zero; no limit depends on either. The state reports the temperature, the loss power, the confinement time, the slowing-down time, the fusion power and its thermal part, the normalised beta, the Greenwald fraction and the safety factor under the load of the last step; they are zero at the start. A frame carries FLAG_NEAR_DENSITY_LIMIT while the density is above 0.85 of the Greenwald density; the compared span reached 0.834. A step of zero or less is refused as NonPositiveDt before the step floor is tested. The clock is a running sum from elapsed_time_s, t_s += dt_s in 64-bit arithmetic, and the card has no end in time.".into(),
-        &[
-            "NonFiniteInput",
-            "NonFiniteState",
-            "NonPositiveDt",
-            "InvalidCard",
-            "HeatingPowerNegative",
-            "OhmicPowerNegative",
-            "PlasmaCurrentNotPositive",
-            "ToroidalFieldNotPositive",
-            "FuelMixOutsideCard",
-            "DensityNotPositive",
-            "DensityAboveGreenwald",
-            "SafetyFactorBelowLimit",
-            "EnergyOutsideCard",
-            "TemperatureBelowReactivityFit",
-            "TemperatureAboveReactivityFit",
-            "BetaAboveTroyon",
-            "NegativeTime",
-            "StepBelowClockResolution",
-            "DtAboveStateCeiling",
-            "SpontaneousGeneration",
-            "FirstLawBreach",
-        ],
-        vec![Advisory {
-            name: "FLAG_NEAR_DENSITY_LIMIT",
-            mask: tokamak_jet_dte1::FLAG_NEAR_DENSITY_LIMIT,
-            seals: true,
-        }],
-        slots(&[
-            ("t", "Time since the start of the heated window, in seconds."),
-            ("pos[0]", "thermal_energy_j"),
-            ("pos[1]", "fast_ion_energy_j"),
-            ("pos[2]", "fusion_energy_j"),
-            ("vel[0]", "fusion_power_w"),
-            ("vel[1]", "temperature_kev"),
-            ("vel[2]", "beta_normalised"),
-            ("force_torque", "Loss power of the thermal plasma, in watts."),
-            ("residual", "Conservation residual."),
-            (
-                "flags",
-                "FLAG_NEAR_DENSITY_LIMIT: the line-averaged density is above 0.85 of the Greenwald density. It seals. The compared span of the density reached 0.834 of the Greenwald density; from 0.85 to the Greenwald density itself the frame carries it.",
-            ),
-            ("proof", "Not written by the step."),
-        ]),
-    )
-}
-
 /// The data of the JSI TRIGA reactor's validation record.
 pub(crate) const REACTOR_TRIGA_JSI_DATA: &str = "The pulse database of the Jozef Stefan Institute, trigapulse.ijs.si: a table of 757 pulses from 1991 to 2023 and, for each pulse, a record of power and two fuel thermocouples at 20,000 samples a second. The constants taken from publications are from the institute's evaluation of its pulse experiments and, for the hot-rod factor, a University of Ljubljana master's thesis; cite gives both. None of the site's measured values is stored in the card. 43 recorded pulses of cores 215, 217 and 231 were read. Fitted on 36 of them: 1.4 to 3.0 printed dollars, a peak at least ten times the noise, a scram found, a printed value that follows the rod table. Compared with 20 table rows of the same cores not in the fit, on the table's peak power, energy within 50 ms of the peak and thermocouple maximum: 12 rows of core 231 from 22 and 28 March 2018, at 1.4 to 2.6 printed dollars, and 8 repeats of core 217 at 2.5 dollars from 24 March 2015. The start temperature and the scram instant of each row are set by rule.";
 
@@ -2767,369 +2082,6 @@ pub(crate) const REACTOR_TRIGA_JSI_RESULT: &str = "On the 36 fitted pulses, 1.4 
 
 /// The limits of the JSI TRIGA reactor's validation record.
 pub(crate) const REACTOR_TRIGA_JSI_LIMITS: &str = "Ten constants are fitted in the card: for each of the three rod-worth tables a scale and an offset on the printed dollars (scale 0.6921, 0.6677 and 0.7191, offset -0.1204, -0.1366 and -0.04949 dollars, for cores 215, 217 and 231); the feedback coefficient, 6.241e-5 per K at 294 K, and its rise, 8.718e-8 per K2; the generation time, 29.59 microseconds, where the published value is 40 with 8 percent; and the heat flow from fuel to water, 890.6 W/K. More are fitted outside the card, to instruments: the pulse channel's factor for each core's sessions (0.9838, 0.9743 and 1.043; their geometric mean is 1 by convention, so two are free), the thermocouple's delay in the recording chain of 2014 and 2015 (1.336 s), and two delays in series in the chain of 2018 (1.152 s each): five free numbers outside the card and fifteen fitted in all. For a session whose channel factor is not fitted the floor on power or energy is about 4 percent at one sigma, and 7 to 8 percent between two sessions (pulses 219 and 243). Sourced and not fitted: the delayed fraction and the six groups, the fuel mass, the heat capacity, the rod's rate, and the hot-rod factor 1.387. The card's form, its targets and its compared range were set with the 43 recorded pulses read. Twelve forms read the power after the pulse too low in every bin of reactivity; the thirteenth, with the generation time fitted, is the one served. When the targets were set, the peak power of every row outside the fit had been read, and the spread and range of the thermocouple maxima of the 2015 repeats; their energies within 50 ms of the peak and the thermocouple maxima of 2018 had not. All three are outside their targets: worst 3.75 and 3.10 against 3, and RMS 2.01 against 1.5; the fourth measure outside, the peak power of 2018, reaches 3.02 on its worst row. The compared range of reactivity, 2.0 to 3.0 printed dollars, was set with the 20 rows outside the fit read, for the reason the result gives: below 2.0 dollars the card read 29, 21 and 9 percent low in peak power at 1.4, 1.6 and 1.8 dollars, and from 2.0 dollars up it was within 3.7 percent. The ten constants are the fit to the 36 pulses from 1.4 to 3.0 dollars. Rows not in the fit exist from 2.0 to 2.6 dollars on one day and at 2.5 dollars on core 217; nothing unfitted lies above 2.6 dollars. The energy within 50 ms of the peak is 0.99 correlated with peak power on the 2018 rows and is not the energy to the scram; no measure outside the fit tests the energy to the scram. A pulse determines products of the constants. A generation time of 29.59 microseconds with a printed dollar worth 0.69, and a feedback that falls back by a fifth with a time constant of 1.1 s after the pulse with a printed dollar worth 0.92 and the published 40 microseconds, fit the recorded pulses equally (pooled error 3.04 and 3.06 percent); the card takes the one with fewer constants. No constant of the card is therefore the reactor's own value of that quantity. What the pulses do determine: the inverse period for each printed dollar, 158 to 170 per second, 3 to 10 percent under the published 175, and prompt criticality at 1.27 to 1.32 printed dollars. The fitted generation time of 29.59 microseconds stands for the delayed fraction over the generation time, 237 per second against the published 175, and is not the reactor's generation time. The card cannot see the day. A printed dollar belongs to a day's reference as well as to a table; the comparison charges 0.03 dollars for it, from two pairs of days, and 22 March 2018 needed about three times that. How many of the six measures outside the fit come within their targets follows that charge: one of six with none or with 0.015 dollars, two with 0.03 and six with 0.06; on the fitted pulses nine of the twelve bin measures with 0.015 dollars, which would give a range of 2.25 to 2.75 dollars, and twelve with 0.03. 0.03 printed dollars moves the peak power by 44 percent at 1.4 dollars, 31 at 1.5, 21 at 1.6, 13 at 1.8 and 9 at 2.0 (core 231): below 2.0 dollars the uncertainty is as wide as the answer, and the card there is ill-conditioned and not biased; it computes there with the same equations. From 2.0 dollars up the day is still unseen: the two rows of 22 March 2018, printed 1.5 and 2.0 dollars, read 44 and 23 percent low, and a caller's printed 2.0 dollars of such a day is answered as the fitted day's. The power, and with it the energy and the rise of the fuel temperature, rests on the institute's pulse channel, whose calibration differed by 7.7 percent between November 2014 and March 2015 on two pulses of the same width and the same thermocouple reading; the card's power is the mean of three calibrations. The fuel temperature is the core average. It is compared with one thermocouple at the centre of one element, 6753 at position B1, with the instrument's response in between: the hot-rod factor is a calculated ratio of element powers (1.387 with 0.003, from the thesis), the factors along the element and inside it at the thermocouple are unsourced and taken as 1, and the delay is fitted. The traces are consistent with 1.387 and do not confirm it: with the factor left free they prefer 1.585 with a heat flow of 2930 W/K, and any factor from 1.39 to 1.73 fits as well or better. The card's heat flow, 890.6 W/K, is conditional on 1.387, and the thermocouple constrains the core-average rise to roughly 5 percent above and 20 percent below. That comparison tests the product of energy, heat capacity and those factors seconds after the pulse; it does not test the temperature during the pulse, in which the thermocouple shows under 4 percent of its rise, nor the temperature of the hottest fuel. No comparison isolates the dependence on the starting temperature. At 2.0 printed dollars and above the recorded pulses started at 20.9 to 29.2 degC: 24.00 to 27.94 degC on core 215, 21.31 to 29.23 on core 217 and 20.90 to 22.81 on core 231. Every row outside the fit at 2.0 printed dollars and above started inside its own table's span. On the compared pulses the rods dropped 1.51 to 7.45 s after the peak, none while the transient rod was moving. The records compared run to 14 s after the fire signal, to 18.3 MW s released, 954 MW and a core-average fuel temperature of 585 K; the quadratic feedback is fitted from 294 to about 585 K. Outside all of that the card computes the same equations. It refuses a start that is not liquid water, a reactivity of zero or less or above the rod's whole worth, a rod-worth table other than the three, a reactivity changed during a run and rods raised after the scram. The 20 rows outside the fit are other days on fitted tables, an interpolation in reactivity; the start temperature and the scram instant of each are set by rule, and those at 2.0 printed dollars and above lie inside both compared spans. The scram's worth, 8 dollars, and the rod's rate and whole worth, 4.16 dollars from the rod table of core 253, are sourced; no measurement here tests them. Nothing tests another core loading or a second pulse on warm fuel. A second program, written apart, recomputes the comparisons on the same machine; the measurements are the institute's own, and no other laboratory has repeated them.";
-
-/// The one line of the C-core reactor in `list_cards`.
-pub(crate) const REACTOR_SPERT3_CCORE_SPECIMEN: &str = "The SPERT III C-core test reactor (stainless-steel-clad, highly enriched plates) in step transients from room temperature at 0 to 2500 psig with no flow, or 200 to 20,000 gpm at 230 psig only, through the first maximum of power to the first maximum of the plate surface temperature at the hot spot; two constants are fitted, and by the rule fixed beforehand the comparison with its 39 held-back transients failed on all three lines.";
-
-/// What the C-core reactor card is.
-pub(crate) const REACTOR_SPERT3_CCORE_WHAT: &str = "The SPERT III reactor at the National Reactor Testing Station, Idaho, with the C-19/52 core: 93 percent enriched UO2-stainless-steel plates clad in stainless steel, 16.8 g of U-235 a plate, 30.6 kg in all, 36 in active length. Step insertions of reactivity from room temperature (21 to 36 degrees Celsius) at system pressures of 0 to 2500 psig with no forced flow, and at 230 psig with 200 to 20,000 gpm. Point kinetics with six delayed groups, and four lumped temperatures: the core-average plate and water, and a plate and water at the hot spot where the thermocouples sat, with the power density multiplied by the measured flux peaking 2.04 x 1.30. The temperature the card answers for is the plate SURFACE temperature at the hot spot, not a fuel temperature. A run ends at the first maximum of that temperature after the first maximum of power. Outside the compared starts, pressures, flows, reactivities and times the card computes the same equations: from any start of liquid water at any absolute pressure above zero, any flow of zero or more, changed from segment to segment, any reactivity above zero, for as long as a run asks.";
-
-/// The data behind the C-core reactor card.
-pub(crate) const REACTOR_SPERT3_CCORE_DATA: &str = "IDO-16918 (OSTI 4042264), on room-temperature power excursions in SPERT III at pressure and flow: its appendix tabulates 126 step transients with pressure, initial temperature, flow, period, peak power, energy to peak and the maximum plate surface temperature read by thermocouples spot-welded to a plate at the flux peak of a central assembly. Core constants from IDO-17138, Table B-1. 15 rows are excluded (11 with an abnormal thermocouple reading, two likely misprints, two with an initial temperature missing or in doubt). Fitted on 72 rows. Compared with the other 39, not in the fit: every third remaining row and the whole 1000 psig series.";
-
-/// The pass lines of the C-core reactor card.
-pub(crate) const REACTOR_SPERT3_CCORE_PASS_LINE: &str = "Error measure: exp(RMS of ln(card / measured)) - 1 over the 39 rows not in the fit, for each of peak power, energy to peak and the maximum plate surface temperature rise. Target: at most 20 percent, and below each of three baselines fitted on the same 72 rows: Fuchs-Nordheim on the measured reciprocal period, the nearest fitted row, and a straight line in the logarithm of the reciprocal period. Record SHA-256 8e2e56cf3e93099f19c6a17537acb76708dc99da682915ea602d84005cbae72f.";
-
-/// The result of the C-core reactor card's comparison.
-pub(crate) const REACTOR_SPERT3_CCORE_RESULT: &str = "On the 39 transients not in the fit, against the target of 20 percent and the three baselines. Peak power: 33.3 percent (38 rows), against Fuchs-Nordheim 176 percent, the nearest fitted row 16.7 percent and the straight line 70.4 percent. Energy to peak: 56.7 percent, against 204, 17.2 and 61.6. Maximum plate surface temperature rise: 71.0 percent (36 rows), against 181, 18.1 and 36.8. The card is closer than Fuchs-Nordheim and the straight line on power and energy, and farther than the nearest fitted row on all three. On the 1000 psig series, not in the fit: peak power 13.5 percent, energy 11.7 percent, temperature rise 67.9 percent, all low.";
-
-/// The limits of the C-core reactor card.
-pub(crate) const REACTOR_SPERT3_CCORE_LIMITS: &str = "Two constants are fitted on 72 rows: the plate-to-coolant conductance with no flow, 6403.73 W/m^2 K (Dittus-Boelter adds the flow), and the share of fission energy deposited directly in the water, 0.551915. The physical share is a few percent, from gamma rays and neutron slowing: 0.551915 is an effective value that absorbs the boiling and void feedback the card leaves out, and is not a property of the core. The whole table, rows outside the fit included, was read before the split and the rules that exclude rows were chosen; no model was run before they were. The card has no boiling, no void, no melting of the plate and no pressure term, and gives the same transient at every pressure, where the measured energy to peak doubles from 0 to 2500 psig; on the 1000 psig series, not in the fit, peak power reads 13.5 percent, energy 11.7 percent and temperature rise 67.9 percent low. The pressure sets where the water at the start boils, and nothing else. Compared on starts at 21 to 36 degC; the water properties of the heat transfer are those of 25 degC. The isothermal temperature coefficient is measured to 204.44 degC and continues straight past it. Flow is compared at 200 to 20,000 gpm (0.055 to 5.49 m/s), at 230 psig; the Dittus-Boelter term is a turbulent correlation and is blended with the fitted stagnant conductance. Every compared transient holds one flow. Compared with reactivities of 0.412 to 1.305 dollars with no flow and 0.870 to 1.305 with flow; on the 39 transients not in the fit, peak power 33.3 percent, energy 56.7 percent, plate surface temperature rise 71.0 percent, against a target of 20. Where the hot-spot plate temperature has no maximum before 200 s (long periods, and flow), the comparison takes the rise reached at 200 s; those 11 rows not in the fit read 2.2 times high on average. The largest energy the card reaches inside its compared range is about 58,000 MW s (53,000 from a start at 36 degC), at the slowest compared flow insertion with the most flow, by 200 s; the largest power about 1050 MW. Past those the card computes the same transient, and nothing stops it in their place: it has no melting of the plate, no boiling and no void. The power and energy rows at flow and long period whose measured power still rose at the scram are left out of the error measures. The delayed groups are Keepin's for U-235, not measured for this core. The ledger names a wrong method; it is not a bound on how closely the physics matches the reactor.";
-
-/// The one line an agent reads in `list_cards`.
-pub(crate) const RUNAWAY_18650_LCO_SPECIMEN: &str = "Thermal runaway of one 18650 lithium-ion cell, LiCoO2 against graphite, in a held oven, under a heater or in an adiabatic calorimeter: the four decomposition stages of Hatchard et al. (2001) with every constant as Kim et al. (2007) publish it, the cell's heat capacity and its loss to the oven, an energy ledger every step. Compared after it was built, by lines fixed before any measured number was read, with open records of LiCoO2 18650 cells: 8 of 23 lines met. It self-heats at 83 degC where measured cells start at 100 to 150 degC, runs away in a 155 degC oven in 24 minutes where Hatchard's cell took 51, and runs away at 150 degC where that cell did not; its highest temperatures lie 30 to 85 K under six adiabatic measurements.";
-
-/// What the card is.
-pub(crate) const RUNAWAY_18650_LCO_WHAT: &str = "One 18650 lithium-ion cell, 18 mm across and 65 mm high, LiCoO2 cathode and graphite anode, as one lumped body in thermal abuse: SEI decomposition, the anode with the electrolyte (slowed by the SEI it grows), the cathode with the electrolyte (autocatalytic in its converted part) and the decomposition of the electrolyte, each an Arrhenius stage, heating the cell, which loses heat to an oven by convection and radiation or, in a calorimeter, none.";
-
-/// The sources of the card's numbers and of the measurements it was compared with.
-pub(crate) const RUNAWAY_18650_LCO_DATA: &str = "Every constant published, none fitted: the kinetics, heats, contents and starting amounts of Ostanek's Simulink model of the Hatchard-Kim mechanism (Purdue University Research Repository 10.4231/NWZX-2675), which agree in the frequency factors, activation energies, heats and starting amounts with Lopez, Jeevarajan and Mukherjee (J. Electrochem. Soc. 162, A2163); Lopez prints other contents (1.39e3, 1.3e3 and 5.0e2 kg/m3) and the card takes Ostanek's (610.4, 1221.0 and 406.9). The jelly roll's density, 2580 kg/m3, and specific heat, 830 J/(kg K), are Hatchard's, as Coman and co-authors reprint them (J. Electrochem. Soc. 164, A587); the convective coefficient 7.17 W/(m2 K) and emissivity 0.8 of the oven test are Lopez's and Ostanek's. Hatchard's paper (J. Electrochem. Soc. 148, A755) and that of Kim, Pesaran and Spotnitz (J. Power Sources 170, 476) are not open and were not read. Measurements compared, all open: Hatchard's oven tests of a LiCoO2 18650 at 145, 150 and 155 degC from 28 degC, as Lopez reprints them in a figure and Ostanek (J. Electrochem. Soc. 170, 090512) states their timing (in sample: the oven constants are Hatchard's own); Golubkov's LCO/NMC 2:1 cell heated at 2 degC/min (RSC Adv. 4, 3633); Mendoza-Hernandez's fresh LiCoO2 2550 mAh cell at 100 percent state of charge by heat-wait-seek (E3S Web Conf. 16, 07001); and seven adiabatic LiCoO2 rows that Lei reprints from other papers (Batteries 3, 14).";
-
-/// The lines of the comparison, fixed before any measured number was read.
-pub(crate) const RUNAWAY_18650_LCO_PASS_LINE: &str = "For each compared test of an 18650 cell with a LiCoO2 cathode, alone or blended: the onset of self-heating within 15 K; the onset of runaway within 20 K; the highest temperature within 100 K; in a held oven, runaway exactly when the cell ran away, and the time from the start of the exposure to runaway within 25 percent; in a calorimeter, the time from the onset of self-heating to the onset of runaway within a factor of 2. Each line stands alone; nothing is averaged across cells. Tests of NMC, NCA and LFP cells are reported as context, outside the 23 lines. Record SHA-256 b704cdf7d0d8bdde297c8ffa7e4b157f4edf633f26890c94e6f4fbfe65a60ad4.";
-
-/// The result of the comparison.
-pub(crate) const RUNAWAY_18650_LCO_RESULT: &str = "Run once through the gateway on 23 lines: within the targets on 8, 2 of 10 on the primary records and 6 of 13 on the reprinted rows. Hatchard's oven at 155 degC: the card runs away, as the cell did, and reaches 20 K per minute at 24.3 minutes against 51.1 (Ostanek's timing; 40.5 to 48 read by eye from Lopez's figure), 52 percent early (target 25 percent). At 150 degC the card runs away at 34.7 minutes and peaks at 481.7 degC where the cell did not run away in 120 minutes; at 145 degC the card reaches 10 K per minute at 129 minutes and peaks at 193.9 degC where the cell held near 148 degC, which the line counts as a runaway, though inside the 120 minutes the record covers the card does not run away either. Golubkov's LCO/NMC cell heated at 2 degC/min: self-heating onset 83.1 degC against 149 (target 15 K), runaway onset 177.4 degC against 208 (20 K), highest temperature 700.7 degC against 853 (100 K). Mendoza-Hernandez's fresh LiCoO2 by heat-wait-seek: self-heating onset 83.7 degC against 100.0 (15 K); runaway onset at 1 degC/min 154.0 degC against 144.9 (20 K), within; self-heating to runaway 11.5 hours against about 5.7, a factor of 2.03 (target 2). The seven reprinted LiCoO2 rows: every onset 32.8 to 58.8 K early (target 15 K); every one of the six highest temperatures within its target, 624.4 degC against 654.3 to 708.8 (100 K). Before the comparison the card's equations were run outside the engine against an independent integration (within 0.002 K before the runaway and 0.2 K at its peak) and, with Ostanek's own constants, against his published Simulink run (peak within 0.5 K, its time 41 s early). The same equations with Ostanek's constants also run away at 150 degC: the early runaway is the published model's, not this card's arithmetic.";
-
-/// What the comparison does not test, and what the card leaves out.
-pub(crate) const RUNAWAY_18650_LCO_LIMITS: &str = "Outside the targets on four of five primary records. The card was built, and its targets written, before any measured number of the records was read. The card is the lumped Hatchard-Kim model as published: one temperature for the whole cell, with the jelly roll's density and specific heat over the can's whole volume, 35.42 J/K, where a measured 44 g LiCoO2 cell holds about 42 J/K (FAA DOT/FAA/TC-TN15/17); the can's whole surface, ends included, loses heat. Left out: venting and the heat and electrolyte the vented gas carries, its combustion, the internal short circuit, the electrical energy of the charge, the melting of the separator and of the aluminium collector, a heat capacity that changes with temperature, the temperature inside the cell, the calorimeter's own heat capacity and its tracking. The card is a fully charged cell; it has no state of charge and no ageing. The anode stage slows itself as its SEI grows: in a cell that cools, about a quarter of the anode's lithium is left, and the end EveryReactantConsumed, the heat held falling to 0.0205 J, is reached by a cell held at 1,200 K after 1.6 hours and at 900 K after 6.2 days; the runaway's peak is in the frames. The commercial cells compared are not Hatchard's cell: their loadings, electrolytes, vents and makers differ, and the measured onsets use thresholds and fits the card reads at its own 0.02 K per minute (FLAG_SELF_HEATING) and 10 K per minute (FLAG_RUNAWAY) or at the paper's stated rate. Hatchard's oven records are read by eye from a reprinted figure, and two readings of the 155 degC timing differ by 3 to 10 minutes. The secondary rows are reprints whose heat-wait-seek settings and thresholds are not stated. The ledger holds the heat stored to the heat released, the heater's heat and the heat lost, within 1e-6 of the cell's chemical heat: it catches a step that does not follow the reactions or a falsified state, and it cannot catch a wrong constant or a wrong mechanism. One party wrote the card, wrote the targets and ran the comparison, on one machine.";
-
-fn runaway_18650_lco_card() -> Card {
-    let cell = runaway_18650_lco::Runaway18650Lco::hatchard_kim();
-    let gate = cell.gate_dt_s().expect("specimen gate");
-    let floor = cell.floor_dt_s().expect("specimen floor");
-    finish(
-        "energy",
-        "runaway_18650_lco",
-        RUNAWAY_18650_LCO_SPECIMEN,
-        vec![
-            scalar(
-                "temperature_k",
-                Role::Phase,
-                "K",
-                Some(0.0),
-                true,
-                Some(runaway_18650_lco::CAN_MELTING_K),
-                true,
-                "exclusive (0, 1811) K: the temperature of the cell at the start, one for the whole body. At zero kelvin and below it is refused as TemperatureNotPositive; at 1811 K, the melting point of iron, where the steel can melts, and above, as CanMelting. A step whose temperature would reach either inside one of its substeps is refused by the same name, and the run ends there, sealed".into(),
-            ),
-            scalar(
-                "sei_fraction",
-                Role::Phase,
-                "1",
-                Some(0.0),
-                false,
-                Some(runaway_18650_lco::AMOUNT_LIMITS[0]),
-                false,
-                "from 0 to 1, inclusive: the lithium in the solid-electrolyte interphase at the start, c_sei, a fraction. A fresh cell is 0.15; a start above it is a cell with more of its lithium in the SEI, and the stage releases its heat in proportion. Below 0 or above 1 it is refused as SeiFractionOutsideCell".into(),
-            ),
-            scalar(
-                "anode_lithium_fraction",
-                Role::Phase,
-                "1",
-                Some(0.0),
-                false,
-                Some(runaway_18650_lco::AMOUNT_LIMITS[1]),
-                false,
-                "from 0 to 0.783, inclusive: the lithium in the graphite at the start, c_ne. A fresh cell is 0.75. The SEI thickness the anode stage grows and is slowed by is 0.783 minus this, so a start below 0.75 is a cell whose anode has already reacted that much, and a start above it a cell with a thinner SEI, down to none at 0.783. Below 0 or above 0.783, where the SEI thickness would be below zero, it is refused as AnodeLithiumOutsideCell".into(),
-            ),
-            scalar(
-                "cathode_unreacted_fraction",
-                Role::Phase,
-                "1",
-                Some(0.0),
-                false,
-                Some(runaway_18650_lco::AMOUNT_LIMITS[2]),
-                false,
-                "from 0 to 1 - 2^-33 (0.99999999988), inclusive, or exactly 1: the unreacted part of the cathode at the start, 1 minus the converted part alpha. A fresh cell is 0.96, alpha 0.04. The cathode stage is autocatalytic, alpha (1 - alpha): at exactly 1 it has no converted part and never starts. The card carries the unreacted part in 64 bits, which resolve alpha to 2^-53, so above 1 - 2^-33 and under 1, where alpha is under 1.16e-10 and carried to fewer than 20 bits, its growth would be lost to rounding: there, below 0 and above 1 it is refused as CathodeUnreactedOutsideCell".into(),
-            ),
-            scalar(
-                "electrolyte_fraction",
-                Role::Phase,
-                "1",
-                Some(0.0),
-                false,
-                Some(runaway_18650_lco::ELECTROLYTE_START),
-                false,
-                "from 0 to 1, inclusive: the electrolyte at the start, c_e, a fraction of the cell's fill. A fresh cell is 1. Below 0 or above 1 it is refused as ElectrolyteOutsideCell. A start whose four amounts together hold 0.0205 J of heat or less, 1e-6 of the cell's chemical heat, is a spent cell: it is stepped as a body that gains and loses heat, under the oven and the heater, and meets no end".into(),
-            ),
-            scalar(
-                "oven_temperature_k",
-                Role::Load,
-                "K",
-                None,
-                false,
-                None,
-                false,
-                "above 0 K when adiabatic is 0: the temperature of the oven, or of the surroundings, held over a step. The cell exchanges heat with it by convection, 7.17 W/(m2 K) over the can's 41.85 cm2, and by radiation with an emissivity of 0.8; at zero kelvin and below it is refused as OvenTemperatureNotPositive. When adiabatic is 1 no heat crosses the can and the oven temperature does not enter the step or the ledger: it is still required, any temperature of 0 K or more is taken, and the step is the same at every one. A negative number of kelvin is no temperature, and the door refuses it as OvenTemperatureNotPositive either way".into(),
-            ),
-            scalar(
-                "heater_power_w",
-                Role::Load,
-                "W",
-                Some(0.0),
-                false,
-                None,
-                false,
-                "at least 0 W: heat a heater puts into the cell, held over a step. 35.42 W warms the cell by 1 K a second with no reaction. Below zero it is refused as HeaterPowerNegative".into(),
-            ),
-            scalar(
-                "adiabatic",
-                Role::Load,
-                "1",
-                Some(0.0),
-                false,
-                Some(1.0),
-                false,
-                "0 or 1 and nothing between: 1 for a cell in an accelerating-rate calorimeter that tracks it, so that no heat crosses the can and the oven temperature does not enter; 0 for a cell that loses heat to the oven. Any other value is refused as AdiabaticNotZeroOrOne".into(),
-            ),
-        ],
-        floor,
-        "the ceiling divided by 2^20, about 1.13e-5 s",
-        gate,
-        "11.805 s, a hundredth of the cell's convective time constant C / (h A), 1180.5 s",
-        None,
-        "Over a step the oven temperature, the heater power and the adiabatic switch are held. Inside a step the card takes substeps, each classical fourth-order Runge-Kutta over the temperature, the natural logarithm of each of the four amounts and the heat lost, and each no longer than 0.1 over the fastest live stage's rate in its logarithm (its stiffness) nor than 1 K of temperature change at the substep's starting rate. A stage whose remaining heat is under 2^-52 of the cell's whole chemical heat no longer sets the substep. At the peak of a runaway one step takes several hundred substeps; a step that would need more than 1,048,576 is refused as SubstepsAboveBudget. The ceiling and the floor bound the step a caller asks for, not the substeps. A run starts at time zero with every heat sum at zero and the start temperature as the anchor of the heat stored; they begin again at each start, and no limit of the card depends on them. The heat each stage released is booked in closed form from its amount, the heater's heat as its power times the step, the heat lost with the temperature: the ledger holds the heat stored, the heat capacity times the rise from the start, to the heat released plus the heater's less the heat lost, within 1e-6 of the cell's whole chemical heat, 20,499 J. The onset of self-heating (FLAG_SELF_HEATING, chemical heat warming the cell at 0.02 K per minute or more) and of runaway (FLAG_RUNAWAY, 10 K per minute or more) are flags on the frame, and the step lands. The end of the runaway is EveryReactantConsumed: the heat the four amounts still hold falls to 1e-6 of the cell's chemical heat or under, 0.0205 J, the ledger's own limit, heat that would warm the cell by under 0.6 mK. It is tested at the end of every substep, so whether a run reaches it, and when, does not follow the step asked for; the step that would carry the cell there is not taken, and the run ends there, sealed to the last step that landed. A start that holds no more than that heat is a spent cell: the card steps it as a body that gains and loses heat, under the oven and the heater, and reaches no end. In this model the anode stage slows itself as its SEI grows, to A exp(-E / R T) exp(-0.783 / 0.033) per second as its lithium runs out: in every oven run worked here about a quarter of the anode's lithium is left when the cell cools, and the runaway's peak is in the frames and the state. A cell held at a temperature after the 155 degC oven run's runaway reaches the end after 1.6 hours at 1,200 K, 5.6 hours at 1,100 K, 24.6 hours at 1,000 K, 6.2 days at 900 K and 60 days at 800 K; at 700 K it has not reached it after 410 days.".to_string(),
-        &[
-            "NonFiniteInput",
-            "NonFiniteState",
-            "NonPositiveDt",
-            "InvalidCell",
-            "OvenTemperatureNotPositive",
-            "HeaterPowerNegative",
-            "AdiabaticNotZeroOrOne",
-            "TemperatureNotPositive",
-            "CanMelting",
-            "SeiFractionOutsideCell",
-            "AnodeLithiumOutsideCell",
-            "CathodeUnreactedOutsideCell",
-            "ElectrolyteOutsideCell",
-            "EveryReactantConsumed",
-            "SubstepsAboveBudget",
-            "SpontaneousGeneration",
-            "FirstLawBreach",
-        ],
-        vec![
-            Advisory {
-                name: "FLAG_SELF_HEATING",
-                mask: runaway_18650_lco::FLAG_SELF_HEATING,
-                seals: true,
-            },
-            Advisory {
-                name: "FLAG_RUNAWAY",
-                mask: runaway_18650_lco::FLAG_RUNAWAY,
-                seals: true,
-            },
-        ],
-        slots(&[
-            ("t", "Time since the start of the run, in seconds."),
-            ("pos[0]", "temperature_k"),
-            ("pos[1]", "chemical_heat_w"),
-            ("pos[2]", "heat_released_j"),
-            ("vel[0]", "anode_lithium_fraction"),
-            ("vel[1]", "cathode_unreacted_fraction"),
-            ("vel[2]", "electrolyte_fraction"),
-            (
-                "force_torque",
-                "The heat the cell has lost to the oven since the start, in joules; negative while the oven warms the cell.",
-            ),
-            ("residual", "Conservation residual: the heat ledger's defect over the cell's whole chemical heat, 20,499 J."),
-            (
-                "flags",
-                "FLAG_SELF_HEATING: the chemical heat warms the cell at 0.02 K per minute or more. FLAG_RUNAWAY: at 10 K per minute or more. Both seal.",
-            ),
-            ("proof", "Not written by the step."),
-        ]),
-    )
-}
-
-/// One step at 10 s of a fresh cell at 298.15 K put in an oven at 155 degC,
-/// and a run of 200 such steps, through its runaway near 1,500 s.
-fn runaway_18650_lco_examples() -> (Value, Value) {
-    pair_examples_of(
-        "energy",
-        "runaway_18650_lco",
-        obj(&[
-            ("temperature_k", scalar_value(298.15)),
-            ("sei_fraction", scalar_value(runaway_18650_lco::SEI_FRACTION_START)),
-            ("anode_lithium_fraction", scalar_value(runaway_18650_lco::ANODE_LITHIUM_START)),
-            ("cathode_unreacted_fraction", scalar_value(1.0 - runaway_18650_lco::CATHODE_CONVERSION_START)),
-            ("electrolyte_fraction", scalar_value(runaway_18650_lco::ELECTROLYTE_START)),
-        ]),
-        obj(&[
-            ("oven_temperature_k", scalar_value(428.15)),
-            ("heater_power_w", scalar_value(0.0)),
-            ("adiabatic", scalar_value(0.0)),
-        ]),
-        scalar_value(10.0),
-        200,
-    )
-}
-
-fn reactor_spert3_ccore_card() -> Card {
-    let specimen = reactor_spert3_ccore::ReactorSpert3Ccore::c_core_step_transients();
-    let gate = specimen.gate_dt_s().expect("specimen gate");
-    let floor = specimen.floor_dt_s().expect("specimen floor");
-    finish(
-        "energy",
-        "reactor_spert3_ccore",
-        REACTOR_SPERT3_CCORE_SPECIMEN,
-        vec![
-            scalar(
-                "initial_temperature_k",
-                Role::Phase,
-                "K",
-                Some(reactor_spert3_ccore::FREEZING_K),
-                false,
-                Some(reactor_spert3_ccore::CRITICAL_TEMPERATURE_K),
-                true,
-                format!(
-                    "the temperature of plates and water at the step: liquid water, at or above {} K and below the saturation temperature of water at system_pressure_psig (IAPWS-IF97 region 4, backward equation; 373.12 K at 0 psig, 627.06 K at 2500 psig), and below the critical temperature, {} K, above the critical pressure, 22.064 MPa. A start that is not liquid water is refused as InitialTemperatureNotLiquidWater. Compared on starts at 21 to 36 degC; the water properties of the heat transfer are those of 25 degC; outside that span the card computes the same equations",
-                    reactor_spert3_ccore::FREEZING_K,
-                    reactor_spert3_ccore::CRITICAL_TEMPERATURE_K,
-                ),
-            ),
-            scalar(
-                "system_pressure_psig",
-                Role::Phase,
-                "psig",
-                Some(-reactor_spert3_ccore::ATMOSPHERE_PSI),
-                true,
-                None,
-                false,
-                format!(
-                    "the system pressure in pounds per square inch above the atmosphere, above absolute zero, -{} psig; at or below it the run is refused as PressureNotPositive. It sets where the water at the start boils, and nothing else. Compared at 0 to {} psig with no flow, and at {} psig with flow. The card has no pressure term and gives the same transient at every pressure, where the measured energy to peak doubles from 0 to 2500 psig; on the 1000 psig series, not in the fit, peak power reads 13.5 percent, energy 11.7 percent and temperature rise 67.9 percent low",
-                    reactor_spert3_ccore::ATMOSPHERE_PSI,
-                    reactor_spert3_ccore::PRESSURE_MAX_PSIG,
-                    reactor_spert3_ccore::FLOW_PRESSURE_MIN_PSIG,
-                ),
-            ),
-            scalar(
-                "reactivity_inserted_dollar",
-                Role::Load,
-                "dollar",
-                Some(0.0),
-                true,
-                None,
-                false,
-                format!(
-                    "the reactivity stepped in at time zero, above zero; zero or less is refused as ReactivityNotPositive. Compared with reactivities of [{}, {}] dollars with no flow and [{}, {}] with flow, the inhour values (with the card's generation time and groups, summed in group order) of the longest and the shortest compared period, 9.3 s or 516 ms to 9.7 ms. On the 39 transients not in the fit: peak power within 33.3 percent, energy 56.7 percent, plate surface temperature rise 71.0 percent, against a target of 20 percent. Above about 1.31 dollars the step ceiling follows the state (DtAboveStateCeiling). A run carries one reactivity: a segment with another is refused as ReactivityChangedDuringRun",
-                    reactor_spert3_ccore::REACTIVITY_MIN_NO_FLOW_DOLLAR,
-                    reactor_spert3_ccore::REACTIVITY_MAX_DOLLAR,
-                    reactor_spert3_ccore::REACTIVITY_MIN_FLOW_DOLLAR,
-                    reactor_spert3_ccore::REACTIVITY_MAX_DOLLAR,
-                ),
-            ),
-            scalar(
-                "coolant_flow_m_per_s",
-                Role::Load,
-                "m/s",
-                Some(0.0),
-                false,
-                None,
-                false,
-                format!(
-                    "the coolant velocity through the core, 18 ft/s at 20,000 gpm, zero or more; below zero it is refused as NegativeFlow. Flow is compared at [{}, {}] m/s (200 to 20,000 gpm), at {} psig; the Dittus-Boelter term is a turbulent correlation and is blended with the fitted stagnant conductance. Each segment may carry its own flow, and each step is taken at its own; every compared transient holds one flow. Above about 5.5 m/s the step ceiling follows the state (DtAboveStateCeiling)",
-                    reactor_spert3_ccore::FLOW_MIN_M_PER_S,
-                    reactor_spert3_ccore::FLOW_MAX_M_PER_S,
-                    reactor_spert3_ccore::FLOW_PRESSURE_MIN_PSIG,
-                ),
-            ),
-        ],
-        floor,
-        "a locked 1e-9 s: the card's own constant, a step that still moves the clock at 600 s, the longest a run of 1,000,000 steps at the ceiling reaches",
-        gate,
-        "0.2 of the reduced generation time, 3 ms, the time constant of the prompt pole at zero net reactivity, where every run starts; it holds every state of the compared range. Past the compared range the step ceiling follows the state: at the state a step starts from and at its trial end, the card refuses as DtAboveStateCeiling a step that would advance the growing prompt pole (net reactivity - 1) / l* by more than 0.0611, the decaying prompt pole (1 - net reactivity) / l* by more than 0.5, or the plate and water heat transfer and sweep H/C_p + H/C_w + 2v/L by more than 0.0184, the most a step at this ceiling advances each inside the compared range (at 1.305 dollars, at -1.48 dollars net, at 5.4864 m/s). At 3 dollars the longest step at the start is 0.092 ms, at 10 dollars 0.020 ms, at 100 m/s 0.046 ms. Measured with the card's own step at the state ceiling: the ledger closes on bursts to 1.5 dollars and on flows to 300 m/s; on bursts of 2 dollars and more it names a step after the power peak, where the feedback turns the power faster than the prompt poles say and the decaying prompt pole carries the power's fall, and there a shorter step closes it to the plate maximum, 0.1 ms at 2 dollars, 0.023 ms at 5 dollars and 0.001 ms at 30 dollars. The three phases are not yet worked out from the step's own error",
-        None,
-        format!(
-            "A run is one transient with one reactivity: every segment carries the reactivity of the first, and each segment may carry its own flow. The reactor starts at {} MW in equilibrium with every temperature rise zero, and the reactivity is a step at time zero. hot_spot_plate_rise_k is the rise of the plate surface temperature at the hot spot above the initial temperature, the quantity the thermocouples measured; plate_rise_k and water_rise_k are the core averages. The run goes through the first maximum of power (FLAG_PAST_POWER_PEAK is set from that step on; peak_power_mw, peak_energy_mws and peak_time_s hold the highest landed sample before it, within one step of the true maximum; the card does not interpolate) and ends at the first maximum of the hot-spot plate temperature after it: the step after is refused as PastPlateTemperatureMaximum and the run is sealed with that refusal, the outcome ended. plate_rise_max_k holds the highest landed hot-spot rise. At long periods and with flow the hot-spot temperature can have no maximum before {} s, where the comparison took the rise reached; the run goes on, and with flow the temperatures settle and a run with no plate maximum is completed. With no flow and a reactivity just under prompt critical the net reactivity falls below -1.48 dollars after 200 s and the ledger or the state ceiling names where the run stops. A single step starts again from the card's start at each call, so single steps cannot be chained. NegativeState and InconsistentState are refusals of the card's step for a state handed to it that the card did not write; this door takes the initial temperature and the pressure and nothing else of a state, so no request reaches them. A step of zero or less is refused as NonPositiveDt before the step floor is tested.",
-            format!("{:e}", reactor_spert3_ccore::INITIAL_POWER_MW),
-            reactor_spert3_ccore::COMPARED_TIME_S,
-        ),
-        &[
-            "NonFiniteInput",
-            "NonFiniteState",
-            "NonPositiveDt",
-            "InvalidCard",
-            "PressureNotPositive",
-            "InitialTemperatureNotLiquidWater",
-            "NegativeFlow",
-            "ReactivityNotPositive",
-            "PastPlateTemperatureMaximum",
-            "NegativeTime",
-            "NegativeState",
-            "DtAboveStateCeiling",
-            "ReactivityChangedDuringRun",
-            "InconsistentState",
-            "SpontaneousGeneration",
-            "FirstLawBreach",
-        ],
-        vec![
-            Advisory {
-                name: "FLAG_PROMPT_SUPERCRITICAL",
-                mask: reactor_spert3_ccore::FLAG_PROMPT_SUPERCRITICAL,
-                seals: true,
-            },
-            Advisory {
-                name: "FLAG_PAST_POWER_PEAK",
-                mask: reactor_spert3_ccore::FLAG_PAST_POWER_PEAK,
-                seals: true,
-            },
-        ],
-        slots(&[
-            ("t", "Time since the step of reactivity, in seconds."),
-            ("pos[0]", "power_mw"),
-            ("pos[1]", "energy_mws"),
-            ("pos[2]", "reactivity_net_dollar"),
-            ("vel[0]", "hot_spot_plate_rise_k"),
-            ("vel[1]", "water_rise_k"),
-            ("vel[2]", "peak_power_mw"),
-            ("force_torque", "Rate of change of power, in MW per second."),
-            ("residual", "Conservation residual: the largest of the neutron, energy and hot-spot energy balances, each relative to its own scale."),
-            (
-                "flags",
-                "FLAG_PROMPT_SUPERCRITICAL: net reactivity above one dollar. FLAG_PAST_POWER_PEAK: the run is past the first maximum of power. Both seal.",
-            ),
-            ("proof", "Not written by the step."),
-        ]),
-    )
-}
-
-/// One step at the card's ceiling from 25 degC at atmospheric pressure with no
-/// flow, and a run of a 1.1 dollar step through its power peak to the first
-/// maximum of the hot-spot plate temperature.
-fn reactor_ccore_examples() -> (Value, Value) {
-    let reactor = reactor_spert3_ccore::ReactorSpert3Ccore::c_core_step_transients();
-    pair_examples_recorded(
-        "energy",
-        "reactor_spert3_ccore",
-        obj(&[
-            ("initial_temperature_k", scalar_value(298.15)),
-            ("system_pressure_psig", scalar_value(0.0)),
-        ]),
-        obj(&[
-            ("reactivity_inserted_dollar", scalar_value(1.1)),
-            ("coolant_flow_m_per_s", scalar_value(0.0)),
-        ]),
-        card_dt(reactor.gate_dt_s()),
-        REACTOR_CCORE_EXAMPLE_STEPS,
-        100,
-    )
-}
-
-/// The steps the worked run of the C-core reactor asks for: 0.6 s, past the
-/// first maximum of the hot-spot plate temperature of a 1.1 dollar step.
-pub(crate) const REACTOR_CCORE_EXAMPLE_STEPS: u64 = 1_000;
 
 fn reactor_triga_jsi_card() -> Card {
     let specimen = reactor_triga_jsi::ReactorTrigaJsi::core_56_pulse_mode();
@@ -3666,168 +2618,6 @@ fn link_gothenburg_10010_card() -> Card {
     )
 }
 
-const CELL_2170_MODEL3_CAPACITY_RULE: &str = "Read it from a recharge record: capacity_ah = ratio x (ampere-hours put in by the full recharge) / (1 - state of charge before that recharge). A full recharge is constant current, then constant voltage at 4.2 V. The ratio is the cell's charge-return ratio, the charge delivered divided by the charge put back at the cell's first capacity test and the recharge after it; it is listed for each cell under cell_number. The state of charge before the recharge is the value at which the voltage after a rest of an hour or more equals the card's rest voltage, which a step at zero current from that state of charge returns as terminal_v. The reading is good when that state of charge is below 0.08, where the curve is steep, and not above; after a shallower discharge keep the last good reading, or the straight line in time between the readings either side";
-
-fn cell_2170_model3_card() -> Card {
-    let specimen = cell_2170_model3::Cell2170Model3::cell();
-    // No pole on the card, so no `π/ω`. The floor and the ceiling are locked
-    // constants of the card.
-    let gate = specimen.gate_dt_s().expect("specimen gate");
-    let floor = specimen.floor_dt_s().expect("specimen floor");
-    let rows = cell_2170_model3::CELLS;
-    let numbers = rows.iter().map(|row| row.cell_number);
-    let least = numbers.clone().fold(f64::INFINITY, f64::min);
-    let most = numbers.fold(f64::NEG_INFINITY, f64::max);
-    let per_cell = rows
-        .iter()
-        .map(|row| {
-            format!(
-                "cell {}: capacity at its first capacity test {} Ah, charge-return ratio {}, resistance scale {}",
-                row.name,
-                crate::message_number(row.reference_capacity_ah),
-                crate::message_number(row.charge_return_ratio),
-                crate::message_number(row.resistance_scale)
-            )
-        })
-        .collect::<Vec<_>>()
-        .join("; ");
-    finish(
-        "energy",
-        "cell_2170_model3",
-        "One Tesla Model 3 2170 lithium-ion cell, any of the three cells m80, m1000 and m448-N of its dataset, as a physical model with memory, under a terminal current and a measured case temperature. Compared from -10 to 40 degC on runs of two cells no model had seen: m448-N 51 of 60, m1000 31 of 45; on m80, whose runs it was built on and not a blind test, 62 of 65, and at -20 degC none of m80's 13. The table card cell_2170_m80 reads 17.4 mV higher on one 1.5 A discharge at 12 degC.",
-        vec![
-            scalar(
-                "cell_number",
-                Role::Phase,
-                "1",
-                Some(least),
-                false,
-                Some(most),
-                false,
-                format!(
-                    "exactly one of {}: the number in the dataset's name for the cell. It picks the numbers that belong to one cell; the equations, the curves and the 22 fitted numbers are the cell type's. {per_cell}. The scale multiplies the three resistances and divides the two exchange currents; the ratio is for reading capacity_ah from a recharge and the step does not use it. Any other value is refused as CellNotRecognized; nothing is rounded to a cell",
-                    crate::cell_2170_model3_cells_in_words()
-                ),
-            ),
-            scalar(
-                "state_of_charge",
-                Role::Phase,
-                "1",
-                Some(cell_2170_model3::CURVE_FIRST_STATE_OF_CHARGE),
-                false,
-                Some(cell_2170_model3::CURVE_LAST_STATE_OF_CHARGE),
-                false,
-                "inclusive [-0.05, 1.05], the ends of the measured rest-voltage curves (StateOfChargeOutsideCard): 1 after a full recharge, and 1 plus the top-up in ampere-hours divided by capacity_ah when the tester topped the cell up afterwards. Compared from 0 to 1.02; the largest start in the tests was 1.012, and a state of charge outside 0 to 1.02 sets FLAG_OUTSIDE_COMPARED_RUNS. The cell is taken as rested: every memory starts at zero. A run lands a step whose state of charge ends within the rounding allowance of the running sum past either end, STATE_OF_CHARGE_ALLOWANCE_PER_STEP, 2.22e-16 for each step of the run so far and two more".into(),
-            ),
-            scalar(
-                "capacity_ah",
-                Role::Phase,
-                "Ah",
-                Some(0.0),
-                true,
-                None,
-                false,
-                format!(
-                    "above 0 Ah (CapacityNotPositive): the capacity from the last full charge, which falls as the cell ages. Compared on 4.16 to 4.7 Ah: the two cells had 4.174 to 4.689 Ah in the compared tests, and the range allows 0.01 Ah beyond that; outside it sets FLAG_OUTSIDE_COMPARED_RUNS. The resistances carry no age term. It is the caller's number and the card never changes it. Each block of tests was measured at one age of the cell, so each capacity was compared in the band of its own block, at the case temperatures that block spanned: 4.16 to 4.26 Ah from -12.9 to 12.6 degC, 4.20 to 4.30 Ah from 0.0 to 20.4 degC, 4.17 to 4.30 Ah from 9.8 to 26.8 degC, 4.35 to 4.53 Ah from 23.3 to 31.4 degC and 4.56 to 4.70 Ah from 28.1 to 45.9 degC. These are the capacities of every run compared from -10 to 40 degC on the three cells and the block capacities of their fitting files, with 0.01 Ah beyond them, and the case temperatures the sensor read in those runs, with the chamber's 0.3 K beyond them. A capacity and a case temperature that no one block holds were never compared, a new cell in the cold or an aged cell when warm, and set FLAG_OUTSIDE_COMPARED_RUNS. {CELL_2170_MODEL3_CAPACITY_RULE}"
-                ),
-            ),
-            scalar(
-                "case_temperature_least_c",
-                Role::Phase,
-                "degC",
-                Some(-cell_2170_model3::KELVIN_OFFSET),
-                true,
-                None,
-                false,
-                "above -273.15 degC, absolute zero (CaseTemperatureBelowAbsoluteZero), required: the least case temperature of the run so far. A span of case temperature past 19.2 K since the rested start, the compared 18.811 K and the chamber's 0.3 K, sets FLAG_OUTSIDE_COMPARED_RUNS, and that span is accumulated over the steps of one request: a run starts rested and states case_temperature_least_c equal to its first segment's case_temperature_c, and a single step equal to its case_temperature_c. A start without it is refused. A value above case_temperature_most_c is refused as CaseTemperatureSpanInverted".into(),
-            ),
-            scalar(
-                "case_temperature_most_c",
-                Role::Phase,
-                "degC",
-                Some(-cell_2170_model3::KELVIN_OFFSET),
-                true,
-                None,
-                false,
-                "above -273.15 degC, required: the most case temperature of the run so far: a run starts rested and states it equal to its first segment's case_temperature_c, and a single step equal to its case_temperature_c. A start without it is refused. A step that takes the span of the run past 19.2 K lands with FLAG_OUTSIDE_COMPARED_RUNS".into(),
-            ),
-            scalar(
-                "current_a",
-                Role::Load,
-                "A",
-                None,
-                false,
-                None,
-                false,
-                "any current: each line of the card is the exact solution for a held current at any size, and a large one ends at a voltage limit. A positive current discharges the cell and a negative current charges it: the opposite sign to the measurements and to the cell_2170_m80 card. Compared from -13.984 to 13.524 A: 13.524 A is the tester's programmed pulse of 13.5 A plus 0.024 A, the accuracy the dataset states for the tester's current, and the pulse reads up to 13.506 A in the logs; 13.984 A is the largest charging current in a compared drive cycle, 13.960 A on cell m1000, plus the same 0.024 A; on cell m80 the largest was 9.74 A. A current outside sets FLAG_OUTSIDE_COMPARED_RUNS; no charging run is in the comparison".into(),
-            ),
-            scalar(
-                "case_temperature_c",
-                Role::Load,
-                "degC",
-                Some(-cell_2170_model3::KELVIN_OFFSET),
-                true,
-                None,
-                false,
-                "above -273.15 degC, absolute zero, where the Arrhenius laws have no value (CaseTemperatureBelowAbsoluteZero): the temperature measured on the cell's case at the end of the step. The card is given it and does not predict it. Compared from -12.9 to 45.9 degC: with the chamber set from -10 to 40 degC the sensor read from -12.59 to 45.54 degC in the compared tests, and 0.3 K beyond that is the chamber's stated accuracy; within every target on 62 of 65 runs of m80, 51 of 60 of m448-N, 31 of 45 of m1000. Fitted without its -10 degC tests the model is within every target on 3 of 13 there, so the temperature laws do not reach colder, and at -20 degC on none of m80's 13 runs. Physical bounds of the cell, its electrolyte freezing or the maker's operating range, are not on the card. It is paired with capacity_ah, as that field states. In the compared runs the case temperature changed by at most 5.023 K between two consecutive seconds and spanned at most 18.811 K inside one run; a step past 5.4 K or 19.2 K, each the measured value with 0.3 K beyond it, sets FLAG_OUTSIDE_COMPARED_RUNS. Outside -12.9 to 45.9 degC it sets the same flag".into(),
-            ),
-        ],
-        floor,
-        "a locked 1 s, the ceiling itself: every fit and every comparison was made at one second, and measurements logged once a second cannot test a shorter step. For a held 4.5 A discharge at 25 degC, the one load compared, a step of 0.1 s gave the one-second answer to within 0.3 mV, but where the current reverses it does not. When the surface reaction's overpotential would change sign inside a step the step is taken again from zero with the other law, so the answer depends on the step: from 4.5 A to -4.5 A at 0 degC the 0.1 s answer differs from the one-second answer by 49 mV in the second of the reversal, 5 mV in the next and 0.3 mV in the one after, and over the first 6,000 seconds of a drive cycle of cell m448-N at -10 degC by up to 32 mV. A shorter step needs that sign change split at the zero crossing and the card fitted and compared again",
-        gate,
-        "a locked 1 s, the sampling of the measurements every fit and every comparison was made on. A load that changes within a second is not represented by a longer step, and the constants were fitted with the one-second rule for the reaction changing sign",
-        None,
-        "Over a step the current and the case temperature are held. The range compared with measurement is a range, not a wall: a capacity, a case temperature or a current outside it, a capacity outside its block's band at a segment's case temperature, a jump of case temperature past 5.4 K, a span past 19.2 K, a running mean past 8.722 A discharging or 2.993 A charging and a state of charge past 1.02 each land with FLAG_OUTSIDE_COMPARED_RUNS, every line the card's own equation and its ledger closed. The same cell type is served as tables, cell_2170_m80; on one discharge, cell m80 from the recharge of its 10 degC block, 4.2661 Ah, at 1.5 A for 600 s with the case at 12 degC, that card gives 3.934 V and this one 3.917 V, 17.4 mV apart. A case temperature at or below absolute zero in any segment of a run refuses the whole run before its first step. The change of case temperature counts from the start: the first step has no last step to differ from. The span counts from the rested start and is accumulated over the steps of one request: a run, or a single step, starts rested and states case_temperature_least_c and case_temperature_most_c both equal to its first case temperature, and a start without them is refused. A start from a returned state is not served on this card: through from it is refused as ContinuationNotOnCard, and without from a pair other than a fresh start's is refused as ContinuationWithoutUpstream, because the card's other memories are not start fields and would start again at zero, among them the 60 s running mean of the current and the last case temperature the 5.4 K change is counted from. A run starts from a rested cell: the state of charge and the capacity as given, the least and most case temperature as given, every other memory at zero, and the ledger anchored there. A rest of an hour is enough from about -7 degC up. Colder, the slowest diffusion mode, 16 minutes at -10 degC, 21 at -12.9 and 38 at -20, needs five of its times to fall under 1 percent: 81, 103 and 189 minutes. At -12.9 degC an hour after a 1C discharge of 1400 s leaves the surface 0.85 percent of capacity below the bulk and the terminal 8.8 mV under its rested voltage; a cell that has not rested is not in that state, and the run should start earlier and go through the load that came before. The first measured sample of a record is the start and each later sample is one step, so a logged drive cycle is one run with a segment of one step for each second. A single step starts from rest in the same way at each call, so single steps cannot be chained into a run. A run ends in a sealed refusal when the terminal voltage would fall below 2.8 V (UndervoltageLimit) or rise above 4.242 V (OvervoltageLimit), when the state of charge would leave the measured curves, -0.05 to 1.05, by more than the rounding allowance of its running sum (StateOfChargeOutsideCard), or when the state of charge at the particle surface would leave them (SurfaceOutsideCurve); the last landed state is the last step on the card. The sustained currents compared, 8.722 A discharging and 2.993 A charging, are the largest that the 60 s running mean reaches in any compared test, 8.698 A and 2.969 A in the hill cycle of cell m80, plus 0.024 A: the hill cycle is the one test of sustained current above the rated current of about 4.5 A, and the model's largest errors are in it; at 40 and 25 degC the card stops at 2.8 V seconds to minutes before the cell, and at the end of the steepest climbs at 0 and -10 degC it reads 130 to 180 mV high. Above a running mean of 4.6 A discharging a frame carries FLAG_SUSTAINED_ABOVE_1C and the run goes on. Charging current is accepted: it was fitted inside the drive cycles of cell m80 and in a slow charge and compared inside the drive cycles of cell m1000, which charge harder; no charging run is in the comparison. A step of zero or less is refused as NonPositiveDt before the step floor is tested.".into(),
-        &[
-            "NonFiniteInput",
-            "NonFiniteState",
-            "NonPositiveDt",
-            "InvalidCell",
-            "CellNotRecognized",
-            "CapacityNotPositive",
-            "CaseTemperatureBelowAbsoluteZero",
-            "CaseTemperatureSpanInverted",
-            "StateOfChargeOutsideCard",
-            "SurfaceOutsideCurve",
-            "UndervoltageLimit",
-            "OvervoltageLimit",
-            "SpontaneousGeneration",
-            "FirstLawBreach",
-        ],
-        vec![
-            Advisory {
-                name: "FLAG_SUSTAINED_ABOVE_1C",
-                mask: cell_2170_model3::FLAG_SUSTAINED_ABOVE_1C,
-                seals: true,
-            },
-            Advisory {
-                name: "FLAG_OUTSIDE_COMPARED_RUNS",
-                mask: cell_2170_model3::FLAG_OUTSIDE_COMPARED_RUNS,
-                seals: true,
-            },
-        ],
-        slots(&[
-            ("t", "Time since the anchor, in seconds."),
-            ("pos[0]", "terminal_v"),
-            ("pos[1]", "charge_removed_ah"),
-            ("pos[2]", "surface_state_of_charge"),
-            ("vel[0]", "reaction_overpotential_v"),
-            ("vel[1]", "hysteresis_v"),
-            ("vel[2]", "electrolyte_v"),
-            (
-                "force_torque",
-                "Running mean of the current with a 60 s time constant, in amperes, positive discharging.",
-            ),
-            ("residual", "Conservation residual."),
-            (
-                "flags",
-                "FLAG_SUSTAINED_ABOVE_1C: the running mean of the current is above 4.6 A, discharging. Of the tests, the hill cycle alone is in this region, and below 10 degC the card reads high in it. FLAG_OUTSIDE_COMPARED_RUNS: the step lies outside the range compared with measurement. Both seal.",
-            ),
-            ("proof", "Not written by the step."),
-        ]),
-    )
-}
-
 fn tire_eve_r19_ice_card() -> Card {
     let tire = tire_eve_r19_ice::TireEveR19Ice::on_rig_ice();
     // The force law has no pole, so no `π/ω` is published.
@@ -4231,10 +3021,10 @@ fn capsule() -> Card {
         slots(&[
             ("t", "Time since the anchor, in seconds."),
             ("pos[0]", "altitude_m"),
-            ("pos[1]", "ground_distance_m"),
+            ("pos[1]", "stagnation_pressure_pa"),
             ("pos[2]", "mach"),
-            ("vel[0]", "air_speed_m_s"),
-            ("vel[1]", "radial_speed_m_s"),
+            ("vel[0]", "recovery_enthalpy_j_kg"),
+            ("vel[1]", "heat_transfer_coefficient_kg_m2_s"),
             ("vel[2]", "heat_flux_w_m2"),
             ("force_torque", "Load, in Earth g."),
             ("residual", "Conservation residual."),
@@ -4821,9 +3611,9 @@ pub(crate) fn unit_of_known(state: &str) -> Option<&'static str> {
         "rain_rate_margin_mm_h" => "mm/h",
         "terminal_v" | "open_circuit_v" | "cutoff_margin_v" | "voltage_v" | "voltage_spike_v"
         | "branch_v" | "lower_limit_margin_v" | "reaction_overpotential_v" | "hysteresis_v"
-        | "electrolyte_v" => "V",
+        | "electrolyte_v" | "electrolyte_drop_v" => "V",
         "charge_removed_ah" => "Ah",
-        "case_temperature_c" => "degC",
+        "case_temperature_c" | "core_temperature_c" => "degC",
         "soc" | "converter_fading_fraction" | "mach" | "residual_conservation_error"
         | "surface_state_of_charge" | "radius_over_final" | "slip_ratio" | "charge_level" => "1",
         "current_a" | "current_mean_a" => "A",
@@ -4853,6 +3643,9 @@ pub(crate) fn unit_of_known(state: &str) -> Option<&'static str> {
         "fluid_volume_m3" => "m^3",
         "mass_kg" | "boundary_mass_kg" => "kg",
         "heat_flux_w_m2" => "W/m^2",
+        "stagnation_pressure_pa" => "Pa",
+        "recovery_enthalpy_j_kg" => "J/kg",
+        "heat_transfer_coefficient_kg_m2_s" => "kg/m²/s",
         "kinetic_j_per_kg" | "potential_j_per_kg" | "heat_j_per_kg" | "given_up_j_per_kg"
         | "energy_defect_j_per_kg" => "J/kg",
         "creep_extension_percent" => "%",
@@ -4891,6 +3684,7 @@ pub(crate) fn unit_of_known(state: &str) -> Option<&'static str> {
         "gap_to_wall_m" => "m",
         "wall_force_n" => "N",
         "rod_compensation_percent_dk_k" => "% dk/k",
+        "rod_reactivity_percent_dk_k" => "% dk/k",
         "circulation_loss_percent_dk_k" => "% dk/k",
         "fuel_flow_fraction" => "1",
         "pump_speed_fraction" => "1",
@@ -4901,6 +3695,9 @@ pub(crate) fn unit_of_known(state: &str) -> Option<&'static str> {
         "hot_clad_k" => "K",
         "water_k" => "K",
         "hot_spot_plate_temperature_k" => "K",
+        "plant_response_mw" => "MW",
+        "service_response_mw" => "MW",
+        "ion_temperature_kev" => "keV",
         _ => return None,
     })
 }
@@ -4924,19 +3721,18 @@ fn force_torque_state_known(card: &str) -> Option<&'static str> {
         "generator_mmrtg_f1" => "range_margin_s",
         "capsule_stardust" | "capsule_insight" => "load_g",
         "satellite_lageos1" => "radius_m",
-        "reactor_spert3" | "reactor_spert3_fuel" | "reactor_triga_jsi" | "reactor_spert3_ccore" => {
-            "power_rate_mw_per_s"
-        }
-        "grid_gb" => "net_power_mw",
-        "cell_2170_m80" => "lower_limit_margin_v",
         // The slot holds the amplitude ceiling less the envelope; its row says so.
         "cantilever_eth" => "envelope_m",
-        "cell_2170_model3" => "current_mean_a",
         "creep_cmsx6" => "stress_mpa",
         "crater_ryugu_sci" => "radius_to_go_m",
+        "grid_gb" => "net_power_mw",
+        "tokamak_jet_dte1" => "loss_power_w",
+        "runaway_18650_lco" => "heat_lost_j",
         "reactor_msre_pump" => "fuel_flow_rate_per_s",
-        "reactor_spert3_twin" => "fuel_melt_margin_k",
-        "reactor_spert3_ccore_twin" => "power_rate_mw_per_s",
+        "reactor_spert3" => "fuel_melt_margin_k",
+        "cell_2170_model3" => "current_mean_a",
+        "reactor_spert3_ccore" => "power_rate_mw_per_s",
+        "reactor_triga_jsi" => "power_rate_mw_per_s",
         "generator_mmrtg_seebeck" => "range_margin_s",
         "momentum_jwst_dihedral" => "h_magnitude_nms",
         "grasp_lift_glass_4tu" => "tangential_force_n",
@@ -4945,9 +3741,7 @@ fn force_torque_state_known(card: &str) -> Option<&'static str> {
         "solar_system" => "earth_mars_distance_m",
         "tire_eve_r19_ice" => "longitudinal_force_n",
         "accumulator_sbo450" => "gas_force_n",
-        "runaway_18650_lco" => "heat_lost_j",
         "los_jwst_fine_guide" => "nis",
-        "tokamak_jet_dte1" => "loss_power_w",
         "tokamak_vde_mast" => "wall_force_n",
         "fingerpad_p02_glass" => "torque_n_m",
         _ => return None,
@@ -5066,23 +3860,6 @@ const CANTILEVER_RESULT: &str = "On the eleven blocks of eight periods between 1
 /// with the month that had been kept unread.
 const LINK_RESULT: &str = "On the rain events of August 2015, in one run of each event through the engine. Root mean square error 0.581 dB (target 0.90). That is 0.585 of the error of P.838 alone, 0.994 dB (target 0.80). The summed attenuation is 1.069 of the measured sum (target 0.75 to 1.25). No attenuation at all gives 1.621 dB. The rule written with the targets finds 21 gauge events in August: eleven are under 1.0 mm and outside the rule, nine are compared and none was refused: 773 five-minute blocks; and one of 15.8 mm that starts 2015-08-31T17:37Z is outside the rule because its window runs past the end of the archive. A second program's author ran that event to the last minute of data, afterwards: the month then reads 0.622 dB, 0.528 and 0.974, all within the targets. In two of the nine events P.838 alone was closer than the card, 0.644 against 0.675 dB and 0.346 against 0.400 dB. August's rain reached 54 mm/h, inside the 84 mm/h fitted. Its dry levels, 52.60 to 52.90 dB, were above every fitted event's, 51.75 to 52.55 dB, and inside the card's limit. The card's five-minute peak is below the measured five-minute peak in seven of the nine events, by up to 2.2 dB. On the one-minute values the card returns, its peak is below the measured peak in six of the nine events, by up to 2.8 dB, and above it in three, by up to 3.3 dB. In light rain under 2 mm/h the card is about 0.3 dB high. The link leads the gauge by one to two minutes: moving the link series one minute later lowers the error from 0.580 to 0.516 dB, and this is not corrected. The other direction of the same link, sublink 588, run afterwards with the same constants, does not transfer under the same rules: 0.794 dB, no better than P.838 alone, with a summed attenuation of 2.30 of the measured sum, because that receiver's dry level wanders by more than 1 dB within a dry day; in the events where its level was steady the card does about as well as on the compared direction. A second program, on the same machine and from its own cut of the archive, recomputes the same results.";
 
-/// The marks of the physical 2170 cell: the ones fixed for the cell_2170_m80
-/// card, unchanged.
-const CELL_2170_MODEL3_PASS_LINE: &str = "The same targets as for the cell_2170_m80 card. On a discharge at a held current: voltage error at most 42 millivolts root mean square and delivered capacity within 3 percent. On a drive cycle: voltage error at most 42 millivolts root mean square, the card still running at the last sample, and the error at the last sample at most 126 millivolts.";
-
-/// The result of the physical 2170 cell's validation record: the check of
-/// 2026-10-09 on runs of the second and the third cell that no model had
-/// seen, as the study's record of that check states it.
-pub(crate) const CELL_2170_MODEL3_RESULT: &str = "Run once on runs of two further cells of the same type that no model had seen, from -10 to 40 degrees Celsius. One resistance number is fitted to each cell from its characterisation tests and nothing else is changed. Third cell, m448-N: 51 of 60 runs within every target, inside the 48 to 54 expected, and all five conditions written for the cells hold. Second cell, m1000: 31 of 45 runs within every target, under the 36 to 41 expected, and two of the five conditions hold. Every ordinary drive cycle the card ran on either cell, 78 of 80, is within the voltage target, and 72 are within every target. Outside the targets on the second cell: its discharge at half the rated current delivers 3.3 to 4.0 percent more charge than measured, at four of five temperatures; three drive cycles at 40 degrees Celsius end 128 to 145 millivolts high, against a target of 126; and one drive cycle at -10 degrees Celsius stops at the card's upper voltage limit a quarter of the way through. Outside the targets on the third cell: its discharge at the rated current at -10 degrees Celsius, with a voltage error of 73 millivolts against 42 and 7.3 percent short on capacity; and two drive cycles in which the card reaches its 2.8 V limit 2 and 13 seconds before the last sample. Twelve runs lay outside the range of the card as run, were refused, and count as outside the targets; the served card answers such a run, each step flagged FLAG_OUTSIDE_COMPARED_RUNS. All ten hill-climb cycles are among them, nine for current and one for case temperature, so that kind of run is untested on new cells. The other two were one drive cycle with three one-second samples of current above 13.524 A and one that started above 1.02 of full.";
-
-/// The result of the fuel-temperature reactor's validation record: the
-/// comparison of 2026-10-09 with the 30 held-back tests as it came out in
-/// the research record.
-pub(crate) const REACTOR_SPERT3_FUEL_RESULT: &str = "On the 30 tests not in the fit, run at 0.43 ms, the card's step ceiling. Each triple is RMS, worst and mean, in units of the report's standard deviation, against the targets 1.5, 3 and 0.5; the times of the peak are relative errors, against 5 and 10 percent. Cold group, 10 tests: peak power (0.514, 0.937, +0.204); energy released to the peak (0.540, 1.087, +0.023); time of the peak RMS 5.22 percent (target 5), worst 12.24 percent (target 10). In this series the report's own plots and its own table differ on the time of the peak by about 3 to 6 percent. The group at 251 to 259 degrees Fahrenheit, 13 tests, the report's series at about 260 degrees Fahrenheit, with nothing fitted in it: peak power (0.643, 1.051, +0.479); energy (0.846, 1.334, -0.152); time of the peak RMS 8.46 percent, worst 14.88 percent, twelve of the thirteen peaks early, about twice the spread of the report's own times. The group at 498 to 501 degrees Fahrenheit, 7 tests: peak power (0.796, 1.650, -0.490); time of the peak RMS 4.49 percent, worst 7.45 percent; energy RMS 1.336, worst 3.212 (target 3), mean -0.890 (target 0.5): the card's energy is low on all seven tests. The 30 together: peak power (0.644, 1.650, +0.161); energy (0.908, 3.212, -0.266); time of the peak RMS 6.69 percent, worst 14.88 percent.";
-
-/// The limits of the fuel-temperature reactor's validation record.
-pub(crate) const REACTOR_SPERT3_FUEL_LIMITS: &str = "Four constants are fitted on 28 tests: the power at the start, 11.6113 W; the strength of the Doppler feedback, 0.0371601 dollar per square root of a kelvin; the heat capacity of the fuel, 0.0260616 MW s per K; and one weight on the water-temperature feedback for all three bands, 0.28586. The card's form was chosen with reactor_spert3's comparison on the ten cold tests read, which put every peak about 22 percent early, and with Tables V and VII, their rows outside the fit included, the plotted time of peak of test 70 and the power history of one cold test outside the fit read; those tests are not in this card's fit. The starting power is a fitted effective value: refitted under other choices it comes out at about 7 to 11 W, the report's 50 W is excluded under this model, and the difference from the report is unexplained. The insertion ramp is the report's design figures, a constant rod acceleration and a constant worth per inch, not a recorded rod motion; the recorded power histories prefer a somewhat faster insertion, and 10 to 15 ms of fixed-time error remains, where the card is late on the fastest tests. The report measures no fuel temperature: fuel_temperature_rise_k is the temperature of one fitted lump, about one fourteenth of the heat capacity of the whole fuel, 69 to 402 K at the peak on the tests not in the fit; it enters the comparison through what it does to power, energy and time, and it is not a temperature a thermocouple in the fuel would read. Heat flow from fuel to water is left out. The delayed-neutron constants are the report's values stated for 500 degrees Fahrenheit, used in all three bands. The report's standard deviations share a part from the power calibration, so the errors of two tests are not independent. The conservation residual names a wrong method and is not a bound on accuracy. On the fastest run of each band, by a second ledger written apart from the card, it names explicit Euler, the midpoint and Heun's second-order methods, Kutta's third-order method, Runge-Kutta with one stage weight wrong by 1e-3 and by 1e-5, a delayed group dropped from the power equation, the Doppler strength wrong by 1e-3 and by 1e-5, a group fraction wrong by 1e-4, and Runge-Kutta at two and at three times the step ceiling; it does not name a group fraction wrong by 1e-6 or Runge-Kutta at 1.5 times the ceiling. Its limit, 3e-7, is set on the card's own method, at 11 times the largest residual that method leaves, and the residual reads the true error of the state low by about 11 to 15 times: on two of the three fast runs the true error, 3.3e-7 and 3.8e-7 of the neutron population, is above the limit while the residual is 2.3e-8 and 2.6e-8. A run is one burst with one reactivity; a reactivity changed during a burst is refused by name, ReactivityChangedDuringBurst. Each step may carry its own flow rate; every compared burst holds one flow, and a burst whose flow changes is computed with the same equations. Outside each band's compared reactivity and flow the card computes the same equations. Between the three bands the card refuses, InletTemperatureOutsideCard. The card stops at the first power maximum: hot standby, operating power, boiling, void, pressure and any other core are not on the card. The reactivity is the report's reactor period converted by the caller with the band's own generation time; the card takes dollars. A second program, with its own reading of the report's tables and a model of its own, recomputes the same figures on the same machine.";
-
 /// The result of the tyre's validation record: the one scoring of
 /// 2026-10-09 on the 60 held-back runs that hold a scored slip, of the 90
 /// held back, as its record states it.
@@ -5103,12 +3880,6 @@ pub(crate) const FINGERPAD_P02_GLASS_RESULT: &str = "On the 30 trials of this fi
 
 /// The limits of the finger pad's validation record.
 pub(crate) const FINGERPAD_P02_GLASS_LIMITS: &str = "All eight constants are fitted to this finger's own trials; nothing is derived from skin or glass, and the form (two characteristic twists, no load term in the twist of the stuck area) comes from another finger of the same experiment, P01. What the card holds: this finger, in one block of 70 trials of one sitting, slipped at 10.2 to 11.1 N mm at 2 N from 5 to 50 degrees a second (the means of its four conditions; single trials ran from 9.3 to 13.2), and the card gives that to about 8 percent. Those are trials the constants were fitted to. At 2 N from 5 to 50 degrees a second there is no trial outside the fit, so nothing there is a test; at the three conditions outside the fit the slip torque is 9.4 to 29.3 percent off (target 5.62), and the card answers there with those gaps stated. The floors of the slip torque, which no card of one finger can go under: one trial about the mean of its condition inside a block, 5.2 percent on this finger; block to block, 13 to 15 percent; finger to finger, 17 to 26 percent. The block-to-block figure is how far the block at 2 N sits from the power law through the other four loads over the seven fingers: +24 percent on this finger, from -12 to +24 over the seven, 13 percent as a standard deviation and 15 as a root mean square. The paper gives the order of the blocks, 0.5, 1, 5, 10 and then 2 N, not randomised because the camera was refocused for each force, and names the confound itself: total experiment time, with moisture increasing with occlusion time. The card takes its level from the last block and does not know the block. On this finger on another occasion a user should carry 13 to 15 percent, and on another finger about a fifth; another day, another surface, a wet or a treated finger, or a finger sliding along the glass is outside this comparison: the motion is a twist about the normal. The card answers at every force above zero with the law's two load exponents, off at every other load measured: +13.6 percent at 0.5 N, +9.4 at 1 N, +21.7 at 5 N and +29.3 at 10 N. Nothing was measured below 0.5 N or above 10 N, and there a frame carries FLAG_BEYOND_COMPARED. The mean at 2 N and 20 degrees a second pools 20 trials twisted about a point off the centre of the contact, which the paper does not count among its 90 trials a finger and which read 3.9 percent higher on this finger: 11.12 N mm pooled, 10.84 from the ten centred trials. On this finger the slip torque shows no trend with rate from 5 to 50 degrees a second (10.24, 11.08, 10.84 and 10.68 N mm) and the card's rate exponent is -0.009; at 100 degrees a second it was 11.66, the card is 13 percent off it, and the card answers there with that gap stated. Nothing was measured below 5 or above 100 degrees a second, and there a frame carries FLAG_BEYOND_COMPARED. On three of the other fingers the slip torque rose by 60 to 80 percent from 5 to 100 degrees a second. This finger and P01 have the lowest friction of the seven. The twist at full slip is the card's weakest output: 39 to 40 degrees at every load and rate, against a measured 19 to 49 degrees over this finger's nine conditions; inside the range it is 39 to 40 against a measured 44 to 49 degrees, and between fingers it spreads by 11 to 17 degrees. FLAG_FULL_SLIP marks that event, the one the card exists to find, and is not a warning. FLAG_BEYOND_COMPARED marks a frame beyond the forces, the rates and the twist that were compared. The stuck fraction is a second fitted curve of the same form as the torque's, with its own characteristic twist; a bed of springs on a rigid finger would have one; the curve is outside its target at seven of the nine conditions. The stuck fraction and the torque were never measured in one trial. The paper (J. R. Soc. Interface 20: 20220809, sections 2.2.1 and 4.3.1, read in its open text) says that the tangential force of the first experiment, the one with the camera, was corrupted, that the torque was acquired in a second experiment with one centred sensor and no camera, and that \"the experiments were conducted on separate days\", so that \"the moisture of the participant's finger could have impacted the friction\". The card's torque is fitted to the second experiment and its stuck fraction to the first. The trial key of the second experiment numbers this finger's 110 trials in one sequence with the block at 2 N last, trials 41 to 110; that the sequence was one sitting is this record's reading of the key, and the paper does not say so. The twist was compared from 1 to 75 degrees. The plate turned 80 degrees in every trial: at 2 N it held its rate to 77.0 degrees at 50 degrees a second and to 78.9, 79.4 and 79.7 degrees at 20, 10 and 5, and then slowed to a stop at 80, with the torque falling. Past 75 degrees the card goes on with the same bed of springs under the held rate, its torque rising toward its slip limit and its heat growing with the twist, and each frame carries FLAG_BEYOND_COMPARED: the twist from 75 to 80 degrees has no comparison, and the measured plate stopped at 80. The direction of the twist is not an input. The overshoot of the torque before it settles, a few percent, and the shrinking of the contact area during the twist are left out. No heat and no stored energy was measured: the ledger of work, stored energy and heat is that of the model's bed of springs and closes for any value of the eight constants, so it can catch a wrong stepping rule or a corrupted step and cannot catch a wrong constant. Its scale is the larger of 0.0508 J, the scale of the compared build (the law's slip-torque limit at 10 N and 5 degrees a second over the whole turn of 80 degrees), and the plate work of the run: the work of a twist to 75 degrees at 2.07 N and 50 degrees a second is 0.0126 J, so on every twist at 2 N to 75 degrees the fixed energy is the scale, and a heavier load or a longer twist is held to the same relative closure. A step that turns the plate by more than 0.05 of the characteristic twist of the torque is refused as TwistStepAboveQuadrature: the ledger sees the difference of the work and the heat, not each, and the card holds the step at which the four-point rule sums each of them exact to rounding. A force of zero or less is refused as NoContact, and a rate of zero or less as TwistRateNotPositive. The slip torque and the full-slip twist are this record's own reductions of the published per-frame files. The slip-torque window here is the frames whose twist lies within rate x 0.5 s below 75 degrees; the authors' is the 0.5 s before 75 degrees. The two agree to 0.02 percent from 5 to 50 degrees a second and differ by 0.67 percent at 100. The authors' own per-trial summaries, outside the fit and the comparison, are compared by the second comparison program and again by the builder: on this finger's 90 centred trials the values here agree with theirs to 0.04 percent in the condition means at 5 to 50 degrees a second. The raw 1 kHz files are not used. The values given here are this record's reductions of the authors' data, not the authors' own figures, except where the paper is quoted. A run is one twist from zero under one load. A run whose later segment changes the force or the rate is refused whole, with no proof, as LoadChangedDuringTwist, and every run and every single step starts untwisted, so that no request can take up a twist under another load: a start at any twist but zero is refused as TwistNotStartedFromZero. The compared build answered a start at any twist under any load. Every trial of all seven fingers in the archive is now read, so a card rebuilt on this finger needs other data to be compared with. One party wrote the card and ran it; a second comparison program, on one machine, gives the same results.";
-
-/// The result of the tokamak's validation record.
-/// The one-line summary of the JET tokamak, as the list shows it.
-pub(crate) const TOKAMAK_SUMMARY: &str = "The plasma of the JET tokamak in an ELMy H-mode pulse of 1996 to 1997, deuterium or deuterium-tritium: its thermal energy, its fast-ion energy and its D-T fusion power under the heating power. Compared with the nine JET pulses of its regime, 1.65 to 3.84 MA, 1.80 to 4.04 T, up to 24.3 MW of heating, heated windows up to 5.475 s and a tritium fraction of 0 to 0.034 or 0.451 to 0.504; outside that envelope it computes the same equations, with nothing compared, up to the Greenwald density, an edge safety factor of 2, the Troyon limit and the span of the reactivity fit. Compared on 2026-10-09 with two held-back JET pulses, and by the rule fixed beforehand the comparison failed: on 42982 the fusion energy released was 0.743 of the measured, under the 0.75 mark.";
-
-const TOKAMAK_RESULT: &str = "On the two pulses not in the fit. Pulse 42982, 219 samples over 5.475 s: thermal energy error 7.9 percent of its peak (target 14.5); fast-ion energy error 22.5 percent (target 25); fusion power error 23.4 percent (target 25); fusion energy released 18.4 MJ against 24.8 MJ, a ratio of 0.743 (target 0.75 to 1.25). The card's fusion power reads low throughout: its peak is 3.7 MW against 6.1 MW. Pulse 42976, a hot-ion pulse outside the card's regime: thermal energy 19.2 percent (target 14.5), fast-ion energy 25.1 percent (target 25), fusion power 34.7 percent (target 25), and fusion energy 5.4 MJ against 10.3 MJ, with a peak fusion power of 5.1 MW against 14.4 MW.";
 
 /// The lines of the accumulator's validation record, fixed before a held-back
 /// file was downloaded.
@@ -5187,47 +3958,12 @@ fn validation(card: &str, specimen: &str) -> Value {
             LINK_RESULT.into(),
             "On the 18 events in the fit, the card's error is 0.667 dB, against 1.028 dB for P.838 alone and 1.589 dB for no attenuation; with each event left out of the fit in turn, 0.677 dB. The structure and the link were chosen on June and July. August tests new rain events on the same link in the same summer, inside the rain rates fitted: interpolation in rain rate, later in time. No other link, frequency, polarisation or season, and no snow, is in the comparison. One link, one direction, one gauge at one end of the path: rain on the path that differs from rain at the gauge is not in the card, and the fitted event with the heaviest rain, 84 mm/h, has the largest error, 1.84 dB. The dry level is the caller's, read from the link itself before each event, and the result depends on it: in the comparison it was the median of the hour before each event; one receiver step, 0.3 dB, of error in it puts the summed attenuation outside its band, at 1.69 of the measured sum, and a single dry level for the whole month, 52.30 dB, gives 0.644. An agent with a rain forecast and no reading of the link's level just before the rain does not have what this comparison used. An agent sizing a fade margin must not take the card's peak as the measured peak: the card's five-minute peak was the lower in seven of the nine events, by up to 2.2 dB, and its one-minute peak was the lower in six, by up to 2.8 dB, and the higher in three, by up to 3.3 dB. The dry level's median, 52.30 dB, is 7.98 dB above free space between two ideal 0.3 m apertures (124.667 dB less 2 x 40.172 dB); the data set gives no antenna gain or feeder loss, so that difference is not divided. The received power in watts and the energies are the card's arithmetic on the levels; no energy is in the comparison. The comparison fed one-minute gauge rates of 0 or multiples of 6 mm/h alone, held through whole minutes in steps of 60 s from dry antennas. The card computes past all of these, with the map and the ledgers exact: a rate above 84 mm/h, a rate above 0 and below 6 mm/h, rain changed inside a gauge minute, a step longer than 60 s and a dry level outside the fitted 51.75 to 52.90 dB; none of those is in the comparison.".into(),
         ],
-        "reactor_spert3" => [
-            "The SPERT III E-core, a small light-water test reactor, in its cold-startup reactivity-insertion tests: primary coolant at 56 to 92 degrees Fahrenheit, no flow, 5e-5 MW at the start, reactivity inserted in a step.".into(),
-            "IDO-17281 (Phillips Petroleum Company for the US Atomic Energy Commission, March 1969), Table III: 30 cold-startup tests, each value with a stated standard deviation. Fitted on 20: the card's one constant. Compared with the other 10, every third test in the order run, not in the fit: 0.890 to 1.128 dollars, 4.3 to 110 MW at the peak, 56 to 82 degF. None of the report's measured values is stored in the card. Tests 22 and 43, both in the fit, set the ends of the compared span, 0.769 to 1.210 dollars: there the card was compared in sample and with each test left out of the fit in turn. Outside that span the card computes the same equations.".into(),
-            "Error measures and targets. Peak power and energy released to the peak: RMS error at most 1.5 of the report's standard deviation, worst at most 3, mean at most 0.5 in size. Time of the peak: RMS relative error at most 5 percent, worst at most 10 percent. Record SHA-256 47458dc27bcd9a60fe6c16ac613b2be3e15b30c7e4bb75d7624c80707e4e7ccd.".into(),
-            "On the 10 tests not in the fit. Peak power: RMS 0.58 of the report's standard deviation (target 1.5), worst 1.13 (target 3), mean +0.29 (target 0.5). Energy released to the peak: RMS 1.01 (target 1.5), worst 1.99 (target 3), mean -0.705 (target 0.5): the card reads low. Time of the peak: RMS 23 percent (target 5), worst 29 percent (target 10), every peak early.".into(),
-            "The card's structure was chosen with all 30 tests of Table III read; its one constant, the strength of the feedback with energy released, is fitted on 20. The delayed-neutron constants are the report's values for 500 degF, used here on cold tests; the report prints none for cold. Each of the 20 fitted tests predicted from the other 19: peak power and energy within the targets above, the peaks about 21 percent early. The card stops at the first power maximum: boiling, heat flow from fuel to water, hot startup and operating power are not on the card. The reactivity is the report's reactor period converted by the caller; the card takes dollars. Peak power, energy released to the peak and time of the peak are the quantities compared with the 10 tests outside the fit. The states the card seals before the peak are compared with digitised plots of 19 fitted tests: on 18 of them the card reaches a tenth of its peak about 26 percent early. The card steps the reactivity in at 5e-5 MW; the report's rod ramped it in over 50 to 65 ms, and a fit to the plots puts the starting power near 9 W. energy/reactor_spert3_fuel carries the ramp. Outside the compared span of reactivity, 0.769 to 1.210 dollars, and of coolant temperature, 56 to 92 degF, the card computes the same equations; every compared burst is one step in reactivity, held to the first maximum.".into(),
-        ],
-        "reactor_spert3_fuel" => [
-            "The SPERT III E-core, a small light-water test reactor, in its low-initial-power reactivity-insertion tests in three bands of inlet temperature: 56 to 92, 251 to 259 and 498 to 501 degrees Fahrenheit, with no coolant flow in the cold band, 2.4 to 22 ft/s in the 251 to 259 degF band and 4.8 to 24 ft/s in the 498 to 501 degF band. The reactivity is ramped in as K t^2 by the transient rod; the fuel temperature and the water temperature are state, and the fuel feeds back by a square-root Doppler law.".into(),
-            "IDO-17281 (OSTI 4792676), Table III (cold startup) and Table V (hot startup at about 260 and 500 degrees Fahrenheit): 58 tests, each value with a stated standard deviation. Fitted on 28: the 20 cold-startup tests of reactor_spert3's fit and eight tests at 500 degrees Fahrenheit, for the card's four constants. Compared with the other 30, not in the fit: ten cold-startup tests, seven at 498 to 501 degrees Fahrenheit, and the whole series the report names for about 260 degrees Fahrenheit, 13 tests at inlet temperatures of 251 to 259 degrees Fahrenheit, where nothing in the card is fitted. None of the report's measured values is stored in the card.".into(),
-            "Error measures and targets, for each of the three groups not in the fit and for the 30 together. Peak power and energy released to the peak: RMS error at most 1.5 of the report's standard deviation, worst at most 3, mean at most 0.5 in size. Time of the peak: RMS relative error at most 5 percent, worst at most 10 percent. Record SHA-256 413ace16d5cc3d622c0ef44c0ea2b9526ac7526dfeee4b43ae601d6018e51db4.".into(),
-            REACTOR_SPERT3_FUEL_RESULT.into(),
-            REACTOR_SPERT3_FUEL_LIMITS.into(),
-        ],
-        "reactor_spert3_ccore" => [
-            REACTOR_SPERT3_CCORE_WHAT.into(),
-            REACTOR_SPERT3_CCORE_DATA.into(),
-            REACTOR_SPERT3_CCORE_PASS_LINE.into(),
-            REACTOR_SPERT3_CCORE_RESULT.into(),
-            REACTOR_SPERT3_CCORE_LIMITS.into(),
-        ],
-        "runaway_18650_lco" => [
-            RUNAWAY_18650_LCO_WHAT.into(),
-            RUNAWAY_18650_LCO_DATA.into(),
-            RUNAWAY_18650_LCO_PASS_LINE.into(),
-            RUNAWAY_18650_LCO_RESULT.into(),
-            RUNAWAY_18650_LCO_LIMITS.into(),
-        ],
         "reactor_triga_jsi" => [
             "The TRIGA Mark II research reactor of the Jozef Stefan Institute, Ljubljana, pulsed by pneumatic ejection of its transient rod, with the 56-element core of standard fuel (12 wt% uranium, 20 percent enriched, U-ZrH) loaded as core 215 in November 2014, core 217 in March 2015 and core 231 in March and April 2018: the power through the pulse and the seconds after it to the scram, the energy released, and the core-average fuel temperature that energy makes.".into(),
             REACTOR_TRIGA_JSI_DATA.into(),
             REACTOR_TRIGA_JSI_PASS_LINE.into(),
             REACTOR_TRIGA_JSI_RESULT.into(),
             REACTOR_TRIGA_JSI_LIMITS.into(),
-        ],
-        "cell_2170_m80" => [
-            "One Tesla Model 3 2170 lithium-ion cell, cell m80 of the dataset, as it stood in each of six blocks of tests at chamber settings of 40, 25, 10, 0, -10 and -20 degrees Celsius: its terminal voltage, given the current and the temperature measured on its case. All six blocks are served. The -10 and -20 degree blocks read 55.6 to 425 millivolts RMS, outside every target, and are served with FLAG_BLOCK_MET_NO_MARK on each step. The same cell type is served as a physical model, cell_2170_model3: on one discharge, cell m80 from the recharge of its 10 degC block at 1.5 A for 600 s with the case at 12 degC, this card gives 3.934 V and that one 3.917 V, 17.4 mV apart.".into(),
-            "The Tesla Model 3 2170 Li-ion Cell Dataset (Borealis 10.5683/SP3/ZVTR4B, version 3.0) and its paper (IEEE ITEC 2022, 10.1109/ITEC53557.2022.9813996). The card's 2,307 numbers are fitted on 17 characterisation files of that cell: the slow discharges and the pulse test of each block. 18 further tests were opened for a forecast outside the engine. 60 tests are outside the fit and that forecast: 12 discharges at a held current and 48 drive cycles.".into(),
-            "Targets, the same at all six temperatures, with a result for each temperature. Each discharge at a held current: voltage error at most 42 millivolts RMS, delivered capacity within 3 percent, and the run ended by the card's own 2.8 V limit. Each drive cycle: voltage error at most 42 millivolts RMS, the card still running at the last sample, and the error at the last sample at most 126 millivolts. Record SHA-256 488fe0af60bbb68be465106ae5fe368b7780f331e8ea5c87e8ac523e6ab984fa.".into(),
-            "On the 60 tests: 27 runs within every target, and no temperature with every run within. The slow discharge, at a third of the rated current, at 40, 25, 10 and 0 degrees Celsius: voltage error 5.0, 6.4, 15.0 and 29.2 millivolts RMS (target 42), within every target. The discharge at the rated current: 48.2, 44.1, 51.2 and 88.2 millivolts at 40, 25, 10 and 0 degrees Celsius (target 42). Of the 32 drive cycles from 0 to 40 degrees Celsius, 29 within the voltage target and 23 within every target. At -10 and -20 degrees Celsius: voltage errors of 55.6 to 425 millivolts, no run within every target. Every block is served at the card's case temperatures, -21.898 to 45.535 degC, and currents to 13.5 A either way, and a step outside its block's own tests carries FLAG_OUTSIDE_COMPARED_TESTS. A third program, written from the protocol's text by an agent that did not write the card, recomputes the same 27 of 60, every error and every call to within a millionth of a millivolt.".into(),
-            "The forecast made outside the engine on the 18 opened tests, one discharge at 2.25 A and two drive cycles at each temperature, had this card's shape within every target at 25, 10 and 0 degrees Celsius, one drive cycle at 40 degrees Celsius 2 millivolts past its target at the last sample, and outside the targets at -10 and -20 degrees Celsius. It held no discharge at the rated current. The 60 tests of this cell have been read: a further comparison needs a cell no model has seen. One party wrote the card and ran the comparison twice, on one machine; a third program, from the protocol's text by an agent that did not write the card, recomputes it. No one outside Protocol Company, which makes this engine, has repeated it. One cell. One capacity per block, while the cell went on ageing inside each block. Each temperature was measured at one age, so a block is also an age of the cell. The card is given the case temperature and does not predict it. Fitted from pulses of up to 13.5 A discharging and 2.25 A charging: a charging current above 2.25 A is served by the discharge side of the tables. Compared up to 11.375 A discharging and 9.737 A charging, the largest currents of the 60 tests, and served to 13.5 A either way, a step outside its block's own tests flagged FLAG_OUTSIDE_COMPARED_TESTS; held currents were compared at about 1.5 A and 4.5 A, and the card bounds the size of the current, not how long it is held. The tables end where a slow discharge at the block's temperature ended. The step is one second.".into(),
         ],
         "cantilever_eth" => [
             "One aluminium strip, 326 mm long, 40 mm wide and 1 mm thick, clamped at one end under a bolted steel plate with nothing between plate and strip, at ETH Zürich: its first bending mode in free decay in room air, as the deflection at the laser-1 station, 268 mm from the clamp.".into(),
@@ -5236,31 +3972,12 @@ fn validation(card: &str, specimen: &str) -> Value {
             CANTILEVER_RESULT.into(),
             "One strip, one clamp, one afternoon. A second comparison program, written from the record's text alone with a reader of its own, gives the same frequency and timing errors on the same eleven blocks; it takes each period's amplitude from a fitted sine where the first takes half the peak-to-peak value, and gives 7.94 percent where the first gives 7.03. The forecast for this structure, made outside the engine on the first 12 s of the second ring-down, is 2.22 percent in amplitude, 0.0047 Hz in frequency and 0.024 of a period in timing, and the card run through the engine gives the same figures there. This structure of six constants was chosen with the errors on those 12 s read, over a smaller structure of five; on the same blocks, computed outside the engine, the five-constant structure gives 6.48 percent in amplitude, closer than this card. The last two blocks lie below the smallest amplitude the constants are fitted on, 0.072 mm; without them the amplitude error is 5.7 percent (target 5.0). The comparison spans envelopes from 15.79 mm down to 0.058 mm: the compared run's own start, at 15.786 mm, is the largest envelope compared, and its readings start from 14.404 mm. From 15.79 mm up to 18.75 mm, the largest amplitude the constants are fitted on, the card answers with the frame flagged FLAG_ENVELOPE_ABOVE_COMPARED. Above 18.75 mm the card refuses by name, as EnvelopeAboveCard: the fitted laws end there, and the strip's own yield needs its alloy, which the dataset does not state. Below 0.058 mm the card answers on to rest with the frame flagged FLAG_ENVELOPE_BELOW_COMPARED. The 12 s to 24 s of this ring-down are now in this comparison: the next comparison needs a ring-down no model has seen. One party wrote the card, ran it and compared it twice, on one machine; no one outside the company has repeated it. The laser was logged in volts: the scale in metres rests on one line of the authors' script, confirmed by a second reading to 3 percent, and every compared quantity is a ratio or a frequency. The card has no mass, so its energies are per kilogram. The softening spring is a power law fitted on amplitudes from 0.072 to 18.75 mm, not derived from the strip's dimensions. A start inside the amplitude ceiling with nearly all its energy as speed can be refused some steps later, because the softened spring carries the deflection envelope past the ceiling: from zero deflection with the envelope at 0.99 of the ceiling the step is refused after 107 steps of 0.25 ms, and at 0.98 the beam rings through.".into(),
         ],
-        "cell_2170_model3" => [
-            "One Tesla Model 3 2170 lithium-ion cell from -10 to 40 degrees Celsius: its terminal voltage, given the current and the temperature measured on its case. A physical model with memory: one measured rest-voltage curve and 22 fitted numbers for the immediate resistance, a surface reaction that eases with current and temperature, lithium diffusing in the particles, hysteresis, and a slow voltage drop in the electrolyte under sustained current. Three cells of the dataset are held: m80, m1000 and m448-N.".into(),
-            "The Tesla Model 3 2170 Li-ion Cell Dataset (Borealis 10.5683/SP3/ZVTR4B, version 3.0). The curve and the 22 numbers are fitted on every test of cell m80 from -10 to 40 degrees Celsius. For cell m1000 one number is fitted, a resistance scale, on its discharge at a third of the rated current, its pulse test, its slow charge and discharge and its capacity test at each of those temperatures, and its capacities were measured from its recharges. For cell m448-N the same one number is fitted, on the same four tests of its own at each temperature. 45 runs of cell m1000 and 60 runs of cell m448-N from -10 to 40 degrees Celsius are outside the fit, unread until the card was run on them: discharges at a held current and drive cycles.".into(),
-            CELL_2170_MODEL3_PASS_LINE.into(),
-            CELL_2170_MODEL3_RESULT.into(),
-            "The model was developed on all the tests of the first cell, m80. Computed outside the engine by the study that fitted it, the model is within every target on 62 of the first cell's 65 runs in range and on 14 of the second cell's 15 opened runs in range. Outside the targets: three hill cycles of the first cell, at 40, 25 and -10 degrees Celsius; at 40 and 25 the card stops at its 2.8 V limit shortly before the real cell, which is riding the same limit there. Steep climbs at low charge in the cold: at 0 and -10 degrees Celsius, at the end of climbs of 7 to 10 A for four minutes below 45 percent charge, the card reads 130 to 180 millivolts high, and three physical causes were tested and none stands. Charging in the cold: in the descents of the hill cycle at 0 and -10 degrees Celsius the card reads 40 to 70 millivolts high. Capacity is up to 2 percent long under held current at 10 and 0 degrees Celsius. Fitted without the tests at -10 degrees Celsius, the model is within every target on 3 of the 13 runs there, so the temperature laws do not reach to a colder temperature. The range: a case temperature from -12.9 to 45.9 degrees Celsius, which is the chamber set from -10 to 40 with 0.3 kelvin allowed either side of what the sensor read; a current up to 13.524 A discharging and 13.984 A charging; each limit is set from the tests of the first two cells computed before that comparison, with the accuracy the dataset states for the tester or the chamber allowed beyond them. -20 degrees Celsius is outside the compared range, because the measurements there are irregular and no mechanism could be separated from them; computed there, the model is within every target on none of the first cell's 13 runs. Sustained current above the rated current was tested by the hill cycle alone; a running mean above 8.722 A, the largest compared, lands with FLAG_OUTSIDE_COMPARED_RUNS. Charging current is accepted and was fitted inside drive cycles; no charging run is in the comparison. The card is given the case temperature and does not predict it. The capacity is the caller's, read from the last full charge. Each block of tests was measured at one age of the cell, so a new cell was never measured in the cold nor an aged cell warm, and the resistances carry no age term: a capacity outside the band its block was compared with at that case temperature lands with FLAG_OUTSIDE_COMPARED_RUNS. So does a case temperature that changes by more than 5.4 K between steps or spans more than 19.2 K in a run, past the 5.023 K and 18.811 K of the compared runs. Every fit and comparison was made at a step of one second, and the card steps by one second: where the current reverses, a step of 0.1 s gave an answer 49 mV from the one-second answer in the reversal that was compared, and no measurement on disk tests it. Every run compared in the record lies inside these edges, so none of them carries the flag. The runs of the second and the third cell inside the range have now been read: a further comparison needs a cell no model has seen. The hill-climb cycles of those cells lie outside the compared range and are not in the comparison. One developer's SI wrote the model, wrote the card and ran the comparison, on one machine. A second program, by an agent that did not write the card, recomputes the comparison from the protocol: with the record's own starts 50 of 60 runs of cell m448-N and 33 of 45 of cell m1000 within every target, the same result as the record on 102 of 105 runs, the three others turning on where the compared span ends; with its own simpler starts, full charge and each block's capacity, 48 and 27. It is the same developer's SI, and no one outside Protocol Company, which makes this engine, has repeated the result.".into(),
-        ],
         "creep_cmsx6" => [
             "One cast of the single-crystal nickel-base superalloy CMSX-6, cast by PCC Airfoils as [001] bars, solution annealed and aged: twelve round test pieces 6 mm in diameter, within 1.9 to 7.5 degrees of [001], in tension creep at 980 degrees Celsius under a held load at initial stresses of 140, 170, 200 and 230 MPa, three at each.".into(),
             "BAM Reference Data: Creep of Single-Crystal Ni-Based Superalloy CMSX-6, version 2.1 (doi 10.5281/zenodo.20132712): twelve creep tests to DIN EN ISO 204; cite gives the full reference. Fitted on six, two at each of 140, 170 and 230 MPa: six constants. Compared with the other six, not in the fit: all three at 200 MPa, a stress no fitted test has, and one more test piece at each of 140, 170 and 230 MPa.".into(),
             "Error measure: the natural logarithm of the card's time over the measured time to reach 0.1, 0.2, 0.5, 1, 2 and 5 percent creep extension, over the six tests not in the fit. Targets: RMS at most 0.15, worst at most 0.30, mean at most 0.10 in size. Record SHA-256 f20f99b0e3419d66201a3e124b5c216c4d138d41f976b19d6a536daf15316d87.".into(),
             CREEP_CMSX6_RESULT.into(),
             "One cast, one temperature, one laboratory. Six constants are fitted on six tests of this cast; the law was chosen with the fitted tests read, and the range at 140 MPa was set with all twelve read. On the fitted tests, each predicted from the other five: RMS 0.112, worst 0.279, mean -0.001; the 170 MPa tests predicted from 140 and 230 MPa alone: 0.118, 0.229, -0.039. The test pieces predict each other about as well: each of the twelve predicted from the other two at its stress gives RMS 0.075, the card 0.093. A straight-line interpolation of the fitted measurements, with no creep law, gives 0.098, 0.237 and -0.013 on the same 33 times; a Norton power law gives 0.436 RMS and 0.952 worst. 200 MPa lies where the stress dependence is straight: the minimum creep rate has a stress exponent near 6 from 170 to 200 MPa and from 200 to 230 MPa, and over 10 from 140 to 170 MPa, where no test is outside the fit; how the law carries to a stress away from the fitted ones is not measured. At 0.5 percent the card is late by a mean of 0.095. Below 0.1 percent the card starts later than every measured curve at all four stresses: in hours to 0.05 percent, the card against the three test pieces, 38.9 against 15.4 to 26.7 at 140 MPa, 7.8 against 2.7 to 3.5 at 170 MPa, 1.69 against 0.61 to 0.66 at 200 MPa and 0.245 against 0.06 to 0.08 at 230 MPa. The measured curves gain 0.02 to 0.04 percent within the first hour and the card stays near zero; its extension is under the measured one by at most 0.07 percent. The card answers there, and each frame carries FLAG_OUTSIDE_MET_RANGE. At 140 MPa the three tests stopped at 1010 to 1030 h, at 0.79 to 0.83 percent, so the levels 0.1, 0.2 and 0.5 percent are the ones compared there, and the card's 1 to 2.09 percent at 140 MPa is beyond any measurement. Between 0.5 percent and where those tests stopped the card runs ahead of them: it reaches 0.8 percent at 683 h where the two tests that got there took about 1000 h, and at the hour each test stopped it gives 1.70 to 1.78 percent, about a factor of 2 in extension. The card answers past 0.2 percent below 170 MPa with this gap, and each frame there carries FLAG_OUTSIDE_MET_RANGE. On 171 levels from 0.10 to 5.00 percent, with all twelve tests: at 170, 200 and 230 MPa the time since load is within 0.30 in log time at every level on all nine tests, the worst 0.289, at 170 MPa and 0.33 percent on a test not in the fit, a margin of 0.011. At 140 MPa all three tests are within 0.30 at every level from 0.10 to 0.25 percent, the worst 0.296; one is outside it from 0.26 percent, a second from 0.31, and all three from 0.66 percent. Below 170 MPa the law is within 0.30 to 0.2 percent, the worst 0.196. No test lies between 140 and 170 MPa, so the law holds its 0.30 to 5 percent from 170 MPa, the lowest stress it holds there, and the stress exponent between 140 and 170 MPa is where it is least measured. The card's clock is the time since load because that is what holds: the law's time between two neighbouring levels is off by up to 1.06 in the logarithm against the measured curves, and its errors cancel only in the sum from zero. Its exponents, 33.4 and -27.2, are fitted numbers of this law and not physical constants of the alloy. Between repeat test pieces at one stress the measured time to 0.1 percent differs by up to 0.27 in the logarithm. No rupture, no extension beyond 5 percent, no other temperature, no changed or removed load (a changed stress is refused as StressNotHeld), no other crystal direction. A second program, written apart, recomputes the same 33 values to 1e-12 on the same machine; a second machine and a second organisation have not repeated it.".into(),
-        ],
-        "grid_gb" => [
-            "The Great Britain synchronous area, the 50 Hz transmission system of England, Scotland and Wales, in the 60 seconds after an importing interconnector, or one pole of it, trips: 41 trips of 693 to 1402 MW between July 2017 and May 2026.".into(),
-            format!(
-                "The system frequency once a second and the half-hourly outturn inertia, published by the National Energy System Operator as NESO Open Data, and the interconnector's flow before and after each trip in Elexon's five-minute generation by fuel type (BMRS dataset FUELINST). The trips were found by a written rule from 114 months of frequency. Every third trip in time order, 13 of 41, is outside the fit; the card's three constants are fitted on the other 28: a response of {} MW/Hz below 50 Hz, a further {} MW/Hz below the knee, and a lag of {} s.",
-                grid_gb::RESPONSE_GAIN_MW_PER_HZ,
-                grid_gb::RESPONSE_GAIN_BELOW_KNEE_MW_PER_HZ,
-                grid_gb::RESPONSE_TIME_S,
-            ),
-            "Depth of the fall and the steepest second: root mean square of the relative error at most 0.25 and mean within 0.10, and the depth error smaller than that of the rule that depth is proportional to loss. Frequency near 60 s: root mean square error at most 0.06 Hz. The whole trace: median root mean square error at most 0.05 Hz. Record SHA-256 0fd449fc45839ef37928db97995b43f47cb22bb2ae89d531ccf4592e6e9732ba, revising 35c91fa9fe440ad852390b77bcd6ecddd8e7029630e620a660b11aad1f481ea9 before the card's structure was fitted.".into(),
-            GRID_GB_RESULT.into(),
-            "The 12 trips outside the fit are an easier set than the 28 in it: the proportional rule reaches 0.18 on them and 0.337 on the 28 with the card's constants (0.35 with each trip left out of the fit in turn), which hold a trip followed by a second loss, on 22 December 2023, and the shallowest fall of all, on 9 May 2026, so the card's margin over that rule on the twelve is small. On the 28, with each trip left out of the fit in turn, the depth error is 0.302 (target 0.25) and the error near 60 s 0.097 Hz (0.06), while the steepest second, 0.154, and the trace, 0.050 Hz, are within, and the depth error is below the proportional rule's 0.350. No structure tried is within every target on the 28; this is the one with the smallest depth error. The response the operator held on each day is not in the open data and is not an input: the card carries one response for nine years. Its errors follow the calendar: before 2021 its falls are about a quarter too shallow, after 2023 too deep. The depth error moves by +0.066 a year (standard error 0.013), from -0.30 in 2018 to +0.17 in 2025, nearly twice the 0.25 target across the span. The system changed: Dynamic Containment from October 2020, 500 MW rising to 1,576 MW by July 2023; Dynamic Moderation and Dynamic Regulation from March 2022; the minimum inertia lowered in 2024. The card has one gain and one lag for all of it. The inertia is the operator's estimate, which leaves out the Stability Pathfinder units. It is the sharper input: 0.9 or 1.2 times the published inertia puts the mean of the steepest second outside its target. The size of the loss is steady to 0.35 percent by the steadiness rule. Every trip had been read when the compared range was set. Losses: every one of the 40 trips lost 693 MW or more. The six trips of 500 to 692 MW inside the other spans, among those the scan lost, run through the engine against the same targets: depth 0.2512 (target 0.25; 0.2509 for the proportional rule) and steepest second 0.273 (0.25), three of the seven outside; the mean depth error -0.032, the steepest second's mean +0.057, near 60 s 0.054 Hz and the trace median 0.030 Hz within. A loss under 693 MW lands with FLAG_OUTSIDE_COMPARED_TRIPS. Frequency: no compared trip went under 49.553 Hz; a frequency under 49.55 Hz lands with FLAG_BELOW_COMPARED_FREQUENCY, down to 48.8 Hz, where low-frequency demand disconnection stops the run. Two numbers are not fitted. They were first written from memory, and the second program's author found their sources. Demand's relief of approximately 2.5 percent per hertz: National Grid, System Operability Framework 2016, p. 70, and the NESO webinar of 12 March 2025; the documented range is 2.0 to 2.5. The 49.8 Hz knee is Dynamic Containment's (NESO, Response Services Service Terms v6; Dynamic Containment testing guidelines of August 2020): right for that one service from October 2020, and before it there were static blocks at 49.7 and 49.6 Hz. With the three constants refitted, a relief from 0 to 5 percent per hertz changes no target's result, and every target holds for a knee of 49.80 to 49.90 Hz; at 49.75 Hz one does not. Every compared trip was one loss: the ledger books each step's own loss, and a step whose loss is not the run's first carries FLAG_OUTSIDE_COMPARED_TRIPS. No changing loss is in the comparison: the one measured trip with a second loss, that of 22 December 2023, is the card's worst. A recomputation outside the engine, held to its tolerance as first written, differs in 39 of 80 runs: in the response and the two integrals alone, the response by at most 4.2e-10 MW, the frequency never above 0.05 of the bound; the card's author widened that tolerance afterwards. A run of exactly 60 s in decimal lands every step: 3,000 steps of 0.02 s land 3,000 and read 60.00000000000378 s; the clock is summed in binary, and the comparison with 60 s carries the published rounding allowance. The scan that found the trips, by its rule of 0.15 Hz or more, lost four falls of exactly 0.150 Hz to rounding. One frequency for the whole area; no network, no generator that trips as a consequence, and no reserve slower than the primary response, so a step past 60 s is flagged FLAG_PAST_COMPARED_MINUTE. One party wrote the card and ran it; a second program, by another author, recomputes it on the same machine.".into(),
         ],
         "tire_eve_r19_ice" => [
             "One 235/55 R19 all-season sport-utility tyre of the European project EVE, rolled on a prepared ice track by the Terramechanics Rig of the Advanced Vehicle Dynamics Laboratory at Virginia Tech in April 2016, at a creep of about 0.06 m/s: the ratio of its longitudinal force to its normal load at a held slip, driven and retarded.".into(),
@@ -5283,13 +4000,6 @@ fn validation(card: &str, specimen: &str) -> Value {
             ACCUMULATOR_SBO450_RESULT.into(),
             ACCUMULATOR_SBO450_LIMITS.into(),
         ],
-        "tokamak_jet_dte1" => [
-            "The JET tokamak at Culham in ELMy H-mode pulses of 1996 to 1997, with the Mark IIa divertor, in deuterium and in deuterium-tritium (the DTE1 experiment): the thermal energy of the plasma, the energy of its fast ions and its D-T fusion power through the heated part of a pulse.".into(),
-            "International Multi-Tokamak Confinement Profile Database, 2008 public release: the time traces of ten JET pulses of 1996 to 1997. The energies and the fusion power in it are the TRANSP reconstruction of each pulse from its measured profiles. Four constants are fitted on eight pulses. Two are outside the fit: 42982, the steady pulse of the 1997 fusion-energy record, and 42976, the hot-ion pulse of the 16 MW fusion-power record.".into(),
-            "Error measures and targets, over the heated window of each pulse, sampled every 25 ms, each RMS error as a fraction of the measured peak in the window: thermal energy at most 14.5 percent, the error the IPB98(y,2) scaling has on its own data; fast-ion energy at most 25 percent; fusion power at most 25 percent. Fusion energy released: 0.75 to 1.25 of the measured. Record SHA-256 7badf2b1267219d0e4da2edaad7d50097f9f98ceee1e0ab5fb9f8fd391ba94bb.".into(),
-            TOKAMAK_RESULT.into(),
-            "Each training pulse predicted with constants fitted without it: thermal energy within 14.5 percent of peak on six of the eight (0.103 to 0.276), fast-ion energy within 25 percent on all eight (0.112 to 0.210). The fusion constants rest on one pulse, 42762, at an even mix; on the four training pulses that are not an even mix the fusion power is within 16.5 percent of its peak on 43134, at a tritium fraction of 0.034, and off by 33, 65 and 40 percent on 42794, 42997 and 43002, at 0.75 to 0.93. Above a fraction of 0.504, and from 0.034 to 0.451, where no pulse lies, the card computes the same D-T power, with the error above 0.504 stated here. The compared envelope is that of the nine pulses of the card's regime run through the card: 0.124 to 24.3 MW of heating, 0.173 to 2.44 MW of ohmic power, 1.65 to 3.84 MA, 1.80 to 4.04 T, 1.65e19 to 7.85e19 per cubic metre and up to 0.834 of the Greenwald density, a safety factor of 3.66 to 4.14, 0.462 to 9.57 MJ of thermal and 5.59 kJ to 1.62 MJ of fast-ion energy, 0.777 to 4.30 keV, a normalised beta of 0.224 to 2.21, a confinement time of 0.150 to 5.72 s, and 5.475 s of the heated window. Outside it the card computes the same equations, up to the Greenwald density, an edge safety factor of 2, the Troyon limit, the span of the reactivity fit and the ceiling of each state's step. Pulse 42976 is a hot-ion pulse, not an ELMy H-mode, and is outside the card's regime: the states and loads it alone reached (25.1 MW of heating, 4.16 MA, a safety factor of 3.39, 3.5 MJ of fast ions, 6.3 keV, confinement times to 8.5 s) are outside the compared envelope and are computed, with the errors above. The card has one temperature, no profiles of its own, no ELMs and no radiation term; the density, the current and the field are the caller's. It does not know the species of the beams. The compared values are a reconstruction by the TRANSP code, whose own fusion power is within 10 to 20 percent of the measured neutron rate. The targets were set with every file of both pulses outside the fit opened for its format, a table of 28 time samples of 42976 printed and a confinement multiplier of about 1.5 estimated from it by hand, and one line of peak values printed for each (42982: thermal energy 10.1 MJ and fusion power 6.08 MW; 42976: 13.1 MJ and 14.4 MW); 42976 was put outside the card's regime after its table was read. No constant is fitted to either. One tokamak, one campaign. A second program, written apart from the first from the raw files and the saved answers, recomputes the same eight results, every number agreeing to 15 figures; a third, built from the raw files, reaches the same numbers. No outside party has repeated it. The card's fusion power is superseded by the solver tokamak_dt_beam_target, which computes the D-T rate of one time slice from the plasma's profiles and its beams.".into(),
-        ],
         "tokamak_vde_mast" => [
             TOKAMAK_VDE_MAST_WHAT.into(),
             TOKAMAK_VDE_MAST_DATA.into(),
@@ -5309,8 +4019,12 @@ fn validation(card: &str, specimen: &str) -> Value {
         "momentum_jwst_dihedral" => card_momentum_jwst_dihedral_descriptor::validation(specimen),
         "generator_mmrtg_seebeck" => card_generator_mmrtg_seebeck_descriptor::validation(specimen),
         "reactor_msre_pump" => card_reactor_msre_pump_descriptor::validation(specimen),
-        "reactor_spert3_twin" => card_reactor_spert3_twin_descriptor::validation(specimen),
-        "reactor_spert3_ccore_twin" => card_reactor_spert3_ccore_twin_descriptor::validation(specimen),
+        "reactor_spert3" => card_reactor_spert3_twin_descriptor::validation(specimen),
+        "grid_gb" => card_grid_gb_twin_descriptor::validation(specimen),
+        "cell_2170_model3" => card_cell_2170_twin_descriptor::validation(specimen),
+        "tokamak_jet_dte1" => card_tokamak_jet_dte1_twin_descriptor::validation(specimen),
+        "runaway_18650_lco" => card_runaway_18650_lco_twin_descriptor::validation(specimen),
+        "reactor_spert3_ccore" => card_reactor_spert3_ccore_plate_descriptor::validation(specimen),
         "crater_ryugu_sci" => [
             "The crater made on asteroid 162173 Ryugu on 5 April 2019 by the Small Carry-on Impactor of JAXA's Hayabusa2: a 2 kg copper projectile at 2 km/s into a rubble surface under a gravity of 9.3e-5 m/s2. The compared quantity is the crater's apparent radius, at the level of the original surface.".into(),
             "The law of crater size and its two constants: thirteen impact craters in dense dry Ottawa Flintshot sand at 1, 111 and 464 times Earth's gravity, Schmidt, Proc. Lunar Planet. Sci. Conf. 11, 2099, its first table, transcribed from the scan at the NASA Astrophysics Data System. The clock: seven points read by eye from the fourth figure of Gault and Wedekind, Impact and Explosion Cratering, 1231. The projectile and the target point: JAXA's press briefing before the impact. Ryugu's mass, density, size and rotation: the JPL Small-Body Database. Outside the fit, and no part of any constant: the measured crater, apparent diameter 14.5 +/- 0.8 m, Science 368, 67, as given in JAXA's summary.".into(),
@@ -5409,7 +4123,23 @@ fn describe_one(item: &Card) -> Value {
     if (item.domain, item.card) == ("aerospace", "solar_system") {
         body["start_state"] = Value::String(SOLAR_SYSTEM_START_STATE.to_string());
     }
+    if let Some(equations) = equations(item.card) {
+        body[EQUATIONS] = json!(equations);
+    }
     body
+}
+
+/// The key of a card's every equation and constant, where its description
+/// prints them for a rebuild from the description alone.
+pub(crate) const EQUATIONS: &str = "equations";
+
+/// Every equation, constant, property law and discretisation of the cards
+/// that print them, one sentence each.
+fn equations(card: &str) -> Option<Vec<String>> {
+    match card {
+        "reactor_spert3" => Some(card_reactor_spert3_twin_descriptor::equations()),
+        _ => None,
+    }
 }
 
 /// The locked state a card's documented run starts from, each number with
@@ -5500,7 +4230,7 @@ fn declared_end_words(end: &crate::ends::End) -> &'static str {
 }
 
 fn describe_fields(item: &Card, example_compute_step: Value, example_run_trajectory: Value) -> Value {
-    json!({
+    let mut body = json!({
         "domain": item.domain,
         "card": item.card,
         "specimen": item.specimen,
@@ -5534,6 +4264,7 @@ fn describe_fields(item: &Card, example_compute_step: Value, example_run_traject
                 "mask": flag.mask,
                 "seals": flag.seals,
                 "state": flag_state(flag.name),
+                "limits": crate::exceedance::describe_kinds(item.card, flag.mask),
             });
             // A flag that marks an event the card exists to find, and not a
             // warning about the model, says so.
@@ -5545,7 +4276,12 @@ fn describe_fields(item: &Card, example_compute_step: Value, example_run_traject
         "frame_slots": frame_slots(item),
         "frame_rule": frame_rule(item),
         "time_label": time_label(item),
-    })
+    });
+    // What a flag reports beside its bit, on a card that sets one.
+    if !item.advisory.is_empty() {
+        body["exceedances"] = json!(crate::exceedance::DESCRIBE_RULE);
+    }
+    body
 }
 
 /// A flag that is the event its card exists to find: the full slip of the
@@ -5624,10 +4360,13 @@ fn flag_state_known(name: &str) -> Option<&'static str> {
         "FLAG_PAST_IDEAL_WALL_LIMIT" => "past_ideal_wall_limit",
         "FLAG_FLOW_CHANGING" => "flow_changing",
         "FLAG_FUEL_CIRCULATING" => "fuel_circulating",
+        "FLAG_ROD_AT_DRIVE_SPEED" => "rod_at_drive_speed",
         "FLAG_PAST_PEAK" => "past_peak",
         "FLAG_HOT_SPOT_BOILING" => "hot_spot_boiling",
         "FLAG_OUTSIDE_COMPARED" => "outside_compared",
         "FLAG_OUTSIDE_COMPARED_RANGE" => "outside_compared_range",
+        "FLAG_SEPARATOR_MELTED" => "separator_melted",
+        "FLAG_VENTED" => "vented",
         _ => return None,
     })
 }
@@ -5803,30 +4542,26 @@ fn worked_examples(domain: &str, card: &str) -> (Value, Value) {
         ("energy", "generator_mmrtg_f1") => generator_examples(),
         ("aerospace", "capsule_stardust") => capsule_examples(),
         ("aerospace", "satellite_lageos1") => satellite_examples(),
-        ("energy", "reactor_spert3") => reactor_examples(),
-        ("energy", "cell_2170_m80") => cell_2170_examples(),
         ("signal", "cantilever_eth") => cantilever_examples(),
-        ("energy", "cell_2170_model3") => cell_2170_model3_examples(),
         ("materials", "creep_cmsx6") => creep_examples(),
         ("aerospace", "capsule_insight") => capsule_insight_examples(),
-        ("energy", "reactor_spert3_fuel") => reactor_fuel_examples(),
         ("energy", "reactor_triga_jsi") => reactor_triga_examples(),
-        ("energy", "reactor_spert3_ccore") => reactor_ccore_examples(),
-        ("energy", "runaway_18650_lco") => runaway_18650_lco_examples(),
         ("aerospace", "crater_ryugu_sci") => crater_examples(),
+        ("energy", "grid_gb") => card_grid_gb_twin_descriptor::examples(),
+        ("energy", "tokamak_jet_dte1") => card_tokamak_jet_dte1_twin_descriptor::examples(),
+        ("energy", "runaway_18650_lco") => card_runaway_18650_lco_twin_descriptor::examples(),
         ("energy", "reactor_msre_pump") => card_reactor_msre_pump_descriptor::examples(),
-        ("energy", "reactor_spert3_twin") => card_reactor_spert3_twin_descriptor::examples(),
-        ("energy", "reactor_spert3_ccore_twin") => card_reactor_spert3_ccore_twin_descriptor::examples(),
+        ("energy", "reactor_spert3") => card_reactor_spert3_twin_descriptor::examples(),
+        ("energy", "cell_2170_model3") => card_cell_2170_twin_descriptor::examples(),
+        ("energy", "reactor_spert3_ccore") => card_reactor_spert3_ccore_plate_descriptor::examples(),
         ("energy", "generator_mmrtg_seebeck") => card_generator_mmrtg_seebeck_descriptor::examples(),
         ("aerospace", "momentum_jwst_dihedral") => card_momentum_jwst_dihedral_descriptor::examples(),
         ("materials", "grasp_lift_glass_4tu") => card_grasp_lift_glass_4tu_descriptor::examples(),
         ("aerospace", "momentum_jwst_srp") => card_momentum_jwst_srp_descriptor::examples(),
         ("signal", "link_gothenburg_10010") => link_examples(),
-        ("energy", "grid_gb") => grid_gb_examples(),
         ("aerospace", "solar_system") => solar_system_examples(),
         ("materials", "tire_eve_r19_ice") => tire_eve_r19_ice_examples(),
         ("aerospace", "los_jwst_fine_guide") => los_examples(),
-        ("energy", "tokamak_jet_dte1") => tokamak_examples(),
         ("energy", "tokamak_vde_mast") => tokamak_vde_mast_examples(),
         ("materials", "fingerpad_p02_glass") => fingerpad_examples(),
         ("energy", "accumulator_sbo450") => accumulator_sbo450_examples(),
@@ -6129,71 +4864,6 @@ fn cable_examples() -> (Value, Value) {
     )
 }
 
-/// One step at the card's ceiling from cold start, and a run to the first
-/// maximum of power for a mid-range reactivity: the reactor period of opened
-/// test 51 (72.3 ms, coolant 82 degF) converted for the card's own set. The run
-/// asks for more steps than it needs and ends in the sealed refusal.
-/// The opened trip of 18 April 2019: one pole of the interconnector to France,
-/// 996 MW, with 241 GVA s and 27,132 MW on the system, from 49.942 Hz. One
-/// step at the card's ceiling, and 2,880 steps, 59.8 s, with a frame every 48.
-fn grid_gb_examples() -> (Value, Value) {
-    let card = grid_gb::GridGb::interconnector_loss();
-    pair_examples_recorded(
-        "energy",
-        "grid_gb",
-        obj(&[
-            ("frequency_hz", scalar_value(49.942)),
-            ("inertia_mw_s", scalar_value(241_000.0)),
-            ("demand_mw", scalar_value(27_132.0)),
-        ]),
-        obj(&[("loss_mw", scalar_value(996.0))]),
-        card_dt(card.gate_dt_s()),
-        2_880,
-        48,
-    )
-}
-
-fn reactor_examples() -> (Value, Value) {
-    let reactor = reactor_spert3::ReactorSpert3::e_core_cold_startup();
-    let coolant_k = (82.0 - 32.0) / 1.8 + 273.15;
-    let state = reactor_spert3::ReactorState::try_cold_start(&reactor, coolant_k).expect("cold");
-    pair_examples_recorded(
-        "energy",
-        "reactor_spert3",
-        obj(&[("coolant_temperature_k", scalar_value(state.coolant_temperature_k))]),
-        obj(&[("reactivity_inserted_dollar", scalar_value(0.9982818460448638))]),
-        card_dt(reactor.gate_dt_s()),
-        3000,
-        100,
-    )
-}
-
-/// One step at the card's ceiling from the start in the cold band, at 82 degF
-/// with no flow, and a run to the first maximum of power for one dollar
-/// inserted. The run asks for more steps than it needs and ends in the sealed
-/// refusal.
-fn reactor_fuel_examples() -> (Value, Value) {
-    let reactor = reactor_spert3_fuel::ReactorSpert3Fuel::e_core_low_initial_power();
-    let inlet_k = (82.0 - 32.0) / 1.8 + 273.15;
-    let state = reactor_spert3_fuel::ReactorState::try_start(&reactor, inlet_k).expect("start");
-    let band = reactor.band_of(inlet_k).expect("the cold band");
-    pair_examples_recorded(
-        "energy",
-        "reactor_spert3_fuel",
-        obj(&[("inlet_temperature_k", scalar_value(state.inlet_temperature_k))]),
-        obj(&[
-            ("reactivity_inserted_dollar", scalar_value(1.0)),
-            (
-                "coolant_flow_m_per_s",
-                scalar_value(reactor.band_flow_min_m_per_s[band]),
-            ),
-        ]),
-        card_dt(reactor.gate_dt_s()),
-        REACTOR_FUEL_EXAMPLE_STEPS,
-        100,
-    )
-}
-
 /// One step at the card's ceiling from 25 degC with 2.0 printed dollars on the
 /// table of core 217, and a run of the same pulse through its power peak.
 fn reactor_triga_examples() -> (Value, Value) {
@@ -6218,32 +4888,6 @@ fn reactor_triga_examples() -> (Value, Value) {
 /// The steps the worked run of the JSI TRIGA reactor asks for: 0.38 s, past
 /// the power peak of a 2.0 dollar pulse.
 pub(crate) const REACTOR_TRIGA_EXAMPLE_STEPS: u64 = 4_000;
-
-/// The steps the worked run of the fuel-temperature reactor asks for: more
-/// than the run to the first maximum takes.
-pub(crate) const REACTOR_FUEL_EXAMPLE_STEPS: u64 = 5_000;
-
-/// One second of a 2.25 A discharge from a cell just recharged, in the 25 degC
-/// block with its case at 25 degC, and ten minutes of the same with a frame
-/// every minute.
-fn cell_2170_examples() -> (Value, Value) {
-    let cell = cell_2170_m80::Cell2170M80::cell();
-    pair_examples_recorded(
-        "energy",
-        "cell_2170_m80",
-        obj(&[
-            ("block_chamber_c", scalar_value(25.0)),
-            ("charge_removed_ah", scalar_value(0.0)),
-        ]),
-        obj(&[
-            ("current_a", scalar_value(-cell_2170_m80::PULSE_CURRENT_A)),
-            ("case_temperature_c", scalar_value(25.0)),
-        ]),
-        card_dt(cell.gate_dt_s()),
-        600,
-        60,
-    )
-}
 
 /// The start of the compared run, 0.150 s before the start of the held-back
 /// ring-down on the model's own trajectory: fixed by one number from the
@@ -6397,28 +5041,6 @@ fn link_examples() -> (Value, Value) {
     )
 }
 
-fn cell_2170_model3_examples() -> (Value, Value) {
-    let cell = cell_2170_model3::Cell2170Model3::cell();
-    pair_examples_recorded(
-        "energy",
-        "cell_2170_model3",
-        obj(&[
-            ("cell_number", scalar_value(cell_2170_model3::CELLS[0].cell_number)),
-            ("state_of_charge", scalar_value(1.0)),
-            ("capacity_ah", scalar_value(4.5006)),
-            ("case_temperature_least_c", scalar_value(25.0)),
-            ("case_temperature_most_c", scalar_value(25.0)),
-        ]),
-        obj(&[
-            ("current_a", scalar_value(4.5)),
-            ("case_temperature_c", scalar_value(25.0)),
-        ]),
-        card_dt(cell.gate_dt_s()),
-        600,
-        60,
-    )
-}
-
 /// The stress of the card's worked examples, MPa: the stress no fitted test has.
 pub(crate) const CREEP_EXAMPLE_STRESS_MPA: f64 = 200.0;
 
@@ -6498,33 +5120,6 @@ fn fingerpad_examples() -> (Value, Value) {
         ]),
         card_dt(pad.gate_dt_s()),
         375,
-        25,
-    )
-}
-
-/// One step at the card's ceiling of a 4.5 MJ plasma at 3.8 MA and 4.0 T
-/// under 20 MW of heating in an even D-T mix, at the start of the heated
-/// window, and the first second of it: 1,000 steps, a frame every 25th step.
-fn tokamak_examples() -> (Value, Value) {
-    let tokamak = tokamak_jet_dte1::TokamakJetDte1::elmy_h_mode();
-    pair_examples_recorded(
-        "energy",
-        "tokamak_jet_dte1",
-        obj(&[
-            ("thermal_energy_j", scalar_value(4.0e6)),
-            ("fast_ion_energy_j", scalar_value(0.5e6)),
-            ("elapsed_time_s", scalar_value(0.0)),
-        ]),
-        obj(&[
-            ("heating_power_w", scalar_value(20.0e6)),
-            ("ohmic_power_w", scalar_value(0.5e6)),
-            ("line_density_per_m3", scalar_value(6.0e19)),
-            ("plasma_current_a", scalar_value(3.8e6)),
-            ("toroidal_field_t", scalar_value(4.0)),
-            ("tritium_fraction", scalar_value(0.5)),
-        ]),
-        card_dt(tokamak.gate_dt_s()),
-        1_000,
         25,
     )
 }
@@ -6652,9 +5247,13 @@ fn solar_system_examples() -> (Value, Value) {
 
 pub(crate) fn reject_meaning(card: &str, name: &str) -> Option<&'static str> {
     Some(match (card, name) {
+        ("grid_gb", which) if card_grid_gb_twin_descriptor::meaning(which).is_some() => return card_grid_gb_twin_descriptor::meaning(which),
+        ("tokamak_jet_dte1", which) if card_tokamak_jet_dte1_twin_descriptor::meaning(which).is_some() => return card_tokamak_jet_dte1_twin_descriptor::meaning(which),
+        ("runaway_18650_lco", which) if card_runaway_18650_lco_twin_descriptor::meaning(which).is_some() => return card_runaway_18650_lco_twin_descriptor::meaning(which),
         ("reactor_msre_pump", which) if card_reactor_msre_pump_descriptor::meaning(which).is_some() => return card_reactor_msre_pump_descriptor::meaning(which),
-        ("reactor_spert3_twin", which) if card_reactor_spert3_twin_descriptor::meaning(which).is_some() => return card_reactor_spert3_twin_descriptor::meaning(which),
-        ("reactor_spert3_ccore_twin", which) if card_reactor_spert3_ccore_twin_descriptor::meaning(which).is_some() => return card_reactor_spert3_ccore_twin_descriptor::meaning(which),
+        ("reactor_spert3", which) if card_reactor_spert3_twin_descriptor::meaning(which).is_some() => return card_reactor_spert3_twin_descriptor::meaning(which),
+        ("cell_2170_model3", which) if card_cell_2170_twin_descriptor::meaning(which).is_some() => return card_cell_2170_twin_descriptor::meaning(which),
+        ("reactor_spert3_ccore", which) if card_reactor_spert3_ccore_plate_descriptor::meaning(which).is_some() => return card_reactor_spert3_ccore_plate_descriptor::meaning(which),
         ("generator_mmrtg_seebeck", which) if card_generator_mmrtg_seebeck_descriptor::meaning(which).is_some() => return card_generator_mmrtg_seebeck_descriptor::meaning(which),
         ("momentum_jwst_dihedral", which) if card_momentum_jwst_dihedral_descriptor::meaning(which).is_some() => return card_momentum_jwst_dihedral_descriptor::meaning(which),
         ("grasp_lift_glass_4tu", which) if card_grasp_lift_glass_4tu_descriptor::meaning(which).is_some() => return card_grasp_lift_glass_4tu_descriptor::meaning(which),
@@ -6994,156 +5593,6 @@ pub(crate) fn reject_meaning(card: &str, name: &str) -> Option<&'static str> {
         ("satellite_lageos1", "AngularMomentumBreach") => {
             "The trial step changed the angular momentum about the Earth's axis by more than the torque of the field, the Sun, the Moon, the tide, sunlight and relativity accounts for. The Coriolis term does no work and is seen by this ledger alone."
         }
-        ("grid_gb", "NonFiniteInput") => "The power lost or `dt` was NaN or infinite.",
-        ("grid_gb", "NonFiniteState") => "The incoming state, or the trial step, was non-finite.",
-        ("grid_gb", "NonPositiveDt") => "`dt` was zero or negative.",
-        ("grid_gb", "InvalidCard") => "A constant is not this card's.",
-        ("grid_gb", "InertiaNotPositive") => {
-            "The stored kinetic energy at 50 Hz is zero or less: the rate of change of frequency divides by it."
-        }
-        ("grid_gb", "DemandNegative") => "The demand is below zero.",
-        ("grid_gb", "LossLargerThanDemand") => {
-            "The power lost is larger in size than the demand: the area cannot lose more infeed, or more demand, than it carries."
-        }
-        ("grid_gb", "NegativeTime") => "The clock is below zero.",
-        ("grid_gb", "LowFrequencyDemandDisconnection") => {
-            "The frequency, incoming or landing, is at or below 48.8 Hz, where low-frequency demand disconnection begins."
-        }
-        ("grid_gb", "FrequencyAboveCard") => {
-            "The frequency, incoming or landing, is above 50.5 Hz, the upper statutory limit, where the card holds no over-frequency response."
-        }
-        ("grid_gb", "SpontaneousGeneration") => "The trial step created kinetic energy from nothing.",
-        ("grid_gb", "FirstLawBreach") => "The trial step destroyed kinetic energy.",
-        ("reactor_spert3", "NonFiniteInput") => {
-            "`dt` or the held reactivity was NaN or infinite."
-        }
-        ("reactor_spert3", "NonFiniteState") => {
-            "The incoming state, or the trial step, was non-finite."
-        }
-        ("reactor_spert3", "NonPositiveDt") => {
-            "`dt` was zero or negative."
-        }
-        ("reactor_spert3", "InvalidCard") => {
-            "A recorded constant is not this reactor's."
-        }
-        ("reactor_spert3", "ReactivityNotPositive") => {
-            "The held reactivity is zero or less: no step in reactivity is inserted, and there is no burst."
-        }
-        ("reactor_spert3", "CoolantTemperatureNotLiquidWater") => {
-            "The recorded primary coolant temperature is below 273.15 K, where water freezes, or above 647.096 K, the critical point of water, above which there is no liquid at any pressure."
-        }
-        ("reactor_spert3", "PastFirstMaximum") => {
-            "The state is past the first maximum of power; nothing after it is on the card."
-        }
-        ("reactor_spert3", "NegativeTime") => {
-            "The incoming state holds a time below zero."
-        }
-        ("reactor_spert3", "DtAboveStateCeiling") => {
-            "The step is longer than 0.2 of the time constant of the fastest pole at the state it starts from or at the state it would land on, or 0.07 of it when that pole is growing: the prompt pole |1 - net reactivity| / l*, or the feedback pole the square root of a P / l*."
-        }
-        ("reactor_spert3", "NegativeState") => {
-            "The incoming state holds an energy released or a precursor sum below zero, or a power that is not above zero."
-        }
-        ("reactor_spert3", "InconsistentState") => {
-            "The incoming state is not one this card writes: at time zero it is not the card's start, or a field the card derives from the rest of the state, under the reactivity of the last landed step that the state records, does not hold the value the card derives."
-        }
-        ("reactor_spert3", "SpontaneousGeneration") => {
-            "The trial step created neutron population beyond what the reactivity supplies."
-        }
-        ("reactor_spert3", "FirstLawBreach") => {
-            "The trial step destroyed neutron population the reactivity supplies."
-        }
-        ("reactor_spert3_ccore", "NonFiniteInput") => {
-            "`dt`, the reactivity or the flow was NaN or infinite."
-        }
-        ("reactor_spert3_ccore", "NonFiniteState") => {
-            "The incoming state, or the trial step, was non-finite."
-        }
-        ("reactor_spert3_ccore", "NonPositiveDt") => "`dt` was zero or negative.",
-        ("reactor_spert3_ccore", "InvalidCard") => "A recorded constant is not this reactor's.",
-        ("reactor_spert3_ccore", "PressureNotPositive") => {
-            "The system pressure is at or below absolute zero: a gauge pressure at or below −14.6959488 psig."
-        }
-        ("reactor_spert3_ccore", "InitialTemperatureNotLiquidWater") => {
-            "The initial temperature is not that of liquid water at the system pressure: below 273.15 K, or at or above the saturation temperature of water at that pressure (IAPWS-IF97 region 4), or above the critical pressure, 22.064 MPa, at or above the critical temperature, 647.096 K."
-        }
-        ("reactor_spert3_ccore", "NegativeFlow") => "The coolant flow is below zero.",
-        ("reactor_spert3_ccore", "ReactivityNotPositive") => {
-            "The held reactivity is zero or less: no step in reactivity is inserted, and there is no burst."
-        }
-        ("reactor_spert3_ccore", "PastPlateTemperatureMaximum") => {
-            "The state is past the first maximum of the hot-spot plate temperature after the power peak; nothing after it is on the card."
-        }
-        ("reactor_spert3_ccore", "NegativeTime") => "The incoming state's clock is below zero.",
-        ("reactor_spert3_ccore", "NegativeState") => {
-            "The incoming state holds an energy, a temperature rise, a swept energy, a precursor sum or a flow below zero, or a power not above zero."
-        }
-        ("reactor_spert3_ccore", "DtAboveStateCeiling") => {
-            "The step is longer than the state lets it be, at the state it starts from or at its trial end: one Runge–Kutta step would advance the growing prompt pole (net reactivity − 1) / l* by more than 0.0611 of its time constant, the decaying prompt pole (1 − net reactivity) / l* by more than 0.5, or the plate and water heat transfer and sweep by more than 0.0184."
-        }
-        ("reactor_spert3_ccore", "ReactivityChangedDuringRun") => {
-            "The reactivity of the load is not the one of the first step of this run; a run is one step of reactivity."
-        }
-        ("reactor_spert3_ccore", "InconsistentState") => {
-            "The incoming state is not one this card writes: at time zero it is not the card's start; later, a derived field, a flag or a peak field is not what the card computes from the rest of the state."
-        }
-        ("reactor_spert3_ccore", "SpontaneousGeneration") => {
-            "The trial step created neutrons or energy beyond what the ledger supplies."
-        }
-        ("reactor_spert3_ccore", "FirstLawBreach") => {
-            "The trial step destroyed neutrons or energy the ledger supplies."
-        }
-        ("runaway_18650_lco", "NonFiniteInput") => {
-            "The oven temperature, the heater power, the adiabatic switch or `dt` was NaN or infinite."
-        }
-        ("runaway_18650_lco", "NonFiniteState") => {
-            "The incoming state, or a substep, was not finite."
-        }
-        ("runaway_18650_lco", "NonPositiveDt") => {
-            "`dt` was zero or negative."
-        }
-        ("runaway_18650_lco", "InvalidCell") => {
-            "A recorded constant is not this cell's."
-        }
-        ("runaway_18650_lco", "OvenTemperatureNotPositive") => {
-            "The oven temperature is zero kelvin or below while the cell loses heat to the oven, adiabatic 0; with adiabatic 1 it does not enter and is not tested."
-        }
-        ("runaway_18650_lco", "HeaterPowerNegative") => {
-            "The heater power is below zero: a heater gives heat and does not take it."
-        }
-        ("runaway_18650_lco", "AdiabaticNotZeroOrOne") => {
-            "The adiabatic switch is neither 0 nor 1."
-        }
-        ("runaway_18650_lco", "TemperatureNotPositive") => {
-            "The cell temperature, incoming or in a substep, is zero kelvin or below."
-        }
-        ("runaway_18650_lco", "CanMelting") => {
-            "The cell temperature, incoming or in a substep, is at or above 1811 K, the melting point of iron: the steel can melts."
-        }
-        ("runaway_18650_lco", "SeiFractionOutsideCell") => {
-            "The lithium in the SEI is below 0 or above 1: a fraction, it is between none and all."
-        }
-        ("runaway_18650_lco", "AnodeLithiumOutsideCell") => {
-            "The lithium in the graphite is below 0 or above 0.783: above it the SEI thickness, 0.783 less this, would be below zero."
-        }
-        ("runaway_18650_lco", "CathodeUnreactedOutsideCell") => {
-            "The unreacted part of the cathode is below 0 or above 1, or above 1 - 2^-33 and under 1: above 1 the converted part would be below zero and the cathode stage would make cathode; just under 1 the converted part, under 1.16e-10, is carried to fewer than 20 bits and its growth is lost to rounding."
-        }
-        ("runaway_18650_lco", "ElectrolyteOutsideCell") => {
-            "The electrolyte is below 0 or above 1: a fraction of the cell's fill, it is between none and all."
-        }
-        ("runaway_18650_lco", "EveryReactantConsumed") => {
-            "The step would carry the cell to every reactant consumed: the heat the lithium in the SEI and in the graphite, the unreacted cathode and the electrolyte still hold falls to 1e-6 of the cell's chemical heat or under, 0.0205 J, and the runaway has finished."
-        }
-        ("runaway_18650_lco", "SubstepsAboveBudget") => {
-            "The step would need more than 1,048,576 substeps to follow its fastest reaction."
-        }
-        ("runaway_18650_lco", "SpontaneousGeneration") => {
-            "The trial step created heat: the heat stored in the cell rose above the heat released, plus the heater's, less the heat lost."
-        }
-        ("runaway_18650_lco", "FirstLawBreach") => {
-            "The trial step destroyed heat: the heat stored in the cell fell below the heat released, plus the heater's, less the heat lost."
-        }
         ("reactor_triga_jsi", "NonFiniteInput") => {
             "`dt`, the reactivity or the scram value was NaN or infinite."
         }
@@ -7192,76 +5641,6 @@ pub(crate) fn reject_meaning(card: &str, name: &str) -> Option<&'static str> {
         ("reactor_triga_jsi", "FirstLawBreach") => {
             "The trial step destroyed neutron population the reactivity supplies."
         }
-        ("reactor_spert3_fuel", "NonFiniteInput") => {
-            "`dt`, the reactivity or the flow rate was NaN or infinite."
-        }
-        ("reactor_spert3_fuel", "NonFiniteState") => {
-            "The incoming state, or the trial step, was non-finite."
-        }
-        ("reactor_spert3_fuel", "NonPositiveDt") => {
-            "`dt` was zero or negative."
-        }
-        ("reactor_spert3_fuel", "InvalidCard") => {
-            "A recorded constant is not this reactor's."
-        }
-        ("reactor_spert3_fuel", "InletTemperatureOutsideCard") => {
-            "The recorded inlet temperature is in none of the three tested bands: 56 to 92, 251 to 259, 498 to 501 degF."
-        }
-        ("reactor_spert3_fuel", "ReactivityNotPositive") => {
-            "The held reactivity is zero or less: no step in reactivity is inserted, and there is no burst."
-        }
-        ("reactor_spert3_fuel", "NegativeFlow") => {
-            "The coolant flow rate is below zero: the flow runs through the core from the inlet, and a flow the other way is not a flow rate of this core."
-        }
-        ("reactor_spert3_fuel", "PastFirstMaximum") => {
-            "The state is past the first maximum of power; nothing after it is on the card."
-        }
-        ("reactor_spert3_fuel", "NegativeTime") => {
-            "The incoming state holds a time below zero."
-        }
-        ("reactor_spert3_fuel", "DtAboveStateCeiling") => {
-            "The step is longer than 0.2 of the time constant of the fastest pole at the state it starts from or at the state it would land on, or 0.045 of it when that pole is growing: the prompt pole |1 - net reactivity| / l*, the feedback pole of the fuel and the water temperature, or the sweep 2 v / L of the water."
-        }
-        ("reactor_spert3_fuel", "NegativeState") => {
-            "The incoming state holds an energy released, a temperature rise or a precursor sum below zero, or a power that is not above zero."
-        }
-        ("reactor_spert3_fuel", "ReactivityChangedDuringBurst") => {
-            "The reactivity of the load is not the one the first step of this burst sent the rod to; a burst is one insertion, ramped in and then held."
-        }
-        ("reactor_spert3_fuel", "InconsistentState") => {
-            "The incoming state is not one this card writes: at time zero it is not the card's start; later, its clock, inserted reactivity and rod flag are not on the ramp to the burst's reactivity, or its power rate, net reactivity, ledger anchor, defect or residual, a flag or a peak field is not what the card computes from the rest of the state."
-        }
-        ("reactor_spert3_fuel", "SpontaneousGeneration") => {
-            "The trial step created neutron population beyond what the reactivity supplies."
-        }
-        ("reactor_spert3_fuel", "FirstLawBreach") => {
-            "The trial step destroyed neutron population the reactivity supplies."
-        }
-        ("cell_2170_m80", "NonFiniteInput") => {
-            "Current, case temperature or `dt` was NaN or infinite."
-        }
-        ("cell_2170_m80", "NonFiniteState") => {
-            "The incoming state, or the trial step, was non-finite."
-        }
-        ("cell_2170_m80", "NonPositiveDt") => "`dt` was zero or negative.",
-        ("cell_2170_m80", "InvalidCell") => "A recorded constant or table entry is not this cell's.",
-        ("cell_2170_m80", "StepNotOneSecond") => "`dt` is not exactly one second.",
-        ("cell_2170_m80", "BlockNotRecognized") => {
-            "The block of the state is not one of the six chamber settings."
-        }
-        ("cell_2170_m80", "CaseTemperatureOutsideCard") => {
-            "Case temperature is below -21.898 degC or above 45.535 degC, beyond the coldest and the warmest block's own tests, where the tables would hold their end values."
-        }
-        ("cell_2170_m80", "CurrentOutsideCard") => {
-            "The current is above 13.5 A charging or discharging, the end of the ten-second table's current axis."
-        }
-        ("cell_2170_m80", "ChargeOutsideTables") => {
-            "Charge removed, incoming or landing, is outside the tables of the block by more than the rounding allowance."
-        }
-        ("cell_2170_m80", "LowerVoltageLimit") => "Landing terminal voltage is below 2.8 V.",
-        ("cell_2170_m80", "UpperVoltageLimit") => "Landing terminal voltage is above 4.242 V.",
-        ("cell_2170_m80", "SpontaneousGeneration") => "The trial step created energy from nothing.",
-        ("cell_2170_m80", "FirstLawBreach") => "The trial step destroyed energy.",
         ("cantilever_eth", "NonFiniteInput") => "`dt` was NaN or infinite.",
         ("cantilever_eth", "NonFiniteState") => {
             "The incoming state, or a stage of the trial step, was not finite."
@@ -7341,38 +5720,6 @@ pub(crate) fn reject_meaning(card: &str, name: &str) -> Option<&'static str> {
         ("los_jwst_fine_guide", "FirstLawBreach") => {
             "The trial step left less variance than the fading, the drive and the measurement account for: the filter would claim knowledge it was not given."
         }
-        ("cell_2170_model3", "NonFiniteInput") => {
-            "Current, case temperature or `dt` was NaN or infinite."
-        }
-        ("cell_2170_model3", "NonFiniteState") => {
-            "The incoming state, or the trial step, was non-finite."
-        }
-        ("cell_2170_model3", "NonPositiveDt") => "`dt` was zero or negative.",
-        ("cell_2170_model3", "InvalidCell") => {
-            "A recorded constant or curve entry is not this cell type's."
-        }
-        ("cell_2170_model3", "CellNotRecognized") => {
-            "The cell number of the state names none of the cells the card holds."
-        }
-        ("cell_2170_model3", "CapacityNotPositive") => "Capacity is zero or less: the charge is counted against it.",
-        ("cell_2170_model3", "CaseTemperatureBelowAbsoluteZero") => {
-            "Case temperature is at or below absolute zero, -273.15 degC, where the temperature laws have no value."
-        }
-        ("cell_2170_model3", "CaseTemperatureSpanInverted") => {
-            "The least case temperature the state carries is above the most it carries."
-        }
-        ("cell_2170_model3", "StateOfChargeOutsideCard") => {
-            "State of charge, incoming or landing, is below -0.05 or above 1.05, the ends of the card's rest-voltage curves, outside which it has no rest voltage, by more than the rounding allowance of its running sum."
-        }
-        ("cell_2170_model3", "SurfaceOutsideCurve") => {
-            "Landing surface state of charge is below -0.05 or above 1.05, the ends of the card's rest-voltage curves, outside which it has no rest voltage."
-        }
-        ("cell_2170_model3", "UndervoltageLimit") => "Landing terminal voltage is below 2.8 V.",
-        ("cell_2170_model3", "OvervoltageLimit") => "Landing terminal voltage is above 4.242 V.",
-        ("cell_2170_model3", "SpontaneousGeneration") => {
-            "The trial step created energy from nothing."
-        }
-        ("cell_2170_model3", "FirstLawBreach") => "The trial step destroyed energy.",
         ("creep_cmsx6", "NonFiniteInput") => "`dt` or the held stress was NaN or infinite.",
         ("creep_cmsx6", "NonFiniteState") => {
             "The incoming state, or the trial step, was non-finite."
@@ -7524,63 +5871,6 @@ pub(crate) fn reject_meaning(card: &str, name: &str) -> Option<&'static str> {
         }
         ("accumulator_sbo450", "FirstLawBreach") => {
             "The trial step destroyed energy: the gas gained less than the work on it less the heat it gave."
-        }
-        ("tokamak_jet_dte1", "NonFiniteInput") => "`dt` or a load value was NaN or infinite.",
-        ("tokamak_jet_dte1", "NonFiniteState") => {
-            "The incoming state, or the trial step, was non-finite."
-        }
-        ("tokamak_jet_dte1", "NonPositiveDt") => "`dt` was zero or negative.",
-        ("tokamak_jet_dte1", "InvalidCard") => "A recorded constant is not this tokamak's.",
-        ("tokamak_jet_dte1", "HeatingPowerNegative") => {
-            "The heating power is below zero."
-        }
-        ("tokamak_jet_dte1", "OhmicPowerNegative") => {
-            "The ohmic power is below zero."
-        }
-        ("tokamak_jet_dte1", "PlasmaCurrentNotPositive") => {
-            "The plasma current is zero or less: the confinement law takes its logarithm and the safety factor divides by it."
-        }
-        ("tokamak_jet_dte1", "ToroidalFieldNotPositive") => {
-            "The toroidal field is zero or less: the confinement law takes its logarithm and the normalised beta divides by it."
-        }
-        ("tokamak_jet_dte1", "FuelMixOutsideCard") => {
-            "The tritium fraction of the fuel is below 0 or above 1, which no fraction of the fuel atoms can be."
-        }
-        ("tokamak_jet_dte1", "DensityNotPositive") => {
-            "The line-averaged density is zero or less: the slowing-down time divides by it."
-        }
-        ("tokamak_jet_dte1", "DensityAboveGreenwald") => {
-            "The line-averaged density is above the Greenwald density of the plasma current."
-        }
-        ("tokamak_jet_dte1", "SafetyFactorBelowLimit") => {
-            "The edge safety factor of the current and the field is below 2."
-        }
-        ("tokamak_jet_dte1", "EnergyOutsideCard") => {
-            "The thermal energy is zero or negative, or the fast-ion energy is negative."
-        }
-        ("tokamak_jet_dte1", "TemperatureBelowReactivityFit") => {
-            "The plasma temperature is below 0.2 keV, the floor of the reactivity fit."
-        }
-        ("tokamak_jet_dte1", "TemperatureAboveReactivityFit") => {
-            "The temperature at the centre of the profile is above 100 keV, the ceiling of the reactivity fit."
-        }
-        ("tokamak_jet_dte1", "BetaAboveTroyon") => {
-            "The normalised beta of the two stores is above the Troyon limit of 2.8, at the start of the step or where the trial step lands."
-        }
-        ("tokamak_jet_dte1", "NegativeTime") => {
-            "The clock, the time since the start of the heated window, is negative."
-        }
-        ("tokamak_jet_dte1", "StepBelowClockResolution") => {
-            "The step is too small to move the clock at its time in 64-bit arithmetic."
-        }
-        ("tokamak_jet_dte1", "DtAboveStateCeiling") => {
-            "The step is longer than the ceiling of the state it starts from or where its trial step lands: the smallest of an eighteenth of the slowing-down time, a forty-sixth of 0.31 times the confinement time and a forty-eighth of the coupling time of the fast ions and the thermal plasma."
-        }
-        ("tokamak_jet_dte1", "SpontaneousGeneration") => {
-            "The trial step created energy beyond what the heating and the fusion supply: a defect of the arithmetic or the integrator."
-        }
-        ("tokamak_jet_dte1", "FirstLawBreach") => {
-            "The trial step destroyed energy the heating and the fusion supply: a defect of the arithmetic or the integrator."
         }
         ("generator_mmrtg_f1", "ConverterAccountBreach") => {
             "The trial step broke the fitted model's account of the fading part of the converter, which is bookkeeping that follows from the model and not a conservation law."
@@ -7828,6 +6118,7 @@ mod tests {
         assert!(flag_state_known("FLAG_NEW").is_none() && unit_of_known("new_quantity_x").is_none() && force_torque_state_known("new_card").is_none());
     }
 
+
     #[test]
     fn parameter_lists_follow_the_request_order() {
         let expected = [
@@ -7872,16 +6163,30 @@ mod tests {
                     "dt_s",
                 ],
             ),
-            ("energy", "battery_sag", vec!["soc", "current_a", "dt_s"]),
+            (
+                "energy",
+                "battery_sag",
+                vec!["soc", "current_a", "dt_s"],
+            ),
             (
                 "energy",
                 "cell_18650pf",
-                vec!["soc", "held_current_a", "current_a", "dt_s"],
+                vec![
+                    "soc",
+                    "held_current_a",
+                    "current_a",
+                    "dt_s",
+                ],
             ),
             (
                 "energy",
                 "thermal",
-                vec!["temperature_k", "heat_power_w", "ambient_k", "dt_s"],
+                vec![
+                    "temperature_k",
+                    "heat_power_w",
+                    "ambient_k",
+                    "dt_s",
+                ],
             ),
             (
                 "signal",
@@ -7917,7 +6222,12 @@ mod tests {
             (
                 "materials",
                 "cable_stretch",
-                vec!["elongation_m", "velocity_m_s", "force_n", "dt_s"],
+                vec![
+                    "elongation_m",
+                    "velocity_m_s",
+                    "force_n",
+                    "dt_s",
+                ],
             ),
             (
                 "energy",
@@ -7937,21 +6247,23 @@ mod tests {
             (
                 "aerospace",
                 "satellite_lageos1",
-                vec!["epoch_utc_s", "forecast_elapsed_s", "position_m", "velocity_m_s", "dt_s"],
+                vec![
+                    "epoch_utc_s",
+                    "forecast_elapsed_s",
+                    "position_m",
+                    "velocity_m_s",
+                    "dt_s",
+                ],
             ),
             (
                 "energy",
                 "reactor_spert3",
-                vec!["coolant_temperature_k", "reactivity_inserted_dollar", "dt_s"],
-            ),
-            (
-                "energy",
-                "cell_2170_m80",
                 vec![
-                    "block_chamber_c",
-                    "charge_removed_ah",
-                    "current_a",
-                    "case_temperature_c",
+                    "inlet_temperature_k",
+                    "system_pressure_mpa",
+                    "coolant_flow_m_per_s",
+                    "initial_power_mw",
+                    "reactivity_inserted_dollar",
                     "dt_s",
                 ],
             ),
@@ -7991,34 +6303,46 @@ mod tests {
                 ],
             ),
             (
-                "energy",
-                "reactor_spert3_fuel",
-                vec![
-                    "inlet_temperature_k",
-                    "reactivity_inserted_dollar",
-                    "coolant_flow_m_per_s",
-                    "dt_s",
-                ],
+                "aerospace",
+                "crater_ryugu_sci",
+                vec!["radius_m", "dt_s"],
             ),
-            ("aerospace", "crater_ryugu_sci", vec!["radius_m", "dt_s"]),
-            ("energy", "reactor_msre_pump", vec!["pump_speed_at_start", "pump_speed_fraction", "dt_s"]),
-            ("energy", "reactor_spert3_twin", vec!["inlet_temperature_k", "system_pressure_mpa", "coolant_flow_m_per_s", "initial_power_mw", "reactivity_inserted_dollar", "dt_s"]),
             (
                 "energy",
-                "reactor_spert3_ccore_twin",
-                vec!["initial_temperature_k", "system_pressure_psig", "reactivity_inserted_dollar", "coolant_flow_m_per_s", "dt_s"],
+                "generator_mmrtg_seebeck",
+                vec!["mission_time_s", "dt_s"],
             ),
-            ("energy", "generator_mmrtg_seebeck", vec!["mission_time_s", "dt_s"]),
             (
                 "aerospace",
                 "momentum_jwst_dihedral",
-                vec!["h_eci_nms", "q1", "q2", "q3", "q4", "sun_x", "sun_y", "sun_z", "sun_distance_au", "dt_s"],
+                vec![
+                    "h_eci_nms",
+                    "q1",
+                    "q2",
+                    "q3",
+                    "q4",
+                    "sun_x",
+                    "sun_y",
+                    "sun_z",
+                    "sun_distance_au",
+                    "dt_s",
+                ],
             ),
-            ("materials", "grasp_lift_glass_4tu", vec!["hand_velocity_m_s", "grip_force_n", "hand_acceleration_m_s2", "dt_s"]),
             (
                 "aerospace",
                 "momentum_jwst_srp",
-                vec!["h_eci_nms", "q1", "q2", "q3", "q4", "sun_x", "sun_y", "sun_z", "sun_distance_au", "dt_s"],
+                vec![
+                    "h_eci_nms",
+                    "q1",
+                    "q2",
+                    "q3",
+                    "q4",
+                    "sun_x",
+                    "sun_y",
+                    "sun_z",
+                    "sun_distance_au",
+                    "dt_s",
+                ],
             ),
             (
                 "signal",
@@ -8035,7 +6359,21 @@ mod tests {
             (
                 "energy",
                 "grid_gb",
-                vec!["frequency_hz", "inertia_mw_s", "demand_mw", "loss_mw", "dt_s"],
+                vec![
+                    "frequency_hz",
+                    "inertia_mw_s",
+                    "demand_mw",
+                    "dc_low_mw",
+                    "dm_low_mw",
+                    "dr_low_mw",
+                    "dc_high_mw",
+                    "dm_high_mw",
+                    "dr_high_mw",
+                    "fast_delivery_s",
+                    "regulation_delivery_s",
+                    "loss_mw",
+                    "dt_s",
+                ],
             ),
             (
                 "aerospace",
@@ -8106,21 +6444,35 @@ mod tests {
                 "tokamak_jet_dte1",
                 vec![
                     "thermal_energy_j",
-                    "fast_ion_energy_j",
+                    "deuterium_beam_ion_energy_j",
+                    "tritium_beam_ion_energy_j",
+                    "tail_ion_energy_j",
                     "elapsed_time_s",
-                    "heating_power_w",
+                    "deuterium_beam_power_w",
+                    "tritium_beam_power_w",
+                    "deuterium_beam_energy_kev",
+                    "tritium_beam_energy_kev",
+                    "icrh_power_w",
                     "ohmic_power_w",
                     "line_density_per_m3",
                     "plasma_current_a",
                     "toroidal_field_t",
                     "tritium_fraction",
+                    "electron_temperature_kev",
+                    "effective_charge",
+                    "hot_ion_regime",
                     "dt_s",
                 ],
             ),
             (
                 "materials",
                 "fingerpad_p02_glass",
-                vec!["twist_deg", "normal_force_n", "twist_rate_deg_s", "dt_s"],
+                vec![
+                    "twist_deg",
+                    "normal_force_n",
+                    "twist_rate_deg_s",
+                    "dt_s",
+                ],
             ),
             (
                 "energy",
@@ -8167,9 +6519,21 @@ mod tests {
                     "anode_lithium_fraction",
                     "cathode_unreacted_fraction",
                     "electrolyte_fraction",
+                    "separator_unmelted_fraction",
+                    "vent_gas_held_fraction",
                     "oven_temperature_k",
                     "heater_power_w",
                     "adiabatic",
+                    "dt_s",
+                ],
+            ),
+            (
+                "materials",
+                "grasp_lift_glass_4tu",
+                vec![
+                    "hand_velocity_m_s",
+                    "grip_force_n",
+                    "hand_acceleration_m_s2",
                     "dt_s",
                 ],
             ),
@@ -8184,6 +6548,11 @@ mod tests {
                     "p6_voltage_v",
                     "dt_s",
                 ],
+            ),
+            (
+                "energy",
+                "reactor_msre_pump",
+                vec!["pump_speed_at_start", "pump_speed_fraction", "dt_s"],
             ),
         ];
         assert_eq!(all().len(), expected.len());
@@ -8269,13 +6638,8 @@ mod tests {
             ),
             (
                 "reactor_spert3",
-                reactor_spert3::ReactorSpert3::e_core_cold_startup().floor_dt_s(),
-                reactor_spert3::ReactorSpert3::e_core_cold_startup().gate_dt_s(),
-            ),
-            (
-                "cell_2170_m80",
-                cell_2170_m80::Cell2170M80::cell().floor_dt_s(),
-                cell_2170_m80::Cell2170M80::cell().gate_dt_s(),
+                genesis_kernel::reactor_spert3_twin::ReactorSpert3Twin::e_core().floor_dt_s(),
+                genesis_kernel::reactor_spert3_twin::ReactorSpert3Twin::e_core().gate_dt_s(),
             ),
             (
                 "cantilever_eth",
@@ -8284,8 +6648,8 @@ mod tests {
             ),
             (
                 "cell_2170_model3",
-                cell_2170_model3::Cell2170Model3::cell().floor_dt_s(),
-                cell_2170_model3::Cell2170Model3::cell().gate_dt_s(),
+                genesis_kernel::cell_2170_twin::Cell2170Twin::cell().floor_dt_s(),
+                genesis_kernel::cell_2170_twin::Cell2170Twin::cell().gate_dt_s(),
             ),
             (
                 "creep_cmsx6",
@@ -8298,24 +6662,9 @@ mod tests {
                 capsule_insight::CapsuleInsight::entry_capsule().gate_dt_s(),
             ),
             (
-                "reactor_spert3_fuel",
-                reactor_spert3_fuel::ReactorSpert3Fuel::e_core_low_initial_power().floor_dt_s(),
-                reactor_spert3_fuel::ReactorSpert3Fuel::e_core_low_initial_power().gate_dt_s(),
-            ),
-            (
                 "crater_ryugu_sci",
                 crater_ryugu_sci::CraterRyuguSci::sci_impact().floor_dt_s(),
                 crater_ryugu_sci::CraterRyuguSci::sci_impact().gate_dt_s(),
-            ),
-            (
-                "reactor_spert3_twin",
-                genesis_kernel::reactor_spert3_twin::ReactorSpert3Twin::e_core().floor_dt_s(),
-                genesis_kernel::reactor_spert3_twin::ReactorSpert3Twin::e_core().gate_dt_s(),
-            ),
-            (
-                "reactor_spert3_ccore_twin",
-                genesis_kernel::reactor_spert3_ccore_twin::ReactorSpert3CcoreTwin::c_core_twin().floor_dt_s(),
-                genesis_kernel::reactor_spert3_ccore_twin::ReactorSpert3CcoreTwin::c_core_twin().gate_dt_s(),
             ),
             (
                 "generator_mmrtg_seebeck",
@@ -8339,8 +6688,8 @@ mod tests {
             ),
             (
                 "grid_gb",
-                grid_gb::GridGb::interconnector_loss().floor_dt_s(),
-                grid_gb::GridGb::interconnector_loss().gate_dt_s(),
+                genesis_kernel::grid_gb_twin::GridGbTwin::great_britain().floor_dt_s(),
+                genesis_kernel::grid_gb_twin::GridGbTwin::great_britain().gate_dt_s(),
             ),
             (
                 "solar_system",
@@ -8359,8 +6708,8 @@ mod tests {
             ),
             (
                 "tokamak_jet_dte1",
-                tokamak_jet_dte1::TokamakJetDte1::elmy_h_mode().floor_dt_s(),
-                tokamak_jet_dte1::TokamakJetDte1::elmy_h_mode().gate_dt_s(),
+                genesis_kernel::tokamak_jet_dte1_twin::TokamakJetDte1Twin::dte1().floor_dt_s(),
+                genesis_kernel::tokamak_jet_dte1_twin::TokamakJetDte1Twin::dte1().gate_dt_s(),
             ),
             (
                 "fingerpad_p02_glass",
@@ -8379,13 +6728,13 @@ mod tests {
             ),
             (
                 "reactor_spert3_ccore",
-                reactor_spert3_ccore::ReactorSpert3Ccore::c_core_step_transients().floor_dt_s(),
-                reactor_spert3_ccore::ReactorSpert3Ccore::c_core_step_transients().gate_dt_s(),
+                genesis_kernel::reactor_spert3_ccore_plate::ReactorSpert3CcorePlate::c_core_plate().floor_dt_s(),
+                genesis_kernel::reactor_spert3_ccore_plate::ReactorSpert3CcorePlate::c_core_plate().gate_dt_s(),
             ),
             (
                 "runaway_18650_lco",
-                runaway_18650_lco::Runaway18650Lco::hatchard_kim().floor_dt_s(),
-                runaway_18650_lco::Runaway18650Lco::hatchard_kim().gate_dt_s(),
+                genesis_kernel::runaway_18650_lco_twin::Runaway18650LcoTwin::fitted().floor_dt_s(),
+                genesis_kernel::runaway_18650_lco_twin::Runaway18650LcoTwin::fitted().gate_dt_s(),
             ),
             (
                 "grasp_lift_glass_4tu",
@@ -8417,12 +6766,8 @@ mod tests {
             // The line-of-sight card's floor and ceiling are one sensor frame
             // less and more half a millisecond.
             let locked_floor = card == "reactor_spert3"
-                || card == "reactor_spert3_fuel"
-                || card == "reactor_spert3_twin"
                 || card == "reactor_spert3_ccore"
-                || card == "reactor_spert3_ccore_twin"
                 || card == "reactor_triga_jsi"
-                || card == "cell_2170_m80"
                 || card == "cell_2170_model3"
                 || card == "creep_cmsx6"
                 || card == "grid_gb"
@@ -8431,9 +6776,7 @@ mod tests {
                 || card == "fingerpad_p02_glass"
                 || card == "los_jwst_fine_guide";
             if card == "grid_gb" {
-                assert_eq!(floor.to_bits(), grid_gb::FLOOR_DT_S.to_bits());
-            } else if card == "reactor_spert3" {
-                assert_eq!(floor.to_bits(), reactor_spert3::FLOOR_DT_S.to_bits());
+                assert_eq!(floor.to_bits(), genesis_kernel::grid_gb::FLOOR_DT_S.to_bits());
             } else if card == "reactor_triga_jsi" {
                 assert_eq!(floor.to_bits(), reactor_triga_jsi::FLOOR_DT_S.to_bits());
                 assert_eq!(floor.to_bits(), 1.0e-9_f64.to_bits());
@@ -8442,29 +6785,17 @@ mod tests {
                 assert!(1.0e6 * ceiling + floor > 1.0e6 * ceiling);
                 // The ceiling follows the fitted generation time: 0.094 ms.
                 assert!((ceiling - 9.39365e-5).abs() < 1.0e-9);
-            } else if card == "reactor_spert3_ccore" {
-                assert_eq!(floor.to_bits(), reactor_spert3_ccore::FLOOR_DT_S.to_bits());
-                assert!(600.0 + floor > 600.0);
-                assert_eq!(ceiling.to_bits(), (0.2_f64 * 0.003).to_bits());
-            } else if card == "reactor_spert3_twin" {
+            } else if card == "reactor_spert3" {
                 // The twin's floor is a locked constant; its ceiling is 0.2 of l* at 70 degF.
                 assert_eq!(floor.to_bits(), genesis_kernel::reactor_spert3_twin::FLOOR_DT_S.to_bits());
                 assert_eq!(ceiling.to_bits(), (genesis_kernel::reactor_spert3_twin::GATE_PHASE_STEP * genesis_kernel::reactor_spert3_twin::GENERATION_TIME_REDUCED_S[0]).to_bits());
-            } else if card == "reactor_spert3_ccore_twin" {
-                assert_eq!(floor.to_bits(), genesis_kernel::reactor_spert3_ccore_twin::FLOOR_DT_S.to_bits());
+            } else if card == "reactor_spert3_ccore" {
+                assert_eq!(floor.to_bits(), genesis_kernel::reactor_spert3_ccore_plate::FLOOR_DT_S.to_bits());
                 assert!(600.0 + floor > 600.0);
-                assert_eq!(ceiling.to_bits(), (0.2_f64 * 0.003).to_bits());
-            } else if card == "reactor_spert3_fuel" {
-                assert_eq!(floor.to_bits(), reactor_spert3_fuel::FLOOR_DT_S.to_bits());
-                assert_eq!(floor.to_bits(), 1.0e-9_f64.to_bits());
-                // The floor still moves the clock at 1e7 s, far past any first maximum.
-                assert!(1.0e7 + floor > 1.0e7);
-            } else if card == "cell_2170_m80" {
-                assert_eq!(floor.to_bits(), cell_2170_m80::STEP_S.to_bits());
-                assert_eq!(ceiling.to_bits(), cell_2170_m80::STEP_S.to_bits());
+                assert_eq!(ceiling.to_bits(), (0.1_f64 * 0.003).to_bits());
             } else if card == "cell_2170_model3" {
-                assert_eq!(floor.to_bits(), cell_2170_model3::FLOOR_DT_S.to_bits());
-                assert_eq!(ceiling.to_bits(), cell_2170_model3::GATE_DT_S.to_bits());
+                assert_eq!(floor.to_bits(), genesis_kernel::cell_2170_twin::FLOOR_DT_S.to_bits());
+                assert_eq!(ceiling.to_bits(), genesis_kernel::cell_2170_twin::GATE_DT_S.to_bits());
                 assert_eq!((floor, ceiling), (1.0, 1.0));
             } else if card == "creep_cmsx6" {
                 // The creep card's floor is a locked constant of the card, 1 s.
@@ -8505,9 +6836,9 @@ mod tests {
                 assert_eq!(floor.to_bits(), genesis_kernel::reactor_msre_pump::FLOOR_DT_S.to_bits());
                 assert_eq!(ceiling.to_bits(), genesis_kernel::reactor_msre_pump::GATE_DT_S.to_bits());
             } else if card == "tokamak_jet_dte1" {
-                // The tokamak's floor and ceiling are locked constants of the card.
-                assert_eq!(floor.to_bits(), tokamak_jet_dte1::FLOOR_DT_S.to_bits());
-                assert_eq!(ceiling.to_bits(), tokamak_jet_dte1::GATE_DT_S.to_bits());
+                // The twin's floor and ceiling are locked constants of the card.
+                assert_eq!(floor.to_bits(), genesis_kernel::tokamak_jet_dte1_twin::FLOOR_DT_S.to_bits());
+                assert_eq!(ceiling.to_bits(), genesis_kernel::tokamak_jet_dte1_twin::GATE_DT_S.to_bits());
             } else {
                 assert_eq!(floor.to_bits(), (ceiling / 1_048_576.0).to_bits(), "{card}");
             }
@@ -8516,9 +6847,7 @@ mod tests {
             assert_eq!(dt["floor_s"].as_f64().unwrap().to_bits(), floor.to_bits());
             assert_eq!(dt["ceiling_s"].as_f64().unwrap().to_bits(), ceiling.to_bits());
             assert!(
-                dt["floor_from"].as_str().unwrap().starts_with(if card == "cell_2170_m80"
-                    || card == "creep_cmsx6"
-                {
+                dt["floor_from"].as_str().unwrap().starts_with(if card == "creep_cmsx6" {
                     "a locked 1 s"
                 } else if card == "cell_2170_model3" {
                     "a locked 1 s"
@@ -8576,16 +6905,11 @@ mod tests {
 
     const GENERATOR_SOURCE: &str = include_str!("../../genesis_kernel/src/generator_mmrtg_f1.rs");
     const CAPSULE_SOURCE: &str = include_str!("../../genesis_kernel/src/capsule_stardust.rs");
-    const REACTOR_SOURCE: &str = include_str!("../../genesis_kernel/src/reactor_spert3.rs");
+    const REACTOR_SOURCE: &str = include_str!("../../genesis_kernel/src/reactor_spert3_twin.rs");
     const REACTOR_TRIGA_SOURCE: &str =
         include_str!("../../genesis_kernel/src/reactor_triga_jsi.rs");
-    const REACTOR_FUEL_SOURCE: &str =
-        include_str!("../../genesis_kernel/src/reactor_spert3_fuel.rs");
-    const GRID_GB_SOURCE: &str = include_str!("../../genesis_kernel/src/grid_gb.rs");
-    const CELL_2170_SOURCE: &str = include_str!("../../genesis_kernel/src/cell_2170_m80.rs");
+    const CELL_2170_SOURCE: &str = include_str!("../../genesis_kernel/src/cell_2170_twin.rs");
     const CANTILEVER_SOURCE: &str = include_str!("../../genesis_kernel/src/cantilever_eth.rs");
-    const CELL_2170_MODEL3_SOURCE: &str =
-        include_str!("../../genesis_kernel/src/cell_2170_model3.rs");
     const CREEP_SOURCE: &str = include_str!("../../genesis_kernel/src/creep_cmsx6.rs");
     const CAPSULE_INSIGHT_SOURCE: &str =
         include_str!("../../genesis_kernel/src/capsule_insight.rs");
@@ -8911,7 +7235,7 @@ mod tests {
         let validation = &body["validation"];
         assert_eq!(validation["result"], LOS_RESULT);
     }
-    const TOKAMAK_SOURCE: &str = include_str!("../../genesis_kernel/src/tokamak_jet_dte1.rs");
+    const TOKAMAK_SOURCE: &str = include_str!("../../genesis_kernel/src/tokamak_jet_dte1_twin.rs");
 
     /// `(variant, doc sentence)` for every variant of a card's `StepReject`,
     /// read from the kernel source.
@@ -9100,49 +7424,14 @@ mod tests {
         }
     }
 
-    /// The Great Britain card lists every variant of its `StepReject`, in the
-    /// kernel's order, with the kernel's sentence word for word, and
-    /// publishes the kernel's bounds exactly.
-    #[test]
-    fn the_great_britain_card_carries_the_kernel_sentences_and_bounds() {
-        let documented = documented_rejects(GRID_GB_SOURCE);
-        let card = find("energy", "grid_gb").expect("the area is served");
-        assert_eq!(documented.len(), 12);
-        assert_eq!(card.rejects.len(), documented.len());
-        for ((name, sentence), listed) in documented.iter().zip(card.rejects) {
-            assert_eq!(name, listed);
-            assert_eq!(reject_meaning("grid_gb", name), Some(sentence.as_str()), "{name}");
-        }
-        assert_eq!(card.advisory.len(), 3);
-        let body = describe_one(card);
-        let field = &body["phase_fields"][0];
-        assert_eq!(field["name"], "frequency_hz");
-        assert_eq!(field["minimum"].as_f64().unwrap().to_bits(), grid_gb::FREQUENCY_MIN_HZ.to_bits());
-        assert_eq!(field["maximum"].as_f64().unwrap().to_bits(), grid_gb::FREQUENCY_MAX_HZ.to_bits());
-        for (index, name) in [(1, "inertia_mw_s"), (2, "demand_mw")] {
-            let field = &body["phase_fields"][index];
-            assert_eq!(field["name"], name);
-            assert_eq!(field["minimum"].as_f64().unwrap(), 0.0);
-            assert!(field["maximum"].is_null(), "{field}");
-        }
-        let load = &body["load_fields"][0];
-        assert_eq!(load["name"], "loss_mw");
-        assert!(load["minimum"].is_null() && load["maximum"].is_null(), "{load}");
-        let ceiling = grid_gb::GridGb::interconnector_loss().gate_dt_s().unwrap();
-        assert_eq!(
-            body["example_compute_step"]["parameters"]["dt_s"].as_f64().unwrap().to_bits(),
-            ceiling.to_bits()
-        );
-        assert!(2_880.0 * ceiling < grid_gb::TIME_MAX_S);
-    }
-
     /// The reactor lists every variant of its `StepReject`, in the kernel's
-    /// order, with the kernel's sentence word for word.
+    /// order, with the kernel's sentence word for word. (0.15.0: the kernel is
+    /// the E-core twin's, `reactor_spert3_twin`.)
     #[test]
     fn the_reactor_refusals_carry_the_sentences_from_the_card() {
         let documented = documented_rejects(REACTOR_SOURCE);
         let card = find("energy", "reactor_spert3").expect("the reactor is served");
-        assert_eq!(documented.len(), 13);
+        assert_eq!(documented.len(), 12);
         assert_eq!(card.rejects.len(), documented.len());
         for ((name, sentence), listed) in documented.iter().zip(card.rejects) {
             assert_eq!(name, listed);
@@ -9152,77 +7441,6 @@ mod tests {
                 "{name}"
             );
         }
-    }
-
-    /// The reactor publishes the kernel's bounds exactly, liquid water for the
-    /// coolant and no bound for the reactivity, whose first step the door holds
-    /// above zero, and its examples are one step at the ceiling and a run to the
-    /// first maximum.
-    #[test]
-    fn the_reactor_publishes_the_kernel_bounds_and_its_examples_start_cold() {
-        let card = find("energy", "reactor_spert3").expect("the reactor is served");
-        let body = describe_one(card);
-        let phase = &body["phase_fields"][0];
-        assert_eq!(phase["name"], "coolant_temperature_k");
-        assert_eq!(phase["unit"], "K");
-        assert_eq!(
-            phase["minimum"].as_f64().unwrap().to_bits(),
-            reactor_spert3::WATER_FREEZING_K.to_bits()
-        );
-        assert_eq!(
-            phase["maximum"].as_f64().unwrap().to_bits(),
-            reactor_spert3::WATER_CRITICAL_K.to_bits()
-        );
-        let words = phase["bound"].as_str().unwrap();
-        assert!(words.contains("CoolantTemperatureNotLiquidWater"), "{words}");
-        assert!(words.contains("Compared at a primary coolant of 56 to 92 degF"), "{words}");
-        assert!(words.contains("its delayed groups the report's set for 500 degF"), "{words}");
-        let load = &body["load_fields"][0];
-        assert_eq!(load["name"], "reactivity_inserted_dollar");
-        assert!(load["minimum"].is_null() && load["maximum"].is_null(), "{load}");
-        let words = load["bound"].as_str().unwrap();
-        assert!(words.contains("ReactivityNotPositive"), "{words}");
-        assert!(words.contains("Compared at 0.769 to 1.210 dollars"), "{words}");
-        assert!(words.contains("peak power within 0.58 of the report's standard deviation RMS and energy to the peak within 1.01 RMS, the peak 23 percent early RMS"), "{words}");
-        assert!(words.contains("[0.7686211839115998, 1.2102315121058187]"), "{words}");
-        let ceiling = reactor_spert3::ReactorSpert3::e_core_cold_startup()
-            .gate_dt_s()
-            .unwrap();
-        assert_eq!(
-            body["example_compute_step"]["parameters"]["dt_s"].as_f64().unwrap().to_bits(),
-            ceiling.to_bits()
-        );
-        let rho = body["example_run_trajectory"]["segments"][0]["load"]["reactivity_inserted_dollar"]
-            .as_f64()
-            .unwrap();
-        assert!((0.7686211839115998..=1.2102315121058187).contains(&rho));
-    }
-
-    /// The fuel-temperature reactor lists every variant of its `StepReject`,
-    /// in the kernel's order, with the kernel's sentence word for word.
-    #[test]
-    fn the_fuel_reactor_refusals_carry_the_sentences_from_the_card() {
-        let documented = documented_rejects(REACTOR_FUEL_SOURCE);
-        let card = find("energy", "reactor_spert3_fuel").expect("the fuel reactor is served");
-        assert_eq!(documented.len(), 15);
-        assert_eq!(card.rejects.len(), documented.len());
-        for ((name, sentence), listed) in documented.iter().zip(card.rejects) {
-            assert_eq!(name, listed);
-            assert_eq!(
-                reject_meaning("reactor_spert3_fuel", name),
-                Some(sentence.as_str()),
-                "{name}"
-            );
-        }
-        // The bands are named by the temperatures they take: 260 degF itself is refused.
-        assert_eq!(REACTOR_FUEL_BAND_DEGF, ["56 to 92", "251 to 259", "498 to 501"]);
-        let reactor = reactor_spert3_fuel::ReactorSpert3Fuel::e_core_low_initial_power();
-        assert!(reactor.band_of((260.0 - 32.0) / 1.8 + 273.15).is_none());
-        assert!(reactor.band_of((260.0 + 459.67) / 1.8).is_none());
-        // The two fractions the state ceiling's sentence carries are the card's own.
-        let sentence = reject_meaning("reactor_spert3_fuel", "DtAboveStateCeiling").unwrap();
-        assert!(sentence.contains(&format!("{} of the time constant", reactor_spert3_fuel::GATE_PHASE_STEP)), "{sentence}");
-        assert!(sentence.contains(&format!("or {} of it", reactor_spert3_fuel::GROWTH_PHASE_STEP)), "{sentence}");
     }
 
     /// The JSI TRIGA reactor lists every variant of its `StepReject`, in the
@@ -9283,7 +7501,8 @@ mod tests {
             }
         }
         let jet = validation("tokamak_jet_dte1", "")["limits"].as_str().unwrap().to_string();
-        assert!(jet.ends_with("The card's fusion power is superseded by the solver tokamak_dt_beam_target, which computes the D-T rate of one time slice from the plasma's profiles and its beams."));
+        // 0.15.0: no served model is superseded, so the JET card's limits name no successor.
+        assert!(!jet.contains("superseded"), "{jet}");
         // The heat share of the accumulator is carried into each start, so its limits state no known limit.
         assert!(!ACCUMULATOR_SBO450_LIMITS.contains("Known limit"));
         assert!(ACCUMULATOR_SBO450_LIMITS.ends_with("The corrected card and its run are the first party's alone; no second program has recomputed them."));
@@ -9294,10 +7513,11 @@ mod tests {
     #[test]
     fn the_triga_reactor_publishes_the_kernel_bounds_tables_flags_frame_and_record() {
         let card = find("energy", "reactor_triga_jsi").expect("the TRIGA reactor is served");
-        assert_eq!(all()[34].card, "reactor_triga_jsi");
-        assert_eq!(all()[35].card, "reactor_spert3_ccore");
+        // 0.15.0: one model per real object, 36 cards, each in its 0.14.3 place.
+        assert_eq!(all()[30].card, "reactor_triga_jsi");
+        assert_eq!(all()[31].card, "reactor_spert3_ccore");
         assert_eq!(all().last().map(|last| last.card), Some("reactor_msre_pump"));
-        assert_eq!(all().len(), 40);
+        assert_eq!(all().len(), 36);
         assert_eq!(card.specimen, crate::spec_sheet::of("reactor_triga_jsi").unwrap().paragraph());
         for words in [
             "Fitted on 36 of the 43 recorded pulses",
@@ -9469,446 +7689,25 @@ mod tests {
         }
     }
 
-    /// The fuel-temperature reactor publishes the widest of the kernel's three
-    /// bands for each field and names each band's own span in words, sets both
-    /// flags, packs the frame as the card's `publish` does, and its examples
-    /// are one step at the ceiling and a run that starts in the cold band.
-    #[test]
-    fn the_fuel_reactor_publishes_the_kernel_bands_flags_and_frame() {
-        let card = find("energy", "reactor_spert3_fuel").expect("the fuel reactor is served");
-        assert_eq!(card.domain, "energy");
-        assert_eq!(all()[19].card, "reactor_spert3_fuel");
-        assert_eq!(all().len(), 40);
-        let reactor = reactor_spert3_fuel::ReactorSpert3Fuel::e_core_low_initial_power();
-        let body = describe_one(card);
-        let bits = |value: &Value| value.as_f64().unwrap().to_bits();
-        let phase = &body["phase_fields"];
-        assert_eq!(phase.as_array().unwrap().len(), 1);
-        assert_eq!(phase[0]["name"], "inlet_temperature_k");
-        assert_eq!(phase[0]["unit"], "K");
-        assert_eq!(bits(&phase[0]["minimum"]), reactor_spert3_fuel::BAND_INLET_MIN_K[0].to_bits());
-        assert_eq!(bits(&phase[0]["maximum"]), reactor_spert3_fuel::BAND_INLET_MAX_K[2].to_bits());
-        let load = &body["load_fields"];
-        assert_eq!(load.as_array().unwrap().len(), 2);
-        assert_eq!(load[0]["name"], "reactivity_inserted_dollar");
-        assert_eq!(load[0]["unit"], "dollar");
-        assert_eq!(load[1]["name"], "coolant_flow_m_per_s");
-        assert_eq!(load[1]["unit"], "m/s");
-        // The reactivity above zero and the flow at or above zero: the physical limits, in every
-        // band, with no maximum.
-        assert_eq!(bits(&load[0]["minimum"]), 0.0_f64.to_bits());
-        assert_eq!(load[0]["minimum_exclusive"], true);
-        assert!(load[0]["maximum"].is_null());
-        assert_eq!(bits(&load[1]["minimum"]), 0.0_f64.to_bits());
-        assert!(load[1]["maximum"].is_null());
-        // Each band's own numbers are in the words of the field, from the card's constants.
-        for band in 0..3 {
-            let name = REACTOR_FUEL_BAND_DEGF[band];
-            let words = phase[0]["bound"].as_str().unwrap();
-            assert!(
-                words.contains(&format!(
-                    "{name} degF: [{}, {}] K",
-                    reactor.band_inlet_min_k[band], reactor.band_inlet_max_k[band]
-                )),
-                "{words}"
-            );
-            let words = load[0]["bound"].as_str().unwrap();
-            assert!(
-                words.contains(&format!(
-                    "{name} degF: [{}, {}] dollars",
-                    reactor.band_reactivity_min_dollar[band], reactor.band_reactivity_max_dollar[band]
-                )),
-                "{words}"
-            );
-            let words = load[1]["bound"].as_str().unwrap();
-            let span = if reactor.band_flow_min_m_per_s[band] == reactor.band_flow_max_m_per_s[band] {
-                format!("{name} degF: exactly {} m/s", reactor.band_flow_min_m_per_s[band])
-            } else {
-                format!(
-                    "{name} degF: [{}, {}] m/s",
-                    reactor.band_flow_min_m_per_s[band], reactor.band_flow_max_m_per_s[band]
-                )
-            };
-            // Each number in the words reads back to the card's own bits.
-            for value in [
-                reactor.band_inlet_min_k[band],
-                reactor.band_reactivity_max_dollar[band],
-                reactor.band_flow_min_m_per_s[band],
-                reactor.band_flow_max_m_per_s[band],
-            ] {
-                assert_eq!(format!("{value}").parse::<f64>().unwrap().to_bits(), value.to_bits());
-            }
-            assert!(words.contains(&span), "{words}");
-            // The band's name is the band's own ends in degrees Fahrenheit. The highest is
-            // (F + 459.67) / 1.8, the conversion both E-core cards use; the lowest is the
-            // (F - 32) / 1.8 + 273.15 at which the compared requests were sent, below the other,
-            // so either conversion of each end is inside.
-            let (low, high) = name.split_once(" to ").unwrap();
-            let as_compared = |degf: &str| (degf.parse::<f64>().unwrap() - 32.0) / 1.8 + 273.15;
-            let kelvin = |degf: &str| (degf.parse::<f64>().unwrap() + 459.67) / 1.8;
-            assert_eq!(as_compared(low).to_bits(), reactor.band_inlet_min_k[band].to_bits());
-            assert!(kelvin(low) >= reactor.band_inlet_min_k[band]);
-            assert_eq!(kelvin(high).to_bits(), reactor.band_inlet_max_k[band].to_bits());
-            assert!(as_compared(high) <= reactor.band_inlet_max_k[band]);
-        }
-        for name in ["InletTemperatureOutsideCard", "ReactivityNotPositive", "NegativeFlow", "DtAboveStateCeiling"] {
-            assert!(body.to_string().contains(name), "{name}");
-        }
-
-        // Both flags, each with the boolean of the state that sets it.
-        let flags = body["advisory_flags"].as_array().unwrap();
-        assert_eq!(flags.len(), 2);
-        assert_eq!(flags[0]["name"], "FLAG_PROMPT_SUPERCRITICAL");
-        assert_eq!(flags[0]["mask"], reactor_spert3_fuel::FLAG_PROMPT_SUPERCRITICAL);
-        assert_eq!(flags[0]["state"], "prompt_supercritical");
-        assert_eq!(flags[1]["name"], "FLAG_ROD_MOVING");
-        assert_eq!(flags[1]["mask"], reactor_spert3_fuel::FLAG_ROD_MOVING);
-        assert_eq!(flags[1]["state"], "rod_moving");
-        assert!(flags.iter().all(|flag| flag["seals"] == true));
-
-        // The frame, as the card's `publish` writes it.
-        let slot = |name: &str| {
-            body["frame_slots"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .find(|slot| slot["slot"] == name)
-                .unwrap()
-                .clone()
-        };
-        for (name, state, unit) in [
-            ("t", "t_s", "s"),
-            ("pos[0]", "power_mw", "MW"),
-            ("pos[1]", "energy_mws", "MW*s"),
-            ("pos[2]", "reactivity_net_dollar", "dollar"),
-            ("vel[0]", "fuel_temperature_rise_k", "K"),
-            ("vel[1]", "water_temperature_rise_k", "K"),
-            ("vel[2]", "peak_power_mw", "MW"),
-            ("force_torque", "power_rate_mw_per_s", "MW/s"),
-            ("residual", "residual_conservation_error", "1"),
-        ] {
-            assert_eq!(slot(name)["state"], state, "{name}");
-            assert_eq!(slot(name)["unit"], unit, "{name}");
-        }
-        for (line, state) in [
-            ("frame.pos[0] = state.power_mw as f32;", "pos[0]"),
-            ("frame.pos[1] = state.energy_mws as f32;", "pos[1]"),
-            ("frame.pos[2] = state.reactivity_net_dollar as f32;", "pos[2]"),
-            ("frame.vel[0] = state.fuel_temperature_rise_k as f32;", "vel[0]"),
-            ("frame.vel[1] = state.water_temperature_rise_k as f32;", "vel[1]"),
-            ("frame.vel[2] = state.peak_power_mw as f32;", "vel[2]"),
-            ("frame.force_torque = state.power_rate_mw_per_s as f32;", "force_torque"),
-        ] {
-            assert!(REACTOR_FUEL_SOURCE.contains(line), "{state}: the card packs this slot otherwise");
-        }
-
-        // The clock and the examples.
-        let ceiling = reactor.gate_dt_s().unwrap();
-        let dt = &body["dt_s"];
-        assert_eq!(bits(&dt["ceiling_s"]), ceiling.to_bits());
-        assert!(dt["nyquist_s"].is_null());
-        assert_eq!(bits(&body["example_compute_step"]["parameters"]["dt_s"]), ceiling.to_bits());
-        let run = &body["example_run_trajectory"];
-        let inlet_k = run["initial"]["inlet_temperature_k"].as_f64().unwrap();
-        let band = reactor.band_of(inlet_k).expect("the example starts in a band");
-        assert_eq!(band, 0);
-        let example_load = &run["segments"][0]["load"];
-        let rho = example_load["reactivity_inserted_dollar"].as_f64().unwrap();
-        assert!(rho >= reactor.band_reactivity_min_dollar[band] && rho <= reactor.band_reactivity_max_dollar[band]);
-        let flow = example_load["coolant_flow_m_per_s"].as_f64().unwrap();
-        assert!(flow >= reactor.band_flow_min_m_per_s[band] && flow <= reactor.band_flow_max_m_per_s[band]);
-        assert_eq!(run["segments"][0]["steps"], REACTOR_FUEL_EXAMPLE_STEPS);
-        // The rule names the card's own starting power and the margins it no longer stops at.
-        let rule = dt["rule"].as_str().unwrap();
-        assert!(rule.contains(&format!("starts at {:e} MW in equilibrium", reactor.initial_power_mw)), "{rule}");
-        assert!(rule.contains("The longest time of peak in Tables III and V is 13.7 s; the largest energy to peak in Tables III and V is 15 MW s; the largest peak power is 410 MW."), "{rule}");
-        assert!(rule.contains("with no limit of time, energy or power"), "{rule}");
-    }
-
-    /// The fuel-temperature reactor's validation record: the report, the
-    /// three bands, the fit and the held-back tests, the protocol and its
-    /// marks, the comparison that failed with every figure of every group,
-    /// and the limits with the four fitted values.
-    #[test]
-    fn the_fuel_reactor_validation_record_states_the_comparison_that_failed() {
-        let card = find("energy", "reactor_spert3_fuel").expect("the fuel reactor is served");
-        let record = &describe_one(card)["validation"];
-        let part = |name: &str| record[name].as_str().unwrap().to_string();
-        let object = part("object");
-        for words in [
-            "SPERT III E-core",
-            "56 to 92, 251 to 259 and 498 to 501 degrees Fahrenheit",
-            "ramped in as K t^2",
-            "the fuel temperature and the water temperature are state",
-            "square-root Doppler law",
-        ] {
-            assert!(object.contains(words), "{words}: {object}");
-        }
-        let data = part("data");
-        for words in [
-            "IDO-17281",
-            "OSTI 4792676",
-            "58 tests",
-            "Fitted on 28: the 20 cold-startup tests of reactor_spert3's fit and eight tests at 500 degrees Fahrenheit",
-            "Compared with the other 30, not in the fit",
-            "13 tests at inlet temperatures of 251 to 259 degrees Fahrenheit",
-        ] {
-            assert!(data.contains(words), "{words}: {data}");
-        }
-        let pass_line = part("pass_line");
-        for words in [
-            "Record SHA-256 413ace16d5cc3d622c0ef44c0ea2b9526ac7526dfeee4b43ae601d6018e51db4.",
-            "for each of the three groups not in the fit and for the 30 together",
-            "at most 1.5",
-            "at most 5 percent",
-        ] {
-            assert!(pass_line.contains(words), "{words}: {pass_line}");
-        }
-        let result = part("result");
-        assert_eq!(result, REACTOR_SPERT3_FUEL_RESULT);
-        assert_ne!(result, NOT_COMPARED);
-        for words in [
-            "On the 30 tests not in the fit, run at 0.43 ms, the card's step ceiling",
-            // cold: peak power, energy, time
-            "(0.514, 0.937, +0.204)",
-            "(0.540, 1.087, +0.023)",
-            "time of the peak RMS 5.22 percent (target 5), worst 12.24 percent (target 10)",
-            "about 3 to 6 percent",
-            // 251 to 259 degF
-            "The group at 251 to 259 degrees Fahrenheit, 13 tests, the report's series at about 260 degrees Fahrenheit, with nothing fitted in it",
-            "(0.643, 1.051, +0.479)",
-            "(0.846, 1.334, -0.152)",
-            "time of the peak RMS 8.46 percent, worst 14.88 percent, twelve of the thirteen peaks early",
-            // 498 to 501 degF
-            "The group at 498 to 501 degrees Fahrenheit, 7 tests",
-            "(0.796, 1.650, -0.490)",
-            "time of the peak RMS 4.49 percent, worst 7.45 percent",
-            "energy RMS 1.336, worst 3.212 (target 3), mean -0.890 (target 0.5)",
-            "the card's energy is low on all seven tests",
-            // the 30 together
-            "(0.644, 1.650, +0.161)",
-            "(0.908, 3.212, -0.266)",
-            "time of the peak RMS 6.69 percent, worst 14.88 percent",
-        ] {
-            assert!(result.contains(words), "{words}: {result}");
-        }
-        // The step the result names is the card's ceiling.
-        let gate = reactor_spert3_fuel::ReactorSpert3Fuel::e_core_low_initial_power()
-            .gate_dt_s()
-            .unwrap();
-        assert!((gate - 0.43e-3).abs() < 1.0e-15 && gate < 0.5e-3);
-        let limits = part("limits");
-        assert!(limits.starts_with("Four constants are fitted on 28 tests"));
-        // The four fitted values are the card's constants, digit for digit.
-        for (words, value) in [
-            ("the power at the start, 11.6113 W", reactor_spert3_fuel::INITIAL_POWER_MW * 1.0e6),
-            (
-                "0.0371601 dollar per square root of a kelvin",
-                reactor_spert3_fuel::DOPPLER_STRENGTH_DOLLAR_PER_SQRT_K,
-            ),
-            ("0.0260616 MW s per K", reactor_spert3_fuel::FUEL_HEAT_CAPACITY_MWS_PER_K),
-            ("for all three bands, 0.28586", reactor_spert3_fuel::WATER_FEEDBACK_WEIGHT),
-        ] {
-            assert!(limits.contains(words), "{words}: {limits}");
-            let digits: String = words
-                .split(|c: char| !(c.is_ascii_digit() || c == '.'))
-                .find(|part| part.contains('.'))
-                .unwrap()
-                .to_string();
-            let written: f64 = digits.parse().unwrap();
-            assert!((written - value).abs() <= 1.0e-12 * value.abs(), "{words}: {value}");
-        }
-        for words in [
-            "The starting power is a fitted effective value",
-            "about 7 to 11 W, the report's 50 W is excluded under this model",
-            "the report's design figures",
-            "10 to 15 ms of fixed-time error remains, where the card is late on the fastest tests",
-            "The report measures no fuel temperature",
-            "69 to 402 K at the peak on the tests not in the fit",
-            "which put every peak about 22 percent early",
-            "Tables V and VII, their rows outside the fit included",
-            "The conservation residual names a wrong method and is not a bound on accuracy",
-            "reads the true error of the state low by about 11 to 15 times",
-            "3.3e-7 and 3.8e-7 of the neutron population, is above the limit while the residual is 2.3e-8 and 2.6e-8",
-            "a reactivity changed during a burst is refused by name, ReactivityChangedDuringBurst",
-            "Each step may carry its own flow rate; every compared burst holds one flow, and a burst whose flow changes is computed with the same equations",
-            "Outside each band's compared reactivity and flow the card computes the same equations",
-        ] {
-            assert!(limits.contains(words), "{words}: {limits}");
-        }
-        // The limit the record names is the card's, unchanged.
-        assert_eq!(reactor_spert3_fuel::RESIDUAL_CONSERVATION_LIMIT, 3.0e-7);
-        assert!(limits.contains("Its limit, 3e-7,"));
-        // The spec sheet gives the comparison with the 30 tests not in the fit and its gap.
-        let sheet = crate::spec_sheet::of("reactor_spert3_fuel").expect("the fuel reactor has a spec sheet");
-        assert!(sheet.compared.starts_with("Compared with the 30 tests not in the fit"), "{}", sheet.compared);
-        assert!(sheet.gap.contains("8.46 percent") && sheet.gap.contains("-0.890"), "{}", sheet.gap);
-        // The record quotes no proof of a run.
-        assert!(!record.to_string().contains("seal"));
-    }
-
     /// The 2170 cell lists every variant of its `StepReject`, in the kernel's
-    /// order, with the kernel's sentence word for word.
+    /// order, with the kernel's sentence word for word. (0.15.0: the served
+    /// cell_2170_model3, the twin's kernel `cell_2170_twin`; the M80 card is
+    /// retired.)
     #[test]
     fn the_2170_cell_refusals_carry_the_sentences_from_the_card() {
         let documented = documented_rejects(CELL_2170_SOURCE);
-        let card = find("energy", "cell_2170_m80").expect("the 2170 cell is served");
-        assert_eq!(documented.len(), 13);
+        let card = find("energy", "cell_2170_model3").expect("the 2170 cell is served");
+        assert_eq!(documented.len(), 16);
         assert_eq!(card.rejects.len(), documented.len());
         for ((name, sentence), listed) in documented.iter().zip(card.rejects) {
             assert_eq!(name, listed);
             assert_eq!(
-                reject_meaning("cell_2170_m80", name),
+                reject_meaning("cell_2170_model3", name),
                 Some(sentence.as_str()),
                 "{name}"
             );
         }
         assert_eq!(card.advisory.len(), 2);
-    }
-
-    /// The 2170 cell publishes the kernel's bounds exactly for every input,
-    /// each block's own range of charge, a step of one second as floor and
-    /// ceiling, and a validation record that states the comparison that failed.
-    #[test]
-    fn the_2170_cell_publishes_the_kernel_bounds_and_states_the_comparison_that_failed() {
-        let card = find("energy", "cell_2170_m80").expect("the 2170 cell is served");
-        let body = describe_one(card);
-        let field = |list: &str, index: usize| body[list][index].clone();
-        let bounds = |field: &Value| {
-            (
-                field["minimum"].as_f64().unwrap().to_bits(),
-                field["maximum"].as_f64().unwrap().to_bits(),
-                field["minimum_exclusive"].as_bool().unwrap(),
-                field["maximum_exclusive"].as_bool().unwrap(),
-            )
-        };
-        let block = field("phase_fields", 0);
-        assert_eq!(block["name"], "block_chamber_c");
-        assert_eq!(block["unit"], "degC");
-        // Every block is served: the -10 and -20 degC blocks met no mark and
-        // carry a flag.
-        assert_eq!(bounds(&block), ((-20.0_f64).to_bits(), 40.0_f64.to_bits(), false, false));
-        assert!(block["bound"].as_str().unwrap().contains("FLAG_BLOCK_MET_NO_MARK"));
-        let charge = field("phase_fields", 1);
-        assert_eq!(charge["name"], "charge_removed_ah");
-        assert_eq!(charge["unit"], "Ah");
-        assert_eq!(
-            bounds(&charge),
-            ((-0.02_f64).to_bits(), cell_2170_m80::CHARGE_DEEP_AH[0].to_bits(), false, false)
-        );
-        let words = charge["bound"].as_str().unwrap();
-        for (chamber, deep) in [
-            ("40", "4.67683635335689"),
-            ("25", "4.4615"),
-            ("10", "4.2059"),
-            ("0", "4.1048"),
-            ("-10", "3.9413"),
-            ("-20", "3.7886"),
-        ] {
-            let chamber = token(chamber.parse::<f64>().unwrap());
-            let deep = token(deep.parse::<f64>().unwrap());
-            assert!(
-                words.contains(&format!("{chamber} degC: [{}, {deep}] Ah", token(-0.02))),
-                "{chamber}: {words}"
-            );
-        }
-        // The current and the case temperature are held to where the tables end.
-        let current = field("load_fields", 0);
-        assert_eq!(current["name"], "current_a");
-        assert_eq!(bounds(&current), ((-13.5_f64).to_bits(), 13.5_f64.to_bits(), false, false));
-        let case = field("load_fields", 1);
-        assert_eq!(case["name"], "case_temperature_c");
-        assert_eq!(case["unit"], "degC");
-        assert_eq!(bounds(&case), ((-21.898_f64).to_bits(), 45.535_f64.to_bits(), false, false));
-        let bands = case["bound"].as_str().unwrap();
-        for block in 0..cell_2170_m80::BLOCK_COUNT {
-            let band = format!(
-                "{} degC block: [{}, {}] degC",
-                cell_2170_m80::BLOCK_CHAMBER_C[block],
-                cell_2170_m80::BLOCK_CASE_MIN_C[block],
-                cell_2170_m80::BLOCK_CASE_MAX_C[block]
-            );
-            assert!(bands.contains(&band), "{band}: {bands}");
-        }
-        // Each block's compared currents are published, from envelope.json of the 0.7.0 fix.
-        let currents = current["bound"].as_str().unwrap();
-        assert!(currents.contains("FLAG_OUTSIDE_COMPARED_TESTS"));
-        for block in 0..cell_2170_m80::BLOCK_COUNT {
-            let band = format!(
-                "{} degC block: [{}, {}] A",
-                cell_2170_m80::BLOCK_CHAMBER_C[block],
-                -cell_2170_m80::BLOCK_CURRENT_DISCHARGE_MAX_A[block],
-                cell_2170_m80::BLOCK_CURRENT_CHARGE_MAX_A[block]
-            );
-            assert!(currents.contains(&band), "{band}: {currents}");
-        }
-        assert!(currents.contains("40 degC block: [-9.809, 9.737] A"), "{currents}");
-        assert!(currents.contains("0 degC block: [-11.375, 8.304] A"), "{currents}");
-        // A start past an end is refused, however near: it is stated.
-        assert!(charge["bound"].as_str().unwrap().contains("A start one 64-bit number past an end is refused too"));
-        assert_eq!(body["phase_fields"].as_array().unwrap().len(), 2);
-        assert_eq!(body["load_fields"].as_array().unwrap().len(), 2);
-
-        let dt = &body["dt_s"];
-        assert_eq!(dt["floor_s"].as_f64().unwrap().to_bits(), 1.0_f64.to_bits());
-        assert_eq!(dt["ceiling_s"].as_f64().unwrap().to_bits(), 1.0_f64.to_bits());
-        assert!(dt["nyquist_s"].is_null());
-        assert!(dt["ceiling_from"].as_str().unwrap().contains("StepNotOneSecond"));
-        assert!(
-            dt["rule"]
-                .as_str()
-                .unwrap()
-                .starts_with(&format!("dt_s is in [{}, {}] s.", token(1.0), token(1.0)))
-        );
-
-        let record = &body["validation"];
-        assert!(record["result"].as_str().unwrap().starts_with(
-            "On the 60 tests: 27 runs within every target"
-        ));
-        let data = record["data"].as_str().unwrap();
-        assert!(data.contains("Borealis 10.5683/SP3/ZVTR4B, version 3.0"));
-        assert!(data.contains("IEEE ITEC 2022, 10.1109/ITEC53557.2022.9813996"));
-        assert!(record["pass_line"].as_str().unwrap().contains(
-            "488fe0af60bbb68be465106ae5fe368b7780f331e8ea5c87e8ac523e6ab984fa"
-        ));
-        assert!(record["limits"].as_str().unwrap().starts_with("The forecast made outside the engine on the 18 opened tests"));
-        assert!(!record.to_string().contains("seal"));
-        // The record counts three computations: the sealed run was computed
-        // twice, and a third time from the protocol's text alone. Result and
-        // limits say the same.
-        let result = record["result"].as_str().unwrap();
-        assert!(result.contains("A third program, written from the protocol's text by an agent that did not write the card, recomputes the same 27 of 60"), "{result}");
-        assert!(!result.contains("second scoring"), "{result}");
-        let limits = record["limits"].as_str().unwrap();
-        assert!(limits.contains("ran the comparison twice"));
-        assert!(limits.contains("a third program, from the protocol's text by an agent that did not write the card, recomputes it"));
-        assert!(!limits.contains("not yet repeated by a second party"));
-
-        assert_eq!(body["advisory_flags"].as_array().unwrap().len(), 2);
-        let slot = |name: &str| {
-            body["frame_slots"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .find(|slot| slot["slot"] == name)
-                .unwrap()
-                .clone()
-        };
-        assert_eq!(slot("pos[0]")["state"], "terminal_v");
-        assert_eq!(slot("pos[1]")["state"], "charge_removed_ah");
-        assert_eq!(slot("pos[1]")["unit"], "Ah");
-        assert_eq!(slot("vel[1]")["state"], "branch_v");
-        assert_eq!(slot("vel[2]")["state"], "case_temperature_c");
-        assert_eq!(slot("vel[2]")["unit"], "degC");
-        assert_eq!(slot("force_torque")["state"], "lower_limit_margin_v");
-
-        let step = &body["example_compute_step"]["parameters"];
-        assert_eq!(step["dt_s"].as_f64().unwrap().to_bits(), 1.0_f64.to_bits());
-        assert_eq!(step["block_chamber_c"].as_f64().unwrap(), 25.0);
-        assert_eq!(step["current_a"].as_f64().unwrap(), -2.25);
-        let run = &body["example_run_trajectory"];
-        assert_eq!(run["segments"][0]["steps"], 600);
-        assert_eq!(run["record_every"], 60);
     }
 
     const FINGERPAD_SOURCE: &str = include_str!("../../genesis_kernel/src/fingerpad_p02_glass.rs");
@@ -10210,12 +8009,13 @@ mod tests {
     }
 
     /// The tokamak lists every variant of its `StepReject`, in the kernel's
-    /// order, with the kernel's sentence word for word.
+    /// order, with the kernel's sentence word for word. (0.15.0: the kernel is
+    /// the JET twin's, `tokamak_jet_dte1_twin`.)
     #[test]
     fn the_tokamak_refusals_carry_the_sentences_from_the_card() {
         let documented = documented_rejects(TOKAMAK_SOURCE);
         let card = find("energy", "tokamak_jet_dte1").expect("the tokamak is served");
-        assert_eq!(documented.len(), 21);
+        assert_eq!(documented.len(), 24);
         assert_eq!(card.rejects.len(), documented.len());
         for ((name, sentence), listed) in documented.iter().zip(card.rejects) {
             assert_eq!(name, listed);
@@ -10225,109 +8025,6 @@ mod tests {
                 "{name}"
             );
         }
-    }
-
-    /// The tokamak publishes the physical bounds of its fields: each above
-    /// or from zero, the tritium fraction from 0 to 1, and no upper bound
-    /// elsewhere, since the compared envelope is lifted. Each bound sentence
-    /// states the compared span. Its validation record carries the record's
-    /// hash and names both pulses outside the fit, and its list row states
-    /// the fusion-energy ratio and the envelope.
-    #[test]
-    fn the_tokamak_publishes_the_kernel_bounds_and_its_validation_record() {
-        let card = find("energy", "tokamak_jet_dte1").expect("the tokamak is served");
-        let tokamak = tokamak_jet_dte1::TokamakJetDte1::elmy_h_mode();
-        let body = describe_one(card);
-        let field = |name: &str| {
-            body["phase_fields"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .chain(body["load_fields"].as_array().unwrap())
-                .find(|field| field["name"] == name)
-                .unwrap_or_else(|| panic!("{name}"))
-                .clone()
-        };
-        assert_eq!(body["phase_fields"].as_array().unwrap().len(), 3);
-        assert_eq!(body["load_fields"].as_array().unwrap().len(), 6);
-        for (name, exclusive, compared) in [
-            ("thermal_energy_j", true, "0.462 to 9.57 MJ"),
-            ("fast_ion_energy_j", false, "5.59 kJ to 1.62 MJ"),
-            ("elapsed_time_s", false, "5.475 s"),
-            ("heating_power_w", false, "0.124 to 24.3 MW"),
-            ("ohmic_power_w", false, "0.173 to 2.44 MW"),
-            ("line_density_per_m3", true, "1.65e19 to 7.85e19"),
-            ("plasma_current_a", true, "1.65 to 3.84 MA"),
-            ("toroidal_field_t", true, "1.80 to 4.04 T"),
-            ("tritium_fraction", false, "0.451 to 0.504"),
-        ] {
-            let published = field(name);
-            assert_eq!(published["minimum"].as_f64().unwrap().to_bits(), 0.0_f64.to_bits(), "{name}");
-            assert_eq!(published["minimum_exclusive"], exclusive, "{name}");
-            if name == "tritium_fraction" {
-                assert_eq!(published["maximum"].as_f64().unwrap().to_bits(), 1.0_f64.to_bits(), "{name}");
-                assert_eq!(published["maximum_exclusive"], false, "{name}");
-            } else {
-                assert!(published["maximum"].is_null(), "{name}");
-            }
-            let bound = published["bound"].as_str().unwrap();
-            assert!(bound.contains(compared), "{name}: {bound}");
-            assert!(bound.to_lowercase().contains("compared"), "{name}: {bound}");
-        }
-        assert!(field("tritium_fraction")["bound"].as_str().unwrap().contains("FuelMixOutsideCard"));
-        assert!(field("tritium_fraction")["bound"].as_str().unwrap().contains("0.743 of the measured"));
-        assert!(field("heating_power_w")["bound"].as_str().unwrap().contains("L-H power threshold"));
-        assert!(field("elapsed_time_s")["bound"].as_str().unwrap().contains("It is required"));
-        assert!(!field("elapsed_time_s")["bound"].as_str().unwrap().contains("end of the card"));
-        for words in [
-            "a ratio of 0.743 (target 0.75 to 1.25)",
-            "peak 3.7 MW against 6.1 MW",
-            "1.65 to 3.84 MA",
-            "nine JET pulses",
-            "5.475 s",
-            "0 to 0.034 or 0.451 to 0.504",
-        ] {
-            assert!(card.specimen.contains(words), "the summary lacks: {words}");
-        }
-        let limits = validation(card.card, card.specimen)["limits"].as_str().unwrap().to_string();
-        assert!(limits.contains("within 16.5 percent of its peak on 43134"));
-        assert!(limits.contains("off by 33, 65 and 40 percent on 42794, 42997 and 43002"));
-        assert!(!limits.contains("17 to 65 percent"));
-        assert!(!limits.contains("not yet repeated by a second party"));
-        assert!(body["dt_s"]["ceiling_from"].as_str().unwrap().contains("46.5 ms"));
-        assert!(body["dt_s"]["ceiling_from"].as_str().unwrap().contains("18.0 ms at 0.777 keV and 7.85e19"));
-        assert!(body["dt_s"]["ceiling_from"].as_str().unwrap().contains("past the compared envelope the step ceiling follows the state"));
-        // The pulse outside the card's regime is outside its envelope and is computed; the limits say how it did.
-        assert!(limits.contains("the states and loads it alone reached (25.1 MW of heating, 4.16 MA, a safety factor of 3.39, 3.5 MJ of fast ions, 6.3 keV, confinement times to 8.5 s) are outside the compared envelope and are computed"));
-        assert!(limits.contains("42976 was put outside the card's regime after its table was read"));
-        assert!(!limits.contains("refused by name"));
-        assert!(!limits.contains("envelope of the ten pulses"));
-        // The shape factor the current's bound states is the card's own.
-        let shape = tokamak.safety_factor(1.0e6, 1.0)
-            / (5.0 * 0.9386 * 0.9386 / 2.899);
-        assert!((shape - 2.428).abs() < 5.0e-4, "{shape}");
-        let dt = &body["dt_s"];
-        assert_eq!(dt["ceiling_s"].as_f64().unwrap().to_bits(), tokamak_jet_dte1::GATE_DT_S.to_bits());
-        assert_eq!(dt["floor_s"].as_f64().unwrap().to_bits(), tokamak_jet_dte1::FLOOR_DT_S.to_bits());
-        assert!(dt["nyquist_s"].is_null());
-        let flags = body["advisory_flags"].as_array().unwrap();
-        assert_eq!(flags.len(), 1);
-        assert_eq!(flags[0]["name"], "FLAG_NEAR_DENSITY_LIMIT");
-        assert_eq!(flags[0]["state"], "near_density_limit");
-        let record = &body["validation"];
-        let part = |name: &str| record[name].as_str().unwrap().to_string();
-        assert!(part("data").contains("42982") && part("data").contains("42976"));
-        assert!(part("data").contains("TRANSP reconstruction"));
-        assert!(part("pass_line").ends_with("Record SHA-256 7badf2b1267219d0e4da2edaad7d50097f9f98ceee1e0ab5fb9f8fd391ba94bb."));
-        assert!(part("pass_line").contains("14.5 percent"));
-        assert!(part("limits").starts_with("Each training pulse predicted with constants fitted without it"));
-        assert_eq!(part("result"), TOKAMAK_RESULT);
-        assert!(part("result").starts_with("On the two pulses not in the fit."));
-        for words in ["7.9 percent", "22.5 percent", "23.4 percent", "a ratio of 0.743", "19.2 percent", "34.7 percent"] {
-            assert!(part("result").contains(words), "{words}");
-        }
-        assert_ne!(part("result"), NOT_COMPARED);
-        assert!(!record.to_string().contains("seal"));
     }
 
     /// The cantilever lists every variant of its `StepReject`, in the kernel's
@@ -10567,36 +8264,6 @@ mod tests {
         assert!(!record.to_string().contains("seal"));
     }
 
-    /// The physical 2170 cell lists every variant of its `StepReject`, in the
-    /// kernel's order, with the kernel's sentence word for word, and its one
-    /// flag. One sentence is the served card's and not the kernel's: the
-    /// kernel's start can carry a span of case temperature from a continued
-    /// run, and the served card takes no continued start, so the meaning of
-    /// the span's refusal leaves "carried across a continued start" out.
-    #[test]
-    fn the_physical_2170_cell_refusals_carry_the_sentences_from_the_card() {
-        let documented = documented_rejects(CELL_2170_MODEL3_SOURCE);
-        let card = find("energy", "cell_2170_model3").expect("the physical 2170 cell is served");
-        assert_eq!(documented.len(), 14);
-        assert_eq!(card.rejects.len(), documented.len());
-        assert!(crate::chain::not_continued("cell_2170_model3").is_some());
-        for ((name, sentence), listed) in documented.iter().zip(card.rejects) {
-            assert_eq!(name, listed);
-            assert_eq!(
-                reject_meaning("cell_2170_model3", name),
-                Some(sentence.as_str()),
-                "{name}"
-            );
-        }
-        assert_eq!(card.advisory.len(), 2);
-        assert_eq!(card.advisory[0].name, "FLAG_SUSTAINED_ABOVE_1C");
-        assert_eq!(card.advisory[0].mask, cell_2170_model3::FLAG_SUSTAINED_ABOVE_1C);
-        assert!(card.advisory[0].seals);
-        assert_eq!(card.advisory[1].name, "FLAG_OUTSIDE_COMPARED_RUNS");
-        assert!(card.advisory[1].seals);
-        assert!(CELL_2170_MODEL3_SOURCE.contains("pub const FLAG_SUSTAINED_ABOVE_1C: u64 = 1 << 0;"));
-    }
-
     /// The crater lists every variant of its `StepReject`, in the kernel's
     /// order, with the kernel's sentence word for word, and its one flag.
     #[test]
@@ -10670,202 +8337,6 @@ mod tests {
         assert_eq!(step["parameters"]["dt_s"], 0.25);
         assert_eq!(run["segments"][0]["steps"], 1600);
         assert_eq!(run["record_every"], 100);
-    }
-
-    /// The physical 2170 cell publishes the kernel's bounds exactly for every
-    /// input, the cells it holds with their locked numbers, a floor and a
-    /// ceiling of 1 s, the pairing of capacity with case temperature and the
-    /// limits on its change and span, its frame, and a validation record that
-    /// says what it was developed on, what was compared, and its second
-    /// scoring.
-    #[test]
-    fn the_physical_2170_cell_publishes_the_kernel_bounds_and_says_what_it_was_developed_on() {
-        let card = find("energy", "cell_2170_model3").expect("the physical 2170 cell is served");
-        let body = describe_one(card);
-        let field = |list: &str, index: usize| body[list][index].clone();
-        let bounds = |field: &Value| {
-            (
-                field["minimum"].as_f64().map_or(0, f64::to_bits),
-                field["maximum"].as_f64().map_or(0, f64::to_bits),
-                field["minimum_exclusive"].as_bool().unwrap(),
-                field["maximum_exclusive"].as_bool().unwrap(),
-            )
-        };
-        let number = field("phase_fields", 0);
-        assert_eq!(number["name"], "cell_number");
-        assert_eq!(bounds(&number), (80.0_f64.to_bits(), 1000.0_f64.to_bits(), false, false));
-        let words = number["bound"].as_str().unwrap();
-        assert!(words.starts_with("exactly one of 80 (cell m80), 1000 (cell m1000) and 448 (cell m448-N):"), "{words}");
-        assert!(
-            words.contains("cell m80: capacity at its first capacity test 4.67683635335689 Ah, charge-return ratio 0.9977038043683101, resistance scale 1; cell m1000: capacity at its first capacity test 4.674654617421927 Ah, charge-return ratio 0.9972171037869162, resistance scale 0.9119920763410333; cell m448-N: capacity at its first capacity test 4.6696220353547755 Ah, charge-return ratio 0.9976972129208563, resistance scale 0.8243415837166522."),
-            "{words}"
-        );
-        assert_eq!(cell_2170_model3::CELL_COUNT, 3);
-        let third = cell_2170_model3::CELLS[2];
-        assert_eq!((third.name, third.cell_number), ("m448-N", 448.0));
-        assert_eq!("4.6696220353547755".parse::<f64>().unwrap().to_bits(), third.reference_capacity_ah.to_bits());
-        assert_eq!("0.9976972129208563".parse::<f64>().unwrap().to_bits(), third.charge_return_ratio.to_bits());
-        assert_eq!("0.8243415837166522".parse::<f64>().unwrap().to_bits(), third.resistance_scale.to_bits());
-        assert_eq!("0.9977038043683101".parse::<f64>().unwrap().to_bits(), cell_2170_model3::CELLS[0].charge_return_ratio.to_bits());
-        assert_eq!("0.9972171037869162".parse::<f64>().unwrap().to_bits(), cell_2170_model3::CELLS[1].charge_return_ratio.to_bits());
-        assert_eq!("4.67683635335689".parse::<f64>().unwrap().to_bits(), cell_2170_model3::CELLS[0].reference_capacity_ah.to_bits());
-        assert_eq!("4.674654617421927".parse::<f64>().unwrap().to_bits(), cell_2170_model3::CELLS[1].reference_capacity_ah.to_bits());
-        assert_eq!("0.9119920763410333".parse::<f64>().unwrap().to_bits(), cell_2170_model3::CELLS[1].resistance_scale.to_bits());
-        assert!(words.contains("CellNotRecognized"));
-        let charge = field("phase_fields", 1);
-        assert_eq!(charge["name"], "state_of_charge");
-        assert_eq!(charge["unit"], "1");
-        assert_eq!(bounds(&charge), ((-0.05_f64).to_bits(), 1.05_f64.to_bits(), false, false));
-        let capacity = field("phase_fields", 2);
-        assert_eq!(capacity["name"], "capacity_ah");
-        assert_eq!(capacity["unit"], "Ah");
-        assert_eq!(bounds(&capacity), (0.0_f64.to_bits(), 0, true, false));
-        let words = capacity["bound"].as_str().unwrap();
-        assert!(words.contains("capacity_ah = ratio x (ampere-hours put in by the full recharge) / (1 - state of charge before that recharge)"));
-        assert!(words.contains("it is listed for each cell under cell_number"));
-        assert!(words.contains("below 0.08"));
-        let current = field("load_fields", 0);
-        assert_eq!(current["name"], "current_a");
-        assert_eq!(bounds(&current), (0, 0, false, false));
-        assert!(current["bound"].as_str().unwrap().contains("Compared from -13.984 to 13.524 A"));
-        assert_eq!(13.524_f64.to_bits(), (13.5_f64 + cell_2170_model3::TESTER_CURRENT_ACCURACY_A).to_bits());
-        assert!(current["bound"].as_str().unwrap().contains("A positive current discharges the cell"));
-        let case = field("load_fields", 1);
-        assert_eq!(case["name"], "case_temperature_c");
-        assert_eq!(case["unit"], "degC");
-        assert_eq!(bounds(&case), ((-273.15_f64).to_bits(), 0, true, false));
-        assert!(case["bound"].as_str().unwrap().contains("Compared from -12.9 to 45.9 degC"));
-        assert_eq!(body["phase_fields"].as_array().unwrap().len(), 5);
-        assert_eq!(body["load_fields"].as_array().unwrap().len(), 2);
-        for (index, name) in [(3, "case_temperature_least_c"), (4, "case_temperature_most_c")] {
-            let carried = field("phase_fields", index);
-            assert_eq!(carried["name"], name);
-            assert_eq!(carried["unit"], "degC");
-            assert_eq!(bounds(&carried), ((-273.15_f64).to_bits(), 0, true, false));
-            assert!(carried["bound"].as_str().unwrap().contains("A start without it is refused"));
-        }
-
-        let dt = &body["dt_s"];
-        assert_eq!(dt["floor_s"].as_f64().unwrap().to_bits(), 1.0_f64.to_bits());
-        assert_eq!(dt["ceiling_s"].as_f64().unwrap().to_bits(), 1.0_f64.to_bits());
-        assert!(dt["nyquist_s"].is_null());
-        let rule = dt["rule"].as_str().unwrap();
-        assert!(rule.starts_with(&format!("dt_s is in [{}, {}] s.", token(1.0), token(1.0))));
-        assert!(dt["floor_from"].as_str().unwrap().contains("49 mV in the second of the reversal"));
-        assert!(dt["floor_from"].as_str().unwrap().contains("For a held 4.5 A discharge at 25 degC, the one load compared, a step of 0.1 s gave the one-second answer to within 0.3 mV"));
-        assert!(!dt["floor_from"].as_str().unwrap().contains("Under a held discharge"));
-        assert!(!rule.contains("up to 9 mV") && !dt["ceiling_from"].as_str().unwrap().contains("9 mV"));
-        let capacity_words = capacity["bound"].as_str().unwrap();
-        for words in [
-            "4.16 to 4.26 Ah from -12.9 to 12.6 degC",
-            "4.20 to 4.30 Ah from 0.0 to 20.4 degC",
-            "4.17 to 4.30 Ah from 9.8 to 26.8 degC",
-            "4.35 to 4.53 Ah from 23.3 to 31.4 degC",
-            "4.56 to 4.70 Ah from 28.1 to 45.9 degC",
-            "FLAG_OUTSIDE_COMPARED_RUNS",
-        ] {
-            assert!(capacity_words.contains(words), "{words}");
-        }
-        let case_words = case["bound"].as_str().unwrap();
-        assert!(case_words.contains("5.4 K") && case_words.contains("19.2 K") && case_words.contains("FLAG_OUTSIDE_COMPARED_RUNS"));
-        assert!(charge["bound"].as_str().unwrap().contains("STATE_OF_CHARGE_ALLOWANCE_PER_STEP"));
-        for name in [
-            "FLAG_OUTSIDE_COMPARED_RUNS",
-            "UndervoltageLimit",
-            "OvervoltageLimit",
-            "StateOfChargeOutsideCard",
-            "SurfaceOutsideCurve",
-            "FLAG_SUSTAINED_ABOVE_1C",
-            "NonPositiveDt",
-        ] {
-            assert!(rule.contains(name), "{name}");
-        }
-
-        let record = &body["validation"];
-        let result = record["result"].as_str().unwrap();
-        assert_eq!(result, CELL_2170_MODEL3_RESULT);
-        assert!(result.starts_with("Run once on runs of two further cells of the same type that no model had seen"));
-        for words in [
-            "One resistance number is fitted to each cell from its characterisation tests and nothing else is changed.",
-            "Third cell, m448-N: 51 of 60 runs within every target, inside the 48 to 54 expected",
-            "all five conditions written for the cells hold",
-            "Second cell, m1000: 31 of 45 runs within every target, under the 36 to 41 expected, and two of the five conditions hold.",
-            "Every ordinary drive cycle the card ran on either cell, 78 of 80, is within the voltage target, and 72 are within every target.",
-            "3.3 to 4.0 percent more charge than measured, at four of five temperatures",
-            "128 to 145 millivolts high",
-            "its discharge at the rated current at -10 degrees Celsius",
-            "All ten hill-climb cycles are among them",
-            "untested on new cells",
-        ] {
-            assert!(result.contains(words), "{words}");
-        }
-        assert!(!result.contains("not yet run"));
-        let data = record["data"].as_str().unwrap();
-        assert!(data.contains("Borealis 10.5683/SP3/ZVTR4B, version 3.0"));
-        let line = record["pass_line"].as_str().unwrap();
-        for mark in ["42 millivolts root mean square", "within 3 percent", "still running at the last sample", "at most 126 millivolts"] {
-            assert!(line.contains(mark), "{mark}");
-        }
-        let limits = record["limits"].as_str().unwrap();
-        for words in [
-            "The model was developed on all the tests of the first cell, m80.",
-            "three hill cycles",
-            "130 to 180 millivolts high",
-            "3 of the 13 runs",
-            "-20 degrees Celsius is outside the compared range",
-            "have now been read",
-            "One developer's SI wrote the model, wrote the card and ran the comparison, on one machine",
-            "A second program, by an agent that did not write the card, recomputes the comparison",
-            "the same result as the record on 102 of 105 runs",
-            "the card steps by one second:",
-            "49 mV from the one-second answer in the reversal that was compared",
-            "It is the same developer's SI, and no one outside Protocol Company, which makes this engine, has repeated the result.",
-        ] {
-            assert!(limits.contains(words), "{words}");
-        }
-        assert!(!limits.contains("not yet repeated by a second party"));
-        assert!(!limits.contains("Known defect"));
-        assert!(!record.to_string().contains("seal"));
-        assert!(!record.to_string().contains("build"));
-
-        assert_eq!(body["advisory_flags"].as_array().unwrap().len(), 2);
-        assert_eq!(body["advisory_flags"][0]["state"], "sustained_above_1c");
-        let slot = |name: &str| {
-            body["frame_slots"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .find(|slot| slot["slot"] == name)
-                .unwrap()
-                .clone()
-        };
-        for (name, state, unit) in [
-            ("pos[0]", "terminal_v", "V"),
-            ("pos[1]", "charge_removed_ah", "Ah"),
-            ("pos[2]", "surface_state_of_charge", "1"),
-            ("vel[0]", "reaction_overpotential_v", "V"),
-            ("vel[1]", "hysteresis_v", "V"),
-            ("vel[2]", "electrolyte_v", "V"),
-            ("force_torque", "current_mean_a", "A"),
-            ("residual", "residual_conservation_error", "1"),
-        ] {
-            assert_eq!(slot(name)["state"], state, "{name}");
-            assert_eq!(slot(name)["unit"], unit, "{name}");
-        }
-
-        let step = &body["example_compute_step"]["parameters"];
-        assert_eq!(step["dt_s"].as_f64().unwrap().to_bits(), 1.0_f64.to_bits());
-        assert_eq!(step["cell_number"].as_f64().unwrap(), 80.0);
-        assert_eq!(step["state_of_charge"].as_f64().unwrap(), 1.0);
-        assert_eq!(step["capacity_ah"].as_f64().unwrap(), 4.5006);
-        assert_eq!(step["current_a"].as_f64().unwrap(), 4.5);
-        let run = &body["example_run_trajectory"];
-        assert_eq!(run["segments"][0]["steps"], 600);
-        assert_eq!(run["record_every"], 60);
-        // The table card of the same cell is served beside it.
-        let earlier = find("energy", "cell_2170_m80").expect("the earlier card is served");
-        assert_eq!(earlier.rejects.len(), 13);
-        assert_eq!(earlier.ceiling_s, 1.0);
     }
 
     /// The creep card lists every variant of its `StepReject`, in the kernel's
@@ -11379,7 +8850,7 @@ mod tests {
             assert_eq!(step["domain"], item.domain);
             assert_eq!(step["card"], item.card);
             match crate::compute_step(&state, step).await {
-                Ok(response) => assert_eq!(response.sha256_seal.len(), 64, "{}", item.card),
+                Ok(response) => assert_eq!(response.sha384_seal.len(), 96, "{}", item.card),
                 Err(error) => panic!("{} step: {}", item.card, error.message()),
             }
             examples += 1;
@@ -11388,22 +8859,6 @@ mod tests {
             assert_eq!(run["domain"], item.domain);
             assert_eq!(run["card"], item.card);
             match crate::trajectory::run(&state, run).await {
-                // The run of each reactor card goes to the first maximum of
-                // power, the end the card declares, and is sealed as ended.
-                Ok(response)
-                    if item.card == "reactor_spert3" || item.card == "reactor_spert3_fuel" =>
-                {
-                    assert_eq!(response.outcome, "ended", "{:?}", response.reject_detail);
-                    assert_eq!(response.reject.as_deref(), Some("PastFirstMaximum"));
-                    assert!(response.steps_landed < response.steps_requested);
-                }
-                // The C-core reactor's run goes on past the power peak to the first maximum of
-                // the hot-spot plate temperature, the end it declares.
-                Ok(response) if item.card == "reactor_spert3_ccore" => {
-                    assert_eq!(response.outcome, "ended", "{:?}", response.reject_detail);
-                    assert_eq!(response.reject.as_deref(), Some("PastPlateTemperatureMaximum"));
-                    assert!(response.steps_landed < response.steps_requested);
-                }
                 Ok(response) => assert_eq!(
                     response.outcome, "completed",
                     "{} {:?}",
@@ -11413,6 +8868,7 @@ mod tests {
             }
             examples += 1;
         }
-        assert_eq!(examples, 80);
+        // 0.15.0: 36 cards, two worked examples each.
+        assert_eq!(examples, 72);
     }
 }

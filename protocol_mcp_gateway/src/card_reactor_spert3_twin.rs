@@ -13,7 +13,7 @@ use crate::{
 };
 
 pub(crate) const DOMAIN: &str = "energy";
-pub(crate) const CARD: &str = "reactor_spert3_twin";
+pub(crate) const CARD: &str = "reactor_spert3";
 
 /// The flags the card declares, ORed.
 pub(crate) const FLAGS: u64 = reactor_spert3_twin::FLAG_ROD_MOVING
@@ -23,10 +23,10 @@ pub(crate) const FLAGS: u64 = reactor_spert3_twin::FLAG_ROD_MOVING
     | reactor_spert3_twin::FLAG_OUTSIDE_COMPARED;
 
 /// The cold-startup start of the worked examples and of the card at rest:
-/// 76 degF, 0.0853 MPa, no flow, 11.7719 W.
+/// 76 degF, 0.0853 MPa, no flow, 7.9949547 W.
 pub(crate) const REST_INLET_K: f64 = (76.0 + 459.67) / 1.8;
 pub(crate) const REST_PRESSURE_MPA: f64 = 0.0853;
-pub(crate) const REST_POWER_MW: f64 = 1.17719e-5;
+pub(crate) const REST_POWER_MW: f64 = 7.9949547e-6;
 
 pub(crate) struct ReactorSpert3TwinCall {
     card: reactor_spert3_twin::ReactorSpert3Twin,
@@ -50,7 +50,7 @@ fn reject_sentence(reject: reactor_spert3_twin::StepReject) -> String {
             reactor_spert3_twin::GROWTH_PHASE_STEP
         )),
         R::FuelMelting => unsealed(&format!(
-            "a ring of the hot rod reached {} K, the melting point of UO2 (FuelMelting).",
+            "a ring of the peak rod reached {} K, the melting point of UO2 (FuelMelting).",
             reactor_spert3_twin::UO2_MELTING_POINT_K
         )),
         R::WaterAtSaturation => unsealed("the water in the core reached its saturation temperature: bulk boiling, where the card's single-phase water no longer holds (WaterAtSaturation)."),
@@ -66,7 +66,7 @@ fn read_load(params: &serde_json::Value) -> Result<reactor_spert3_twin::ReactorL
 
 fn start_outside(inlet_k: f64, pressure_mpa: f64, flow: f64, power: f64) -> String {
     format!(
-        "Physical Violation: the start of inlet {} K, pressure {} MPa, flow {} m/s and power {} MW is outside the reactor_spert3_twin card: the inlet must be above 273.15 K and below the saturation temperature at the pressure, {} K, and the steady state at that power must hold liquid water and solid fuel (StateOutsideCard).",
+        "Physical Violation: the start of inlet {} K, pressure {} MPa, flow {} m/s and power {} MW is outside the reactor_spert3 card: the inlet must be above 273.15 K and below the saturation temperature at the pressure, {} K, and the steady state at that power must hold liquid water and solid fuel (StateOutsideCard).",
         message_number(inlet_k),
         message_number(pressure_mpa),
         message_number(flow),
@@ -103,7 +103,7 @@ impl ReactorSpert3TwinCall {
         let load = read_load(params)?;
         if load.reactivity_inserted_dollar.to_bits() != self.run_load.reactivity_inserted_dollar.to_bits() {
             return Err(format!(
-                "Physical Violation: 'reactivity_inserted_dollar' {} dollar is not the {} dollar of the first segment: a run of the reactor_spert3_twin card is one ejection of the transient rod (ReactivityChangedDuringRun).",
+                "Physical Violation: 'reactivity_inserted_dollar' {} dollar is not the {} dollar of the first segment: a run of the reactor_spert3 card is one ejection of the transient rod (ReactivityChangedDuringRun).",
                 message_number(load.reactivity_inserted_dollar),
                 message_number(self.run_load.reactivity_inserted_dollar)
             ));
@@ -117,11 +117,19 @@ impl ReactorSpert3TwinCall {
             .map_err(|reject| StepFailure::from_reject(reject, reject_sentence(reject)))
     }
 
+    /// The limits the step from `before` to the state now held is past
+    /// (`crate::exceedance`).
+    pub(crate) fn exceedances(&self, before: &reactor_spert3_twin::ReactorState) -> genesis_kernel::exceedance::Exceedances {
+        genesis_kernel::reactor_spert3_twin::exceedances(&self.card, before, &self.state, self.load, self.dt_s)
+    }
+
     pub(crate) fn run(mut self, proof: [u8; 16]) -> Result<IntegratedFrame, String> {
         let mut frame = blank_frame(proof);
+        let before = self.state;
         self.step_into(&mut frame).map_err(|failure| failure.detail)?;
         Ok(IntegratedFrame {
             frame,
+            exceedances: self.exceedances(&before),
             residual_conservation_error: self.state.residual_conservation_error,
             state: state(&self.state)?,
         })
@@ -173,6 +181,14 @@ pub(crate) fn with<T>(state: &reactor_spert3_twin::ReactorState, finish: impl Fn
         ("hot_fuel_ring_3_k", StateField::F64(s.hot_fuel_k[3])),
         ("hot_fuel_ring_4_k", StateField::F64(s.hot_fuel_k[4])),
         ("hot_fuel_ring_5_k", StateField::F64(s.hot_fuel_k[5])),
+        ("peak_fuel_centre_k", StateField::F64(s.peak_fuel_centre_k)),
+        ("peak_clad_k", StateField::F64(s.peak_clad_k)),
+        ("peak_fuel_ring_0_k", StateField::F64(s.peak_fuel_k[0])),
+        ("peak_fuel_ring_1_k", StateField::F64(s.peak_fuel_k[1])),
+        ("peak_fuel_ring_2_k", StateField::F64(s.peak_fuel_k[2])),
+        ("peak_fuel_ring_3_k", StateField::F64(s.peak_fuel_k[3])),
+        ("peak_fuel_ring_4_k", StateField::F64(s.peak_fuel_k[4])),
+        ("peak_fuel_ring_5_k", StateField::F64(s.peak_fuel_k[5])),
         ("precursor_1_mw", StateField::F64(s.precursor_mw[0])),
         ("precursor_2_mw", StateField::F64(s.precursor_mw[1])),
         ("precursor_3_mw", StateField::F64(s.precursor_mw[2])),
@@ -181,13 +197,16 @@ pub(crate) fn with<T>(state: &reactor_spert3_twin::ReactorState, finish: impl Fn
         ("precursor_6_mw", StateField::F64(s.precursor_mw[5])),
         ("heat_carried_out_mws", StateField::F64(s.heat_carried_out_mws)),
         ("hot_heat_to_water_mws", StateField::F64(s.hot_heat_to_water_mws)),
+        ("peak_heat_to_water_mws", StateField::F64(s.peak_heat_to_water_mws)),
         ("population_anchor_mw", StateField::F64(s.population_anchor_mw)),
         ("heat_anchor_mws", StateField::F64(s.heat_anchor_mws)),
         ("hot_heat_anchor_mws", StateField::F64(s.hot_heat_anchor_mws)),
+        ("peak_heat_anchor_mws", StateField::F64(s.peak_heat_anchor_mws)),
         ("reactivity_power_integral", StateField::F64(s.reactivity_power_integral)),
         ("population_defect_mw", StateField::F64(s.population_defect_mw)),
         ("energy_defect_mws", StateField::F64(s.energy_defect_mws)),
         ("hot_energy_defect_mws", StateField::F64(s.hot_energy_defect_mws)),
+        ("peak_energy_defect_mws", StateField::F64(s.peak_energy_defect_mws)),
         ("residual_conservation_error", StateField::F64(s.residual_conservation_error)),
         ("inlet_temperature_k", StateField::F64(s.inlet_temperature_k)),
         ("system_pressure_mpa", StateField::F64(s.system_pressure_mpa)),

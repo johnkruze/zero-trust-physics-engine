@@ -327,6 +327,26 @@ pub fn step(
     load: ThermalLoad,
     dt_s: f64,
 ) -> Result<(), StepReject> {
+    #[cfg(any(test, debug_assertions, feature = "check_exceedances"))]
+    let before = *state;
+    let stepped = step_landed(node, state, frame, load, dt_s);
+    #[cfg(any(test, debug_assertions, feature = "check_exceedances"))]
+    if stepped.is_ok() {
+        crate::exceedance::debug_check("thermal", exceedances(node, &before, state, load, dt_s), frame.flags);
+    }
+    stepped
+}
+
+/// The step itself; [`step`] is it with, in a build that checks
+/// (`crate::exceedance::CHECKED`), the check that [`exceedances`] stands for
+/// the flags it wrote.
+fn step_landed(
+    node: &ThermalNode,
+    state: &mut ThermalNodeState,
+    frame: &mut LastStateFrame64,
+    load: ThermalLoad,
+    dt_s: f64,
+) -> Result<(), StepReject> {
     step_as_computed(node, state, frame, load, dt_s)?;
     normal_or_zero_state(state);
     Ok(())
@@ -581,6 +601,38 @@ fn step_bias_work(
     };
     advanced.heat_j += extra_j;
     commit(node, state, frame, load, dt_s, advanced)
+}
+
+/// Every limit a flag of this card can mark: what [`exceedances`] reports
+/// beside a flag's bit (`crate::exceedance`).
+pub const EXCEEDANCE_KINDS: &[crate::exceedance::ExceedanceKind] = &[DERATE_KIND];
+
+const DERATE_KIND: crate::exceedance::ExceedanceKind = crate::exceedance::ExceedanceKind {
+    flag: "FLAG_THERMAL_DERATE",
+    mask: FLAG_THERMAL_DERATE,
+    quantity: "temperature_k",
+    unit: "K",
+    side: crate::exceedance::Side::AtOrAbove,
+    limit: Some(DERATE_TEMPERATURE_K),
+    limit_words: "the derate temperature of the cold plate, 358.15 K",
+};
+
+/// The limits the step from `before` to `after` under `load` over `dt_s`
+/// is past: one record for each limit a flag set on its frame marks.
+pub fn exceedances(
+    node: &ThermalNode,
+    before: &ThermalNodeState,
+    after: &ThermalNodeState,
+    load: ThermalLoad,
+    dt_s: f64,
+) -> crate::exceedance::Exceedances {
+    let _ = (node, before, load, dt_s);
+    let mut records = crate::exceedance::Exceedances::new();
+    records.push_if(
+        after.derated,
+        crate::exceedance::Exceedance::fixed(DERATE_KIND, after.temperature_k),
+    );
+    records
 }
 
 #[cfg(test)]

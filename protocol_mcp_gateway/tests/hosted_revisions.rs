@@ -27,7 +27,7 @@ enum Door {
 
 impl Door {
     fn open() -> Door {
-        let mut child = Command::new(env!("CARGO_BIN_EXE_hosted_door"))
+        let mut child = Command::new(env!("CARGO_BIN_EXE_hosted_door")).arg("--unsigned")
             .args(["--open", "--port", "0", "--requests-per-minute", "100000"])
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -543,7 +543,7 @@ async fn a_library_client_connects_in_each_of_its_ways_to_both_doors() {
                 .await
                 .unwrap_or_else(|error| panic!("{at}: {error:?}"));
             assert_eq!(called.is_error, Some(false), "{at}");
-            assert!(called.content[0].as_text().unwrap().text.contains("sha256_seal"), "{at}");
+            assert!(called.content[0].as_text().unwrap().text.contains("sha384_seal"), "{at}");
             client.cancel().await.expect("close");
         }
     }

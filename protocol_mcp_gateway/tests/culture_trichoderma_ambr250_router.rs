@@ -9,7 +9,7 @@ use genesis_solvers::culture_trichoderma_ambr250::{self as culture, Question};
 use protocol_mcp_gateway::app;
 use reqwest::Client;
 use serde_json::{Value, json};
-use sha2::{Digest, Sha256};
+use sha2::{Digest, Sha384};
 use tokio::net::TcpListener;
 
 async fn spawn_app() -> String {
@@ -150,7 +150,7 @@ async fn a_culture_matches_the_solver_bit_for_bit_and_its_proof_holds() {
     assert!((volume[3].as_f64().unwrap() - (110.0 + 16.875 - 4.0 - 12.9)).abs() < 1.0e-9);
 
     // The field hash is the count and seven numbers for each segment.
-    let mut hasher = Sha256::new();
+    let mut hasher = Sha384::new();
     hasher.update(28_u64.to_le_bytes());
     for segment in 0..4 {
         for value in [
@@ -166,7 +166,7 @@ async fn a_culture_matches_the_solver_bit_for_bit_and_its_proof_holds() {
         }
     }
     let own = hex::encode(hasher.finalize());
-    let served = body["field_sha256"].as_str().expect("field hash");
+    let served = body["field_sha384"].as_str().expect("field hash");
     assert_eq!(served, own);
 
     // The proof holds, and an edited number breaks it by name.
@@ -383,9 +383,17 @@ async fn the_description_says_what_is_fitted_and_its_example_runs_unchanged() {
     let listed = reqwest::get(format!("{base}/solvers")).await.unwrap();
     let listed: Value = serde_json::from_str(&listed.text().await.unwrap()).unwrap();
     let solvers = listed["solvers"].as_array().expect("solvers");
-    assert_eq!(solvers.len(), 25);
+    assert_eq!(solvers.len(), protocol_mcp_gateway::SOLVERS);
     assert_eq!(solvers[10]["solver"], "culture_trichoderma_ambr250");
-    let summary = solvers[10]["summary"].as_str().expect("a sentence");
+    // Since 0.14.4 a row gives what the model computes, the comparison and
+    // the gap; the whole spec sheet is the description's.
+    let row_summary = solvers[10]["summary"].as_str().expect("a sentence");
+    assert!(!row_summary.contains("Range: "), "{row_summary}");
+    let (_, full) = post(&base, "/describe_solver", &json!({ "solver": "culture_trichoderma_ambr250" })).await;
+    let full: Value = serde_json::from_str(&full).unwrap();
+    let summary = full["summary"].as_str().unwrap().to_string();
+    let summary = summary.as_str();
+    assert!(summary.starts_with(row_summary.split_once(" Compared with ").map_or(row_summary, |parts| parts.0)), "{summary}");
     assert!(summary.contains("Fitted on 8 of the 12 cultures, fed 29.375 to 34.676 g/L glucose with 0 to 2 g/L yeast extract: six constants."), "{summary}");
     assert!(summary.contains("oxygen taken up within 0.0108 mol (target 0.0153), dry biomass to 170 h within 1.05 g/L (target 2.15), glucose within 0.51 g/L (target 0.85); galacturonate 4.60 g/L RMS (target 2.74), mucic acid 6.45 g/L (target 4.51), carbon dioxide 0.01125 mol (target 0.00265)."), "{summary}");
     assert!(summary.contains("Range: compared on the twelve cultures' own starts, feeds (glucose 10.077 to 52.101 g/L) and schedule, to 312 h"), "{summary}");

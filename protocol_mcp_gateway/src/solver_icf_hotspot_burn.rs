@@ -236,7 +236,7 @@ pub fn reject_name(reject: &HotSpotReject) -> &'static str {
 }
 
 fn field_words() -> String {
-    "SHA-256 of the count of the numbers that follow as 8 little-endian bytes, then, for each row of the burn history in order, its time in ps, fusion power in W, hot-spot temperature in keV, pressure in Gbar and radius in um, all as little-endian f64 bytes.".to_string()
+    "SHA-384 of the count of the numbers that follow as 8 little-endian bytes, then, for each row of the burn history in order, its time in ps, fusion power in W, hot-spot temperature in keV, pressure in Gbar and radius in um, all as little-endian f64 bytes.".to_string()
 }
 
 fn sections() -> Sections {

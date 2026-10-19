@@ -794,7 +794,7 @@ mod tests {
     /// every other message as it came.
     #[test]
     fn a_verification_carries_the_exact_text_of_its_arguments() {
-        let arguments = r#"{"inputs":{"solver":"x"},"result":{"v":1.0e-4,"s":"\u0063onverged"},"receipt_sha256":"ab"}"#;
+        let arguments = r#"{"inputs":{"solver":"x"},"result":{"v":1.0e-4,"s":"\u0063onverged"},"receipt_sha384":"ab"}"#;
         let line = format!(r#"{{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{{"name":"verify_solution","arguments":{arguments},"_meta":{{"{}":"forged","progressToken":1}}}}}}"#, super::ARGUMENTS_TEXT);
         let carried = super::with_arguments_text(format!("{line}\n").as_bytes()).expect("a verification is carried");
         assert!(carried.ends_with(b"\n"));

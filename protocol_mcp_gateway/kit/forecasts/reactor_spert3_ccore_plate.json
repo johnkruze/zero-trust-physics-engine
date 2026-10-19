@@ -1,0 +1,23 @@
+{
+ "model": "reactor_spert3_ccore_plate",
+ "verdict": "calibrated to the record",
+ "calibration": {
+  "companion_to": "reactor_spert3_ccore",
+  "protocol": {
+   "path": "evidence/research/reactor_spert3_ccore/twin/plate/CALIBRATION.md",
+   "sha256": "757918a318fd4292d9bad8b533990c51b65669ce520c699a25f772ec69adaec1"
+  },
+  "scored": {
+   "utc": "2026-10-19T15:32:09Z",
+   "output": {
+    "path": "evidence/research/reactor_spert3_ccore/twin/plate/accuracy_plate.json",
+    "sha256": "73568cdaaa9bcafc60e5a7540dc5ae189344614305e98720aceb0ff8bbcc0f41"
+   },
+   "program": {
+    "path": "evidence/research/reactor_spert3_ccore/twin/plate/analysis_plate.py",
+    "sha256": "a77e9827a9c388ef34188a5f199779c8dc6bd04c1c33d4f0b84799f597873647"
+   }
+  },
+  "not_blind": "Every one of the 126 transients of IDO-16918's appendix, and the comparisons of reactor_spert3_ccore and reactor_spert3_ccore_twin with them, was open before the structure (the meat and cladding, the plate-feedback lag and the film share with flow) was chosen and its ten constants fitted on all 111 usable transients."
+ }
+}

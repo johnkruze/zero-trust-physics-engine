@@ -310,13 +310,26 @@ impl fmt::Display for LhdReject {
             ),
             Self::FastProtonChargeExceedsElectrons { shell, fast_proton_fraction, charge_over_electrons } => write!(
                 f,
-                "in shell {shell} of {SHELLS} the beam protons still slowing are {fast_proton_fraction} of the electrons, and with the boron they carry {charge_over_electrons} of the electrons' charge: no thermal proton could be left, and quasi-neutrality cannot hold"
+                "in shell {shell} of {SHELLS} the beam protons still slowing are {} of the electrons, and with the boron they carry {} of the electrons' charge: no thermal proton could be left, and quasi-neutrality cannot hold",
+                Ratio(*fast_proton_fraction),
+                Ratio(*charge_over_electrons)
             ),
         }
     }
 }
 
 impl std::error::Error for LhdReject {}
+
+/// A ratio in a sentence: as Rust writes it under 1e15, and in exponent form
+/// from there, so that no sentence carries a number of three hundred digits
+/// (the random conformance test of 16 October 2026, D1b).
+struct Ratio(f64);
+
+impl fmt::Display for Ratio {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if self.0.abs() < 1.0e15 { write!(f, "{}", self.0) } else { write!(f, "{:e}", self.0) }
+    }
+}
 
 /// The settled answer for one beam.
 #[derive(Clone, Debug, PartialEq)]
@@ -721,6 +734,19 @@ fn answer(question: &LhdQuestion, refinement_cap: u32, fault: Fault) -> Result<L
         let fast_proton_fraction = fast_protons / electrons;
         let charge_over_electrons = (fast_protons + 5.0 * boron) / electrons;
         if !fast_proton_fraction.is_finite() {
+            // Near the top of the beam power's range the protons a second
+            // overflow (beam power over about 4.6e294 W at the worked plasma:
+            // the random conformance test of 16 October 2026, D1b, where it
+            // was NonFiniteValue). Worked again with the beam power over the
+            // electrons first, the fraction is finite and the charge the
+            // limit it passes is named.
+            let fraction = question.beam_power_w / electrons / (question.beam_energy_kev * JOULE_PER_KEV) * share
+                / (volume_m3 * shell_volume_fraction(shell))
+                * answer.slowing_time_s;
+            let charge = fraction + 5.0 * boron / electrons;
+            if fraction.is_finite() && charge.is_finite() && !(charge <= FAST_PROTON_CHARGE_OVER_ELECTRONS_MAX) {
+                return Err(LhdReject::FastProtonChargeExceedsElectrons { shell, fast_proton_fraction: fraction, charge_over_electrons: charge });
+            }
             return Err(LhdReject::NonFiniteValue);
         }
         if !(charge_over_electrons <= FAST_PROTON_CHARGE_OVER_ELECTRONS_MAX) {
@@ -1586,5 +1612,28 @@ mod tests {
                 assert!(answer.fused_fraction.is_normal() && answer.fused_fraction > 0.0, "{question:?}");
             }
         }
+    }
+
+    /// The random conformance test of 16 October 2026, D1b: with the worked
+    /// plasma a beam power above about 4.6e294 W, inside the declared range
+    /// to 1e300 W, was a sealed NonFiniteValue, the protons a second
+    /// overflowing, where below it the same question is
+    /// FastProtonChargeExceedsElectrons, the limit its words name, with its
+    /// ratios printed in three hundred digits. Both are now that limit, the
+    /// ratios in exponent form.
+    #[test]
+    fn a_beam_power_at_the_top_of_its_range_is_the_charge_limit() {
+        for power in [4.595682120728122e294, 4.6e294, 1e297, 1e300] {
+            let reject = solve(&LhdQuestion { beam_power_w: power, ..ANSWERED }).unwrap_err();
+            let LhdReject::FastProtonChargeExceedsElectrons { shell: 0, fast_proton_fraction, charge_over_electrons } = reject else {
+                panic!("{power:e}: {reject:?}");
+            };
+            assert!(fast_proton_fraction.is_finite() && charge_over_electrons >= fast_proton_fraction, "{power:e}");
+            let said = reject.to_string();
+            assert!(said.len() < 300 && said.contains("e2"), "{said}");
+        }
+        // Under 1e15 a ratio is written as before.
+        let small = LhdReject::FastProtonChargeExceedsElectrons { shell: 3, fast_proton_fraction: 0.5, charge_over_electrons: 1.25 };
+        assert_eq!(small.to_string(), "in shell 3 of 20 the beam protons still slowing are 0.5 of the electrons, and with the boron they carry 1.25 of the electrons' charge: no thermal proton could be left, and quasi-neutrality cannot hold");
     }
 }

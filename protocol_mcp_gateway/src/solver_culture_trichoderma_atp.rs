@@ -188,7 +188,7 @@ const REFUSALS: &[Refusal] = &[
 ];
 
 fn field_words() -> String {
-    "SHA-256 of the count of the numbers that follow as 8 little-endian bytes, which is eight times the number of segments, then for each segment in turn its biomass, glucose, galacturonate and mucic acid in g/L, its volume in mL, and its carbon dioxide, oxygen and galacturonate burnt in mol, all as little-endian f64 bytes.".to_string()
+    "SHA-384 of the count of the numbers that follow as 8 little-endian bytes, which is eight times the number of segments, then for each segment in turn its biomass, glucose, galacturonate and mucic acid in g/L, its volume in mL, and its carbon dioxide, oxygen and galacturonate burnt in mol, all as little-endian f64 bytes.".to_string()
 }
 
 fn sections() -> Sections {

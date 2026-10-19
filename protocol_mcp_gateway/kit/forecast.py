@@ -1,78 +1,61 @@
 #!/usr/bin/env python3
-"""Forecast first: a model's protocol fixed, fingerprinted and committed
-before any of its held-back data is read, and its scoring recorded after.
+"""Forecasts of data that does not exist yet, fixed in Git before the data
+arrives, and the scoring once it has.
 
-    python3 kit/forecast.py register  <model> --protocol FILE [--held-back FILE ...] [--root DIR]
-    python3 kit/forecast.py open      <model> <held-back FILE> [--root DIR]
-    python3 kit/forecast.py score     <model> --output FILE [--program FILE] [--verdict WORD] [--root DIR]
-    python3 kit/forecast.py calibrate <model> --companion-to <model> --protocol FILE --output FILE --program FILE --not-blind "<sentence>" [--root DIR]
+    python3 kit/forecast.py register  <model> --protocol FILE [--data FILE ...] [--root DIR]
+    python3 kit/forecast.py open      <model> <data FILE> [--root DIR]
+    python3 kit/forecast.py score     <model> --output FILE [--program FILE] [--root DIR]
     python3 kit/forecast.py check     [<model> ...] [--binary MCP_STDIO] [--root DIR]
+
+A forecast is for data that does not exist yet: the LAGEOS-1 ranges of a
+week not yet flown, the MMRTG's power past the last published day. Data
+already on disk needs none of this: fit on what helps, compare on the rest,
+and give both counts in the model's spec sheet (new_model.py --fitted-on,
+--compared-with).
 
 <model> is the card's or the solver's name as it is served. --root is the
 workspace (the folder whose Cargo.toml lists the crates); the default is the
 workspace this script sits in. The registry is one JSON file per model,
-protocol_mcp_gateway/kit/forecasts/<model>.json, and each step is a commit
-of that one file in the gateway crate's Git, so Git's own record orders the
-steps:
+protocol_mcp_gateway/kit/forecasts/<model>.json.
 
-  register  takes the SHA-256 of the protocol (the pass marks and the
-            forecast) and of each held-back file as it is held, writes the
-            registration and commits it. A registration is made once.
-  open      is the gate to the held-back data: it reads nothing until the
-            registration is committed, the protocol on disk still has its
-            fingerprint and the file asked for is a registered held-back
-            file with its fingerprint; then it records the time the file is
-            opened, commits that, and prints the file's path.
-  score     records the scoring: its time, the output's SHA-256 and the
-            program's; a second scoring is recorded beside the first.
-  calibrate records that the model was calibrated to the record: its
-            structure or constants were chosen with the record it is
-            compared with open, so the comparison is not a blind test, and
-            it is served beside the model compared blind, --companion-to.
-            It writes the record's "calibration" (the companion, the SHA-256
-            of the comparison's own record, the time of the comparison with
-            the output's and the program's SHA-256, and one sentence of what
-            of the record was seen before the structure or constants were
-            chosen), sets "verdict" to "calibrated to the record" and
-            commits it. A calibration is recorded once.
-  check     says, for each registration, whether forecast first holds: the
-            protocol was committed before every opening and before the
-            scoring, and is unchanged on disk. A record that carries a
-            calibration is held to its calibration instead (`calibration_holds`,
-            the five rules below), reading what the built mcp_stdio serves
-            (--binary, by default the workspace's target/release/mcp_stdio).
+  register  takes the SHA-256 of the forecast (its file, with the numbers it
+            predicts and the tolerance) and of each data file named, writes
+            the record and commits it: one commit, whose time in Git shows
+            the forecast was fixed before the data. A forecast is fixed once.
+  open      reads a data file named in the record once the forecast's
+            fingerprint is in a commit and the file on disk is the forecast
+            fingerprinted; it records when the file was read in the record
+            and prints the file's path. It commits nothing: commit the
+            record with the work.
+  score     records the scoring in the record: its time, the output's
+            SHA-256 and the program's; a second scoring is kept beside the
+            first. It commits nothing.
+  check     holds each model by the rule of the gateway's conformance sweep
+            (tests/conformance_support, `forecast_findings`), read from the
+            built mcp_stdio (--binary; by default the workspace's
+            target/release/mcp_stdio):
+              - a served model whose description states a forecast,
+                "Forecast committed before the data was opened, as
+                <SHA-256>.", holds when its record registers that SHA-256,
+                the forecast was committed before every reading of its data
+                and before its comparison, and it is unchanged on disk;
+              - a served model that states no forecast is described by its
+                spec sheet (src/spec_sheet.rs) and held to nothing here,
+                whatever its record carries (a calibration, with a companion
+                or none, is the record's own account);
+              - a record of a model not served, or every record when no
+                built engine is found, is held to its forecast's times where
+                it carries a forecast.
             Exit 1 if one does not hold.
 
-A model may carry a calibration and a blind registration in the same record:
-the blind registration is the record's top level, as register writes it, and
-keeps every rule of forecast first; register adds one to a record that holds
-only a calibration. Its verdict is "calibrated to the record" until that blind
-registration is scored; score then takes the scoring's word, --verdict met,
-"met in part" or missed, and the word served changes with it. A calibrated
-record is held to:
+The record's keys (protocol, held_back, registered, opened, scored,
+registered_by) are the ones the sweep reads; the keys earlier tools wrote
+(verdict, calibration) are kept as written and read by nothing.
 
-  1. calibration.companion_to names a served model, not itself, whose own
-     record has been scored (scored.utc);
-  2. calibration.protocol.sha256 is 64 hex characters and is the SHA-256 of
-     the file on disk;
-  3. calibration.scored gives the time of the comparison, with the output's
-     and the program's SHA-256;
-  4. the model is served as compared with measurement (its spec sheet gives
-     the numbers), and the record's own word is calibrated to the record
-     until a blind registration in it is scored;
-  5. a blind registration in the same record holds forecast first.
-
-The conformance suite (protocol_mcp_gateway/tests/conformance_support,
-`forecast_findings`) holds a model to this registry only where its served
-description states a forecast, "Forecast committed before the data was opened, as
-<SHA-256>.": the registry carries that SHA-256, committed before the data it
-forecasts was opened and compared. Every other model is described by its
-spec sheet (protocol_mcp_gateway/src/spec_sheet.rs) and held to nothing here.
-
-A registration made by hand from an older record ("registered_by" names the
+A record made by hand from an older one ("registered_by" names the
 backfill) gives under "protocol.committed" the commit, in a crate's Git,
-that carried the protocol's SHA-256 (or the protocol itself) before the
-scoring; the rule then reads that commit's time from that crate's Git.
+that carried the forecast's SHA-256 (or the forecast itself) before the
+scoring; check then reads that commit's time from that crate's Git.
 """
 
 import argparse
@@ -86,38 +69,18 @@ import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REGISTRY = "kit/forecasts"
-# The registry's own words of a record (its "verdict"): the record's account,
-# not what is served. Served since 0.14.3, every model with a record is
-# against_measurement "compared with measurement" (COMPARED), and its spec
-# sheet gives the numbers.
-CALIBRATED = "calibrated to the record"
-BLIND_WORDS = ("met", "missed", "met in part")
-COMPARED = "compared with measurement"
+# How a served description states a forecast of data not yet published
+# (FORECAST_SAID in tests/conformance_support).
+FORECAST_SAID = "Forecast committed before the data was opened, as "
 
 
 def is_sha256(text):
     return isinstance(text, str) and len(text) == 64 and all(c in "0123456789abcdefABCDEF" for c in text)
 
 
-def blind(record):
-    """Whether the record carries a blind registration: its top level."""
+def carries_forecast(record):
+    """Whether the record carries a forecast: its top level."""
     return isinstance(record.get("protocol"), dict)
-
-
-def blind_scored(record):
-    return blind(record) and bool(record.get("scored"))
-
-
-def verdict(record):
-    """The word a record gives its model, where it carries a calibration:
-    calibrated to the record until a blind registration in the same record is
-    scored, then that scoring's, as score wrote it. None for a record with no
-    calibration, whose word is find_model's."""
-    if not record.get("calibration"):
-        return None
-    if not blind_scored(record):
-        return CALIBRATED
-    return record.get("verdict")
 
 
 def sha256_of(path):
@@ -145,10 +108,18 @@ def parse_time(text):
     is marked as a date so that two of the same day are not ordered."""
     if text is None:
         return None, False
+    if not isinstance(text, str):
+        return None, False
     if len(text) == 10:
-        day = datetime.datetime.strptime(text, "%Y-%m-%d").replace(tzinfo=datetime.timezone.utc)
+        try:
+            day = datetime.datetime.strptime(text, "%Y-%m-%d").replace(tzinfo=datetime.timezone.utc)
+        except ValueError:
+            return None, False
         return day, True
-    value = datetime.datetime.fromisoformat(text.replace("Z", "+00:00"))
+    try:
+        value = datetime.datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return None, False
     if value.tzinfo is None:
         value = value.replace(tzinfo=datetime.timezone.utc)
     return value.astimezone(datetime.timezone.utc), False
@@ -201,7 +172,7 @@ class Registry:
     def read(self, model):
         path = self.file(model)
         if not os.path.exists(path):
-            sys.exit(f"{model}: no registration ({self.rel(model)}); register its protocol first")
+            sys.exit(f"{model}: no record ({self.rel(model)}); register its forecast first")
         with open(path) as f:
             return json.load(f)
 
@@ -213,12 +184,29 @@ class Registry:
         except (OSError, ValueError):
             return None
 
-    def write_and_commit(self, model, record, message):
+    def write(self, model, record):
+        """The record on disk, not committed."""
         path = self.file(model)
         os.makedirs(os.path.dirname(path), exist_ok=True)
         with open(path, "w") as f:
             json.dump(record, f, indent=1)
             f.write("\n")
+
+    def protocol_committed(self, model, sha256):
+        """Whether a commit of the record carries the forecast's SHA-256."""
+        for commit, _ in self.committed(model):
+            shown = git(self.gateway, "show", f"{commit}:{self.rel(model)}", check=False)
+            try:
+                if (json.loads(shown).get("protocol") or {}).get("sha256") == sha256:
+                    return True
+            except ValueError:
+                continue
+        return False
+
+    def write_and_commit(self, model, record, message):
+        """The record on disk and in one commit: register's step, the one
+        whose time Git keeps."""
+        self.write(model, record)
         git(self.gateway, "add", "--", self.rel(model))
         git(self.gateway, "commit", "-q", "-m", message + "\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>", "--", self.rel(model))
         return git(self.gateway, "rev-parse", "HEAD")
@@ -237,7 +225,8 @@ class Registry:
 
     def fixed(self, model, record):
         """When the protocol was fixed: the backfilled commit's time in its
-        crate's Git, or the registration's own first commit. With the reason
+        crate's Git, or the first commit of the registration whose record
+        carries the protocol's SHA-256, as the sweep reads it. With the reason
         when it cannot be told."""
         committed = record.get("protocol", {}).get("committed")
         if committed:
@@ -256,18 +245,14 @@ class Registry:
         commits = self.committed(model)
         if not commits:
             return None, "the registration is not committed"
-        if record.get("calibration"):
-            # Beside a calibration recorded first, the protocol was fixed by
-            # the first commit whose record carries its SHA-256.
-            for commit, when in commits:
-                shown = git(self.gateway, "show", f"{commit}:{self.rel(model)}", check=False)
-                try:
-                    if (json.loads(shown).get("protocol") or {}).get("sha256") == record["protocol"]["sha256"]:
-                        return when, None
-                except ValueError:
-                    continue
-            return None, "no commit of the registration carries the protocol's SHA-256"
-        return commits[0][1], None
+        for commit, when in commits:
+            shown = git(self.gateway, "show", f"{commit}:{self.rel(model)}", check=False)
+            try:
+                if (json.loads(shown).get("protocol") or {}).get("sha256") == record["protocol"]["sha256"]:
+                    return when, None
+            except ValueError:
+                continue
+        return None, "no commit of the registration carries the protocol's SHA-256"
 
     def manifest_fingerprint(self, committed, sha256):
         """A pre-registration that fingerprints several files at once
@@ -298,7 +283,9 @@ class Registry:
 
 
 def holds(registry, model, record):
-    """The reasons forecast first does not hold for `record`; empty when it does."""
+    """The reasons the record's times do not hold: the forecast committed
+    before each reading and before the scoring, and unchanged on disk. Empty
+    when they hold."""
     wrong = []
     protocol = record.get("protocol") or {}
     if len(protocol.get("sha256") or "") != 64:
@@ -323,15 +310,21 @@ def holds(registry, model, record):
         wrong.append(f"the protocol was fixed and the model scored on the same day, {scored['utc']}, and the record gives no time to order them")
     elif when <= fixed:
         wrong.append(f"the protocol was fixed at {fixed.strftime('%Y-%m-%dT%H:%M:%SZ')}, not before the scoring at {scored['utc']}")
+    # Each data file was opened before the scoring (the sweep's rule too).
+    if when is not None and not date_only:
+        for opened in record.get("opened") or []:
+            read, _ = parse_time(opened.get("utc"))
+            if read is not None and read > when:
+                wrong.append(f"{opened.get('path')} was opened at {opened.get('utc')}, after the scoring at {scored['utc']}")
     return wrong
 
 
 def register(registry, args):
-    # A record that holds only a calibration takes a blind registration as
-    # its top level; any other record is registered once.
+    # A record that holds only a calibration takes a forecast as its top
+    # level; any other record is registered once.
     existing = registry.load(args.model) if os.path.exists(registry.file(args.model)) else None
-    if os.path.exists(registry.file(args.model)) and (existing is None or blind(existing) or not existing.get("calibration")):
-        sys.exit(f"{args.model}: already registered ({registry.rel(args.model)}); a protocol is fixed once")
+    if os.path.exists(registry.file(args.model)) and (existing is None or carries_forecast(existing) or not existing.get("calibration")):
+        sys.exit(f"{args.model}: already registered ({registry.rel(args.model)}); a forecast is fixed once")
     if existing is not None:
         after(registry.committed(args.model)[-1][1] if registry.committed(args.model) else None)
     protocol = os.path.abspath(args.protocol)
@@ -344,47 +337,44 @@ def register(registry, args):
         "scored": None,
         "registered_by": "forecast.py register",
     })
-    held = ", ".join(entry["path"] for entry in record["held_back"]) or "none named"
+    data = ", ".join(entry["path"] for entry in record["held_back"]) or "none named yet"
     commit = registry.write_and_commit(
         args.model,
         record,
-        f"Forecast first: {args.model}'s protocol {record['protocol']['path']} fixed and fingerprinted, SHA-256 {record['protocol']['sha256']}, before any held-back data is read (held back: {held}).",
+        f"Forecast of {args.model}: {record['protocol']['path']}, SHA-256 {record['protocol']['sha256']} (data: {data}).",
     )
-    print(f"{args.model}: protocol {record['protocol']['sha256']} committed in protocol_mcp_gateway {commit}")
+    print(f"{args.model}: forecast {record['protocol']['sha256']} committed in protocol_mcp_gateway {commit}")
 
 
 def open_held_back(registry, args):
     record = registry.read(args.model)
-    if not blind(record):
-        sys.exit(f"{args.model}: no blind registration ({registry.rel(args.model)}); register its protocol first")
-    if not registry.committed(args.model) or not registry.clean(args.model):
-        sys.exit(f"{args.model}: the registration is not committed as it stands; commit it before any held-back data is read")
+    if not carries_forecast(record):
+        sys.exit(f"{args.model}: no forecast in {registry.rel(args.model)}; register it first")
     protocol = record["protocol"]
+    if not registry.protocol_committed(args.model, protocol["sha256"]):
+        sys.exit(f"{args.model}: the forecast's fingerprint is in no commit of {registry.rel(args.model)}; register commits it")
     on_disk = registry.full(protocol["path"])
     if not os.path.exists(on_disk) or sha256_of(on_disk) != protocol["sha256"]:
-        sys.exit(f"{args.model}: the protocol {protocol['path']} is not the one fingerprinted, {protocol['sha256']}; a protocol is fixed once")
+        sys.exit(f"{args.model}: the forecast {protocol['path']} is not the one fingerprinted, {protocol['sha256']}; a forecast is fixed once")
     asked = registry.named(args.file)
     entry = next((entry for entry in record.get("held_back", []) if entry["path"] == asked), None)
     if entry is None:
-        sys.exit(f"{args.model}: {asked} is not a registered held-back file")
+        sys.exit(f"{args.model}: {asked} is not a data file named in the forecast")
     if sha256_of(registry.full(asked)) != entry["sha256"]:
         sys.exit(f"{args.model}: {asked} is not the file fingerprinted, {entry['sha256']}")
     after(registry.committed(args.model)[-1][1])
-    record.setdefault("opened", []).append({"path": asked, "utc": now_utc()})
-    registry.write_and_commit(args.model, record, f"Forecast first: {args.model} opens its held-back data {asked}, after its protocol {protocol['sha256']} was committed.")
+    if not any(opened.get("path") == asked for opened in record.get("opened") or []):
+        record.setdefault("opened", []).append({"path": asked, "utc": now_utc()})
+        registry.write(args.model, record)
     print(registry.full(asked))
 
 
 def score(registry, args):
     record = registry.read(args.model)
-    if not blind(record):
-        sys.exit(f"{args.model}: no blind registration ({registry.rel(args.model)}); a calibration is recorded by calibrate, and a blind scoring needs its protocol registered first")
-    if not registry.committed(args.model):
-        sys.exit(f"{args.model}: the registration is not committed; nothing is scored before its protocol is")
-    if args.verdict is not None and args.verdict not in BLIND_WORDS:
-        sys.exit(f"{args.model}: --verdict is the scoring's word, met, met in part or missed, not {args.verdict!r}")
-    if record.get("calibration") and args.verdict is None and not record.get("scored"):
-        sys.exit(f"{args.model}: its record carries a calibration, so its word changes with this scoring from calibrated to the record to the scoring's: give --verdict met, \"met in part\" or missed")
+    if not carries_forecast(record):
+        sys.exit(f"{args.model}: no forecast in {registry.rel(args.model)}; register it first")
+    if not registry.protocol_committed(args.model, record["protocol"]["sha256"]):
+        sys.exit(f"{args.model}: the forecast's fingerprint is in no commit; nothing is scored before it is")
     after(registry.committed(args.model)[-1][1])
     scoring = {"utc": now_utc(), "output": registry.named(args.output), "output_sha256": sha256_of(args.output)}
     if args.program:
@@ -396,59 +386,18 @@ def score(registry, args):
     else:
         record["scored"] = scoring
         what = "scored"
-        if args.verdict is not None:
-            record["verdict"] = args.verdict
     wrong = holds(registry, args.model, record)
-    registry.write_and_commit(args.model, record, f"Forecast first: {args.model} {what}, output SHA-256 {scoring['output_sha256']}.")
+    registry.write(args.model, record)
     if wrong:
-        print(f"{args.model}: forecast first does not hold: " + "; ".join(wrong))
+        print(f"{args.model}: {what}; its times do not hold: " + "; ".join(wrong))
         sys.exit(1)
-    print(f"{args.model}: {what}; forecast first holds")
-
-
-def calibrate(registry, args):
-    model, companion = args.model, args.companion_to
-    record = registry.load(model) if os.path.exists(registry.file(model)) else {"model": model}
-    if record is None:
-        sys.exit(f"{model}: {registry.rel(model)} is not JSON")
-    if record.get("calibration"):
-        sys.exit(f"{model}: already calibrated ({registry.rel(model)}); a calibration is recorded once")
-    if blind_scored(record):
-        sys.exit(f"{model}: its blind registration is scored, so its word is that scoring's; a model calibrated to the record after it is a companion of its own")
-    if companion == model:
-        sys.exit(f"{model}: --companion-to names the served model it stands beside, not itself")
-    own = registry.load(companion)
-    if not ((own or {}).get("scored") or {}).get("utc"):
-        sys.exit(f"{model}: the companion {companion} has no scored record ({registry.rel(companion)}, scored.utc); a calibrated model stands beside a model compared blind and scored")
-    not_blind = " ".join(args.not_blind.split())
-    if not not_blind:
-        sys.exit(f"{model}: --not-blind is one sentence: what of the record was seen before the structure or constants were chosen")
-    for path in (args.protocol, args.output, args.program):
-        if not os.path.isfile(path):
-            sys.exit(f"{model}: {path} is not a file")
-    if registry.committed(model):
-        after(registry.committed(model)[-1][1])
-    named = lambda path: {"path": registry.named(path), "sha256": sha256_of(path)}
-    calibration = {
-        "companion_to": companion,
-        "protocol": named(args.protocol),
-        "scored": {"utc": now_utc(), "output": named(args.output), "program": named(args.program)},
-        "not_blind": not_blind,
-    }
-    record["verdict"] = CALIBRATED
-    record["calibration"] = calibration
-    commit = registry.write_and_commit(
-        model,
-        record,
-        f"Calibrated to the record: {model}, beside {companion}, compared with {calibration['protocol']['path']} (SHA-256 {calibration['protocol']['sha256']}) after its structure or constants were chosen with that record open, so not a blind test; output SHA-256 {calibration['scored']['output']['sha256']}, program SHA-256 {calibration['scored']['program']['sha256']}. Not blind: {not_blind}",
-    )
-    print(f"{model}: calibrated to the record beside {companion}, committed in protocol_mcp_gateway {commit}")
+    print(f"{args.model}: {what}, output SHA-256 {scoring['output_sha256']}; commit {registry.rel(args.model)} with the work")
 
 
 class Served:
     """What a built mcp_stdio serves, read once over its local connection:
-    each model's word (list_cards, list_solvers) and the validation result
-    of its full description. `why` says why nothing could be read."""
+    each model's row (list_cards, list_solvers) and its full description.
+    `why` says why nothing could be read."""
 
     def __init__(self, binary):
         self.binary = binary
@@ -505,20 +454,26 @@ class Served:
         row = (self.rows or {}).get(model)
         return None if row is None else row.get("against_measurement")
 
-    def result(self, model):
-        """The validation result of the model's full description."""
+    def description(self, model):
+        """The model's full description, or None where it is not served or
+        cannot be read."""
         self.read()
         row = (self.rows or {}).get(model)
         if row is None:
             return None
         try:
             if "domain" in row:
-                described = self.tool("describe_card", {"domain": row["domain"], "card": row["card"]})
-            else:
-                described = self.tool("describe_solver", {"solver": row["solver"]})
+                return self.tool("describe_card", {"domain": row["domain"], "card": row["card"]})
+            return self.tool("describe_solver", {"solver": row["solver"]})
         except (OSError, ValueError, KeyError, IndexError, TypeError):
             return None
-        return (described.get("validation") or {}).get("result") or ""
+
+    def said(self, model):
+        """The forecasts the model's full description states, each the text
+        after "Forecast committed before the data was opened, as ", as the
+        sweep's forecasts_said reads it; None where it is not served."""
+        described = self.description(model)
+        return None if described is None else forecasts_said(described)
 
     def close(self):
         if self.door is not None:
@@ -527,76 +482,80 @@ class Served:
             self.door = None
 
 
-def calibration_holds(registry, model, record, served):
-    """The reasons a record that carries a calibration does not hold; empty
-    when it does. `served` is what the built engine serves (`Served`, or any
-    object with models(), word() and result(), and `why`)."""
-    wrong = []
-    calibration = record.get("calibration") or {}
-    # 1. The companion: a served model, not itself, its own record scored.
-    companion = calibration.get("companion_to")
-    if not companion or companion == model:
-        wrong.append("calibration.companion_to names no served model beside it")
-    else:
-        models = served.models()
-        if models is not None and companion not in models:
-            wrong.append(f"calibration.companion_to, {companion}, is not a served model")
-        if not ((registry.load(companion) or {}).get("scored") or {}).get("utc"):
-            wrong.append(f"calibration.companion_to, {companion}: its own record, {registry.rel(companion)}, is not scored (no scored.utc)")
-    # 2. The fingerprint of the record it is compared with.
-    protocol = calibration.get("protocol") or {}
-    if not is_sha256(protocol.get("sha256")):
-        wrong.append("calibration.protocol.sha256 is not 64 hex characters")
-    elif registry.spectrum or os.path.isabs(protocol.get("path", "")):
-        on_disk = registry.full(protocol.get("path", ""))
-        if not os.path.isfile(on_disk):
-            wrong.append(f"calibration.protocol, {protocol.get('path')}, is not on this disk, so it is not the file fingerprinted")
-        elif sha256_of(on_disk) != protocol["sha256"]:
-            wrong.append(f"calibration.protocol on disk, {protocol.get('path')}, is not the one fingerprinted")
-    # 3. The comparison's scoring.
-    scored = calibration.get("scored") or {}
-    try:
-        when = parse_time(scored.get("utc"))[0]
-    except (TypeError, ValueError):
-        when = None
-    if when is None:
-        wrong.append("calibration.scored gives no time of the comparison")
-    for part in ("output", "program"):
-        if not is_sha256((scored.get(part) or {}).get("sha256")):
-            wrong.append(f"calibration.scored.{part} gives no SHA-256")
-    # 4, and the word: calibrated to the record until a blind registration
-    # in the same record is scored, then that scoring's.
-    word = verdict(record)
-    if blind_scored(record):
-        if word not in BLIND_WORDS:
-            wrong.append(f"its blind registration is scored, and {registry.rel(model)} gives no verdict of that scoring (met, met in part or missed)")
-    elif record.get("verdict") not in (None, CALIBRATED):
-        wrong.append(f"{registry.rel(model)} gives the verdict {record.get('verdict')}, and no blind registration of it is scored: until one is, the verdict is calibrated to the record")
-    if word is not None:
-        shown = served.word(model)
-        if shown is None:
-            wrong.append(served.why or f"the served word: {model} is not served")
-        elif shown != COMPARED:
-            wrong.append(f"the served word is {shown!r}, not {COMPARED!r}")
-    # 5. A blind registration beside it keeps every rule of forecast first.
-    if blind(record):
-        wrong += holds(registry, model, record)
-    return wrong
+def strings(value):
+    """Every string of a JSON value, its keys among them."""
+    if isinstance(value, str):
+        yield value
+    elif isinstance(value, list):
+        for item in value:
+            yield from strings(item)
+    elif isinstance(value, dict):
+        for key, item in value.items():
+            yield key
+            yield from strings(item)
+
+
+def forecasts_said(description):
+    """The forecasts a description states: the hex after each "Forecast
+    committed before the data was opened, as ", once each."""
+    said = []
+    for text in strings(description):
+        at = text.find(FORECAST_SAID)
+        while at >= 0:
+            start = at + len(FORECAST_SAID)
+            end = start
+            while end < len(text) and text[end] in "0123456789abcdefABCDEF":
+                end += 1
+            if text[start:end] not in said:
+                said.append(text[start:end])
+            at = text.find(FORECAST_SAID, start)
+    return said
+
+
+def model_holds(registry, model, served):
+    """(what is said when it holds, the reasons it does not) for one model,
+    by the sweep's rule; see check."""
+    record = registry.load(model)
+    relative = registry.rel(model)
+    if os.path.exists(registry.file(model)) and record is None:
+        return "", [f"{relative} is not JSON"]
+    said = served.said(model) if served.models() is not None else None
+    if said:
+        if record is None:
+            return "", [f"the description states a forecast, and {relative} is missing: no committed, fingerprinted forecast"]
+        registered = (record.get("protocol") or {}).get("sha256") or ""
+        wrong = []
+        for sha256 in said:
+            if not is_sha256(sha256):
+                wrong.append(f"the description states a forecast as \"{sha256}\", not a SHA-256")
+            elif sha256 != registered:
+                wrong.append(f"the description states the forecast {sha256}, and {relative} registers {registered or 'none'}")
+        return f"holds, the forecast it states ({', '.join(said)}) committed before its data", wrong + holds(registry, model, record)
+    if said is not None:
+        return "holds, states no forecast", []
+    if record is None:
+        return "", [f"no record ({relative}), and it is not served"]
+    if carries_forecast(record):
+        return "holds", holds(registry, model, record)
+    return "holds, carries no forecast", []
 
 
 def check(registry, args):
     folder = os.path.join(registry.gateway, REGISTRY)
-    models = args.models or sorted(name[:-5] for name in os.listdir(folder) if name.endswith(".json")) if os.path.isdir(folder) else args.models
+    recorded = sorted(name[:-5] for name in os.listdir(folder) if name.endswith(".json")) if os.path.isdir(folder) else []
     served = Served(args.binary or os.path.join(registry.root, "target", "release", "mcp_stdio"))
+    if served.models() is None:
+        if args.binary:
+            print(served.why)
+            sys.exit(1)
+        print(f"{served.why}; each record is held to its forecast's times", file=sys.stderr)
+    models = args.models
+    if not models:
+        stating = sorted(model for model in (served.models() or ()) if model not in recorded and served.said(model))
+        models = recorded + stating
     failed = 0
-    for model in models or []:
-        record = registry.read(model)
-        if record.get("calibration"):
-            wrong = calibration_holds(registry, model, record, served)
-            said = f"holds, {verdict(record)}"
-        else:
-            wrong = holds(registry, model, record)
-            said = "holds"
+    for model in models:
+        said, wrong = model_holds(registry, model, served)
         print(f"{model}: " + (said if not wrong else "does not hold: " + "; ".join(wrong)))
         failed += bool(wrong)
     served.close()
@@ -610,7 +569,7 @@ def main():
     one = commands.add_parser("register")
     one.add_argument("model")
     one.add_argument("--protocol", required=True)
-    one.add_argument("--held-back", nargs="*", default=[])
+    one.add_argument("--data", "--held-back", dest="held_back", nargs="*", default=[], help="each data file the forecast is scored on, fingerprinted as it is")
     one = commands.add_parser("open")
     one.add_argument("model")
     one.add_argument("file")
@@ -618,20 +577,12 @@ def main():
     one.add_argument("model")
     one.add_argument("--output", required=True)
     one.add_argument("--program")
-    one.add_argument("--verdict", help="the scoring's word, met, \"met in part\" or missed; required for a record that carries a calibration, whose word changes with it")
-    one = commands.add_parser("calibrate")
-    one.add_argument("model")
-    one.add_argument("--companion-to", required=True, help="the served model it stands beside, compared blind and scored")
-    one.add_argument("--protocol", required=True, help="the comparison's own record, a file in evidence/")
-    one.add_argument("--output", required=True, help="the comparison's scored output")
-    one.add_argument("--program", required=True, help="the program that scored it")
-    one.add_argument("--not-blind", required=True, help="one sentence: what of the record was seen before the structure or constants were chosen")
     one = commands.add_parser("check")
     one.add_argument("models", nargs="*")
-    one.add_argument("--binary", help="the mcp_stdio whose served words a calibrated record is held to; by default the workspace's target/release/mcp_stdio")
+    one.add_argument("--binary", help="the built mcp_stdio whose descriptions say which models state a forecast; by default the workspace's target/release/mcp_stdio")
     args = parser.parse_args()
     registry = Registry(args.root)
-    {"register": register, "open": open_held_back, "score": score, "calibrate": calibrate, "check": check}[args.command](registry, args)
+    {"register": register, "open": open_held_back, "score": score, "check": check}[args.command](registry, args)
 
 
 if __name__ == "__main__":

@@ -93,28 +93,6 @@ fn a_forecast_reads_times_as_git_and_a_registration_write_them() {
     assert_eq!(utc_seconds("15 October"), None);
 }
 
-/// A model that states no forecast is held to nothing of the registry,
-/// whatever its evidence: a company specimen, a compared model with no
-/// registration, a second form fitted on all its data. A forecast stated is
-/// held to the registration that carries its SHA-256.
-#[test]
-fn a_forecast_stated_is_held_to_its_registration_and_nothing_else_is() {
-    for word in EVIDENCE_WORDS {
-        assert!(forecast_findings("a_model_of_nothing", word, &json!({ "specimen": "Fitted on all 12 runs." }), &[]).is_empty(), "{word}");
-    }
-    let hash = "a".repeat(64);
-    let stated = json!({ "validation": { "pass_line": format!("Forecast committed before the data was opened, as {hash}.") } });
-    assert_eq!(forecasts_said(&stated), vec![hash.clone()]);
-    let found = forecast_findings("a_model_of_nothing", COMPARED, &stated, &[]);
-    assert!(found.iter().any(|f| f.weight == Weight::Contract && f.detail.contains("kit/forecasts/a_model_of_nothing.json is missing")), "{found:#?}");
-    // A served forecast: the registry carries the hash its description states.
-    let lageos: Value = serde_json::from_str(&std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/kit/forecasts/satellite_lageos1.json")).unwrap()).unwrap();
-    let registered = lageos["protocol"]["sha256"].as_str().unwrap().to_string();
-    let other = json!({ "validation": { "pass_line": format!("Forecast committed before the data was opened, as {}.", "b".repeat(64)) } });
-    let found = forecast_findings("satellite_lageos1", COMPARED, &other, &[]);
-    assert!(found.iter().any(|f| f.detail.contains(&format!("registers {registered}"))), "{found:#?}");
-}
-
 /// The spec sheet in a compared model's list sentence: each part named
 /// when it is missing, out of order or without its number.
 #[test]

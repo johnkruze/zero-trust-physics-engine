@@ -160,6 +160,7 @@ extern crate core;
 
 use core::prelude::v1::*;
 
+use crate::exceedance::{Exceedance, ExceedanceKind, Side};
 use crate::frame::LastStateFrame64;
 use crate::normal::normal_or_zero;
 use crate::math::{exp, log};
@@ -728,6 +729,26 @@ pub fn step(
     load: VdeLoad,
     dt_s: f64,
 ) -> Result<(), StepReject> {
+    #[cfg(any(test, debug_assertions, feature = "check_exceedances"))]
+    let before = *state;
+    let stepped = step_landed(card, state, frame, load, dt_s);
+    #[cfg(any(test, debug_assertions, feature = "check_exceedances"))]
+    if stepped.is_ok() {
+        crate::exceedance::debug_check("tokamak_vde_mast", exceedances(card, &before, state, load, dt_s), frame.flags);
+    }
+    stepped
+}
+
+/// The step itself; [`step`] is it with, in a build that checks
+/// (`crate::exceedance::CHECKED`), the check that [`exceedances`] stands for
+/// the flags it wrote.
+fn step_landed(
+    card: &TokamakVdeMast,
+    state: &mut VdeState,
+    frame: &mut LastStateFrame64,
+    load: VdeLoad,
+    dt_s: f64,
+) -> Result<(), StepReject> {
     step_as_computed(card, state, frame, load, dt_s)?;
     normal_or_zero_state(state);
     Ok(())
@@ -1161,6 +1182,42 @@ fn state_is_finite(state: &VdeState) -> bool {
         && state.energy_defect_j.is_finite()
         && state.residual_conservation_error.is_finite()
         && state.gap_to_wall_m.is_finite()
+}
+
+/// Every limit a flag of this card can mark: what [`exceedances`] reports
+/// beside a flag's bit (`crate::exceedance`).
+pub const EXCEEDANCE_KINDS: &[crate::exceedance::ExceedanceKind] = &[
+    WALL_KIND,
+];
+
+const WALL_KIND: ExceedanceKind = ExceedanceKind::fixed(
+    "FLAG_PAST_IDEAL_WALL_LIMIT",
+    FLAG_PAST_IDEAL_WALL_LIMIT,
+    "ideal_wall_stiffness_ratio",
+    "1",
+    Side::Below,
+    1.0,
+    "the push of the wall and P6 as perfect conductors over the held field's stiffness, Ip² Dᵀ L⁻¹ D / G'(z), at one: one at +0.238 m and -0.239 m, 2.267 at the equilibrium",
+);
+
+/// The limits the step from `before` to `after` under `load` over `dt_s`
+/// is past: one record for each limit a flag set on its frame marks.
+/// The value is the card's ideal-wall margin plus one, the ratio the margin
+/// is that ratio less one of.
+pub fn exceedances(
+    card: &TokamakVdeMast,
+    before: &VdeState,
+    after: &VdeState,
+    load: VdeLoad,
+    dt_s: f64,
+) -> crate::exceedance::Exceedances {
+    let _ = (before, load, dt_s);
+    let mut records = crate::exceedance::Exceedances::new();
+    if after.past_ideal_wall_limit {
+        let margin = card.ideal_wall_margin(after.displacement_m).unwrap_or(0.0);
+        records.push(Exceedance::fixed(WALL_KIND, margin + 1.0));
+    }
+    records
 }
 
 #[cfg(test)]
