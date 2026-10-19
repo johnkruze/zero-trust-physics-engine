@@ -44,12 +44,12 @@ fn every_card_is_attacked_and_its_findings_are_reported() {
 #[test]
 fn the_rules_on_words_catch_what_they_look_for() {
     let clean = json!({
-        "specimen": "The company's own specimen: a copper fuse link on a 48 V node.",
+        "specimen": "A copper fuse link on a 48 V node: its temperature under a load current. Range: compared from 1 to 3 A. Fitted on 4 of 8 runs: one constant. Compared with the 4 runs not in the fit: temperature within 0.4 percent RMS. Gap: at 3 A it reads 0.9 percent high. Refuses a link past its melting point, 1357.77 K (MeltReached).",
         "validation": { "result": "Compared from 1 to 3 A, the error was 0.4 percent." },
         "rejects": [{ "name": "MeltReached", "meaning": "The link reached its melting point, 1357.77 K." }],
     });
     let rejects = vec![("MeltReached".to_string(), "The link reached its melting point, 1357.77 K.".to_string())];
-    assert!(text_findings("clean", &clean, "met", &rejects).is_empty(), "{:?}", text_findings("clean", &clean, "met", &rejects));
+    assert!(text_findings("clean", &clean, COMPARED, &rejects).is_empty(), "{:?}", text_findings("clean", &clean, COMPARED, &rejects));
 
     let dirty = json!({
         "specimen": "A generic specimen, not a named real object.",
@@ -57,9 +57,9 @@ fn the_rules_on_words_catch_what_they_look_for() {
         "invariants": [{ "checked": "at every step" }],
     });
     let rejects = vec![("CurrentNotCompared".to_string(), "The current is outside the span compared with measurement.".to_string())];
-    let found = text_findings("dirty", &dirty, "met", &rejects);
+    let found = text_findings("dirty", &dirty, COMPARED, &rejects);
     let rules: Vec<&str> = found.iter().map(|f| f.rule).collect();
-    for rule in ["no check", "ranges in plain words", "not described by what it lacks", "a refusal is a physical limit", "compared range in numbers"] {
+    for rule in ["no check", "ranges in plain words", "not described by what it lacks", "a refusal is a physical limit", "compared range in numbers", SPEC_SHEET] {
         assert!(rules.contains(&rule), "{rule}: {found:#?}");
     }
     // "checked" as a served key is found as a key.
@@ -83,7 +83,7 @@ fn the_rules_on_words_catch_what_they_look_for() {
 }
 
 #[test]
-fn forecast_first_reads_times_as_git_and_a_registration_write_them() {
+fn a_forecast_reads_times_as_git_and_a_registration_write_them() {
     assert_eq!(utc_seconds("1970-01-01T00:00:00Z"), Some((0, false)));
     assert_eq!(utc_seconds("2026-10-15T03:21:59Z"), Some((1_792_034_519, false)));
     assert_eq!(utc_seconds("2026-10-14T20:21:59-07:00"), Some((1_792_034_519, false)));
@@ -91,79 +91,48 @@ fn forecast_first_reads_times_as_git_and_a_registration_write_them() {
     assert_eq!(utc_seconds("2026-10-15"), Some((1_792_022_400, true)));
     assert_eq!(utc_seconds("2024-02-29T12:00:00+00:00"), Some((1_709_208_000, false)));
     assert_eq!(utc_seconds("15 October"), None);
-    // A model held to no measurement is not held to forecast first; a compared
-    // model with no registration is.
-    assert!(forecast_findings("a_model_of_nothing", "not held to a measurement", &json!({}), &[]).is_empty());
-    let found = forecast_findings("a_model_of_nothing", "missed", &json!({}), &[]);
-    assert!(found.iter().any(|f| f.rule == "forecast first" && f.detail.contains("kit/forecasts/a_model_of_nothing.json is missing")), "{found:#?}");
 }
 
-/// A model calibrated to the record is held to its calibration, and to
-/// nothing of forecast first without a blind registration: each rule broken
-/// is named, and the word follows a blind scoring beside it.
+/// A model that states no forecast is held to nothing of the registry,
+/// whatever its evidence: a company specimen, a compared model with no
+/// registration, a second form fitted on all its data. A forecast stated is
+/// held to the registration that carries its SHA-256.
 #[test]
-fn a_model_calibrated_to_the_record_is_held_to_its_calibration() {
-    use sha2::{Digest, Sha256};
-    // Served under the sixth word with no registration: named, and nothing of forecast first.
-    let found = forecast_findings("a_model_of_nothing", CALIBRATED, &json!({}), &[]);
-    assert!(found.iter().any(|f| f.rule == CALIBRATED && f.weight == Weight::Contract && f.detail.contains("kit/forecasts/a_model_of_nothing.json is missing")), "{found:#?}");
-    assert!(!found.iter().any(|f| f.rule == "forecast first"), "{found:#?}");
+fn a_forecast_stated_is_held_to_its_registration_and_nothing_else_is() {
+    for word in EVIDENCE_WORDS {
+        assert!(forecast_findings("a_model_of_nothing", word, &json!({ "specimen": "Fitted on all 12 runs." }), &[]).is_empty(), "{word}");
+    }
+    let hash = "a".repeat(64);
+    let stated = json!({ "validation": { "pass_line": format!("Forecast committed before the data was opened, as {hash}.") } });
+    assert_eq!(forecasts_said(&stated), vec![hash.clone()]);
+    let found = forecast_findings("a_model_of_nothing", COMPARED, &stated, &[]);
+    assert!(found.iter().any(|f| f.weight == Weight::Contract && f.detail.contains("kit/forecasts/a_model_of_nothing.json is missing")), "{found:#?}");
+    // A served forecast: the registry carries the hash its description states.
+    let lageos: Value = serde_json::from_str(&std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/kit/forecasts/satellite_lageos1.json")).unwrap()).unwrap();
+    let registered = lageos["protocol"]["sha256"].as_str().unwrap().to_string();
+    let other = json!({ "validation": { "pass_line": format!("Forecast committed before the data was opened, as {}.", "b".repeat(64)) } });
+    let found = forecast_findings("satellite_lageos1", COMPARED, &other, &[]);
+    assert!(found.iter().any(|f| f.detail.contains(&format!("registers {registered}"))), "{found:#?}");
+}
 
-    let dir = std::env::temp_dir().join(format!("calibrated_to_the_record_{}", std::process::id()));
-    std::fs::create_dir_all(&dir).unwrap();
-    let protocol = dir.join("comparison.json");
-    std::fs::write(&protocol, b"the comparison's own record\n").unwrap();
-    let sha: String = Sha256::digest(b"the comparison's own record\n").iter().map(|byte| format!("{byte:02x}")).collect();
-    // The companion is a served solver whose own record is scored.
-    let record = json!({
-        "model": "a_calibrated_model",
-        "verdict": CALIBRATED,
-        "calibration": {
-            "companion_to": "stress_plate_hole_s235",
-            "protocol": { "path": protocol.to_str().unwrap(), "sha256": sha },
-            "scored": { "utc": "2026-10-15T12:00:00Z", "output": { "path": "out.json", "sha256": "a".repeat(64) }, "program": { "path": "score.py", "sha256": "b".repeat(64) } },
-            "not_blind": "The record was compared once before the constants were chosen."
-        }
-    });
-    let served: Vec<String> = ["stress_plate_hole_s235", "a_calibrated_model"].map(String::from).to_vec();
-    let described = json!({ "validation": { "result": "Calibrated to the record, not a blind test: the companion of stress_plate_hole_s235." } });
-    let held = |record: &Value, verdict: &str, described: &Value, served: &[String]| -> Vec<String> {
-        calibration_findings("a_calibrated_model", verdict, Some(record), described, served).iter().filter(|f| f.weight == Weight::Contract).map(|f| f.detail.clone()).collect()
+/// The spec sheet in a compared model's list sentence: each part named
+/// when it is missing, out of order or without its number.
+#[test]
+fn a_spec_sheet_is_held_to_its_shape() {
+    let good = "Creep of one cast: extension against time. Range: 140 to 230 MPa. Fitted on 6 of 12 tests: six constants. Compared with the 6 tests not in the fit: within 0.093 RMS in log time. Gap: below 0.1 percent it starts late, 1.5 to 4 times. Refuses a stress outside 140 to 230 MPa (StressOutsideCard).";
+    assert!(spec_sheet_findings(good, &["StressOutsideCard"]).is_empty(), "{:?}", spec_sheet_findings(good, &["StressOutsideCard"]));
+    let bad = |sentence: &str, words: &str| {
+        let found = spec_sheet_findings(sentence, &["StressOutsideCard"]);
+        assert!(found.iter().any(|wrong| wrong.contains(words)), "{words}: {found:#?}");
     };
-    assert_eq!(held(&record, CALIBRATED, &described, &served), Vec::<String>::new());
-    let broken = |change: &dyn Fn(&mut Value), words: &str| {
-        let mut changed = record.clone();
-        change(&mut changed);
-        let found = held(&changed, CALIBRATED, &described, &served);
-        assert!(found.iter().any(|detail| detail.contains(words)), "{words}: {found:#?}");
-    };
-    // 1. The companion.
-    broken(&|r| r["calibration"]["companion_to"] = json!("a_calibrated_model"), "names no served model beside it");
-    broken(&|r| r["calibration"]["companion_to"] = json!("a_model_of_nothing"), "a_model_of_nothing, is not a served model");
-    broken(&|r| r["calibration"]["companion_to"] = json!("a_model_of_nothing"), "is not scored");
-    // 2. The fingerprint of the record compared with.
-    broken(&|r| r["calibration"]["protocol"]["sha256"] = json!("abc"), "calibration.protocol.sha256 is not 64 hex characters");
-    broken(&|r| r["calibration"]["protocol"]["sha256"] = json!("c".repeat(64)), "is not the one fingerprinted");
-    // 3. The scoring.
-    broken(&|r| r["calibration"]["scored"]["utc"] = Value::Null, "calibration.scored gives no time of the comparison");
-    broken(&|r| r["calibration"]["scored"]["output"] = Value::Null, "calibration.scored.output gives no SHA-256");
-    broken(&|r| r["calibration"]["scored"]["program"]["sha256"] = json!(""), "calibration.scored.program gives no SHA-256");
-    // 4. The word and the description.
-    assert!(held(&record, "missed", &described, &served).iter().any(|detail| detail.contains("the word served is calibrated to the record")));
-    assert!(held(&record, CALIBRATED, &json!({ "validation": { "result": "Calibrated to the record." } }), &served).iter().any(|detail| detail.contains("does not say it is not a blind test")));
-    // The word follows a blind scoring in the same record: then it is the scoring's.
-    let mut scored = record.clone();
-    scored["protocol"] = json!({ "path": protocol.to_str().unwrap(), "sha256": sha, "committed": null });
-    scored["scored"] = json!({ "utc": "2026-10-16T12:00:00Z", "output": "out.json", "output_sha256": "d".repeat(64) });
-    scored["verdict"] = json!("met");
-    let words = |verdict: &str| -> Vec<String> {
-        calibration_findings("a_calibrated_model", verdict, Some(&scored), &described, &served).iter().filter(|f| f.rule == CALIBRATED).map(|f| f.detail.clone()).collect()
-    };
-    assert_eq!(words("met"), Vec::<String>::new());
-    assert!(words(CALIBRATED).iter().any(|detail| detail.contains("its blind registration is scored, met, and the list says calibrated to the record")), "{:#?}", words(CALIBRATED));
-    // The blind registration is held to forecast first: this one is in no commit.
-    assert!(calibration_findings("a_calibrated_model", "met", Some(&scored), &described, &served).iter().any(|f| f.rule == "forecast first" && f.detail.contains("is not committed")));
-    std::fs::remove_dir_all(&dir).ok();
+    bad(&good.replace(" Gap: below 0.1 percent it starts late, 1.5 to 4 times.", ""), "no \"Gap: \" part");
+    bad(&good.replace("(StressOutsideCard)", "(SomethingElse)"), "none of the model's own refusal names");
+    bad(&good.replace("within 0.093 RMS", "about as good as the tests"), "no number within which");
+    bad(&good.replace("Range: 140 to 230 MPa.", "Range: high stress."), "not a span in numbers");
+    bad(&good.replace("Fitted on 6 of 12 tests: six constants.", "Fitted on 6 of 12 held-back tests."), "says \"held-back\"");
+    bad(&good.replace("Compared with the 6 tests not in the fit: within 0.093 RMS in log time.", "it met its marks. Compared with the 6 tests not in the fit: within 0.093 RMS in log time."), "says \"met\"");
+    let swapped = "Creep. Fitted on 6 of 12 tests. Range: 140 to 230 MPa. Compared with 6: within 0.093. Gap: 1.5 to 4 times. Refuses StressOutsideCard.";
+    bad(swapped, "not in the order");
 }
 
 #[test]

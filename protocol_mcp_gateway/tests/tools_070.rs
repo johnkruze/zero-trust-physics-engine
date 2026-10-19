@@ -131,7 +131,9 @@ async fn every_connection_gives_the_same_bytes_for_the_changed_tools() {
     let keyed = Hosted::start(
         vec![json!({
             "client": "all", "key_sha256": sha(KEY),
-            "cards": [["energy", "thermal"], ["energy", "reactor_spert3"], ["energy", "reactor_spert3_fuel"]],
+            // reactor_spert3_twin is served beside the two it supersedes, so this
+            // view says superseded_by as every other connection does.
+            "cards": [["energy", "thermal"], ["energy", "reactor_spert3"], ["energy", "reactor_spert3_fuel"], ["energy", "reactor_spert3_twin"]],
             "solvers": ["atom_dft"], "max_in_flight": 4, "max_permits": 2
         })],
         None,
@@ -427,7 +429,10 @@ fn genesis_seal_reads_a_comparison_of_solves() {
 }
 
 /// The most characters the declaration of every tool comes to, compact.
-const TOOL_LIST_CHARS: usize = 63_761;
+// 62,804 on integration_0143 (pins.py on the merged binary): the words of
+// 0.14.3 and solve declaring from; 63,316 once verify_solution declares from
+// beside the whole answer of a chained solve.
+const TOOL_LIST_CHARS: usize = 63_316;
 
 #[test]
 fn the_tool_list_declares_the_pair_and_the_solver_once_and_lists_no_catalogue() {
@@ -519,8 +524,10 @@ fn the_tool_list_declares_the_pair_and_the_solver_once_and_lists_no_catalogue() 
     // of a grid on one axis and fewer of a list (0.14.0 rc2, items 1 and 7):
     // 63,721 (rc2_014/measure_rc2/pins_item11.txt); and find_flip's request
     // schema says a search makes at least three solves (item 1, continued):
-    // TOOL_LIST_CHARS for all eighteen, reproduced the same way
-    // (rc2_014/measure_rc2/pins_item01b.txt).
+    // 63,761 for all eighteen, reproduced the same way
+    // (rc2_014/measure_rc2/pins_item01b.txt); 62,475 once list_cards,
+    // list_solvers and find_model say the evidence in three words and the
+    // describe tools what the full form adds (0.14.3, pins.py).
     assert!(text.len() <= TOOL_LIST_CHARS, "{} characters", text.len());
     let earlier: Vec<_> = tools.iter().take(13).collect();
     // 40,050 as declared since 0.10.1; 40,433 once compute_step and the
@@ -547,8 +554,13 @@ fn the_tool_list_declares_the_pair_and_the_solver_once_and_lists_no_catalogue() 
     // upstream request in from goes without its readout and an inline answer's
     // 40000 characters are said to limit its rows (the words of 0.14.0);
     // 52,614 once run_dataset's schema says those rows of a grid on one axis
-    // and of a list (0.14.0 rc2, item 7).
-    assert_eq!(serde_json::to_string(&earlier).unwrap().len(), 52_614, "the thirteen earlier tools as declared in the next version");
+    // and of a list (0.14.0 rc2, item 7); 51,755 once list_cards and
+    // list_solvers say the three words of the evidence, and the describe
+    // tools what the full form adds (0.14.3).
+    // 52,084 on integration_0143: the same and solve declaring from (pins.py
+    // on the merged binary moves the whole list by the same 329 characters);
+    // 52,596 once verify_solution declares from (512 more, as the whole list).
+    assert_eq!(serde_json::to_string(&earlier).unwrap().len(), 52_596, "the thirteen earlier tools as declared in the next version");
     for name in ["ti64_lattice", "reactor_triga_jsi", "tokamak_dt_beam_target", "culture_trichoderma_ambr250"] {
         assert!(!text.contains(name), "the tool list names {name}");
     }

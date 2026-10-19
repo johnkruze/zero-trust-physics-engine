@@ -529,7 +529,7 @@ async fn the_described_example_runs_unchanged_and_the_description_holds_its_limi
     let listed = reqwest::get(format!("{base}/solvers")).await.unwrap();
     let listed: Value = serde_json::from_str(&listed.text().await.unwrap()).unwrap();
     let solvers = listed["solvers"].as_array().expect("solvers");
-    assert_eq!(solvers.len(), 24);
+    assert_eq!(solvers.len(), 25);
     assert_eq!(solvers[4]["solver"], SOLVER);
     assert!(solvers[4]["summary"].as_str().unwrap().ends_with('.'));
 
@@ -572,7 +572,7 @@ async fn the_described_example_runs_unchanged_and_the_description_holds_its_limi
     assert_eq!(described["convergence"]["step_tolerance"], 1.0e-12);
     assert_eq!(described["reference"]["url"], "https://doi.org/10.5281/zenodo.6778336");
     assert_eq!(described["reference"]["retrieved"], "2026-10-09");
-    assert!(described["reference"]["kind"].as_str().unwrap().contains("not an independent measurement"));
+    assert!(described["reference"]["kind"].as_str().unwrap().contains("the same frequencies, so this confirms the calculation"));
 
     // The validation record: five parts, and the comparison as it came out.
     let record = described["validation"].as_object().unwrap();
@@ -583,32 +583,31 @@ async fn the_described_example_runs_unchanged_and_the_description_holds_its_limi
     assert!(record["pass_line"].as_str().unwrap().contains("ea32c1e8b46f5191316dc9b53dc30f2105e1e86a7600d422b4fa8da5744589da"));
     // The one place the tests hold the words of the result.
     assert!(record["result"].as_str().unwrap().starts_with(
-        "Compared with the held-back bars on 2026-10-09, and by the rule fixed beforehand the comparison failed: P1 was missed and every other line was met."
+        "On bars ERY1 and ERY2, not used to choose the model. P1: 215.68 GPa recovered against 210.25 GPa from the tensile slope, 2.58 percent apart (target 2.49)"
     ));
     assert!(record["limits"].as_str().unwrap().starts_with(
-        "No agreement with an independent measurement of the modulus is claimed."
+        "The one other measurement of this sheet's modulus is the slope of the tensile tests"
     ));
     // Sentences held in the one line of the list, the result and the limits.
-    assert!(described["summary"].as_str().unwrap().ends_with(
-        "; the comparison with the independent tensile measurement missed its line, and no independent measurement confirms the returned moduli."
-    ));
+    let summary = described["summary"].as_str().unwrap();
+    assert!(summary.contains("215.68 GPa against 210.25 GPa from the tensile slope, 2.58 percent apart (target 2.49)"), "{summary}");
+    assert!(summary.contains("flatwise 1587.428 to 1608.28 Hz") && summary.contains("within 0.114 percent"), "{summary}");
+    assert!(summary.contains("(PoissonRatioOutOfRange)") && summary.contains("the shear modulus has no second measurement"), "{summary}");
     let result = record["result"].as_str().unwrap();
     for words in [
-        "P1: 215.68 GPa recovered against 210.25 GPa from the tensile slope, 2.58 percent apart against a line of 2.49.",
-        "The miss is 0.094 of a percentage point, 0.2 GPa",
-        "over 100 to 140, 140 to 180 or 100 to 200 MPa the line is met (2.10, 2.26 and 2.24 percent against 2.48, 2.38 and 2.43)",
-        "in substance it is neither a miss nor a pass",
-        "P2: worst of four 0.114 percent.",
+        "P1: 215.68 GPa recovered against 210.25 GPa from the tensile slope, 2.58 percent apart (target 2.49), 0.094 of a percentage point, 0.2 GPa, over the target.",
+        "over 100 to 140, 140 to 180 or 100 to 200 MPa the recovered modulus is inside the target (2.10, 2.26 and 2.24 percent against 2.48, 2.38 and 2.43)",
+        "over 60 to 100, 50 to 150, 180 to 220 or 50 to 250 MPa outside it",
+        "P2: worst of four 0.114 percent (target 0.25).",
         "4755.130 Hz for both ERY1 and ERY2 in the laboratory's whole-spectrum column",
         "−0.129 percent (ERY1) and −0.027 percent (ERY2)",
-        "P6: worst 0.053 percent. P6 is arithmetic",
+        "P6: worst 0.053 percent (target 0.10). P6 is arithmetic",
         "0.032 percent in G and 0.051 to 0.053 percent in E",
-        "so P6 was not a blind test",
-        "211.6 GPa against 197.0 GPa, 7.4 percent apart against a line of 2.29.",
-        "made with a build of the uncommitted tree, 19 minutes before the commits the record names for it existed",
-        "later builds re-made every answer bit for bit",
+        "the sizes were read before the frequencies",
+        "211.6 GPa against 197.0 GPa, 7.4 percent apart (target 2.29).",
+        "Later builds re-make every answer bit for bit",
         "P3 for G, 0.598 against 0.601 percent",
-        "evidence/verification/second_party/V-36/",
+        "P3: 0.46 percent in E (target 1.41), 0.60 percent in G (target 4.24). P5: 9.2e-11 (target 1e-8).",
     ] {
         assert!(result.contains(words), "{words}: {result}");
     }
@@ -617,22 +616,21 @@ async fn the_described_example_runs_unchanged_and_the_description_holds_its_limi
         "along the rolling direction the slope itself moves by up to 8 percent within one test",
         "Across the rolling direction the slope moves 1.4 to 2.0 percent within a test",
         "the scatter is between test pieces: 204.5 to 213.4 GPa",
-        "a fixed 0.6 micrometres at each end of a 25 micrometre window, the same formula gives a line near 4.6 percent",
-        "5 percent \"too loose to decide\"",
+        "a fixed 0.6 micrometres at each end of a 25 micrometre window, the same formula gives a target near 4.6 percent",
+        "the record's own 5 percent \"too loose to decide\"",
         "A handbook 210 GPa is 0.12 percent from the mean of the tensile slopes across the rolling direction",
-        "The comparison supports nothing either way.",
+        "the solver reproduces the laboratory's own values on two bars not used to choose it, within 0.053 percent, and predicts a resonance it is not given, within 0.114 percent",
         "The first is arithmetic: the same formula on the same readings",
-        "it is not a blind test",
+        "with the offset set by the bar's shape",
         "tests the shear and rotary-inertia correction of the bending model and the width and thickness readings",
-        "It does not test the absolute value of Young's modulus: all three frequencies scaled by one factor leave the residual unchanged.",
-        "It does not test the shear modulus (3 percent in G moves the prediction 0.027 percent), the torsion end correction (0.006 percent) or the choice of shear coefficient",
+        "The edgewise residual is unchanged when all three frequencies are scaled by one factor",
+        "it moves 0.027 percent for 3 percent in G and 0.006 percent with the torsion end correction, and stays inside 0.25 percent with a shear coefficient of 5/6",
         "a handbook Poisson's ratio of 0.29 predicts the same four readings within 0.082 percent",
         "The solver cannot tell the bar name from the frequencies",
         "ERY1's frequencies sent under the name ERX1 converge, to 216.32 GPa",
         "The compared ranges are the envelope of the eight scans compared with measurement, two on each of the four bars: flatwise 1587.428 to 1608.28 Hz, torsion 8899.446 to 8966.189 Hz, and edgewise from 4695.035 Hz",
         "Inside them the answers run from 210.7 to 216.3 GPa in E and from 79.0 to 80.8 GPa in G.",
         "a supplied edgewise frequency is answered with its residual as it is, past the 0.25 percent of line P2 too",
-        "Through engine 0.6.0 the ranges were flatwise 1200 to 2000 Hz",
         "The shear modulus has no second measurement of any kind.",
         "summary sheet states ±1 percent (95 percent confidence) for both E and G at room temperature",
         "that is the uncertainty returned for both moduli",
@@ -891,7 +889,7 @@ async fn the_three_connections_give_the_same_bytes_and_a_key_sees_only_its_solve
     let web = spawn_app().await;
     let mut local = Local::start().await;
     let hosted = Hosted::start(&json!([
-        client_entry("all", KEY_ALL, json!(["atom_dft", "ablator_slab", "journal_bearing_sheffield", "propeller_apc_10x7e", "modulus_bam_s355", "seawater_column", "argon_pair_gas", "fusion_pb11_lhd", "fusion_pb11_thermal", "step_flow_armaly", "culture_trichoderma_ambr250", "tokamak_dt_beam_target", "pipe_flow_superpipe", "culture_trichoderma_atp", "junction_nist_b7_s2", "water_hammer_oil_line", "orifice_air_chamber", "pneumatic_hose_resonance", "blast_wave_tnt_air", "stress_plate_hole_s235", "stress_plate_hole_s235_elastic", "icf_hotspot_burn", "ln2_line_dlr_fttf", "plasma_sheath_ram_c2"])),
+        client_entry("all", KEY_ALL, json!(["atom_dft", "ablator_slab", "journal_bearing_sheffield", "propeller_apc_10x7e", "modulus_bam_s355", "seawater_column", "argon_pair_gas", "fusion_pb11_lhd", "fusion_pb11_thermal", "step_flow_armaly", "culture_trichoderma_ambr250", "tokamak_dt_beam_target", "pipe_flow_superpipe", "fuel_rod_triga_jsi", "culture_trichoderma_atp", "junction_nist_b7_s2", "water_hammer_oil_line", "orifice_air_chamber", "pneumatic_hose_resonance", "blast_wave_tnt_air", "stress_plate_hole_s235", "stress_plate_hole_s235_elastic", "icf_hotspot_burn", "ln2_line_dlr_fttf", "plasma_sheath_ram_c2"])),
         client_entry("bar", KEY_BAR, json!([SOLVER])),
         client_entry("atom", KEY_ATOM, json!(["atom_dft"])),
     ]))

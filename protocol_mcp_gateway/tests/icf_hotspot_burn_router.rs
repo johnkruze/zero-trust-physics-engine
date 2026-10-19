@@ -237,12 +237,12 @@ async fn the_description_carries_the_standing_and_its_examples_run_unchanged() {
     let listed = reqwest::get(format!("{base}/solvers")).await.unwrap();
     let listed: Value = serde_json::from_str(&listed.text().await.unwrap()).unwrap();
     let solvers = listed["solvers"].as_array().expect("solvers");
-    assert_eq!(solvers.len(), 24);
-    assert_eq!(solvers[21]["solver"], "icf_hotspot_burn");
-    let summary = solvers[21]["summary"].as_str().expect("a sentence");
-    assert!(summary.contains("Nothing is fitted"), "{summary}");
-    assert!(summary.contains("it met no shot and three marks of twenty-four"), "{summary}");
-    assert!(summary.contains("Re-evaluated after the fact and not gated, with an independent second party's consistent reading"), "{summary}");
+    assert_eq!(solvers.len(), 25);
+    assert_eq!(solvers[22]["solver"], "icf_hotspot_burn");
+    let summary = solvers[22]["summary"].as_str().expect("a sentence");
+    assert!(summary.contains("Nothing fitted"), "{summary}");
+    assert!(summary.contains("3 of 24 targets reached and no shot within all of its own"), "{summary}");
+    assert!(summary.contains("with the stagnated mass as fuel, N221204 yields 2.19 to 2.97 MJ against 3.1"), "{summary}");
 
     let (status, text) = post(&base, "/describe_solver", &json!({ "solver": "icf_hotspot_burn" })).await;
     assert_eq!(status, 200, "{text}");
@@ -254,7 +254,8 @@ async fn the_description_carries_the_standing_and_its_examples_run_unchanged() {
         assert!(!words.to_lowercase().contains("check"), "{part}");
     }
     let pass_line = described["validation"]["pass_line"].as_str().unwrap();
-    assert!(pass_line.contains("a3ef39766b8a527947f4b8c37d3cb2563849a9da3abdabc40fe2dd4b805d8553"), "{pass_line}");
+    assert!(pass_line.contains("Record SHA-256 a3ef39766b8a527947f4b8c37d3cb2563849a9da3abdabc40fe2dd4b805d8553."), "{pass_line}");
+    assert!(pass_line.contains("Y, the yield within a factor of 2 of the measured; W, the burn width within 30 percent of the measured"), "{pass_line}");
     let inputs = described["inputs"].as_array().expect("inputs");
     assert_eq!(inputs.len(), 6);
     assert_eq!(inputs[0]["minimum"], burn::TEMPERATURE_MIN_KEV);
@@ -292,7 +293,7 @@ async fn the_description_carries_the_standing_and_its_examples_run_unchanged() {
         assert_eq!(body["result"]["burned_through"], 1.0, "{key}");
     }
     let covers = described["reference"]["covers"].as_str().unwrap();
-    for words in ["The registered result stands: scored once under the protocol's rule, no shot met and three marks of twenty-four.", "the worked refusal, example_refused", "Re-evaluated after the fact, not gated and not a pass", "at 255 or 510 g/cm^3", "yield 2.19 and 2.97 MJ against 3.1"] {
+    for words in ["Compared once as the record sets it: no shot within all its targets, 3 of 24 targets reached.", "the worked refusal, example_refused", "With no target, the consistent reading an independent reviewer proposed", "at 255 or 510 g/cm^3", "yield 2.19 and 2.97 MJ against 3.1"] {
         assert!(covers.contains(words), "{words}: {covers}");
     }
 }

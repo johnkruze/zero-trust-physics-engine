@@ -114,6 +114,10 @@ pub struct SolutionDocument {
     pub load_source: Option<Value>,
     pub seal_parts: SealParts,
     pub solution_seal: String,
+    /// Present only when the request named its upstream in `from`: the
+    /// chain commitment, outside the solution seal.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub chain: Option<Value>,
 }
 
 #[derive(Serialize)]
@@ -147,8 +151,20 @@ struct SealTail<'a> {
 }
 
 pub async fn run(state: &crate::AppState, request: Value) -> Result<SolutionResponse, DoorError> {
+    // `from` is not part of the solve: a chained solve is the same solve as
+    // the request typed by hand, and its chain stands beside it.
+    let (request, from) = crate::chain::take(request);
     let request = filled(state.view(), request)?;
     let prepared = prepare_in(state.view(), &request)?;
+    if let Some(from) = from {
+        let plan = crate::chain::read(state.view(), &request, from, crate::chain::Target::Solve, 0)?;
+        return crate::on_pool(state, move || {
+            let (settled, request) = plan.settle()?;
+            let solved = (prepared.solver.solve)(&prepared.given)?;
+            seal_with(prepared.solver, request, solved, Some(&|seal: &str| settled.chain_value(seal)))
+        })
+        .await;
+    }
     crate::on_pool(state, move || {
         let solved = (prepared.solver.solve)(&prepared.given)?;
         seal(prepared.solver, request, solved)
@@ -177,9 +193,10 @@ pub async fn verify(state: &crate::AppState, body: &Value, text: Option<&str>) -
             ))
         });
     };
+    let chained = request.get(crate::chain::FROM).is_some();
     let response = run(state, request.clone()).await?;
     let version = (given != response.document.solution_seal).then(|| version_words(&response.document, given));
-    crate::verify_by_request::answer(
+    let text = crate::verify_by_request::answer(
         CAUSE_SEAL,
         "solve",
         given,
@@ -188,8 +205,28 @@ pub async fn verify(state: &crate::AppState, body: &Value, text: Option<&str>) -
         &crate::verify_by_request::compared_with_receipt("solved", CAUSE_SEAL),
         crate::verify_by_request::TEXT_NOT_COMPARED,
         version,
-    )
+    )?;
+    if !chained {
+        return Ok(text);
+    }
+    // A chained solve: every upstream run was computed again and held to its
+    // seal, and each handed value to the upstream's sealed answer and to the
+    // request, before the request was solved again.
+    let mut report: Map<String, Value> = serde_json::from_str(&text).map_err(|error| {
+        DoorError::Internal(format!("Physical Violation: the response could not be encoded. {error}"))
+    })?;
+    report.insert("chain_checked".into(), Value::String(CHAIN_CHECKED.to_string()));
+    if let Some(chain) = &response.document.chain {
+        report.insert("recomputed_chain_seal".into(), chain["chain_seal"].clone());
+    }
+    serde_json::to_string(&report).map_err(|error| {
+        DoorError::Internal(format!("Physical Violation: the response could not be encoded. {error}"))
+    })
 }
+
+/// What a check by request of a chained solve compared beside the solution
+/// seal.
+pub(crate) const CHAIN_CHECKED: &str = "Every upstream run in 'from' was computed again and its run_seal compared with the seal given, and each handed value compared bit for bit with the upstream's sealed answer and with the request, before the request was solved again; holds covers the solution seal and the upstream runs. recomputed_chain_seal is the chain seal of the solve computed again, which solve's answer carries in chain.chain_seal.";
 
 /// What a check by request of a solution says when the seal given is not the
 /// one computed: the seal covers `engine_version`, and, when the seal given
@@ -246,11 +283,19 @@ pub struct LongSolutionReport {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub difference: Option<String>,
     pub compared: &'static str,
+    /// A chained solve sent whole with its `from`: what was compared beside
+    /// the answer. Left out of every other long form.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub chain_checked: Option<&'static str>,
+    /// With `chain_checked`, when the answer holds: the chain seal of the
+    /// solve computed again.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub recomputed_chain_seal: Option<Value>,
 }
 
 impl LongSolutionReport {
     fn of(holds: bool, cause: Option<&str>, compared: &'static str) -> Self {
-        Self { holds, values_hold: holds, cause: cause.map(str::to_string), differs_at: None, difference: None, compared }
+        Self { holds, values_hold: holds, cause: cause.map(str::to_string), differs_at: None, difference: None, compared, chain_checked: None, recomputed_chain_seal: None }
     }
 
     /// The report of a comparison with the engine's answer.
@@ -288,6 +333,22 @@ pub(crate) fn long_form_solves(answer: &Map<String, Value>) -> bool {
 /// were rewritten with the seal worked out again holds every seal; only the
 /// solve shows its values are the engine's.
 async fn long_form(state: &crate::AppState, body: &Value, text: Option<&str>) -> Result<LongSolutionReport, DoorError> {
+    // A chained solve carries the upstream's run seal and not its request:
+    // it is checked whole only with the `from` solve took, sent beside it.
+    let from = body.get(crate::chain::FROM).cloned();
+    if from.is_none() && body.get("chain").is_some_and(|chain| !chain.is_null()) {
+        return Err(chained_solve_alone());
+    }
+    let (stripped, stripped_text);
+    let (body, text) = if from.is_some() {
+        let mut object = body.as_object().cloned().unwrap_or_default();
+        object.shift_remove(crate::chain::FROM);
+        stripped = Value::Object(object);
+        stripped_text = without_member(text, crate::chain::FROM);
+        (&stripped, stripped_text.as_deref())
+    } else {
+        (body, text)
+    };
     let seals = check_in(state.view(), body)?;
     if !seals.holds {
         return Ok(LongSolutionReport::of(false, seals.cause.as_deref(), WHOLE_SOLUTION_COMPARED));
@@ -327,6 +388,10 @@ async fn long_form(state: &crate::AppState, body: &Value, text: Option<&str>) ->
             ));
         }
     };
+    if let Some(from) = from {
+        drop(prepared);
+        return chained_long_form(state, body, text, inputs, from).await;
+    }
     let solved = crate::on_pool(state, move || Ok(prepared.solve_and_seal(inputs))).await?;
     let response = match solved {
         Ok(response) => response,
@@ -352,6 +417,100 @@ async fn long_form(state: &crate::AppState, body: &Value, text: Option<&str>) ->
     })?;
     let sent_text = crate::rebuild::sent_text(body, text);
     Ok(LongSolutionReport::of_compared(crate::rebuild::compare(&engine_text, body, &sent_text)?, WHOLE_SOLUTION_COMPUTED))
+}
+
+/// The cause of the long form of a chained solve whose chain does not hold:
+/// the upstream run, a handed value or the coupling, named in its sentence.
+pub(crate) const CAUSE_CHAIN: &str = "chain";
+
+/// What the long form of a chained solve, sent whole with its `from`,
+/// compared beside the answer.
+pub(crate) const WHOLE_CHAIN_CHECKED: &str = "The upstream run in 'from' was computed again and its run_seal compared with the seal given, each handed value compared bit for bit with the upstream's sealed answer and with the answer's inputs, and the request solved again with that from; the whole answer, its chain and chain_seal included, was compared with the engine's answer byte for byte. recomputed_chain_seal is the chain seal of the solve computed again.";
+
+/// The refusal of the long form of a chained solve sent alone: its answer
+/// carries the upstream's run seal and not the upstream's request.
+fn chained_solve_alone() -> DoorError {
+    DoorError::Unprocessable(format!(
+        "Physical Violation: this answer is a chained solve (its chain names upstream_run_seal), and the upstream's request is not in it, so the run it was handed from cannot be computed again here ({}). Send the whole answer with from, as solve took it (request, run_seal and coupling), beside it; or its request with from and its solution_seal, the short form.",
+        crate::rebuild::NO_REQUEST
+    ))
+}
+
+/// The text of a JSON object as it came with one member taken out, its other
+/// members' texts kept byte for byte; None when there is no text or it is not
+/// an object.
+fn without_member(text: Option<&str>, key: &str) -> Option<String> {
+    use serde::de::{Deserializer, MapAccess, Visitor};
+    use serde_json::value::RawValue;
+    struct Members<'a>(Vec<(String, &'a RawValue)>);
+    impl<'de: 'a, 'a> serde::Deserialize<'de> for Members<'a> {
+        fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+            struct Each<'a>(std::marker::PhantomData<&'a ()>);
+            impl<'de: 'a, 'a> Visitor<'de> for Each<'a> {
+                type Value = Members<'a>;
+                fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                    formatter.write_str("a JSON object")
+                }
+                fn visit_map<M: MapAccess<'de>>(self, mut map: M) -> Result<Self::Value, M::Error> {
+                    let mut members = Vec::new();
+                    while let Some((name, raw)) = map.next_entry::<String, &'de RawValue>()? {
+                        members.push((name, raw));
+                    }
+                    Ok(Members(members))
+                }
+            }
+            deserializer.deserialize_map(Each(std::marker::PhantomData))
+        }
+    }
+    let members: Members = serde_json::from_str(text?).ok()?;
+    let kept: Vec<String> = members
+        .0
+        .iter()
+        .filter(|(name, _)| name != key)
+        .map(|(name, raw)| format!("{}:{}", serde_json::to_string(name).unwrap_or_default(), raw.get()))
+        .collect();
+    Some(format!("{{{}}}", kept.join(",")))
+}
+
+/// The long form of a chained solve, its seal already held: the request the
+/// answer carries solved again with the `from` sent beside it (each upstream
+/// run computed again and held to its seal, each handed value to the
+/// upstream's answer and to the request, as solve does), then the whole
+/// answer compared with the engine's, byte for byte.
+async fn chained_long_form(state: &crate::AppState, body: &Value, text: Option<&str>, inputs: Value, from: Value) -> Result<LongSolutionReport, DoorError> {
+    let chained = |report: LongSolutionReport| LongSolutionReport { chain_checked: Some(WHOLE_CHAIN_CHECKED), ..report };
+    let mut request = inputs;
+    if let Some(object) = request.as_object_mut() {
+        object.insert(crate::chain::FROM.into(), from);
+    }
+    let response = match run(state, request).await {
+        Ok(response) => response,
+        Err(DoorError::Unprocessable(sentence)) => {
+            return Ok(chained(LongSolutionReport {
+                differs_at: Some(crate::chain::FROM.to_string()),
+                difference: Some(format!("The request was solved again with the from sent, and the chain does not hold: {sentence}")),
+                ..LongSolutionReport::of(false, Some(CAUSE_CHAIN), WHOLE_SOLUTION_COMPUTED)
+            }));
+        }
+        Err(other) => return Err(other),
+    };
+    let sent_seal = body.get(CAUSE_SEAL).and_then(Value::as_str).unwrap_or_default();
+    if response.document.solution_seal != sent_seal {
+        return Ok(chained(LongSolutionReport {
+            difference: Some("The request was solved again and solves to another solution_seal: the answer is consistent with itself, and its sealed parts are not the engine's solution of this request.".to_string()),
+            ..LongSolutionReport::of(false, Some(CAUSE_SEAL), WHOLE_SOLUTION_COMPUTED)
+        }));
+    }
+    let engine_text = serde_json::to_string(&response).map_err(|error| {
+        DoorError::Internal(format!("Physical Violation: the response could not be encoded. {error}"))
+    })?;
+    let sent_text = crate::rebuild::sent_text(body, text);
+    let report = chained(LongSolutionReport::of_compared(crate::rebuild::compare(&engine_text, body, &sent_text)?, WHOLE_SOLUTION_COMPUTED));
+    if !report.holds {
+        return Ok(report);
+    }
+    let seal = response.document.chain.as_ref().map(|chain| chain["chain_seal"].clone());
+    Ok(LongSolutionReport { recomputed_chain_seal: seal, ..report })
 }
 
 pub fn check_in(view: &crate::view::View, body: &Value) -> Result<SolutionReport, DoorError> {
@@ -823,6 +982,17 @@ pub(crate) fn seal(
     request: Value,
     solved: Solved,
 ) -> Result<SolutionResponse, String> {
+    seal_with(solver, request, solved, None)
+}
+
+/// A solution sealed, with the chain of a chained solve written beside its
+/// seal and covered by its receipt.
+pub(crate) fn seal_with(
+    solver: &Solver,
+    request: Value,
+    solved: Solved,
+    chain: Option<&dyn Fn(&str) -> Value>,
+) -> Result<SolutionResponse, String> {
     let parameters = request.get("parameters").and_then(Value::as_object);
     let (outcome, reject, reject_detail, iterations, result, invariants, field) = match solved {
         Solved::Answer(answer) => (
@@ -868,7 +1038,7 @@ pub(crate) fn seal(
             )
         }
     };
-    sealed(request, outcome, reject, reject_detail, iterations, result, invariants, field)
+    sealed(request, outcome, reject, reject_detail, iterations, result, invariants, field, chain)
 }
 
 /// A solution's document sealed under this engine's version, with its
@@ -884,6 +1054,7 @@ fn sealed(
     result: Option<Value>,
     invariants: Option<Value>,
     field: Option<String>,
+    chain: Option<&dyn Fn(&str) -> Value>,
 ) -> Result<SolutionResponse, String> {
     let version = solvers::engine_version();
     let ingredients = Ingredients {
@@ -911,7 +1082,12 @@ fn sealed(
         load_source,
         seal_parts: ingredients.parts(),
         solution_seal: ingredients.seal(),
+        chain: None,
     };
+    let mut document = document;
+    if let Some(chain) = chain {
+        document.chain = Some(chain(&document.solution_seal));
+    }
     let text = serde_json::to_string(&document).map_err(|error| {
         format!("Physical Violation: the response could not be encoded. {error}")
     })?;

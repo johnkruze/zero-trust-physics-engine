@@ -219,7 +219,7 @@ async fn each_worked_plan_in_the_description_runs_as_written_and_is_a_sealed_dat
             sent += 1;
         }
     }
-    assert_eq!(sent, 3 * 39);
+    assert_eq!(sent, 3 * 42);
     // The full view and the cold plate's own view show the cold plate, with both kinds of path.
     for view in [View::full(), one_card("energy", "thermal")] {
         let description = said_at(&view, "run_dataset", Some("plan"));

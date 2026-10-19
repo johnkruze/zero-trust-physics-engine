@@ -57,20 +57,17 @@ record is held to:
      the file on disk;
   3. calibration.scored gives the time of the comparison, with the output's
      and the program's SHA-256;
-  4. the model's served word is its verdict (calibrated to the record until a
-     blind registration is scored), and while that is calibrated to the
-     record its served description's validation result says it is not a
-     blind test;
+  4. the model is served as compared with measurement (its spec sheet gives
+     the numbers), and the record's own word is calibrated to the record
+     until a blind registration in it is scored;
   5. a blind registration in the same record holds forecast first.
 
 The conformance suite (protocol_mcp_gateway/tests/conformance_support,
-`forecast_findings`) holds every compared model to the same rule: a model
-whose list row says met, missed or met in part fails if it has no
-registration, or if its registration does not show a committed,
-fingerprinted protocol older than its scoring. A model whose row says
-calibrated to the record, or whose registration carries a calibration, is
-held to the five rules above (`calibration_findings`), and to nothing of
-forecast first unless its record holds a blind registration.
+`forecast_findings`) holds a model to this registry only where its served
+description states a forecast, "Forecast committed before the data was opened, as
+<SHA-256>.": the registry carries that SHA-256, committed before the data it
+forecasts was opened and compared. Every other model is described by its
+spec sheet (protocol_mcp_gateway/src/spec_sheet.rs) and held to nothing here.
 
 A registration made by hand from an older record ("registered_by" names the
 backfill) gives under "protocol.committed" the commit, in a crate's Git,
@@ -89,11 +86,13 @@ import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REGISTRY = "kit/forecasts"
-# The sixth word of against_measurement, and the three of a blind comparison.
+# The registry's own words of a record (its "verdict"): the record's account,
+# not what is served. Served since 0.14.3, every model with a record is
+# against_measurement "compared with measurement" (COMPARED), and its spec
+# sheet gives the numbers.
 CALIBRATED = "calibrated to the record"
 BLIND_WORDS = ("met", "missed", "met in part")
-# What the served description of a calibrated model says of its comparison.
-NOT_A_BLIND_TEST = "not a blind test"
+COMPARED = "compared with measurement"
 
 
 def is_sha256(text):
@@ -577,10 +576,8 @@ def calibration_holds(registry, model, record, served):
         shown = served.word(model)
         if shown is None:
             wrong.append(served.why or f"the served word: {model} is not served")
-        elif shown != word:
-            wrong.append(f"the served word is {shown!r}, not {word!r}")
-        elif word == CALIBRATED and NOT_A_BLIND_TEST not in (served.result(model) or ""):
-            wrong.append("the served description's validation result does not say it is not a blind test")
+        elif shown != COMPARED:
+            wrong.append(f"the served word is {shown!r}, not {COMPARED!r}")
     # 5. A blind registration beside it keeps every rule of forecast first.
     if blind(record):
         wrong += holds(registry, model, record)

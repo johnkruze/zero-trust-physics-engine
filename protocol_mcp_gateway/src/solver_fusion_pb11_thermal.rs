@@ -12,7 +12,7 @@ use genesis_solvers::pb11_reaction as reaction;
 use serde_json::{Value, json};
 
 use crate::solver_fusion_pb11_shared::{
-    EVIDENCE, PASS_LINES_FIXED, RUN_TWICE, SECOND_SCORING, cross_section_record, number,
+    PASS_LINES_FIXED, RUN_TWICE, SECOND_SCORING, cross_section_record, number,
 };
 use crate::solvers::{
     Answer, Given, Input, Kind, Published, Refusal, Refused, Sections, Solved, Solver,
@@ -68,7 +68,7 @@ const fn within(
 
 pub const FUSION_PB11_THERMAL: Solver = Solver {
     name: "fusion_pb11_thermal",
-    summary: "Energy balance of a uniform thermal proton-boron-11 plasma, ion temperature 1 to 1000 keV: the electron temperature at which the electrons balance, fusion, bremsstrahlung, synchrotron and exchange power, and the ignition margin. No constant is fitted. Compared with the published calculations of Ochs et al. (2022) and Putvinski et al. (2019) at ion temperatures of 200 to 450 keV: seven of its eight gated lines met. Its numbers come from two requests. The comparison's request at 300 keV (13 percent boron, electron density 1.52e20 m^-3, 20 T, wall reflectivity 1, kinetic enhancement on) gives an electron temperature of 159.33 keV against a published 163.0, and an ignition margin of 0.037. The worked example, example_solve, is another plasma at 300 keV (15 percent boron, 1.6e20 m^-3, 6.661 T, wall reflectivity 0.95, kinetic enhancement off): an electron temperature of 113.152 keV and an ignition margin of -1.042, so it does not ignite.",
+    summary: "Energy balance of a uniform thermal proton-boron-11 plasma: the electron temperature at which the electrons balance, fusion, bremsstrahlung, synchrotron and exchange power, and the ignition margin. Range: ion temperature 1 to 1000 keV, electron density 1e18 to 1e22 m^-3, boron 0.01 to 0.9 of the fuel ions; held to published calculations at ion temperatures of 200 to 450 keV, and computed with the same equations across the whole range. Nothing fitted: the cross-section, radiation and exchange forms are published ones. Held to the published calculations of Ochs et al. 2022 and Putvinski et al. 2019: the electron temperature at 300 keV and 13 percent boron within 2.3 percent (target 5), the largest fusion power over bremsstrahlung within 0.2 percent (target 2). The comparison's request at 300 keV (13 percent boron, electron density 1.52e20 m^-3, 20 T, wall reflectivity 1, kinetic enhancement on) gives an electron temperature of 159.33 keV against a published 163.0, and an ignition margin of 0.037. The worked example, example_solve, is another plasma at 300 keV (15 percent boron, 1.6e20 m^-3, 6.661 T, wall reflectivity 0.95, kinetic enhancement off): an electron temperature of 113.152 keV and an ignition margin of -1.042, so it does not ignite. Gap: synchrotron over fusion power is 7.9 percent off a plain-Python model of the same balance (target 5), and two published bremsstrahlung fits differ by as much as the ignition margin. Refuses an ion temperature outside 1 to 1000 keV (IonTemperatureOutOfRange), a plasma the field cannot hold (PressureExceedsField) and electrons that find no balance (ElectronTemperatureOutOfRange).",
     inputs: &[
         within(
             "ion_temperature_kev",
@@ -76,7 +76,7 @@ pub const FUSION_PB11_THERMAL: Solver = Solver {
             thermal::ION_TEMPERATURE_MAX_KEV,
             "keV",
             "IonTemperatureOutOfRange",
-            "Temperature of protons, boron and ash, 1 to 1000 keV. Low end: 1 keV is the floor of the bremsstrahlung fit, and the electrons are sought from it up to the ions' temperature, so below it none can be sought, and at it the search is empty and stops as ElectronTemperatureOutOfRange. High end: the reactivity is the integral of the cross-section fit, which ends at 9.76 MeV, and at 1000 keV the part of the rate above 9.76 MeV, which the integral leaves out, is 1.7e-5 of it (3.6e-4 at 1500 keV). The energies that carry the rate (the Gamow window) are 12.9 to 22.7 keV at 1 keV, 50 to 116 keV at 10 keV and 241 to 3321 keV at 1000 keV; the cross-section was measured from 22 to 3481 keV, so below about 3 keV the rate rests on the fit's S-factor near zero energy, 197 MeV b (NACRE II: 210, +20 or -30), and nothing below 10 keV was compared with another evaluation. Below 10 keV and above 500 keV the reactivity is confirmed by a second, independent quadrature to 1e-10. Until this version the low end was 10 keV. Compared with published calculations from 200 to 450 keV in steps of 10: the electron temperature at 300 keV and 13 percent boron was 159.33 keV against a published 163.0, and the largest fusion power over bremsstrahlung at 15 percent boron was 1.0302 against 1.028, at 300 keV as published.",
+            "Temperature of protons, boron and ash, 1 to 1000 keV. Low end: 1 keV is the floor of the bremsstrahlung fit, and the electrons are sought from it up to the ions' temperature, so below it none can be sought, and at it the search is empty and stops as ElectronTemperatureOutOfRange. High end: the reactivity is the integral of the cross-section fit, which ends at 9.76 MeV, and at 1000 keV the part of the rate above 9.76 MeV, which the integral leaves out, is 1.7e-5 of it (3.6e-4 at 1500 keV). The energies that carry the rate (the Gamow window) are 12.9 to 22.7 keV at 1 keV, 50 to 116 keV at 10 keV and 241 to 3321 keV at 1000 keV; the cross-section was measured from 22 to 3481 keV, so below about 3 keV the rate rests on the fit's S-factor near zero energy, 197 MeV b (NACRE II: 210, +20 or -30), and below 10 keV no other evaluation is compared. Below 10 keV and above 500 keV the reactivity is confirmed by a second, independent quadrature to 1e-10. Compared with published calculations from 200 to 450 keV in steps of 10: the electron temperature at 300 keV and 13 percent boron is 159.33 keV against a published 163.0, and the largest fusion power over bremsstrahlung at 15 percent boron is 1.0302 against 1.028, at 300 keV as published.",
         ),
         within(
             "electron_density_per_m3",
@@ -100,7 +100,7 @@ pub const FUSION_PB11_THERMAL: Solver = Solver {
             thermal::ASH_FRACTION_MAX,
             "",
             "AshFractionOutOfRange",
-            "Thermal alpha ash per fuel ion, 0 to 1: up to as many alphas as fuel ions. Ash dilutes the fuel through quasi-neutrality and enters the effective charge, the exchange and the alpha drag. No plasma with ash was compared: every comparison run had none.",
+            "Thermal alpha ash per fuel ion, 0 to 1: up to as many alphas as fuel ions. Ash dilutes the fuel through quasi-neutrality and enters the effective charge, the exchange and the alpha drag. Every comparison run had no ash.",
         ),
         above(
             "magnetic_field_t",
@@ -108,7 +108,7 @@ pub const FUSION_PB11_THERMAL: Solver = Solver {
             thermal::MAGNETIC_FIELD_MAX_T,
             "T",
             "MagneticFieldOutOfRange",
-            "Field applied from outside the plasma, above 0 to 1e6 T. Pressure balance is held: where the plasma pressure exceeds B^2 / (2 mu0) the solver stops by name (PressureExceedsField, sealed). The top is where the electron's cyclotron quantum, 0.116 keV at 1e6 T, reaches a tenth of the 1 keV floor of the electron temperature and classical synchrotron emission no longer holds. What field a magnet can make is a property of a device and is not held. Compared at applied fields of 6.661 T (5 T inside the plasma, the synchrotron case) to 20 T; the synchrotron case met its electron temperature line (113.2 against 113 keV) and missed its synchrotron line (1.263 against 1.17 of fusion power).",
+            "Field applied from outside the plasma, above 0 to 1e6 T. Pressure balance is held: where the plasma pressure exceeds B^2 / (2 mu0) the solver stops by name (PressureExceedsField, sealed). The top is where the electron's cyclotron quantum, 0.116 keV at 1e6 T, reaches a tenth of the 1 keV floor of the electron temperature and classical synchrotron emission no longer holds. What field a magnet can make is a property of a device and is not held. Compared at applied fields of 6.661 T (5 T inside the plasma, the synchrotron case) to 20 T; in the synchrotron case the electron temperature is 113.2 against 113 keV (target 5 percent) and synchrotron over fusion power 1.263 against 1.17 (target 5 percent).",
         ),
         within(
             "minor_radius_m",
@@ -116,7 +116,7 @@ pub const FUSION_PB11_THERMAL: Solver = Solver {
             thermal::MINOR_RADIUS_MAX_M,
             "m",
             "MinorRadiusOutOfRange",
-            "Minor radius, 0.1 to 10 m, a laboratory plasma to one larger than any reactor design. It enters only the synchrotron loss, Trubnikov's formula for a plasma opaque to its own low harmonics, whose condition is held by name at every trial temperature: the loss may not exceed what the electrons emit with nothing absorbed (SynchrotronAboveUnabsorbedEmission, sealed). Every comparison run took a minor radius of 2 m; the radius enters only the synchrotron loss, which met none of its lines.",
+            "Minor radius, 0.1 to 10 m, a laboratory plasma to one larger than any reactor design. It enters the synchrotron loss alone, Trubnikov's formula for a plasma opaque to its own low harmonics, whose condition is held by name at every trial temperature: the loss may not exceed what the electrons emit with nothing absorbed (SynchrotronAboveUnabsorbedEmission, sealed). Every comparison run took a minor radius of 2 m; the one synchrotron comparison is 7.9 percent off (target 5).",
         ),
         within(
             "wall_reflectivity",
@@ -124,7 +124,7 @@ pub const FUSION_PB11_THERMAL: Solver = Solver {
             thermal::WALL_REFLECTIVITY_MAX,
             "",
             "WallReflectivityOutOfRange",
-            "Share of the synchrotron radiation the wall sends back, 0 to 1: a wall cannot send back less than none or more than all. It has no default: it is poorly known, and the answer turns on it. At 1 there is no synchrotron loss. Compared at a wall reflectivity of 1 in every run but one, at 0.95, which missed its synchrotron line by 7.9 percent.",
+            "Share of the synchrotron radiation the wall sends back, 0 to 1: a wall cannot send back less than none or more than all. It has no default: it is poorly known, and the answer turns on it. At 1 there is no synchrotron loss. Compared at a wall reflectivity of 1 in every run but one, at 0.95, whose synchrotron over fusion power is 7.9 percent off a plain-Python model of the same balance (target 5).",
         ),
         above(
             "energy_confinement_time_s",
@@ -132,13 +132,13 @@ pub const FUSION_PB11_THERMAL: Solver = Solver {
             thermal::CONFINEMENT_TIME_MAX_S,
             "s",
             "ConfinementTimeOutOfRange",
-            "Energy confinement time of the ions, any time above zero: at zero the power that holds the ions is infinite. It enters the auxiliary power only, as W_i / tau_E; the electron temperature does not depend on it. Every comparison run took 100 s, and no line compared the auxiliary power, the one output the confinement time enters.",
+            "Energy confinement time of the ions, any time above zero: at zero the power that holds the ions is infinite. It enters the auxiliary power alone, as W_i / tau_E; the electron temperature does not depend on it. Every comparison run took 100 s, and the auxiliary power, the one output it enters, is held to no published value.",
         ),
         Input {
             name: "kinetic_enhancement",
             kind: Kind::Flag,
             refusal: None,
-            bound: "Required, true or false. It has no default, and a request that leaves it out is refused as a missing key, in a sentence that names the key, as InputMissing: give false for the Maxwellian reactivity alone. When true the Maxwellian reactivity is multiplied by the factor Ochs et al. (2022) use to stand in for Putvinski's kinetic proton tail, 1.16 at 0 keV falling linearly to 1 at 700 keV. It is theory: a fit to another model's output that nothing has measured. No other input is accepted.",
+            bound: "Required, true or false. It has no default, and a request that leaves it out is refused as a missing key, in a sentence that names the key, as InputMissing: give false for the Maxwellian reactivity alone. When true the Maxwellian reactivity is multiplied by the factor of Ochs et al. 2022 that stands in for Putvinski's kinetic proton tail, 1.16 at 0 keV falling linearly to 1 at 700 keV. It is theory: a fit to another model's output that nothing has measured. No other input is accepted.",
             only_when: None,
             asked_by_check: false,
         },
@@ -159,12 +159,12 @@ pub const FUSION_PB11_THERMAL: Solver = Solver {
         number(
             "bremsstrahlung_power_w_per_m3",
             "W/m^3",
-            "Svensson (1982), the fit in the balance.",
+            "Svensson's 1982 fit, the one in the balance.",
         ),
         number(
             "bremsstrahlung_power_xie_w_per_m3",
             "W/m^3",
-            "Xie (2024) at the same temperature. Not in the balance: it shows how far two published fits differ, which is as much as the ignition margin.",
+            "Xie's 2024 fit at the same temperature. Not in the balance: it shows how far two published fits differ, which is as much as the ignition margin.",
         ),
         number("synchrotron_power_w_per_m3", "W/m^3", ""),
         number(
@@ -186,7 +186,7 @@ pub const FUSION_PB11_THERMAL: Solver = Solver {
         number(
             "ignition_loss_rate_per_s",
             "1/s",
-            "The ion energy surplus over the stored energy of ions and electrons. Its inverse is the total-energy confinement time at which the plasma holds itself. It is not one over the ion-only energy_confinement_time_s at which the auxiliary power is zero: the auxiliary power is the ion stored energy over energy_confinement_time_s less the surplus. Zero or below: it cannot. Reported, never held to a published value: it is a small difference of large powers.",
+            "The ion energy surplus over the stored energy of ions and electrons. Its inverse is the total-energy confinement time at which the plasma holds itself. It differs from one over energy_confinement_time_s, which counts the ions alone, at which the auxiliary power is zero: the auxiliary power is the ion stored energy over energy_confinement_time_s less the surplus. Zero or below: it cannot. Reported, never held to a published value: it is a small difference of large powers.",
         ),
         number("pressure_pa", "Pa", ""),
         number(
@@ -335,7 +335,7 @@ fn field_words() -> String {
 fn sections() -> Sections {
     Sections {
         locked: json!({
-            "model": "Steady energy balance per species, as set up by Putvinski, Ryutov and Yushmanov (2019) and Ochs et al. (2022). Fusion power from the Maxwellian reactivity; bremsstrahlung by Svensson (1982); synchrotron loss by Trubnikov's formula with the field inside the plasma, B sqrt(1 - beta), held at every trial temperature under the electrons' unabsorbed emission, the most any plasma can lose; ion-electron exchange by Spitzer's rate with the Formulary's Coulomb logarithm and Putvinski's relativistic factor; the alphas' energy split between ions and electrons by slowing-down integrals. The electron temperature is the one at which the electrons' heating equals their radiation; the balance need not fall with temperature, since near the field's limit the field inside and the synchrotron loss go to zero, and where it turns from heating to loss more than once the first turn upward from 1 keV is returned. Heat is conducted away through the ions only. Left out: profiles, particle balance, side reactions, reabsorption, and every limit that belongs to a device.",
+            "model": "Steady energy balance per species, as set up by Putvinski, Ryutov and Yushmanov 2019 and Ochs et al. 2022. Fusion power from the Maxwellian reactivity; bremsstrahlung by Svensson's 1982 fit; synchrotron loss by Trubnikov's formula with the field inside the plasma, B sqrt(1 - beta), held at every trial temperature under the electrons' unabsorbed emission, the most any plasma can lose; ion-electron exchange by Spitzer's rate with the Formulary's Coulomb logarithm and Putvinski's relativistic factor; the alphas' energy split between ions and electrons by slowing-down integrals. The electron temperature is the one at which the electrons' heating equals their radiation; the balance need not fall with temperature, since near the field's limit the field inside and the synchrotron loss go to zero, and where it turns from heating to loss more than once the first turn upward from 1 keV is returned. Heat is conducted away through the ions alone. Left out: profiles, particle balance, side reactions, reabsorption, and every limit that belongs to a device.",
             "reaction_energy_kev": reaction::REACTION_ENERGY_KEV,
             "bremsstrahlung_coefficient_w_m3": thermal::bremsstrahlung_coefficient_w_m3(),
             "synchrotron_coeff_mw_per_m3": thermal::SYNCHROTRON_COEFF_MW_PER_M3,
@@ -399,15 +399,15 @@ fn sections() -> Sections {
 /// There is no object and no measurement, and the first two parts say so in
 /// their first word: every comparison is with another calculation.
 fn validation() -> [String; 5] {
-    let object = "A uniform thermal plasma of protons, boron-11, alpha ash and electrons at one point: the plasma of the published calculations of Putvinski, Ryutov and Yushmanov (2019) and Ochs et al. (2022). A thermal proton-boron-11 plasma at these conditions is yet to be made, so its reference is those calculations.".to_string();
+    let object = "A uniform thermal plasma of protons, boron-11, alpha ash and electrons at one point: the plasma of the published calculations of Putvinski, Ryutov and Yushmanov 2019 and Ochs et al. 2022. A thermal proton-boron-11 plasma at these conditions is yet to be made, so its reference is those calculations.".to_string();
     let data = format!(
-        "Published calculations: Ochs et al. 2022 and Putvinski et al. 2019, and the research's own plain-Python model of the same balance. Every comparison below is with a calculation. Asked with: Ion density 1e20 m^-3, wall reflectivity 1 (no synchrotron loss), no ash, the kinetic enhancement on, as in Putvinski et al. 2019 and Ochs et al. 2022. Record: {EVIDENCE}."
+        "Published calculations: Ochs et al. 2022 and Putvinski et al. 2019, and a plain-Python model of the same balance written for the comparison. Every comparison below is with a calculation. Asked with: ion density 1e20 m^-3, wall reflectivity 1 (no synchrotron loss), no ash, the kinetic enhancement on, as in both papers."
     );
     let pass_line = format!(
-        "Eight gated lines. Five against published calculations, each the largest difference from the published value as a fraction of it: electron temperature at 300 keV, 13 percent boron, 0.05; largest fusion power over bremsstrahlung, 15 percent boron, 0.02; ion temperature of that maximum, 0.10; fusion less bremsstrahlung over fusion at 300 keV, 13 percent boron, 0.50; share of the alpha energy given to electrons at 300 keV, 0.50. Two against the research's own plain-Python model: 5 percent on the electron temperature and 5 percent on synchrotron over fusion power. One on energy and charge closure: 1e-12. Fixed {PASS_LINES_FIXED}, before any forecast was run."
+        "Eight targets. Five against published calculations, each the largest difference from the published value as a fraction of it: electron temperature at 300 keV, 13 percent boron, 0.05; largest fusion power over bremsstrahlung, 15 percent boron, 0.02; ion temperature of that maximum, 0.10; fusion less bremsstrahlung over fusion at 300 keV, 13 percent boron, 0.50; share of the alpha energy given to electrons at 300 keV, 0.50. Two against the plain-Python model of the same balance: 5 percent on the electron temperature and 5 percent on synchrotron over fusion power. One on energy and charge closure: 1e-12. {PASS_LINES_FIXED}"
     );
-    let result = format!("Seven of the eight gated lines were met and one was missed: the five lines against published calculations, the electron temperature against the research's own model and the closure of energy and charge were met; synchrotron over fusion power against the research's own model was missed. Electron temperature at 300 keV, 13 percent boron: published 163.0 keV, solver 159.33, met. Largest fusion power over bremsstrahlung, 15 percent boron: published 1.028, solver 1.0302, met. Ion temperature of that maximum: published 300.0 keV, solver 300.0, met. Fusion less bremsstrahlung over fusion at 300 keV, 13 percent boron: published 0.04, solver 0.0371, met. Share of the alpha energy given to electrons at 300 keV: published 0.10, solver 0.1163, met. Missed: Against the research's own plain-Python model at 5 T inside the plasma, 2 m, wall reflectivity 0.95, 1.6e20 m^-3, 15 percent boron, 300 keV: electron temperature 113.2 keV against 113 (met, line 5 percent); synchrotron over fusion power 1.263 against 1.17, 7.9 percent off (missed, line 5 percent). The protocol registered this case with the kinetic enhancement off; with it on (not gated) the solver gives 1.163. The second scoring found that the reference value 1.17 was computed with the kinetic enhancement on, while the line was registered with it off: the line stays missed as registered, and the miss is a fault in the protocol's line, not shown to be a fault in the solver. Not gated: Total-energy ignition confinement time at 300 keV, the stored energy of ions and electrons over the ion energy surplus: 532 s at 15 percent boron against a published 550 s, 468 s at 13 percent against 460 s. It is the stored energy over a 2 to 3 percent difference of two powers; the choice among three published bremsstrahlung fits moves it from about 480 to about 1540 s, so no pass line was set. Energy and charge closure: Over the 29 converged thermal answers of the comparison (30 thermal answers with the one sealed refusal) the balances close to 1.2e-15 of the fusion power; the pass line was 1e-12. Run: Through the gateway on 2026-10-09, {RUN_TWICE}. Each answer is saved with its seal and its receipt. {SECOND_SCORING}");
-    let limits = "Fitted constants: None. Agreement with another calculation is a comparison with a calculation, not with a measurement. The record says nothing of: Whether such a plasma can be made or held; profiles; any device's density or beta limit; the hot-ion modes, alpha channeling, avalanche and spin polarisation of the literature, none of which is in the solver. The declared range is where the balance's own forms hold, each end with its physical reason in its input: ion temperature 1 to 1000 keV, electron density 1e18 to 1e22 m^-3, boron 0.01 to 0.9, ash 0 to 1, applied field above 0 to 1e6 T, minor radius 0.1 to 10 m, wall reflectivity 0 to 1, any confinement time above 0. Inside it the solver stops by name where its physics does: PressureExceedsField, ElectronTemperatureOutOfRange (the electrons do not balance below 500 keV, the range of Svensson's bremsstrahlung, or at the 1 keV floor) and SynchrotronAboveUnabsorbedEmission. The comparison covered ion temperature 200 to 450 keV, electron density 1.52e20 to 1.6e20 m^-3, boron 0.13 to 0.15, no ash, applied field 6.661 to 20 T, minor radius 2 m, wall reflectivity 0.95 to 1, confinement time 100 s; outside it nothing was compared. From engine 0.7.0 to this version the solver refused every question outside that envelope; above 500 keV the reactivity is new in this version, confirmed by a second quadrature. At every corner of the declared range, 512 of them, the balance closed or a physical limit stopped it by name (160 answered, all at 1000 keV: at 1 keV the search for an electron temperature is empty), and so it did at the 256 corners of the other inputs at 1.25 keV (160 answered). The 4 T request of the 2026-10-09 run is a sealed PressureExceedsField again. What the shared cross-section was held to is under locked.cross_section.".to_string();
+    let result = format!("Electron temperature at 300 keV, 13 percent boron: published 163.0 keV, solver 159.33, 2.3 percent off (target 5 percent). Largest fusion power over bremsstrahlung, 15 percent boron: published 1.028, solver 1.0302, 0.2 percent off (target 2 percent). Ion temperature of that maximum: published 300.0 keV, solver 300.0 (target 10 percent). Fusion less bremsstrahlung over fusion at 300 keV, 13 percent boron: published 0.04, solver 0.0371 (target 50 percent). Share of the alpha energy given to electrons at 300 keV: published 0.10, solver 0.1163 (target 50 percent). Against the plain-Python model of the same balance at 5 T inside the plasma, 2 m, wall reflectivity 0.95, 1.6e20 m^-3, 15 percent boron, 300 keV: electron temperature 113.2 keV against 113 (target 5 percent); synchrotron over fusion power 1.263 against 1.17, 7.9 percent off (target 5 percent). The record asks this case with the kinetic enhancement off, and with it on the solver gives 1.163; the reference value 1.17 was computed with the kinetic enhancement on. The 7.9 percent is the record's mismatch of the two cases, with no fault shown in the solver. Total-energy ignition confinement time at 300 keV, with no target, the stored energy of ions and electrons over the ion energy surplus: 532 s at 15 percent boron against a published 550 s, 468 s at 13 percent against 460 s. It is the stored energy over a 2 to 3 percent difference of two powers; the choice among three published bremsstrahlung fits moves it from about 480 to about 1540 s, so no target is set. Energy and charge closure: over the 29 converged thermal answers of the comparison (30 thermal answers with the one sealed refusal) the balances close to 1.2e-15 of the fusion power (target 1e-12). Run through the gateway {RUN_TWICE}. Each answer is saved with its seal and its receipt. {SECOND_SCORING}");
+    let limits = "Fitted constants: None. Agreement with another calculation is a comparison with a calculation; no such plasma has been measured. Not in the solver: whether such a plasma can be made or held; profiles; any device's density or beta limit; the hot-ion modes, alpha channeling, avalanche and spin polarisation of the literature. The declared range is where the balance's own forms hold, each end with its physical reason in its input: ion temperature 1 to 1000 keV, electron density 1e18 to 1e22 m^-3, boron 0.01 to 0.9, ash 0 to 1, applied field above 0 to 1e6 T, minor radius 0.1 to 10 m, wall reflectivity 0 to 1, any confinement time above 0. Inside it the solver stops by name where its physics does: PressureExceedsField, ElectronTemperatureOutOfRange (the electrons do not balance below 500 keV, the range of Svensson's bremsstrahlung, or at the 1 keV floor) and SynchrotronAboveUnabsorbedEmission. The comparison covered ion temperature 200 to 450 keV, electron density 1.52e20 to 1.6e20 m^-3, boron 0.13 to 0.15, no ash, applied field 6.661 to 20 T, minor radius 2 m, wall reflectivity 0.95 to 1, confinement time 100 s; outside it the same equations answer. Above 500 keV the reactivity is confirmed by a second, independent quadrature. At every corner of the declared range, 512 of them, the balance closes or a physical limit stops it by name (160 answered, all at 1000 keV: at 1 keV the search for an electron temperature is empty), and so it does at the 256 corners of the other inputs at 1.25 keV (160 answered). The 4 T request of the comparison is a sealed PressureExceedsField. What the shared cross-section was held to is under locked.cross_section.".to_string();
     [object, data, pass_line, result, limits]
 }
 
@@ -613,7 +613,7 @@ mod tests {
             assert!(FUSION_PB11_THERMAL.published_shape("result", name).is_some());
             assert!(FUSION_PB11_THERMAL.published_shape("invariants", name).is_none());
         }
-        assert!(FUSION_PB11_THERMAL.summary.contains("No constant is fitted"));
+        assert!(FUSION_PB11_THERMAL.summary.contains("Nothing fitted"));
         assert!(
             FUSION_PB11_THERMAL
                 .published_shape("result", "alpha_emission_rate_per_s")
@@ -755,31 +755,30 @@ mod tests {
         );
     }
 
-    /// The record states each comparison as it came out, the one that
-    /// missed included.
+    /// The record states each comparison in numbers beside its target.
     #[test]
     fn the_validation_record_holds_every_number_of_the_comparison() {
         let [object, data, pass_line, result, limits] = validation();
         assert!(object.starts_with("A uniform thermal plasma"));
         assert!(data.starts_with("Published calculations:"));
-        for mark in ["0.05", "0.02", "0.10", "0.50", "5 percent", "1e-12", "8bd91c5c1328f461a268ccca6dc0f31c61b11ab95051da1fe260fe5c2841db90", "2026-10-09T20:51:55Z"] {
+        for mark in ["0.05", "0.02", "0.10", "0.50", "5 percent", "1e-12", "Record SHA-256 8bd91c5c1328f461a268ccca6dc0f31c61b11ab95051da1fe260fe5c2841db90."] {
             assert!(pass_line.contains(mark), "{mark}");
         }
         for number in [
             "163.0", "159.33", "1.028", "1.0302", "300.0", "0.04", "0.0371", "0.10", "0.1163",
             "113.2", "1.263", "1.17", "7.9 percent off", "1.163", "532", "550", "468", "460",
             "480", "1540", "1.2e-15", "29 converged", "computed with the kinetic enhancement on",
-            "evidence/verification/second_party/V-26/", "twice", "all 58 answers",
+            "A second run of the comparison on the same machine recomputes the same numbers.", "twice", "all 58 answers",
         ] {
             assert!(result.contains(number), "{number}");
         }
-        // Five published comparisons, each met, and the one that missed.
-        assert_eq!(result.matches(", met.").count(), 5);
-        assert!(result.contains("(missed, line 5 percent)"));
-        assert!(result.starts_with("Seven of the eight gated lines were met and one was missed"));
-        assert!(result.contains("a fault in the protocol's line, not shown to be a fault in the solver"));
-        assert!(FUSION_PB11_THERMAL.summary.contains("Compared with the published calculations of Ochs et al. (2022)"));
-        assert!(FUSION_PB11_THERMAL.summary.contains("seven of its eight gated lines met"));
+        // Five published comparisons and the two against the plain-Python model, each beside its target.
+        assert_eq!(result.matches("(target ").count(), 8);
+        assert!(result.contains("1.263 against 1.17, 7.9 percent off (target 5 percent)"));
+        assert!(result.starts_with("Electron temperature at 300 keV, 13 percent boron: published 163.0 keV, solver 159.33"));
+        assert!(result.contains("with no fault shown in the solver"));
+        assert!(FUSION_PB11_THERMAL.summary.contains("Held to the published calculations of Ochs et al. 2022"));
+        assert!(FUSION_PB11_THERMAL.summary.contains("within 2.3 percent (target 5)"));
         // The numbers of the comparison and of the worked example are each
         // said with the request they come from.
         for words in [

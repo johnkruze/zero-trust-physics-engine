@@ -159,7 +159,7 @@ async fn the_description_carries_the_standing_and_its_examples_run_unchanged() {
     assert_eq!(status, 200, "{text}");
     let described: Value = serde_json::from_str(&text).unwrap();
     assert!(described["summary"].as_str().unwrap().contains("Nichols and Brown"));
-    assert_eq!(described["validation"]["result"], "The company's own specimen: its constants are the company's, stated in its description, and every answer holds the conservation ledgers stated under invariants to their tolerances; what its method was held to, and how it did there, is under reference.");
+    assert_eq!(described["validation"]["result"], "Company specimen: its constants are the company's, stated in its description, and every answer holds the conservation ledgers stated under invariants to their tolerances; what its method is held to, and within what, is under reference.");
     assert!(described["reference"]["url"].as_str().unwrap().contains("10.1002/andp.18682100602"));
     for key in ["example_solve", "example_solve_low_pressure"] {
         let (status, text) = post(&base, "/solve", &described[key]).await;

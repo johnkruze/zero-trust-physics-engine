@@ -139,7 +139,7 @@ impl Connections {
         };
         let hosted = Hosted::start(
             vec![
-                entry("all", KEY, json!(["atom_dft", "ablator_slab", "journal_bearing_sheffield", "propeller_apc_10x7e", "modulus_bam_s355", "seawater_column", "argon_pair_gas", "fusion_pb11_lhd", "fusion_pb11_thermal", "step_flow_armaly", "culture_trichoderma_ambr250", "tokamak_dt_beam_target", "pipe_flow_superpipe", "culture_trichoderma_atp", "junction_nist_b7_s2", "water_hammer_oil_line", "orifice_air_chamber", "pneumatic_hose_resonance", "blast_wave_tnt_air", "stress_plate_hole_s235", "stress_plate_hole_s235_elastic", "icf_hotspot_burn", "ln2_line_dlr_fttf", "plasma_sheath_ram_c2"])),
+                entry("all", KEY, json!(["atom_dft", "ablator_slab", "journal_bearing_sheffield", "propeller_apc_10x7e", "modulus_bam_s355", "seawater_column", "argon_pair_gas", "fusion_pb11_lhd", "fusion_pb11_thermal", "step_flow_armaly", "culture_trichoderma_ambr250", "tokamak_dt_beam_target", "pipe_flow_superpipe", "fuel_rod_triga_jsi", "culture_trichoderma_atp", "junction_nist_b7_s2", "water_hammer_oil_line", "orifice_air_chamber", "pneumatic_hose_resonance", "blast_wave_tnt_air", "stress_plate_hole_s235", "stress_plate_hole_s235_elastic", "icf_hotspot_burn", "ln2_line_dlr_fttf", "plasma_sheath_ram_c2"])),
                 entry("atom", KEY_ATOM, json!(["atom_dft"])),
                 entry("slab", KEY_SLAB, json!(["ablator_slab"])),
             ],
@@ -694,7 +694,7 @@ fn the_list_shows_thirteen_solvers_and_the_description_publishes_fields_bounds_r
     assert_eq!(status, 200, "{text}");
     let listed: Value = serde_json::from_str(&text).unwrap();
     let solvers = listed["solvers"].as_array().expect("solvers");
-    assert_eq!(solvers.len(), 24);
+    assert_eq!(solvers.len(), 25);
     assert_eq!(solvers[0]["solver"], "atom_dft");
     assert_eq!(solvers[1]["solver"], "ablator_slab");
     assert_eq!(solvers[3]["solver"], "propeller_apc_10x7e");
@@ -1028,7 +1028,7 @@ fn the_list_shows_thirteen_solvers_and_the_description_publishes_fields_bounds_r
     assert_eq!(recipe["steps"].as_array().unwrap().len(), 5);
     assert_eq!(
         recipe["written_out_in"],
-        "evidence/research/stardust_heatshield_model_run/arcjet_test_to_question/RECIPE.md"
+        "the steps below, which are the whole rule"
     );
 
     // What comes back, and the record in five parts.
@@ -1050,11 +1050,11 @@ fn the_list_shows_thirteen_solvers_and_the_description_publishes_fields_bounds_r
     );
     let data = record["data"].as_str().unwrap();
     assert!(
-        data.ends_with("On 2026-10-09 the model was run once on 31 further arc-jet tests that no model had seen, with its predictions fixed before the measurements were read."),
+        data.ends_with("Compared with 31 further arc-jet tests, not in the fit and not used to choose the surface rules."),
         "{data}"
     );
     let limits = record["limits"].as_str().unwrap();
-    assert!(limits.starts_with("Known misses. 1. The faint end of the charring is too deep"), "{limits}");
+    assert!(limits.starts_with("Known gaps. 1. The faint end of the charring is too deep"), "{limits}");
     assert!(limits.contains("9. The decomposition gas inside the slab is read at 1 atm"), "{limits}");
     let object = record["object"].as_str().unwrap();
     assert!(object.contains("`PICA, open record, version 5` is the PICA model a caller is pointed to"));
@@ -1220,6 +1220,10 @@ fn the_schema_of_solve_declares_every_input_plainly() {
     let (before, signed_words) = said.split_once(" parameters may also carry signed").expect("the signed words");
     assert!(signed_words.ends_with("A solve answer without load_source holds no signed parameter."), "{said}");
     parameters["description"] = json!(before);
+    // A sealed card run handed in through a coupling into a solver
+    // (triga_pulse_to_element_6753) may stand beside them too: without it, the
+    // schema the atom had.
+    assert!(declared["properties"].as_object_mut().unwrap().shift_remove("from").is_some());
     assert_eq!(
         serde_json::to_string(&declared).unwrap(),
         r#"{"type":"object","properties":{"solver":{"const":"atom_dft"},"parameters":{"type":"object","properties":{"atomic_number":{"type":"integer","minimum":1,"maximum":18}},"required":["atomic_number"],"additionalProperties":false,"description":"A required input left out is refused as InputMissing, and an input given with a choice it does not go with as InputNotWithChoice, each in a sentence that names the input, and a solver the engine does not serve as UnknownSolver; nothing is filled in."},"example":{"type":"string","description":"In place of parameters: the name of one of the solver's worked examples as describe_solver keys it (example_solve, or a key that begins example_solve_). The request is filled with that example's parameters, and the filled request is the one solved, sealed and returned as inputs."}},"required":["solver"],"additionalProperties":false,"description":"One sealed solution."}"#

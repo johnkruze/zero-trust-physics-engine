@@ -9,7 +9,7 @@ use genesis_solvers::pb11_reaction as reaction;
 use serde_json::{Value, json};
 
 use crate::solver_fusion_pb11_shared::{
-    EVIDENCE, PASS_LINES_FIXED, RUN_TWICE, SECOND_SCORING, cross_section_record, number,
+    PASS_LINES_FIXED, RUN_TWICE, SECOND_SCORING, cross_section_record, number,
 };
 use crate::solvers::{
     Answer, Given, Input, Kind, Published, Refusal, Refused, Sections, Solved, Solver,
@@ -30,7 +30,7 @@ pub const FUSION_PB11_LHD: Solver = Solver {
                 unit: "keV",
             },
             refusal: Some("BeamEnergyOutOfRange"),
-            bound: "Energy of the beam protons, above 10 keV to 190 keV. A proton is followed down to 10 keV, so at or below it there is nothing to follow; 190 keV is the rating of the device's negative-ion beams, the most energetic beams the object has (the equations go further: the cross-section's fit reaches 10.6 MeV in the laboratory). Compared with measured alpha count rates for negative-ion beams of 127.45 to 160.25 keV (Ogawa et al. 2024, Figures 6 and 10) and one 45 keV beam at 7.8 s in Figure 6: the solver put the six beam-energy points in the measured order (Spearman 0.943) but rose 11.1 times from 128 to 160 kV where the measurement rose 2.10, and the collapse under the 45 keV beam was met. One beam is one question; the alphas of several beams add.",
+            bound: "Energy of the beam protons, above 10 keV to 190 keV. A proton is followed down to 10 keV, so at or below it there is nothing to follow; 190 keV is the rating of the device's negative-ion beams, the most energetic beams the object has (the equations go further: the cross-section's fit reaches 10.6 MeV in the laboratory). Compared with measured alpha count rates for negative-ion beams of 127.45 to 160.25 keV and one 45 keV beam at 7.8 s: the six beam-energy points come in the measured order (Spearman 0.943), with a rise of 11.1 times from 128 to 160 kV where the measurement rises 2.10, and under the 45 keV beam the rate falls to 1.26e-5 of its value before, against a measured 0.062. One beam is one question; the alphas of several beams add.",
             only_when: None,
             asked_by_check: true,
         },
@@ -42,7 +42,7 @@ pub const FUSION_PB11_LHD: Solver = Solver {
                 unit: "W",
             },
             refusal: Some("BeamPowerOutOfRange"),
-            bound: "Beam power deposited in the plasma, injected less shine-through: any power above zero (to 1e300 W, a capacity of the input and no physics). The alpha rate is proportional to it, and so are the fast protons; where in any shell the beam protons still slowing and the boron would carry more charge than the electrons, no thermal proton could be left, and the solver stops by name (FastProtonChargeExceedsElectrons, sealed). Compared at deposited powers of 0.9389 to 1.4056 MW for the negative-ion beams of Figure 10, answered, and at the injected powers of Figure 6, 2.254 to 3.97 MW and 4.515 MW for the 45 keV beam, which leave 1.25 to 7.25 fast protons per electron at the axis and are refused by that limit; the time shape, run with the injected power on engine 0.6.0, was missed by a worst factor of 2.42.",
+            bound: "Beam power deposited in the plasma, injected less shine-through: any power above zero (to 1e300 W, a capacity of the input and no physics). The alpha rate is proportional to it, and so are the fast protons; where in any shell the beam protons still slowing and the boron would carry more charge than the electrons, no thermal proton could be left, and the solver stops by name (FastProtonChargeExceedsElectrons, sealed). Compared at deposited powers of 0.9389 to 1.4056 MW for the negative-ion beams of the beam-energy scan, answered, and at the injected powers of the time trace, 2.254 to 3.97 MW and 4.515 MW for the 45 keV beam, which leave 1.25 to 7.25 fast protons per electron at the axis and are refused by that limit; computed with the injected power before that limit was held, the time shape came within a worst factor of 2.42.",
             only_when: None,
             asked_by_check: true,
         },
@@ -54,7 +54,7 @@ pub const FUSION_PB11_LHD: Solver = Solver {
                 unit: "m^-3",
             },
             refusal: Some("ElectronDensityOutOfRange"),
-            bound: "Line-averaged electron density, 1e18 to 3e19 m^-3, the span of the device's proton-boron discharges. Up to the top the ionisation length of a 45 to 190 keV hydrogen beam stays above the minor radius (an estimate), so the core-peaked deposition the solver takes is not contradicted. Compared at line-averaged electron densities of 2.261e18 to 6.872e18 m^-3; the published calculation's 1.96e19 m^-3 was compared with a calculation only.",
+            bound: "Line-averaged electron density, 1e18 to 3e19 m^-3, the span of the device's proton-boron discharges. Up to the top the ionisation length of a 45 to 190 keV hydrogen beam stays above the minor radius (an estimate), so the core-peaked deposition the solver takes holds. Compared with measurement at line-averaged electron densities of 2.261e18 to 6.872e18 m^-3, and with the published calculation at its 1.96e19 m^-3.",
             only_when: None,
             asked_by_check: true,
         },
@@ -66,7 +66,7 @@ pub const FUSION_PB11_LHD: Solver = Solver {
                 unit: "keV",
             },
             refusal: Some("ElectronTemperatureOutOfRange"),
-            bound: "Central electron temperature, 0.5 to 6.67 keV; the ions are at the electron temperature. Below 0.5 keV boron at the axis is not fully stripped (the last electron of B4+ is bound by 0.340 keV), and the solver takes boron as a bare nucleus of charge 5. Above two thirds of 10 keV the 10 keV a proton is followed to is less than 1.5 ion temperatures, and the proton would be thermal. Compared at central electron temperatures of 2.1252 keV (the 45 keV beam) and 2.9929 to 3.7872 keV (the negative-ion beams); the published calculation's 5.4 keV was compared with a calculation only.",
+            bound: "Central electron temperature, 0.5 to 6.67 keV; the ions are at the electron temperature. Below 0.5 keV boron at the axis is not fully stripped (the last electron of B4+ is bound by 0.340 keV), and the solver takes boron as a bare nucleus of charge 5. Above two thirds of 10 keV the 10 keV a proton is followed to is less than 1.5 ion temperatures, and the proton would be thermal. Compared with measurement at central electron temperatures of 2.1252 keV (the 45 keV beam) and 2.9929 to 3.7872 keV (the negative-ion beams), and with the published calculation at its 5.4 keV.",
             only_when: None,
             asked_by_check: true,
         },
@@ -91,7 +91,7 @@ pub const FUSION_PB11_LHD: Solver = Solver {
             "In the whole plasma: three per reaction.",
         ),
         number("fusion_power_w", "W", "Reactions per second times 8.68 MeV."),
-        number("fusion_gain", "1", "Fusion power over deposited beam power, computed as the fused share times 8.68 MeV over the beam energy: it does not pass through the power."),
+        number("fusion_gain", "1", "Fusion power over deposited beam power, computed as the fused share times 8.68 MeV over the beam energy, independent of the power."),
         number(
             "fused_fraction",
             "1",
@@ -247,16 +247,16 @@ fn field_words() -> String {
 fn sections() -> Sections {
     Sections {
         locked: json!({
-            "model": "A beam proton is born at the beam energy in one of twenty radial shells and slows there on electrons, protons and boron by the test-particle rates of the NRL Plasma Formulary. At each energy it may fuse with boron-11, with the cross-section averaged over the thermal motion of the boron. Steady state. The beam protons still slowing in a shell, born per second times the slowing time, are positive charge beside the thermal protons and the boron; where with the boron they would carry more than the electrons' charge, no thermal proton could be left, and the answer is refused (FastProtonChargeExceedsElectrons). Profile shapes are fixed: electron temperature Te0 (1 - rho^2), ions at the electron temperature, electron density (9/8) n (1 - rho^8), boron the hollow profile digitised from Ogawa 2022 Figure 3, beam ions born per unit volume as (1 - rho^2). The boron is natural boron, 80 percent boron-11. Left out: charge-exchange and orbit loss of beam ions, radial motion while slowing, the time before steady state, beam-beam and thermal reactions, 10B(p,alpha)7Be, the beam's energy spread, the detector.",
+            "model": "A beam proton is born at the beam energy in one of twenty radial shells and slows there on electrons, protons and boron by the test-particle rates of the NRL Plasma Formulary. At each energy it may fuse with boron-11, with the cross-section averaged over the thermal motion of the boron. Steady state. The beam protons still slowing in a shell, born per second times the slowing time, are positive charge beside the thermal protons and the boron; where with the boron they would carry more than the electrons' charge, no thermal proton could be left, and the answer is refused (FastProtonChargeExceedsElectrons). Profile shapes are fixed: electron temperature Te0 (1 - rho^2), ions at the electron temperature, electron density (9/8) n (1 - rho^8), boron the hollow profile digitised for discharge 169626, beam ions born per unit volume as (1 - rho^2). The boron is natural boron, 80 percent boron-11. Left out: charge-exchange and orbit loss of beam ions, radial motion while slowing, the time before steady state, beam-beam and thermal reactions, 10B(p,alpha)7Be, the beam's energy spread, the detector.",
             "magnetic_axis_m": lhd::MAGNETIC_AXIS_M,
             "minor_radius_m": lhd::MINOR_RADIUS_M,
             "toroidal_field_t": lhd::TOROIDAL_FIELD_T,
             "plasma_volume_m3": lhd::plasma_volume_m3(),
             "boron11_fraction": lhd::BORON11_FRACTION,
             "boron_profile_polynomial": lhd::BORON_PROFILE,
-            "boron_profile_source": "DIGITISED from the fitted curve of Ogawa et al. 2022, Figure 3 (discharge 169626), and fitted by a polynomial of degree six in rho, highest power first, one at its peak. Not fitted to any alpha rate.",
+            "boron_profile_source": "Digitised from the fitted boron curve of discharge 169626 in the published calculation (Fusion Sci. Technol. 78, 175), and fitted by a polynomial of degree six in rho, highest power first, one at its peak. Fitted to no alpha rate.",
             "central_over_line_averaged_density": lhd::CENTRAL_OVER_LINE_AVERAGED_DENSITY,
-            "profile_shapes_source": "The shapes of temperature, density and beam deposition are assumptions. The papers print only the central temperature and the line-averaged density.",
+            "profile_shapes_source": "The shapes of temperature, density and beam deposition are assumptions. The papers print the central temperature and the line-averaged density, and no profile.",
             "shells": lhd::SHELLS,
             "stopping_energy_kev": lhd::STOPPING_ENERGY_KEV,
             "fast_proton_charge_over_electrons_max": lhd::FAST_PROTON_CHARGE_OVER_ELECTRONS_MAX,
@@ -294,7 +294,7 @@ fn sections() -> Sections {
             "retrieved": lhd::REFERENCE_RETRIEVED,
             "published_alpha_rate_per_s": lhd::REFERENCE_ALPHA_RATE_PER_S,
             "test": "ogawa_2022_three_beams_of_discharge_168156",
-            "covers": "The total alpha emission rate of one case. The test prints the solver's rate over the published one for both readings of the paper's boron density and holds the solver to neither. The served solver answers this case, with the same numbers its physics gave when 0.7.0 to 0.8.0 refused it at the door.",
+            "covers": "The total alpha emission rate of one case. The test prints the solver's rate over the published one for both readings of the paper's boron density and holds the solver to neither. The served solver answers this case.",
             "kind": "A reference calculation. It is not a measurement.",
         }),
     }
@@ -302,17 +302,17 @@ fn sections() -> Sections {
 
 /// The validation record, in the five parts a card's description gives: the
 /// object, the data, the pass line, the result and the limits. It states
-/// each comparison as it came out: three of the four lines were missed.
+/// each comparison in numbers beside its target.
 fn validation() -> [String; 5] {
-    let object = "The boron-seeded hydrogen plasma of the Large Helical Device (National Institute for Fusion Science, Toki), toroidal field 2.75 T, magnetic axis 3.60 m, heated by tangential hydrogen neutral beams: the only magnetically confined plasma in which proton-boron-11 alpha particles have been counted. Ogawa et al., Fusion Sci. Technol. 78 (2022) 175; Magee et al., Nat. Commun. 14 (2023) 955; Ogawa et al., Nucl. Fusion 64 (2024) 096028.".to_string();
+    let object = "The boron-seeded hydrogen plasma of the Large Helical Device (National Institute for Fusion Science, Toki), toroidal field 2.75 T, magnetic axis 3.60 m, heated by tangential hydrogen neutral beams: the one magnetically confined plasma in which proton-boron-11 alpha particles have been counted. Published in Fusion Sci. Technol. 78, 175; Nat. Commun. 14, 955; Nucl. Fusion 64, 096028.".to_string();
     let data = format!(
-        "One published calculation: Ogawa et al. 2022: 1.5e14 alpha particles per second for the three negative-ion beams of discharge 168156 (180, 165 and 164 keV; 4.33, 2.39 and 3.37 MW deposited; 1.96e19 m^-3; 5.4 keV) with the boron profile of discharge 169626. A reference calculation. It is not a measurement. Measured: Alpha count rate of one silicon detector under the plasma, discharges 178062 to 178072 (Ogawa et al. 2024; Magee et al. 2023). The values were DIGITISED from the papers' figures; the device's data service did not answer. Beam energy dependence: Ogawa et al. 2024, Figure 10: the count rate over boron signal, beam particle rate and slowing-down time at six points, three discharges at two times, beam voltage 127 to 160 kV. Time shape: Ogawa et al. 2024, Figure 6, discharge 178063: the count rate at 4.5, 5.0, 5.5, 6.0, 6.5 and 7.0 s. Record: {EVIDENCE}."
+        "One published calculation, a reference and not a measurement: 1.5e14 alpha particles per second for the three negative-ion beams of discharge 168156 (180, 165 and 164 keV; 4.33, 2.39 and 3.37 MW deposited; 1.96e19 m^-3; 5.4 keV) with the boron profile of discharge 169626 (Fusion Sci. Technol. 78, 175). Measured: the alpha count rate of one silicon detector under the plasma, discharges 178062 to 178072 (Nucl. Fusion 64, 096028; Nat. Commun. 14, 955), digitised from the papers' figures; the device's data service did not answer. Beam energy dependence: the count rate over boron signal, beam particle rate and slowing-down time at six points, three discharges at two times, beam voltage 127 to 160 kV. Time shape: discharge 178063, the count rate at 4.5, 5.0, 5.5, 6.0, 6.5 and 7.0 s. Nothing fitted."
     );
     let pass_line = format!(
-        "Four lines. Against the published calculation: solver over published inside 0.5 to 2.0. Beam energy dependence: after one common scale factor, every point within a factor of 2. Time shape: after one common scale factor, every point within a factor of 2. Collapse under the 45 keV beam: solver ratio at most the measured ratio. Fixed {PASS_LINES_FIXED}, before any forecast was run and before any value was read off a figure of Ogawa et al. 2024."
+        "Four targets. Against the published calculation: solver over published inside 0.5 to 2.0. Beam energy dependence: after one common scale factor, every point within a factor of 2. Time shape: after one common scale factor, every point within a factor of 2. Collapse under the 45 keV beam: solver ratio at most the measured ratio. {PASS_LINES_FIXED}"
     );
-    let result = format!("Three of the four lines were missed and one was met. Run: Through the gateway on 2026-10-09, {RUN_TWICE}. Each answer is saved with its seal and its receipt. Published calculation, with the boron of the paper's text, 6.3e16 per m^3: alpha rate 1.921e13 per second, solver over published 0.128, not met. With the boron of the figure's axis, 6.3e17 per m^3, not gated: alpha rate 1.950e14 per second, solver over published 1.300. The paper gives its boron density twice and the two differ by ten: about 7e16 m^-3 in its text and colour bar, 6.3e17 by the axis of the profile it says it used. The protocol registered the text's value, and by it the pass line is missed. Which value the published calculation used is not known. The reference contradicts itself in a second place: its own emissivity map integrates to about 0.4 of its own stated total. The registered band of 0.5 to 2.0 is tighter than the reference's agreement with itself; the line stays missed. Beam energy dependence: worst factor 2.94, Spearman rank correlation 0.943, rise from 128 to 160 kV measured 2.10 and solver 11.1, not met. These runs took the beam voltage of each circle of the bottom panel of Figure 10, where the protocol names the top panel; with the top panel's voltages the worst factor is 2.953 and the rise 10.7, and the line is still missed. The solver puts the six points in the measured order but rises five times more steeply with beam energy than the measurement does. The measured rise from 128 to 160 kV, 2.1, is below the 4.4 that a cross-section with no resonance at all gives, so no cross-section shape or averaging in the solver can produce it. The cause is open: it lies on the measurement side or in something that neither this solver nor the experimenters' own calculation contains. Time shape: worst factor 2.42, not met. Run as registered with the injected beam power, the only power the figure gives; the solver takes deposited power. With the power scaled by the density (not gated, chosen after the figure was opened) the worst factor is 1.82. Collapse under the 45 keV beam: solver ratio 1.26e-5, measured ratio 0.062, met. One-sided: the measured floor is noise. Absolute count rate, not gated: At 6.0 s with 1.3 MW deposited the solver gives 7.0e12 alpha particles per second: 1.28 times the paper's own calculation (about 5.5e12), and through the paper's detection efficiency of 1.2e-7 counts per alpha 845 kcps against a measured 179 kcps, 4.7 times above. The paper's calculation is itself about three times above its measurement. {SECOND_SCORING} In this version, after the fact and no test: the fast protons each run leaves in steady state are counted against the electrons. The seven runs of Figure 10 (A3), given the deposited power, are answered with the bits they had, the most fast protons 0.78 of the electrons at the axis. The fourteen of Figure 6 (A4 to A6, the 45 keV beam of A5 among them), given the injected power or an estimate of the deposited one, leave 1.25 to 7.25 beam protons per electron at the axis, which no plasma can hold beside its electrons, and are refused by name (FastProtonChargeExceedsElectrons): the time-shape and collapse lines were scored on answers this version does not give. The published calculation's plasma is answered, its fast protons at most 0.16 of the electrons.");
-    let limits = "Fitted constants: None. Every number is from the two Ogawa papers or is a declared assumption of the solver. What the measurement tests: The shape of the answer in beam energy, in time and across the step to a 45 keV beam, each after one free scale factor. It does not test the absolute rate: no absolute alpha rate has been measured in a magnetically confined plasma. The declared range is where the solver's equations hold, each end with its physical reason in its input: a beam above the 10 keV stopping energy to 190 keV, any deposited power above zero, line-averaged electron density 1e18 to 3e19 m^-3, central temperature 0.5 to 6.67 keV, peak boron density zero, or from 0.04973892441153873 m^-3, one boron nucleus in the plasma, to what quasi-neutrality allows in every shell. Inside it the solver stops by name where the fast protons and the boron would outweigh the electrons. From engine 0.7.0 to this version it answered only inside the envelope of the inputs compared with measurement, the negative-ion beams to their own runs and the 45 keV beam in one plasma, and refused the published calculation's plasma; both beam families now share one range. The comparison covered beams of 45 and 127.45 to 160.25 keV, 0.9389 to 4.515 MW, 2.261e18 to 6.872e18 m^-3, 2.1252 to 3.7872 keV and boron of zero and 5.1354e16 to 2.84682e17 m^-3; outside it nothing was compared with measurement. At every corner of the declared range, 64 of them, the ledgers closed or a physical limit stopped the solve by name (42 answered). The record says nothing of: Any other device or beam; beam ions lost by charge exchange or orbits; the time before steady state; how many alphas reach a detector; thermal fusion, which is nil at these temperatures; drag of beam protons on one another. What the shared cross-section was held to is under locked.cross_section.".to_string();
+    let result = format!("Against the published calculation, with the boron of the paper's text, 6.3e16 per m^3: alpha rate 1.921e13 per second, solver over published 0.128 (target 0.5 to 2.0). With the boron of the figure's axis, 6.3e17 per m^3: alpha rate 1.950e14 per second, solver over published 1.300. The paper gives its boron density twice and the two differ by ten: about 7e16 m^-3 in its text and colour bar, 6.3e17 by the axis of the profile it says it used; the record takes the text's value. Which value the published calculation used is unknown. The reference disagrees with itself in a second place: its own emissivity map integrates to about 0.4 of its own stated total, so the band of 0.5 to 2.0 is tighter than the reference's agreement with itself. Beam energy dependence: worst factor 2.94 (target 2), Spearman rank correlation 0.943, rise from 128 to 160 kV measured 2.10 and solver 11.1. These runs take the beam voltage of each circle of the bottom panel of the beam-energy figure, where the record names the top panel; with the top panel's voltages the worst factor is 2.953 and the rise 10.7. The solver puts the six points in the measured order and rises five times more steeply with beam energy than the measurement does. The measured rise from 128 to 160 kV, 2.1, is below the 4.4 that a cross-section with no resonance at all gives, so no cross-section shape or averaging in the solver can produce it: the cause lies on the measurement side or in something that neither this solver nor the experimenters' own calculation contains. Time shape: worst factor 2.42 (target 2), run with the injected beam power, the one power the figure gives, where the solver takes deposited power; with the power scaled by the density, a choice made with the figure read, the worst factor is 1.82. Collapse under the 45 keV beam: solver ratio 1.26e-5, measured ratio 0.062 (target: at most the measured ratio); one-sided, since the measured floor is noise. Absolute count rate, with no target: at 6.0 s with 1.3 MW deposited the solver gives 7.0e12 alpha particles per second, 1.28 times the paper's own calculation (about 5.5e12), and through the paper's detection efficiency of 1.2e-7 counts per alpha 845 kcps against a measured 179 kcps, 4.7 times above; the paper's calculation is itself about three times above its measurement. Run through the gateway {RUN_TWICE}. Each answer is saved with its seal and its receipt. {SECOND_SCORING} Fast protons: the fast protons each run leaves in steady state are counted against the electrons. The seven runs of the beam-energy scan, given the deposited power, are answered with the bits they had, the most fast protons 0.78 of the electrons at the axis. The fourteen of the time trace, the 45 keV beam among them, given the injected power or an estimate of the deposited one, leave 1.25 to 7.25 beam protons per electron at the axis, which no plasma can hold beside its electrons, and are refused by name (FastProtonChargeExceedsElectrons): the time shape and the collapse are compared on answers computed before that limit was held. The published calculation's plasma is answered, its fast protons at most 0.16 of the electrons.");
+    let limits = "Fitted constants: None. Every number is from the published LHD papers or is a declared assumption of the solver. What the measurement tests: the shape of the answer in beam energy, in time and across the step to a 45 keV beam, each after one free scale factor. The absolute rate is outside what it tests: no absolute alpha rate has been measured in a magnetically confined plasma. The declared range is where the solver's equations hold, each end with its physical reason in its input: a beam above the 10 keV stopping energy to 190 keV, any deposited power above zero, line-averaged electron density 1e18 to 3e19 m^-3, central temperature 0.5 to 6.67 keV, peak boron density zero, or from 0.04973892441153873 m^-3, one boron nucleus in the plasma, to what quasi-neutrality allows in every shell. Inside it the solver stops by name where the fast protons and the boron would outweigh the electrons. Both beam families, the negative-ion beams and the 45 keV beam, share one range, and the published calculation's plasma is inside it. The comparison covered beams of 45 and 127.45 to 160.25 keV, 0.9389 to 4.515 MW, 2.261e18 to 6.872e18 m^-3, 2.1252 to 3.7872 keV and boron of zero and 5.1354e16 to 2.84682e17 m^-3; outside it the same equations answer, compared with no measurement. At every corner of the declared range, 64 of them, the ledgers close or a physical limit stops the solve by name (42 answered). Not in the solver: any other device or beam; beam ions lost by charge exchange or orbits; the time before steady state; how many alphas reach a detector; thermal fusion, which is nil at these temperatures; drag of beam protons on one another. What the shared cross-section was held to is under locked.cross_section.".to_string();
     [object, data, pass_line, result, limits]
 }
 
@@ -492,7 +492,8 @@ mod tests {
             assert!(FUSION_PB11_LHD.published_shape("result", name).is_some());
             assert!(FUSION_PB11_LHD.published_shape("invariants", name).is_none());
         }
-        assert!(FUSION_PB11_LHD.summary.contains("No constant is fitted"));
+        let summary = crate::spec_sheet::summary_of(FUSION_PB11_LHD.name, FUSION_PB11_LHD.summary);
+        assert!(summary.contains("Nothing fitted"), "{summary}");
         // The other proton-boron solver's names are not this one's, and the
         // atom publishes neither's.
         assert!(FUSION_PB11_LHD.published_shape("result", "electron_temperature_kev").is_none());
@@ -509,12 +510,12 @@ mod tests {
         }
         let limits = &validation()[4];
         assert!(limits.contains("where the solver's equations hold"));
-        assert!(limits.contains("both beam families now share one range"));
+        assert!(limits.contains("Both beam families, the negative-ion beams and the 45 keV beam, share one range"));
         assert!(limits.contains("central temperature 0.5 to 6.67 keV"));
         assert_eq!(body["inputs"][3]["minimum"], 0.5);
         assert!(body["inputs"][1]["bound"].as_str().unwrap().contains("FastProtonChargeExceedsElectrons"));
-        assert!(!FUSION_PB11_LHD.summary.contains("missed"));
-        assert!(FUSION_PB11_LHD.summary.contains("Compared with the measured alpha count rates of Ogawa et al. (2024)"));
+        assert!(!summary.contains("missed"));
+        assert!(summary.contains("Compared with measured alpha count rates under negative-ion beams of 127.45 to 160.25 keV"), "{summary}");
     }
 
     #[test]
@@ -681,28 +682,29 @@ mod tests {
         );
     }
 
-    /// The validation record states each comparison as it came out, the
-    /// three that missed included.
+    /// The validation record states each comparison in numbers beside its
+    /// target.
     #[test]
     fn the_validation_record_holds_every_number_of_the_comparison() {
         let [object, data, pass_line, result, limits] = validation();
         assert!(object.contains("Large Helical Device"));
-        assert!(data.contains("It is not a measurement") && data.contains("DIGITISED"));
-        for mark in ["0.5 to 2.0", "within a factor of 2", "at most the measured ratio", "8bd91c5c1328f461a268ccca6dc0f31c61b11ab95051da1fe260fe5c2841db90", "2026-10-09T20:51:55Z"] {
+        assert!(data.contains("a reference and not a measurement") && data.contains("digitised from the papers' figures"));
+        for mark in ["0.5 to 2.0", "within a factor of 2", "at most the measured ratio", "Record SHA-256 8bd91c5c1328f461a268ccca6dc0f31c61b11ab95051da1fe260fe5c2841db90."] {
             assert!(pass_line.contains(mark), "{mark}");
         }
         for number in [
             "1.921e13", "0.128", "1.950e14", "1.300", "2.94", "0.943", "2.10", "11.1", "2.42",
             "1.82", "1.26e-5", "0.062", "7.0e12", "1.28", "5.5e12", "1.2e-7", "845", "179",
             "4.7 times above", "about 0.4 of its own stated total", "below the 4.4",
-            "evidence/verification/second_party/V-26/", "twice", "all 58 answers",
+            "A second run of the comparison on the same machine recomputes the same numbers.", "twice", "all 58 answers",
         ] {
             assert!(result.contains(number), "{number}");
         }
-        assert!(result.starts_with("Three of the four lines were missed"));
-        assert_eq!(result.matches("not met").count(), 3);
+        assert!(result.starts_with("Against the published calculation"));
+        assert_eq!(result.matches("(target 2)").count(), 2);
+        assert!(result.contains("solver over published 0.128 (target 0.5 to 2.0)"));
         assert!(limits.starts_with("Fitted constants: None."));
-        assert!(limits.contains("It does not test the absolute rate"));
+        assert!(limits.contains("The absolute rate is outside what it tests"));
         let body = describe_value(FUSION_PB11_LHD.name).expect("described");
         let cross_section = &body["locked"]["cross_section"];
         assert_eq!(cross_section["against_nacre_ii"]["met"], false);

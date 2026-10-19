@@ -102,7 +102,7 @@ pub const ORIFICE_AIR_CHAMBER: Solver = Solver {
     solve,
 };
 
-const SUMMARY: &str = "A rigid 100 cm^3 chamber of air charged or vented through the company's own pneumatic valve, in the ISO 6358-1:2013 form (sonic conductance 1.0e-8 m^3/(s Pa), critical pressure ratio 0.30, subsonic index 0.5), with heat exchanged with the wall at 293.15 K: pressure, temperature and mass flow over time, choked and subsonic flow as regimes, the chamber reaching the reservoir's pressure in a finite time; mass and energy ledgers closed at every step and the entropy generated, the valve's throttling either way among it, never falling; stops by name at the valve's rating and where slip flow begins at the valve's throat.";
+const SUMMARY: &str = "Company specimen: a rigid 100 cm^3 chamber of air charged or vented through a pneumatic valve in the ISO 6358-1:2013 form (sonic conductance 1.0e-8 m^3/(s Pa), critical pressure ratio 0.30, subsonic index 0.5), with heat exchanged with the wall at 293.15 K: pressure, temperature and mass flow over time, choked and subsonic flow as regimes, the chamber reaching the reservoir's pressure in a finite time; mass and energy ledgers closed at every step and the entropy generated, the valve's throttling either way among it, never falling; stops by name at the valve's rating and where slip flow begins at the valve's throat.";
 
 const REFUSALS: &[Refusal] = &[
     Refusal { name: "InputNotFinite", meaning: "An input was NaN or infinite.", sealed: false },
@@ -139,7 +139,7 @@ fn field_words() -> String {
 fn sections() -> Sections {
     Sections {
         locked: json!({
-            "specimen": "The company's own specimen: a pneumatic valve of sonic conductance 1.0e-8 m^3/(s Pa) (1.0 dm^3/(s bar)), critical pressure ratio 0.30 and subsonic index 0.5, the same either way, rated to 1.0 MPa over the atmosphere, between a reservoir of air at 293.15 K and a rigid chamber of 100 cm^3, a cylinder as long as it is wide (50.31 mm), its 0.01193 m^2 of wall held at 293.15 K with a film coefficient of 30 W/(m^2 K).",
+            "specimen": "Company specimen: a pneumatic valve of sonic conductance 1.0e-8 m^3/(s Pa) (1.0 dm^3/(s bar)), critical pressure ratio 0.30 and subsonic index 0.5, the same either way, rated to 1.0 MPa over the atmosphere, between a reservoir of air at 293.15 K and a rigid chamber of 100 cm^3, a cylinder as long as it is wide (50.31 mm), its 0.01193 m^2 of wall held at 293.15 K with a film coefficient of 30 W/(m^2 K).",
             "sonic_conductance_m3_s_pa": chamber::SONIC_CONDUCTANCE_M3_S_PA,
             "critical_pressure_ratio": chamber::CRITICAL_PRESSURE_RATIO,
             "subsonic_index": chamber::SUBSONIC_INDEX,
@@ -185,7 +185,7 @@ fn sections() -> Sections {
             },
         ]),
         convergence: json!({
-            "rule": "A run is a march of 20 us steps, the last one what is left, so that the run ends at the asked time. Near equal pressures the subsonic flow falls as the square root of the difference and its slope has no bound, so the chamber reaches the reservoir's pressure in a finite time and its own rate (how fast its pressure answers a change of itself) outruns any fixed step: where that rate times the step passes 0.2 the step is cut into substeps of Runge-Kutta, and where it passes 1 over the time left, or past sixteen substeps, the rest of the step is one backward-Euler step, the flow and the heat taken at its end, its root found in the square root of the pressure difference to the reservoir. It cannot carry the chamber past the reservoir's pressure: every step's pressure lies between the two pressures given, to the rounding of the pressure moved.",
+            "rule": "A run is a march of 20 us steps, the last one what is left, so that the run ends at the asked time. Near equal pressures the subsonic flow falls as the square root of the difference and its slope has no bound, so the chamber reaches the reservoir's pressure in a finite time and its own rate (how fast its pressure answers a change of itself) outruns any fixed step: where that rate times the step exceeds 0.2 the step is cut into substeps of Runge-Kutta, and where it exceeds 1 over the time left, or past sixteen substeps, the rest of the step is one backward-Euler step, the flow and the heat taken at its end, its root found in the square root of the pressure difference to the reservoir. It cannot carry the chamber past the reservoir's pressure: every step's pressure lies between the two pressures given, to the rounding of the pressure moved.",
             "refusal": "StepNotSettled",
             "run_time": "About 0.25 s for a run of 20 s with its histories returned, on one core of an Apple M4 Pro.",
         }),
@@ -195,18 +195,18 @@ fn sections() -> Sections {
             "retrieved": chamber::REFERENCE_RETRIEVED,
             "test": "the_first_law_of_a_fast_charge",
             "covers": "The test holds the charge to the first law's closed form, T = gamma T_r p/(p - p0 + gamma p0) with no heat, from below: 381.5 K against 384.9 K after 60 ms. The source, charging and venting a tank through two proportional pressure regulators, measured the ISO form's two constants to move with the supply pressure: on the VPPM-6L-L-1-G18-0L10H from C = 0.90e-8 m^3/(s Pa) and b = 0.56 at 200 kPa to C = 1.55e-8 to 1.65e-8 and b = 0.36 to 0.46 from 400 to 800 kPa. A valve whose constants move like that is not this valve: this specimen's are one pair.",
-            "kind": "Measurements of other valves, stated as a limit of the form; and the first law's closed form for a charge. Record: evidence/research/hydraulics_robotics/.",
+            "kind": "Measurements of other valves, stated as a limit of the form; and the first law's closed form for a charge.",
         }),
     }
 }
 
 fn validation() -> [String; 5] {
     [
-        "The company's own specimen: a pneumatic valve in the ISO 6358 form, sonic conductance 1.0e-8 m^3/(s Pa) and critical pressure ratio 0.30, charging or venting a rigid 100 cm^3 chamber of air.".to_string(),
-        "The company's own specimen, its constants declared in its description; its comparison with measurement comes later. The form's two constants were measured to move with the supply pressure on two proportional regulators (Varga and Keski-Honkola 2012); that is under reference.".to_string(),
+        "Company specimen: a pneumatic valve in the ISO 6358 form, sonic conductance 1.0e-8 m^3/(s Pa) and critical pressure ratio 0.30, charging or venting a rigid 100 cm^3 chamber of air.".to_string(),
+        "Company specimen, every constant declared in its description. The form's two constants were measured to move with the supply pressure on two proportional regulators; reference gives those numbers.".to_string(),
         "The ledgers stated under invariants: the chamber's mass and energy closed at every step, and the entropy generated never falling.".to_string(),
         crate::descriptor::OWN_SPECIMEN_SOLVER_RESULT.to_string(),
-        "The valve's constants are the company's, declared in its description, and are one pair at every pressure and in both directions. The chamber's air has one pressure and one temperature, and its heat goes to the wall through one film coefficient. No pipe lies between the valve and the chamber, and the valve is open from the start. A proof shows that an answer was not changed, not that the model matches a valve.".to_string(),
+        "The valve's constants are the company's, declared in its description, and are one pair at every pressure and in both directions. The chamber's air has one pressure and one temperature, and its heat goes to the wall through one film coefficient. No pipe lies between the valve and the chamber, and the valve is open from the start. A proof confirms an answer is unchanged; this valve is a company specimen, with no measurement of its own.".to_string(),
     ]
 }
 

@@ -1,0 +1,23 @@
+{
+ "model": "reactor_spert3_ccore_twin",
+ "verdict": "calibrated to the record",
+ "calibration": {
+  "companion_to": "reactor_spert3_ccore",
+  "protocol": {
+   "path": "evidence/research/reactor_spert3_ccore/twin/CALIBRATION.md",
+   "sha256": "51e7fbb15d4fbfd8428f8af0bc043555404fb9c4b0f37edc4abc1979b69284f8"
+  },
+  "scored": {
+   "utc": "2026-10-18T19:50:27Z",
+   "output": {
+    "path": "evidence/research/reactor_spert3_ccore/twin/accuracy.json",
+    "sha256": "c11cc41699acbd81c3e76d6070fd002db2a791fce895cfeb08a083b0726a30ec"
+   },
+   "program": {
+    "path": "evidence/research/reactor_spert3_ccore/twin/analysis.py",
+    "sha256": "4f61c53643e06bd28851dd1a6f0be5d4835963108b441168b3c167d10be00531"
+   }
+  },
+  "not_blind": "Every one of the 126 transients of IDO-16918's appendix, and reactor_spert3_ccore's comparison with 39 of them on 2026-10-11, was open before the structure (boiling, film, void and feedback node) was chosen and its eight constants fitted on all 111 usable transients."
+ }
+}

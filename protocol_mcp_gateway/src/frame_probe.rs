@@ -154,7 +154,7 @@ async fn the_published_layout_reads_the_frames_of_a_real_run_on_every_card() {
             assert!(label.starts_with(TIME_LABEL_SENTENCE), "{}", card.card);
         }
     }
-    assert_eq!(checked, 74);
+    assert_eq!(checked, 80);
 }
 
 /// Ten steps of 0.1 s read 0.9999999999999999 s: the sentence is true.

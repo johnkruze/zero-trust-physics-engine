@@ -366,7 +366,7 @@ async fn the_described_example_runs_unchanged_and_converges() {
     assert_eq!(listed.status().as_u16(), 200);
     let listed: Value = serde_json::from_str(&listed.text().await.unwrap()).unwrap();
     let solvers = listed["solvers"].as_array().expect("solvers");
-    assert_eq!(solvers.len(), 24);
+    assert_eq!(solvers.len(), 25);
     assert_eq!(solvers[0]["solver"], "atom_dft");
     assert_eq!(solvers[1]["solver"], "ablator_slab");
     assert_eq!(solvers[3]["solver"], "propeller_apc_10x7e");
@@ -583,7 +583,7 @@ async fn the_summary_says_spin_unpolarized_and_non_relativistic() {
     let described: Value = serde_json::from_str(&text).unwrap();
     assert_eq!(
         described["summary"],
-        "Spin-unpolarized, non-relativistic local-density ground state of one spherical neutral atom, atomic number 1 through 18: total energy, its four parts, and each orbital eigenvalue. It reproduces the NIST spin-unpolarized LDA tables and is not the measured energy of the atom."
+        "Spin-unpolarized, non-relativistic local-density ground state of one spherical neutral atom: total energy, its four parts, and each orbital eigenvalue. Range: atomic number 1 through 18, every one held to the reference. Nothing fitted. Held to the NIST spin-unpolarized local-density tables within 1e-5 hartree, on the total energy, its four parts and every orbital eigenvalue of every atom. Gap: it is the local-density ground state, which carries the approximation's own difference from the measured energy of the atom; spin polarization and relativity are left out. Refuses an atomic number outside 1 to 18 (AtomicNumberOutOfRange)."
     );
     let kind = described["reference"]["kind"].as_str().unwrap();
     assert!(kind.contains("spin-unpolarized, non-relativistic"), "{kind}");

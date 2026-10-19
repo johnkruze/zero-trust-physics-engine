@@ -30,22 +30,22 @@
     "bibtex": "@misc{kruze2026zerotrustphysics,\n  author       = {Kruze, John},\n  title        = {Zero-Trust Physics: a verifier for the physical answers of Super Intelligence},\n  year         = {2026},\n  month        = oct,\n  version      = {1.0},\n  howpublished = {Preprint},\n  publisher    = {Zenodo},\n  organization = {Protocol Company},\n  doi          = {10.5281/zenodo.23305697},\n  url          = {https://doi.org/10.5281/zenodo.23305697},\n  note         = {Byline on the paper: John Kruze, with Super Intelligence}\n}"
   },
   "counts": {
-    "cards": 37,
-    "solvers": 24,
-    "models": 61
+    "cards": 40,
+    "solvers": 25,
+    "models": 65
   },
   "models": {
     "materials/ti64_lattice": {
       "kind": "card",
-      "real_thing": "An annealed Ti-6Al-4V lattice column under nodal force, torque, and temperature. A generic specimen, not a named real object.",
+      "real_thing": "An annealed Ti-6Al-4V lattice column under nodal force, torque, and temperature. A company specimen.",
       "sources": [],
-      "how_used": "No measured data: the card's constants are its own declared values and it was compared with no measurement. Cite the paper.",
+      "how_used": "No measured data: the card's constants are its own declared values. Cite the paper.",
       "not_held_to_a_measurement": true,
       "cite_also": "paper"
     },
     "energy/grid_node": {
       "kind": "card",
-      "real_thing": "A copper fuse link between an upstream voltage and a load current. A generic specimen, not a named real object.",
+      "real_thing": "A copper fuse link between an upstream voltage and a load current. A company specimen.",
       "sources": [
         {
           "role": "constants",
@@ -60,23 +60,23 @@
           "bibtex": "@techreport{iec61140_2016,\n  author      = {{International Electrotechnical Commission}},\n  title       = {Protection against electric shock - Common aspects for installation and equipment},\n  institution = {International Electrotechnical Commission},\n  type        = {International Standard},\n  number      = {IEC 61140:2016},\n  edition     = {4.0},\n  address     = {Geneva},\n  year        = {2016},\n  url         = {https://webstore.iec.ch/en/publication/23997}\n}"
         }
       ],
-      "how_used": "No measured data. One declared constant, the 120 V extra-low-voltage DC ceiling past which a frame is flagged, is named in the card's source as IEC 61140; every other constant is the card's own declared value. Compared with no measurement.",
+      "how_used": "No measured data. One declared constant, the 120 V extra-low-voltage DC ceiling past which a frame is flagged, is named in the card's source as IEC 61140; every other constant is the card's own declared value.",
       "not_held_to_a_measurement": true,
       "cite_also": "paper"
     },
     "energy/swing": {
       "kind": "card",
-      "real_thing": "A synchronous 60 Hz machine under mechanical power. A generic specimen, not a named real object.",
+      "real_thing": "A synchronous 60 Hz machine under mechanical power. A company specimen.",
       "sources": [],
-      "how_used": "No measured data: the card's constants are its own declared values and it was compared with no measurement. Cite the paper.",
+      "how_used": "No measured data: the card's constants are its own declared values. Cite the paper.",
       "not_held_to_a_measurement": true,
       "cite_also": "paper"
     },
     "energy/battery_sag": {
       "kind": "card",
-      "real_thing": "A 12S lithium-ion pack under a terminal current. A generic specimen, not a named real object.",
+      "real_thing": "A 12S lithium-ion pack under a terminal current. A company specimen.",
       "sources": [],
-      "how_used": "No measured data: the card's constants are its own declared values and it was compared with no measurement. Cite the paper.",
+      "how_used": "No measured data: the card's constants are its own declared values. Cite the paper.",
       "not_held_to_a_measurement": true,
       "cite_also": "paper"
     },
@@ -97,47 +97,47 @@
           "bibtex": "@misc{kollmeyer2018panasonic,\n  author = {Kollmeyer, Phillip},\n  title = {{Panasonic 18650PF Li-ion Battery Data}},\n  year = {2018},\n  publisher = {Mendeley Data},\n  version = {1},\n  doi = {10.17632/wykht8y7tg.1},\n  url = {https://doi.org/10.17632/wykht8y7tg.1},\n  note = {Dataset}\n}"
         }
       ],
-      "how_used": "The card's constants were taken from the dataset's low-rate and pulse tests; eleven 1C discharges were held back from that fitting and used for the comparison.",
+      "how_used": "The card's constants were fitted on the dataset's low-rate and pulse tests; it is compared with eleven 1C discharges outside the fit.",
       "not_held_to_a_measurement": false,
       "cite_also": "paper"
     },
     "energy/thermal": {
       "kind": "card",
-      "real_thing": "An avionics cold plate under heater power and a bath temperature. A generic specimen, not a named real object.",
+      "real_thing": "An avionics cold plate under heater power and a bath temperature. A company specimen.",
       "sources": [],
-      "how_used": "No measured data: the card's constants are its own declared values and it was compared with no measurement. Cite the paper.",
+      "how_used": "No measured data: the card's constants are its own declared values. Cite the paper.",
       "not_held_to_a_measurement": true,
       "cite_also": "paper"
     },
     "signal/resonance": {
       "kind": "card",
-      "real_thing": "A 10 Hz mount oscillator under an imposed acceleration. A generic specimen, not a named real object.",
+      "real_thing": "A 10 Hz mount oscillator under an imposed acceleration. A company specimen.",
       "sources": [],
-      "how_used": "No measured data: the card's constants are its own declared values and it was compared with no measurement. Cite the paper.",
+      "how_used": "No measured data: the card's constants are its own declared values. Cite the paper.",
       "not_held_to_a_measurement": true,
       "cite_also": "paper"
     },
     "signal/tesseract": {
       "kind": "card",
-      "real_thing": "A drive-mode Duffing resonator under acceleration, an external rate, and sensed velocity. A generic specimen, not a named real object.",
+      "real_thing": "A drive-mode Duffing resonator under acceleration, an external rate, and sensed velocity. A company specimen.",
       "sources": [],
-      "how_used": "No measured data: the card's constants are its own declared values and it was compared with no measurement. Cite the paper.",
+      "how_used": "No measured data: the card's constants are its own declared values. Cite the paper.",
       "not_held_to_a_measurement": true,
       "cite_also": "paper"
     },
     "materials/hydraulic_fluid": {
       "kind": "card",
-      "real_thing": "A mineral-oil column under a commanded flow. A generic specimen, not a named real object.",
+      "real_thing": "A mineral-oil column under a commanded flow. A company specimen.",
       "sources": [],
-      "how_used": "No measured data: the card's constants are its own declared values and it was compared with no measurement. Cite the paper.",
+      "how_used": "No measured data: the card's constants are its own declared values. Cite the paper.",
       "not_held_to_a_measurement": true,
       "cite_also": "paper"
     },
     "materials/cable_stretch": {
       "kind": "card",
-      "real_thing": "A Dyneema tendon under a commanded force. A generic specimen, not a named real object.",
+      "real_thing": "A Dyneema tendon under a commanded force. A company specimen.",
       "sources": [],
-      "how_used": "No measured data: the card's constants are its own declared values and it was compared with no measurement. Cite the paper.",
+      "how_used": "No measured data: the card's constants are its own declared values. Cite the paper.",
       "not_held_to_a_measurement": true,
       "cite_also": "paper"
     },
@@ -206,7 +206,7 @@
           "bibtex": "@article{browne2007a234,\n  author = {Browne, E. and Tuli, J. K.},\n  title = {{Nuclear Data Sheets for A = 234}},\n  journal = {Nuclear Data Sheets},\n  volume = {108},\n  number = {3},\n  pages = {681--772},\n  year = {2007},\n  doi = {10.1016/j.nds.2007.02.003}\n}"
         }
       ],
-      "how_used": "Three constants were fitted to the first 2,061 days of the dataset's Curiosity power readings; 1,279 later days (mission days 2,809 to 4,087) were held back for the comparison. The plutonium-238 half-life (Browne and Tuli, through NuDat 3) and the thermal power at landing (Woerner et al. 2013) are locked constants, not fitted.",
+      "how_used": "Three constants were fitted on the first 2,061 days of the dataset's Curiosity power readings, mission days 0 to 2,060; days 2,061 to 2,808 chose the card's structure; it is compared with the 1,279 later days, mission days 2,809 to 4,087, outside both. The plutonium-238 half-life (Browne and Tuli, through NuDat 3) and the thermal power at landing (Woerner et al. 2013) are locked constants, not fitted.",
       "not_held_to_a_measurement": false,
       "cite_also": "paper"
     },
@@ -404,7 +404,7 @@
           "bibtex": "@misc{ilrs_lageos_mission_pages,\n  author = {{International Laser Ranging Service (ILRS)}},\n  title = {{LAGEOS-1} and {LAGEOS-2} mission pages},\n  url = {https://ilrs.cddis.eosdis.nasa.gov/missions/satellite_missions/current_missions/lag1_general.html},\n  note = {Retrieved 2026-10-06}\n}"
         }
       ],
-      "how_used": "The card's forces are fixed from published constants (EGM2008 field, IERS Conventions 2010, Horizons data sheets, a Montenbruck and Gill Sun/Moon series, ILRS satellite data); none was computed from the orbit files. Of the ILRS weekly orbits, two LAGEOS-1 weeks were opened for the design; two LAGEOS-1 weeks and four LAGEOS-2 weeks were held back for the comparison.",
+      "how_used": "The card's forces are fixed from published constants (EGM2008 field, IERS Conventions 2010, Horizons data sheets, a Montenbruck and Gill Sun/Moon series, ILRS satellite data); none was computed from the orbit files. Of the ILRS weekly orbits, two LAGEOS-1 weeks chose the card's structure; it is compared with two more LAGEOS-1 weeks and four LAGEOS-2 weeks, outside that choice. Record SHA-256 52114d795811fc014b3114c4bec8726d33ca0771dc295c57253d914243498fed.",
       "not_held_to_a_measurement": false,
       "cite_also": "paper"
     },
@@ -437,7 +437,7 @@
           "bibtex": "@techreport{olson2013spert3,\n  author = {Olson, Arne P.},\n  title = {Neutronics Calculations for {SPERT-III}, {E}-core},\n  institution = {Argonne National Laboratory},\n  address = {Argonne, IL},\n  number = {ANL/GTRI/TM-13/10},\n  year = {2013},\n  doi = {10.2172/1087815},\n  url = {https://doi.org/10.2172/1087815},\n  note = {OSTI ID 1087815}\n}"
         }
       ],
-      "how_used": "Table III of IDO-17281: every third test in run order (10) was held back and sealed; the one fitted constant came from the other 20; the locked constants are the report's own. None of the report's measured values is stored in the card.",
+      "how_used": "Table III of IDO-17281: the one fitted constant is fitted on 20 tests; the card is compared with the other 10, every third test in run order, outside the fit; the locked constants are the report's own. None of the report's measured values is stored in the card.",
       "not_held_to_a_measurement": false,
       "cite_also": "paper"
     },
@@ -470,7 +470,7 @@
           "bibtex": "@inproceedings{kollmeyer2022blind,\n  author = {Kollmeyer, Phillip J. and Naguib, Mina and Khanum, Fauzia and Emadi, Ali},\n  title = {{A Blind Modeling Tool for Standardized Evaluation of Battery State of Charge Estimation Algorithms}},\n  booktitle = {2022 IEEE Transportation Electrification Conference \\& Expo (ITEC)},\n  year = {2022},\n  pages = {243--248},\n  publisher = {IEEE},\n  doi = {10.1109/ITEC53557.2022.9813996}\n}"
         }
       ],
-      "how_used": "The card's 2,307 fitted numbers were taken from 17 characterisation files of cell m80 (the slow discharges and the pulse test of each block); 18 tests were held back and opened for a forecast outside the engine, and 60 more (12 held-current discharges and 48 drive cycles) were held back until the engine's card was compared with them.",
+      "how_used": "The card's 2,307 fitted numbers were fitted on 17 characterisation files of cell m80 (the slow discharges and the pulse test of each block). Outside the fit, 18 tests were read for a forecast outside the engine, and the card is compared with 60 more (12 held-current discharges and 48 drive cycles).",
       "not_held_to_a_measurement": false,
       "cite_also": "paper"
     },
@@ -503,7 +503,7 @@
           "bibtex": "@article{lai2020fullfield,\n  author = {Lai, Zhilu and Alzugaray, Ignacio and Chli, Margarita and Chatzi, Eleni},\n  title = {{Full-field structural monitoring using event cameras and physics-informed sparse identification}},\n  journal = {Mechanical Systems and Signal Processing},\n  volume = {145},\n  pages = {106905},\n  year = {2020},\n  doi = {10.1016/j.ymssp.2020.106905}\n}"
         }
       ],
-      "how_used": "The card's six constants were fitted to one recording, test1a (0.863 s to 24 s); a second ring-down of the same strip, test1b, was held back: its first 12 s were opened for a forecast outside the engine and its next 12 s were held back from the fitting and the forecast and compared with the card once; their coarse envelope on Laser_1 had been printed by mistake on 2026-10-06, before the split was written, and no fit was made to it.",
+      "how_used": "The card's six constants were fitted on one recording, test1a (0.863 s to 24 s). A second ring-down of the same strip, test1b, is outside the fit: its first 12 s were used for a forecast outside the engine, and the card is compared with its next 12 s. The coarse envelope of those 12 s on Laser_1, its peak-to-peak value in each half second, was read before the split was written; nothing is fitted to it.",
       "not_held_to_a_measurement": false,
       "cite_also": "paper"
     },
@@ -536,7 +536,7 @@
           "bibtex": "@inproceedings{kollmeyer2022blind,\n  author = {Kollmeyer, Phillip J. and Naguib, Mina and Khanum, Fauzia and Emadi, Ali},\n  title = {{A Blind Modeling Tool for Standardized Evaluation of Battery State of Charge Estimation Algorithms}},\n  booktitle = {2022 IEEE Transportation Electrification Conference \\& Expo (ITEC)},\n  year = {2022},\n  pages = {243--248},\n  publisher = {IEEE},\n  doi = {10.1109/ITEC53557.2022.9813996}\n}"
         }
       ],
-      "how_used": "The rest-voltage curve and 22 numbers were fitted on every test of cell m80 from -10 to 40 degrees Celsius; for cells m1000 and m448-N one resistance scale was fitted on four characterisation tests of each cell at each temperature; 45 runs of m1000 and 60 runs of m448-N (held-current discharges and drive cycles) were held back unopened until the card was run on them.",
+      "how_used": "The rest-voltage curve and 22 numbers were fitted on every test of cell m80 from -10 to 40 degrees Celsius; for cells m1000 and m448-N one resistance scale was fitted on four characterisation tests of each cell at each temperature; the card is compared with 45 runs of m1000 and 60 runs of m448-N (held-current discharges and drive cycles), outside the fit.",
       "not_held_to_a_measurement": false,
       "cite_also": "paper"
     },
@@ -581,7 +581,7 @@
           "bibtex": "@article{avilacalderon2025management,\n  author = {{\\'A}vila Calder{\\'o}n, L. A. and Shakeel, Y. and Gedsun, A. and Forti, M. and Hunke, S. and Han, Y. and Hammerschmidt, T. and Aversa, R. and Olbricht, J. and Chmielowski, M. and Stotzka, R. and Bitzek, E. and Hickel, T. and Skrotzki, B.},\n  title = {{Management of reference data in materials science and engineering exemplified for creep data of a single-crystalline Ni-based superalloy}},\n  journal = {Acta Materialia},\n  volume = {286},\n  pages = {120735},\n  year = {2025},\n  doi = {10.1016/j.actamat.2025.120735}\n}"
         }
       ],
-      "how_used": "The card's six constants were fitted to six tests of the Zenodo record, two at each of 140, 170 and 230 MPa; six were held back and not read: all three at 200 MPa and one more test piece at each of the other three stresses.",
+      "how_used": "The card's six constants were fitted on six tests of the Zenodo record, two at each of 140, 170 and 230 MPa; it is compared with the six tests outside the fit: all three at 200 MPa and one more test piece at each of the other three stresses.",
       "not_held_to_a_measurement": false,
       "cite_also": "paper"
     },
@@ -686,7 +686,7 @@
           "bibtex": "@misc{mcd62,\n  author = {{LMD} and {OU} and {IAA} and {ESA} and {CNES}},\n  title = {Mars Climate Database v6.2},\n  howpublished = {Public web interface, Laboratoire de M{\\'e}t{\\'e}orologie Dynamique, Paris},\n  url = {https://www-mars.lmd.jussieu.fr/mcd_python/},\n  note = {Queried 2026-10-09}\n}"
         }
       ],
-      "how_used": "Air built from seven Mars Climate Sounder temperature profiles set on the lander's surface pressure (NTRS 20200003204); drag from the 2008 Phoenix aerodynamic database (Fig. 9a, digitised); no constant from the accelerometer. Of the flight record (PDS insight_edl), the first 150 s were opened to diagnose a first forecast and the last 59 s before the parachute were held back unread for the comparison.",
+      "how_used": "Air built from seven Mars Climate Sounder temperature profiles set on the lander's surface pressure (NTRS 20200003204); drag from the 2008 Phoenix aerodynamic database (Fig. 9a, digitised); no constant from the accelerometer. Of the flight record (PDS insight_edl), the first 150 s were read to diagnose a first forecast; the card is compared with the last 59 s before the parachute.",
       "not_held_to_a_measurement": false,
       "cite_also": "paper"
     },
@@ -731,13 +731,13 @@
           "bibtex": "@misc{nist_webbook_srd69,\n  author = {Linstrom, Peter},\n  title = {{NIST Chemistry WebBook, NIST Standard Reference Database 69}},\n  publisher = {National Institute of Standards and Technology},\n  year = {1997},\n  doi = {10.18434/T4D303},\n  url = {https://doi.org/10.18434/T4D303},\n  note = {Thermophysical Properties of Fluid Systems, water; retrieved 2026-10-09}\n}"
         }
       ],
-      "how_used": "Tables III and V of IDO-17281: four constants fitted on 28 tests (20 cold-startup, eight at 500 degF); 30 held back (ten cold-startup, seven at 500 degF, the whole 260 degF series of 13). Water density and heat capacity for the three bands from the NIST WebBook. None of the report's measured values is stored in the card.",
+      "how_used": "Tables III and V of IDO-17281: four constants fitted on 28 tests (20 cold-startup, eight at 500 degF); compared with the 30 outside the fit (ten cold-startup, seven at 500 degF, the whole 260 degF series of 13). Water density and heat capacity for the three bands from the NIST WebBook. None of the report's measured values is stored in the card.",
       "not_held_to_a_measurement": false,
       "cite_also": "paper"
     },
     "materials/grasp_lift_glass_4tu": {
       "kind": "card",
-      "real_thing": "A 0.2 kg glass-faced object, the company's own specimen, lifted from a table between two finger pads whose friction and tangential stiffness are those of the human index finger pads of the 4TU set on glass, TU Delft and Aix-Marseille Université",
+      "real_thing": "A 0.2 kg glass-faced object, a company specimen, lifted from a table between two finger pads whose friction and tangential stiffness are those of the human index finger pads of the 4TU set on glass, TU Delft and Aix-Marseille Université",
       "sources": [
         {
           "role": "measurements",
@@ -764,7 +764,7 @@
           "bibtex": "@article{willemet2022slippage,\n  author = {Willemet, Laurence and Huloux, Nicolas and Wiertlewski, Micha{\\\"e}l},\n  title = {Efficient tactile encoding of object slippage},\n  journal = {Scientific Reports},\n  volume = {12},\n  pages = {13192},\n  year = {2022},\n  doi = {10.1038/s41598-022-16938-1}\n}"
         }
       ],
-      "how_used": "The pads' Coulomb friction coefficient and tangential stiffness are fitted to the set's development trials on natural glass (S1 whole, S4 to S11 at levels 1, 2, 3, 5, 6 and 7); S2, S3 and S12 whole and level 4 of S4 to S11 were held back and scored through the engine: one of four pass lines met. The object, its mass and faces are the company's own.",
+      "how_used": "The pads' Coulomb friction coefficient and tangential stiffness are fitted on the set's development trials on natural glass (S1 whole, S4 to S11 at levels 1, 2, 3, 5, 6 and 7); the card is compared, through the engine, with S2, S3 and S12 whole and level 4 of S4 to S11, outside the fit. The object, its mass and faces are the company's own.",
       "not_held_to_a_measurement": false,
       "cite_also": "paper"
     },
@@ -881,13 +881,13 @@
           "bibtex": "@misc{bely2025genesis,\n  author = {Bely, Pierre Y. and others},\n  title = {Genesis of the {James Webb Space Telescope} architecture: the designers' story},\n  year = {2025},\n  eprint = {2501.09072},\n  archivePrefix = {arXiv}\n}"
         }
       ],
-      "how_used": "The card's four fitted numbers, the ridge's point from the centre of mass and the dihedral angle of the sunshield's two slopes, were fitted to the momentum changes over the hourly blocks of the UTC days 2023-05-12 to 2023-07-14; the days 2023-07-15 to 2023-08-14 were downloaded unread, fingerprinted with the protocol and held back for one comparison, and the days 2023-08-15 to 2023-09-14 the same way for a second. The sunshield's area, width and optical numbers, the layers' dihedral form and the Sun's irradiance are the published figures above, not fitted.",
+      "how_used": "The card's four fitted numbers, the ridge's point from the centre of mass and the dihedral angle of the sunshield's two slopes, were fitted on the momentum changes over the hourly blocks of the UTC days 2023-05-12 to 2023-07-14; the card is compared with the days 2023-07-15 to 2023-08-14 and, second, with the days 2023-08-15 to 2023-09-14, both outside the fit. The sunshield's area, width and optical numbers, the layers' dihedral form and the Sun's irradiance are the published figures above, not fitted.",
       "not_held_to_a_measurement": false,
       "cite_also": "paper"
     },
     "energy/generator_mmrtg_seebeck": {
       "kind": "card",
-      "real_thing": "The Multi-Mission Radioisotope Thermoelectric Generator, flight unit F1, on NASA's Curiosity rover: its daily-average electrical output on Mars since the landing of 6 August 2012, in the Seebeck matched-load form; the companion of generator_mmrtg_f1, the model of the same generator compared blind",
+      "real_thing": "The Multi-Mission Radioisotope Thermoelectric Generator, flight unit F1, on NASA's Curiosity rover: its daily-average electrical output on Mars since the landing of 6 August 2012, in the Seebeck matched-load form; the second form of the generator beside generator_mmrtg_f1",
       "sources": [
         {
           "role": "measurements",
@@ -950,7 +950,142 @@
           "bibtex": "@article{browne2007a234,\n  author = {Browne, E. and Tuli, J. K.},\n  title = {{Nuclear Data Sheets for A = 234}},\n  journal = {Nuclear Data Sheets},\n  volume = {108},\n  number = {3},\n  pages = {681--772},\n  year = {2007},\n  doi = {10.1016/j.nds.2007.02.003}\n}"
         }
       ],
-      "how_used": "Calibrated to the record, not a blind test: three constants were fitted to every day of the dataset's Curiosity power readings, mission days 0 to 4,087, after generator_mmrtg_f1 had been compared with days 2,809 to 4,087, so the comparison with those days is after the fact; generator_mmrtg_f1, compared blind, is served beside it, and the sources are generator_mmrtg_f1's. The forecast of the days after 4,087 was registered before any of their values was published as a number (a July 2025 NASA memorandum shows them only in a plot, and no value is read off a plot), for the dataset's next release. The plutonium-238 half-life (Browne and Tuli, through NuDat 3) and the thermal power at landing (Woerner et al. 2013) are locked constants, not fitted.",
+      "how_used": "Three constants were fitted on every day of the dataset's Curiosity power readings, mission days 0 to 4,087, all 4,088 in the fit, with generator_mmrtg_f1's comparison on days 2,809 to 4,087 read; generator_mmrtg_f1, fitted on days 0 to 2,060 and compared with days 2,809 to 4,087 outside its fit, is served beside it, and the sources are generator_mmrtg_f1's. Outside the fit: the days from 4,088 on, in the dataset's next release; a July 2025 NASA memorandum shows them in a plot and gives no number, and no value is read off a plot. Forecast committed before the data was opened, as 0afc18e0e7af9b4405b4ce5b16764226ee917774d72253a1590cc179e76d86d1. The plutonium-238 half-life (Browne and Tuli, through NuDat 3) and the thermal power at landing (Woerner et al. 2013) are locked constants, not fitted.",
+      "not_held_to_a_measurement": false,
+      "cite_also": "paper"
+    },
+    "energy/reactor_msre_pump": {
+      "kind": "card",
+      "real_thing": "The Molten-Salt Reactor Experiment at Oak Ridge National Laboratory at zero power with its U-235 fuel salt, 1965-66: the reactivity the control rods supply through fuel-pump start-up and coast-down",
+      "sources": [
+        {
+          "role": "measurements and constants",
+          "authors": "Prince, B. E.; Engel, J. R.; Ball, S. J.; Haubenreich, P. N.; Kerlin, T. W.",
+          "title": "Zero-Power Physics Experiments on the Molten-Salt Reactor Experiment",
+          "year": 1968,
+          "publisher_or_venue": "Oak Ridge National Laboratory, for the US Atomic Energy Commission",
+          "identifier": "ORNL-4233",
+          "url": null,
+          "requested_acknowledgment": null,
+          "citation_text": "Prince, B. E., Engel, J. R., Ball, S. J., Haubenreich, P. N. and Kerlin, T. W. Zero-Power Physics Experiments on the Molten-Salt Reactor Experiment. ORNL-4233, Oak Ridge National Laboratory, February 1968.",
+          "bibtex": "@techreport{prince1968ornl4233,\n  author = {Prince, B. E. and Engel, J. R. and Ball, S. J. and Haubenreich, P. N. and Kerlin, T. W.},\n  title = {Zero-Power Physics Experiments on the {Molten-Salt Reactor Experiment}},\n  institution = {Oak Ridge National Laboratory},\n  number = {ORNL-4233},\n  year = {1968}\n}"
+        },
+        {
+          "role": "constants",
+          "authors": "Prince, B. E.",
+          "title": "Period Measurements on the Molten Salt Reactor Experiment During Fuel Circulation: Theory and Experiment",
+          "year": 1966,
+          "publisher_or_venue": "Oak Ridge National Laboratory",
+          "identifier": "ORNL-TM-1626",
+          "url": null,
+          "requested_acknowledgment": null,
+          "citation_text": "Prince, B. E. Period Measurements on the Molten Salt Reactor Experiment During Fuel Circulation: Theory and Experiment. ORNL-TM-1626, Oak Ridge National Laboratory, October 1966.",
+          "bibtex": "@techreport{prince1966ornltm1626,\n  author = {Prince, B. E.},\n  title = {Period Measurements on the {Molten Salt Reactor Experiment} During Fuel Circulation: Theory and Experiment},\n  institution = {Oak Ridge National Laboratory},\n  number = {ORNL-TM-1626},\n  year = {1966}\n}"
+        }
+      ],
+      "how_used": "From ORNL-4233: the delayed-neutron constants (Table 2) and the vessel's elevations (Fig. 2) as locked constants; the measured steady circulation loss, 0.212 % dk/k (section 3.6), and the fuel-pump speed and rod position through the start-up and the coast-down (Figs. 22 to 24, digitised, with rod 1's worth from Fig. 5) as the record. From ORNL-TM-1626, Table 1: the residence times round the loop. Two constants fitted, the whole record read when the form was chosen: the flux shape's height on the steady loss and the fuel-flow lag on the 48 start-up readings; the 73 coast-down readings were left out of the fit. None of the measured values is stored in the card.",
+      "not_held_to_a_measurement": false,
+      "cite_also": "paper"
+    },
+    "energy/reactor_spert3_twin": {
+      "kind": "card",
+      "real_thing": "The SPERT III E-core, a small oxide-fuelled pressurized-water test reactor at the National Reactor Testing Station, Idaho: all 70 tabulated reactivity-insertion tests, cold startup at about 70 degrees Fahrenheit, hot startup at about 260 and 500 degrees Fahrenheit, hot standby from about 1 MW and operating power from 19 MW",
+      "sources": [
+        {
+          "role": "measurements",
+          "authors": "McCardell, R. K.; Herborn, D. I.; Houghtaling, J. E.",
+          "title": "Reactivity Accident Test Results and Analyses for the SPERT III E-Core: A Small, Oxide-Fueled, Pressurized-Water Reactor",
+          "year": 1969,
+          "publisher_or_venue": "Phillips Petroleum Co., Atomic Energy Division, Idaho Falls, Idaho, for the U.S. Atomic Energy Commission (contract AT(10-1)-205); distributed by the U.S. Department of Energy Office of Scientific and Technical Information",
+          "identifier": "IDO-17281; OSTI 4792676; 10.2172/4792676",
+          "url": "https://doi.org/10.2172/4792676",
+          "requested_acknowledgment": null,
+          "citation_text": "McCardell, R. K.; Herborn, D. I.; Houghtaling, J. E. (1969). Reactivity Accident Test Results and Analyses for the SPERT III E-Core: A Small, Oxide-Fueled, Pressurized-Water Reactor. Report IDO-17281, Phillips Petroleum Co., Atomic Energy Division, Idaho Falls, Idaho, for the U.S. Atomic Energy Commission, March 1969. OSTI 4792676. https://doi.org/10.2172/4792676",
+          "bibtex": "@techreport{mccardell1969spert3,\n  author = {McCardell, R. K. and Herborn, D. I. and Houghtaling, J. E.},\n  title = {Reactivity Accident Test Results and Analyses for the {SPERT III E-Core}: A Small, Oxide-Fueled, Pressurized-Water Reactor},\n  institution = {Phillips Petroleum Co., Atomic Energy Division, Idaho Falls, Idaho},\n  number = {IDO-17281},\n  year = {1969},\n  month = {mar},\n  doi = {10.2172/4792676},\n  url = {https://doi.org/10.2172/4792676},\n  note = {OSTI ID 4792676}\n}"
+        },
+        {
+          "role": "constants",
+          "authors": "Linstrom, Peter (as the DataCite record of the DOI gives the creator; the pages read name no author)",
+          "title": "NIST Chemistry WebBook, NIST Standard Reference Database 69 (Thermophysical Properties of Fluid Systems: water isobars at 0.0853 MPa and 10.44 MPa)",
+          "year": 1997,
+          "publisher_or_venue": "National Institute of Standards and Technology",
+          "identifier": "10.18434/T4D303",
+          "url": "https://doi.org/10.18434/T4D303",
+          "requested_acknowledgment": null,
+          "citation_text": "Linstrom, Peter (1997). NIST Chemistry WebBook, NIST Standard Reference Database 69. National Institute of Standards and Technology. https://doi.org/10.18434/T4D303 (Thermophysical Properties of Fluid Systems, water, retrieved 2026-10-09).",
+          "bibtex": "@misc{nist_webbook_srd69,\n  author = {Linstrom, Peter},\n  title = {{NIST Chemistry WebBook, NIST Standard Reference Database 69}},\n  publisher = {National Institute of Standards and Technology},\n  year = {1997},\n  doi = {10.18434/T4D303},\n  url = {https://doi.org/10.18434/T4D303},\n  note = {Thermophysical Properties of Fluid Systems, water; retrieved 2026-10-09}\n}"
+        },
+        {
+          "role": "constants",
+          "authors": "Fink, J. K.",
+          "title": "Thermophysical properties of uranium dioxide",
+          "year": 2000,
+          "publisher_or_venue": "Journal of Nuclear Materials 279 (1), 1-18",
+          "identifier": "10.1016/S0022-3115(99)00273-1",
+          "url": "https://doi.org/10.1016/S0022-3115(99)00273-1",
+          "requested_acknowledgment": null,
+          "citation_text": "Fink, J. K. (2000). Thermophysical properties of uranium dioxide. Journal of Nuclear Materials 279 (1), 1-18. https://doi.org/10.1016/S0022-3115(99)00273-1",
+          "bibtex": "@article{fink2000uo2,\n  author = {Fink, J. K.},\n  title = {Thermophysical properties of uranium dioxide},\n  journal = {Journal of Nuclear Materials},\n  volume = {279},\n  number = {1},\n  pages = {1--18},\n  year = {2000},\n  doi = {10.1016/S0022-3115(99)00273-1}\n}"
+        },
+        {
+          "role": "constants",
+          "authors": "Wagner, W.; Cooper, J. R.; Dittmann, A.; Kijima, J.; Kretzschmar, H.-J.; Kruse, A.; Mares, R.; Oguchi, K.; Sato, H.; Stöcker, I.; Sifner, O.; Takaishi, Y.; Tanishita, I.; Trübenbach, J.; Willkommen, Th.",
+          "title": "The IAPWS Industrial Formulation 1997 for the Thermodynamic Properties of Water and Steam",
+          "year": 2000,
+          "publisher_or_venue": "Journal of Engineering for Gas Turbines and Power 122 (1), 150-182",
+          "identifier": "10.1115/1.483186",
+          "url": "https://doi.org/10.1115/1.483186",
+          "requested_acknowledgment": null,
+          "citation_text": "Wagner, W. et al. (2000). The IAPWS Industrial Formulation 1997 for the Thermodynamic Properties of Water and Steam. Journal of Engineering for Gas Turbines and Power 122 (1), 150-182. https://doi.org/10.1115/1.483186",
+          "bibtex": "@article{wagner2000if97,\n  author = {Wagner, W. and others},\n  title = {The {IAPWS} Industrial Formulation 1997 for the Thermodynamic Properties of Water and Steam},\n  journal = {Journal of Engineering for Gas Turbines and Power},\n  volume = {122},\n  number = {1},\n  pages = {150--182},\n  year = {2000},\n  doi = {10.1115/1.483186}\n}"
+        }
+      ],
+      "how_used": "The digital twin of the core: fitted on all 70 tests of IDO-17281 Tables III, V and VII, twelve constants, and compared with each test left out of the fit. The report's design data (Appendix A), kinetics, gap, heat-source and rod data (Appendix B, Table II) and rod worth curves (Fig. B-4) set its structure; UO2 heat capacity and conductivity are Fink's, the saturation temperature IAPWS-IF97's, and the water's properties polynomials fitted to the NIST WebBook isobar at 10.44 MPa. reactor_spert3_fuel, the earlier card of the same core, is served beside it.",
+      "not_held_to_a_measurement": false,
+      "cite_also": "paper"
+    },
+    "energy/reactor_spert3_ccore_twin": {
+      "kind": "card",
+      "real_thing": "The SPERT III reactor with the C-19/52 highly enriched plate core, National Reactor Testing Station, Idaho: room-temperature step power excursions under pressure and flow, reported 1964",
+      "sources": [
+        {
+          "role": "measurements",
+          "authors": "Toole, C. R.",
+          "title": "The Effects of Pressure and Flow on Room Temperature Power Excursions in Spert III",
+          "year": 1964,
+          "publisher_or_venue": "Phillips Petroleum Co., Atomic Energy Division, Idaho Falls, Idaho, for the U.S. Atomic Energy Commission (contract AT(10-1)-205); distributed by the U.S. Department of Energy Office of Scientific and Technical Information",
+          "identifier": "IDO-16918; OSTI 4042264; 10.2172/4042264",
+          "url": "https://doi.org/10.2172/4042264",
+          "requested_acknowledgment": null,
+          "citation_text": "Toole, C. R. (1964). The Effects of Pressure and Flow on Room Temperature Power Excursions in Spert III. Report IDO-16918, Phillips Petroleum Co., Atomic Energy Division, Idaho Falls, Idaho, for the U.S. Atomic Energy Commission, June 1964. OSTI 4042264. https://doi.org/10.2172/4042264",
+          "bibtex": "@techreport{toole1964spert3,\n  author = {Toole, C. R.},\n  title = {The Effects of Pressure and Flow on Room Temperature Power Excursions in {Spert III}},\n  institution = {Phillips Petroleum Co., Atomic Energy Division, Idaho Falls, Idaho},\n  number = {IDO-16918},\n  year = {1964},\n  month = {jun},\n  doi = {10.2172/4042264},\n  url = {https://doi.org/10.2172/4042264},\n  note = {OSTI ID 4042264}\n}"
+        },
+        {
+          "role": "design data",
+          "authors": "Condit, C. M.; Scott, J. F.; Johnson, R. L.",
+          "title": "The Effects of Coolant Temperature and Initial Power Level on the Excursion Behavior of a Highly Enriched Plate Core in Spert III: Experiment and Analysis",
+          "year": 1967,
+          "publisher_or_venue": "Phillips Petroleum Co., Atomic Energy Division, Idaho Falls, Idaho, for the U.S. Atomic Energy Commission (contract AT(10-1)-205); distributed by the U.S. Department of Energy Office of Scientific and Technical Information",
+          "identifier": "IDO-17138; OSTI 4389198; 10.2172/4389198",
+          "url": "https://doi.org/10.2172/4389198",
+          "requested_acknowledgment": null,
+          "citation_text": "Condit, C. M.; Scott, J. F.; Johnson, R. L. (1967). The Effects of Coolant Temperature and Initial Power Level on the Excursion Behavior of a Highly Enriched Plate Core in Spert III: Experiment and Analysis. Report IDO-17138, Phillips Petroleum Co., Atomic Energy Division, Idaho Falls, Idaho, for the U.S. Atomic Energy Commission. OSTI 4389198. https://doi.org/10.2172/4389198",
+          "bibtex": "@techreport{condit1967spert3,\n  author = {Condit, C. M. and Scott, J. F. and Johnson, R. L.},\n  title = {The Effects of Coolant Temperature and Initial Power Level on the Excursion Behavior of a Highly Enriched Plate Core in {Spert III}: Experiment and Analysis},\n  institution = {Phillips Petroleum Co., Atomic Energy Division, Idaho Falls, Idaho},\n  number = {IDO-17138},\n  year = {1967},\n  doi = {10.2172/4389198},\n  url = {https://doi.org/10.2172/4389198},\n  note = {OSTI ID 4389198}\n}"
+        },
+        {
+          "role": "constants",
+          "authors": "Keepin, G. R.",
+          "title": "Physics of Nuclear Kinetics",
+          "year": 1965,
+          "publisher_or_venue": "book; publisher not recorded",
+          "identifier": null,
+          "url": null,
+          "requested_acknowledgment": null,
+          "citation_text": "Keepin, G. R. (1965). Physics of Nuclear Kinetics.",
+          "bibtex": "@book{keepin1965kinetics,\n  author = {Keepin, G. R.},\n  title = {Physics of Nuclear Kinetics},\n  year = {1965},\n  note = {Publisher not confirmed from the evidence record}\n}"
+        }
+      ],
+      "how_used": "IDO-16918's appendix: the 111 usable step transients the card's eight constants are fitted on and compared with (peak power, energy to peak, plate temperature at peak and at its maximum), the same record reactor_spert3_ccore, served beside it, is compared with. IDO-17138 Table B-1 and IDO-16918 Table I: the core constants, the isothermal and void coefficients. Keepin: the delayed-neutron groups.",
       "not_held_to_a_measurement": false,
       "cite_also": "paper"
     },
@@ -1043,7 +1178,7 @@
           "bibtex": "@misc{jaxa2020arakawasummary,\n  author = {{JAXA Hayabusa2 Project}},\n  title = {Summary of {Arakawa} et al. (2020), An artificial impact on the asteroid 162173 {Ryugu} formed a crater in the gravity-dominated regime},\n  year = {2020},\n  month = mar,\n  howpublished = {Japan Aerospace Exploration Agency, Hayabusa2 Project website},\n  url = {https://www.hayabusa2.jaxa.jp/en/topics/20200320_science/}\n}"
         }
       ],
-      "how_used": "The law of crater size and its two constants are from Schmidt's thirteen centrifuge craters in Ottawa sand; the clock from seven points of Gault and Wedekind's Fig. 4; projectile and target from JAXA's pre-impact briefing; Ryugu's properties from the JPL Small-Body Database (Watanabe et al. 2019). Held back, and no part of any constant: the measured crater of Arakawa et al. (2020), as given in JAXA's summary.",
+      "how_used": "The law of crater size and its two constants are from Schmidt's thirteen centrifuge craters in Ottawa sand; the clock from seven points of Gault and Wedekind's Fig. 4; projectile and target from JAXA's pre-impact briefing; Ryugu's properties from the JPL Small-Body Database (Watanabe et al. 2019). Compared with, and no part of any constant: the measured crater of Arakawa et al. (2020), as given in JAXA's summary.",
       "not_held_to_a_measurement": false,
       "cite_also": "paper"
     },
@@ -1124,7 +1259,7 @@
           "bibtex": "@misc{stsci_set_telescope_pointing,\n  author = {{Space Telescope Science Institute}},\n  title = {{JWST} calibration pipeline: set\\_telescope\\_pointing.py},\n  url = {https://github.com/spacetelescope/jwst/blob/main/jwst/lib/set_telescope_pointing.py},\n  note = {calc\\_eci2j\\_matrix; read 2026-10-14}\n}"
         }
       ],
-      "how_used": "The card's three fitted numbers, the centre of pressure in the J-frame, were fitted to the momentum changes over the hourly blocks of the UTC days 2023-05-12 to 2023-06-14; the days 2023-06-15 to 2023-07-14 were held back for the comparison, and the days 2023-07-15 to 2023-09-14, downloaded unread and fingerprinted, were scored blind after it. The sunshield's area, its optical numbers and the Sun's irradiance are the published figures above, not fitted.",
+      "how_used": "The card's three fitted numbers, the centre of pressure in the J-frame, were fitted on the momentum changes over the hourly blocks of the UTC days 2023-05-12 to 2023-06-14; the card is compared with the days 2023-06-15 to 2023-07-14 and, second, with the days 2023-07-15 to 2023-09-14, both outside the fit. The sunshield's area, its optical numbers and the Sun's irradiance are the published figures above, not fitted.",
       "not_held_to_a_measurement": false,
       "cite_also": "paper"
     },
@@ -1169,7 +1304,7 @@
           "bibtex": "@techreport{itur2005p838,\n  author = {{International Telecommunication Union}},\n  title = {Recommendation {ITU-R} {P.838-3}: Specific attenuation model for rain for use in prediction methods},\n  institution = {International Telecommunication Union, Radiocommunication Sector},\n  address = {Geneva},\n  number = {ITU-R P.838-3},\n  year = {2005},\n  url = {https://www.itu.int/rec/R-REC-P.838-3-200503-I/en}\n}"
         }
       ],
-      "how_used": "Sent and received level every 10 s and the Barlastplatsen gauge every minute; three wet-antenna constants fitted on the 18 rain events of June and July 2015, every reading of August 2015 held back; the rain term is ITU-R P.838-3 with nothing fitted.",
+      "how_used": "Sent and received level every 10 s and the Barlastplatsen gauge every minute; three wet-antenna constants fitted on the 18 rain events of June and July 2015; compared with every reading of August 2015, outside the fit; the rain term is ITU-R P.838-3 with nothing fitted.",
       "not_held_to_a_measurement": false,
       "cite_also": "paper"
     },
@@ -1214,7 +1349,7 @@
           "bibtex": "@misc{elexon2026fuelinst,\n  author = {{Elexon Limited}},\n  title = {Generation by fuel type, {BMRS} dataset {FUELINST}},\n  year = {2026},\n  howpublished = {Elexon Balancing Mechanism Reporting Service, Insights API},\n  url = {https://data.elexon.co.uk/bmrs/api/v1/datasets/FUELINST},\n  note = {Retrieved 2026-10-09. Contains BMRS data \\copyright{} Elexon Limited copyright and database right 2026}\n}"
         }
       ],
-      "how_used": "Trips found by a written rule in 114 months of one-second frequency; loss size from FUELINST interconnector flow before and after; inertia from the half-hourly series. Three constants fitted on 28 trips; every third trip in time order, 13 of 41, held back.",
+      "how_used": "Trips found by a written rule in 114 months of one-second frequency; loss size from FUELINST interconnector flow before and after; inertia from the half-hourly series. Three constants fitted on 28 trips; compared with every third trip in time order, 13 of 41, outside the fit.",
       "not_held_to_a_measurement": false,
       "cite_also": "paper"
     },
@@ -1319,7 +1454,7 @@
           "bibtex": "@misc{iers_finals2000a_2026,\n  author = {{IERS Rapid Service/Prediction Centre, U.S. Naval Observatory}},\n  title = {{IERS} Earth orientation parameters (finals2000A.all)},\n  year = {2026},\n  url = {https://datacenter.iers.org/data/9/finals2000A.all},\n  note = {Retrieved 2026-10-09}\n}"
         }
       ],
-      "how_used": "Nothing is fitted: constants are DE440's and the start state is DE441's through Horizons. The Mars Global Surveyor ranges of 1999 to 2006 were opened to choose the card's structure and set the pass lines; the Mars Odyssey, Mars Reconnaissance Orbiter, MESSENGER, Juno and Cassini ranges were held back for the comparison.",
+      "how_used": "Nothing is fitted: constants are DE440's and the start state is DE441's through Horizons. The Mars Global Surveyor ranges of 1999 to 2006 were read to choose the card's structure and its error targets; the card is compared with the Mars Odyssey, Mars Reconnaissance Orbiter, MESSENGER, Juno and Cassini ranges, outside that choice.",
       "not_held_to_a_measurement": false,
       "cite_also": "paper"
     },
@@ -1376,7 +1511,7 @@
           "bibtex": "@inproceedings{agliullin2019torquevectoring,\n  author = {Agliullin, Timur and Ivanov, Valentin and Ricciardi, Vincenzo and Acosta Reche, Manuel and Augsburg, Klaus and Sandu, Corina and Shyrokau, Barys and Savitski, Dzmitry},\n  title = {Torque Vectoring Control on Ice for Electric Vehicles with Individually Actuated Wheels},\n  year = {2019},\n  publisher = {Zenodo},\n  doi = {10.5281/zenodo.3515087},\n  url = {https://doi.org/10.5281/zenodo.3515087}\n}"
         }
       ],
-      "how_used": "252 runs in three archives; three constants fitted to 72 runs at 3.5 and 5 kN and 1.5 and 3.5 bar; held back: all 54 runs at 6.5 kN and all 36 runs at 2.5 bar; the 90 runs on a water film with a steered wheel left out.",
+      "how_used": "252 runs in three archives; three constants fitted on 72 runs at 3.5 and 5 kN and 1.5 and 3.5 bar; compared with, outside the fit, all 54 runs at 6.5 kN and all 36 runs at 2.5 bar; the 90 runs on a water film with a steered wheel left out.",
       "not_held_to_a_measurement": false,
       "cite_also": "paper"
     },
@@ -1409,7 +1544,7 @@
           "bibtex": "@misc{stsci_jwst_guidestar_products,\n  author = {{Space Telescope Science Institute}},\n  title = {{JWST} Science Calibration Pipeline documentation: Guide star data products},\n  url = {https://jwst-pipeline.readthedocs.io/en/latest/jwst/data_products/guidestar_products.html},\n  note = {Read 2026-10-09}\n}"
         }
       ],
-      "how_used": "The card's eighteen constants were fitted to the centroid packets of the 127 files of the 19 visits that started in April 2022; the 134 files of the 24 visits from 2022-05-02 to 2022-06-21 were held back for the comparison.",
+      "how_used": "The card's eighteen constants were fitted on the centroid packets of the 127 files of the 19 visits that started in April 2022; the card is compared with the 134 files of the 24 visits from 2022-05-02 to 2022-06-21, outside the fit.",
       "not_held_to_a_measurement": false,
       "cite_also": "paper"
     },
@@ -1538,7 +1673,7 @@
           "bibtex": "@article{troyon1984beta,\n  author = {Troyon and others},\n  journal = {Plasma Physics and Controlled Fusion},\n  volume = {26},\n  pages = {209},\n  year = {1984},\n  note = {Title and full author list not confirmed from the evidence record}\n}"
         }
       ],
-      "how_used": "Time traces of ten JET pulses from the 2008 public release of the profile database (TRANSP reconstructions, not raw signals): four constants fitted on eight pulses, pulses 42982 and 42976 held back. Loss power from the IPB98(y,2) scaling, D-T power from the Bosch-Hale reactivity.",
+      "how_used": "Time traces of ten JET pulses from the 2008 public release of the profile database (TRANSP reconstructions, not raw signals): four constants fitted on eight pulses; compared with pulses 42982 and 42976, outside the fit. Loss power from the IPB98(y,2) scaling, D-T power from the Bosch-Hale reactivity.",
       "not_held_to_a_measurement": false,
       "cite_also": "paper"
     },
@@ -1616,7 +1751,7 @@
           "bibtex": "@article{duboisdedunilac2023torsion,\n  author = {du Bois de Dunilac, Sophie and C{\\'o}rdova Bulens, David and Lef{\\`e}vre, Philippe and Redmond, Stephen J. and Delhaye, Benoit P.},\n  title = {Biomechanics of the finger pad in response to torsion},\n  journal = {Journal of the Royal Society Interface},\n  volume = {20},\n  number = {201},\n  pages = {20220809},\n  year = {2023},\n  doi = {10.1098/rsif.2022.0809}\n}"
         }
       ],
-      "how_used": "Per-frame video_out files of the Zenodo archive; eight constants fitted to 80 trials of P02 (0.5, 2, 5 N; 5 to 50 degrees a second); held back: P02's 30 trials at 1 N, 10 N and 100 degrees a second and fingers P03 to P07 whole; P01 was open and gave the form of the model.",
+      "how_used": "Per-frame video_out files of the Zenodo archive; eight constants fitted on 80 trials of P02 (0.5, 2, 5 N; 5 to 50 degrees a second); compared with, outside the fit, P02's 30 trials at 1 N, 10 N and 100 degrees a second and fingers P03 to P07 whole; P01 was read and gave the form of the model.",
       "not_held_to_a_measurement": false,
       "cite_also": "paper"
     },
@@ -1757,7 +1892,7 @@
           "bibtex": "@misc{hydac_sbo_catalogue,\n  author = {{HYDAC}},\n  title = {{Diaphragm Accumulators SBO}},\n  howpublished = {US catalogue section, PN\\#02068195 / 4.21 / ACU1808-2025},\n  url = {https://www.hydac.com/media/local_resources_usa/downloads/catalog/accumulators/accumulators-pdfs/diaphragm-accumulators_sbo.pdf}\n}"
         }
       ],
-      "how_used": "The ratio of piston area to vessel volume and the thermal time constant were fitted to the 100 runs from 0.01 to 10 Hz of the two records at 40 / 60 bar (zenodo.11265458 and zenodo.15478932); all 285 runs of the other five records were held back from that fitting. After the second scoring the piston area was set to a 50 mm bore from the force and oil pressure of all seven records, by which time every run had been opened. The NIST isotherms are used only to state the error of the Peng-Robinson equation.",
+      "how_used": "The ratio of piston area to vessel volume and the thermal time constant were fitted on the 100 runs from 0.01 to 10 Hz of the two records at 40 / 60 bar (zenodo.11265458 and zenodo.15478932); the card is compared with all 285 runs of the other five records, outside that fit. The piston area, a 50 mm bore, is set from the force and oil pressure of all seven records, the 285 runs outside the fit among them. The NIST isotherms state the error of the Peng-Robinson equation.",
       "not_held_to_a_measurement": false,
       "cite_also": "paper"
     },
@@ -1814,7 +1949,7 @@
           "bibtex": "@misc{ravnik_triga_description,\n  author = {Ravnik, Matjaž},\n  title = {Description of {TRIGA} Reactor},\n  howpublished = {Course note, ``Jožef Stefan'' Institute, Reactor Infrastructure Centre, Ljubljana},\n  url = {https://ric.ijs.si/wp-content/uploads/2026/04/Description_TRIGA_Reactor.pdf}\n}"
         }
       ],
-      "how_used": "From the JSI pulse database: 43 per-pulse records of cores 215, 217 and 231, all opened; ten constants fitted on 36 of them; held back by rule, the table's peak power, energy and thermocouple maximum for 20 rows of the same cores whose records had not been fetched when they were scored; 15 of those records were fetched on 2026-10-11, after the scoring, and the peak power of every row held back had been printed beside the first card before the protocol was fixed. Constants from the 2024 article (Table 2, heat-capacity line) and the hot-rod factor 1.387 from the 2019 thesis (Table 4). None of the site's measured values is stored in the card.",
+      "how_used": "From the JSI pulse database: 43 per-pulse records of cores 215, 217 and 231, all read; ten constants fitted on 36 of them. Compared with, outside the fit: the table's peak power, energy and thermocouple maximum for 20 rows of the same cores whose records had not been fetched when the card was compared with them; 15 of those records have been fetched since. The card's structure was set with the peak power of every one of those 20 rows read. Constants from the 2024 article (Table 2, heat-capacity line) and the hot-rod factor 1.387 from the 2019 thesis (Table 4). None of the site's measured values is stored in the card.",
       "not_held_to_a_measurement": false,
       "cite_also": "paper"
     },
@@ -1859,14 +1994,14 @@
           "bibtex": "@book{keepin1965kinetics,\n  author = {Keepin, G. R.},\n  title = {Physics of Nuclear Kinetics},\n  year = {1965},\n  note = {Publisher not confirmed from the evidence record}\n}"
         }
       ],
-      "how_used": "The 126 step transients of IDO-16918's appendix: 15 rows excluded before any run, 72 fitted (two constants), 39 held back (every third remaining row and the whole 1000 psig series). Core constants from IDO-17138 Table B-1; delayed-neutron set from Keepin.",
+      "how_used": "The 126 step transients of IDO-16918's appendix: 15 rows excluded before any run, 72 fitted (two constants), 39 compared outside the fit (every third remaining row and the whole 1000 psig series). Core constants from IDO-17138 Table B-1; delayed-neutron set from Keepin.",
       "not_held_to_a_measurement": false,
       "cite_also": "paper"
     },
     "energy/runaway_18650_lco": {
       "kind": "card",
       "real_thing": "One 18650 lithium-ion cell, LiCoO2 against graphite, fully charged, in thermal abuse: the lumped four-stage model of Hatchard et al. (2001) and Kim et al. (2007), compared with open records of LiCoO2 18650 oven, ramp and heat-wait-seek tests",
-      "how_used": "No constant is fitted. The kinetics, heats, contents and starting amounts are Ostanek's (2025) Table 2; the jelly roll's density and specific heat are Hatchard's as Coman et al. (2017) Table I reprint them; the oven's convective coefficient and emissivity are Hatchard's as Lopez et al. (2015) state them. Compared after it was built, by lines fixed beforehand, with Hatchard's oven tests at 145, 150 and 155 degC (reprinted by Lopez et al. 2015, Fig. 2a, timed by Ostanek et al. 2023), Golubkov et al. (2014) Table 3, Mendoza-Hernandez et al. (2017) Table 1, and the LiCoO2 rows Lei et al. (2017) Table 1 reprint: 8 of 23 lines met.",
+      "how_used": "No constant is fitted. The kinetics, heats, contents and starting amounts are Ostanek's (2025) Table 2; the jelly roll's density and specific heat are Hatchard's as Coman et al. (2017) Table I reprint them; the oven's convective coefficient and emissivity are Hatchard's as Lopez et al. (2015) state them. Compared, on 23 error measures, with Hatchard's oven tests at 145, 150 and 155 degC (reprinted by Lopez et al. 2015, Fig. 2a, timed by Ostanek et al. 2023), Golubkov et al. (2014) Table 3, Mendoza-Hernandez et al. (2017) Table 1, and the LiCoO2 rows Lei et al. (2017) Table 1 reprint.",
       "not_held_to_a_measurement": false,
       "cite_also": "paper",
       "sources": [
@@ -2291,7 +2426,7 @@
           "bibtex": "@misc{bell2012pdsim,\n  author = {Bell, Ian},\n  title = {{PDSim}: module {PDSim.core.bearings}, function journal\\_bearing\\_design},\n  year = {2012},\n  howpublished = {\\url{https://pdsim.readthedocs.io/en/stable/_modules/PDSim/core/bearings.html}},\n  note = {Source repository: https://github.com/ibell/pdsim}\n}"
         }
       ],
-      "how_used": "Minimum film thickness by the ultrasonic phase-change method, fifty runs; the viscosity multiplier fitted to 34 opened runs, 16 held back by rank; the solver's Sommerfeld numbers are also checked against 18 Raimondi-Boyd values.",
+      "how_used": "Minimum film thickness by the ultrasonic phase-change method, fifty runs; the viscosity multiplier fitted on 34 runs; compared with 16 runs outside the fit, chosen by rank; the solver's Sommerfeld numbers are also compared with 18 Raimondi-Boyd values.",
       "not_held_to_a_measurement": false,
       "cite_also": "paper"
     },
@@ -2336,7 +2471,7 @@
           "bibtex": "@mastersthesis{brandt2005smallscale,\n  author = {Brandt, John Burton},\n  title = {Small-Scale Propeller Performance at Low Speeds},\n  school = {University of Illinois at Urbana-Champaign, Department of Aerospace Engineering},\n  address = {Urbana, Illinois},\n  year = {2005},\n  url = {https://m-selig.ae.illinois.edu/props/volume-1/Brandt_2005_UIUC-MS-Thesis.pdf}\n}"
         }
       ],
-      "how_used": "Blade geometry at 18 stations as model input; two section constants fitted to the sweeps at 4007, 5001 and 5018 rev/min (43 points); held back: the sweeps at 6015, 6020, 6519 and 6531 rev/min (64 points) and the static run (9 rows).",
+      "how_used": "Blade geometry at 18 stations as model input; two section constants fitted on the sweeps at 4007, 5001 and 5018 rev/min (43 points); compared with, outside the fit, the sweeps at 6015, 6020, 6519 and 6531 rev/min (64 points) and the static run (9 rows).",
       "not_held_to_a_measurement": false,
       "cite_also": "paper"
     },
@@ -2381,7 +2516,7 @@
           "bibtex": "@misc{rehmer2025ti64,\n  author = {Rehmer, Birgit and Bayram, Faruk and {\\'A}vila Calder{\\'o}n, Luis Alexander and Mohr, Gunther and Skrotzki, Birgit},\n  title = {{BAM reference data: Temperature-dependent Young's and shear modulus data for additively and conventionally manufactured variants of Ti-6Al-4V}},\n  year = {2025},\n  publisher = {Zenodo},\n  version = {1.1},\n  doi = {10.5281/zenodo.14617243},\n  url = {https://doi.org/10.5281/zenodo.14617243},\n  note = {Dataset}\n}"
         }
       ],
-      "how_used": "The model was chosen on bars ERX1 and ERX2 and the tensile tests along the rolling direction; bars ERY1 and ERY2 and the tensile tests across it were held back and opened once, on 2026-10-09, after the solver was served.",
+      "how_used": "The model's form was set on bars ERX1 and ERX2 and the tensile tests along the rolling direction; it is compared with bars ERY1 and ERY2 and the tensile tests across it, outside that choice.",
       "not_held_to_a_measurement": false,
       "cite_also": "paper"
     },
@@ -2630,7 +2765,7 @@
           "bibtex": "@article{moritz2000grs80,\n  author = {Moritz, H.},\n  title = {Geodetic Reference System 1980},\n  journal = {Journal of Geodesy},\n  volume = {74},\n  number = {1},\n  pages = {128--133},\n  year = {2000},\n  doi = {10.1007/s001900050278}\n}"
         }
       ],
-      "how_used": "Nothing is fitted: density and sound speed are the TEOS-10 Gibbs function (IAPWS R13-08 and SR7-09) and gravity is the TEOS-10 toolbox's formula; leg 6 (I09N, 130 stations) was opened and the scoring rule written on it, and the other ten legs were held back unread until the one scored run.",
+      "how_used": "Nothing is fitted: density and sound speed are the TEOS-10 Gibbs function (IAPWS R13-08 and SR7-09) and gravity is the TEOS-10 toolbox's formula; leg 6 (I09N, 130 stations) was read and the error measures written on it; the solver is compared with the other ten legs, in other parts of the ocean.",
       "not_held_to_a_measurement": false,
       "cite_also": "paper"
     },
@@ -2699,7 +2834,7 @@
           "bibtex": "@article{klein1968tables,\n  author = {Klein, Max and Smith, Francis J.},\n  title = {Tables of collision integrals for the (m,6) potential function for 10 values of m},\n  journal = {Journal of Research of the National Bureau of Standards Section A: Physics and Chemistry},\n  volume = {72A},\n  number = {4},\n  pages = {359},\n  year = {1968},\n  doi = {10.6028/jres.072A.033}\n}"
         }
       ],
-      "how_used": "The two Lennard-Jones constants are fitted to 42 of Goodwin and Hill's speed-of-sound points (eleven isotherms up to 300.117 K, at or below 500 kPa); their 24 points on the four isotherms from 310 K to 349.868 K were held back; Vogel's 49 viscosity points were never fitted.",
+      "how_used": "The two Lennard-Jones constants are fitted on 42 of Goodwin and Hill's speed-of-sound points (eleven isotherms up to 300.117 K, at or below 500 kPa); compared with their 24 points on the four isotherms from 310 K to 349.868 K, outside the fit; Vogel's 49 viscosity points are compared and never fitted.",
       "not_held_to_a_measurement": false,
       "cite_also": "paper"
     },
@@ -2804,7 +2939,7 @@
           "bibtex": "@manual{nrl2019formulary,\n  title = {{NRL} Plasma Formulary},\n  organization = {Naval Research Laboratory},\n  address = {Washington, DC},\n  year = {2019},\n  number = {NRL/PU/6790-19-640},\n  note = {2019 revision}\n}"
         }
       ],
-      "how_used": "Nothing is fitted. Inputs are numbers printed in or digitised from the two Ogawa papers. Compared with the calculation of Ogawa et al. 2022 (1.5e14 alphas per second) and, held back, with the measured count rates digitised from Ogawa et al. 2024 Figures 6 and 10. The cross-section is the Tentori-Belloni fit.",
+      "how_used": "Nothing is fitted. Inputs are numbers printed in or digitised from the two Ogawa papers. Compared with the calculation of Ogawa et al. 2022 (1.5e14 alphas per second) and with the measured count rates digitised from Ogawa et al. 2024 Figures 6 and 10, outside any fit. The cross-section is the Tentori-Belloni fit.",
       "not_held_to_a_measurement": false,
       "cite_also": "paper"
     },
@@ -2954,7 +3089,7 @@
           "bibtex": "@article{erturk2008backward,\n  author = {Erturk, Ercan},\n  title = {Numerical solutions of 2-{D} steady incompressible flow over a backward-facing step, {Part I}: High {Reynolds} number solutions},\n  journal = {Computers \\& Fluids},\n  volume = {37},\n  number = {6},\n  pages = {633--655},\n  year = {2008},\n  doi = {10.1016/j.compfluid.2007.09.003}\n}"
         }
       ],
-      "how_used": "Nothing is fitted. Opened: Figure 3 of NASA TM 106248 (Reynolds number 100) and both quoted reattachment lengths; held back: its Figure 4, the whole condition at Reynolds number 389; added first-hand on 2026-10-10 and opened: Armaly's own Figure 15 (80 circles at Reynolds number 100). Erturk's table is the published reference calculation.",
+      "how_used": "Nothing is fitted. Read in building it: Figure 3 of NASA TM 106248 (Reynolds number 100) and both quoted reattachment lengths. Compared with, outside that: its Figure 4, the whole condition at Reynolds number 389; and, first-hand, Armaly's own Figure 15 (80 circles at Reynolds number 100). Erturk's table is the published reference calculation.",
       "not_held_to_a_measurement": false,
       "cite_also": "paper"
     },
@@ -2987,7 +3122,7 @@
           "bibtex": "@article{tamminen2022ambr,\n  author = {Tamminen, Anu and Turunen, Rosaliina and Barth, Dorothee and Vidgren, Virve and Wiebe, Marilyn G.},\n  title = {Use of ambr\\textregistered{}250 to assess mucic acid production in fed-batch cultures of a marine {Trichoderma} sp. {D-221704}},\n  journal = {AMB Express},\n  volume = {12},\n  number = {1},\n  pages = {90},\n  year = {2022},\n  doi = {10.1186/s13568-022-01436-4}\n}"
         }
       ],
-      "how_used": "Daily samples (dry biomass, glucose, galacturonate, mucic acid), off-gas every five minutes and the pumped feeds; fitted on the eight cultures at pH 4.0 fed about 29.4 to 34.7 g/L glucose; the four cultures fed about 10.6 and about 50 g/L glucose held back whole.",
+      "how_used": "Daily samples (dry biomass, glucose, galacturonate, mucic acid), off-gas every five minutes and the pumped feeds; fitted on the eight cultures at pH 4.0 fed about 29.4 to 34.7 g/L glucose; compared with the four cultures fed about 10.6 and about 50 g/L glucose, whole, outside the fit.",
       "not_held_to_a_measurement": false,
       "cite_also": "paper"
     },
@@ -3164,7 +3299,7 @@
           "bibtex": "@article{wurzel2022lawson,\n  author = {Wurzel and Hsu},\n  title = {Progress toward fusion energy breakeven and gain as measured against the {Lawson} criterion},\n  journal = {Physics of Plasmas},\n  volume = {29},\n  pages = {062103},\n  year = {2022},\n  eprint = {2105.10954},\n  archiveprefix = {arXiv}\n}"
         }
       ],
-      "how_used": "Radial profiles, beam heating and TRANSP's fusion power for six JET D-T pulses (structure chosen on these) and for every TFTR D-T pulse of the database (held back). Nothing is fitted. Bosch-Hale cross-sections, checked against ENDF/B-VIII.0; slowing-down rates of the NRL Plasma Formulary; detector calibration accuracy from Johnson et al. and Batistoni et al.",
+      "how_used": "Radial profiles, beam heating and TRANSP's fusion power for six JET D-T pulses (structure chosen on these) and for every TFTR D-T pulse of the database (compared with, outside that choice). Nothing is fitted. Bosch-Hale cross-sections, compared with ENDF/B-VIII.0; slowing-down rates of the NRL Plasma Formulary; detector calibration accuracy from Johnson et al. and Batistoni et al.",
       "not_held_to_a_measurement": false,
       "cite_also": "paper"
     },
@@ -3209,7 +3344,7 @@
           "bibtex": "@misc{fcento100kb,\n  author = {fcento100},\n  title = {kingery-bulmash: {Kingery-Bulmash} blast parameters after {Swisdak} (1994)},\n  year = {2024},\n  howpublished = {GitHub},\n  url = {https://github.com/fcento100/kingery-bulmash},\n  note = {Commit 194c3c7. Retrieved 2026-10-14}\n}"
         }
       ],
-      "how_used": "Nothing is fitted. The model is the company's own derivation (a point source of the charge's energy, Sedov-Taylor, the Euler equations and weak-shock theory). Dewey's TNT interface and the Kingery-Bulmash correlation are references the tests compare with; the Dewey-Sochet gauge records, rich and lean held back, were compared once with pass marks fixed before scoring, and the comparison missed.",
+      "how_used": "Nothing is fitted. The model is the company's own derivation (a point source of the charge's energy, Sedov-Taylor, the Euler equations and weak-shock theory). Dewey's TNT interface and the Kingery-Bulmash correlation are references the tests compare with; the solver is compared with the 24 Dewey-Sochet gauge traces of the rich and lean series, outside any fit.",
       "not_held_to_a_measurement": false,
       "cite_also": "paper"
     },
@@ -3254,7 +3389,7 @@
           "bibtex": "@techreport{en10025-2,\n  institution = {CEN},\n  title = {{EN 10025-2: Hot rolled products of structural steels, Part 2: Technical delivery conditions for non-alloy structural steels}},\n  year = {2019}\n}"
         }
       ],
-      "how_used": "Young's modulus and Poisson's ratio were fitted to the opened band of the measured field (the points 16 mm or more from the hole along the bar); the 1,189 points 4.5 to 12 mm from the hole's centre were held back and opened once, on 2026-10-14, after the protocol was fingerprinted and the solver committed. The comparison is not blind in that ring: before the protocol was fixed, the builder had read in the scout's dossier its local strains of 1.3e-3 to 3.0e-3, 0.5 to 1 mm from the hole's edge, and line P3 is the dossier's own, proposed with those strains in view. The yield strength is EN 10025-2's least value for the grade, not this sheet's.",
+      "how_used": "Young's modulus and Poisson's ratio were fitted on the band of the measured field 16 mm or more from the hole along the bar; the solver is compared with the 1,189 points 4.5 to 12 mm from the hole's centre, outside the fit. In that ring, local strains of 1.3e-3 to 3.0e-3, 0.5 to 1 mm from the hole's edge, were read before the error targets were set, and target P3 was proposed with those strains in view. The yield strength is EN 10025-2's least value for the grade, not this sheet's.",
       "not_held_to_a_measurement": false,
       "cite_also": "paper"
     },
@@ -3287,7 +3422,7 @@
           "bibtex": "@article{anton2025calibration,\n  author = {Anton, David and Tr{\\\"o}ger, Jendrik-Alexander and Wessels, Henning and R{\\\"o}mer, Ulrich and Henkes, Alexander and Hartmann, Stefan},\n  title = {Deterministic and statistical calibration of constitutive models from full-field data with parametric physics-informed neural networks},\n  journal = {Advanced Modeling and Simulation in Engineering Sciences},\n  volume = {12},\n  pages = {12},\n  year = {2025},\n  doi = {10.1186/s40323-025-00285-7}\n}"
         }
       ],
-      "how_used": "Calibrated to the record, not a blind test: the same measured field as stress_plate_hole_s235's, read with that solver's scored comparison open. Young's modulus and Poisson's ratio are stress_plate_hole_s235's, fitted to the opened band of the measured field (the points 16 mm or more from the hole along the bar) before its held-back ring was scored; nothing is fitted here. Its structure, no yield, was chosen after the ring of 1,189 points 4.5 to 12 mm from the hole's centre had been scored, and it was scored on that ring after the fact by stress_plate_hole_s235's lines; stress_plate_hole_s235, the scored original, compared before this companion was built and not blind in that ring by its own record, is served beside it. The record gives no yield strength of this sheet.",
+      "how_used": "The same measured field as stress_plate_hole_s235's. Young's modulus and Poisson's ratio are stress_plate_hole_s235's, fitted on the band of the measured field 16 mm or more from the hole along the bar; nothing is fitted here. Its structure, no yield, was set with the ring of 1,189 points 4.5 to 12 mm from the hole's centre and stress_plate_hole_s235's comparison on it read; it is compared on that ring with stress_plate_hole_s235's error measures. stress_plate_hole_s235, the first form, with a yield, is served beside it. The record gives no yield strength of this sheet.",
       "not_held_to_a_measurement": false,
       "cite_also": "paper"
     },
@@ -3356,7 +3491,7 @@
           "bibtex": "@techreport{huber1963shock,\n  author = {Huber, Paul W.},\n  title = {Hypersonic shock-heated flow parameters for velocities to 46,000 feet per second and altitudes to 323,000 feet},\n  institution = {NASA Langley Research Center},\n  number = {TR R-163},\n  year = {1963},\n  url = {https://ntrs.nasa.gov/citations/19640014678}\n}"
         }
       ],
-      "how_used": "The vehicle, its reflectometer stations and bands, the trajectory, and the held-back onset altitudes from Grantham (TN D-6062 Tables I, III, IX, X); the 26 reactions from Dunn and Kang's Table I; the eleven species' thermodynamics from the NASA Glenn coefficients; the air from the 1962 standard. Nothing is fitted. Huber's equilibrium shock tables are a reference calculation the solver is held to in a test.",
+      "how_used": "The vehicle, its reflectometer stations and bands, the trajectory, and the measured onset altitudes it is compared with, from Grantham (TN D-6062 Tables I, III, IX, X); the 26 reactions from Dunn and Kang's Table I; the eleven species' thermodynamics from the NASA Glenn coefficients; the air from the 1962 standard. Nothing is fitted. Huber's equilibrium shock tables are a reference calculation the solver is held to in a test.",
       "not_held_to_a_measurement": false,
       "cite_also": "paper"
     },
@@ -3389,7 +3524,52 @@
           "bibtex": "@article{tamminen2022ambr,\n  author = {Tamminen, Anu and Turunen, Rosaliina and Barth, Dorothee and Vidgren, Virve and Wiebe, Marilyn G.},\n  title = {Use of ambr\\textregistered{}250 to assess mucic acid production in fed-batch cultures of a marine {Trichoderma} sp. {D-221704}},\n  journal = {AMB Express},\n  volume = {12},\n  number = {1},\n  pages = {90},\n  year = {2022},\n  doi = {10.1186/s13568-022-01436-4}\n}"
         }
       ],
-      "how_used": "Daily samples (dry biomass, glucose, galacturonate, mucic acid), off-gas every five minutes and the pumped feeds; fitted on the twelve cultures at pH 4.0, fed about 10 to 52 g/L glucose with 0 to 2 g/L yeast extract; the four cultures at pH 3.5 and 3.0 held back whole and scored once.",
+      "how_used": "Daily samples (dry biomass, glucose, galacturonate, mucic acid), off-gas every five minutes and the pumped feeds; fitted on the twelve cultures at pH 4.0, fed about 10 to 52 g/L glucose with 0 to 2 g/L yeast extract; compared with the four cultures at pH 3.5 and 3.0, whole, outside the fit.",
+      "not_held_to_a_measurement": false,
+      "cite_also": "paper"
+    },
+    "fuel_rod_triga_jsi": {
+      "kind": "solver",
+      "real_thing": "The instrumented standard fuel element 6753 at position B1 of the TRIGA Mark II research reactor of the Jožef Stefan Institute, Ljubljana, cores 215 (2014), 217 (2015) and 231 (2018), and its fuel thermocouple T1",
+      "sources": [
+        {
+          "role": "measurements",
+          "authors": "Švajger, Ingrid; Snoj, Luka",
+          "title": "Pulse experiments on TRIGA Mark II at \"Jožef Stefan\" Institute (pulse database)",
+          "year": null,
+          "publisher_or_venue": "\"Jožef Stefan\" Institute, Reactor Physics Department, Ljubljana, Slovenia",
+          "identifier": null,
+          "url": "https://trigapulse.ijs.si/",
+          "requested_acknowledgment": null,
+          "citation_text": "Švajger, Ingrid; Snoj, Luka. Pulse experiments on TRIGA Mark II at \"Jožef Stefan\" Institute. \"Jožef Stefan\" Institute, Reactor Physics Department, Ljubljana. https://trigapulse.ijs.si/ (records retrieved October 2026).",
+          "bibtex": "@misc{svajger_trigapulse,\n  author = {Švajger, Ingrid and Snoj, Luka},\n  title = {Pulse experiments on {TRIGA Mark II} at ``{Jožef Stefan}'' Institute},\n  howpublished = {Online pulse database, ``Jožef Stefan'' Institute, Reactor Physics Department, Ljubljana},\n  url = {https://trigapulse.ijs.si/},\n  note = {Records retrieved October 2026}\n}"
+        },
+        {
+          "role": "constants",
+          "authors": "Švajger, I.; Čalič, D.; Pungerčič, A.; Trkov, A.; Snoj, L.",
+          "title": "Evaluation of reactor pulse experiments",
+          "year": 2024,
+          "publisher_or_venue": "Nuclear Engineering and Technology 56 (4), 1165-1203",
+          "identifier": "10.1016/j.net.2023.11.021",
+          "url": "https://doi.org/10.1016/j.net.2023.11.021",
+          "requested_acknowledgment": null,
+          "citation_text": "Švajger, I.; Čalič, D.; Pungerčič, A.; Trkov, A.; Snoj, L. (2024). Evaluation of reactor pulse experiments. Nuclear Engineering and Technology 56(4), 1165-1203. https://doi.org/10.1016/j.net.2023.11.021",
+          "bibtex": "@article{svajger2024pulse,\n  author = {Švajger, I. and Čalič, D. and Pungerčič, A. and Trkov, A. and Snoj, L.},\n  title = {Evaluation of reactor pulse experiments},\n  journal = {Nuclear Engineering and Technology},\n  volume = {56},\n  number = {4},\n  pages = {1165--1203},\n  year = {2024},\n  doi = {10.1016/j.net.2023.11.021}\n}"
+        },
+        {
+          "role": "constants",
+          "authors": "Vavtar, Ingrid",
+          "title": "Analiza fizikalnih parametrov reaktorskega pulza (Analysis of the physical parameters of the reactor pulse)",
+          "year": 2019,
+          "publisher_or_venue": "Master's thesis, University of Ljubljana, Faculty of Mathematics and Physics (mentor: Snoj, Luka); Repository of the University of Ljubljana",
+          "identifier": "hdl:20.500.12556/RUL-109204; COBISS.SI-ID 3344228",
+          "url": "https://repozitorij.uni-lj.si/IzpisGradiva.php?id=109204&lang=eng",
+          "requested_acknowledgment": null,
+          "citation_text": "Vavtar, Ingrid (2019). Analiza fizikalnih parametrov reaktorskega pulza [Analysis of the physical parameters of the reactor pulse]. Master's thesis, University of Ljubljana, Faculty of Mathematics and Physics. http://hdl.handle.net/20.500.12556/RUL-109204",
+          "bibtex": "@mastersthesis{vavtar2019pulse,\n  author = {Vavtar, Ingrid},\n  title = {Analiza fizikalnih parametrov reaktorskega pulza},\n  school = {University of Ljubljana, Faculty of Mathematics and Physics},\n  year = {2019},\n  url = {http://hdl.handle.net/20.500.12556/RUL-109204},\n  note = {In Slovenian. English title: Analysis of the physical parameters of the reactor pulse. Mentor: Luka Snoj}\n}"
+        }
+      ],
+      "how_used": "Channel T1 and the power of the institute's pulse records: two constants (gap conductance, thermocouple time constant) fitted on 39 pulses of cores 215, 217 and 231; compared with 16 pulses of cores 217 and 231 left out of the fit. Geometry, densities and the meat's heat capacity from the article; the hot-rod factor 1.387 from I. Vavtar's thesis.",
       "not_held_to_a_measurement": false,
       "cite_also": "paper"
     },
@@ -3494,7 +3674,7 @@
           "bibtex": "@article{vandriest1956turbulent,\n  author = {Van Driest, E. R.},\n  title = {On Turbulent Flow Near a Wall},\n  journal = {Journal of the Aeronautical Sciences},\n  volume = {23},\n  number = {11},\n  pages = {1007--1011},\n  year = {1956},\n  doi = {10.2514/8.3713}\n}"
         }
       ],
-      "how_used": "Nothing is fitted to a constant; the twelve Zagarola-Smits Pitot profiles below Reynolds number 1e6 were opened and used to choose the outer shape of the mixing length; the 25 McKeon profiles and the nine smooth-pipe NSTAP profiles of Hultmark and others were held back until the protocol was fingerprinted; the 14 Zagarola-Smits profiles above 1e6 are reported and not gated.",
+      "how_used": "Nothing is fitted to a constant; the twelve Zagarola-Smits Pitot profiles below Reynolds number 1e6 were read and chose the outer shape of the mixing length; the solver is compared with the 25 McKeon profiles and the nine smooth-pipe NSTAP profiles of Hultmark and others, outside that choice; the 14 Zagarola-Smits profiles above 1e6 are reported with no target.",
       "not_held_to_a_measurement": false,
       "cite_also": "paper"
     },
@@ -3527,13 +3707,13 @@
           "bibtex": "@article{olaya2023nbasinb,\n  author = {Olaya, David and Biesecker, John and Castellanos-Beltran, Manuel A. and Sirois, Adam J. and Hopkins, Peter F. and Dresselhaus, Paul D. and Benz, Samuel P.},\n  title = {Nb/a-Si/Nb Josephson junctions for high-density superconducting circuits},\n  journal = {Applied Physics Letters},\n  volume = {122},\n  pages = {182601},\n  year = {2023},\n  doi = {10.1063/5.0148250}\n}"
         }
       ],
-      "how_used": "The critical current is the one the dataset states; the dissipative table is the junction's own field-suppressed curve; the capacitance is fitted to two bias currents of the zero-field curve, its return bracket; every other voltage of the zero-field curve was held back and compared once. The paper was not obtained; only its abstract was read.",
+      "how_used": "The critical current is the one the dataset states; the dissipative table is the junction's own field-suppressed curve; the capacitance is fitted on two bias currents of the zero-field curve, its return bracket; the solver is compared with every other voltage of the zero-field curve, outside the fit. Of the paper, its abstract alone was read.",
       "not_held_to_a_measurement": false,
       "cite_also": "paper"
     },
     "water_hammer_oil_line": {
       "kind": "solver",
-      "real_thing": "A 4.0 m steel hydraulic line of mineral oil, 12 x 1.5 mm tube, between a held supply and a valve that closes: the company's own specimen",
+      "real_thing": "A 4.0 m steel hydraulic line of mineral oil, 12 x 1.5 mm tube, between a held supply and a valve that closes: a company specimen",
       "sources": [
         {
           "role": "measurements",
@@ -3590,7 +3770,7 @@
     },
     "orifice_air_chamber": {
       "kind": "solver",
-      "real_thing": "A rigid 100 cm^3 chamber of air charged or vented through a pneumatic valve of sonic conductance 1.0e-8 m^3/(s Pa) and critical pressure ratio 0.30: the company's own specimen",
+      "real_thing": "A rigid 100 cm^3 chamber of air charged or vented through a pneumatic valve of sonic conductance 1.0e-8 m^3/(s Pa) and critical pressure ratio 0.30: a company specimen",
       "sources": [
         {
           "role": "method",
@@ -3623,7 +3803,7 @@
     },
     "pneumatic_hose_resonance": {
       "kind": "solver",
-      "real_thing": "A 2.0 m polyamide 12 hose, 6 x 4 mm, feeding a closed 20 cm^3 volume of air: the company's own specimen",
+      "real_thing": "A 2.0 m polyamide 12 hose, 6 x 4 mm, feeding a closed 20 cm^3 volume of air: a company specimen",
       "sources": [
         {
           "role": "method",
@@ -3719,7 +3899,7 @@
           "bibtex": "@article{betti2015alpha,\n  author = {Betti, R. and Christopherson, A. R. and Spears, B. K. and others},\n  title = {Alpha heating and burning plasmas in inertial confinement fusion},\n  journal = {Physical Review Letters},\n  volume = {114},\n  pages = {255003},\n  year = {2015},\n  doi = {10.1103/PhysRevLett.114.255003}\n}"
         }
       ],
-      "how_used": "The published neutron-averaged hot-spot temperature (from the DD neutrons), pressure, neutron-image volume, down-scatter ratio and fuel mass of seven shots made the solver's stagnation questions; the measured yield, burn width and burn-up, and the inferred yield amplification, are what it was compared with, under pass marks fixed before it was run on them. Nothing is fitted. Bosch-Hale D-T reactivity; Krokhin-Rozanov alpha deposition with NRL Formulary slowing-down rates; Braginskii conductivity and the ablation of Betti et al. (2002); Svensson bremsstrahlung with free-free absorption; the Lawson parameter of Betti et al. (2015).",
+      "how_used": "The published neutron-averaged hot-spot temperature (from the DD neutrons), pressure, neutron-image volume, down-scatter ratio and fuel mass of seven shots made the solver's stagnation questions; the measured yield, burn width and burn-up, and the inferred yield amplification, are what it is compared with, outside any fit. Nothing is fitted. Bosch-Hale D-T reactivity; Krokhin-Rozanov alpha deposition with NRL Formulary slowing-down rates; Braginskii conductivity and the ablation of Betti et al. (2002); Svensson bremsstrahlung with free-free absorption; the Lawson parameter of Betti et al. (2015).",
       "not_held_to_a_measurement": false,
       "cite_also": "paper"
     },
@@ -3800,7 +3980,7 @@
           "bibtex": "@article{churchill1977friction,\n  author = {Churchill, Stuart W.},\n  title = {Friction-factor equation spans all fluid-flow regimes},\n  journal = {Chemical Engineering},\n  volume = {84},\n  number = {24},\n  pages = {91--92},\n  year = {1977}\n}"
         }
       ],
-      "how_used": "The line's geometry, stations, steady conditions and records are Klein, Traudt and Deeken's. Liquid nitrogen's density, speed of sound, viscosity and vapour pressure come from the NIST Chemistry WebBook, which evaluates the equation of state of Span and others and the viscosity of Lemmon and Jacobsen; the steel's Young's modulus at the liquid's temperature from NIST's cryogenic fit for 304 stainless; Churchill's friction factor as published. Three of the nine tests' traces fixed the roughness and the valve's seat and series ratio; the other six were held back and scored once against marks committed before they were opened, in the engine's own record and not in the public pass-marks repository.",
+      "how_used": "The line's geometry, stations, steady conditions and records are Klein, Traudt and Deeken's. Liquid nitrogen's density, speed of sound, viscosity and vapour pressure come from the NIST Chemistry WebBook, which evaluates the equation of state of Span and others and the viscosity of Lemmon and Jacobsen; the steel's Young's modulus at the liquid's temperature from NIST's cryogenic fit for 304 stainless; Churchill's friction factor as published. Three of the nine tests' traces fixed the roughness and the valve's seat and series ratio; the solver is compared with the other six, outside the fit, by error targets written in the engine's own record.",
       "not_held_to_a_measurement": false,
       "cite_also": "paper"
     }

@@ -202,10 +202,10 @@ def citation(key, kind, title, compared=False):
     is; its owner writes them in."""
     if compared:
         real_thing = f"{title}, compared with measurements of it"
-        how_used = "The measurements it is compared with are named here, with their people and licence, when it is scored against them; the protocol is fixed first (kit/forecasts/" + key.split("/")[-1] + ".json)."
+        how_used = "The measurements it is compared with are named here, with their people and licence, when it is compared with them (kit/forecasts/" + key.split("/")[-1] + ".json)."
     else:
-        real_thing = f"{title}, the company\'s own specimen."
-        how_used = "The company\'s own derivation: its constants are its own declared values. Cite the paper."
+        real_thing = f"{title}, a company specimen."
+        how_used = "Company specimen: its constants are its own declared values. Cite the paper."
     return (
         f'    "{key}": {{\n'
         f'      "kind": "{kind}",\n'
@@ -221,21 +221,21 @@ def citation(key, kind, title, compared=False):
 # What find_model says of a compared model stamped before its scoring: what
 # is so until then, and not "the company's own specimen".
 NOT_YET_SCORED = (
-    '"not yet scored against the measurements it is compared with: its protocol is fixed and fingerprinted '
-    'first (kit/forecasts/{name}.json), and its verdict is written here when it is scored"'
+    '"not yet compared with the measurements of it: its spec sheet (src/spec_sheet.rs) is written when it is '
+    '(kit/forecasts/{name}.json)"'
 )
 
 
 # What find_model says after the sixth word of a model stamped calibrated,
 # until its own numbers against the record are written.
 CALIBRATED_WORDS = (
-    '"its numbers against the record, after the fact, are those of its calibration (kit/forecasts/{name}.json)"'
+    '"its numbers against the record are those of its spec sheet (src/spec_sheet.rs; kit/forecasts/{name}.json)"'
 )
 
 # What a stamped calibrated model's validation result opens with.
 CALIBRATED_RESULT = (
-    "Calibrated to the record, not a blind test: the companion of {companion}, the scored original, which is served beside it under its own word. "
-    "Its structure or constants were chosen with the record it is compared with open, and its numbers against that record are after the fact."
+    "A second form of the object of {companion}, which is served beside it under its own ID. "
+    "Its structure or constants were chosen with that record read; its spec sheet gives what it is fitted on and its numbers against the record."
 )
 
 # What the row of CALIBRATIONS says until the calibration is recorded.
@@ -264,8 +264,8 @@ def calibrated_citation(stamp, key, kind, companion):
         "real_thing": own["real_thing"],
         "sources": own["sources"],
         "how_used": (
-            f"Calibrated to the record: its structure or constants were chosen with the record of {companion}'s real object open, so its comparison "
-            f"with that record is not a blind test; {companion}, the scored original, is served beside it, and the sources are {companion}'s."
+            f"A second form of {companion}'s real object: its structure or constants were chosen with {companion}'s record read; "
+            f"{companion} is served beside it, and the sources are {companion}'s."
         ),
         "not_held_to_a_measurement": False,
         "cite_also": "paper",
@@ -311,11 +311,11 @@ def compared_by_hand(stamp, name, args):
         stamp.by_hand.append(
             f"Forecast first, before any held-back data is read: python3 protocol_mcp_gateway/kit/forecast.py register {name} --protocol <its validation_protocol.md> --held-back <each held-back file>; "
             f"read each held-back file only through python3 protocol_mcp_gateway/kit/forecast.py open {name} <file>, and record the scoring with forecast.py score {name} --output <the scored output> --program <the scoring program>. "
-            "The conformance suite fails a compared model whose registration does not show a committed, fingerprinted protocol older than its scoring."
+            "The conformance suite holds a forecast the description states (\"Forecast committed before the data was opened, as <SHA-256>.\") to this registration."
         )
     stamp.by_hand += [
-        f"The stamped citation and find_model entry of {name} name it a model compared with measurements, not yet scored: once scored, write its sources (people, data set, licence) and how they are used in citations.json, set not_held_to_a_measurement to false, and give its find_model entry the verdict (Marks::Met, InPart or Missed) and its words. Until then find_model's test, which holds every NotCompared entry to the company's own specimen, fails on it by name: that is the guard against serving it unscored.",
-        "The stamped description is the template's, the company's own specimen: rewrite its specimen, validation record and summary as the real thing it is, with the range it was compared on and how it did there, in numbers.",
+        f"The stamped citation and find_model entry of {name} name it a model compared with measurements, not yet compared: once compared, write its sources (people, data set, licence) and how they are used in citations.json, set not_held_to_a_measurement to false, give its find_model entry Marks::Measured, and write its spec sheet row in protocol_mcp_gateway/src/spec_sheet.rs (what it computes; Range; Fitted on; Compared with ... within; Gap; Refuses). find_model's test every_model_compared_with_measurement_has_its_spec_sheet fails until the row is there.",
+        "The stamped description is the template's, a company specimen: rewrite its validation record and summary as the real thing it is, in numbers; its list sentence is its spec sheet.",
     ]
 
 

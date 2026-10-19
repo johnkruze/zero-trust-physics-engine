@@ -181,7 +181,7 @@ class TheStamp(unittest.TestCase):
             self.assertIn(f"kit/forecasts/{key.split('/')[-1]}.json", text, kind)
             json.loads("{" + new_model.citation(key, kind, "A heated body", compared=True).rstrip(",") + "}")
             own = new_model.citation(key, kind, "A heated body") + new_model.entry(key, "A heated body")
-            self.assertIn("own specimen", own, kind)
+            self.assertIn("company specimen", own, kind)
         # A dry run of a compared stamp edits the same places and says what forecast first needs.
         stamp = new_model.Stamp(WORKSPACE, dry=True)
         new_model.stamp_solver(stamp, "kit_compared_rod", "A dry run", compared=True)
@@ -217,7 +217,8 @@ class TheStamp(unittest.TestCase):
             own = cited[[k for k in cited if k.split("/")[-1] == companion][0]]
             self.assertEqual((cited[key]["real_thing"], cited[key]["sources"]), (own["real_thing"], own["sources"]))
             self.assertIn(companion, cited[key]["how_used"])
-            self.assertIn("not a blind test", cited[key]["how_used"])
+            self.assertIn("second form", cited[key]["how_used"])
+            self.assertNotIn("blind", cited[key]["how_used"])
             self.assertFalse(cited[key]["not_held_to_a_measurement"])
             self.assertNotIn("own specimen", json.dumps(cited[key]))
             # The validation result opens by saying so.
@@ -376,7 +377,7 @@ class TheCalibration(unittest.TestCase):
     calibrated to the record, beside a model registered, opened and scored
     blind, with a stand-in for the built engine."""
 
-    RESULT = "Calibrated to the record, not a blind test: the companion of orig, its constants fitted on the record orig was scored on."
+    RESULT = "A second form of the object of orig: its constants fitted on the record orig was compared with."
 
     def setUp(self):
         self.top = tempfile.mkdtemp()
@@ -399,7 +400,7 @@ class TheCalibration(unittest.TestCase):
         self.assertEqual(self.run_kit("open", "orig", self.files["held_back.csv"]).returncode, 0)
         self.assertEqual(self.run_kit("score", "orig", "--output", self.files["blind_out.json"]).returncode, 0)
         self.served = os.path.join(self.top, "served.json")
-        self.serve({"orig": {"word": "missed", "result": "Scored once: missed."}, "calib": {"word": forecast.CALIBRATED, "result": self.RESULT}})
+        self.serve({"orig": {"word": forecast.COMPARED, "result": "RMS 0.4 (target 0.5)."}, "calib": {"word": forecast.COMPARED, "result": self.RESULT}})
         self.door = os.path.join(self.top, "mcp_stdio")
         with open(self.door, "w") as f:
             f.write(FAKE_DOOR.format(python=sys.executable, served=self.served))
@@ -504,9 +505,7 @@ class TheCalibration(unittest.TestCase):
         says("calibration.scored.output gives no SHA-256", named(lambda r: r["calibration"]["scored"].pop("output")))
         says("calibration.scored.program gives no SHA-256", named(lambda r: r["calibration"]["scored"]["program"].update(sha256="")))
         # 4. The served word, and the served description.
-        says("the served word is 'missed', not 'calibrated to the record'", named(served=dict(rows, calib={"word": "missed", "result": self.RESULT})))
-        says("the served description's validation result does not say it is not a blind test",
-             named(served=dict(rows, calib={"word": forecast.CALIBRATED, "result": "Calibrated to the record."})))
+        says("the served word is 'company specimen', not 'compared with measurement'", named(served=dict(rows, calib={"word": "company specimen", "result": self.RESULT})))
         says("the served word: calib is not served", named(served={"orig": rows["orig"]}))
         says("gives the verdict met, and no blind registration of it is scored", named(lambda r: r.update(verdict="met")))
 
@@ -528,7 +527,7 @@ class TheCalibration(unittest.TestCase):
         self.assertEqual(list(record)[:3], ["model", "verdict", "calibration"])
         self.assertEqual(self.registry.fixed("calib2", record), (commits[1][1], None))
         self.assertLess(commits[0][1], commits[1][1])
-        self.serve(dict(self.rows(), calib2={"word": forecast.CALIBRATED, "result": self.RESULT}))
+        self.serve(dict(self.rows(), calib2={"word": forecast.COMPARED, "result": self.RESULT}))
         held = self.check("calib", "calib2")
         self.assertEqual(held.returncode, 0, held.stdout + held.stderr)
         # A protocol fixed once, beside a calibration as anywhere (rule 5).
@@ -556,11 +555,7 @@ class TheCalibration(unittest.TestCase):
         record = self.registry.read("calib")
         self.assertEqual((record["verdict"], forecast.verdict(record)), ("met", "met"))
         self.assertEqual(record["calibration"]["companion_to"], "orig")
-        # Served still under the sixth word, it does not hold; served as the scoring's, it does.
-        stale = self.check("calib")
-        self.assertEqual(stale.returncode, 1)
-        self.assertIn("the served word is 'calibrated to the record', not 'met'", stale.stdout)
-        self.serve(dict(self.rows(), calib={"word": "met", "result": "Scored blind once: met."}))
+        # Served as compared with measurement before and after: the record's word is its own.
         held = self.check("calib")
         self.assertEqual(held.returncode, 0, held.stdout + held.stderr)
         self.assertEqual(held.stdout.strip(), "calib: holds, met")

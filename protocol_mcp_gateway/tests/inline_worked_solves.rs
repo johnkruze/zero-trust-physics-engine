@@ -42,7 +42,7 @@ fn an_inline_answer_holds_the_worked_solves_its_solver_says() {
         }
     }
     let names: Vec<&str> = said.iter().map(|(solver, _, _)| solver.as_str()).collect();
-    assert_eq!(names.len(), 15, "{names:?}");
+    assert_eq!(names.len(), 16, "{names:?}");
     for (solver, held, parameters) in said {
         let plan = |count: usize| json!({ "solver": solver, "plan": { "kind": "list", "solves": vec![json!({ "parameters": parameters.clone() }); count] } });
         let (error, text) = door.call("run_dataset", &plan(held));

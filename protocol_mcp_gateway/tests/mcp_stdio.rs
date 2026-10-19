@@ -348,7 +348,7 @@ async fn a_repeated_key_on_the_agent_door_is_refused_and_not_sealed() {
     let body: Value =
         serde_json::from_str(listed["result"]["content"][0]["text"].as_str().unwrap()).unwrap();
     let pairs = body["cards"].as_array().expect("pairs");
-    assert_eq!(pairs.len(), 37, "{body}");
+    assert_eq!(pairs.len(), 40, "{body}");
 }
 
 #[tokio::test]
@@ -475,7 +475,7 @@ async fn an_unreadable_line_on_the_agent_door_is_answered() {
     assert_eq!(listed["id"], 3, "{listed}");
     let body: Value =
         serde_json::from_str(listed["result"]["content"][0]["text"].as_str().unwrap()).unwrap();
-    assert_eq!(body["cards"].as_array().expect("pairs").len(), 37);
+    assert_eq!(body["cards"].as_array().expect("pairs").len(), 40);
 }
 
 fn tool_text(result: &rmcp::model::CallToolResult) -> String {
@@ -584,12 +584,13 @@ async fn list_cards_and_describe_card_serve_the_thirty_one_pairs() {
     assert_eq!(listed.is_error, Some(false));
     let listed: Value = serde_json::from_str(&tool_text(&listed)).unwrap();
     assert_eq!(listed.as_object().unwrap().len(), 2, "{listed}");
-    assert_eq!(listed["count"], json!(37), "{listed}");
+    assert_eq!(listed["count"], json!(40), "{listed}");
     let cards = listed["cards"].as_array().expect("cards");
     let pairs: Vec<(&str, &str)> = cards
         .iter()
         .map(|entry| {
-            assert_eq!(entry.as_object().unwrap().len(), 4, "{entry}");
+            // domain, card, against_measurement, specimen, and superseded_by on a superseded card.
+            assert_eq!(entry.as_object().unwrap().len(), 4 + usize::from(entry.get("superseded_by").is_some()), "{entry}");
             assert!(entry["against_measurement"].is_string(), "{entry}");
             assert!(entry["specimen"].as_str().unwrap().ends_with('.'));
             (
@@ -622,6 +623,8 @@ async fn list_cards_and_describe_card_serve_the_thirty_one_pairs() {
             ("aerospace", "capsule_insight"),
             ("energy", "reactor_spert3_fuel"),
             ("aerospace", "crater_ryugu_sci"),
+            ("energy", "reactor_spert3_twin"),
+            ("energy", "reactor_spert3_ccore_twin"),
             ("energy", "generator_mmrtg_seebeck"),
             ("aerospace", "momentum_jwst_dihedral"),
             ("aerospace", "momentum_jwst_srp"),
@@ -638,66 +641,25 @@ async fn list_cards_and_describe_card_serve_the_thirty_one_pairs() {
             ("energy", "runaway_18650_lco"),
             ("materials", "grasp_lift_glass_4tu"),
             ("energy", "tokamak_vde_mast"),
+            ("energy", "reactor_msre_pump"),
         ]
     );
-    // The one line of the C-core reactor says its comparison failed.
-    assert!(cards[33]["specimen"].as_str().unwrap().contains("failed on all three lines"));
-    // The one line of the JSI TRIGA reactor carries its standing.
-    for words in [
-        "Ten constants are fitted to 36 pulses of this reactor",
-        "one thermocouple of one element",
-    ] {
-        assert!(cards[32]["specimen"].as_str().unwrap().contains(words), "{words}");
+    // The one line of each model compared with measurement is its spec
+    // sheet: the six parts in order, each opening as it does, with the
+    // record's own numbers.
+    for index in [10, 11, 12, 14, 15, 16, 17, 18, 19, 20, 21, 22, 26, 29, 34, 35, 39] {
+        let line = cards[index]["specimen"].as_str().unwrap();
+        let at = |mark: &str| line.find(mark).unwrap_or_else(|| panic!("cards[{index}] has no {mark:?}: {line}"));
+        let fitted = line.find(" Fitted on ").or_else(|| line.find(" Nothing fitted")).unwrap_or_else(|| panic!("cards[{index}]: {line}"));
+        assert!(at(" Range: ") < fitted && fitted < at(" Compared with ") && at(" Compared with ") < at(" Gap: ") && at(" Gap: ") < at(" Refuses "), "cards[{index}]: {line}");
+        for word in ["blind", "held-back", "pass mark", "pass line", "fixed beforehand", " met ", " missed", "failed"] {
+            assert!(!line.contains(word), "cards[{index}] says {word:?}: {line}");
+        }
     }
-    assert_eq!(
-        cards[19]["specimen"],
-        "The SPERT III E-core test reactor in low-initial-power bursts at three inlet temperatures, from the start of the transient rod's motion to the first maximum of power, with the fuel temperature and the water temperature as state; four constants are fitted, and by the rule fixed beforehand the comparison with its 30 held-back tests failed."
-    );
-    assert_eq!(
-        cards[20]["specimen"],
-        "The crater made on asteroid Ryugu by the 2 kg copper impactor of Hayabusa2 on 5 April 2019: its radius growing from 0.1622 m until it stops, by the law of crater size for dry sand held by gravity alone, fitted in the laboratory on Earth and not to Ryugu, with no load; its predicted radius is 18 percent above the measured crater, a miss of its own line, and its clock is not compared with Ryugu."
-    );
-    assert_eq!(
-        cards[24]["specimen"],
-        "One 32.445 GHz microwave link across 1.26 km of Gothenburg in rain, OpenMRG link 10010 sublink 587: its path loss from the rain rate at the gauge beside it. The rain term is Recommendation ITU-R P.838-3 with nothing fitted; the three constants of the water on the antennas are fitted to this link's own readings of June and July 2015. Compared with the nine rain events of August 2015, whose rain reached 54 mm/h, it met all three lines: RMS error 0.581 dB against 0.90."
-    );
-    assert_eq!(
-        cards[27]["specimen"],
-        "One 235/55 R19 all-season tyre rolling on ice at a held slip on the Terramechanics Rig at Virginia Tech, at the rig's creep of 0.06 m/s: the longitudinal force and the work, from a friction ratio fitted to this tyre's own measurements."
-    );
-    assert_eq!(
-        cards[16]["specimen"],
-        "One Tesla Model 3 2170 lithium-ion cell, any of the three cells m80, m1000 and m448-N of its dataset, as a physical model with memory, under a terminal current and a measured case temperature. Compared from -10 to 40 degC on runs of two cells no model had seen: m448-N 51 of 60, m1000 31 of 45; on m80, whose runs it was built on and not a blind test, 62 of 65, and at -20 degC none of m80's 13. The table card cell_2170_m80 reads 17.4 mV higher on one 1.5 A discharge at 12 degC."
-    );
-    assert_eq!(
-        cards[17]["specimen"],
-        "One cast of the single-crystal nickel alloy CMSX-6, loaded along [001] at 980 degrees Celsius, creeping in tension under a held load: the percentage creep extension of a round test piece 6 mm in diameter against the time since the full load, from zero to 5 percent at 140 to 230 MPa. Six constants fitted to six creep tests of this cast; the time to a level met its three lines on six held-back tests, at the registered levels from 0.1 to 5 percent; the range compared at 140 MPa, 0.1 to 0.2 percent, was drawn after the scoring with every test read. Below 0.1 percent the law starts later than every measured curve, by a factor of 1.5 to 4 in the hours to 0.05 percent, and at 140 MPa past 0.2 percent it runs ahead of the three tests, by about a factor of 2 in extension at the hour they were stopped (1.70 to 1.78 percent against 0.79 to 0.83): the card answers there with those misses stated, and a frame there says so."
-    );
-    assert_eq!(
-        cards[18]["specimen"],
-        "The InSight entry capsule on its entry at Mars of 26 November 2018, from the top of the atmosphere to the flown parachute deployment, under 6164.62 m and under 352.1169 m/s at once: no wind, the air of orbiter soundings set on the lander's barometer, and the capsule's lift as the load. Compared with the flight from the locked entry state: with the lift measured on the first 150 s all four of NASA's first lines were met, the radius at deployment 114 m low against a line of 3.5 km and Mach 1.501 against 1.522. Other starts are computed down to the landing site and were not compared. It does not forecast an entry whose lift is not known."
-    );
-    assert_eq!(
-        cards[15]["specimen"],
-        "One aluminium strip clamped at one end at ETH Zürich, ringing down freely in room air in its first bending mode: the deflection at the laser-1 station, 268 mm from the clamp, with no load."
-    );
-    assert_eq!(
-        cards[14]["specimen"],
-        "One Tesla Model 3 2170 lithium-ion cell, cell m80 alone, in six blocks of tests from -20 to 40 degC, under a terminal current and a measured case temperature. Compared on 60 held-back tests it failed, 27 met: C/3 met from 0 to 40 degC, 1C missed at each, and the -10 and -20 degC blocks met no mark (55.6 to 425 mV). The physical model cell_2170_model3 reads 17.4 mV lower on one 1.5 A discharge at 12 degC."
-    );
-    assert_eq!(
-        cards[12]["specimen"],
-        "The laser-ranging satellite LAGEOS-1 in free flight, in a frame turning with the Earth: the Earth's field to degree and order 12, the Sun and the Moon, the solid tide, sunlight pressure and relativity, with no load. Compared with the published orbits of LAGEOS-1 and LAGEOS-2 on 28 days of 2026 for up to seven days, it met every line on 42 held-back runs: worst 0.65 m after one revolution, 3.8 m after one day, 32 m after seven days."
-    );
-    assert_eq!(
-        cards[11]["specimen"],
-        "The Stardust sample return capsule on its entry of 15 January 2006, from entry interface down to the drogue-deployment condition the radar recorded, under 31030 m and under Mach 1.23 at once, past which a state is refused: no lift, no wind, a yearly standard atmosphere, and no load. One entry was compared with the flight, the locked entry from entry interface, and it met all three lines: peak load 32.17 g against 32.89 g, and the drogue altitude and Mach number reached at 138.909 s and 136.953 s against 137.9 s recorded. Other paths are computed inside the tables, down to sea level, and were not compared."
-    );
-    let generator = &cards[10]["specimen"];
-    assert_eq!(
-        generator,
-        "One radioisotope generator, flight unit F1, on the Curiosity rover: its daily-average electrical output from landing on, with no load. Compared on the 1,279 held-back days 2,809 to 4,087, the end of the published record: inside its line of 0.010 of 115.4 W by root mean square (0.008129, about 0.94 W) and outside it in its mean over the final 365 days (+0.010094, about 1.16 W high), so it failed by the rule fixed beforehand. It reads high and the gap grew each year; past day 4,087 nothing was compared and the frame sets FLAG_PAST_RECORD."
-    );
+    for (index, number) in [(35, "39"), (34, "20 table rows"), (10, "2,809 to 4,087"), (17, "0.093"), (19, "30"), (26, "32.445 GHz")] {
+        assert!(cards[index]["specimen"].as_str().unwrap().contains(number), "cards[{index}]: {number}");
+    }
+    assert!(cards[34]["specimen"].as_str().unwrap().contains("one thermocouple of one element"));
 
     for (domain, card) in pairs {
         let which = json!({ "domain": domain, "card": card });

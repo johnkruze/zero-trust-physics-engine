@@ -334,39 +334,37 @@ mod tests {
         }
     }
 
-    /// stress_plate_hole_s235's own record says its comparison is not blind
-    /// in the held-back ring (the solver's validation data, and
-    /// stress_plate_s235/validation_protocol.md, "What was seen before this
-    /// protocol was fixed"): its entry says so, and its companion's names it
-    /// as the scored original, never as compared blind.
+    /// stress_plate_hole_s235's own record says what of the compared ring was
+    /// read before its error targets were set: the local strains of 1.3e-3 to
+    /// 3.0e-3 by the hole's edge. Its entry says so, with the numbers, and the
+    /// elastic form's entry says its structure was set with the ring read.
     #[test]
     fn the_stress_plate_entries_say_what_its_record_says_of_the_ring() {
         let view = View::full();
         let original = cite_in(&view, &json!({ "solver": "stress_plate_hole_s235" })).unwrap();
         let companion = cite_in(&view, &json!({ "solver": "stress_plate_hole_s235_elastic" })).unwrap();
         let said = original["how_used"].as_str().unwrap();
-        assert!(said.contains("The comparison is not blind in that ring"), "{said}");
+        assert!(said.contains("the 1,189 points 4.5 to 12 mm from the hole's centre, outside the fit") && said.contains("local strains of 1.3e-3 to 3.0e-3, 0.5 to 1 mm from the hole's edge, were read before the error targets were set"), "{said}");
         let said = companion["how_used"].as_str().unwrap();
-        assert!(said.contains("stress_plate_hole_s235, the scored original, compared before this companion was built and not blind in that ring by its own record"), "{said}");
+        assert!(said.contains("Its structure, no yield, was set with the ring of 1,189 points 4.5 to 12 mm from the hole's centre and stress_plate_hole_s235's comparison on it read"), "{said}");
         assert!(!CITATIONS.contains("stress_plate_hole_s235, compared blind"));
     }
 
-    /// Three entries said what their records contradict and the served
-    /// validations have mended since 0.13.1 (AUDIT.md of 2026-10-16, defects
-    /// 4, 7 and 10): cantilever_eth's next 12 s were not kept unread, their
-    /// coarse envelope having been printed; reactor_triga_jsi's held-back
-    /// records were fetched, after the scoring; ln2_line_dlr_fttf's marks were
-    /// committed to the engine's own record, not posted.
+    /// Three entries say what their records say: cantilever_eth's compared 12 s
+    /// had their coarse envelope read; 15 of reactor_triga_jsi's 20 compared
+    /// rows have had their records fetched since, and its structure was set
+    /// with their peak power read; ln2_line_dlr_fttf's error targets are in the
+    /// engine's own record.
     #[test]
     fn the_entries_say_what_the_mended_validations_say() {
         let view = View::full();
         let how = |request: Value| cite_in(&view, &request).unwrap()["how_used"].as_str().unwrap().to_string();
         let cantilever = how(json!({ "domain": "signal", "card": "cantilever_eth" }));
-        assert!(cantilever.contains("their coarse envelope on Laser_1 had been printed by mistake on 2026-10-06"), "{cantilever}");
+        assert!(cantilever.contains("The coarse envelope of those 12 s on Laser_1, its peak-to-peak value in each half second, was read before the split was written"), "{cantilever}");
         let triga = how(json!({ "domain": "energy", "card": "reactor_triga_jsi" }));
-        assert!(triga.contains("15 of those records were fetched on 2026-10-11, after the scoring"), "{triga}");
+        assert!(triga.contains("15 of those records have been fetched since") && triga.contains("The card's structure was set with the peak power of every one of those 20 rows read"), "{triga}");
         let line = how(json!({ "solver": "ln2_line_dlr_fttf" }));
-        assert!(line.contains("in the engine's own record and not in the public pass-marks repository"), "{line}");
+        assert!(line.contains("compared with the other six, outside the fit, by error targets written in the engine's own record"), "{line}");
         for words in ["kept unread until the card was compared", "whose records were never fetched", "marks posted before they were opened"] {
             assert!(!CITATIONS.contains(words), "{words}");
         }

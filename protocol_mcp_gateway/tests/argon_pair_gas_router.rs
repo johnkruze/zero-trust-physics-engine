@@ -255,7 +255,7 @@ async fn the_description_says_what_is_fitted_and_its_example_runs_unchanged() {
         .find(|row| row["solver"] == "argon_pair_gas")
         .expect("argon_pair_gas is listed");
     let summary = row["summary"].as_str().expect("a sentence");
-    assert!(summary.contains("fitted to the measured speed of sound in argon"), "{summary}");
+    assert!(summary.contains("Fitted on 42 of the 66 measured speeds of sound at or below 500 kPa"), "{summary}");
 
     let (status, text) = post(&base, "/describe_solver", &json!({ "solver": "argon_pair_gas" })).await;
     assert_eq!(status, 200, "{text}");
@@ -265,13 +265,20 @@ async fn the_description_says_what_is_fitted_and_its_example_runs_unchanged() {
         let words = described["validation"][part].as_str().unwrap_or_else(|| panic!("{part}"));
         assert!(!words.is_empty(), "{part}");
     }
-    assert!(described["validation"]["limits"].as_str().unwrap().contains("extrapolation in temperature"));
+    assert!(described["validation"]["limits"].as_str().unwrap().contains("extends the fit in temperature by up to 50 K"));
     assert!(described["validation"]["data"].as_str().unwrap().contains("calculated from an ab initio potential, not measured"));
     // Sentences held in the one line of the list and in each part of the
     // record.
-    assert!(summary.ends_with(
-        "Every property is answered from 250 K to 6000 K, where argon begins to ionize, at 0 to 500 kPa, where the pressure series cut after its first term is written. Compared with measurement, all five lines met: the speed of sound from 250 K to 349.868 K at 30.5 kPa to 467.2 kPa (held-back rms 0.0074 m/s), the viscosity from 291.09 K to 681.96 K at zero pressure (mean 1.47 percent high)."
-    ), "{summary}");
+    for words in [
+        "Range: speed of sound compared at 250 to 349.868 K and 30.5 to 467.2 kPa, viscosity at 291.09 to 681.96 K; computes every property from 250 to 6000 K and 0 to 500 kPa with the same equations.",
+        "Compared with the 24 speeds of sound not in the fit (310 to 349.868 K): within 0.0074 m/s RMS (worst 0.0146)",
+        "within 1.47 percent mean (worst 2.97)",
+        "Gap: the viscosity reads high at all 49 points, 2.95 percent at 291 K falling to 0.28 percent at 682 K",
+        "(TemperatureOutOfRange)",
+        "(PressureOutOfRange)",
+    ] {
+        assert!(summary.contains(words), "{words}: {summary}");
+    }
     let data = described["validation"]["data"].as_str().unwrap();
     for words in [
         "the archive's compiler gives its own 95 percent uncertainty beside it, 0.50 to 0.59 m/s",
@@ -280,32 +287,34 @@ async fn the_description_says_what_is_fitted_and_its_example_runs_unchanged() {
         "The viscosity is at a density of 1.1 kg/m3, not at zero density",
         "what is measured is the ratio of the viscosity to its value at 298.15 K, and the absolute level of all 49 values rests on that one value",
         "the NIST ThermoML Archive, doi 10.18434/mds2-2422",
-        "the National Institute of Standards and Technology be acknowledged as the source of the data",
+        "Fitted on the 42 points at or below 500 kPa of the eleven isotherms from 250 K to 300.117 K",
     ] {
         assert!(data.contains(words), "{words}: {data}");
     }
     let pass_line = described["validation"]["pass_line"].as_str().unwrap();
     for words in [
-        "They were drawn knowing that textbook constants give about 2 percent, so meeting them is not evidence of agreement with the measurement",
-        "The comparison is not blind: before the split was chosen and these lines were fixed, a sampled listing of both files was printed and read",
-        "29 of the 163 speed-of-sound rows, from all 15 isotherms including the four held back, and 11 of the 49 viscosity rows, all of which are scored",
+        "RMS error at most 0.030 m/s, worst at most 0.060 m/s, RMS at most a quarter of the ideal gas's",
+        "mean error at most 2.0 percent, worst at most 4.0 percent",
+        "set knowing that textbook constants give about 2 percent",
     ] {
         assert!(pass_line.contains(words), "{words}: {pass_line}");
     }
+    assert!(
+        described["validation"]["limits"].as_str().unwrap().contains("The split and the targets were chosen with 29 of the 163 speed-of-sound rows read, from all 15 isotherms, and 11 of the 49 viscosity rows."),
+        "the rows read before the split are stated"
+    );
     let result = described["validation"]["result"].as_str().unwrap();
     for words in [
-        "All five lines were met.",
-        "root mean square error 0.0074 m/s, largest 0.0146 m/s",
-        "mean error 1.47 percent, largest 2.97 percent",
+        "RMS 0.0074 m/s (target 0.030), worst 0.0146 m/s (target 0.060), RMS 0.023 of the ideal gas's 0.327 m/s (target 0.25)",
+        "mean error 1.47 percent (target 2.0), worst 2.97 percent (target 4.0)",
         "above the measurement at all 49 points, by 2.95 percent at 291 K falling to 0.28 percent at 682 K: 1.4 to 20 times the measurement's uncertainty, 9 on average, and no point is within it",
         "143.84 K and 3.3379 angstrom fit all 49 points within 0.11 percent",
-        "What fails is one pair of constants for both properties: that pair misses the held-back speed of sound by 0.22 m/s",
-        "does not distinguish the 12-6 form from a square well, van der Waals' second virial coefficient, a hard sphere with an r^-6 attraction, or Mie potentials from 9-6 to 30-6",
-        "meets the same lines, at 0.0073 to 0.0107 m/s",
-        "the reference equation of state scores 0.0076, and repeated states differ by up to 0.016 m/s",
-        "the second acoustic virial coefficient fitted at 250 to 300 K extrapolates 50 K",
-        "SHA-256 90dfab953a94d199db146cfad89a4ce4bf750288c3b33b299fb2fed49e722066) was overwritten by a later build, which returned all 115 saved answers byte for byte; engine 0.7.0 answers all 115, the 49 viscosity answers asked at zero pressure among them, the same in every field but the engine version and the receipt",
-        "evidence/verification/second_party/V-34/",
+        "that pair is 0.22 m/s off on the speed of sound outside the fit; one pair of constants does not carry both properties",
+        "a square well, van der Waals' second virial coefficient, a hard sphere with an r^-6 attraction, and Mie potentials from 9-6 to 30-6, each fitted on the same 42 points, give 0.0073 to 0.0107 m/s RMS",
+        "the reference equation of state gives 0.0076, and repeated states differ by up to 0.016 m/s",
+        "fitted at 250 to 300 K, it extrapolates 50 K",
+        "SHA-256 90dfab953a94d199db146cfad89a4ce4bf750288c3b33b299fb2fed49e722066; a later build returns all 115 byte for byte, and engine 0.7.0 answers all 115, the 49 viscosity answers asked at zero pressure among them, the same in every field but the engine version and the receipt",
+        "A second run on the same machine recomputes the same numbers.",
     ] {
         assert!(result.contains(words), "{words}: {result}");
     }
@@ -315,7 +324,7 @@ async fn the_description_says_what_is_fitted_and_its_example_runs_unchanged() {
     ));
     assert_eq!(described["locked"]["well_depth_k"], argon::WELL_DEPTH_K);
     assert_eq!(described["locked"]["zero_distance_angstrom"], argon::ZERO_DISTANCE_ANGSTROM);
-    assert_eq!(described["reference"]["kind"], "Reference calculations for the 12-6 potential. They are not measurements, and they say nothing about argon.");
+    assert_eq!(described["reference"]["kind"], "Reference calculations for the 12-6 potential itself: they hold the solver's integrals of the potential, and the comparison with argon is the validation record.");
     let inputs = described["inputs"].as_array().expect("inputs");
     assert_eq!(inputs.len(), 2);
     assert_eq!(inputs[0]["minimum"], argon::TEMPERATURE_MIN_K);
@@ -335,9 +344,9 @@ async fn the_description_says_what_is_fitted_and_its_example_runs_unchanged() {
     }
     assert!(!bound.contains("NotCompared"), "{bound}");
     let limits = described["validation"]["limits"].as_str().unwrap();
-    assert!(limits.contains("Not tested, and answered: a pressure above zero outside 30.5 to 467.2 kPa; the speed of sound above 349.868 K; the viscosity below 291.09 K; every property above 681.96 K up to 6000 K"), "{limits}");
+    assert!(limits.contains("Answered with the same equations and compared with no measurement: a pressure above zero outside 30.5 to 467.2 kPa; the speed of sound above 349.868 K; the viscosity below 291.09 K; every property above 681.96 K up to 6000 K"), "{limits}");
     assert!(!limits.contains("pressures above 500 kPa, where the solver refuses"), "{limits}");
-    assert!(summary.contains("the speed of sound from 250 K to 349.868 K at 30.5 kPa to 467.2 kPa (held-back rms 0.0074 m/s), the viscosity from 291.09 K to 681.96 K at zero pressure"), "{summary}");
+    assert!(summary.contains("speed of sound compared at 250 to 349.868 K and 30.5 to 467.2 kPa, viscosity at 291.09 to 681.96 K"), "{summary}");
     let result = described["validation"]["result"].as_str().unwrap();
     assert!(result.contains("engine 0.7.0 answers all 115, the 49 viscosity answers asked at zero pressure among them, the same in every field but the engine version and the receipt."), "{result}");
     assert_eq!(described["refusals"].as_array().expect("refusals").len(), 9);

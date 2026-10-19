@@ -453,10 +453,10 @@ async fn the_card_is_listed_and_described_with_its_record() {
     let base = spawn_app().await;
     let list: Value = Client::new().get(format!("{base}/cards")).send().await.unwrap().json().await.unwrap();
     let cards = list["cards"].as_array().unwrap();
-    assert_eq!(cards.len(), 37);
+    assert_eq!(cards.len(), 40);
     assert_eq!(cards[20]["domain"], "aerospace");
     assert_eq!(cards[20]["card"], "crater_ryugu_sci");
-    assert!(cards[20]["specimen"].as_str().unwrap().contains("fitted in the laboratory on Earth and not to Ryugu"));
+    assert!(cards[20]["specimen"].as_str().unwrap().contains("nothing fitted to Ryugu"));
     let (status, text) = post(&base, "/describe_card", &json!({ "domain": "aerospace", "card": "crater_ryugu_sci" })).await;
     assert_eq!(status, 200, "{text}");
     let body: Value = serde_json::from_str(&text).unwrap();
@@ -468,45 +468,42 @@ async fn the_card_is_listed_and_described_with_its_record() {
     let record = &body["validation"];
     assert!(record["limits"].as_str().unwrap().contains("Nothing is fitted to Ryugu"));
     // Sentences held in the one line of the list, the result and the limits.
-    assert!(cards[20]["specimen"].as_str().unwrap().ends_with(
-        "; its predicted radius is 18 percent above the measured crater, a miss of its own line, and its clock is not compared with Ryugu."
+    assert!(cards[20]["specimen"].as_str().unwrap().contains(
+        "Gap: on Ryugu the card stops 1.32 m, 18.2 percent, above the measured apparent radius, outside the allowance of 0.97 m;"
     ));
     let result = record["result"].as_str().unwrap();
     for words in [
-        "by the rule fixed beforehand the comparison with Ryugu failed",
-        "Those intervals are +/- 31 to 38 percent, so the first laboratory line could not have failed",
-        "The second, 7.87 percent, was foreseeable from Schmidt's published line",
-        "with any one of four of the nine opened shots left out it is 10.4 to 11.8 percent, a miss",
-        "The four errors are all of one sign, a real bias of the nine-shot line",
-        "18.2 percent, too large, against an allowance of 0.97 m",
+        "On Ryugu: the card stops at 8.571 m against the measured apparent radius of 7.25 m, 1.32 m or 18.2 percent above (allowance 0.97 m",
+        "Those intervals are +/- 31 to 38 percent wide",
+        "The mean, 7.87 percent, follows from Schmidt's published line",
+        "with any one of four of the nine 1 g shots left out it is 10.4 to 11.8 percent (target 10)",
+        "The four errors are all of one sign, a bias of the nine-shot line",
         "7.25 m is the apparent radius, which is what the law predicts: the apparent diameter is 14.5 +/- 0.8 m and the rim-to-rim diameter 17.6 +/- 0.7 m",
-        "The same team's submitted manuscript gave 6.5 +/- 0.4 m by another reduction",
+        "The same team's submitted manuscript gives 6.5 +/- 0.4 m by another reduction",
         "6.9 to 7.7 m by the dry-sand line of Housen and Holsapple, \"agrees well with the apparent radius\"",
-        "with a mark of 1 part in 10^9, and that line was missed",
-        "stopped at 8.571304624905444 m, 3.45 parts in 10^8 from the closed form of the fitted law, 8.571304329477925 m",
-        "The record said the line was met because it compared the engine with the closed form of the same six-figure constants",
-        "Since engine 0.7.0 the card types the constants as the fit gave them and stops at 8.571304329477922 m, 4 parts in 10^16 from the closed form",
+        "8.571304329477925 m (target 1 part in 10^9)",
+        "stops at 8.571304329477922 m, 4 parts in 10^16 from the closed form",
+        "stopped at 8.571304624905444 m, 3.45 parts in 10^8 from the closed form",
         "That agreement is by construction: on the stopping step the card sets the radius to a typed constant",
-        "Engine 0.7.0, with the constants retyped, does not",
+        "differ from that run in the eighth figure and beyond",
         "the team's submitted manuscript says growth would stop by about 300 s",
-        "SHA-256 425ef2b93d69be6f05da11eaf6ad4c4debecc37d548672950465d68ef2bf3b04) was overwritten by a later build; two later builds, 05efbd06… and 043d5765…, returned the answer byte for byte",
-        "evidence/verification/second_party/V-30/",
+        "binary 425ef2b93d69be6f05da11eaf6ad4c4debecc37d548672950465d68ef2bf3b04; two later builds, 05efbd06… and 043d5765…, return its answer byte for byte",
     ] {
         assert!(result.contains(words), "{words}: {result}");
     }
     assert!(!result.contains("to the last bit"), "{result}");
     let limits = record["limits"].as_str().unwrap();
     for words in [
-        "The comparison is not blind: the measured diameter and a prediction of 8.6 m worked out by hand were in hand before the protocol's hash was recorded, and all of Schmidt's Table 1, the four held-back centrifuge craters included, was seen while it was transcribed",
+        "the measured diameter and a prediction of 8.6 m worked out by hand were read before the record's hash was taken, and all of Schmidt's first table, the four centrifuge craters outside the fit included, was read while it was transcribed",
         "The impactor was a hollow copper shell 13 cm across, of 2 kg; the card models it as a solid copper sphere of the same mass, of radius 3.76 cm, at the full 2 km/s",
         "the same law gives 7.83 m, 8.0 percent above the measurement and inside the allowance",
         "(the shell, 2 km/s, g = 1.2e-4 m/s2) it gives 7.50 m, 3.5 percent above",
-        "Across twenty reasonable readings of the inputs the prediction runs from 7.15 to 8.80 m, wider than the miss",
+        "Across twenty reasonable readings of the inputs the prediction runs from 7.15 to 8.80 m, wider than the gap",
         "each move the prediction more than the rotation term does, and neither is in the allowance",
-        "it does not show that Ryugu's crater departs from sand scaling",
+        "The 18.2 percent belongs to the scaling of dense Ottawa Flintshot sand with these inputs",
         "Its time constant, 1.318295773573555, comes from seven points read by eye at 1 g",
-        "the open sources say growth for about 200 s and a stop by about 300 s. The clock is untested.",
-        "It was scored twice, the second time by a second scorer, on one machine",
+        "the open sources say growth for about 200 s and a stop by about 300 s. No time of Ryugu's crater is in the comparison.",
+        "a second comparison program, on the same machine, gives the same numbers",
     ] {
         assert!(limits.contains(words), "{words}: {limits}");
     }

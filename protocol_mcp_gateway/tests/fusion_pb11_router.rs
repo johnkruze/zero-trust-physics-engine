@@ -506,16 +506,16 @@ async fn both_are_listed_and_described_and_each_example_runs_unchanged() {
     let listed = reqwest::get(format!("{base}/solvers")).await.unwrap();
     let listed: Value = serde_json::from_str(&listed.text().await.unwrap()).unwrap();
     let solvers = listed["solvers"].as_array().expect("solvers");
-    assert_eq!(solvers.len(), 24);
+    assert_eq!(solvers.len(), 25);
     assert_eq!(solvers[7]["solver"], "fusion_pb11_lhd");
     assert_eq!(solvers[8]["solver"], "fusion_pb11_thermal");
     for listed in &solvers[7..9] {
         let summary = listed["summary"].as_str().unwrap();
         assert!(summary.ends_with('.'));
-        assert!(summary.contains("No constant is fitted"), "{summary}");
+        assert!(summary.contains("Nothing fitted"), "{summary}");
     }
-    assert!(solvers[8]["summary"].as_str().unwrap().contains("Compared with the published calculations of Ochs et al. (2022)"));
-    assert!(solvers[7]["summary"].as_str().unwrap().contains("one of its four lines met"));
+    assert!(solvers[8]["summary"].as_str().unwrap().contains("Held to the published calculations of Ochs et al. 2022"));
+    assert!(solvers[7]["summary"].as_str().unwrap().contains("the six beam-energy points in the measured order (Spearman 0.943), worst factor 2.94"));
     for place in [7, 8] {
         assert!(!solvers[place]["summary"].as_str().unwrap().contains("missed"), "{place}");
     }
@@ -584,25 +584,25 @@ async fn both_are_listed_and_described_and_each_example_runs_unchanged() {
     assert!(described["reference"]["covers"].as_str().unwrap().contains("The served solver answers this case"));
     let limits = described["validation"]["limits"].as_str().unwrap();
     assert!(limits.contains("The declared range is where the solver's equations hold"), "{limits}");
-    assert!(limits.contains("both beam families now share one range"), "{limits}");
+    assert!(limits.contains("Both beam families, the negative-ion beams and the 45 keV beam, share one range"), "{limits}");
     assert_eq!(described["locked"]["boron11_fraction"], 0.80);
     assert_eq!(described["locked"]["shells"], 20);
-    // The comparison with the published calculation is stated as it came out: missed.
+    // The comparison with the published calculation is stated in numbers beside its target.
     let result = described["validation"]["result"].as_str().unwrap();
-    assert!(result.starts_with("Three of the four lines were missed and one was met."), "{result}");
-    assert!(result.contains("with the boron of the paper's text, 6.3e16 per m^3: alpha rate 1.921e13 per second, solver over published 0.128, not met."), "{result}");
-    // So are the comparisons with the measured count rates: two missed, one met.
-    assert!(result.contains("Beam energy dependence: worst factor 2.94, Spearman rank correlation 0.943, rise from 128 to 160 kV measured 2.10 and solver 11.1, not met."), "{result}");
+    assert!(result.starts_with("Against the published calculation, with the boron of the paper's text"), "{result}");
+    assert!(result.contains("with the boron of the paper's text, 6.3e16 per m^3: alpha rate 1.921e13 per second, solver over published 0.128 (target 0.5 to 2.0)."), "{result}");
+    // So are the comparisons with the measured count rates.
+    assert!(result.contains("Beam energy dependence: worst factor 2.94 (target 2), Spearman rank correlation 0.943, rise from 128 to 160 kV measured 2.10 and solver 11.1."), "{result}");
     // The record says which beam voltage the runs took, with the protocol's own beside it.
     assert!(result.contains("with the top panel's voltages the worst factor is 2.953 and the rise 10.7"), "{result}");
-    assert!(result.contains("Time shape: worst factor 2.42, not met."), "{result}");
-    assert!(result.contains("Collapse under the 45 keV beam: solver ratio 1.26e-5, measured ratio 0.062, met."), "{result}");
-    assert_eq!(result.matches("not met").count(), 3);
-    assert!(result.contains("Absolute count rate, not gated:") && result.contains("4.7 times above"), "{result}");
+    assert!(result.contains("Time shape: worst factor 2.42 (target 2)"), "{result}");
+    assert!(result.contains("Collapse under the 45 keV beam: solver ratio 1.26e-5, measured ratio 0.062 (target: at most the measured ratio)"), "{result}");
+    assert_eq!(result.matches("(target").count(), 4);
+    assert!(result.contains("Absolute count rate, with no target:") && result.contains("4.7 times above"), "{result}");
     let (_, text) = post(&base, "/describe_solver", &json!({ "solver": "fusion_pb11_thermal" })).await;
     let described: Value = serde_json::from_str(&text).unwrap();
     let result = described["validation"]["result"].as_str().unwrap();
-    assert!(result.contains("Missed: ") && result.contains("7.9 percent off"), "{result}");
+    assert!(result.contains("7.9 percent off (target 5 percent)"), "{result}");
     assert!(described["validation"]["data"].as_str().unwrap().starts_with("Published calculations:"));
     assert!(described["validation"]["object"].as_str().unwrap().starts_with("A uniform thermal plasma"));
     // The switch is a field like the others: true or false, with no default.
@@ -611,8 +611,8 @@ async fn both_are_listed_and_described_and_each_example_runs_unchanged() {
     assert!(described["inputs"][8]["bound"].as_str().unwrap().starts_with("Required, true or false. It has no default, and a request that leaves it out is refused as a missing key, in a sentence that names the key, as InputMissing"));
     assert_eq!(described["inputs"][8]["type"], "true or false");
     assert!(described["inputs"][8]["bound"].as_str().unwrap().contains("It is theory"));
-    // Five comparisons with published calculations, each met.
-    assert_eq!(result.matches(", met.").count(), 5);
+    // Five comparisons with published calculations, two with the plain-Python model and the closure, each beside its target.
+    assert_eq!(result.matches("(target ").count(), 8);
     // The atom is described as before, and a name between is none.
     let (status, text) = post(&base, "/describe_solver", &json!({ "solver": "atom_dft" })).await;
     assert_eq!(status, 200, "{text}");
@@ -668,7 +668,7 @@ async fn requests_at_the_edges_of_the_range_are_answered_truly_and_described() {
     };
     assert!(note("electron_temperature_kev").contains("turns from heating to loss"));
     let rate = note("ignition_loss_rate_per_s");
-    assert!(rate.contains("stored energy of ions and electrons") && rate.contains("It is not one over the ion-only energy_confinement_time_s"), "{rate}");
+    assert!(rate.contains("stored energy of ions and electrons") && rate.contains("It differs from one over energy_confinement_time_s, which counts the ions alone"), "{rate}");
     assert!(!rate.contains("One over the confinement time"), "{rate}");
     assert_eq!(described["locked"]["electron_grid_step_kev"], thermal::ELECTRON_GRID_STEP_KEV);
     assert!(described["validation"]["result"].as_str().unwrap().contains("Total-energy ignition confinement time"));

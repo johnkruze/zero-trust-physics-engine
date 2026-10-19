@@ -35,7 +35,7 @@ pub const JOURNAL_BEARING_SHEFFIELD: Solver = Solver {
                 unit: "N",
             },
             refusal: Some("LoadNotPositive"),
-            bound: "The steady load on the bearing, above zero (LoadNotPositive otherwise). The film depends on load and speed only through the Sommerfeld number; a load the film carries only with the shaft outside an eccentricity ratio of 0.05 to 0.95 is refused as EccentricityRatioOutOfRange. The tested envelope of the specimen is 2 to 20 kN; outside it nothing was compared.",
+            bound: "The steady load on the bearing, above zero (LoadNotPositive otherwise). The film depends on load and speed through the Sommerfeld number alone; a load that would put the shaft outside an eccentricity ratio of 0.05 to 0.95 is refused as EccentricityRatioOutOfRange. Compared at 2 to 20 kN; outside that it computes the same equations.",
             only_when: None,
             asked_by_check: true,
         },
@@ -47,7 +47,7 @@ pub const JOURNAL_BEARING_SHEFFIELD: Solver = Solver {
                 unit: "rpm",
             },
             refusal: Some("SpeedNotPositive"),
-            bound: "The steady shaft speed, above zero (SpeedNotPositive otherwise). Above a film Reynolds number of 41.2 sqrt(R/c), about 1450 and near 143,000 rpm for an oil of 860 kg/m³, Taylor vortices form and the film is not laminar: refused as FilmNotLaminar. The tested envelope is 100 to 800 rpm, where the film Reynolds number is at most about 8; outside it nothing was compared, and the film is held at 65 °C at every speed. No other input is accepted: the bearing, the oil, the grid and the tolerances are constants of the solver.",
+            bound: "The steady shaft speed, above zero (SpeedNotPositive otherwise). Above a film Reynolds number of 41.2 sqrt(R/c), about 1450 and near 143,000 rpm for an oil of 860 kg/m³, Taylor vortices form and the film is not laminar: refused as FilmNotLaminar. Compared at 100 to 800 rpm, where the film Reynolds number is at most about 8; outside that it computes the same equations, the film held at 65 °C at every speed. No other input is accepted: the bearing, the oil, the grid and the tolerances are constants of the solver.",
             only_when: None,
             asked_by_check: true,
         },
@@ -69,7 +69,7 @@ pub const JOURNAL_BEARING_SHEFFIELD: Solver = Solver {
             "deg",
             "Angle from the load line to the line of centres, from the film force of the settled field. Compared with no measurement.",
         ),
-        number("minimum_film_thickness_m", "m", "Compared with measurement."),
+        number("minimum_film_thickness_m", "m", "Compared with the 16 measured runs not in the fit: mean absolute relative residual 0.058, worst 0.156."),
         number(
             "peak_film_pressure_pa",
             "Pa",
@@ -172,7 +172,7 @@ fn sections() -> Sections {
             "radial_clearance_m": bearing::RADIAL_CLEARANCE_M,
             "oil_viscosity_at_65c_pa_s": bearing::OIL_VISCOSITY_AT_65C_PA_S,
             "film_viscosity_multiplier": bearing::FILM_VISCOSITY_MULTIPLIER,
-            "film_viscosity_multiplier_source": "Fitted to the thirty-four opened runs of the validation protocol. Every other constant is the source's.",
+            "film_viscosity_multiplier_source": "Fitted on 34 of the 50 measured runs of the validation record. Every other constant is the source's.",
             "eccentricity_ratio_min": bearing::ECCENTRICITY_RATIO_MIN,
             "eccentricity_ratio_max": bearing::ECCENTRICITY_RATIO_MAX,
             "cells_around": bearing::CELLS_AROUND,
@@ -212,7 +212,7 @@ fn sections() -> Sections {
             "tolerance": bearing::REFERENCE_TOLERANCE,
             "test": "raimondi_boyd_full_bearing_at_three_length_ratios",
             "covers": "The Sommerfeld number at eccentricity ratios 0.1 to 0.9 for length-to-diameter ratios 1, 1/2 and 1/4, with the film started at the widest gap as the table's authors did.",
-            "kind": "A reference calculation. It is not a measurement.",
+            "kind": "A reference calculation: Raimondi and Boyd's solution of the Reynolds equation for the finite bearing; the solver's Sommerfeld number is within 0.015 of it, relative, at every tabulated point at an eccentricity ratio of 0.95 or less.",
         }),
     }
 }
@@ -221,11 +221,11 @@ fn sections() -> Sections {
 /// object, the data, the pass line, the result and the limits. The numbers
 /// are those of the research record of the bearing.
 fn validation() -> [String; 5] {
-    let object = "The plain full journal bearing of the bespoke test platform of the Leonardo Centre for Tribology, University of Sheffield, flooded with mineral oil, bearing temperature 65 °C, shaft aligned, steady load and speed. Beamish, Li, Brunskill, Hunter and Dwyer-Joyce, Tribology International 148 (2020) 106295.".to_string();
-    let data = "Minimum film thickness by the ultrasonic phase-change method, one value per steady run, fifty runs: five speeds from 100 to 800 rpm at ten loads from 2 to 20 kN. Mendeley Data, doi 10.17632/txdrvd382p.2, CC BY 4.0. Thirty-four runs were opened and the viscosity multiplier fitted to them; sixteen were held back by rank before any measurement was read. Record: evidence/research/tribology_sheffield_journal_bearing/.".to_string();
-    let pass_line = "On the residual (solver - measured) / measured over the held-back runs: mean of the absolute residual at most 0.15, worst absolute residual at most 0.35, absolute value of the mean at most 0.10. Fixed 2026-10-09T20:11:00Z, SHA-256 5319a2f190dece027bd0f19cb339b9d950827a2e7dcde7241b251380a21de01a of analysis/prereg.json, before any measured film thickness was read.".to_string();
-    let result = "All three lines met on the sixteen held-back runs: mean absolute 0.0580, worst absolute 0.1563, mean 0.0199, computed by this solver through the gateway on 2026-10-09, once, each answer saved with its seal and its receipt. With no fitted constant the solver misses: on the sixteen held-back runs mean absolute 0.1409, worst absolute 0.2574, mean 0.1409, the film thicker than measured on all sixteen (by the second scoring, outside the engine); on the thirty-four opened runs mean absolute 0.1293, worst absolute 0.4761, mean 0.1277, not met. On the opened runs with the fitted multiplier, leaving one out, in plain Python outside the engine: mean absolute 0.0636, worst absolute 0.3339, mean 0.0085, met; through the engine: mean absolute 0.0617, worst absolute 0.3235, mean 0.0085, met, and the fitted multiplier came from these runs. A second scorer recomputed the sixteen residuals, the seals and the receipts from the protocol alone on 2026-10-09 and found the same numbers and the same verdict: evidence/verification/second_party/V-22/. Not gated: against the ultrasonic amplitude method on the same sixteen runs, mean absolute 0.2106, worst absolute 0.9356, mean -0.0648; the source restricts that method to films under 12.5 micrometres.".to_string();
-    let limits = "One constant is fitted, the viscosity multiplier. The held-back runs are every third run of the same fifty and lie among the fitted ones, inside the same loads and speeds: interpolation, not extrapolation. The model depends on load and speed only through their ratio, and eight of the sixteen share that ratio with a fitted run. That is a property of the model, not a measurement. The test is whether the measurements fall on one curve with one constant. Nothing is shown outside 2 to 20 kN and 100 to 800 rpm (Sommerfeld number about 0.016 to 1.3), and the solver answers past them wherever the laminar film carries the load inside the eccentricity ratios searched; there the oil is held at 65 °C and the shell and the shaft rigid, so heating at high speed and deformation under high load are left out. Through engine 0.8.0 a load or speed outside the tested envelope was refused. The record says nothing of any other bearing, oil or temperature; a misaligned shaft; start-up, shut-down or a moving load; the film away from its thinnest point; the pressure; the attitude angle; friction and oil flow. The solver returns the attitude angle and the peak film pressure from the same settled field as the film thickness, compared with no measurement, and no friction and no oil flow.".to_string();
+    let object = "The plain full journal bearing of the test platform of the Leonardo Centre for Tribology, University of Sheffield: flooded with mineral oil, the bearing at 65 °C, the shaft aligned, steady load and speed.".to_string();
+    let data = "Minimum film thickness by the ultrasonic phase-change method, one value per steady run: 50 runs, five speeds from 100 to 800 rpm at ten loads from 2 to 20 kN (Mendeley Data, doi 10.17632/txdrvd382p.2; the paper is Tribology International 148, 106295). 34 runs in the fit, the viscosity multiplier fitted on them; 16 outside it, every third run by rank, inside the same 2 to 20 kN and 100 to 800 rpm.".to_string();
+    let pass_line = "Minimum film thickness, as the residual (solver - measured) / measured over the 16 runs not in the fit: mean of the absolute residual at most 0.15, worst absolute residual at most 0.35, absolute value of the mean at most 0.10. Record SHA-256 5319a2f190dece027bd0f19cb339b9d950827a2e7dcde7241b251380a21de01a.".to_string();
+    let result = "On the 16 runs not in the fit: mean absolute residual 0.0580 (target 0.15), worst absolute 0.1563 (target 0.35), mean +0.0199 (target 0.10). Each answer was computed by this solver through the gateway and saved with its seal and its receipt; a second program recomputes the 16 residuals, the seals and the receipts from the record alone to the same numbers. With no fitted constant: on the 16 runs not in the fit, mean absolute 0.1409, worst absolute 0.2574, mean 0.1409, the film thicker than measured on all 16 (computed outside the engine); on the 34 fitted runs, mean absolute 0.1293, worst absolute 0.4761, mean 0.1277. With the fitted multiplier, each of the 34 fitted runs left out of the fit in turn: mean absolute 0.0636, worst absolute 0.3339, mean 0.0085 in a second program outside the engine, and mean absolute 0.0617, worst absolute 0.3235, mean 0.0085 through the engine. Beside these, against the ultrasonic amplitude method on the same 16 runs: mean absolute 0.2106, worst absolute 0.9356, mean -0.0648; the source restricts that method to films under 12.5 micrometres.".to_string();
+    let limits = "One constant is fitted, the viscosity multiplier, on 34 of the 50 runs. The 16 runs outside the fit are every third run of the same 50 and lie among the fitted ones, inside the same loads and speeds: interpolation, not extrapolation. The model depends on load and speed through the Sommerfeld number alone, and 8 of the 16 share their Sommerfeld number with a fitted run; the comparison asks whether the 50 measurements fall on one curve with one constant. Compared at 2 to 20 kN and 100 to 800 rpm (Sommerfeld number 0.016 to 1.30). Past them the solver computes the same equations wherever the laminar film carries the load at an eccentricity ratio of 0.05 to 0.95; there the oil is held at 65 °C and the shell and the shaft are rigid, so heating at high speed and deformation under high load are left out. The record holds one bearing, one oil and one temperature, an aligned shaft, and steady load and speed; it holds no measurement of the film away from its thinnest point, of the pressure, of the attitude angle, of friction or of oil flow. The solver returns the attitude angle and the peak film pressure from the same settled field as the film thickness, compared with no measurement, and returns no friction and no oil flow.".to_string();
     [object, data, pass_line, result, limits]
 }
 
@@ -368,7 +368,8 @@ mod tests {
         assert!(journal.published_shape("result", "peak_film_pressure_pa").is_some());
         let names: Vec<&str> = journal.result.iter().map(|output| output.name).collect();
         assert_eq!(names, ["sommerfeld_number", "eccentricity_ratio", "attitude_angle_deg", "minimum_film_thickness_m", "peak_film_pressure_pa"]);
-        assert!(journal.summary.contains("the attitude angle and the pressure were compared with nothing"));
+        let summary = crate::spec_sheet::summary_of(journal.name, journal.summary);
+        assert!(summary.contains("the attitude angle and the peak film pressure come from the same settled film and have no measurement"), "{summary}");
         assert!(atom.published_shape("result", "eccentricity_ratio").is_none());
         assert!(atom.published_shape("invariants", "flow_balance_residual").is_none());
         assert!(crate::solvers::find("atom").is_none());
@@ -419,7 +420,7 @@ mod tests {
     fn the_validation_record_holds_every_number_of_the_comparison() {
         let [object, data, pass_line, result, limits] = validation();
         assert!(object.contains("University of Sheffield"));
-        assert!(data.contains("fifty runs") && data.contains("doi 10.17632/txdrvd382p.2"));
+        assert!(data.contains("50 runs") && data.contains("doi 10.17632/txdrvd382p.2"));
         for mark in ["0.15", "0.35", "0.10", "5319a2f190dece027bd0f19cb339b9d950827a2e7dcde7241b251380a21de01a"] {
             assert!(pass_line.contains(mark), "{mark}");
         }

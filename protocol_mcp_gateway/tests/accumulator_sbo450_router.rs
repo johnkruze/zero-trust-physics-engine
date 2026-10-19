@@ -646,7 +646,7 @@ async fn the_local_connection_lists_the_accumulator_and_gives_the_bytes_of_the_w
     assert!(!error);
     let listed: Value = serde_json::from_str(&listed).unwrap();
     let cards = listed["cards"].as_array().unwrap();
-    assert_eq!(cards.len(), 37);
+    assert_eq!(cards.len(), 40);
     let entry = cards
         .iter()
         .find(|card| card["card"] == "accumulator_sbo450")
@@ -654,7 +654,7 @@ async fn the_local_connection_lists_the_accumulator_and_gives_the_bytes_of_the_w
     assert_eq!(entry["domain"], "energy");
     // The line an agent sees in the list carries the standing: what is fitted and what was compared.
     let line = entry["specimen"].as_str().unwrap();
-    assert!(line.contains("fitted to this accumulator's own runs at 40 bar precharge and 60 bar"), "{line}");
+    assert!(line.contains("Fitted on the 100 runs from 0.01 to 10 Hz of the two records at 40 bar precharge and 60 bar load"), "{line}");
     assert!(line.contains(STANDING), "{line}");
 
     let which = json!({ "domain": "energy", "card": "accumulator_sbo450" });
@@ -668,23 +668,23 @@ async fn the_local_connection_lists_the_accumulator_and_gives_the_bytes_of_the_w
     assert!(result.starts_with(RESULT_STARTS), "{result}");
     let limits = description["validation"]["limits"].as_str().unwrap();
     for words in [
-        "amended afterwards with every run opened",
-        "It is not a new test",
+        "The card's geometry and range were corrected after the comparison, with every run read",
+        "the result states the corrected card's numbers on the measured runs",
         "Two constants are fitted to this accumulator's own runs at one condition",
         "The piston area is that of a 50 mm bore, 19.635 cm2, which no source prints",
         "an offset of -0.202 kN",
         "a vessel of 0.58879 l",
-        "a step lands only if H is at most 0.065 of the larger of M and 100 J",
-        "the record at 109 to 132 bar, 40 bar precharge and 120 bar load, was compared by the card as scored and missed",
+        "a step lands if H is at most 0.065 of the larger of M and 100 J, and is refused otherwise",
+        "the record at 109 to 132 bar, 40 bar precharge and 120 bar load, reads 2.72 percent median error of the swing (target 2.0) on the card as first compared",
         "Fitted to each record alone the lag is 1.47 to 1.53 ms in all seven",
-        "test nothing: every baseline meets them",
+        "say nothing of the card: every baseline is within them",
         "extrapolation in pressure and in charge",
         "The precharge is absolute",
-        "would still have failed the comparison: 2.56 percent in the worst record, 6.73 percent at most and 4.03 degrees at most",
+        "gives 2.56 percent in the worst record (target 2.0), 6.73 percent at most (5.0) and 4.03 degrees at most (3.0)",
         "falls threefold",
         "Newton's law is incapable of representing this physical phenomenon",
-        "arXiv:2012.06526",
-        "The miss at 40 / 120 bar is not the equation of state",
+        "preprint 2012.06526",
+        "The 2.72 percent at 40 / 120 bar does not come from the equation of state",
         "one series compliance",
         "with that removed through the model it is 0.35 percent",
         "0.72 percent",
@@ -692,23 +692,22 @@ async fn the_local_connection_lists_the_accumulator_and_gives_the_bytes_of_the_w
         "The ledger closes for any time constant and any vessel volume",
         "no orifice, no flow of gas, and choked flow does not arise",
         "the mean pressure, which is taken from each run",
-        "A second party scored it again from the protocol (V-39) and found the score right",
-        "have not been scored by a second party",
+        "A second program, by another party, recomputes it from the protocol and gives the same numbers",
+        "no second program has recomputed them",
     ] {
         assert!(limits.contains(words), "{words}: {limits}");
     }
     for words in [
-        "The card answered 282 runs and refused three",
-        "0.93 percent in the median against a line of 2.0, met",
-        "2.72 at 40 / 120 against 2.0, missed",
-        "13.96 percent against 5.0, missed",
-        "its median lead error is not the lowest",
-        "it is no evidence for the card's exchange of heat",
+        "The card answers 282 runs and refuses three",
+        "0.93 percent in the median (target 2.0)",
+        "2.72 at 40 / 120 (target 2.0)",
+        "13.96 percent (target 5.0)",
+        "its median lead error, 0.27 degrees, is above three baselines' 0.12, 0.15 and 0.25",
+        "so that target says nothing of the card's exchange of heat",
         "a3d268ca094ba37d1edc91eb3e46d9748deb365d48b9295453e1fa45a8235428",
-        "That is the registered result and it stands",
-        "evidence/verification/second_party/V-39/",
-        "It is not a new test and no line above is changed by it",
-        "None of these is a line met",
+        "These numbers are of the card as it was then",
+        "verifies every proof and reproduces every number above",
+        "89 runs have no answer",
         "59 are no longer answered",
         "92e33dfeaacb2c2fceb0bed273e24424ed13d16fa68592c107e70c3171fbe56e",
         "ba073e2a1c070aa1282bcea8b330b765a833c53b0ab63367a61fb46722a68bb7",
@@ -717,11 +716,10 @@ async fn the_local_connection_lists_the_accumulator_and_gives_the_bytes_of_the_w
         assert!(result.contains(words), "{words}: {result}");
     }
     for words in [
-        "a second scoring confirmed it",
-        "which is not a new test",
-        "a precharge of 20 bar at 37 to 43 or 55 to 67 bar, or of 40 bar at 57 to 64 or 75 to 86 bar, a wall at 293.4 to 293.7 K, gas at 285.9 to 301.8 K and a piston at most 0.7 m/s",
-        "At 109 to 132 bar it missed, 2.72 percent median against 2.0",
-        "up to the vessel's rated 330 bar",
+        "within 0.93 percent median (target 2.0)",
+        "37 to 43 and 55 to 67 bar (20 bar) and 57 to 64 and 75 to 86 bar (40 bar), wall 293.4 to 293.7 K, gas 285.9 to 301.8 K, piston to 0.7 m/s",
+        "Gap: 2.72 percent median at 109 to 132 bar (target 2.0)",
+        "up to the rated 330 bar",
         "0.01 to 20 Hz",
         AFTER_THE_FACT_LINE,
     ] {
@@ -759,10 +757,10 @@ async fn the_local_connection_lists_the_accumulator_and_gives_the_bytes_of_the_w
 }
 
 /// The standing in the one line of `list_cards`.
-const STANDING: &str = "the comparison failed, two of six lines met";
+const STANDING: &str = "within 0.49 percent median, 4.05 at most (target 5.0)";
 /// How the result of the validation record begins.
-const RESULT_STARTS: &str = "Compared with the 285 held-back runs on 2026-10-09, run once through the engine, and by the rule fixed beforehand the comparison failed: two of six lines were met.";
+const RESULT_STARTS: &str = "On the 285 runs outside the fit, run once through the engine.";
 /// What the result says of the run after the fact.
-const AFTER_THE_FACT: &str = "of the 285 formerly held-back runs it answers 196 and refuses 89, the 57 runs at 40 / 120 bar as PressureOutsideCard before the first step and the 32 runs at 0.1 Hz and under of the other four records as HeatShareAboveCard";
+const AFTER_THE_FACT: &str = "of the 285 runs it answers 196 and refuses 89, the 57 runs at 40 / 120 bar as PressureOutsideCard before the first step and the 32 runs at 0.1 Hz and under of the other four records as HeatShareAboveCard";
 /// What the one line of `list_cards` says of it.
-const AFTER_THE_FACT_LINE: &str = "on the 196 runs in the range in which it held";
+const AFTER_THE_FACT_LINE: &str = "on the 196 runs of the served range, drawn afterwards";

@@ -4,10 +4,12 @@
 //! No model is called and nothing is fetched: the description is matched
 //! against a curated list of terms for each card and solver, written from
 //! their own descriptions. The answer gives the best few, each with fit
-//! first (the words that matched, and the one real thing the model is of)
-//! and then accuracy (what it was compared with, and how it did against
-//! that measurement, and no excerpt of its limits), kept apart so that a model that failed its pass marks
-//! is not read as a model that does not fit. When nothing fits the answer is
+//! first (the words that matched, and the one real thing the model is of
+//! with its range) and then accuracy (what it was fitted on, what it was
+//! compared with outside the fit and within what, and the gap), kept apart
+//! so that a model with a gap is not read as a model that does not fit. A
+//! model a newer one supersedes (`crate::succession`) is given after its
+//! successor, under its own ID. When nothing fits the answer is
 //! complete in itself: every card and solver was compared, here are the
 //! nearest by words and why they are not it, and where requests for a model
 //! go, said as what is so and not as an instruction. The same description
@@ -51,9 +53,16 @@ const STRONG: u32 = 3;
 const PLAIN: u32 = 2;
 const WEAK: u32 = 1;
 
-/// How a model did against the pass marks its record states.
+/// The kind of evidence behind a model. `Met`, `Missed`, `InPart` and
+/// `Calibrated` are the record's own account of a comparison with
+/// measurement and are served alike, as "compared with measurement"; the
+/// numbers, in the model's spec sheet (`crate::spec_sheet`), say how good
+/// it is. `Measured` is the same word for a new entry.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Marks {
+    /// Compared with measurement of a real object: the word for a new entry.
+    #[allow(dead_code)]
+    Measured,
     Met,
     Missed,
     InPart,
@@ -70,34 +79,36 @@ pub enum Marks {
 }
 
 impl Marks {
-    /// How a model did against its own measurements, in one word: the word
-    /// the public site gives its thing. `list_cards`, `list_solvers` and
+    /// The kind of evidence behind a model, in one of three words.
+    /// `list_cards`, `list_solvers`, `describe_card`, `describe_solver` and
     /// `find_model` give it for each model as `against_measurement`.
     pub fn against_measurement(self) -> &'static str {
         match self {
-            Marks::Met => "met",
-            Marks::Missed => "missed",
-            Marks::InPart => "met in part",
-            Marks::NotCompared => "not held to a measurement",
-            Marks::Reference => "held to a reference calculation",
-            Marks::Calibrated => CALIBRATED,
+            Marks::Measured | Marks::Met | Marks::Missed | Marks::InPart | Marks::Calibrated => crate::spec_sheet::COMPARED,
+            Marks::NotCompared => crate::spec_sheet::SPECIMEN,
+            Marks::Reference => crate::spec_sheet::REFERENCE,
         }
+    }
+
+    /// Compared with measurement of a real object.
+    pub fn compared(self) -> bool {
+        self.against_measurement() == crate::spec_sheet::COMPARED
     }
 }
 
-/// The sixth word: a model whose structure or constants were chosen with the
-/// record it is compared with open.
-pub(crate) const CALIBRATED: &str = "calibrated to the record";
-
 /// What `against_measurement` holds, said in the description of each tool
 /// that returns it.
-pub(crate) const AGAINST_MEASUREMENT_SAYS: &str = "against_measurement says in one of six words how the model stands against measurement. \"met\", \"met in part\" and \"missed\" say how it did against the pass marks its record states, and its validation record, in describe_card or describe_solver, says whether that comparison was blind and, where it was not, what was seen and when. \"calibrated to the record\" is a companion whose structure or constants were chosen with the record of a scored original open, so its comparison is not a blind test; the original is served beside it under its own word. \"held to a reference calculation\" is compared with a published calculation, and \"not held to a measurement\" is the company's own specimen. It is accuracy and not fit, and a model that missed is still the served model of its thing.";
+pub(crate) const AGAINST_MEASUREMENT_SAYS: &str = crate::spec_sheet::AGAINST_MEASUREMENT_SAYS;
+
 
 pub struct Entry {
     /// `domain/card` for a card, the solver's name for a solver.
     pub key: &'static str,
     pub marks: Marks,
-    /// One short phrase after the verdict, from the model's own record.
+    /// One short phrase of the model's evidence: served as its accuracy
+    /// where it has no spec sheet (a company specimen, a reference
+    /// calculation). A model compared with measurement is described by its
+    /// spec sheet (`crate::spec_sheet`) instead.
     pub marks_words: &'static str,
     /// Terms that name the thing itself.
     pub strong: &'static [&'static str],
@@ -123,11 +134,11 @@ pub struct Entry {
 }
 
 /// What the index says of a card that is one of the company's own specimens.
-const OWN_SPECIMEN: &str = "the company's own specimen";
+const OWN_SPECIMEN: &str = "company specimen";
 
-/// What the verdict phrase of one of the company's own specimens says after
-/// its name: what its numbers are.
-const OWN_SPECIMEN_ACCOUNT: &str = "its constants are the company's, stated in its description";
+/// What the accuracy of a company specimen says after its name: what its
+/// numbers are.
+const OWN_SPECIMEN_ACCOUNT: &str = "an object the company specified, every constant stated in its description; each step holds its conservation ledger to the stated limit";
 
 /// The index: one entry for each served card and solver, in the engine's order.
 pub const INDEX: &[Entry] = &[
@@ -257,6 +268,18 @@ pub const INDEX: &[Entry] = &[
         weak: &["radius", "sand", "copper", "hit", "surface"],
         other: &["dimorphos", "didymos", "dart", "deep impact", "tempel", "bennu", "itokawa", "eros", "vesta", "ceres", "meteor crater", "barringer", "arizona", "chicxulub", "moon", "lunar", "mars"],
         own: &["ryugu", "hayabusa2"] },
+    Entry { key: "energy/reactor_spert3_twin", marks: Marks::Measured, marks_words: "its spec sheet gives the comparison and the gap",
+        strong: &["spert iii", "spert 3", "digital twin", "hot standby", "operating power", "rod ejection", "reactor transient"],
+        plain: &["spert", "reactor", "transient", "e-core", "burst", "fission", "power excursion", "transient rod", "rod worth", "clad temperature", "hot startup", "cold startup", "initial power", "uo2", "oxide fuel", "pressurized water", "test reactor", "twin"],
+        weak: &["nuclear", "power", "peak", "core", "fuel", "hot", "coolant", "flow", "clad", "inlet", "pressure", "doppler"],
+        other: &["spert i", "spert ii", "spert iv", "spert 1", "spert 2", "spert 4", "borax", "kewb", "godiva", "nsrr", "cabri", "chernobyl", "rbmk", "fukushima", "three mile island", "candu", "triga", "c-core", "sl-1", "ebr"],
+        own: &["spert"] },
+    Entry { key: "energy/reactor_spert3_ccore_twin", marks: Marks::Measured, marks_words: "its spec sheet gives the comparison and the gap",
+        strong: &["subcooled boiling", "void feedback", "void reactivity", "c-19/52", "ccore twin"],
+        plain: &["spert", "spert iii", "c-core", "reactor", "power excursion", "step insertion", "reactivity insertion", "flow", "void", "saturation temperature", "plate temperature", "highly enriched", "stainless steel clad", "plate core", "research reactor", "test reactor", "transient", "reactivity", "doppler", "moderator temperature", "peak power", "energy to peak", "pressurized", "psig", "gpm"],
+        weak: &["pressure", "boiling", "nuclear", "fuel plate", "idaho", "ido-16918", "kinetics", "burst", "hot spot", "coolant"],
+        other: &["triga", "e-core", "spert i", "borax", "tokamak", "fusion", "battery", "msre"],
+        own: &["c-core", "subcooled", "twin"] },
     Entry { key: "energy/generator_mmrtg_seebeck", marks: Marks::Calibrated, marks_words: "within 0.00319 of 115.4 W by root mean square on days 0 to 4,087, the days its constants were fitted on; its blind forecast of the days after 4,087 is registered and waits for the record's next release",
         strong: &["mmrtg", "rtg", "radioisotope", "curiosity", "plutonium", "thermoelectric generator", "seebeck", "matched load"],
         plain: &["rover", "mars rover", "thermoelectric", "nuclear battery", "decay", "generator output", "mission day", "sol", "mars science laboratory", "thermocouple", "temperature drop", "calibrated"],
@@ -353,7 +376,13 @@ pub const INDEX: &[Entry] = &[
         weak: &["magnetic", "fusion", "coil", "position", "control", "wall"],
         other: &["jet", "joint european torus", "diii-d", "iter", "asdex", "kstar", "jt-60", "alcator", "c-mod", "nstx", "tcv", "sparc", "tftr", "mast-u", "mast upgrade", "stellarator", "lhd", "w7-x", "wendelstein", "nif", "national ignition facility"],
         own: &["mast", "mega amp spherical tokamak", "15045"] },
-    Entry { key: "atom_dft", marks: Marks::Reference, marks_words: "reproduces the NIST local-density tables within 1e-5 hartree; not the measured energy of the atom",
+    Entry { key: "energy/reactor_msre_pump", marks: Marks::Measured, marks_words: "its spec sheet gives the comparison and the gap",
+        strong: &["msre", "molten salt reactor", "molten salt", "circulating fuel", "fuel salt", "fuel pump", "pump coast-down", "pump coastdown", "pump start-up", "pump startup"],
+        plain: &["coast-down", "coastdown", "start-up", "startup", "delayed neutron", "precursor", "circulation", "reactivity", "rod compensation", "oak ridge", "ornl", "fluoride salt", "loss of flow", "pump trip", "zero power"],
+        weak: &["reactor", "pump", "nuclear", "fuel", "flow", "transient", "rod", "core", "salt"],
+        other: &["triga", "spert", "borax", "kewb", "godiva", "candu", "rbmk", "chernobyl", "fukushima", "three mile island", "sodium", "lead-cooled", "pebble", "hteg", "aircraft reactor", "msbr", "thorium"],
+        own: &["msre", "molten salt"] },
+    Entry { key: "atom_dft", marks: Marks::Reference, marks_words: "the NIST spin-unpolarized local-density tables, atomic number 1 to 18, within 1e-5 hartree; it is the local-density ground state, not the measured energy of the atom",
         strong: &["atom", "dft", "density functional", "electronic structure", "ground state"],
         plain: &["hydrogen", "helium", "neon", "argon atom", "orbital", "eigenvalue", "lda", "electron", "quantum", "total energy", "atomic number", "carbon", "oxygen"],
         weak: &["energy", "element", "chemistry", "nucleus"],
@@ -401,7 +430,7 @@ pub const INDEX: &[Entry] = &[
         weak: &["beam", "reaction rate", "energy", "kev"],
         other: &["tokamak", "jet", "tftr", "deuterium", "tritium", "diii-d", "iter", "asdex", "kstar", "jt-60", "alcator", "c-mod", "nstx", "mast", "tore supra", "sparc", "w7-x", "wendelstein", "nif", "national ignition facility", "laser", "inertial", "z-pinch", "z machine"],
         own: &["lhd", "large helical device"] },
-    Entry { key: "fusion_pb11_thermal", marks: Marks::Reference, marks_words: "the published calculations of Ochs et al. (2022) and the research's own model, seven of its eight gated pass lines met; the electron temperature at 300 keV 159.33 keV against a published 163.0",
+    Entry { key: "fusion_pb11_thermal", marks: Marks::Reference, marks_words: "the published calculations of Ochs et al. (2022) and Putvinski et al. (2019) and the research's own plain model, ion temperatures 200 to 450 keV: 7 of 8 compared quantities within their targets, synchrotron over fusion power 7.9 percent off against a 5 percent target; at 300 keV the electron temperature 159.33 keV against a published 163.0",
         strong: &["proton-boron", "p-b11", "pb11", "boron", "aneutronic", "bremsstrahlung"],
         plain: &["fusion", "thermal plasma", "energy balance", "ignition", "synchrotron", "plasma", "electron temperature", "ion temperature", "fusion power"],
         weak: &["reaction rate", "energy", "kev", "radiation"],
@@ -419,7 +448,7 @@ pub const INDEX: &[Entry] = &[
         weak: &["growth", "acid", "sugar", "vessel", "ph", "biology"],
         other: &["aspergillus", "penicillium", "yeast", "saccharomyces", "pichia", "coli", "escherichia", "bacillus", "streptomyces", "corynebacterium", "cho", "mammalian", "hybridoma", "citric acid", "penicillin", "ethanol", "insulin", "antibody"],
         own: &["trichoderma", "ambr250", "ambr", "yeast extract"] },
-    Entry { key: "tokamak_dt_beam_target", marks: Marks::Reference, marks_words: "TRANSP's fusion power, calculated from the measured profiles, on 34 held-back TFTR slices, three of its four marks met, the median 1.022",
+    Entry { key: "tokamak_dt_beam_target", marks: Marks::Reference, marks_words: "TRANSP's fusion power from the measured profiles of 34 TFTR slices outside any fit, the median ratio 1.022 and 30 of 34 within 0.75 to 1.25; against four measured values +7, +21, -11 and about +8 percent",
         strong: &["tokamak", "deuterium-tritium", "fusion rate", "beam-target", "tftr", "jet", "joint european torus", "fusion"],
         plain: &["deuterium", "tritium", "neutron rate", "neutron", "neutral beam", "plasma", "fusion power", "d-t", "dt", "time slice", "culham", "princeton", "shell", "electron temperature", "ion temperature", "electron density", "steady state"],
         weak: &["beam", "reaction rate", "profile", "energy", "pulse"],
@@ -431,6 +460,12 @@ pub const INDEX: &[Entry] = &[
         weak: &["air", "flow", "reynolds", "velocity", "wall", "tube"],
         other: &["blood", "artery", "pipeline", "sewer"],
         own: &["superpipe"] },
+    Entry { key: "fuel_rod_triga_jsi", marks: Marks::Measured, marks_words: "its spec sheet gives the comparison and the gap",
+        strong: &["fuel element", "fuel rod", "element 6753", "instrumented element", "fuel thermocouple"],
+        plain: &["triga", "fuel temperature", "u-zrh", "uranium zirconium hydride", "clad", "thermocouple"],
+        weak: &["pulse", "jsi", "temperature", "heat", "conduction", "pool", "fuel"],
+        other: &["spert", "msre", "molten salt", "pwr", "bwr", "candu", "magnox", "oxide fuel", "uo2"],
+        own: &["element 6753", "fuel_rod_triga_jsi"] },
     Entry { key: "culture_trichoderma_atp", marks: Marks::Missed, marks_words: "missed three of six pass lines on the four held-back cultures at pH 3.5 and 3.0",
         strong: &["fed-batch", "trichoderma", "fermentation", "bioreactor", "culture", "mucic acid"],
         plain: &["fungus", "galacturonate", "biomass", "ambr", "bioprocess", "fermenter", "microbial", "feed", "broth", "cell culture", "ph"],
@@ -532,6 +567,7 @@ fn served_name(entry: &Entry) -> &'static str {
     entry.key.rsplit('/').next().unwrap_or(entry.key)
 }
 
+
 /// How `ln2_line_dlr_fttf` did on its six held-back tests.
 const LN2_LINE_MARKS: Marks = Marks::Missed;
 const LN2_LINE_MARKS_WORDS: &str = "missed seven of eleven marks on the six held-back tests and met four: the first rise at S2, the front's speed from S1 to S2, the second surge's time and the steady pressure drop";
@@ -547,7 +583,7 @@ const STOP: &[&str] = &[
 
 pub fn description() -> String {
     format!(
-        "Finds the served model for a real thing described in plain words, such as \"a lithium cell discharging in the cold\". It returns the best few cards and solvers, each with fit first (the words that matched, and model_of, the one real thing it is a model of) and then accuracy (compared_with, the data it was fitted to and the data held back and compared, and accuracy_against_measurement: how it did against the pass marks its record states); a model's range and stops are in describe_card or describe_solver. against_measurement gives that verdict in one of six words, the word list_cards and list_solvers give on every row: \"met\", \"met in part\" and \"missed\" say how the model did against the pass marks its record states, and its validation record says whether that comparison was blind and, where it was not, what was seen and when; \"calibrated to the record\" is a companion whose structure or constants were chosen with the record of a scored original open, so its comparison is not a blind test, and the original is served beside it under its own word; \"held to a reference calculation\" is compared with a published calculation, and \"not held to a measurement\" is the company's own specimen. It is accuracy and not fit. The two are separate: a model that failed its pass marks is still the served model of its thing. The names it gives (domain and card, or solver) are the names list_cards and list_solvers give and the names describe_card, describe_solver, cite and every other tool take. When nothing served fits it says so, having compared every card and solver, names the nearest by words and why they are not it, or says that there is no near one, and says where requests for a model go. A model is set aside when the description names another thing of its kind (another gas, another maker's cell, another planet's probe). It is matched against a fixed list of terms with no model call: the same words give the same answer."
+        "Finds the served model for a real thing described in plain words, such as \"a lithium cell discharging in the cold\". It returns the best few cards and solvers, each with fit first (the words that matched, and model_of: the one real thing it is a model of, and its range) and then accuracy: against_measurement, the evidence behind it in one of three words, as list_cards and list_solvers give it (\"compared with measurement\", \"held to a reference calculation\" or \"company specimen\"); compared_with, what it was fitted on; and accuracy_against_measurement, what it was compared with outside the fit, within what, and the gap, in numbers. Fit and accuracy are separate: a model with a gap is still the served model of its thing. A model a newer one supersedes carries superseded_by and comes after it, still served under its own ID. The names it gives (domain and card, or solver) are the names list_cards and list_solvers give and the names describe_card, describe_solver, cite and every other tool take; describe_card or describe_solver gives the range and every refusal. When nothing served fits it says so, having compared every card and solver, names the nearest by words and why they are not it, or says that there is no near one, and says where requests for a model go. A model is set aside when the description names another thing of its kind (another gas, another maker's cell, another planet's probe). It is matched against a fixed list of terms with no model call: the same words give the same answer."
     )
 }
 
@@ -750,41 +786,32 @@ fn score(entry: &'static Entry, described: &[String], all: &[String]) -> Scored 
     }
 }
 
-/// The verdict of a model's comparison with measurement, in words that
-/// cannot be read as a statement about fit: what it was held to, whether it
-/// passed, and one clause from its own record.
+/// The evidence behind a model, in numbers: a compared model's comparison
+/// and gap from its spec sheet; a company specimen's account of itself; a
+/// reference calculation's, from its record.
 fn accuracy(entry: &Entry) -> String {
+    if let Some(sheet) = crate::spec_sheet::of(served_name(entry)) {
+        return sheet.accuracy();
+    }
     match entry.marks {
-        Marks::Met => format!("passed the pass marks its record states: {}", entry.marks_words),
-        Marks::Missed => format!("failed the pass marks its record states: {}", entry.marks_words),
-        Marks::InPart => format!("passed in part the pass marks its record states: {}", entry.marks_words),
-        Marks::NotCompared => format!("{}: {OWN_SPECIMEN_ACCOUNT}", entry.marks_words),
-        Marks::Reference => format!("held to a reference calculation, not compared with a measurement: {}", entry.marks_words),
-        Marks::Calibrated => {
-            let beside = match calibration_of(served_name(entry)) {
-                Some(row) => format!("{}, the scored original, is served beside it", row.companion_to),
-                None => "the scored original is served beside it".to_string(),
-            };
-            format!(
-                "calibrated to the record, not a blind test: its structure or constants were chosen with the record of a scored original open, and {beside} under its own word: {}",
-                entry.marks_words
-            )
-        }
+        Marks::NotCompared => format!("Company specimen: {OWN_SPECIMEN_ACCOUNT}."),
+        Marks::Reference => format!("Held to a reference calculation: {}.", entry.marks_words.trim_end_matches('.')),
+        _ => entry.marks_words.to_string(),
     }
 }
 
-/// A model's verdict in one word and in one phrase: what `against_measurement`
+/// A model's evidence in one word and in numbers: what `against_measurement`
 /// and `accuracy_against_measurement` hold for it.
 fn verdict(entry: &Entry) -> (&'static str, String) {
     (entry.marks.against_measurement(), accuracy(entry))
 }
 
-/// The verdict of a card, by its names. None for a card the index does not hold.
+/// The evidence of a card, by its names. None for a card the index does not hold.
 pub(crate) fn verdict_of_card(domain: &str, card: &str) -> Option<(&'static str, String)> {
     INDEX.iter().find(|entry| entry.key.split_once('/') == Some((domain, card))).map(verdict)
 }
 
-/// The verdict of a solver, by its name. None for a solver the index does not hold.
+/// The evidence of a solver, by its name. None for a solver the index does not hold.
 pub(crate) fn verdict_of_solver(solver: &str) -> Option<(&'static str, String)> {
     INDEX.iter().find(|entry| entry.key == solver).map(verdict)
 }
@@ -809,7 +836,14 @@ fn named(view: &View, entry: &Entry) -> Option<(Map<String, Value>, Option<Value
             (described["summary"].clone(), described.get("validation").cloned(), described.get("reference").cloned())
         }
     };
+    // A compared model is of what it computes, over its range; the rest of
+    // its spec sheet is its accuracy.
+    let summary = match crate::spec_sheet::of(served_name(entry)) {
+        Some(sheet) => json!(sheet.model_of()),
+        None => summary,
+    };
     row.insert("model_of".to_string(), summary);
+    crate::succession::into(&mut row, view, served_name(entry));
     Some((row, validation, reference))
 }
 
@@ -841,18 +875,16 @@ fn record(view: &View, entry: &Entry, matched: &[&str]) -> Option<Map<String, Va
     // what the model was compared with.
     let data_text = text(validation.get("data"));
     let data_text = data_text.split(" Record: evidence/").next().unwrap_or("").to_string();
+    let sheet = crate::spec_sheet::of(served_name(entry));
     let compared_with = match entry.marks {
-        Marks::NotCompared => {
-            "The company's own specimen: its constants are the company's, stated in its description.".to_string()
-        }
+        _ if sheet.is_some() => sheet.map(|sheet| sheet.fitted_on.to_string()).unwrap_or_default(),
+        Marks::NotCompared => "Company specimen: every constant is stated in its description.".to_string(),
         Marks::Reference => {
             let reference = reference.unwrap_or(Value::Null);
             format!("A reference calculation: {}.", text(reference.get("name")).trim_end_matches('.'))
         }
-        // The record's whole account of its data: what the model was fitted
-        // to and, further on, what was held back and compared. Its opening
-        // alone names only the fitting data, which is not what the model was
-        // compared with.
+        // The record's account of its data: what the model was fitted on
+        // and what it was compared with outside the fit.
         _ => data_text,
     };
     row.insert("compared_with".to_string(), json!(compared_with));
@@ -872,7 +904,7 @@ fn served(cards: usize, solvers: usize) -> String {
 fn about(cards: usize, solvers: usize) -> String {
     let served = served(cards, solvers);
     format!(
-        "Fit and accuracy are separate. Fit: each match is a match on words, and model_of is the one real thing the model is of. For a thing described by its kind (a cell discharging, a capsule entering an atmosphere), a match is the served model of that kind of thing, and fits. For one particular other object (a named cell, a dataset of your own), a model of a different object of the same kind is not a model of it, and nothing served fits. Accuracy: accuracy_against_measurement is how the model did against the pass marks its record states, and a model that failed its pass marks is still the served model of its thing, served with the failure stated. compared_with is the record's whole account of its data: what the model was fitted to and what was held back and compared with it. describe_card or describe_solver, by the names given here, has the pass marks, the result, whether the comparison was blind and, where it was not, what was seen and when, the range and every stop by name, and cite, by the same names, the people whose data it stands on. Everything this connection serves ({served}) was compared with the description; when nothing served fits, requests for a model go to {} at {}, each naming an open dataset of the thing.",
+        "Fit and accuracy are separate. Fit: each match is a match on words; model_of is the one real thing the model is of, and its range. For a thing described by its kind (a cell discharging, a capsule entering an atmosphere), a match is the served model of that kind of thing, and fits. For one particular other object (a named cell, a dataset of your own), a model of a different object of the same kind is not a model of it, and nothing served fits. Accuracy: against_measurement names the evidence (compared with measurement, held to a reference calculation, or company specimen); compared_with says what the model was fitted on; accuracy_against_measurement gives what it was compared with outside the fit, within what, and the gap, in numbers. A model with a gap is still the served model of its thing. A model with superseded_by is still served under its own ID, every earlier proof with it verifies, and the newer model is listed before it. describe_card or describe_solver, by the names given here, has the whole record, the range and every refusal by name, and cite, by the same names, the people whose data it stands on. Everything this connection serves ({served}) was compared with the description; when nothing served fits, requests for a model go to {} at {}, each naming an open dataset of the thing.",
         crate::identity::MAKER,
         crate::identity::EMAIL
     )
@@ -963,15 +995,38 @@ pub fn find_in(view: &View, request: &Value) -> Result<Value, DoorError> {
     // The best first; equal scores keep the engine's order.
     scored.sort_by(|a, b| b.score.cmp(&a.score));
     let mut matches = Vec::new();
+    let mut listed: Vec<&'static str> = Vec::new();
     for found in scored.iter().filter(|scored| fits(scored)) {
         if matches.len() == limit {
             break;
+        }
+        let name = served_name(found.entry);
+        if listed.contains(&name) {
+            continue;
+        }
+        // A model a newer one supersedes: the newer first, then the
+        // original under its own ID.
+        if let Some(by) = crate::succession::superseded_by(view, name).filter(|by| !listed.contains(by)) {
+            if let Some(newer) = INDEX.iter().find(|entry| served_name(entry) == by) {
+                if let Some(mut row) = record(view, newer, &found.matched) {
+                    let terms: Vec<String> = found.matched.iter().map(|term| format!("\"{term}\"")).collect();
+                    row.insert("fit".to_string(), json!(format!("supersedes {name}, which matches your description on the words {}", terms.join(", "))));
+                    row.insert("supersedes".to_string(), json!(crate::succession::supersedes(view, by)));
+                    row.insert("score".to_string(), json!(found.score));
+                    matches.push(Value::Object(row));
+                    listed.push(by);
+                    if matches.len() == limit {
+                        break;
+                    }
+                }
+            }
         }
         let Some(mut row) = record(view, found.entry, &found.matched) else {
             continue;
         };
         row.insert("score".to_string(), json!(found.score));
         matches.push(Value::Object(row));
+        listed.push(name);
     }
     let (cards, solvers) = (view.cards().len(), view.solver_names().len());
     let mut answer = Map::new();
@@ -1019,37 +1074,94 @@ pub fn find_in(view: &View, request: &Value) -> Result<Value, DoorError> {
 mod tests {
     use super::*;
 
-    /// The eighteen compared models whose comparison is not blind by their
-    /// own record (evidence/verification/served_words_2026-10-16/AUDIT.md,
-    /// classes S and C): each keeps its word, its validation record says in
-    /// plain words that the comparison is not blind, and its phrase in
-    /// find_model and the short form says so too.
-    const NOT_BLIND: [&str; 18] = [
-        "aerospace/capsule_stardust", "aerospace/solar_system", "energy/reactor_spert3_fuel", "energy/reactor_triga_jsi",
-        "argon_pair_gas", "energy/grid_gb", "aerospace/capsule_insight", "energy/tokamak_vde_mast", "signal/cantilever_eth",
-        "energy/reactor_spert3", "energy/reactor_spert3_ccore", "energy/tokamak_jet_dte1", "aerospace/crater_ryugu_sci",
-        "ablator_slab", "blast_wave_tnt_air", "stress_plate_hole_s235", "icf_hotspot_burn", "plasma_sheath_ram_c2",
-    ];
-
+    /// Every model compared with measurement has its spec sheet, and its
+    /// accuracy, in find_model and in the short form, is the sheet's
+    /// comparison and gap, with none of the old record's words. A model a
+    /// newer squad adds to the index with no sheet fails here by name.
     #[test]
-    fn every_comparison_that_is_not_blind_says_so_in_its_record_and_its_phrase() {
+    fn every_model_compared_with_measurement_has_its_spec_sheet() {
         let view = View::full();
-        for key in NOT_BLIND {
-            let entry = INDEX.iter().find(|entry| entry.key == key).unwrap_or_else(|| panic!("{key} is not served"));
-            assert!(matches!(entry.marks, Marks::Met | Marks::Missed | Marks::InPart), "{key} keeps its word");
-            assert!(accuracy(entry).ends_with("; the comparison was not blind, as its validation says"), "{key}: {}", accuracy(entry));
-            let described = match key.split_once('/') {
+        for entry in INDEX.iter().filter(|entry| entry.marks.compared()) {
+            let name = served_name(entry);
+            let sheet = crate::spec_sheet::of(name).unwrap_or_else(|| panic!("{}: compared with measurement, and no row of spec_sheet::SHEETS", entry.key));
+            assert_eq!(accuracy(entry), sheet.accuracy(), "{}", entry.key);
+            let row = record(&view, entry, &["term"]).unwrap();
+            assert_eq!(row["model_of"], sheet.model_of(), "{}", entry.key);
+            assert_eq!(row["compared_with"], sheet.fitted_on, "{}", entry.key);
+            // Each refusal the sheet names is one the model lists.
+            let described = match entry.key.split_once('/') {
                 Some((domain, card)) => crate::descriptor::describe_value_in(&view, domain, card),
-                None => crate::solvers::describe_value(key),
+                None => crate::solvers::describe_whole(entry.key),
             }
-            .unwrap_or_else(|| panic!("{key} is described"));
-            let validation = described["validation"].to_string();
-            assert!(validation.contains("The comparison is not blind"), "{key}: {validation}");
+            .unwrap_or_else(|| panic!("{} is described", entry.key));
+            let listed = described["rejects"].to_string() + &described["refusals"].to_string() + &described["declared_ends"].to_string();
+            for named in crate::spec_sheet::names_in(sheet.refuses) {
+                assert!(listed.contains(&format!("\"{named}\"")), "{}: the sheet names {named}, which it does not list", entry.key);
+            }
         }
-        // No other model's phrase says it.
-        for entry in INDEX.iter().filter(|entry| !NOT_BLIND.contains(&entry.key)) {
-            assert!(!accuracy(entry).contains("not blind, as its validation says"), "{}", entry.key);
+        for entry in INDEX.iter().filter(|entry| !entry.marks.compared()) {
+            assert!(crate::spec_sheet::of(served_name(entry)).is_none(), "{}: a sheet, and not compared with measurement", entry.key);
         }
+    }
+
+    /// A model a newer one supersedes: its list row, its descriptions and its
+    /// match say so, and find_model gives the newer model first and the
+    /// original after it under its own ID. Stand-ins: two served cards of one
+    /// object, before any successor is merged.
+    #[test]
+    fn a_superseded_model_is_said_so_and_its_successor_comes_first() {
+        static STAND_IN: &[crate::succession::Succession] = &[crate::succession::Succession { model: "reactor_spert3", by: "reactor_spert3_ccore" }];
+        let view = View::full();
+        let before = find_in(&view, &json!({ "description": "SPERT III reactor power excursion", "limit": 5 })).unwrap();
+        crate::succession::with_table(STAND_IN, || {
+            let answer = find_in(&view, &json!({ "description": "SPERT III reactor power excursion", "limit": 5 })).unwrap();
+            let cards: Vec<&str> = answer["matches"].as_array().unwrap().iter().map(|row| row["card"].as_str().unwrap()).collect();
+            let at = |card: &str| cards.iter().position(|named| *named == card).unwrap_or_else(|| panic!("{card}: {answer}"));
+            assert!(at("reactor_spert3_ccore") + 1 == at("reactor_spert3"), "{cards:?}");
+            assert_eq!(cards.iter().filter(|card| **card == "reactor_spert3_ccore").count(), 1, "{cards:?}");
+            let newer = &answer["matches"][at("reactor_spert3_ccore")];
+            assert_eq!(newer["supersedes"], json!(["reactor_spert3"]));
+            assert!(newer["fit"].as_str().unwrap().starts_with("supersedes reactor_spert3, which matches your description on the words"), "{newer}");
+            let old = &answer["matches"][at("reactor_spert3")];
+            assert_eq!(old["superseded_by"], "reactor_spert3_ccore");
+            assert_eq!(old["model_of"], before["matches"].as_array().unwrap().iter().find(|row| row["card"] == "reactor_spert3").unwrap()["model_of"]);
+            // The list row, the full and the short descriptions.
+            let list = crate::descriptor::list_value_in(&view);
+            let row = list["cards"].as_array().unwrap().iter().find(|row| row["card"] == "reactor_spert3").unwrap();
+            assert_eq!(row["superseded_by"], "reactor_spert3_ccore");
+            assert_eq!(row.as_object().unwrap().keys().collect::<Vec<_>>(), ["domain", "card", "against_measurement", "superseded_by", "specimen"]);
+            let full = crate::descriptor::describe_value_in(&view, "energy", "reactor_spert3").unwrap();
+            assert_eq!(full.as_object().unwrap().keys().take(3).collect::<Vec<_>>(), ["domain", "card", "superseded_by"]);
+            let short = crate::descriptor::describe_short_in(&view, "energy", "reactor_spert3").unwrap();
+            assert_eq!(short["superseded_by"], "reactor_spert3_ccore");
+            // The successor and every other model say nothing of it.
+            for card in ["reactor_spert3_ccore", "reactor_spert3_fuel"] {
+                assert!(crate::descriptor::describe_value_in(&view, "energy", card).unwrap().get("superseded_by").is_none(), "{card}");
+            }
+            // A view that does not serve the successor says nothing either.
+            let without = View::limited([("energy".to_string(), "reactor_spert3".to_string())], []);
+            let list = crate::descriptor::list_value_in(&without);
+            assert!(list["cards"][0].get("superseded_by").is_none(), "{list}");
+        });
+        // With the served table, which is empty until the merge, nothing changes.
+        assert_eq!(find_in(&view, &json!({ "description": "SPERT III reactor power excursion", "limit": 5 })).unwrap(), before);
+    }
+
+    /// A solver a newer one supersedes, on a stand-in.
+    #[test]
+    fn a_superseded_solver_says_so_on_its_row_and_in_its_descriptions() {
+        static STAND_IN: &[crate::succession::Succession] = &[crate::succession::Succession { model: "fusion_pb11_thermal", by: "fusion_pb11_lhd" }];
+        let view = View::full();
+        crate::succession::with_table(STAND_IN, || {
+            let list = crate::solvers::list_value_in(&view);
+            let row = list["solvers"].as_array().unwrap().iter().find(|row| row["solver"] == "fusion_pb11_thermal").unwrap();
+            assert_eq!(row["superseded_by"], "fusion_pb11_lhd");
+            for form in ["full", "short"] {
+                let described = crate::solvers::describe_request_in(&view, &json!({ "solver": "fusion_pb11_thermal", "form": form })).unwrap();
+                assert_eq!(described["superseded_by"], "fusion_pb11_lhd", "{form}");
+                assert_eq!(described.as_object().unwrap().keys().nth(1).map(String::as_str), Some("superseded_by"), "{form}");
+            }
+        });
     }
 
     #[test]
@@ -1116,43 +1228,22 @@ mod tests {
                 // record of a comparison, and a fusion solver's record states
                 // its comparison with the published calculation it was held to.
                 Marks::Reference => assert!(
-                    result.is_empty() || result.contains("TRANSP") || result.contains("calculation"),
+                    result.is_empty() || result.contains("TRANSP") || result.contains("calculation") || result.contains("published"),
                     "{}: {result}",
                     entry.key
                 ),
-                Marks::Met => {
-                    assert!(!result.contains("comparison failed") && !result.contains("did not pass") && !result.is_empty(), "{}: {result}", entry.key)
-                }
-                Marks::Missed => assert!(
-                    result.contains("failed") || result.contains("missed") || result.contains("not pass"),
-                    "{}: {result}",
-                    entry.key
-                ),
-                Marks::InPart => assert!(result.contains("met") && (result.contains("missed") || result.contains("not met") || result.contains("none of")), "{}", entry.key),
-                // A model calibrated to the record says so in the first
-                // sentence of its result, that it is not a blind test, and
-                // names the model it stands beside.
-                Marks::Calibrated => {
-                    let first = result.split(". ").next().unwrap_or("").to_lowercase();
-                    let companion = calibration_of(served_name(entry)).map(|row| row.companion_to).unwrap_or("its companion");
-                    assert!(first.contains(CALIBRATED) && first.contains("not a blind test") && first.contains(companion), "{}: {result}", entry.key);
-                }
+                // A model compared with measurement states its result in numbers.
+                _ => assert!(result.chars().any(|c| c.is_ascii_digit()), "{}: {result}", entry.key),
             }
             assert!(record(&view, entry, &[]).is_some(), "{}", entry.key);
         }
-        // The generator serves the days it failed on, and its phrase says
-        // so in the record's own numbers: 0.008129 and +0.010094 of 115.4 W.
+        // The generator serves the days outside its fit, and its accuracy
+        // keeps the record's numbers: 0.008129 and +0.010094 of 115.4 W.
         let generator = INDEX.iter().find(|entry| entry.key == "energy/generator_mmrtg_f1").expect("the generator");
-        assert_eq!(generator.marks, Marks::Missed);
-        assert_eq!(
-            accuracy(generator),
-            "failed the pass marks its record states: met its root mean square line (about 0.94 W against 1.154 W) and missed its final-year line (about 1.16 W high) on the held-back days 2,809 to 4,087, which it serves"
-        );
-        let record = crate::descriptor::describe_value_in(&view, "energy", "generator_mmrtg_f1").unwrap()["validation"].clone();
-        let result = record["result"].as_str().unwrap();
-        assert!(result.starts_with("One line met and one missed, so by the rule fixed beforehand the comparison failed."), "{result}");
-        for words in ["2,809 to 4,087", "0.008129, about 0.94 W, inside the line of 0.010", "+0.010094, about 1.16 W high, outside the line"] {
-            assert!(result.contains(words), "{words}: {result}");
+        assert!(generator.marks.compared());
+        let said = accuracy(generator);
+        for words in ["2,809 to 4,087", "0.008129", "0.010094"] {
+            assert!(said.contains(words), "{words}: {said}");
         }
         assert!((0.008129_f64 * 115.4 - 0.94).abs() < 0.005 && (0.010094_f64 * 115.4 - 1.16).abs() < 0.005 && (0.010_f64 * 115.4 - 1.154).abs() < 1e-12);
     }
@@ -1266,8 +1357,9 @@ mod tests {
         }
         // The name is read whole: "SPERT III" is not "SPERT I", and a cell of
         // the dataset the card holds is not another maker's cell.
-        assert_eq!(first_of("the SPERT III E-core reactor, cold, after a step in reactivity").as_deref(), Some("energy/reactor_spert3"));
-        assert_eq!(first_of("the SPERT III reactor with its C-core after a step in reactivity").as_deref(), Some("energy/reactor_spert3_ccore"));
+        // Each is superseded (succession::TABLE): its successor first, then the original under its own ID.
+        assert_eq!(keys("the SPERT III E-core reactor, cold, after a step in reactivity")[..2], ["energy/reactor_spert3_twin", "energy/reactor_spert3"]);
+        assert_eq!(keys("the SPERT III reactor with its C-core after a step in reactivity")[..2], ["energy/reactor_spert3_ccore_twin", "energy/reactor_spert3_ccore"]);
         // Another maker's cell, or another cathode, is not this LiCoO2 cell.
         assert_ne!(first_of("thermal runaway of a Panasonic NCR18650PF cell").as_deref(), Some("energy/runaway_18650_lco"));
         assert_ne!(first_of("thermal runaway of an NMC 18650 cell").as_deref(), Some("energy/runaway_18650_lco"));
@@ -1296,7 +1388,8 @@ mod tests {
             ("the viscosity of argon gas, compared with air", "argon_pair_gas"),
             ("pointing jitter of the Webb telescope, set against Hubble's", "aerospace/los_jwst_fine_guide"),
             ("the capsule of the InSight lander, built on the Phoenix design, entering the atmosphere of Mars", "aerospace/capsule_insight"),
-            ("the SPERT III E-core reactor after a step in reactivity, as SPERT I was tested before it", "energy/reactor_spert3"),
+            // reactor_spert3 is superseded: its successor comes first (succession::TABLE).
+            ("the SPERT III E-core reactor after a step in reactivity, as SPERT I was tested before it", "energy/reactor_spert3_twin"),
             ("the electrical output of the radioisotope generator on the Curiosity rover, the kind Voyager carried before it", "energy/generator_mmrtg_f1"),
         ] {
             assert_eq!(first_of(description).as_deref(), Some(first), "{description}: {:?}", keys(description));
@@ -1336,10 +1429,11 @@ mod tests {
             ["energy/cell_2170_m80", "energy/cell_2170_model3"]
         );
         // The E-core's two cards: one takes a cold step, the other an inlet temperature, a coolant flow and a rod that ramps.
-        assert_eq!(first_of("the SPERT III E-core reactor is cold when a step in reactivity is put in all at once").as_deref(), Some("energy/reactor_spert3"));
+        // Both are superseded by reactor_spert3_twin, which comes first; then the original that fits.
+        assert_eq!(keys("the SPERT III E-core reactor is cold when a step in reactivity is put in all at once")[..2], ["energy/reactor_spert3_twin", "energy/reactor_spert3"]);
         assert_eq!(
-            first_of("the SPERT III E-core reactor in a burst with hot coolant flowing through the core as its transient rod ramps in reactivity").as_deref(),
-            Some("energy/reactor_spert3_fuel")
+            keys("the SPERT III E-core reactor in a burst with hot coolant flowing through the core as its transient rod ramps in reactivity")[..2],
+            ["energy/reactor_spert3_twin", "energy/reactor_spert3_fuel"]
         );
         // One tokamak, two models: the solver takes the plasma in shells, the card its energies under the heating power.
         assert_eq!(
@@ -1352,6 +1446,26 @@ mod tests {
         );
         // The thermal proton-boron solver takes the ion temperature and publishes the fusion power.
         assert_eq!(first_of("fusion power of a hot hydrogen-boron plasma against its radiation losses at an ion temperature of 300 keV").as_deref(), Some("fusion_pb11_thermal"));
+        // The molten-salt reactor, by its name and by what happens to it.
+        assert_eq!(first_of("MSRE pump transient").as_deref(), Some("energy/reactor_msre_pump"));
+        assert_eq!(first_of("molten salt reactor fuel pump coast-down").as_deref(), Some("energy/reactor_msre_pump"));
+        assert_eq!(first_of("the reactivity lost when the fuel of a molten-salt reactor starts to circulate").as_deref(), Some("energy/reactor_msre_pump"));
+    }
+
+    /// The SPERT III twin is the first answer to the core described in plain
+    /// words, its tests named as the report names them.
+    #[test]
+    fn the_spert_iii_core_in_plain_words_finds_its_twin_first() {
+        for description in [
+            "SPERT III reactor transient",
+            "the SPERT III E-core reactor",
+            "a digital twin of the SPERT III reactor",
+            "SPERT III hot standby transient from 1 MW",
+            "SPERT III operating power excursion at 19 MW",
+            "SPERT 3 rod ejection with the clad temperature",
+        ] {
+            assert_eq!(first_of(description).as_deref(), Some("energy/reactor_spert3_twin"), "{description}");
+        }
     }
 
     #[test]
@@ -1565,38 +1679,33 @@ mod tests {
     }
 
     /// Fit and accuracy cannot be confused: fit comes first, in its own
-    /// words; the verdict is a phrase that says what was failed or passed,
-    /// with no true or false and no bare "missed:" before a count of what was
-    /// met. A bare "met_its_marks": false can be read as "does not fit", and
-    /// "missed: 27 of 60 runs met their marks" backwards.
+    /// words; the accuracy is one phrase in numbers, with no true or false
+    /// to misread as "does not fit".
     #[test]
-    fn fit_comes_first_and_the_verdict_is_one_unambiguous_phrase() {
+    fn fit_comes_first_and_the_accuracy_is_one_phrase_in_numbers() {
         let view = View::full();
         for entry in INDEX {
             let row = record(&view, entry, &["term"]).unwrap();
-            let order: Vec<&str> = row.keys().map(String::as_str).filter(|key| !matches!(*key, "domain" | "card" | "solver")).collect();
+            let mut order: Vec<&str> = row.keys().map(String::as_str).filter(|key| !matches!(*key, "domain" | "card" | "solver")).collect();
+            // A superseded model says its successor first (succession::TABLE), and only then.
+            let superseded = crate::succession::superseded_by(&view, served_name(entry)).is_some();
+            assert_eq!(order.first() == Some(&crate::succession::KEY), superseded, "{}", entry.key);
+            if superseded {
+                order.remove(0);
+            }
             assert_eq!(order, ["fit", "model_of", "compared_with", "against_measurement", "accuracy_against_measurement"], "{}", entry.key);
             assert!(row.values().all(|value| value.is_string()), "{}: no true, false or null to misread", entry.key);
-            let verdict = row["accuracy_against_measurement"].as_str().unwrap();
+            let said = row["accuracy_against_measurement"].as_str().unwrap();
             let opening = match entry.marks {
-                Marks::Met => "passed the pass marks its record states: ",
-                Marks::Missed => "failed the pass marks its record states: ",
-                Marks::InPart => "passed in part the pass marks its record states: ",
-                Marks::NotCompared => "the company's own specimen: ",
-                Marks::Reference => "held to a reference calculation, not compared with a measurement: ",
-                Marks::Calibrated => "calibrated to the record, not a blind test: ",
+                Marks::NotCompared => "Company specimen: ",
+                Marks::Reference => "Held to a reference calculation: ",
+                _ => "Compared with ",
             };
-            assert!(verdict.starts_with(opening), "{}: {verdict}", entry.key);
-            // the clause after it begins with what the model did, not with a count
-            let clause = &verdict[opening.len()..];
-            if matches!(entry.marks, Marks::Met | Marks::Missed | Marks::InPart) {
-                assert!(
-                    ["met ", "missed ", "only ", "its ", "the comparison passed", "two files met"].iter().any(|start| clause.starts_with(start)),
-                    "{}: {clause}",
-                    entry.key
-                );
+            assert!(said.starts_with(opening), "{}: {said}", entry.key);
+            for word in crate::spec_sheet::UNSAID {
+                assert!(!crate::spec_sheet::says(said, word), "{}: says \"{word}\": {said}", entry.key);
             }
-            // nothing is cut part way through a sentence
+        // nothing is cut part way through a sentence
             let text = row["compared_with"].as_str().unwrap();
             assert!(!text.contains('…') && text.ends_with(['.', ')', '"']), "{}: {text}", entry.key);
             // no path of the company's own disk
@@ -1606,11 +1715,14 @@ mod tests {
         let row = &answer["matches"][0];
         assert_eq!(row["card"], "cantilever_eth");
         assert_eq!(row["fit"], "matches your description on the words \"ringing\", \"strip\", \"aluminium\", \"clamped\", \"flick\"");
-        assert_eq!(row["accuracy_against_measurement"], "failed the pass marks its record states: met three of four pass lines; the comparison was not blind, as its validation says");
-        // what it was compared with is the data, not the specimen again
-        assert!(row["compared_with"].as_str().unwrap().contains("recordings of the strip ringing down"), "{row}");
+        assert_eq!(row["accuracy_against_measurement"], crate::spec_sheet::of("cantilever_eth").unwrap().accuracy());
+        // what it was compared with is what it was fitted on, not the specimen again
+        assert!(row["compared_with"].as_str().unwrap().starts_with("Fitted on ") || row["compared_with"].as_str().unwrap().starts_with("Nothing fitted"), "{row}");
         let about = answer["about"].as_str().unwrap();
         assert!(about.starts_with("Fit and accuracy are separate.") && about.contains("is still the served model of its thing") && about.contains("kruze@zerotrustphysics.com") && !about.contains("request_model"), "{about}");
+        for word in crate::spec_sheet::UNSAID {
+            assert!(!crate::spec_sheet::says(about, word), "{word}: {about}");
+        }
         assert!(about.ends_with("when nothing served fits, requests for a model go to John Kruze at kruze@zerotrustphysics.com, each naming an open dataset of the thing.") && !about.contains("write to"), "{about}");
         // A thing described by its kind is fitted by the served model of that
         // kind; only a particular other object is not. The sentence says a
@@ -1632,12 +1744,9 @@ mod tests {
         let mut counted = std::collections::BTreeMap::new();
         for entry in INDEX {
             let word = match entry.marks {
-                Marks::Met => "met",
-                Marks::Missed => "missed",
-                Marks::InPart => "met in part",
-                Marks::NotCompared => "not held to a measurement",
+                Marks::NotCompared => "company specimen",
                 Marks::Reference => "held to a reference calculation",
-                Marks::Calibrated => "calibrated to the record",
+                Marks::Measured | Marks::Met | Marks::Missed | Marks::InPart | Marks::Calibrated => "compared with measurement",
             };
             assert_eq!(entry.marks.against_measurement(), word, "{}", entry.key);
             *counted.entry(word).or_insert(0) += 1;
@@ -1648,12 +1757,15 @@ mod tests {
             assert_eq!(row.unwrap_or_else(|| panic!("{} is on no list", entry.key))["against_measurement"], word, "{}: its list row", entry.key);
             assert_eq!(record(&view, entry, &[]).unwrap()["against_measurement"], word, "{}: its match", entry.key);
         }
-        assert_eq!(counted.into_iter().collect::<Vec<_>>(), [("calibrated to the record", 2), ("held to a reference calculation", 3), ("met", 12), ("met in part", 5), ("missed", 27), ("not held to a measurement", 12)]);
+        assert_eq!(counted.into_iter().collect::<Vec<_>>(), [("company specimen", 12), ("compared with measurement", 50), ("held to a reference calculation", 3)]);
         // No row of either list is without the word, but the solver compiled for tests only.
         assert_eq!(cards["cards"].as_array().unwrap().len(), INDEX.iter().filter(|entry| entry.key.contains('/')).count());
         for row in cards["cards"].as_array().unwrap() {
             assert!(row["against_measurement"].is_string(), "{row}");
-            assert_eq!(row.as_object().unwrap().keys().collect::<Vec<_>>(), ["domain", "card", "against_measurement", "specimen"]);
+            // A superseded card names its successor after its word (succession::TABLE).
+            let superseded = crate::succession::superseded_by(&view, row["card"].as_str().unwrap()).is_some();
+            let expected: &[&str] = if superseded { &["domain", "card", "against_measurement", "superseded_by", "specimen"] } else { &["domain", "card", "against_measurement", "specimen"] };
+            assert_eq!(row.as_object().unwrap().keys().map(String::as_str).collect::<Vec<_>>(), expected, "{row}");
         }
         for row in solvers["solvers"].as_array().unwrap() {
             if row["solver"] == crate::solver_probe::STAND_IN.name {
@@ -1664,29 +1776,32 @@ mod tests {
         }
         // And through the tool: a match gives the word before its phrase.
         let answer = find_in(&view, &json!({ "description": "rain fade on a microwave link" })).unwrap();
-        assert_eq!(answer["matches"][0]["against_measurement"], "met");
-        assert!(answer["matches"][0]["accuracy_against_measurement"].as_str().unwrap().starts_with("passed the pass marks"));
-        // Each of the three tools says what the key is: accuracy, not fit.
+        assert_eq!(answer["matches"][0]["against_measurement"], "compared with measurement");
+        assert!(answer["matches"][0]["accuracy_against_measurement"].as_str().unwrap().starts_with("Compared with "));
+        // Each tool that gives the key says its three words, and that the
+        // numbers say how good the model is.
         for said in [description().as_str(), AGAINST_MEASUREMENT_SAYS] {
-            assert!(said.contains("against_measurement") && said.contains("\"met in part\"") && said.contains("accuracy and not fit"), "{said}");
-            assert!(said.contains("one of six words") && said.contains("\"calibrated to the record\"") && said.contains("not a blind test") && said.contains("the original is served beside it under its own word"), "{said}");
-            // The three words say how a model did against the pass marks its
-            // record states; the record says whether the comparison was blind.
-            // Nothing says the three words name blind tests.
-            assert!(said.contains("say how") && said.contains("the pass marks its record states") && said.contains("says whether that comparison was blind"), "{said}");
-            assert!(!said.contains("compared blind") && !said.contains("fixed before"), "{said}");
+            for word in crate::spec_sheet::WORDS {
+                assert!(said.contains(&format!("\"{word}\"")), "{word}: {said}");
+            }
+            for word in crate::spec_sheet::UNSAID {
+                assert!(!crate::spec_sheet::says(said, word), "{word}: {said}");
+            }
         }
+        assert!(AGAINST_MEASUREMENT_SAYS.ends_with("The numbers say how good it is."));
     }
 
-    /// A model calibrated to the record has its row of CALIBRATIONS, and the
-    /// row is its registration's calibration word for word: the companion it
-    /// names is a served model other than itself, whose own record is
-    /// scored. Its phrase says what the word means and names the companion.
+    /// A second form of a model's object (served as calibrated to the record
+    /// until 0.14.3) has its row of CALIBRATIONS, and the row is its
+    /// registration's word for word: the model it stands beside is a served
+    /// model other than itself. It is compared with measurement, by its spec
+    /// sheet, like any other.
     #[test]
-    fn every_model_calibrated_to_the_record_has_its_row_and_its_registration() {
+    fn every_second_form_has_its_row_and_its_registration() {
         let served: Vec<&str> = INDEX.iter().map(served_name).collect();
         for entry in INDEX.iter().filter(|entry| entry.marks == Marks::Calibrated) {
             assert!(calibration_of(served_name(entry)).is_some(), "{}: no row of CALIBRATIONS", entry.key);
+            assert_eq!(entry.marks.against_measurement(), crate::spec_sheet::COMPARED, "{}", entry.key);
         }
         let forecasts = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("kit/forecasts");
         let record_of = |model: &str| -> Value {
@@ -1696,19 +1811,15 @@ mod tests {
         for row in CALIBRATIONS {
             assert_eq!(CALIBRATIONS.iter().filter(|other| other.model == row.model).count(), 1, "{}: two rows", row.model);
             assert!(served.contains(&row.model), "{}: not served", row.model);
-            assert!(row.companion_to != row.model && served.contains(&row.companion_to), "{}: its companion {} is not a served model beside it", row.model, row.companion_to);
+            assert!(row.companion_to != row.model && served.contains(&row.companion_to), "{}: {} is not a served model beside it", row.model, row.companion_to);
             let calibration = record_of(row.model)["calibration"].clone();
             assert_eq!(calibration["companion_to"], row.companion_to, "{}: the row's companion is not its registration's", row.model);
-            assert_eq!(calibration["not_blind"], row.not_blind, "{}: the row's not_blind is not its registration's", row.model);
-            assert!(record_of(row.companion_to)["scored"]["utc"].is_string(), "{}: its companion's record is not scored", row.model);
+            assert_eq!(calibration["not_blind"], row.not_blind, "{}: the row is not its registration's", row.model);
         }
-        // The phrase, on an entry of the sixth word.
-        let entry = Entry { key: "energy/a_model", marks: Marks::Calibrated, marks_words: "within 1 percent after the fact", strong: &[], plain: &[], weak: &[], other: &[], own: &[] };
-        assert_eq!(
-            accuracy(&entry),
-            "calibrated to the record, not a blind test: its structure or constants were chosen with the record of a scored original open, and the scored original is served beside it under its own word: within 1 percent after the fact"
-        );
-        assert_eq!(verdict(&entry).0, CALIBRATED);
+        // The served description names the model beside it and nothing of the old record.
+        let short = crate::descriptor::describe_short_in(&View::full(), "energy", "generator_mmrtg_seebeck").unwrap();
+        assert_eq!(short["companion_to"], "generator_mmrtg_f1");
+        assert!(short.get("not_blind").is_none());
     }
 
     /// The kinds the answer itself gives as examples of a description that
@@ -1791,6 +1902,10 @@ mod tests {
         }
         // The things themselves are still found by their kind.
         assert_eq!(first_of("a nuclear research reactor pulsed by a step in reactivity").as_deref(), Some("energy/reactor_triga_jsi"));
+        // The instrumented fuel element of the same reactor, by its own words.
+        assert_eq!(first_of("TRIGA fuel element temperature").as_deref(), Some("fuel_rod_triga_jsi"));
+        assert_eq!(first_of("the thermocouple of a TRIGA fuel rod through a pulse").as_deref(), Some("fuel_rod_triga_jsi"));
+        assert_eq!(first_of("the JSI TRIGA reactor pulse").as_deref(), Some("energy/reactor_triga_jsi"));
         assert_eq!(first_of("a satellite in orbit around the Earth").as_deref(), Some("aerospace/satellite_lageos1"));
     }
 

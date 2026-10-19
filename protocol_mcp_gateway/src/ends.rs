@@ -57,6 +57,12 @@ pub(crate) const ENDS: &[End] = &[
         side: Side::Always,
     },
     End {
+        card: "reactor_spert3_ccore_twin",
+        reject: "PastPlateTemperatureMaximum",
+        end: "the first maximum of the hot-spot plate temperature after the first maximum of power, where the card's transient ends",
+        side: Side::Always,
+    },
+    End {
         card: "capsule_stardust",
         reject: "PastFlightDeployment",
         end: "the drogue-deployment condition the radar recorded, altitude under 31,030 m and Mach number under 1.23 at once, where the card's entry ends; the step that first crosses both lands",

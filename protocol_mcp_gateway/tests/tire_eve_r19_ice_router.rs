@@ -562,7 +562,7 @@ async fn the_local_connection_lists_the_tyre_and_gives_the_bytes_of_the_web_conn
         .expect("the tyre is listed");
     assert_eq!(entry["domain"], "materials");
     // The line an agent sees in the list says that the ratio is fitted.
-    assert!(entry["specimen"].as_str().unwrap().contains("fitted to this tyre's own measurements"));
+    assert!(entry["specimen"].as_str().unwrap().contains("Fitted on 72 of the 252 runs of the EVE ice dataset"));
 
     let which = json!({ "domain": "materials", "card": "tire_eve_r19_ice" });
     let (described, error) = local.tool("describe_card", &which).await;
@@ -572,19 +572,19 @@ async fn the_local_connection_lists_the_tyre_and_gives_the_bytes_of_the_web_conn
     assert_eq!(described, over_web);
     let description: Value = serde_json::from_str(&described).unwrap();
     assert!(description["validation"]["result"].as_str().unwrap().starts_with(
-        "Ninety runs were held back. On 2026-10-09 the card was compared with the 60 of them that hold a scored slip, as 60 cells of three repeats each, and all five lines fixed beforehand were met"
+        "On the 60 of the 90 runs outside the fit that hold a slip of 5 to 20 percent, as 60 cells of three repeats each"
     ));
     // Sentences held in the result and the limits.
     let result = description["validation"]["result"].as_str().unwrap();
     for words in [
-        "One held-back run, number 153, is a faulty record: it rolled for about 90 s like the others, and its channels are on other scales",
+        "One run outside the fit, number 153, is a faulty record: it rolled for about 90 s like the others, and its channels are on other scales",
         "vertical force reads 1,849 N at a nominal 3,500 N",
         "wheel angle spans 0 to 11.75 where every other file spans 0 to 360",
-        "without it, computed after the scoring and no part of the registered result, the three errors are 0.031, 0.034 and 0.029",
-        "The card read high on all six conditions at 6.5 kN, by 0.023 on average",
-        "SHA-256 7a2f3cc8e75aadbbdaf4f74289803ddf1149dbe882d94cadc96f668061b943c7) was overwritten by a later build",
-        "which returned all 108 saved answers byte for byte. Since engine 0.7.0 a request states slip_held_s, so those saved requests are refused as they were sent.",
-        "evidence/verification/second_party/V-33/",
+        "without it the three errors are 0.031, 0.034 and 0.029",
+        "The card reads high on all six conditions at 6.5 kN, by 0.023 on average",
+        "0.034 over the 60 cells (target 0.045), 0.040 over the 24 cells at 2.5 bar (target 0.045) and 0.029 over the 36 cells at 6.5 kN (target 0.045)",
+        "binary 7a2f3cc8e75aadbbdaf4f74289803ddf1149dbe882d94cadc96f668061b943c7; a later build returns all 108 saved answers byte for byte. A request now states slip_held_s, so those saved requests are refused as they were sent.",
+        "A second comparison program, on the same machine and on its own reduction of the raw files, gives the same results",
     ] {
         assert!(result.contains(words), "{words}: {result}");
     }
@@ -596,23 +596,22 @@ async fn the_local_connection_lists_the_tyre_and_gives_the_bytes_of_the_web_conn
         "the ratio rose by 0.010 to 0.024 from the first repeat to the third",
         "Any model that does not know the block lands near 0.03, and the card is at that floor",
         "A user should carry about ±0.03 (one standard deviation) on the ratio for the session",
-        "it is not a figure for a tyre on ice at a stated temperature or at road speed",
+        "not a figure for a tyre on ice at a stated temperature or at road speed",
         "the exponent fitted to them alone is -0.107 ± 0.014, where the card holds -0.133",
         "worth 0.002 to 0.003 of the 0.03 error",
         "about -62 N with a standard deviation of 49 N, is not subtracted from the measured forces",
         "it can catch a corrupted step, and it cannot catch a wrong constant, a wrong exponent or a wrong ice",
-        "compared at 6.5 kN with a root-mean-square error of 0.029 against a line of 0.045",
-        "Through engine 0.9 the card refused a load outside 3.5 to 6.5 kN",
-        "with the change placed where the wheel speed steps, every one-second window from 5 s to 20 s after a change met all five lines, and every one before 5 s failed one",
-        "Engine 0.7.0 changed every answer of this card",
-        "It was scored twice, the second time by a second scorer, on one machine",
+        "compared at 6.5 kN with a root-mean-square error of 0.029 (target 0.045)",
+        "with the change placed where the wheel speed steps: every one-second window from 5 s to 20 s after a change is inside all five targets, and every one before 5 s is outside one",
+        "the first second gives 0.0477 at 6.5 kN (target 0.045)",
+        "a second comparison program, on the same machine, gives the same results",
     ] {
         assert!(limits.contains(words), "{words}: {limits}");
     }
     // Re-pinned for 0.10.1: after the kernel's 13 names the list holds the gateway's own two, DtBelowFloor and DtAboveCeiling.
     assert_eq!(description["rejects"].as_array().map(Vec::len), Some(15), "{}", description["rejects"]);
     // The constant comparator is named for what it is.
-    assert!(result.contains("geometric mean with no slip term (least squares on the logarithm) gave 0.036"), "{result}");
+    assert!(result.contains("geometric mean with no slip term (least squares on the logarithm) gives 0.036"), "{result}");
 
     // The worked examples of the description run as written, the same bytes on both.
     let step = description["example_compute_step"].clone();

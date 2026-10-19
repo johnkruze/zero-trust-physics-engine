@@ -219,7 +219,7 @@ fn a_history_row_under_a_millisecond_after_the_one_before_is_refused_at_once_and
     let short = described(&mut local, "ablator_slab");
     assert_eq!(
         short["more"]["refusals"],
-        "The 34 named refusals with the solver's sentence for each: 23 a request itself shows (422, no proof) and 11 met while computing (200, outcome `refused`, no result)."
+        "The 34 named refusals with the solver's sentence for each: 23 a request itself shows (422, no proof) and 11 found while computing (200, outcome `refused`, no result)."
     );
     let part = |door: &mut Stdio2, part: &str| -> Value {
         let (error, text) = door.tool("describe_solver", &json!({ "solver": "ablator_slab", "part": part }));

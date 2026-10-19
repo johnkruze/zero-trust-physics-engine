@@ -10,13 +10,21 @@ https://mcp.zerotrustphysics.com/mcp
 
 That address is open to any agent, and nothing here is needed to use it. This repository is for building the same engine on your own machine and getting the same proofs.
 
-## What 0.14.2 is
+## What 0.14.3 is
 
-This is engine 0.14.2, the version the open address has served since 18 October 2026: 37 models, 24 field solvers and 18 tools. It answers every question with the same bytes and the same proof as 0.14.0 and 0.14.1; only the instructions an agent reads on connecting changed, now 563 characters.
+This is engine 0.14.3, the version the open address has served since 18 October 2026: 40 models, 25 field solvers and 18 tools. Of the 380 worked answers 0.14.2 gives, 308 are the same bytes and 72 changed in their words only, every proof kept. The 23 other worked answers are the new models'.
 
-- **The same bytes on every machine tested.** Every exponential, logarithm, power and trigonometric function an answer depends on is computed by the engine's own code, never by the machine's math library. Built from this source on a Mac (Apple M4 Pro), on Linux arm64, and on Linux amd64 with and without FMA, it gave the same answer, byte for byte, to all 380 worked questions, and the same 13 printed proofs. The open address answers byte for byte as a local build does.
+- **`reactor_spert3_twin`**, the SPERT III E-core test reactor (1,392 UO2 rods) through a reactivity burst. Twelve numbers fitted on all 70 tests of report IDO-17281: at the median test, peak power within 6.0 percent, energy to the peak within 7.9 and time to the peak within 3.4. Predicted from fits that left each test out in turn: 6.2, 7.8 and 3.0. Its largest gap: from 19 MW of operating power, 3 tests, energy reads 81.8 percent low.
+- **`reactor_spert3_ccore_twin`**, the SPERT III C-core (93 percent enriched plates), with subcooled boiling. Eight constants fitted on 111 transients of report IDO-16918; predicted with each tenth left out in turn, peak power within 12.6 percent RMS, energy to the peak within 19.6 and the hot-spot plate rise at peak power within 13.4. Its largest gap: at 230 psig with 5,000 to 20,000 gpm, peak power 21.2 percent RMS.
+- **`reactor_msre_pump`**, the reactivity the control rods of the Molten-Salt Reactor Experiment supply while the fuel pump starts or coasts down. Two constants fitted on the start-up; on the 73 coast-down rod readings not in the fit, within 8.1 pcm RMS, largest 23.7. The steady circulation loss: 0.2120 % dk/k against the measured 0.212 ± 0.004.
+- **`fuel_rod_triga_jsi`**, a field solver: the temperature of the instrumented fuel element 6753 of the Jožef Stefan Institute's TRIGA Mark II reactor through a pulse. Two constants fitted on 39 pulses; on 16 pulses not in the fit, the thermocouple's maximum rise within 9.2 percent (mean 5.5), its time after the power peak within 19.6 percent (mean 11.9), and its rise 10 s after the peak within 4.3 percent on the 8 records that run that long.
+- **`solve` and `verify_solution` take `from`:** a sealed run of a model handed into a field solver under one chain proof. The coupling `triga_pulse_to_element_6753` hands a pulse of the `reactor_triga_jsi` model to `fuel_rod_triga_jsi`; chained on the same 16 pulses, the thermocouple's maximum rise reads 9.8 to 4.3 percent low.
+
+And three things about every answer and every model:
+
+- **The same bytes on every machine tested.** Every exponential, logarithm, power and trigonometric function an answer depends on is computed by the engine's own code, never by the machine's math library. For 0.14.3, the open address, built from this source on Linux x86-64, gave the same answer, byte for byte, to all 403 worked questions as a build on a Mac (Apple M4 Pro), and the same 13 printed proofs.
 - **Anyone can recompute a proof.** A proof is a SHA-256 hash that binds the question to the answer, byte for byte. `genesis_seal`, in this repository, confirms one with no engine, and so do the Python programs at https://github.com/johnkruze/zero-trust-physics .
-- **Misses are reported as misses.** A model compared with measurements of its real thing says how it did, in one of three words: met, met in part or missed. Its description says whether the comparison was blind and, where it was not, what was seen and when. A model that missed is still served, with its miss stated.
+- **Every model says what stands behind it, numbers first.** One of three words: "compared with measurement" (50 of the 65 models: a real object), "held to a reference calculation" (3: a published calculation) or "company specimen" (12: an object the company specified, every constant stated). Each of the 50 describes itself as a spec sheet in six parts: what it computes; its range; what it was fitted on, or that nothing was fitted; what it was compared with, and within what; the gap, where it does worst; and what it refuses. A model replaced by a newer one names it in `superseded_by` and is still served: `reactor_spert3` and `reactor_spert3_fuel` name `reactor_spert3_twin`, and `reactor_spert3_ccore` names `reactor_spert3_ccore_twin`.
 
 ## What is in this repository
 
@@ -92,13 +100,12 @@ cd genesis_seal_parquet && cargo build --release --locked && cargo test --releas
 
 Some tests print one line, `skipped: … needs the saved runs`, and return: they compare with runs the company keeps, which are not in this repository. The tests use Unix tools such as `ps` and `mkfifo`.
 
-Nine of the gateway's tests fail in this repository, because of what they check. Each holds a model served forecast first to the commit, in the company's own repository of each crate, that carries its forecast's protocol, and this repository is one commit without that history:
-`a_model_calibrated_to_the_record_is_held_to_its_calibration`, and `<model>_meets_the_served_contract` for `blast_wave_tnt_air`, `culture_trichoderma_atp`, `generator_mmrtg_seebeck`, `grasp_lift_glass_4tu`, `momentum_jwst_dihedral`, `momentum_jwst_srp`, `plasma_sheath_ram_c2` and `stress_plate_hole_s235`.
-Every other test passed on 17 October 2026 on an Apple M4 Pro: kernel 817, solvers 516, seal 201, gateway 1,156, Parquet converter 20. One gateway test times a run while it holds its permit, and on a heavily loaded machine it can fail and then pass when run again.
+One of the gateway's tests fails in this repository, because of what it checks: `generator_mmrtg_seebeck_meets_the_served_contract`. The MMRTG model's description states a prediction made before the data it predicts were published, and the test looks for the commit that recorded that prediction in the company's own repository of the gateway; this repository is one commit without that history.
+Every other test passed on 18 October 2026 on an Apple M4 Pro: kernel 838, solvers 525, seal 201, gateway 1,192, Parquet converter 20. One gateway test times a run while it holds its permit, and on a heavily loaded machine it can fail and then pass when run again.
 
 ## Two things to know
 
-- **Proofs and machines.** Build it on your machine and every model and every field solver gives the proof the open address gives. That was measured on the four machine kinds above. On another kind, compare one worked answer with the open address before relying on it.
+- **Proofs and machines.** Build it on your machine and every model and every field solver gives the proof the open address gives. For 0.14.3 that was measured on the two machine kinds above, a Mac (Apple M4 Pro) and Linux x86-64. On another kind, compare one worked answer with the open address before relying on it.
 - **Paths that are not here.** Comments and some descriptions name files under `evidence/`, and `REFERENCE.md`, `AGENTS.md` and `HOSTING.md`. Those are the company's own records and are not part of this repository.
 
 ## Credit

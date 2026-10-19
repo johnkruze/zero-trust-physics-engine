@@ -225,14 +225,14 @@ async fn every_connection_gives_the_same_bytes_for_the_changed_tools() {
 fn each_list_states_its_count() {
     let mut door = Stdio2::start(None);
     let cards = ok(&mut door, "list_cards", &json!({}));
-    assert_eq!(cards["count"], json!(37));
-    assert_eq!(cards["cards"].as_array().unwrap().len(), 37);
+    assert_eq!(cards["count"], json!(40));
+    assert_eq!(cards["cards"].as_array().unwrap().len(), 40);
     let solvers = ok(&mut door, "list_solvers", &json!({}));
-    assert_eq!(solvers["count"], json!(24));
-    assert_eq!(solvers["solvers"].as_array().unwrap().len(), 24);
+    assert_eq!(solvers["count"], json!(25));
+    assert_eq!(solvers["solvers"].as_array().unwrap().len(), 25);
     // The count comes first, before the list it counts.
     let (_, text) = door.tool("list_cards", &json!({}));
-    assert!(text.starts_with("{\"count\":37,\"cards\":["), "{}", &text[..40]);
+    assert!(text.starts_with("{\"count\":40,\"cards\":["), "{}", &text[..40]);
 }
 
 #[test]

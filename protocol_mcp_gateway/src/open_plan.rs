@@ -92,6 +92,7 @@ pub const OPEN_SOLVE_SECONDS: &[(&str, f64)] = &[
     ("tokamak_dt_beam_target", 10_000.0),
     ("junction_nist_b7_s2", 19.0), // 117.6 million steps: 17.2 s, 18.1 s with canonical math
     ("icf_hotspot_burn", 8.7), // on the edge of ignition, its step halved: 6.25 s, 8.32 s with canonical math
+    ("fuel_rod_triga_jsi", 3.5), // 600 s of history in 60,000 points, its capacity, 300,000 steps: 2.79 s under load
     ("step_flow_armaly", 3.0), // at Reynolds number 400: 2.16 s
     ("ln2_line_dlr_fttf", 2.1), // 10 s of transient at 20 MPa: 1.95 s, 2.03 s with canonical math
     ("stress_plate_hole_s235", 1.7), // at 139.81 MPa, the highest traction answered, 1,000 points: 1.66 s
@@ -163,6 +164,10 @@ pub const INLINE_WORKED_SOLVES: &[(&str, u64)] = &[
     ("icf_hotspot_burn", 16),
     ("ln2_line_dlr_fttf", 25),
     ("plasma_sheath_ram_c2", 17),
+    // Its worked solve answers the thermocouple and the fuel at each of the
+    // history's 300 times: one inline answer holds 10 (37,145 characters), and 11
+    // are refused (2026-10-18).
+    ("fuel_rod_triga_jsi", 10),
 ];
 
 pub(crate) fn solve_seconds(solver: &str) -> f64 {

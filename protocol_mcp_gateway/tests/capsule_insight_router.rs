@@ -757,7 +757,7 @@ async fn the_local_connection_lists_the_capsule_and_gives_the_bytes_of_the_web_c
     assert!(!error);
     let listed: Value = serde_json::from_str(&listed).unwrap();
     let cards = listed["cards"].as_array().unwrap();
-    assert_eq!(cards.len(), 37);
+    assert_eq!(cards.len(), 40);
     assert_eq!(cards[18]["domain"], "aerospace");
     assert_eq!(cards[18]["card"], "capsule_insight");
     let on_web: Value = Client::new().get(format!("{web}/cards")).send().await.unwrap().json().await.unwrap();

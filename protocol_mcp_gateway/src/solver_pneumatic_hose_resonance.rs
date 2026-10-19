@@ -84,7 +84,7 @@ pub const PNEUMATIC_HOSE_RESONANCE: Solver = Solver {
     solve,
 };
 
-const SUMMARY: &str = "The pneumatic resonance of the company's own 2.0 m polyamide hose (6 x 4 mm) feeding a closed 20 cm^3 volume, air at 293.15 K about a mean pressure: the dissipative laminar line of Nichols and Brown (viscous and thermal Bessel functions, the tube's stretch, the volume's heat exchange), its natural modes as poles with their damping ratios, the response's peaks, and the volume's pressure over the inlet's at asked frequencies; energy and volume-flow ledgers closed by quadrature along the standing wave and passivity held at the peaks and the asked frequencies; stops by name at the first mode across the bore (50,289 Hz), where slip flow begins at the wall, in the bore or in the oscillating viscous layer (1.0544 Hz for each pascal of mean pressure), and at the tube's rating; held to Poiseuille and to Kirchhoff's wide-tube attenuation.";
+const SUMMARY: &str = "Company specimen: the pneumatic resonance of a 2.0 m polyamide hose (6 x 4 mm) feeding a closed 20 cm^3 volume, air at 293.15 K about a mean pressure: the dissipative laminar line of Nichols and Brown (viscous and thermal Bessel functions, the tube's stretch, the volume's heat exchange), its natural modes as poles with their damping ratios, the response's peaks, and the volume's pressure over the inlet's at asked frequencies; energy and volume-flow ledgers closed by quadrature along the standing wave and passivity held at the peaks and the asked frequencies; stops by name at the first mode across the bore (50,289 Hz), where slip flow begins at the wall, in the bore or in the oscillating viscous layer (1.0544 Hz for each pascal of mean pressure), and at the tube's rating; held to Poiseuille and to Kirchhoff's wide-tube attenuation.";
 
 const REFUSALS: &[Refusal] = &[
     Refusal { name: "InputNotFinite", meaning: "An input was NaN or infinite.", sealed: false },
@@ -137,7 +137,7 @@ fn field_words() -> String {
 fn sections() -> Sections {
     Sections {
         locked: json!({
-            "specimen": "The company's own specimen: 2.0 m of polyamide 12 tube, 4 mm bore and 1 mm wall (Young's modulus 1.4 GPa, Poisson 0.4), rated to 1.0 MPa over the atmosphere, closed at its end by a 20 cm^3 volume whose wall stays at the air's 293.15 K; dry air, R 287.05 J/(kg K), gamma 1.4, viscosity 1.8205e-5 Pa s, Prandtl number 0.713.",
+            "specimen": "Company specimen: 2.0 m of polyamide 12 tube, 4 mm bore and 1 mm wall (Young's modulus 1.4 GPa, Poisson 0.4), rated to 1.0 MPa over the atmosphere, closed at its end by a 20 cm^3 volume whose wall stays at the air's 293.15 K; dry air, R 287.05 J/(kg K), gamma 1.4, viscosity 1.8205e-5 Pa s, Prandtl number 0.713.",
             "hose_length_m": hose::HOSE_LENGTH_M,
             "hose_bore_m": hose::HOSE_BORE_M,
             "hose_wall_m": hose::HOSE_WALL_M,
@@ -192,18 +192,18 @@ fn sections() -> Sections {
             "retrieved": hose::REFERENCE_RETRIEVED,
             "test": "the_line_meets_poiseuille_and_kirchhoff",
             "covers": "The test holds the line's resistance at 1 mHz to Poiseuille's 8 mu/(pi r^4) within 1e-6, its compliance to the isothermal A/p, and its attenuation at 5 and 20 kHz to Kirchhoff's wide-tube closed form within 1.2 and 0.6 percent.",
-            "kind": "Published closed forms, not measurements. The record of the search for measured data is in evidence/research/hydraulics_robotics/.",
+            "kind": "Published closed forms: Poiseuille's resistance and Kirchhoff's attenuation in a wide tube.",
         }),
     }
 }
 
 fn validation() -> [String; 5] {
     [
-        "The company's own specimen: 2.0 m of polyamide 12 tube, 6 x 4 mm, closed by a 20 cm^3 volume, air at 293.15 K about a mean pressure, driven by a small pressure at the inlet.".to_string(),
-        "The company's own specimen, its constants declared in its description; its comparison with measurement comes later. The model is held to two published closed forms, Poiseuille's resistance and Kirchhoff's attenuation in a wide tube; that is under reference.".to_string(),
+        "Company specimen: 2.0 m of polyamide 12 tube, 6 x 4 mm, closed by a 20 cm^3 volume, air at 293.15 K about a mean pressure, driven by a small pressure at the inlet.".to_string(),
+        "Company specimen, every constant declared in its description. The model is held to two published closed forms, Poiseuille's resistance and Kirchhoff's attenuation in a wide tube; reference gives the numbers.".to_string(),
         "The ledgers stated under invariants: energy and volume flow closed at every peak and every asked frequency, and the line and the volume never giving energy.".to_string(),
         crate::descriptor::OWN_SPECIMEN_SOLVER_RESULT.to_string(),
-        "The hose's constants are the company's, declared in its description. The air is at rest about its mean pressure, the oscillation small and laminar, the waves plane; the tube's wall is elastic with no loss of its own; the volume is taken as a sphere of the same volume for its heat exchange. A proof shows that an answer was not changed, not that the model matches a hose.".to_string(),
+        "The hose's constants are the company's, declared in its description. The air is at rest about its mean pressure, the oscillation small and laminar, the waves plane; the tube's wall is elastic with no loss of its own; the volume is taken as a sphere of the same volume for its heat exchange. A proof confirms an answer is unchanged; this hose is a company specimen, with no measurement of its own.".to_string(),
     ]
 }
 

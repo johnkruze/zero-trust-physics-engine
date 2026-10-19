@@ -91,7 +91,7 @@ fn the_two_cards_take_one_request_and_the_slopes_turn_roll_into_torque_about_the
 }
 
 /// The served words state the record: the four fitted numbers, the two
-/// blind comparisons and their misses (the second, the ledger of 2026-10-16,
+/// months not in the fit with each measure beside its target (the second,
 /// ledger_2026-10-16/RESULT.md), and the torque about the boresight at roll.
 #[test]
 fn the_served_words_agree_with_the_record() {
@@ -100,17 +100,20 @@ fn the_served_words_agree_with_the_record() {
     for words in [
         "0.0704146 rad, 4.03 degrees",
         "-0.0404585, 0.00776958 and -0.171418 m",
-        "it met four of five marks",
-        "within its allowance on 18 of 28 days",
-        "off by -1.6 and +1.0 µN m on average, where momentum_jwst_srp's is off by -28.9 and +27.3",
-        "B: 18 of 28 days, 64 percent, missed",
+        "on 25 of 28 and 22 of 30 days (target 80 percent)",
+        "within that allowance on 18 of 28 and 13 of 30 days (target 80 percent)",
+        "the torque about J1 is off by -1.6 and +1.0 µN m on average",
+        "off by -28.9 and +27.3 µN m beyond 2 degrees of roll",
+        "B 18 of 28 days, 64 percent (80)",
         "The two ledgers confirm the arithmetic of one rotation and of two balances",
         "a norm from 0.999999 to 1.000001, both inclusive",
         "with nothing pulled back",
         "up to 3.5 N m s",
-        "it met three of five, missing the daily growth of |H| as well, on 22 of 30 days, and the vector on 13 of 30",
-        "three of five, A and B missed, where the forecast was four of five with B missed",
-        "7 of 10 marks in the card's two blind months",
+        "A 22 of 30 days, 73 percent (80)",
+        "B 13 of 30 days, 43 percent (80)",
+        "within 0.272 and 0.375 of its spread RMS (target 0.5)",
+        "within 0.144 and 0.149 of the RMS torque (target 0.4)",
+        "Fitted on the 64 days 12 May to 14 July 2023",
     ] {
         assert!(text.contains(words), "{words}");
     }

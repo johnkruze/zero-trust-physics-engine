@@ -252,9 +252,10 @@ async fn the_description_carries_the_comparison_and_its_examples_run_unchanged()
     let listed = reqwest::get(format!("{base}/solvers")).await.unwrap();
     let listed: Value = serde_json::from_str(&listed.text().await.unwrap()).unwrap();
     let row = listed["solvers"].as_array().unwrap().iter().find(|row| row["solver"] == "ln2_line_dlr_fttf").expect("listed").clone();
-    assert_ne!(row["against_measurement"], "not held to a measurement");
+    assert_eq!(row["against_measurement"], "compared with measurement");
     let summary = row["summary"].as_str().unwrap();
     assert!(summary.contains("DLR's Fluid Transient Test Facility"), "{summary}");
+    assert!(summary.contains("82.7 to 86.4 K") && summary.contains("(StrokeFasterThanGrid)"), "{summary}");
 
     let (status, text) = post(&base, "/describe_solver", &json!({ "solver": "ln2_line_dlr_fttf" })).await;
     assert_eq!(status, 200, "{text}");

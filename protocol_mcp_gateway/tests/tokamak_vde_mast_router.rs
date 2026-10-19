@@ -429,17 +429,28 @@ async fn the_description_carries_the_kernel_sentences_the_end_and_the_result() {
     }
     assert_eq!(body["declared_ends"][0]["reject"], "PlasmaAtWall");
     let record = &body["validation"];
-    assert!(record["pass_line"].as_str().unwrap().contains("3743912cffaa1274685092dd247e5aaf596f7af0f1e8275be7a1e3ccdc4b9f70"));
+    assert!(record["pass_line"].as_str().unwrap().contains("Record SHA-256 3743912cffaa1274685092dd247e5aaf596f7af0f1e8275be7a1e3ccdc4b9f70"));
     let result = record["result"].as_str().unwrap();
-    for words in ["met in part, one line of three", "6.55 per second against Windridge's 96.3", "7.10 per second", "121.3 per second", "-2,933 ampere-turns", "-3,126"] {
+    for words in [
+        "6.55 per second against Windridge's 96.3, 93.2 percent low (target within 25 percent)",
+        "7.10 per second",
+        "94.1 percent low (target within 25 percent)",
+        "121.3 per second",
+        "-2,933 ampere-turns",
+        "-3,126 in the shot, 6.2 percent low (target within 25 percent)",
+    ] {
         assert!(result.contains(words), "{words}");
     }
-    assert!(record["object"].as_str().unwrap().starts_with("The company's own derivation, from the MAST spherical tokamak"));
-    assert!(record["data"].as_str().unwrap().contains("Creative Commons 4.0 BY-SA"));
+    assert!(record["object"].as_str().unwrap().starts_with("The MAST spherical tokamak (UKAEA, Culham) in shot 15045"));
+    assert!(record["data"].as_str().unwrap().contains("FAIR-MAST") && record["data"].as_str().unwrap().contains("692 files"));
     assert_eq!(body["continuation"]["served"], true);
     let list: Value = Client::new().get(format!("{base}/cards")).send().await.unwrap().json().await.unwrap();
     let row = list["cards"].as_array().unwrap().iter().find(|row| row["card"] == "tokamak_vde_mast").unwrap();
-    assert_eq!(row["against_measurement"], "met in part");
+    assert_eq!(row["against_measurement"], "compared with measurement");
+    // The list row is the spec sheet: the gap is stated with its number.
+    let specimen = row["specimen"].as_str().unwrap();
+    assert!(specimen.contains("Gap: the growth rate is 93.2 percent low (6.55 per second against 96.3"), "{specimen}");
+    assert!(specimen.contains("(PlasmaAtWall)"), "{specimen}");
     // the frame's force slot carries the wall's force on the plasma, in newtons
     let slots = body["frame_slots"].as_array().unwrap();
     let force = slots.iter().find(|slot| slot["slot"] == "force_torque").unwrap().to_string();

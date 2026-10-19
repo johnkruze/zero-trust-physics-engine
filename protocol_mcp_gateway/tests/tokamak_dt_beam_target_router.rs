@@ -461,12 +461,12 @@ async fn it_is_listed_and_described_and_its_example_runs_unchanged() {
     let listed = reqwest::get(format!("{base}/solvers")).await.unwrap();
     let listed: Value = serde_json::from_str(&listed.text().await.unwrap()).unwrap();
     let solvers = listed["solvers"].as_array().expect("solvers");
-    assert_eq!(solvers.len(), 24);
+    assert_eq!(solvers.len(), 25);
     assert_eq!(solvers[11]["solver"], "tokamak_dt_beam_target");
     let summary = solvers[11]["summary"].as_str().unwrap();
-    assert!(summary.contains("No constant is fitted"), "{summary}");
-    assert!(summary.contains("Compared with TRANSP's fusion power"), "{summary}");
-    assert!(summary.contains("three of its four marks met"), "{summary}");
+    assert!(summary.contains("Nothing fitted"), "{summary}");
+    assert!(summary.contains("Held to TRANSP's fusion power"), "{summary}");
+    assert!(summary.contains("30 of the 34 within 0.75 to 1.25 (target 0.90 of them)"), "{summary}");
 
     let (status, text) = post(&base, "/describe_solver", &json!({ "solver": "tokamak_dt_beam_target" })).await;
     assert_eq!(status, 200, "{text}");

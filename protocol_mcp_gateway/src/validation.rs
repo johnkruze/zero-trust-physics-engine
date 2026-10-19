@@ -5,7 +5,7 @@
 //! watched by an observer that reads the exact value of the quantity after each
 //! measured step that lands. The statistics, the hash of the measurements and
 //! the seal are `genesis_seal::validation`, the one place the rule is written.
-//! The answer holds no verdict. A request may open a commitment its
+//! The answer sets no threshold. A request may open a commitment its
 //! measurements were locked with (`genesis_seal::commitment`): it is opened
 //! before a permit, data that do not open it are refused by name, and the
 //! seal covers it.
@@ -407,7 +407,7 @@ pub fn schema_in(view: &crate::view::View) -> Map<String, Value> {
         },
         "required": ["quantity", "measurements"],
         "additionalProperties": false,
-        "description": "One run, or one plan of solves, and measurements of one quantity. The answer is the error in numbers, sealed with a hash of the measurements. It holds no verdict. A request holds run or solves, not both."
+        "description": "One run, or one plan of solves, and measurements of one quantity. The answer is the error in numbers, sealed with a hash of the measurements. It sets no threshold. A request holds run or solves, not both."
     }) {
         Value::Object(map) => map,
         _ => unreachable!("schema is an object"),

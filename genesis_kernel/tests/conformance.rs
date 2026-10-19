@@ -385,6 +385,26 @@ fn reactor_spert3_ccore() -> Vec<Finding> {
         ledger: [population_anchor_mw, feedback_integral_dollar_mws, swept_energy_mws], physical: [power_mw, plate_rise_k])
 }
 
+fn reactor_spert3_twin() -> Vec<Finding> {
+    use reactor_spert3_twin::*;
+    kit!(reactor_spert3_twin, ReactorSpert3Twin::e_core(), ReactorState,
+        start: |c| ReactorState::try_start(c, (76.0 + 459.67) / 1.8, 0.0853, 0.0, 1.17719e-5).unwrap(),
+        load: ReactorLoad { reactivity_inserted_dollar: 1.0 },
+        dt: 0.00043, steps: 16,
+        flags: FLAG_ROD_MOVING | FLAG_PAST_PEAK | FLAG_HOT_SPOT_BOILING | FLAG_PROMPT_SUPERCRITICAL | FLAG_OUTSIDE_COMPARED,
+        ledger: [population_anchor_mw, heat_anchor_mws, hot_heat_anchor_mws, reactivity_power_integral, heat_carried_out_mws, hot_heat_to_water_mws],
+        physical: [power_mw, clad_k, hot_clad_k, water_k, energy_released_mws])
+}
+
+fn reactor_spert3_ccore_twin() -> Vec<Finding> {
+    use reactor_spert3_ccore_twin::*;
+    kit!(reactor_spert3_ccore_twin, ReactorSpert3CcoreTwin::c_core_twin(), ReactorState,
+        start: |c| ReactorState::try_start(c, 298.15, 0.0).unwrap(),
+        load: ReactorLoad { reactivity_inserted_dollar: 1.1, coolant_flow_m_per_s: 0.0 },
+        dt: 0.0006, steps: 16, flags: FLAG_PROMPT_SUPERCRITICAL | FLAG_PAST_POWER_PEAK | FLAG_HOT_SPOT_BOILING | FLAG_OUTSIDE_COMPARED_RANGE,
+        ledger: [population_anchor_mw, feedback_integral_dollar_mws, swept_energy_mws], physical: [power_mw, plate_rise_k, hot_spot_plate_rise_k])
+}
+
 fn runaway_18650_lco() -> Vec<Finding> {
     use runaway_18650_lco::*;
     kit!(runaway_18650_lco, Runaway18650Lco::hatchard_kim(), RunawayState,
@@ -443,7 +463,17 @@ fn tokamak_vde_mast() -> Vec<Finding> {
         physical: [displacement_m, velocity_m_s, wall_current_a, p6_current_a])
 }
 
-const CARDS: [(&str, fn() -> Vec<Finding>); 37] = [
+fn reactor_msre_pump() -> Vec<Finding> {
+    use reactor_msre_pump::*;
+    kit!(reactor_msre_pump, ReactorMsrePump::specimen(), ReactorMsrePumpState,
+        start: |c| ReactorMsrePumpState::try_start(c, 0.0).unwrap(),
+        load: ReactorMsrePumpLoad { pump_speed_fraction: 0.05 },
+        dt: 0.05, steps: 16, flags: FLAG_FLOW_CHANGING | FLAG_FUEL_CIRCULATING | FLAG_OUTSIDE_COMPARED_RUNS,
+        ledger: [inventory_anchor_ws[1], born_ws[1], decayed_vessel_ws[3], decayed_outside_ws[3]],
+        physical: [precursor_ws[1][40], precursor_ws[3][200]])
+}
+
+const CARDS: [(&str, fn() -> Vec<Finding>); 40] = [
     ("thermal", thermal),
     ("resonance", resonance),
     ("swing", swing),
@@ -476,11 +506,14 @@ const CARDS: [(&str, fn() -> Vec<Finding>); 37] = [
     ("accumulator_sbo450", accumulator_sbo450),
     ("reactor_triga_jsi", reactor_triga_jsi),
     ("reactor_spert3_ccore", reactor_spert3_ccore),
+    ("reactor_spert3_twin", reactor_spert3_twin),
+    ("reactor_spert3_ccore_twin", reactor_spert3_ccore_twin),
     ("runaway_18650_lco", runaway_18650_lco),
     ("grasp_lift_glass_4tu", grasp_lift_glass_4tu),
     ("momentum_jwst_srp", momentum_jwst_srp),
     ("momentum_jwst_dihedral", momentum_jwst_dihedral),
     ("tokamak_vde_mast", tokamak_vde_mast),
+    ("reactor_msre_pump", reactor_msre_pump),
 ];
 
 /// Every card attacked; every finding printed and, with `CONFORMANCE_REPORT`

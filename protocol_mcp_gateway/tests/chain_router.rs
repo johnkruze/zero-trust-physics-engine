@@ -824,7 +824,7 @@ fn each_condition_of_the_cell_m80_couplings_is_refused_by_name_before_any_physic
 }
 
 /// describe_card lists each cell m80 coupling, with its conditions, on both
-/// of its cards, and the engine serves four couplings.
+/// of its cards, and the engine serves five couplings, one of them into a solver.
 #[test]
 fn describe_card_lists_each_coupling_on_both_of_its_cards() {
     let mut door = local();
@@ -851,6 +851,10 @@ fn describe_card_lists_each_coupling_on_both_of_its_cards() {
             "spert3_fuel_burst_to_point_card", "spert3_fuel_burst_to_point_card",
         ]
     );
+    // The coupling into a solver is listed by describe_solver, not on its card.
+    let element = ok(&mut door, "describe_solver", &json!({ "solver": "fuel_rod_triga_jsi" }));
+    assert_eq!(element["couplings"][0]["name"], "triga_pulse_to_element_6753");
+    assert_eq!(element["couplings"][0]["downstream"], "solver/fuel_rod_triga_jsi");
     let m80 = ok(&mut door, "describe_card", &json!({ "domain": "energy", "card": "cell_2170_m80" }));
     let model3 = ok(&mut door, "describe_card", &json!({ "domain": "energy", "card": "cell_2170_model3" }));
     assert_eq!(m80["couplings"], model3["couplings"]);
@@ -921,7 +925,8 @@ async fn every_connection_gives_the_same_bytes_for_a_chain() {
     let keyed = Hosted::start(
         vec![json!({
             "client": "all", "key_sha256": sha(KEY),
-            "cards": [["signal", "resonance"], ["energy", "reactor_spert3"], ["energy", "reactor_spert3_fuel"], ["energy", "cell_2170_m80"], ["energy", "cell_2170_model3"]],
+            // reactor_spert3_twin beside the two it supersedes: superseded_by is said here as in the full view.
+            "cards": [["signal", "resonance"], ["energy", "reactor_spert3"], ["energy", "reactor_spert3_fuel"], ["energy", "reactor_spert3_twin"], ["energy", "cell_2170_m80"], ["energy", "cell_2170_model3"]],
             "solvers": [], "max_in_flight": 4, "max_permits": 2
         })],
         None,
@@ -1192,7 +1197,7 @@ fn describe_card_says_per_card_what_a_continuation_carries_and_the_engine_agrees
             }
         }
     }
-    assert_eq!((served, refused), (27, 10));
+    assert_eq!((served, refused), (27, 13));
 }
 
 /// A key whose view holds one card of a coupling sees no coupling naming the
@@ -1213,9 +1218,10 @@ fn a_keyed_view_lists_only_couplings_of_cards_it_holds() {
         let (_, error, text) = narrow.tool(KEY, "describe_card", &pair);
         assert!(!error, "{text}");
         assert!(!text.contains("\"couplings\"") && !text.contains(&format!("energy/{other}\"")), "{text}");
-        // The rest of the description is the full view's, the couplings, last in it, left out.
+        // The rest of the description is the full view's, the couplings, last in it, left out,
+        // and superseded_by, whose successor this view does not hold (succession::TABLE).
         let (_, full_text) = door.tool("describe_card", &pair);
-        assert_eq!(text, format!("{}}}", &full_text[..full_text.find(",\"couplings\":").expect("the couplings")]), "{card}");
+        assert_eq!(text, format!("{}}}", &full_text[..full_text.find(",\"couplings\":").expect("the couplings")]).replace("\"superseded_by\":\"reactor_spert3_twin\",", ""), "{card}");
         let full = parsed(&full_text);
         assert_eq!(full["couplings"].as_array().unwrap().len(), 2, "{card}");
     }

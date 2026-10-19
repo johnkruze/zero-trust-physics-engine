@@ -55,8 +55,7 @@ fn every_refusal_carries_the_sentence_of_its_source() {
 }
 
 /// The worked question converges, and the list row and the description say
-/// what it is: calibrated to the record, the companion of
-/// stress_plate_hole_s235, not a blind test.
+/// what it is: the second form of stress_plate_hole_s235, with its numbers.
 #[test]
 fn the_worked_question_converges_and_the_word_is_calibrated() {
     let mut door = Door::start();
@@ -66,14 +65,16 @@ fn the_worked_question_converges_and_the_word_is_calibrated() {
     assert_eq!(answer["iterations"], 0);
     assert_eq!(answer["result"]["past_compared_traction"], 0.0);
     let result = description["validation"]["result"].as_str().expect("a result");
-    assert!(result.starts_with("Calibrated to the record, not a blind test: "), "{result}");
-    assert!(result.contains("stress_plate_hole_s235 is the scored original"), "{result}");
+    assert!(result.starts_with("On stress_plate_hole_s235's error measures at 106.26 MPa"), "{result}");
+    assert!(result.contains("RMS 0.638 um in u_x (target 2.0) and 0.486 um in u_y (target 1.5)"), "{result}");
     let list: Value = door.value("list_solvers", &json!({})).expect("listed");
     let rows = list["solvers"].as_array().expect("rows");
     let row = rows.iter().find(|row| row["solver"] == "stress_plate_hole_s235_elastic").expect("listed");
-    assert_eq!(row["against_measurement"], "calibrated to the record", "{row}");
+    assert_eq!(row["against_measurement"], "compared with measurement", "{row}");
+    let summary = row["summary"].as_str().expect("a summary");
+    assert!(summary.contains("Nothing fitted here") && summary.contains("up to 590.04 MPa") && summary.contains("(StrainBeyondSmallStrain)"), "{summary}");
     let original = rows.iter().find(|row| row["solver"] == "stress_plate_hole_s235").expect("listed");
-    assert_eq!(original["against_measurement"], "missed", "{original}");
+    assert_eq!(original["against_measurement"], "compared with measurement", "{original}");
 }
 
 async fn spawn_app() -> String {

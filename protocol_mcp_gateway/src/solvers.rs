@@ -28,6 +28,7 @@ pub const ALL: &[&Solver] = &[
     &crate::solver_culture_trichoderma_ambr250::CULTURE_TRICHODERMA_AMBR250,
     &crate::solver_tokamak_dt_beam_target::TOKAMAK_DT_BEAM_TARGET,
     &crate::solver_pipe_flow_superpipe::PIPE_FLOW_SUPERPIPE,
+    &crate::solver_fuel_rod_triga_jsi::FUEL_ROD_TRIGA_JSI,
     &crate::solver_culture_trichoderma_atp::CULTURE_TRICHODERMA_ATP,
     &crate::solver_junction_nist_b7_s2::JUNCTION_NIST_B7_S2,
     &crate::solver_water_hammer_oil_line::WATER_HAMMER_OIL_LINE,
@@ -484,7 +485,8 @@ pub fn list_value_in(view: &View) -> Value {
             if let Some((word, _)) = crate::find_model::verdict_of_solver(solver.name) {
                 row.insert("against_measurement".to_string(), json!(word));
             }
-            row.insert("summary".to_string(), json!(solver.summary));
+            crate::succession::into(&mut row, view, solver.name);
+            row.insert("summary".to_string(), json!(crate::spec_sheet::summary_of(solver.name, solver.summary)));
             Value::Object(row)
         })
         .collect();
@@ -735,7 +737,7 @@ pub fn describe_whole(name: &str) -> Option<Value> {
     };
     let mut described = Map::new();
     described.insert("solver".to_string(), json!(solver.name));
-    described.insert("summary".to_string(), json!(solver.summary));
+    described.insert("summary".to_string(), json!(crate::spec_sheet::summary_of(solver.name, solver.summary)));
     described.insert("engine_version".to_string(), json!(engine_version()));
     if let Some(validation) = solver.validation {
         let mut record = Map::new();
@@ -787,6 +789,12 @@ pub fn describe_whole(name: &str) -> Option<Value> {
     if let Some(refused) = example_refused(solver.name) {
         described.insert(EXAMPLE_REFUSED.to_string(), refused);
     }
+    // The couplings into this solver: a card's sealed run handed in through
+    // `from`, as describe_card lists a card's.
+    let couplings = crate::couplings::table_into_solver(&crate::view::View::full(), solver.name);
+    if couplings.as_array().is_some_and(|list| !list.is_empty()) {
+        described.insert("couplings".to_string(), couplings);
+    }
     Some(Value::Object(described))
 }
 
@@ -808,7 +816,7 @@ const FULL_FORM_HAS: &str = "each input's bound in words, what each returned nam
 /// The short form of a solver's description: what an agent needs to write a
 /// first request and to know what it is dealing with, in a page. Every part
 /// is taken from the whole description, so no bound, name or number is
-/// written twice; the verdict is the one `find_model` and `list_solvers`
+/// written twice; the evidence is the one `find_model` and `list_solvers`
 /// give. An input keeps everything but its prose and its refusal name; what
 /// is returned, the refusals and the worked examples are given by name, and
 /// the first worked example also as a request.
@@ -830,7 +838,7 @@ pub fn describe_short(name: &str) -> Option<Value> {
     let mut short = Map::new();
     short.insert("solver".to_string(), whole["solver"].clone());
     short.insert(crate::descriptor::FORM.to_string(), json!("short"));
-    short.insert("summary".to_string(), whole["summary"].clone());
+    short.insert("summary".to_string(), json!(crate::spec_sheet::short_of(name, whole["summary"].as_str().unwrap_or(""))));
     if let Some((word, phrase)) = crate::find_model::verdict_of_solver(name) {
         short.insert("against_measurement".to_string(), json!(word));
         short.insert("accuracy_against_measurement".to_string(), json!(phrase));
@@ -890,10 +898,10 @@ pub fn describe_request_in(view: &View, request: &Value) -> Result<Value, DoorEr
                 "Physical Violation: 'form' \"short\" and 'part' each ask for less than the whole description; send one of them.".to_string(),
             ));
         }
-        return describe_short(solver).ok_or_else(not_found);
+        return describe_short(solver).map(|short| with_successor(view, solver, short)).ok_or_else(not_found);
     }
     match object.get("part") {
-        None => describe_value(solver).ok_or_else(not_found),
+        None => describe_value(solver).map(|whole| with_successor(view, solver, whole)).ok_or_else(not_found),
         Some(Value::String(part)) => match describe_part(solver, part) {
             Some(described) => Ok(described),
             None => {
@@ -913,6 +921,22 @@ pub fn describe_request_in(view: &View, request: &Value) -> Result<Value, DoorEr
             "Physical Violation: 'part' must be a string; this request has {other}."
         ))),
     }
+}
+
+/// A description of a solver a newer one supersedes, with `superseded_by`
+/// after the solver's name.
+fn with_successor(view: &View, solver: &str, described: Value) -> Value {
+    let Some(by) = crate::succession::superseded_by(view, solver) else { return described };
+    let Value::Object(map) = described else { return described };
+    let mut out = Map::new();
+    for (key, value) in map {
+        let here = key == "solver";
+        out.insert(key, value);
+        if here {
+            out.insert(crate::succession::KEY.to_string(), json!(by));
+        }
+    }
+    Value::Object(out)
 }
 
 /// The names of a solver's worked examples, as its description keys them.
@@ -1162,6 +1186,12 @@ fn request_schema(view: &View) -> Value {
 
 pub fn solve_schema_in(view: &View) -> Map<String, Value> {
     let mut schema = object_map(request_schema(view));
+    // A sealed card run handed in through a coupling into a solver; the
+    // declaration is the same in every view.
+    schema["properties"]
+        .as_object_mut()
+        .expect("properties")
+        .insert(crate::chain::FROM.to_string(), crate::chain::solve_from_schema(false));
     schema.insert(
         "description".to_string(),
         Value::String("One sealed solution.".to_string()),
@@ -1202,7 +1232,11 @@ pub fn solution_schema_in(_view: &View) -> Map<String, Value> {
                 "required": ["inputs", "engine_version", "result", "invariants", "field_sha256", "outcome"],
                 "additionalProperties": true
             },
-            "solution_seal": { "type": "string", "pattern": "^[0-9a-f]{64}$", "description": "The solution_seal of the solve answer: with request, or as part of the whole answer." }
+            "solution_seal": { "type": "string", "pattern": "^[0-9a-f]{64}$", "description": "The solution_seal of the solve answer: with request, or as part of the whole answer." },
+            "from": {
+                "type": "object",
+                "description": "Beside the whole answer of a chained solve: the from solve took (request, run_seal, coupling). The upstream run is computed again and held to its seal, each handed value to it, and the request solved again with it; the answer alone is refused (AnswerCarriesNoRequest)."
+            }
         },
         "additionalProperties": true,
         "description": "Either request and solution_seal alone, the short form: the request is solved again and its seal compared with solution_seal. Or the whole solve answer sent back as it came, without request, the long form: inputs, engine_version, outcome, iterations, reject, result, invariants, field_sha256, seal_parts and solution_seal are then all required. The solution seal is recomputed from its exact hex values and the part that fails is named; then its request is solved again under a physics permit and the limits of solve, and the engine's whole answer to it compared with the answer sent, value by value and then byte for byte, the receipt included, so an answer that holds is every byte the engine's. A seal has no key: an answer whose values were rewritten with its seal parts, seal and receipt worked out again holds every seal, and only the solve shows it is not the engine's (cause solution_seal). The long form's answer carries holds, true when the answer sent is every byte the engine's, and values_hold beside it, true when every value of it is the engine's answer to its request computed again, whatever its spelling: each number by its 64-bit value, strings, flags and null exactly, keys and their order, the receipt string among them. A copy whose numbers a client wrote again in its own spelling (0.0001 for 1.0e-4, 12 for 12.0) has holds false and values_hold true, and differs_at names the first place its text differs."

@@ -1446,7 +1446,7 @@ async fn the_three_connections_list_the_beam_and_give_the_same_bytes_for_its_des
     assert!(!error);
     let listed: Value = serde_json::from_str(&listed).unwrap();
     let cards = listed["cards"].as_array().unwrap();
-    assert_eq!(cards.len(), 37);
+    assert_eq!(cards.len(), 40);
     assert_eq!(cards[15]["domain"], "signal");
     assert_eq!(cards[15]["card"], "cantilever_eth");
     let on_web: Value = Client::new().get(format!("{web}/cards")).send().await.unwrap().json().await.unwrap();
@@ -1502,9 +1502,9 @@ async fn the_three_connections_list_the_beam_and_give_the_same_bytes_for_its_des
     assert!(record["data"].as_str().unwrap().contains("doi 10.5281/zenodo.22723484"));
     assert!(record["pass_line"].as_str().unwrap().contains("d081cc5ae51b5de4a028cd17b4e1ae80b402f71fdc786f82876713f3b925d4a6"));
     // The one place the tests hold the words of the result: the comparison
-    // with the held-back half.
+    // with the half outside the fit, each error beside its target.
     assert!(record["result"].as_str().unwrap().starts_with(
-        "Compared with the held-back half on 2026-10-09, and by the rule fixed beforehand the comparison failed: three of the four lines were met and the amplitude line was missed."
+        "On the eleven blocks of eight periods between 12 s and 24 s of the second ring-down, outside the fit: frequency error 0.0031 Hz (target 0.010), timing error 0.021 of a period (target 0.20), amplitude error 7.03 percent (target 5.0)."
     ));
 
     // The four tools that compute: the same bytes on the three connections.

@@ -473,6 +473,12 @@ async fn a_start_below_a_tenth_of_a_percent_lands_flagged_and_one_below_zero_is_
     }
     assert!(!rejects.contains(&"CreepExtensionBelowCard"));
     assert!(!rejects.contains(&"TimeBeyondCard"));
+    // The describe text names 5 percent as the card's top, and the bound states the two gaps in numbers.
+    let meaning = |name: &str| described["rejects"].as_array().unwrap().iter().find(|r| r["name"] == name).unwrap()["meaning"].as_str().unwrap().to_string();
+    assert_eq!(meaning("CreepExtensionBeyondCard"), "The trial step went past 5 percent creep extension, the card's top.");
+    assert_eq!(meaning("CreepExtensionOutsideCard"), "The incoming creep extension is above 5 percent, the card's top.");
+    let bound = described["phase_fields"][0]["bound"].as_str().unwrap();
+    assert!(bound.contains("1.5 to 4 times the hours to 0.05 percent") && bound.contains("about 2 times the extension"), "{bound}");
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -815,7 +821,7 @@ async fn the_creep_card_is_listed_in_the_materials_domain_as_the_eighteenth_card
     let client = Client::new();
     let listed: Value = client.get(format!("{base}/cards")).send().await.unwrap().json().await.unwrap();
     let all_pairs = listed["cards"].as_array().unwrap();
-    assert_eq!(all_pairs.len(), 37);
+    assert_eq!(all_pairs.len(), 40);
     let listed = &all_pairs[17];
     assert_eq!(listed["domain"], "materials");
     assert_eq!(listed["card"], "creep_cmsx6");

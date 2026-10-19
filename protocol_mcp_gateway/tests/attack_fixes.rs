@@ -69,7 +69,7 @@ async fn the_battery_charging_minimum_says_it_depends_on_the_state_of_charge() {
         bound.starts_with("The largest charging current (negative) that is accepted depends on the state of charge"),
         "{bound}"
     );
-    assert!(bound.contains("approached only as the state of charge goes to zero"), "{bound}");
+    assert!(bound.contains("approached as the state of charge goes to zero and nowhere else"), "{bound}");
     assert!(bound.contains("charging_current_limit_by_state_of_charge"), "{bound}");
 }
 
