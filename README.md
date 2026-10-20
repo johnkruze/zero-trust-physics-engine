@@ -22,7 +22,7 @@ This is engine 0.15.0, the version the open address has served since 19 October 
   ca06027a972c81c8630fed9f4ea2d4e91596b9434a88a03b7eb325b24e40645b7090cb705927745e73ee8b272eb1be38
   ```
 
-  `verify_tape`, `verify_solution`, `verify_dataset` and `verify_receipt` take `public_key` and `seen_nonces`, and name a signature that does not hold: forged (`SignatureDoesNotVerify`), expired (`SignatureExpired`), of another key (`SignatureKeyMismatch`) or replayed (`SignatureNonceReplayed`). Signed ML-DSA-87 (RustCrypto `ml-dsa` 0.1.1); checked with `dilithium-py` 1.5.1 by the Python programs. A signature shows who issued an answer and when; the seals, and the answer computed again, show what was computed.
+  `verify_tape`, `verify_solution`, `verify_dataset` and `verify_receipt` take `public_key` and `seen_nonces`, and name a signature that does not hold: forged (`SignatureDoesNotVerify`), expired (`SignatureExpired`), of another key (`SignatureKeyMismatch`) or replayed (`SignatureNonceReplayed`). Signed ML-DSA-87 (RustCrypto `ml-dsa` 0.1.1); verified with `dilithium-py` 1.5.1 by the Python programs. A signature shows who issued an answer and when; the seals, and the answer computed again, show what was computed.
 - **The Stardust → PICA chain.** The entry of the Stardust capsule (`capsule_stardust`) hands its nose conditions to the heat-shield solver (`ablator_slab`) through the coupling `stardust_entry_to_pica_slab`, under one chain proof. The entry: peak load 32.17 g against 32.89 g reconstructed, the drogue condition within 1.01 s of the radar record. The shield, fed by the entry: nose wear 4.65 mm, about a third more than measured, and the face within 156 K RMS of the airborne spectra. Alone, on 31 arc-jet tests outside the fit, the solver's wear has a mean of −2.6 percent and its hottest face is within 7 percent on 24 of 28; the face runs 4.1 percent hot on average.
 - **Flags that say how far.** Past what a model was compared with it keeps going and flags every step, as before. Since 0.15.0 each flagged step also carries, for each flag, the limit, the value the step reached, the extent past the limit in the limit's unit, and that extent as a fraction of the limit. A run carries `exceedance_extremes`: for each limit it went past, how many steps, the first, and the step of the largest extent with its numbers. The receipt covers them, and `verify_tape` holds them to each frame's flags.
 
@@ -39,7 +39,7 @@ The models that now answer under the object's own ID, in their own words (`descr
 And three things about every answer and every model:
 
 - **The same bytes on every machine tested.** Every exponential, logarithm, power and trigonometric function an answer depends on is computed by the engine's own code, never by the machine's math library. For 0.15.0, the open address, built from this source on Linux x86-64, gave the same answer, byte for byte with its signature taken out, to all 379 worked questions as a build on a Mac (Apple M4 Pro), and the same 13 printed proofs.
-- **Anyone can recompute a proof.** A proof is a SHA-384 hash that binds the question to the answer, byte for byte. `genesis_seal`, in this repository, confirms one with no engine, and checks the signature, and so do the Python programs at https://github.com/johnkruze/zero-trust-physics .
+- **Anyone can recompute a proof.** A proof is a SHA-384 hash that binds the question to the answer, byte for byte. `genesis_seal`, in this repository, confirms one with no engine, and verifies the signature, and so do the Python programs at https://github.com/johnkruze/zero-trust-physics .
 - **Every model says what stands behind it, numbers first.** One of three words: "compared with measurement" (46 of the 61 models: a real object), "held to a reference calculation" (3: a published calculation) or "company specimen" (12: an object the company specified, every constant stated). Each of the 46 states what it computes, what it was fitted on, what it was compared with and within what, and its gap, where it does worst.
 
 ## What is in this repository
@@ -112,13 +112,13 @@ Save the text of a run's answer to a file, then:
 target/release/genesis_seal verify-run answer.json
 ```
 
-To check the signature too, give it the public key, the base64 `public_key` of `https://mcp.zerotrustphysics.com/answer-key`, saved to a file:
+To verify the signature too, give it the public key, the base64 `public_key` of `https://mcp.zerotrustphysics.com/answer-key`, saved to a file:
 
 ```sh
 target/release/genesis_seal verify-run answer.json --public-key answer_key.pub --nonce-ledger seen.txt
 ```
 
-Run `genesis_seal` alone and it lists what else it confirms: a chain of runs, a dataset, one row of a dataset, a signature alone. The same checks in Python are at https://github.com/johnkruze/zero-trust-physics : the seals with Python's standard library alone, the signature with one package, `dilithium-py`.
+Run `genesis_seal` alone and it lists what else it confirms: a chain of runs, a dataset, one row of a dataset, a signature alone. The same verification in Python is at https://github.com/johnkruze/zero-trust-physics : the seals with Python's standard library alone, the signature with one package, `dilithium-py`.
 
 ## Run the tests
 
