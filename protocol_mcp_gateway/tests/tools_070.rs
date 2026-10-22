@@ -473,7 +473,9 @@ fn the_tool_list_declares_the_pair_and_the_solver_once_and_lists_no_catalogue() 
     // 55,892 in 0.15.0: seal rule v2 and one model for each real object.
     // 56,851 in 0.15.1: verify, never check, and how a signed answer a client
     // wrote again is verified, in the four verification tools; cite's paper.
-    assert_eq!(serde_json::to_string(&earlier).unwrap().len(), 56_851, "the thirteen earlier tools as declared in the next version");
+    // 57,223 in 0.15.2: solve and its from say a chained solve takes each
+    // handed value from frame_hex or a _hex value, not a decimal.
+    assert_eq!(serde_json::to_string(&earlier).unwrap().len(), 57_223, "the thirteen earlier tools as declared in the next version");
     for name in ["ti64_lattice", "reactor_triga_jsi", "tokamak_dt_beam_target", "culture_trichoderma_ambr250"] {
         assert!(!text.contains(name), "the tool list names {name}");
     }

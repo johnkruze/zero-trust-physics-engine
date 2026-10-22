@@ -689,7 +689,7 @@ fn crater_ryugu_sci_card() -> Card {
         floor,
         "the ceiling divided by 2^20: a step that moves the wall by about a tenth of a micrometre at its fastest. Under it a step is mostly rounding",
         gate,
-        "0.25 s, a locked constant: about 1,600 steps from 1.75 m to the stop. Over that whole growth the largest conservation residual at this step is 5.8e-8 against a limit of 1e-6; at 0.5 s it is 8.8e-7 and at 1 s the first step is refused. Nearer the impact the wall is faster and a step of 0.25 s is refused by the ledger: from 0.1622 m a run takes steps of a few microseconds at first, growing with the radius",
+        "0.25 s, a locked constant: about 1,600 steps from 1.75 m to the stop. Over that whole growth the largest conservation residual at this step is 5.8e-8 against a limit of 1e-6; at 0.5 s it is 8.8e-7 and at 1 s the first step is refused. Nearer the impact the wall is faster: below about 1.39 m a step of 0.25 s is past the ledger's limit when taken whole, and is taken again in 2, 4, 8, ... equal Runge-Kutta pieces, each closed on the same ledger, up to 2^20 of them, and lands; from 0.1622 m a run at 0.25 s lands 1,601 steps to the stop, at 400.25 s",
         None,
         "No load: nothing acts on the crater but the impact and Ryugu, and a run segment carries an empty load object. A run starts at time zero at the radius given, with the wall at the speed this impact gives it there; 1.75 m is 0.917 s after the impact by the card's clock, and the worked example starts there. A single step starts in the same way at each call: its radius_m handed back as a new start goes on with the wall at the speed the card sets from that radius, not the speed the earlier steps integrated, and t_s begins again at zero; through from, a continuation is served from the crater stopped and refused before it (ContinuationNotOnCard). The radius grows and never shrinks. On the step in which the wall would turn back, the crater is set at 8.571304329477922 m with the wall at rest, the frame carries FLAG_STOPPED, and from then on a step moves the time alone. From 1.75 m at the step ceiling that is step 1,597, at 399.25 s. The time is the clock of Gault and Wedekind, 1977, which runs until the ejecta near the rim have landed; no time of Ryugu's crater is in the comparison.".into(),
         &[
@@ -2793,7 +2793,7 @@ fn creep_cmsx6_card() -> Card {
         floor,
         "a locked 1 s: a step of 1 s moves the creep extension by more than a thousand million spacings of 64-bit numbers, so the ledger's quadrature resolves the step to nine figures",
         gate,
-        "0.2 over the largest rate of change of the creep rate with the creep extension that the law can reach from zero to 5 percent, at 230 MPa: about 50 s, a stability bound of the Runge-Kutta step. Its accuracy is held by the ledger: from 0.1 percent one honest step leaves at most 1.7e-10 against a limit of 2e-9. From zero extension, where the law's primary multiplier falls over the first 0.04 percent, a step of the ceiling at 200 and 230 MPa leaves more than the limit and is refused by the ledger, by name, with the state kept; a step of 5 s from zero lands at every stress through to 5 percent, the largest residual 1.1e-10 at 230 MPa",
+        "0.2 over the largest rate of change of the creep rate with the creep extension that the law can reach from zero to 5 percent, at 230 MPa: about 50 s, a stability bound of the Runge-Kutta step. Its accuracy is held by the ledger: from 0.1 percent one honest step leaves at most 1.7e-10 against a limit of 2e-9. From zero extension, where the law's primary multiplier falls over the first 0.04 percent, a step of the ceiling taken whole at 200 and 230 MPa (of 40 s above 179.64 MPa) leaves more than the limit; such a step is taken again in 2, 4, 8, ... equal Runge-Kutta pieces, each booked and closed on the same ledger, none shorter than the floor of 1 s, and lands. A step that lands whole lands as it always did. A step of 5 s from zero lands whole at every stress through to 5 percent, the largest residual 1.1e-10 at 230 MPa",
         None,
         "The card answers one question: at a held stress, how far has the test piece crept at a given time since the full load, from zero creep extension up. t_s is the time since the full load was applied, as the card's law gives it. A run starts at the creep extension given, with empty books and the clock at the time the law itself takes to reach that extension from zero at the stress of the first segment: zero at zero, and 0.1 percent at 50.79 h at 140 MPa, 11.36 h at 170 MPa, 2.96 h at 200 MPa and 0.668 h at 230 MPa. That time since load is the quantity compared with measurement. The time between two extensions does not hold: against the measured curves the law's time from one level to the next is off by up to 1.06 in the natural logarithm, and a clock started at 0.1 percent is more than 0.30 off at 5 to 16 of 170 levels at 170, 200 and 230 MPa. Do not subtract one frame's time from another's. A single step starts in the same way at each call: its creep_extension_percent handed back as a new start continues the same test, and the clock continues with it, while the work and the heat begin again at zero. stress_mpa is held: every segment of a run carries the stress of the first, and a segment with another stress refuses the whole run before its first step as StressNotHeld; no test in the data changes its stress. A stress outside the span in any segment refuses the whole run before its first step. The temperature is 980 degrees Celsius and is not an input. The law against the worst-case target of 0.30 in the logarithm of the time to a level, over all twelve tests: from 0.1 to 5 percent at 170, 200 and 230 MPa it is within it on all nine tests at every one of 171 levels, the worst 0.289; at 140 MPa from 0.1 to 0.25 percent, the worst 0.296. Below 0.1 percent the law is slow to start against every measured curve at every stress (in hours to 0.05 percent, the law against the three test pieces, 38.9 against 15.4 to 26.7 at 140 MPa, 7.8 against 2.7 to 3.5 at 170 MPa, 1.69 against 0.61 to 0.66 at 200 MPa and 0.245 against 0.06 to 0.08 at 230 MPa). Past 0.2 percent at 140 MPa the law runs ahead: it is more than 0.30 off from 0.26 percent on one test and ahead of all three past 0.66 percent, and at the hour each test stopped, 1010 to 1030 h, it gives 1.70 to 1.78 percent against 0.79 to 0.83 measured, about a factor of 2; no 140 MPa test went past 0.83 percent, and no test lies between 140 and 170 MPa. The card answers in both regions, and every frame there carries FLAG_OUTSIDE_MET_RANGE. Under a held stress the extension grows at every step, and the step that would go past 5 percent, the card's top, is refused as CreepExtensionBeyondCard: a run that asks for more steps than that is sealed to its last landed step with that refusal, and its last landed state is within one step of 5 percent. A step that lands exactly on it lands. At the ceiling from 0.1 percent that is 4,462 steps at 230 MPa, 11,031 at 200 MPa, 30,506 at 170 MPa and 102,748 at 140 MPa, each to 5 percent, at 62.6, 156.1, 434.8 and 1477.1 h. All are inside the 1,000,000 steps of a run. The card has no limit in time: the latest hour it can reach is 1477.11 h, at 140 MPa and 5 percent. A step of zero or less is refused as NonPositiveDt before the step floor is tested.".into(),
         &[
@@ -2843,7 +2843,7 @@ fn creep_cmsx6_card() -> Card {
 
 /// What the capsule says of its two speed fields: the speed through the air
 /// they make, its band above 68.96 km, and the corridor below it.
-const CAPSULE_SPEED_REACH: &str = "The speed through the air is the square root of the sum of the squares of radial_speed_m_s and of transverse_speed_m_s less the air's own turning, 5.4197601852574874e-05 rad/s times radius_m. Above 68.96 km, where drag is read by altitude from a table computed along the 1997 design trajectory at 12173 to 12620 m/s (12487 to 12620 m/s in the first table of AIAA 97-2304 and 12173 m/s at the 68.96 km row of its fourth; that paper does not say whether these speeds are inertial or through the air), the speed through the air must be from 11900 to 12620 m/s, the top the highest speed the table was computed at, and a state outside is refused as AirSpeedOutsideCard. The locked entry, compared with the flight, runs through 11911.98 to 12573.44 m/s there at every step from 0.05 s to 0.0005 s; from 12573.44 to 12620 m/s the card computes on the source's design speeds, past the flown entry. Below 68.96 km, where drag is read by Mach number, the Mach number must be from 0.16 to 40, the ends of that table, and a state outside is refused as MachOutsideCard; the four entries below Mach 1.0 are read from the fifteenth figure of the paper. Any path is computed on the same equations and ledger. The locked entry flew a corridor, the lowest and highest speed through the air and sine of the path angle it had within 500 m of each altitude, widened by 1 m/s and by 0.001, at knots every 500 m from 31 km to 69 km (at 40 km 1147.51 to 1350.11 m/s); a state off it is computed on the same equations and ledger. Above 86 km the speed of sound is held at its 86 km value, 274.096 m/s, so the Mach number reported there is not the real air's; the band, not the Mach number, is the limit there. A state under 31030 m and under Mach 1.23 at once, past the flown drogue deployment, is refused as PastFlightDeployment at the start; a run that reaches it is ended there, at the end the card declares. A start deep in the atmosphere at the entry speed can be refused by the ledger at the largest step and lands at a smaller one";
+const CAPSULE_SPEED_REACH: &str = "The speed through the air is the square root of the sum of the squares of radial_speed_m_s and of transverse_speed_m_s less the air's own turning, 5.4197601852574874e-05 rad/s times radius_m. Above 68.96 km, where drag is read by altitude from a table computed along the 1997 design trajectory at 12173 to 12620 m/s (12487 to 12620 m/s in the first table of AIAA 97-2304 and 12173 m/s at the 68.96 km row of its fourth; that paper does not say whether these speeds are inertial or through the air), the speed through the air must be from 11900 to 12620 m/s, the top the highest speed the table was computed at, and a state outside is refused as AirSpeedOutsideCard; the band is held to each state of the path and, for a step across 68.96 km, to the speed where the path crosses it, read on the straight line between the step's two states, and not to a stage of the step, which reads the table by altitude alone (since engine 0.15.2; through 0.15.1 a path that crossed under 11900 m/s between two states was taken or refused as a stage fell, so the outcome turned with the input). The locked entry, compared with the flight, runs through 11911.98 to 12573.44 m/s there at every step from 0.05 s to 0.0005 s; from 12573.44 to 12620 m/s the card computes on the source's design speeds, past the flown entry. Below 68.96 km, where drag is read by Mach number, the Mach number must be 0.16 or more, the table's first entry, and a state under it is refused as MachOutsideCard; the four entries below Mach 1.0 are read from the fifteenth figure of the paper. The table ends at Mach 40 with 1.4959, the value the table by altitude gives at 68.96 km; above Mach 40 below 68.96 km that entry is held, up to 12620 m/s through the air, the top speed any drag of the card was computed at, and each step whose stage or landing read it held carries FLAG_MACH_TABLE_HELD with the highest Mach number it was held at (since engine 0.15.2; from 0.7.0 to 0.15.1 such a state was refused, and a path crossing 68.96 km within a hundredth of Mach 40 completed or was refused as the input turned); above 12620 m/s there a state is refused as MachOutsideCard. Any path is computed on the same equations and ledger. The locked entry flew a corridor, the lowest and highest speed through the air and sine of the path angle it had within 500 m of each altitude, widened by 1 m/s and by 0.001, at knots every 500 m from 31 km to 69 km (at 40 km 1147.51 to 1350.11 m/s); a state off it is computed on the same equations and ledger, and since engine 0.15.2, with the corridor carried on by the same recipe from 69 km to 134 km, a landing off it carries FLAG_OFF_FLOWN_ENTRY, as does a landing under 31 km or above 134 km, each with the bound at that altitude, the value and the distance past it. No landing of the locked entry carries it. Above 86 km the speed of sound is held at its 86 km value, 274.096 m/s, so the Mach number reported there is not the real air's; the band, not the Mach number, is the limit there. A state under 31030 m and under Mach 1.23 at once, past the flown drogue deployment, is refused as PastFlightDeployment at the start; a run that reaches it is ended there, at the end the card declares. A start deep in the atmosphere at the entry speed can be refused by the ledger at the largest step and lands at a smaller one";
 
 /// What the InSight capsule says of a speed above its entry: the two speed
 /// fields publish no bound of their own; the speed through the air is held.
@@ -3013,11 +3013,23 @@ fn capsule() -> Card {
             "SpontaneousGeneration",
             "FirstLawBreach",
         ],
-        vec![Advisory {
-            name: "FLAG_DROGUE_MACH_WINDOW",
-            mask: capsule_stardust::FLAG_DROGUE_MACH_WINDOW,
-            seals: true,
-        }],
+        vec![
+            Advisory {
+                name: "FLAG_DROGUE_MACH_WINDOW",
+                mask: capsule_stardust::FLAG_DROGUE_MACH_WINDOW,
+                seals: true,
+            },
+            Advisory {
+                name: "FLAG_OFF_FLOWN_ENTRY",
+                mask: capsule_stardust::FLAG_OFF_FLOWN_ENTRY,
+                seals: true,
+            },
+            Advisory {
+                name: "FLAG_MACH_TABLE_HELD",
+                mask: capsule_stardust::FLAG_MACH_TABLE_HELD,
+                seals: true,
+            },
+        ],
         slots(&[
             ("t", "Time since the anchor, in seconds."),
             ("pos[0]", "altitude_m"),
@@ -3028,7 +3040,7 @@ fn capsule() -> Card {
             ("vel[2]", "heat_flux_w_m2"),
             ("force_torque", "Load, in Earth g."),
             ("residual", "Conservation residual."),
-            ("flags", "FLAG_DROGUE_MACH_WINDOW. It seals."),
+            ("flags", "FLAG_DROGUE_MACH_WINDOW, FLAG_OFF_FLOWN_ENTRY and FLAG_MACH_TABLE_HELD, or 0. They seal."),
             ("proof", "Not written by the step."),
         ]),
     )
@@ -4352,6 +4364,8 @@ fn flag_state_known(name: &str) -> Option<&'static str> {
         | "FLAG_COUNT_RATE_BEYOND_COMPARED"
         | "FLAG_SLIP_SETTLING"
         | "FLAG_BELOW_COMPARED_RADIUS"
+        | "FLAG_OFF_FLOWN_ENTRY"
+        | "FLAG_MACH_TABLE_HELD"
         | "FLAG_ENVELOPE_ABOVE_COMPARED" => "none: the frame's flags alone",
         "FLAG_INCIPIENT_SLIP" => "incipient_slip",
         "FLAG_GROSS_SLIP" => "gross_slip",
@@ -5519,10 +5533,10 @@ pub(crate) fn reject_meaning(card: &str, name: &str) -> Option<&'static str> {
             "Altitude, incoming, at a stage of the step, or landing, is below 0 m, the sea level of the 1976 standard's air and the ellipsoid under the path: the capsule is on or under the ground."
         }
         ("capsule_stardust", "MachOutsideCard") => {
-            "Mach number, incoming, at a stage of the step, or landing, is below 0.16, the first entry of the drag table read by Mach number, or is above 40 below 68.96 km, where that table ends."
+            "Mach number, incoming, at a stage of the step, or landing, is below 0.16, the first entry of the drag table read by Mach number, or is above 40 below 68.96 km, where that table ends, at a speed through the air above 12620 m/s, the top speed any drag of the card was computed at."
         }
         ("capsule_stardust", "AirSpeedOutsideCard") => {
-            "Air speed, incoming, at a stage of the step, or landing, above 68.96 km is below 11900 m/s or above 12620 m/s, the highest speed the drag table by altitude was computed at."
+            "Air speed above 68.96 km, incoming, landing, or where the step's path crosses 68.96 km, is below 11900 m/s or above 12620 m/s, the highest speed the drag table by altitude was computed at."
         }
         ("capsule_stardust", "PastFlightDeployment") => {
             "The incoming state is under 31030 m and under Mach 1.23 at once: past the flown drogue deployment."

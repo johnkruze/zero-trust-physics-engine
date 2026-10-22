@@ -419,10 +419,24 @@ async fn a_start_below_a_tenth_of_a_percent_lands_flagged_and_one_below_zero_is_
         }
     }
     // A step of the ceiling from zero at 230 MPa leaves more than the ledger's
-    // limit: it is refused by the ledger, by name, and carries no proof.
+    // limit taken whole; since engine 0.15.2 it is taken in pieces, each closed
+    // on the same ledger, and lands with its proof (through 0.15.1 it was
+    // refused by the ledger).
     let (status, text) = post(&base, "/verify_physics", &step_body(0.0, 230.0, ceiling())).await;
-    assert_eq!(status, 422, "{text}");
-    assert!((text.contains("(FirstLawBreach)") || text.contains("(SpontaneousGeneration)")) && !text.contains("sha384_seal"), "{text}");
+    assert_eq!(status, 200, "{text}");
+    assert!(text.contains("sha384_seal"), "{text}");
+    // Engine 0.15.2, work order of 21 October: from 0.0 percent at dt 40 s,
+    // 180 MPa (above the flip of 0.15.1 at 179.64 MPa) runs, and its tape
+    // verifies.
+    for stress in [179.64, 180.0, 200.0, 230.0] {
+        let (status, text) = post(&base, "/run_trajectory", &run_body(0.0, stress, 40.0, 10, 10)).await;
+        assert_eq!(status, 200, "{stress}: {text}");
+        let tape: Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(tape["outcome"], "completed", "{stress}: {}", tape["reject_detail"]);
+        let (status, report) = post(&base, "/verify_tape", &tape).await;
+        assert_eq!(status, 200, "{report}");
+        assert_eq!(serde_json::from_str::<Value>(&report).unwrap()["holds"], true, "{stress}");
+    }
     let (status, text) = post(&base, "/verify_physics", &step_body(-1.0e-9, 200.0, ceiling())).await;
     assert_eq!(status, 422);
     assert_eq!(

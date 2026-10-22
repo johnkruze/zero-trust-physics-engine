@@ -45,7 +45,7 @@ fn reject_sentence(reject: reactor_spert3_twin::StepReject) -> String {
         R::ReactivityChangedDuringRun => unsealed("the reactivity is not the one the run's first step sent the rod through; a run is one ejection (ReactivityChangedDuringRun)."),
         R::StateOutsideCard => unsealed("the incoming state is not one this card writes (StateOutsideCard)."),
         R::DtAboveStateCeiling => unsealed(&format!(
-            "the step is longer than {} of the prompt time constant l* / |1 - rho| ({} while the prompt pole grows) at the state it starts from or lands on (DtAboveStateCeiling).",
+            "the step is longer than {} of the prompt time constant l* / |1 - rho| ({} while the prompt pole grows) at the state it starts from or lands on, and is above the card's ceiling or would be taken in pieces shorter than its floor, 1e-9 s (DtAboveStateCeiling).",
             reactor_spert3_twin::DECAY_PHASE_STEP,
             reactor_spert3_twin::GROWTH_PHASE_STEP
         )),

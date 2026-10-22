@@ -230,7 +230,7 @@ async fn any_other_change_to_the_bytes_breaks_the_receipt_or_leaves_the_form() {
     assert_eq!(report["receipt_sha384"], stated);
 
     // A key moved: `engine_version` taken from its place and put last.
-    let version = r#""engine_version":"genesis_kernel_v0.13.0""#;
+    let version = r#""engine_version":"genesis_kernel_v0.13.1""#;
     assert!(text.contains(&format!("{version},")));
     let (document, tail) = split_tail(&text);
     let moved = format!("{},{version}{tail}", document.replacen(&format!("{version},"), "", 1));

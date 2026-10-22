@@ -174,10 +174,14 @@
 //! bound of the Runge–Kutta step taken from zero extension. Its accuracy is
 //! held by the ledger. From 0.1 percent up one honest step leaves at most
 //! 1.7e-10, a twelfth of the limit. Below 0.1 percent the primary multiplier
-//! falls over the first 0.04 percent and one step of the ceiling there
-//! leaves more than the limit: such a step is refused by the ledger, by name,
-//! with the state kept, and a shorter step lands (the largest that lands from
-//! zero extension is stated in the engine's description of the card).
+//! falls over the first 0.04 percent and one step of the ceiling there,
+//! taken whole, leaves more than the limit (from zero extension at 40 s,
+//! above 179.64 MPa). Since engine 0.15.2 such a step, at or under the
+//! ceiling, is taken again in 2, 4, 8, ... equal Runge–Kutta pieces, each
+//! booked and closed on the same ledger, none shorter than the floor, and
+//! lands; through 0.15.1 the ledger refused it by name. A step that lands
+//! whole lands as it always did. A step above the ceiling is named by the
+//! ledger whole.
 //! [`CreepCmsx6::floor_dt_s`] is [`FLOOR_DT_S`], 1 s: the rate is at least
 //! `6e-7 e` percent per second from 0.1 percent and `A x^n (1 + K)` at zero,
 //! so a step of 1 s moves the extension by more than 1e9 spacings of 64-bit
@@ -611,8 +615,73 @@ fn step_as_computed(
     dt_s: f64,
 ) -> Result<(), StepReject> {
     validate(alloy, state, load, dt_s)?;
+    // The step whole, as through engine 0.15.1: a step that lands whole
+    // lands as it always did.
     let advanced = rk4(alloy, load.stress_mpa, state.creep_extension_percent, dt_s);
-    commit(alloy, state, frame, load, dt_s, advanced)
+    let whole = commit(alloy, state, frame, load, dt_s, advanced);
+    let (Some(gate_dt_s), Some(floor_dt_s)) = (alloy.gate_dt_s(), alloy.floor_dt_s()) else {
+        return whole;
+    };
+    if !ledger_refused(whole) || !(dt_s <= gate_dt_s) {
+        return whole;
+    }
+    // The ledger did not close on a step the card stands behind, one at or
+    // under its ceiling: from near zero extension, where the primary
+    // multiplier falls over the first 0.04 percent, the Runge-Kutta error of
+    // a long step is past the limit. The step is taken again in 2, 4, 8, ...
+    // equal pieces, each a Runge-Kutta step booked and closed on the same
+    // ledger, until one count lands, or a piece would be shorter than the
+    // floor, 1 s. The ledger's limit is not changed. A step above the
+    // ceiling is not the card's and is named by the ledger whole, as before.
+    let stress = load.stress_mpa;
+    let mut refused = whole;
+    let mut pieces: f64 = 2.0;
+    while dt_s / pieces >= floor_dt_s {
+        let mut trial = *state;
+        let mut trial_frame = *frame;
+        let mut taken: f64 = 0.0;
+        let mut landed = Ok(());
+        while taken < pieces {
+            // Each piece ends on t_start + dt · (k + 1) / n, the last exactly
+            // on t_start + dt.
+            let end_s = state.t_s + dt_s * ((taken + 1.0) / pieces);
+            let width_s = end_s - trial.t_s;
+            let advanced = rk4(alloy, stress, trial.creep_extension_percent, width_s);
+            landed = commit(alloy, &mut trial, &mut trial_frame, load, width_s, advanced);
+            if landed.is_err() {
+                break;
+            }
+            trial.t_s = end_s;
+            taken += 1.0;
+        }
+        match landed {
+            Ok(()) => {
+                // The flags of the step are the whole step's: the rate at its
+                // end against the rate at its start, and the extension it
+                // covered.
+                trial.creep_rate_rising = trial.creep_rate_percent_per_h
+                    > alloy.creep_rate_percent_per_h(stress, state.creep_extension_percent);
+                trial.outside_met_range = alloy.outside_met_range(
+                    stress,
+                    state.creep_extension_percent,
+                    trial.creep_extension_percent,
+                );
+                publish(&trial, &mut trial_frame);
+                *state = trial;
+                *frame = trial_frame;
+                return Ok(());
+            }
+            Err(_) if ledger_refused(landed) => refused = landed,
+            Err(reject) => return Err(reject),
+        }
+        pieces *= 2.0;
+    }
+    refused
+}
+
+/// The ledger's two refusals: the trial step created or destroyed work.
+fn ledger_refused(outcome: Result<(), StepReject>) -> bool {
+    core::matches!(outcome, Err(StepReject::SpontaneousGeneration | StepReject::FirstLawBreach))
 }
 
 /// Each value of a landed state below the normal range written as zero
@@ -1813,21 +1882,16 @@ mod tests {
             assert!((at_tenth_h - forecast[0]).abs() <= 1.0e-3 * forecast[0] + 6.0e-4, "{stress}");
             assert!((state.t_s / 3600.0 - forecast[5]).abs() <= 1.0e-3 * forecast[5], "{stress}");
         }
-        for (stress, lands) in [(140.0, true), (170.0, true), (200.0, false), (230.0, false)] {
+        // At the ceiling from zero: 140 and 170 MPa land whole; 200 and 230
+        // MPa, refused by the ledger whole through engine 0.15.1, land in
+        // pieces since 0.15.2.
+        for stress in [140.0, 170.0, 200.0, 230.0] {
             let fresh = CreepState::try_new(&alloy, stress, 0.0).unwrap();
             let mut state = fresh;
             let mut frame = blank_frame();
             let end = step(&alloy, &mut state, &mut frame, load(stress), ceiling());
-            if lands {
-                assert_eq!(end, Ok(()), "{stress}");
-            } else {
-                assert!(
-                    end == Err(StepReject::FirstLawBreach) || end == Err(StepReject::SpontaneousGeneration),
-                    "{stress}: {end:?}"
-                );
-                assert_eq!(state_bits(&state), state_bits(&fresh));
-                frame_untouched(&frame);
-            }
+            assert_eq!(end, Ok(()), "{stress}");
+            assert!(state.residual_conservation_error <= RESIDUAL_CONSERVATION_LIMIT, "{stress}");
         }
         for stress in [140.0, 230.0] {
             let fresh = CreepState::try_new(&alloy, stress, 0.0).unwrap();
@@ -1840,6 +1904,49 @@ mod tests {
             );
             assert_eq!(state_bits(&state), state_bits(&fresh));
         }
+    }
+
+    /// Engine 0.15.2, work order of 21 October: from 0.0 percent at dt 40 s,
+    /// a stress above 179.64 MPa was refused FirstLawBreach at step 1 through
+    /// 0.15.1, inside the card's ceiling of about 50 s. The whole step's
+    /// Runge-Kutta error over the primary multiplier's fall was past the
+    /// ledger's limit. Now the step is taken in equal pieces, each booked and
+    /// closed on the same ledger; it lands at every stress of the card, and its
+    /// landing agrees with steps of 1.25 s. A step that landed whole lands bit
+    /// for bit as before.
+    #[test]
+    fn a_step_of_forty_seconds_from_zero_lands_in_pieces_at_every_stress() {
+        let alloy = CreepCmsx6::at_980_c();
+        let mut stress = 140.0;
+        while stress <= 230.0 {
+            let mut state = CreepState::try_new(&alloy, stress, 0.0).unwrap();
+            let mut frame = blank_frame();
+            for count in 0..10 {
+                step(&alloy, &mut state, &mut frame, load(stress), 40.0)
+                    .unwrap_or_else(|e| std::panic!("{stress} MPa, step {count}: {e:?}"));
+                assert!(state.residual_conservation_error <= RESIDUAL_CONSERVATION_LIMIT);
+            }
+            assert_eq!(state.t_s.to_bits(), (CreepState::try_new(&alloy, stress, 0.0).unwrap().t_s + 400.0).to_bits());
+            let mut fine = CreepState::try_new(&alloy, stress, 0.0).unwrap();
+            let mut fine_frame = blank_frame();
+            for _ in 0..320 {
+                step(&alloy, &mut fine, &mut fine_frame, load(stress), 1.25).unwrap();
+            }
+            let gap = (state.creep_extension_percent - fine.creep_extension_percent).abs();
+            assert!(gap <= 1.0e-6 * fine.creep_extension_percent, "{stress}: {gap:e}");
+            assert_eq!(frame.flags & FLAG_OUTSIDE_MET_RANGE, FLAG_OUTSIDE_MET_RANGE);
+            stress += 2.5;
+        }
+        // 179 MPa landed whole through 0.15.1 and lands as the whole step.
+        let mut whole = CreepState::try_new(&alloy, 179.0, 0.0).unwrap();
+        let mut by_hand = whole;
+        let mut frame = blank_frame();
+        step(&alloy, &mut whole, &mut frame, load(179.0), 40.0).unwrap();
+        let mut hand_frame = blank_frame();
+        let advanced = rk4(&alloy, 179.0, 0.0, 40.0);
+        commit(&alloy, &mut by_hand, &mut hand_frame, load(179.0), 40.0, advanced).unwrap();
+        assert_eq!(state_bits(&whole), state_bits(&by_hand));
+        assert_eq!(frame.to_bytes(), hand_frame.to_bytes());
     }
 
     #[test]

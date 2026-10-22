@@ -58,3 +58,25 @@ fn the_worked_run_lands_and_closes_its_ledger() {
     assert_eq!(run["outcome"], "completed", "{run}");
     assert!(run["max_residual_conservation_error"].as_f64().unwrap() <= 1.0e-6);
 }
+
+/// Engine 0.15.2, work order of 21 October: the worked start at 4e-4 s,
+/// inside the card's ceiling of 4.3e-4 s, stopped DtAboveStateCeiling at
+/// 1.3228 dollars on 0.15.1 (192 steps landed). It now runs its steps, the
+/// state's own ceiling held by pieces inside the step, and its tape verifies
+/// by request.
+#[test]
+fn a_step_inside_the_ceiling_runs_past_one_point_three_dollars() {
+    let mut door = Door::start();
+    let description: Value = door.value("describe_card", &json!({ "domain": "energy", "card": "reactor_spert3" })).expect("described");
+    for dollars in [1.3228, 1.35, 1.5] {
+        let mut request = description["example_run_trajectory"].clone();
+        request["dt_s"] = json!(4.0e-4);
+        request["segments"][0]["steps"] = json!(2000);
+        request["segments"][0]["load"]["reactivity_inserted_dollar"] = json!(dollars);
+        let run = door.value("run_trajectory", &request).expect("answered");
+        assert_ne!(run["reject"], "DtAboveStateCeiling", "{dollars}: {}", run["reject_detail"]);
+        assert_eq!(run["outcome"], "completed", "{dollars}: {}", run["reject_detail"]);
+        let verified = door.value("verify_tape", &json!({ "request": request, "run_seal": run["run_seal"] })).expect("verified");
+        assert_eq!(verified["holds"], true, "{dollars}: {verified}");
+    }
+}

@@ -1699,7 +1699,9 @@ fn integrate(domain: &str, card: &str, params: &Value, proof: [u8; 16]) -> Oracl
                 scalar(params, "dt_s"),
             )
             .unwrap();
-            let advisory = capsule_stardust::FLAG_DROGUE_MACH_WINDOW;
+            let advisory = capsule_stardust::FLAG_DROGUE_MACH_WINDOW
+                | capsule_stardust::FLAG_OFF_FLOWN_ENTRY
+                | capsule_stardust::FLAG_MACH_TABLE_HELD;
             assert_eq!(frame.flags & !advisory, 0);
             let residual = state.residual_conservation_error;
             Oracle {
@@ -2061,7 +2063,7 @@ async fn assert_real_seal(
     let response: VerifyPhysicsResponse = serde_json::from_str(&text).unwrap();
     assert_eq!(
         response.engine_version,
-        "genesis_kernel_v0.13.0"
+        "genesis_kernel_v0.13.1"
     );
     assert_eq!(response.inputs, parsed);
     assert_eq!(
@@ -3084,8 +3086,8 @@ async fn the_capsule_flag_appears_near_the_drogue_condition_and_past_it_a_step_i
 async fn a_capsule_state_off_the_card_is_refused_and_does_not_seal() {
     const ALTITUDE: &str = "Physical Failure: altitude is above 134.7 km, the top of the drag table read by altitude (AltitudeOutsideCard). That state is not sealed.";
     const SEA: &str = "Physical Failure: altitude is below 0 m, the sea level of the 1976 standard's air and the ellipsoid under the path: the capsule is on or under the ground (BelowStandardSeaLevel). That state is not sealed.";
-    const MACH: &str = "Physical Failure: the Mach number is below 0.16, the first entry of the drag table read by Mach number, or is above 40 below 68.96 km, where that table ends (MachOutsideCard). That state is not sealed.";
-    const AIR_SPEED: &str = "Physical Failure: above 68.96 km the speed through the air is below 11900 m/s or above 12620 m/s, the highest speed the drag table by altitude was computed at (AirSpeedOutsideCard). That state is not sealed.";
+    const MACH: &str = "Physical Failure: the Mach number is below 0.16, the first entry of the drag table read by Mach number, or is above 40 below 68.96 km, where that table ends, at a speed through the air above 12620 m/s, the top speed any drag of the card was computed at (MachOutsideCard). That state is not sealed.";
+    const AIR_SPEED: &str = "Physical Failure: above 68.96 km the speed through the air, at the state or where the step's path crosses 68.96 km, is below 11900 m/s or above 12620 m/s, the highest speed the drag table by altitude was computed at (AirSpeedOutsideCard). That state is not sealed.";
     const PAST: &str = "Physical Failure: the state is under 31030 m and under Mach 1.23 at once, past the flown drogue deployment, where the capsule flew on a parachute (PastFlightDeployment). That state is not sealed.";
     let base = spawn_app().await;
     let earth_m = capsule_stardust::LOCAL_EARTH_RADIUS_M;

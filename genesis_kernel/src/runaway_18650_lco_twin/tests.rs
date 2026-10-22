@@ -305,7 +305,7 @@ fn step_with(
     sized: bool,
 ) -> Result<(), StepReject> {
     validate(cell, state, &load, dt_s)?;
-    let trial = integrate(cell, state, &load, dt_s, substep, sized)?;
+    let trial = integrate(cell, state, &load, dt_s, substep, sized, 1.0)?;
     commit(cell, state, frame, &load, dt_s, trial)
 }
 
@@ -381,7 +381,7 @@ fn a_falsified_ledger_is_named_both_ways() {
     assert_eq!(frame.to_bytes(), held);
     let mut state = start;
     let load = oven(428.15);
-    let honest = integrate(&cell, &state, &load, 1.0, rk4, true).unwrap();
+    let honest = integrate(&cell, &state, &load, 1.0, rk4, true, 1.0).unwrap();
     let mut forged = honest;
     forged.temperature_k += 0.01;
     assert_eq!(commit(&cell, &mut state, &mut frame, &load, 1.0, forged), Err(StepReject::SpontaneousGeneration));
@@ -554,3 +554,67 @@ const REFERENCE_155_TO_20_K_PER_MIN_S: f64 = 3714.0;
 const REFERENCE_150_TO_10_K_PER_MIN_S: f64 = 6520.0;
 const REFERENCE_145_PEAK_K: f64 = 421.101;
 
+
+/// Engine 0.15.2, work orders of 21 October: the card's own example state in
+/// an oven above about 440 K at steps of 10 s was refused FirstLawBreach
+/// part way (455 K at step 46, 452 K at 48, 520 K at 23, 700 K at 7 on
+/// 0.15.1), with landed runs on either side: an outcome that turned with the
+/// oven's temperature. Inside a substep sized at its start the separator's
+/// melt rate, steep in temperature, ran away from the Runge-Kutta rule, and
+/// the error passed the ledger's limit. Now the step is taken again with
+/// substeps half as long, and again, until its ledger closes. Every oven
+/// from 400 to 800 K runs the 600 steps, or ends at the runaway's own end,
+/// and never on the ledger.
+#[test]
+fn an_oven_run_at_ten_seconds_never_ends_on_the_ledger() {
+    let cell = Runaway18650LcoTwin::fitted();
+    let amounts = [0.15, 0.75, 0.96, 1.0, 1.0, 1.0];
+    let mut oven_k = 400.0;
+    while oven_k <= 800.0 {
+        let mut state = RunawayState::try_start(&cell, 301.15, amounts).unwrap();
+        let mut frame = blank();
+        let mut landed = 0;
+        let end = loop {
+            if landed == 600 {
+                break None;
+            }
+            match step(&cell, &mut state, &mut frame, oven(oven_k), 10.0) {
+                Ok(()) => landed += 1,
+                Err(reject) => break Some(reject),
+            }
+        };
+        assert!(
+            end.is_none() || end == Some(StepReject::EveryReactantConsumed),
+            "oven {oven_k} K: {end:?} after {landed} steps"
+        );
+        assert!(state.residual_conservation_error <= RESIDUAL_CONSERVATION_LIMIT);
+        oven_k += 1.75;
+    }
+    for oven_k in [452.0, 455.0, 460.0, 520.0, 700.0] {
+        let mut state = RunawayState::try_start(&cell, 301.15, amounts).unwrap();
+        let mut frame = blank();
+        for count in 0..600 {
+            step(&cell, &mut state, &mut frame, oven(oven_k), 10.0)
+                .unwrap_or_else(|e| std::panic!("{oven_k} K, step {count}: {e:?}"));
+        }
+    }
+}
+
+/// A step whose ledger closes with the substeps of engine 0.15.1 lands bit
+/// for bit as it did: the shorter substeps are taken only after a refusal.
+#[test]
+fn a_step_that_landed_lands_as_before() {
+    let cell = Runaway18650LcoTwin::fitted();
+    let mut state = RunawayState::try_start(&cell, 301.15, [0.15, 0.75, 0.96, 1.0, 1.0, 1.0]).unwrap();
+    let mut frame = blank();
+    for _ in 0..60 {
+        let mut by_hand = state;
+        let mut hand_frame = frame;
+        let trial = integrate(&cell, &by_hand, &oven(428.15), 10.0, rk4, true, 1.0).unwrap();
+        commit(&cell, &mut by_hand, &mut hand_frame, &oven(428.15), 10.0, trial).unwrap();
+        normal_or_zero_state(&mut by_hand);
+        step(&cell, &mut state, &mut frame, oven(428.15), 10.0).unwrap();
+        assert_eq!(bits(&state), bits(&by_hand));
+        assert_eq!(frame.to_bytes(), hand_frame.to_bytes());
+    }
+}

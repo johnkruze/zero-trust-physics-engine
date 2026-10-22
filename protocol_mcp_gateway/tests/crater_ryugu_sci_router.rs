@@ -521,8 +521,9 @@ async fn the_card_is_listed_and_described_with_its_record() {
 
 /// Where the card stood at 1.75 m, a run from the floor, 0.1622 m, at a
 /// step of 2 microseconds lands on the kernel's own loop bit for bit with the
-/// ledger closed, and its tape verifies; at the ceiling its first step is
-/// refused by the ledger, sealed with nothing landed.
+/// ledger closed, and its tape verifies; at the ceiling its steps land in
+/// pieces (engine 0.15.2; through 0.15.1 the first was refused by the
+/// ledger), and that tape verifies too.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_run_from_the_floor_lands_on_the_kernel_loop_and_its_tape_verifies() {
     let base = spawn_app().await;
@@ -540,6 +541,39 @@ async fn a_run_from_the_floor_lands_on_the_kernel_loop_and_its_tape_verifies() {
     let (status, answer) = post(&base, "/run_trajectory", &run_body(RADIUS_FLOOR_M, ceiling(), 3, 1)).await;
     assert_eq!(status, 200, "{answer}");
     let tape: Value = serde_json::from_str(&answer).unwrap();
-    assert_eq!(tape["outcome"], "refused", "{answer}");
-    assert_eq!(tape["steps_landed"], 0);
+    assert_eq!(tape["outcome"], "completed", "{answer}");
+    assert_eq!(tape["steps_landed"], 3);
+    let (state, worst, _, _) = direct_loop(RADIUS_FLOOR_M, ceiling(), 3, 1);
+    assert_state_is(&tape["final_state"], &state, "from the floor at the ceiling");
+    assert!(worst <= 1.0e-6, "{worst:e}");
+    let (status, report) = post(&base, "/verify_tape", &tape).await;
+    assert_eq!(status, 200, "{report}");
+    assert_eq!(serde_json::from_str::<Value>(&report).unwrap()["holds"], true);
+}
+
+/// Engine 0.15.2, work order of 21 October: the starts inside the declared
+/// range that 0.15.1 refused SpontaneousGeneration at step 1 at dt 0.25 s.
+/// Each now completes, its tape verifies, and the outcome is the same for
+/// every start from the floor to 1.75 m.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn the_starts_refused_at_step_one_through_0151_complete_at_the_ceiling() {
+    let base = spawn_app().await;
+    for radius_m in [1.10901, 0.73644, 1.154, 1.34206] {
+        let (status, answer) = post(&base, "/run_trajectory", &run_body(radius_m, 0.25, 10, 10)).await;
+        assert_eq!(status, 200, "{answer}");
+        let tape: Value = serde_json::from_str(&answer).unwrap();
+        assert_eq!(tape["outcome"], "completed", "{radius_m}: {}", tape["reject_detail"]);
+        assert_eq!(tape["steps_landed"], 10);
+        let (status, report) = post(&base, "/verify_tape", &tape).await;
+        assert_eq!(status, 200, "{report}");
+        assert_eq!(serde_json::from_str::<Value>(&report).unwrap()["holds"], true, "{radius_m}");
+    }
+    let mut radius_m = RADIUS_FLOOR_M;
+    while radius_m < 1.75 {
+        let (status, answer) = post(&base, "/run_trajectory", &run_body(radius_m, 0.25, 1, 1)).await;
+        assert_eq!(status, 200, "{answer}");
+        let tape: Value = serde_json::from_str(&answer).unwrap();
+        assert_eq!(tape["outcome"], "completed", "{radius_m}");
+        radius_m += 0.0371;
+    }
 }

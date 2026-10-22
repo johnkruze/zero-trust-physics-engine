@@ -275,7 +275,7 @@ async fn a_step_of_the_system_matches_the_compiled_step_with_the_same_proof_byte
         assert_eq!(status, 200, "{answer}");
         let response: VerifyPhysicsResponse = serde_json::from_str(&answer).unwrap();
         assert_eq!(response.inputs, request);
-        assert_eq!(response.engine_version, "genesis_kernel_v0.13.0");
+        assert_eq!(response.engine_version, "genesis_kernel_v0.13.1");
 
         let mut state = SolarSystemState::try_state(&system, position_m, velocity_m_s).unwrap();
         let mut frame = blank_frame(commit_request_proof(&request));

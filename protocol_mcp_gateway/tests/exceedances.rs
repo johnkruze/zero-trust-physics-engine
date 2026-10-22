@@ -402,8 +402,9 @@ async fn every_flag_of_every_card_is_described_with_its_limits() {
             }
         }
     }
-    // 70 from 0.15.0: the retired models' flags are not served.
-    assert_eq!(flags, 70);
+    // 70 from 0.15.0: the retired models' flags are not served. 72 from
+    // 0.15.2: capsule_stardust's FLAG_OFF_FLOWN_ENTRY and FLAG_MACH_TABLE_HELD.
+    assert_eq!(flags, 72);
     assert!(limits > flags, "{limits}");
 }
 

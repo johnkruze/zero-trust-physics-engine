@@ -98,10 +98,18 @@
 //! of the core, whichever is larger.
 //!
 //! [`ReactorSpert3Twin::gate_dt_s`] is the static step ceiling, 0.2 of `l*`
-//! at 70 degF. Past it the step itself refuses ([`StepReject::DtAboveStateCeiling`])
-//! a step longer than [`DECAY_PHASE_STEP`] of the prompt time constant `l* / |1 − ρ|`, or
-//! [`GROWTH_PHASE_STEP`] of it when the prompt pole is growing, at the state
-//! it starts from or at the state it lands on. A step that crosses the start
+//! at 70 degF. The step also holds a ceiling that follows the state: a step
+//! longer than [`DECAY_PHASE_STEP`] of the prompt time constant `l* / |1 − ρ|`,
+//! or [`GROWTH_PHASE_STEP`] of it when the prompt pole is growing, at the
+//! state it starts from or at the state it lands on, is taken in 2, 4, 8, ...
+//! equal pieces, each held to that ceiling at its start and its landing and
+//! closed on the same ledgers, none shorter than the floor (since engine
+//! 0.15.2). A step that lands whole lands as it always did. Through 0.15.1
+//! such a step was refused ([`StepReject::DtAboveStateCeiling`]): at the
+//! ceiling above a net reactivity of about 1.30 dollars, at 4e-4 s from
+//! 1.3228 dollars, so the card stated a ceiling its own step did not stand
+//! behind. It is refused now only above the card's ceiling, or where the
+//! pieces would be shorter than the floor. A step that crosses the start
 //! or the stop of the rod's motion is taken in two Runge-Kutta parts, split
 //! there.
 //!
@@ -439,7 +447,7 @@ pub enum StepReject {
     ReactivityChangedDuringRun,
     /// The incoming state is not one this card writes: a power at or below zero, a temperature at or below zero, a clock below zero, or a start outside the card.
     StateOutsideCard,
-    /// The step is longer than 0.4 of the prompt time constant, or than the growth share of it while the prompt pole grows, at the state it starts from or lands on.
+    /// The step is longer than 0.4 of the prompt time constant, or than the growth share of it while the prompt pole grows, at the state it starts from or lands on, and is above the card's ceiling or would be taken in pieces shorter than its floor, 1e-9 s.
     DtAboveStateCeiling,
     /// A ring of the peak rod, at the core's own peak-to-average power density, reached the melting point of UO2, 3120 K.
     FuelMelting,
@@ -1347,7 +1355,55 @@ fn normal_or_zero_state(state: &mut ReactorState) {
     normal_or_zero_each(&mut s.peak_fuel_k);
 }
 
+/// The step: whole, as through engine 0.15.1, and, when the state's own
+/// ceiling refuses a step at or under the card's ceiling, in 2, 4, 8, ...
+/// equal pieces, each a step of this card held to that ceiling at its start
+/// and its landing and closed on the same two ledgers, none shorter than the
+/// floor. A step that lands whole lands as it always did. Through 0.15.1 a
+/// step at or under the ceiling was refused `DtAboveStateCeiling` once the
+/// net reactivity passed about 1.30 dollars (1.3228 dollars at 4e-4 s from
+/// 70 degF): the card stated a ceiling its own step did not stand behind.
 fn step_as_computed(card: &ReactorSpert3Twin, state: &ReactorState, load: ReactorLoad, dt_s: f64) -> Result<ReactorState, StepReject> {
+    let whole = step_whole(card, state, load, dt_s);
+    if !core::matches!(whole, Err(StepReject::DtAboveStateCeiling)) {
+        return whole;
+    }
+    let (Some(gate_dt_s), Some(floor_dt_s)) = (card.gate_dt_s(), card.floor_dt_s()) else {
+        return whole;
+    };
+    if !(dt_s <= gate_dt_s) {
+        return whole;
+    }
+    let mut pieces: f64 = 2.0;
+    'counts: while dt_s / pieces >= floor_dt_s {
+        let mut landed = *state;
+        let mut taken: f64 = 0.0;
+        while taken < pieces {
+            // Each piece ends on t_start + dt · (k + 1) / n, the last exactly
+            // on t_start + dt.
+            let end_s = state.t_s + dt_s * ((taken + 1.0) / pieces);
+            let width_s = end_s - landed.t_s;
+            match step_whole(card, &landed, load, width_s) {
+                Ok(mut next) => {
+                    next.t_s = end_s;
+                    normal_or_zero_state(&mut next);
+                    landed = next;
+                }
+                Err(StepReject::DtAboveStateCeiling) => {
+                    pieces *= 2.0;
+                    continue 'counts;
+                }
+                Err(reject) => return Err(reject),
+            }
+            taken += 1.0;
+        }
+        return Ok(landed);
+    }
+    whole
+}
+
+/// One step of `dt_s` taken whole: the step of engine 0.15.1.
+fn step_whole(card: &ReactorSpert3Twin, state: &ReactorState, load: ReactorLoad, dt_s: f64) -> Result<ReactorState, StepReject> {
     if !load.reactivity_inserted_dollar.is_finite() || !dt_s.is_finite() {
         return Err(StepReject::NonFiniteInput);
     }
@@ -1666,6 +1722,59 @@ mod tests {
             assert_eq!(frame.proof, [7; 16]);
         }
         (state, worst)
+    }
+
+    /// Engine 0.15.2, work order of 21 October: from the worked start, a run
+    /// at 4e-4 s, inside the card's ceiling of 4.3e-4 s, was refused
+    /// DtAboveStateCeiling at 1.3228 dollars (step 193) on 0.15.1. Now a
+    /// step the state's own ceiling does not take whole is taken in equal
+    /// pieces, each held to it, and every insertion from 1.0 to 2.0 dollars
+    /// at 4e-4 s and at the ceiling runs 8000 steps or stops at a physical
+    /// end of the card, never on the step; the ledgers stay under their limit,
+    /// and a run at the ceiling agrees with one taken at a tenth of it.
+    #[test]
+    fn a_step_under_the_ceiling_is_never_refused_by_the_state_ceiling() {
+        let card = ReactorSpert3Twin::e_core();
+        let start = ReactorState::try_start(&card, 297.5944444444445, 0.0853, 0.0, 7.9949547e-06).unwrap();
+        let gate = card.gate_dt_s().unwrap();
+        for dt_s in [4.0e-4, gate] {
+            let mut rho = 1.0;
+            while rho <= 2.0 {
+                let mut state = start;
+                let mut frame = blank();
+                let mut end = None;
+                for _ in 0..8000 {
+                    if let Err(reject) = step(&card, &mut state, &mut frame, ReactorLoad { reactivity_inserted_dollar: rho }, dt_s) {
+                        end = Some(reject);
+                        break;
+                    }
+                    assert!(state.residual_conservation_error <= RESIDUAL_CONSERVATION_LIMIT);
+                }
+                assert!(
+                    end.is_none() || end == Some(StepReject::FuelMelting) || end == Some(StepReject::WaterAtSaturation),
+                    "{dt_s} s at {rho} dollars: {end:?}"
+                );
+                rho += 0.0457;
+            }
+        }
+        // 1.3228 dollars at 4e-4 s against 4000 steps of 1e-4 s over the
+        // first 0.4 s: the peak power within 2 percent.
+        let mut coarse = start;
+        let mut fine = start;
+        let mut frame = blank();
+        for _ in 0..1000 {
+            step(&card, &mut coarse, &mut frame, ReactorLoad { reactivity_inserted_dollar: 1.3228 }, 4.0e-4).unwrap();
+        }
+        for _ in 0..4000 {
+            step(&card, &mut fine, &mut frame, ReactorLoad { reactivity_inserted_dollar: 1.3228 }, 1.0e-4).unwrap();
+        }
+        assert!((coarse.peak_power_mw - fine.peak_power_mw).abs() <= 0.02 * fine.peak_power_mw, "{} {}", coarse.peak_power_mw, fine.peak_power_mw);
+        // A step taken whole lands as the whole step, bit for bit.
+        let mut whole = start;
+        step(&card, &mut whole, &mut frame, ReactorLoad { reactivity_inserted_dollar: 1.2 }, 4.0e-4).unwrap();
+        let mut by_hand = step_whole(&card, &start, ReactorLoad { reactivity_inserted_dollar: 1.2 }, 4.0e-4).unwrap();
+        normal_or_zero_state(&mut by_hand);
+        assert_eq!(whole, by_hand);
     }
 
     #[test]

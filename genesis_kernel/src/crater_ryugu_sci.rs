@@ -63,8 +63,13 @@
 //! 1.2 radii from which point-source laws of cratering are used (Housen and
 //! Holsapple 2011, Icarus 211, 856), and the wall there is a tenth of the
 //! projectile's 2 km/s. From the floor the wall runs to its stop in steps that
-//! grow with the radius; at the ceiling of 0.25 s a step near the floor is
-//! refused by the ledger, and a smaller one lands. The card served from 1.75 m
+//! grow with the radius. At the ceiling of 0.25 s a step below about 1.39 m
+//! is past the ledger's limit when taken whole; since engine 0.15.2 such a
+//! step is taken again in 2, 4, 8, ... equal Runge–Kutta pieces, each closed
+//! on the same ledger, up to 2^20 of them, and lands (through 0.15.1 the
+//! ledger refused it, and a smaller step landed). A step that lands whole
+//! lands as it always did. From the floor at 0.25 s a run lands 1,601 steps
+//! to the stop, at 400.25 s. The card served from 1.75 m
 //! until engine 0.9; that floor had no recorded reason.
 //!
 //! The equations. `R` is the crater radius, `V` the speed of its wall,
@@ -407,6 +412,67 @@ fn step_as_computed(
     dt_s: f64,
 ) -> Result<(), StepReject> {
     validate(crater, state, load, dt_s)?;
+    // The step whole, as through engine 0.15.1: a step that lands whole
+    // lands as it always did.
+    let whole = piece(crater, state, frame, dt_s);
+    if !ledger_refused(whole) || !(dt_s <= crater.gate_dt_s) {
+        return whole;
+    }
+    // The ledger did not close on a step the card stands behind, one at or
+    // under its ceiling: the Runge-Kutta error of a step this long at this
+    // wall speed is past the limit. The step is taken again in 2, 4, 8, ...
+    // equal pieces, each a Runge-Kutta step closed on the same ledger, until
+    // one count lands, or the pieces would number more than GATE_OVER_FLOOR,
+    // 2^20 (a piece of a step at the ceiling no shorter than the floor). The
+    // ledger's limit is not changed. A step above the ceiling is not the
+    // card's and is named by the ledger whole, as before.
+    let mut refused = whole;
+    let mut pieces: f64 = 2.0;
+    while pieces <= crater.gate_over_floor {
+        let mut trial = *state;
+        let mut trial_frame = *frame;
+        let mut taken: f64 = 0.0;
+        let mut landed = Ok(());
+        while taken < pieces {
+            // Each piece ends on t_start + dt · (k + 1) / n, the last exactly
+            // on t_start + dt.
+            let end_s = state.t_s + dt_s * ((taken + 1.0) / pieces);
+            let width_s = end_s - trial.t_s;
+            landed = piece(crater, &mut trial, &mut trial_frame, width_s);
+            if landed.is_err() {
+                break;
+            }
+            trial.t_s = end_s;
+            trial_frame.t = end_s;
+            taken += 1.0;
+        }
+        match landed {
+            Ok(()) => {
+                *state = trial;
+                *frame = trial_frame;
+                return Ok(());
+            }
+            Err(_) if ledger_refused(landed) => refused = landed,
+            Err(reject) => return Err(reject),
+        }
+        pieces *= 2.0;
+    }
+    refused
+}
+
+/// The ledger's two refusals: the trial step created or destroyed energy.
+fn ledger_refused(outcome: Result<(), StepReject>) -> bool {
+    core::matches!(outcome, Err(StepReject::SpontaneousGeneration | StepReject::FirstLawBreach))
+}
+
+/// One Runge-Kutta step of `dt_s` from `state`, as [`commit`] lands it, or,
+/// from the stopped crater, the clock alone.
+fn piece(
+    crater: &CraterRyuguSci,
+    state: &mut CraterState,
+    frame: &mut LastStateFrame64,
+    dt_s: f64,
+) -> Result<(), StepReject> {
     if is_stopped(crater, state) {
         return commit(crater, state, frame, dt_s, [state.radius_m, 0.0]);
     }
@@ -1103,8 +1169,7 @@ mod tests {
     /// grows to the same stop under the ledger's limit, in steps that grow
     /// with the radius to the ceiling; the run from the floor matches the run
     /// from 1.75 m once it passes 1.75 m in the energy it holds. At the ceiling
-    /// the first step from the floor is refused by the ledger, by name, with
-    /// the state and the frame kept.
+    /// the first step from the floor lands in pieces (engine 0.15.2).
     #[test]
     fn a_crater_from_the_floor_grows_to_the_same_stop_under_the_ledger() {
         let crater = CraterRyuguSci::sci_impact();
@@ -1132,17 +1197,62 @@ mod tests {
             let clock = CLOCK_CONSTANT * f64::sqrt(FINAL_RADIUS_M / SITE_GRAVITY_M_S2);
             assert!((state.t_s - clock).abs() < 1.0, "{radius_m}: {}", state.t_s);
         }
+        // From the floor a step of the ceiling is taken in pieces (engine
+        // 0.15.2): through 0.15.1 the ledger refused it whole.
         let mut state = CraterState::try_radius(&crater, RADIUS_FLOOR_M).unwrap();
-        let before = state_bits(&state);
         let mut frame = blank_frame();
-        let held = frame.to_bytes();
-        let named = step(&crater, &mut state, &mut frame, NO_LOAD, GATE_DT_S);
-        assert!(
-            core::matches!(named, Err(StepReject::SpontaneousGeneration | StepReject::FirstLawBreach | StepReject::NonFiniteState)),
-            "{named:?}"
-        );
-        assert_eq!(state_bits(&state), before);
-        assert_eq!(frame.to_bytes(), held);
+        step(&crater, &mut state, &mut frame, NO_LOAD, GATE_DT_S).unwrap();
+        assert_eq!(state.t_s.to_bits(), GATE_DT_S.to_bits());
+        assert!(state.residual_conservation_error <= RESIDUAL_CONSERVATION_LIMIT);
+        proof_intact(&frame);
+    }
+
+    /// Engine 0.15.2, work order of 21 October: a start inside the card's
+    /// range, 0.1622 to 8.571 m, at the ceiling of 0.25 s was refused
+    /// SpontaneousGeneration at step 1 below about 1.39 m (1.10901, 0.73644,
+    /// 1.154 and 1.34206 m among them). The whole step's Runge-Kutta error was
+    /// past the ledger's limit. Now the step is taken in equal pieces, each
+    /// closed on the same ledger, and lands; a step that landed whole lands
+    /// bit for bit as before.
+    #[test]
+    fn a_step_of_the_ceiling_lands_in_pieces_from_every_start_on_the_card() {
+        let crater = CraterRyuguSci::sci_impact();
+        for radius_m in [RADIUS_FLOOR_M, 0.2, 0.5, 0.73644, 1.0, 1.10901, 1.154, 1.34206, 1.39, 1.4] {
+            let mut state = CraterState::try_radius(&crater, radius_m).unwrap();
+            let mut frame = blank_frame();
+            step(&crater, &mut state, &mut frame, NO_LOAD, GATE_DT_S).unwrap_or_else(|e| std::panic!("{radius_m}: {e:?}"));
+            assert!(state.residual_conservation_error <= RESIDUAL_CONSERVATION_LIMIT, "{radius_m}");
+            assert_eq!(state.t_s.to_bits(), GATE_DT_S.to_bits(), "{radius_m}");
+            // The landing agrees with 4096 steps of the ceiling over 4096.
+            let mut fine = CraterState::try_radius(&crater, radius_m).unwrap();
+            let mut fine_frame = blank_frame();
+            for _ in 0..4096 {
+                step(&crater, &mut fine, &mut fine_frame, NO_LOAD, GATE_DT_S / 4096.0).unwrap();
+            }
+            assert!((state.radius_m - fine.radius_m).abs() < 1.0e-6 * fine.radius_m, "{radius_m}: {} {}", state.radius_m, fine.radius_m);
+            proof_intact(&frame);
+        }
+        // A start that landed whole lands as the whole step, bit for bit: the
+        // pieces are never taken for it.
+        let mut whole = CraterState::try_radius(&crater, 1.75).unwrap();
+        let mut by_hand = whole;
+        let mut frame = blank_frame();
+        step(&crater, &mut whole, &mut frame, NO_LOAD, GATE_DT_S).unwrap();
+        let advanced = rk4(&crater, [by_hand.radius_m, by_hand.wall_speed_m_s], GATE_DT_S).unwrap();
+        by_hand.t_s += GATE_DT_S;
+        by_hand.radius_m = advanced[0];
+        by_hand.wall_speed_m_s = advanced[1];
+        assert_eq!(whole.radius_m.to_bits(), by_hand.radius_m.to_bits());
+        assert_eq!(whole.wall_speed_m_s.to_bits(), by_hand.wall_speed_m_s.to_bits());
+        // Each start along the line from the floor to 1.75 m lands: the
+        // outcome no longer turns with the start.
+        let mut radius_m = RADIUS_FLOOR_M;
+        while radius_m < 1.75 {
+            let mut state = CraterState::try_radius(&crater, radius_m).unwrap();
+            let mut frame = blank_frame();
+            assert!(step(&crater, &mut state, &mut frame, NO_LOAD, GATE_DT_S).is_ok(), "{radius_m}");
+            radius_m += 0.0137;
+        }
     }
 
     #[test]

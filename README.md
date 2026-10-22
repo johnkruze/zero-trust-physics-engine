@@ -10,9 +10,18 @@ https://mcp.zerotrustphysics.com/mcp
 
 That address is open to any agent, and nothing here is needed to use it. This repository is for building the same engine on your own machine and getting the same proofs.
 
-## What 0.15.1 is
+## What 0.15.2 is
 
-This is engine 0.15.1, the version the open address has served since 22 October 2026: 36 models, 25 field solvers and 18 tools, as 0.15.0. Its models and its seal rule are 0.15.0's, so every seal and every proof of a computed answer is the one 0.15.0 gives: of the 379 worked questions, 361 answer byte for byte as 0.15.0 and 18 differ in their words only; the 13 printed proofs are the same. What changed:
+This is engine 0.15.2, the version the open address has served since 22 October 2026: 36 models, 25 field solvers and 18 tools, as 0.15.1. The models' code moved, so the kernel is 0.13.1 and every model's answer names `genesis_kernel_v0.13.1` in its `engine_version` and its receipt; no run, step, solution or chain seal of a worked question moved. Of the 379 worked questions, 259 answer byte for byte as 0.15.1, 113 differ in `engine_version` and the receipt alone, and 7 in their words; of the 13 printed proofs, 4 are the same and 9 differ in `engine_version` and the receipt alone. Every step 0.15.1 landed lands to the bit, unless a new flag of `capsule_stardust` is set on it. What changed:
+
+- **`capsule_stardust`, the Mach-40 edge.** From 6,503,140 m at 12,760 m/s across, dt 0.05 s, 1,000 steps, radial −1905.0 and −1905.75 m/s were refused `MachOutsideCard` at step 827 while −1905.25 completed. Below 68.96 km above Mach 40 the drag table's top entry is now held up to 12,620 m/s through the air, and the step carries `FLAG_MACH_TABLE_HELD` with the highest Mach number it was held at. The band above 68.96 km is held to each state of the path and to the speed where the path crosses 68.96 km. Each edge now turns once.
+- **`capsule_stardust`, `FLAG_OFF_FLOWN_ENTRY`.** A step off the corridor the flown entry took, 31 to 134 km, carries the bound at that altitude, the value and the extent past it. A run off the flown entry therefore moves its run seal; the flown entry's does not.
+- **`crater_ryugu_sci`, `creep_cmsx6`, `reactor_spert3`:** a step at or under the declared ceiling that the ledger or the state's ceiling refuses whole is taken in equal pieces, each closed on the same ledger. **`runaway_18650_lco`:** a step whose ledger does not close is taken again with substeps half as long. Starts these refused at 0.15.1 inside their declared ranges now run. No ledger's limit moved.
+- **Chained solves:** `solve`'s description says each handed value goes into `parameters` bit for bit, from the run's `frame_hex` or a `_hex` value, never a decimal readout.
+
+## What 0.15.1 brought
+
+Engine 0.15.1, served from 22 October 2026 until 0.15.2 the same day, kept 0.15.0's seals and computed values and changed these, which 0.15.2 keeps:
 
 - **The true cause for a signed answer a client wrote again.** An SI agent that parses an answer and writes it back moves the signature out of the engine's form. `verify_tape`, `verify_solution` and `verify_dataset` now read the signature from the answer's values, verify it over the receipt the answer carries, and name the cause `ReceiptDoesNotMatch` with `written_again`; the answer is then computed again, and `values_hold` and `differs_at` say whether the values stand and where the text first differs. 0.15.0 named such an answer `SignatureAbsent`.
 - **A chain that ends in a solve verifies.** A coupling of a model into a field solver (`stardust_entry_to_pica_slab`, `triga_pulse_to_element_6753`) gives a chain whose last link is a `solve` answer. As `links`, the run then the solve, it holds at `verify_tape` and, with no engine, at `genesis_seal verify-chain` and the Python `verify_chain.py`: the solve's `solution_seal` is recomputed from its seal parts and the chain seal rebuilt over it. The Stardust entry into the PICA slab gives `chain_seal` `21a8ace2…80b1` at the engine and with no engine. 0.15.0 refused such a chain, "the tape does not name a card".
@@ -48,7 +57,7 @@ The models that now answer under the object's own ID, in their own words (`descr
 
 And three things about every answer and every model:
 
-- **The same bytes on every machine tested.** Every exponential, logarithm, power and trigonometric function an answer depends on is computed by the engine's own code, never by the machine's math library. For 0.15.1, the open address, built from this source on Linux x86-64, gave the same answer, byte for byte with its signature taken out, to all 379 worked questions as a build on a Mac (Apple M4 Pro), and the same 13 printed proofs.
+- **The same bytes on every machine tested.** Every exponential, logarithm, power and trigonometric function an answer depends on is computed by the engine's own code, never by the machine's math library. For 0.15.2, the open address, built from this source on Linux x86-64, gave the same answer, byte for byte with its signature taken out, to all 379 worked questions as a build on a Mac (Apple M4 Pro), and the same 13 printed proofs.
 - **Anyone can recompute a proof.** A proof is a SHA-384 hash that binds the question to the answer, byte for byte. `genesis_seal`, in this repository, confirms one with no engine, and verifies the signature, and so do the Python programs at https://github.com/johnkruze/zero-trust-physics .
 - **Every model says what stands behind it, numbers first.** One of three words: "compared with measurement" (46 of the 61 models: a real object), "held to a reference calculation" (3: a published calculation) or "company specimen" (12: an object the company specified, every constant stated). Each of the 46 states what it computes, what it was fitted on, what it was compared with and within what, and its gap, where it does worst.
 
@@ -142,11 +151,11 @@ cd genesis_seal_parquet && cargo build --release --locked && cargo test --releas
 
 Some tests print one line, `skipped: … needs the saved runs`, and return: they compare with runs the company keeps, which are not in this repository. The tests use Unix tools such as `ps` and `mkfifo`.
 
-Every test passed on 21 October 2026 on an Apple M4 Pro: kernel 901, solvers 545, seal 214, gateway 1,144, Parquet converter 23. One gateway test, `a_comparison_of_solves_opens_its_commitment_with_rows_in_the_place_of_steps`, starts the debug build of `genesis_seal` that the test itself builds; on a heavily loaded machine that program once did not start, and the test passed when run again (`--test validation_router`, 19 of 19 in 9 s).
+Every test passed on 22 October 2026 on an Apple M4 Pro: kernel 909, solvers 545, seal 214, gateway 1,147, Parquet converter 23. One gateway test, `a_comparison_of_solves_opens_its_commitment_with_rows_in_the_place_of_steps`, starts the debug build of `genesis_seal` that the test itself builds; on a heavily loaded machine that program once did not start, and the test passed when run again (`--test validation_router`, 19 of 19 in 9 s).
 
 ## Two things to know
 
-- **Proofs and machines.** Build it on your machine and every model and every field solver gives the proof the open address gives. For 0.15.1 that was measured on the two machine kinds above, a Mac (Apple M4 Pro) and Linux x86-64. On another kind, compare one worked answer with the open address before relying on it.
+- **Proofs and machines.** Build it on your machine and every model and every field solver gives the proof the open address gives. For 0.15.2 that was measured on the two machine kinds above, a Mac (Apple M4 Pro) and Linux x86-64. On another kind, compare one worked answer with the open address before relying on it.
 - **Paths that are not here.** Comments and some descriptions name files under `evidence/`, and `REFERENCE.md`, `AGENTS.md` and `HOSTING.md`. Those are the company's own records and are not part of this repository.
 
 ## Credit
