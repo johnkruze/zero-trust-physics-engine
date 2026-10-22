@@ -409,7 +409,7 @@ impl CreepCmsx6 {
     }
 
     /// A step at `stress_mpa` from `from_percent` to `to_percent` covers
-    /// creep extension where the law missed the measured curves: below 0.1
+    /// creep extension where the law does not follow the measured curves: below 0.1
     /// percent, or past 0.2 percent below 170 MPa. See
     /// [`FLAG_OUTSIDE_MET_RANGE`].
     #[must_use]
@@ -821,7 +821,7 @@ const START_LOW_KIND: ExceedanceKind = ExceedanceKind::fixed(
     "percent",
     Side::Below,
     CREEP_EXTENSION_MIN_PERCENT,
-    "0.1 percent creep extension: below it the law missed the measured curves at any stress",
+    "0.1 percent creep extension: below it the law does not follow the measured curves at any stress",
 );
 const REACH_HIGH_KIND: ExceedanceKind = ExceedanceKind::fixed(
     "FLAG_OUTSIDE_MET_RANGE",
@@ -830,7 +830,7 @@ const REACH_HIGH_KIND: ExceedanceKind = ExceedanceKind::fixed(
     "percent",
     Side::Above,
     CREEP_EXTENSION_MAX_BELOW_FULL_REACH_PERCENT,
-    "0.2 percent creep extension at a stress below 170 MPa: past it the law missed the measured curves",
+    "0.2 percent creep extension at a stress below 170 MPa: past it the law does not follow the measured curves",
 );
 
 /// The limits the step from `before` to `after` under `load` over `dt_s`

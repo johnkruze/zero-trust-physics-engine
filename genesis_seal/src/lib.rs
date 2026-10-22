@@ -30,6 +30,7 @@ pub mod rows;
 pub mod run;
 pub mod sampler;
 pub mod sealed_form;
+pub mod solution;
 #[cfg(unix)]
 pub mod stored_file;
 pub mod tree;

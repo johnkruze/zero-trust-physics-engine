@@ -285,3 +285,43 @@ fn the_slab_s_description_lists_the_coupling() {
     let card = door.value("describe_card", &json!({ "domain": "aerospace", "card": "capsule_stardust" })).expect("described");
     assert!(!card.to_string().contains(COUPLING));
 }
+
+/// 0.15.1: the chain's answers in order, the card's run then the slab's
+/// solve, hold as links: verify_tape computes the run and solves the solve
+/// again with the run before it, and genesis_seal::chain verifies the same
+/// links with no engine, the solve's seal recomputed from its values and the
+/// chain seal rebuilt (0.15.0 refused both: "the tape does not name a card").
+/// A handed frame changed in the solve's request is named at link 1.
+#[test]
+fn the_chain_s_answers_as_links_hold_at_verify_tape_and_with_no_engine() {
+    let mut door = Door::start();
+    let up = upstream(30);
+    let (error, card_text) = door.call("run_trajectory", &up);
+    assert!(!error, "{card_text}");
+    let card: Value = serde_json::from_str(&card_text).unwrap();
+    let seal = card["run_seal"].as_str().unwrap().to_string();
+    let request = chained(parameters(&card), &up, &seal);
+    let (error, solve_text) = door.call("solve", &request);
+    assert!(!error, "{solve_text}");
+    let solve: Value = serde_json::from_str(&solve_text).unwrap();
+    let links_text = format!(r#"{{"links":[{card_text},{solve_text}]}}"#);
+    let (error, verified) = door.call_text("verify_tape", &links_text);
+    assert!(!error, "{verified}");
+    let verified: Value = serde_json::from_str(&verified).unwrap();
+    assert_eq!((verified["holds"].clone(), verified["values_hold"].clone(), verified["cause"].clone()), (json!(true), json!(true), Value::Null), "{verified}");
+    assert_eq!(verified["chain_seal"], solve["chain"]["chain_seal"]);
+    assert_eq!(verified["chain_seal"], WORKED_CHAIN_SEAL);
+    let links: Value = serde_json::from_str(&links_text).unwrap();
+    let offline = genesis_seal::chain::check_chain(&links).expect("read");
+    assert!(offline.holds && offline.last_is_solve, "{offline:?}");
+    assert_eq!(offline.chain_seal.as_deref(), solve["chain"]["chain_seal"].as_str());
+    // A handed value changed in the solve's request, its seal parts left: the
+    // solve's own seal no longer holds, named at link 1.
+    let mut changed = links.clone();
+    let row = &mut changed["links"][1]["inputs"]["parameters"]["history_pressure_pa"][2];
+    *row = json!(row.as_f64().unwrap() * 1.01);
+    let report = genesis_seal::chain::check_chain(&changed).expect("read");
+    assert_eq!((report.holds, report.broken_link), (false, Some(1)), "{report:?}");
+    let report = door.value("verify_tape", &changed).expect("a report");
+    assert_eq!((report["holds"].clone(), report["broken_link"].clone()), (json!(false), json!(1)), "{report}");
+}

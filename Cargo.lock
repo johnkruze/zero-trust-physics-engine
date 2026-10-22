@@ -511,7 +511,7 @@ version = "0.13.0"
 
 [[package]]
 name = "genesis_seal"
-version = "0.7.0"
+version = "0.7.1"
 dependencies = [
  "base64 0.22.1",
  "curve25519-dalek",
@@ -1154,7 +1154,7 @@ dependencies = [
 
 [[package]]
 name = "protocol_mcp_gateway"
-version = "0.15.0"
+version = "0.15.1"
 dependencies = [
  "axum",
  "ed25519-dalek",

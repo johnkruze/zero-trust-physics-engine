@@ -858,3 +858,49 @@ fn a_plan_of_solves_is_refused_by_what_it_is() {
         assert_eq!(format!("{out}{error}").trim_end(), said, "{arguments:?}");
     }
 }
+
+/// 0.15.1: a chain that ends in a solve, handed by a coupling into a solver:
+/// a reactor_triga_jsi pulse of 4,000 steps handed into fuel_rod_triga_jsi
+/// (triga_pulse_to_element_6753), as engine 0.15.1 rc1 answered it on its
+/// local connection (`tests/fixtures/chain_triga_solve.json`). It holds with
+/// no engine, the solve's seal recomputed from its values and the chain seal
+/// rebuilt; each break is named at its link. 0.15.0 refused it, "the tape does
+/// not name a card".
+#[test]
+fn verify_chain_holds_a_chain_that_ends_in_a_solve_and_names_each_break() {
+    let folder = folder("verify_chain_solve");
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/chain_triga_solve.json");
+    let chain: Value = serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
+    let whole = write(&folder, "chain.json", &serde_json::to_vec(&chain).unwrap());
+    let (code, out, _) = run(&["verify-chain", &whole]);
+    assert_eq!(code, 0, "{out}");
+    let seal = chain["links"][1]["chain"]["chain_seal"].as_str().unwrap();
+    assert!(out.starts_with(&format!("holds: true\nlinks: 2\nbroken_link: none\ncause: none\nchain_seal: {seal}\nnote: the last link is a solve;")), "{out}");
+    let flip = |text: &str| {
+        let last = if text.ends_with('0') { '1' } else { '0' };
+        format!("{}{last}", &text[..text.len() - 1])
+    };
+    let cases: Vec<(&str, Box<dyn Fn(&mut Value)>, &str)> = vec![
+        ("solution seal", Box::new(|c: &mut Value| { let t = c["links"][1]["solution_seal"].as_str().unwrap().to_string(); c["links"][1]["solution_seal"] = json!(flip(&t)); }), "broken_link: 1\ncause: solution_seal"),
+        ("result", Box::new(|c: &mut Value| { let r = c["links"][1]["result"].as_object_mut().unwrap(); let key = r.keys().find(|k| k.ends_with("_hex") && r[*k].is_string()).unwrap().clone(); let t = r[&key].as_str().unwrap().to_string(); r[&key] = json!(flip(&t)); }), "broken_link: 1\ncause: solution_seal"),
+        ("a frame time handed", Box::new(|c: &mut Value| { let t = c["links"][1]["chain"]["handed"][1]["value_hex"][3].as_str().unwrap().to_string(); c["links"][1]["chain"]["handed"][1]["value_hex"][3] = json!(flip(&t)); }), "broken_link: 1\ncause: handed"),
+        ("upstream", Box::new(|c: &mut Value| { let t = c["links"][1]["chain"]["upstream_run_seal"].as_str().unwrap().to_string(); c["links"][1]["chain"]["upstream_run_seal"] = json!(flip(&t)); }), "broken_link: 1\ncause: upstream"),
+        ("chain seal", Box::new(|c: &mut Value| { let t = c["links"][1]["chain"]["chain_seal"].as_str().unwrap().to_string(); c["links"][1]["chain"]["chain_seal"] = json!(flip(&t)); }), "broken_link: 1\ncause: chain_seal"),
+    ];
+    for (what, change, said) in cases {
+        let mut broken = chain.clone();
+        change(&mut broken);
+        let path = write(&folder, "broken.json", &serde_json::to_vec(&broken).unwrap());
+        let (code, out, _) = run(&["verify-chain", &path]);
+        assert_eq!(code, 1, "{what}: {out}");
+        assert!(out.starts_with("holds: false\nlinks: 2\n") && out.contains(said), "{what}: {out}");
+    }
+    // A solve that is not the last link is refused by name.
+    let mut early = chain.clone();
+    let solve = early["links"][1].clone();
+    early["links"] = json!([chain["links"][0].clone(), solve.clone(), solve]);
+    let path = write(&folder, "early.json", &serde_json::to_vec(&early).unwrap());
+    let (code, out, err) = run(&["verify-chain", &path]);
+    assert_eq!(code, 2, "{out}{err}");
+    assert!(format!("{out}{err}").contains("only the last link may be a solve"), "{out}{err}");
+}

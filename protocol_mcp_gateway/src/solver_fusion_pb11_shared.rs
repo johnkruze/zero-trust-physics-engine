@@ -36,9 +36,9 @@ pub fn cross_section_record() -> Value {
         "fit": "The S-factor fit of Tentori and Belloni, Nucl. Fusion 63, 086001, Table 1: measured points from 22 keV (Becker's 1987 data) to 3481 keV (Sikora and Weller's 2016 data) and a digitised curve from 5.7 to 9.76 MeV.",
         "range_kev": [0.0, reaction::CROSS_SECTION_ENERGY_MAX_KEV],
         "uncertainty": "The evaluations differ: the Maxwellian reactivity is known to about plus or minus 10 percent from 10 to 60 keV and to about minus 15, plus 5 percent from 70 to 500 keV. This fit is the highest of the three compared. On the low side from 70 to 500 keV the other two evaluations are lower still: the low bound of NACRE II is 16 to 19 percent under this fit and Nevins-Swain 7 to 27 percent under.",
-        "against_its_own_integral": { "temperatures": 22, "worst_relative": 1.9e-10, "pass_line": 1.0e-6, "met": true },
-        "against_the_published_reactivity_fit": { "temperatures_70_to_500_kev": 11, "worst_abs": 0.0062, "pass_line": 0.01, "met": true },
-        "against_nacre_ii": { "points": 34, "inside_its_stated_band": 30, "pass_line": "inside at every point", "met": false, "note": "Above the band's high value by 0.36, 0.65, 0.43 and 0.18 percent at 69, 78, 86 and 108 keV; the record states these four points and keeps the target at every point." },
+        "against_its_own_integral": { "temperatures": 22, "worst_relative": 1.9e-10, "tolerance": 1.0e-6, "within": true },
+        "against_the_published_reactivity_fit": { "temperatures_70_to_500_kev": 11, "worst_abs": 0.0062, "tolerance": 0.01, "within": true },
+        "against_nacre_ii": { "points": 34, "inside_its_stated_band": 30, "tolerance": "inside at every point", "within": false, "note": "Above the band's high value by 0.36, 0.65, 0.43 and 0.18 percent at 69, 78, 86 and 108 keV; the record states these four points and keeps the target at every point." },
     })
 }
 

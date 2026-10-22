@@ -10,9 +10,19 @@ https://mcp.zerotrustphysics.com/mcp
 
 That address is open to any agent, and nothing here is needed to use it. This repository is for building the same engine on your own machine and getting the same proofs.
 
-## What 0.15.0 is
+## What 0.15.1 is
 
-This is engine 0.15.0, the version the open address has served since 19 October 2026: 36 models, 25 field solvers and 18 tools.
+This is engine 0.15.1, the version the open address has served since 22 October 2026: 36 models, 25 field solvers and 18 tools, as 0.15.0. Its models and its seal rule are 0.15.0's, so every seal and every proof of a computed answer is the one 0.15.0 gives: of the 379 worked questions, 361 answer byte for byte as 0.15.0 and 18 differ in their words only; the 13 printed proofs are the same. What changed:
+
+- **The true cause for a signed answer a client wrote again.** An SI agent that parses an answer and writes it back moves the signature out of the engine's form. `verify_tape`, `verify_solution` and `verify_dataset` now read the signature from the answer's values, verify it over the receipt the answer carries, and name the cause `ReceiptDoesNotMatch` with `written_again`; the answer is then computed again, and `values_hold` and `differs_at` say whether the values stand and where the text first differs. 0.15.0 named such an answer `SignatureAbsent`.
+- **A chain that ends in a solve verifies.** A coupling of a model into a field solver (`stardust_entry_to_pica_slab`, `triga_pulse_to_element_6753`) gives a chain whose last link is a `solve` answer. As `links`, the run then the solve, it holds at `verify_tape` and, with no engine, at `genesis_seal verify-chain` and the Python `verify_chain.py`: the solve's `solution_seal` is recomputed from its seal parts and the chain seal rebuilt over it. The Stardust entry into the PICA slab gives `chain_seal` `21a8ace2…80b1` at the engine and with no engine. 0.15.0 refused such a chain, "the tape does not name a card".
+- **A signed chained solve sent whole with its `from`** holds at `verify_solution`.
+- **`cite`** gives the paper v2.0, https://doi.org/10.5281/zenodo.23517223 .
+- **The words the engine serves** say verify, and name the true values: `crater_ryugu_sci`'s comparison is of the law fitted on all thirteen craters; `grid_gb`'s lowest frequency in its worked minute is 49.752862 Hz, as computed; `reactor_spert3`'s flag frame and rod bound are written from the model's own constants; `chain_verified` and `proof_verifiers` replace `chain_checked` and `proof_checkers`.
+
+## What 0.15.0 brought
+
+Engine 0.15.0, served from 19 October 2026, brought these, and 0.15.1 keeps them:
 
 - **One model for each real object.** 36 models and 25 field solvers, where 0.14.3 served 40 and 25. Where a newer model of an object had been served beside the older one, the newer one now answers under the object's own ID, and the other IDs are retired: ten IDs in all, four of them served in 0.14.3 (`cell_2170_m80`, `reactor_spert3_fuel`, `reactor_spert3_twin`, `reactor_spert3_ccore_twin`). A request that names a retired ID is refused by name, `RetiredModel`, with the ID that serves its object.
 - **Seal rule v2: SHA-384.** Every seal is SHA-384, written as 96 hex digits, and every answer that carries a receipt names its rule, `"seal_rule":"zero-trust-physics/seal/v2"`. The fields named for their hash are renamed to match (`receipt_sha384`, `sha384_seal`, `field_sha384` and the rest). A record of rule v1 (SHA-256, engine 0.14.3 and earlier) is refused by name, `SealRuleNotServed`. The texts hashed, their order and their separators are those of rule v1, so every seal of 0.15.0 differs from 0.14.3's.
@@ -38,7 +48,7 @@ The models that now answer under the object's own ID, in their own words (`descr
 
 And three things about every answer and every model:
 
-- **The same bytes on every machine tested.** Every exponential, logarithm, power and trigonometric function an answer depends on is computed by the engine's own code, never by the machine's math library. For 0.15.0, the open address, built from this source on Linux x86-64, gave the same answer, byte for byte with its signature taken out, to all 379 worked questions as a build on a Mac (Apple M4 Pro), and the same 13 printed proofs.
+- **The same bytes on every machine tested.** Every exponential, logarithm, power and trigonometric function an answer depends on is computed by the engine's own code, never by the machine's math library. For 0.15.1, the open address, built from this source on Linux x86-64, gave the same answer, byte for byte with its signature taken out, to all 379 worked questions as a build on a Mac (Apple M4 Pro), and the same 13 printed proofs.
 - **Anyone can recompute a proof.** A proof is a SHA-384 hash that binds the question to the answer, byte for byte. `genesis_seal`, in this repository, confirms one with no engine, and verifies the signature, and so do the Python programs at https://github.com/johnkruze/zero-trust-physics .
 - **Every model says what stands behind it, numbers first.** One of three words: "compared with measurement" (46 of the 61 models: a real object), "held to a reference calculation" (3: a published calculation) or "company specimen" (12: an object the company specified, every constant stated). Each of the 46 states what it computes, what it was fitted on, what it was compared with and within what, and its gap, where it does worst.
 
@@ -132,16 +142,16 @@ cd genesis_seal_parquet && cargo build --release --locked && cargo test --releas
 
 Some tests print one line, `skipped: … needs the saved runs`, and return: they compare with runs the company keeps, which are not in this repository. The tests use Unix tools such as `ps` and `mkfifo`.
 
-Every test passed on 19 October 2026 on an Apple M4 Pro: kernel 901, solvers 545, seal 212, gateway 1,140, Parquet converter 23. One gateway test, `a_comparison_of_solves_opens_its_commitment_with_rows_in_the_place_of_steps`, starts the debug build of `genesis_seal` that the test itself builds; on a heavily loaded machine that program once did not start, and the test passed when run again (`--test validation_router`, 19 of 19 in 9 s).
+Every test passed on 21 October 2026 on an Apple M4 Pro: kernel 901, solvers 545, seal 214, gateway 1,144, Parquet converter 23. One gateway test, `a_comparison_of_solves_opens_its_commitment_with_rows_in_the_place_of_steps`, starts the debug build of `genesis_seal` that the test itself builds; on a heavily loaded machine that program once did not start, and the test passed when run again (`--test validation_router`, 19 of 19 in 9 s).
 
 ## Two things to know
 
-- **Proofs and machines.** Build it on your machine and every model and every field solver gives the proof the open address gives. For 0.15.0 that was measured on the two machine kinds above, a Mac (Apple M4 Pro) and Linux x86-64. On another kind, compare one worked answer with the open address before relying on it.
+- **Proofs and machines.** Build it on your machine and every model and every field solver gives the proof the open address gives. For 0.15.1 that was measured on the two machine kinds above, a Mac (Apple M4 Pro) and Linux x86-64. On another kind, compare one worked answer with the open address before relying on it.
 - **Paths that are not here.** Comments and some descriptions name files under `evidence/`, and `REFERENCE.md`, `AGENTS.md` and `HOSTING.md`. Those are the company's own records and are not part of this repository.
 
 ## Credit
 
-`NOTICE` names the code and the numbers of other people that this source holds, and whose each is. To cite the work, cite the paper: https://doi.org/10.5281/zenodo.23305697 . An agent can ask the engine itself: the `cite` tool answers for the service and for each model.
+`NOTICE` names the code and the numbers of other people that this source holds, and whose each is. To cite the work, cite the paper, version 2.0: https://doi.org/10.5281/zenodo.23517223 . An agent can ask the engine itself: the `cite` tool answers for the service and for each model.
 
 ## Where the rest is
 

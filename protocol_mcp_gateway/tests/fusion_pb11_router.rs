@@ -541,7 +541,7 @@ async fn both_are_listed_and_described_and_each_example_runs_unchanged() {
         // the shared cross-section was held to is with the locked constants.
         assert_eq!(described["validation"].as_object().unwrap().len(), 5);
         assert!(described["validation"]["limits"].as_str().unwrap().starts_with("Fitted constants: None"));
-        assert_eq!(described["locked"]["cross_section"]["against_nacre_ii"]["met"], false);
+        assert_eq!(described["locked"]["cross_section"]["against_nacre_ii"]["within"], false);
         assert_eq!(described["locked"]["cross_section"]["against_nacre_ii"]["inside_its_stated_band"], 30);
         // Every result and invariant the description names is in a solution, and no other.
         let (_, body) = solved(&base, &described["example_solve"]).await;

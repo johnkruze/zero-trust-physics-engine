@@ -16,18 +16,18 @@
   "paper": {
     "authors": "John Kruze, with Super Intelligence",
     "authors_in_archive": "Kruze, John (Protocol Company)",
-    "title": "Zero-Trust Physics: a verifier for the physical answers of Super Intelligence",
+    "title": "Zero-Trust Physics: deterministic verification, validation and post-quantum attestation for physical superintelligence",
     "year": 2026,
-    "publication_date": "2026-10-11",
-    "version": "1.0",
+    "publication_date": "2026-10-20",
+    "version": "2.0",
     "resource_type": "Preprint",
     "publisher_or_venue": "Zenodo; Protocol Company",
-    "identifier": "10.5281/zenodo.23305697",
-    "url": "https://doi.org/10.5281/zenodo.23305697",
+    "identifier": "10.5281/zenodo.23517223",
+    "url": "https://doi.org/10.5281/zenodo.23517223",
     "doi_all_versions": "10.5281/zenodo.23305696",
     "contact": "kruze@zerotrustphysics.com",
-    "citation_text": "Kruze, J., with Super Intelligence (2026). Zero-Trust Physics: a verifier for the physical answers of Super Intelligence (version 1.0). Protocol Company. Zenodo. https://doi.org/10.5281/zenodo.23305697",
-    "bibtex": "@misc{kruze2026zerotrustphysics,\n  author       = {Kruze, John},\n  title        = {Zero-Trust Physics: a verifier for the physical answers of Super Intelligence},\n  year         = {2026},\n  month        = oct,\n  version      = {1.0},\n  howpublished = {Preprint},\n  publisher    = {Zenodo},\n  organization = {Protocol Company},\n  doi          = {10.5281/zenodo.23305697},\n  url          = {https://doi.org/10.5281/zenodo.23305697},\n  note         = {Byline on the paper: John Kruze, with Super Intelligence}\n}"
+    "citation_text": "Kruze, J., with Super Intelligence (2026). Zero-Trust Physics: deterministic verification, validation and post-quantum attestation for physical superintelligence (version 2.0). Protocol Company. Zenodo. https://doi.org/10.5281/zenodo.23517223",
+    "bibtex": "@misc{kruze2026zerotrustphysics,\n  author       = {Kruze, John},\n  title        = {Zero-Trust Physics: deterministic verification, validation and post-quantum attestation for physical superintelligence},\n  year         = {2026},\n  month        = oct,\n  version      = {2.0},\n  howpublished = {Preprint},\n  publisher    = {Zenodo},\n  organization = {Protocol Company},\n  doi          = {10.5281/zenodo.23517223},\n  url          = {https://doi.org/10.5281/zenodo.23517223},\n  note         = {Byline on the paper: John Kruze, with Super Intelligence}\n}"
   },
   "counts": {
     "cards": 36,
@@ -2936,7 +2936,7 @@
           "bibtex": "@manual{nrl2019formulary,\n  title = {{NRL} Plasma Formulary},\n  organization = {Naval Research Laboratory},\n  address = {Washington, DC},\n  year = {2019},\n  number = {NRL/PU/6790-19-640},\n  note = {2019 revision}\n}"
         }
       ],
-      "how_used": "Nothing is fitted and nothing is measured. Compared with the published calculations of Ochs et al. 2022 and Putvinski et al. 2019 at ion density 1e20 m^-3 with no synchrotron loss, no ash and the kinetic enhancement on. The cross-section is the Tentori-Belloni fit, checked against NACRE II; bremsstrahlung after Svensson 1982.",
+      "how_used": "Nothing is fitted and nothing is measured. Compared with the published calculations of Ochs et al. 2022 and Putvinski et al. 2019 at ion density 1e20 m^-3 with no synchrotron loss, no ash and the kinetic enhancement on. The cross-section is the Tentori-Belloni fit, compared with NACRE II; bremsstrahlung after Svensson 1982.",
       "not_held_to_a_measurement": true,
       "cite_also": "paper"
     },

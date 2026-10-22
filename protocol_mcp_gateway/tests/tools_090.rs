@@ -158,7 +158,7 @@ fn cite_gives_the_service_and_the_paper_first_then_the_people_whose_measurements
     // No licence and no word on passing data on: a citation says who to cite and where their work is.
     assert!(data[0].get("licence").is_none() && data[0].get("may_redistribute_measurements").is_none());
     assert_eq!(data[0]["requested_acknowledgment"], "Supported by National Energy SO Open Data");
-    assert_eq!(grid["paper"]["url"], "https://doi.org/10.5281/zenodo.23305697");
+    assert_eq!(grid["paper"]["url"], "https://doi.org/10.5281/zenodo.23517223");
     let text = grid["text"].as_str().unwrap();
     let bibtex = grid["bibtex"].as_str().unwrap();
     assert!(bibtex.starts_with("@misc{zerotrustphysics_service,") && bibtex.contains("@misc{kruze2026zerotrustphysics,") && bibtex.contains("@misc{neso2026systemfrequency,"));
@@ -190,7 +190,7 @@ fn cite_gives_the_service_and_the_paper_first_then_the_people_whose_measurements
     let solvers = ok(&mut door, "list_solvers", &json!({}));
     for solver in solvers["solvers"].as_array().unwrap() {
         let answer = ok(&mut door, "cite", &json!({ "solver": solver["solver"] }));
-        assert!(answer["text"].as_str().unwrap().contains("zenodo.23305697"), "{solver}");
+        assert!(answer["text"].as_str().unwrap().contains("zenodo.23517223"), "{solver}");
     }
     // A solver's answers carry the solvers' engine version, and its citation of the service says that one.
     let atom = ok(&mut door, "cite", &json!({ "solver": "atom_dft" }));
@@ -203,18 +203,18 @@ fn cite_gives_the_service_and_the_paper_first_then_the_people_whose_measurements
     assert_eq!(service["service"]["publisher"], "Protocol Company");
     assert_eq!(service["service"]["address"], "https://mcp.zerotrustphysics.com/mcp");
     assert_eq!(service["service"]["site"], "https://zerotrustphysics.com");
-    assert_eq!(service["service"]["paper"], "https://doi.org/10.5281/zenodo.23305697");
+    assert_eq!(service["service"]["paper"], "https://doi.org/10.5281/zenodo.23517223");
     assert_eq!(service["service"]["contact"], "kruze@zerotrustphysics.com");
     // Restored in 0.14.4 beside the rest: the engine's source, the programs
     // that check a proof with no engine, the page for agents and the phone.
     assert_eq!(service["service"]["engine_source"], "https://github.com/johnkruze/zero-trust-physics-engine");
-    assert_eq!(service["service"]["proof_checkers"], "https://github.com/johnkruze/zero-trust-physics");
+    assert_eq!(service["service"]["proof_verifiers"], "https://github.com/johnkruze/zero-trust-physics");
     assert_eq!(service["service"]["site_for_agents"], "https://zerotrustphysics.com/llms.txt");
     assert_eq!(service["service"]["phone"], "928-264-7883");
     assert_eq!(service["service"]["engine_version"], "genesis_kernel_v0.13.0 and genesis_solvers_v0.13.0");
     let text = service["text"].as_str().unwrap();
     assert!(text.starts_with("John Kruze (Protocol Company). Zero-Trust Physics: a physics verifier for Super Intelligence. Served at https://mcp.zerotrustphysics.com/mcp"), "{text}");
-    assert!(text.ends_with("https://doi.org/10.5281/zenodo.23305697"));
+    assert!(text.ends_with("https://doi.org/10.5281/zenodo.23517223"));
     assert!(service["about"].as_str().unwrap().starts_with("How to cite the service itself"));
     assert!(service.get("data").is_none());
     for (key, value) in service["service"].as_object().unwrap() {
@@ -609,7 +609,7 @@ fn every_connection_says_who_it_is_first() {
     // keeps going and flags every step. Since 0.14.2 (John Kruze, 18 October
     // 2026) the instructions are five sentences, about 560 characters: the
     // maker, the site, the paper and the sources are in cite's answer.
-    let opening = "Zero-Trust Physics: deterministic physics, a proof on every answer. Start with find_model (describe the real thing) or list_cards / list_solvers, and read describe_card or describe_solver (form \"short\") before a first request. Past what a model was compared with, it keeps going with the same equations and flags every step. It stops only at a physical limit, or where its equations, constants or tables no longer hold, and it names the reason. verify_tape, verify_solution and verify_dataset check the proof of a run, a solution or a dataset; cite gives sources.";
+    let opening = "Zero-Trust Physics: deterministic physics, a proof on every answer. Start with find_model (describe the real thing) or list_cards / list_solvers, and read describe_card or describe_solver (form \"short\") before a first request. Past what a model was compared with, it keeps going with the same equations and flags every step. It stops only at a physical limit, or where its equations, constants or tables no longer hold, and it names the reason. verify_tape, verify_solution and verify_dataset verify the proof of a run, a solution or a dataset; cite gives sources.";
     let stdio = Stdio2::start(None);
     let local = parsed(&stdio.hello);
     let keyed = keyed();

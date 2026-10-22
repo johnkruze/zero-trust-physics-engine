@@ -76,7 +76,12 @@ pub(super) fn card() -> Card {
                 false,
                 None,
                 false,
-                "the reactivity the transient rod is ejected through, zero or more; below zero is refused as ReactivityNegative. The rod starts at the height x_0 where the worth curve of Fig. B-4 holds this reactivity and falls at 2000 in/s^2 (1 + 0.0219966 p) from 2.46 ms after the clock's zero. Compared from 0.46 to 1.29 dollars: Tables III and V by the inhour value of each tested period, Table VII as printed. Past them the card computes the same rod and feedback. A run is one ejection with one reactivity: a segment with another is refused as ReactivityChangedDuringRun".to_string(),
+                format!(
+                    "the reactivity the transient rod is ejected through, zero or more; below zero is refused as ReactivityNegative. The rod starts at the height x_0 where the worth curve of Fig. B-4 holds this reactivity and falls at {} in/s^2 (1 + {} p), p the system pressure in MPa, from {:.1} ms after the clock's zero. Compared from 0.46 to 1.29 dollars: Tables III and V by the inhour value of each tested period, Table VII as printed. Past them the card computes the same rod and feedback. A run is one ejection with one reactivity: a segment with another is refused as ReactivityChangedDuringRun",
+                    reactor_spert3_twin::ROD_ACCELERATION_IN_PER_S2,
+                    reactor_spert3_twin::ROD_ACCELERATION_GAIN_PER_MPA,
+                    reactor_spert3_twin::ROD_DELAY_S * 1000.0,
+                ),
             ),
         ],
         floor,
@@ -106,7 +111,7 @@ pub(super) fn card() -> Card {
             Advisory { name: "FLAG_PROMPT_SUPERCRITICAL", mask: reactor_spert3_twin::FLAG_PROMPT_SUPERCRITICAL, seals: true },
             Advisory { name: "FLAG_OUTSIDE_COMPARED", mask: reactor_spert3_twin::FLAG_OUTSIDE_COMPARED, seals: true },
         ],
-        slots(&[
+        with_flags_words(slots(&[
             ("t", "Time since the clock's zero, the initiation of the transient, in seconds."),
             ("pos[0]", "power_mw"),
             ("pos[1]", "energy_released_mws"),
@@ -116,12 +121,34 @@ pub(super) fn card() -> Card {
             ("vel[2]", "water_k"),
             ("force_torque", "fuel_melt_margin_k"),
             ("residual", "Conservation residual."),
-            (
-                "flags",
-                "FLAG_ROD_MOVING: the transient rod is moving. FLAG_PAST_PEAK: the power is below the run's highest. FLAG_HOT_SPOT_BOILING: the hot-spot clad is above saturation. FLAG_PROMPT_SUPERCRITICAL: net reactivity above one dollar. FLAG_OUTSIDE_COMPARED: the run is farther than one from the nearest of the 70 tested conditions, inlet temperature counted in 15 K, pressure in 1 MPa, flow in 0.75 m/s, initial power in decades and reactivity in 0.1 dollar. All seal.",
-            ),
+            ("flags", ""),
             ("proof", "Not written by the step."),
-        ]),
+        ])),
+    )
+}
+
+/// The words of the frame's flags, the distance of FLAG_OUTSIDE_COMPARED in
+/// the card's own scales (`reactor_spert3_twin::COMPARED_SCALES`): one unit
+/// is so many kelvin of inlet temperature, a factor in pressure, so many m/s
+/// of flow, a factor in initial power and so many dollars of reactivity.
+fn with_flags_words(mut frame: Vec<super::FrameSlot>) -> Vec<super::FrameSlot> {
+    static WORDS: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    let words: &'static str = WORDS.get_or_init(flags_words).as_str();
+    for slot in frame.iter_mut().filter(|slot| slot.slot == "flags") {
+        slot.holds = words;
+    }
+    frame
+}
+
+fn flags_words() -> String {
+    let scales = reactor_spert3_twin::COMPARED_SCALES;
+    format!(
+        "FLAG_ROD_MOVING: the transient rod is moving. FLAG_PAST_PEAK: the power is below the run's highest. FLAG_HOT_SPOT_BOILING: the hot-spot clad is above saturation. FLAG_PROMPT_SUPERCRITICAL: net reactivity above one dollar. FLAG_OUTSIDE_COMPARED: the run is farther than one from the nearest of the 70 tested conditions, inlet temperature counted in {} K, pressure in a factor of {}, flow in {} m/s, initial power in a factor of {} and reactivity in {} dollar. All seal.",
+        scales[0],
+        genesis_kernel::math::powf(2.0, scales[1]),
+        scales[2],
+        genesis_kernel::math::powf(10.0, scales[3]),
+        scales[4],
     )
 }
 
@@ -295,4 +322,25 @@ pub(super) fn equations() -> Vec<String> {
         "The run's records: peak_power_mw starts at P_0 with time_of_peak_s = 0 and energy_to_peak_mws = 0, and a landed step with P strictly above peak_power_mw sets all three to its P, t and E; a landed step with the hot clad strictly above hot_clad_max_k sets it and time_of_hot_clad_max_s. past_peak is P below peak_power_mw, rod_moving t between t_d and t_e, hot_spot_boiling the hot clad above T_sat (saturation_k), prompt_supercritical rho above 1; hot_clad_heat_flux_mw_per_m2 is q(T_hot clad, T_w) x 1e-6; inserted_reactivity_dollar, doppler_dollar, moderator_dollar and net_reactivity_dollar are rho_ins, rho_D, rho_M and rho.".to_string(),
         format!("The state's keys, in the order the engine writes them: {}.", state_keys.join(", ")),
     ]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The served words quote the card's own constants: the flags frame the
+    /// scales of FLAG_OUTSIDE_COMPARED, and the reactivity's bound the rod's
+    /// acceleration gain and delay (0.15.1; 0.15.0 quoted 0.14.3's).
+    #[test]
+    fn the_flags_and_the_rod_words_are_the_card_s_constants() {
+        let flags = flags_words();
+        assert!(flags.contains("inlet temperature counted in 25 K, pressure in a factor of 2, flow in 1.5 m/s, initial power in a factor of 10 and reactivity in 0.1 dollar."), "{flags}");
+        assert_eq!(reactor_spert3_twin::COMPARED_SCALES, [25.0, 1.0, 1.5, 1.0, 0.1]);
+        let card = card();
+        let frame: Vec<&str> = card.slots.iter().filter(|slot| slot.slot == "flags").map(|slot| slot.holds).collect();
+        assert_eq!(frame, vec![flags.as_str()]);
+        let words = card.fields.iter().map(|field| field.bound.clone()).collect::<Vec<_>>().join(" | ");
+        assert!(words.contains("falls at 2000 in/s^2 (1 + 0.024930321 p), p the system pressure in MPa, from 1.0 ms after the clock's zero."), "{words}");
+        assert!(!words.contains("0.0219966") && !words.contains("2.46 ms"), "{words}");
+    }
 }

@@ -471,7 +471,9 @@ fn the_tool_list_declares_the_pair_and_the_solver_once_and_lists_no_catalogue() 
     // on the merged binary moves the whole list by the same 329 characters);
     // 52,596 once verify_solution declares from (512 more, as the whole list).
     // 55,892 in 0.15.0: seal rule v2 and one model for each real object.
-    assert_eq!(serde_json::to_string(&earlier).unwrap().len(), 55_892, "the thirteen earlier tools as declared in the next version");
+    // 56,851 in 0.15.1: verify, never check, and how a signed answer a client
+    // wrote again is verified, in the four verification tools; cite's paper.
+    assert_eq!(serde_json::to_string(&earlier).unwrap().len(), 56_851, "the thirteen earlier tools as declared in the next version");
     for name in ["ti64_lattice", "reactor_triga_jsi", "tokamak_dt_beam_target", "culture_trichoderma_ambr250"] {
         assert!(!text.contains(name), "the tool list names {name}");
     }

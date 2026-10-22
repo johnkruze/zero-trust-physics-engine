@@ -10,7 +10,7 @@
 - the measure tool tells a moved seal from bytes moved under kept seals;
 - the stamp writes a compared model's spec sheet (its SHEETS row: fitted on,
   compared with ... within, the gap), Marks::Measured, and with --supersedes
-  the succession.rs row;
+  the retired.rs row (one model for each real object, engine 0.15.0);
 - forecasts: a forecast is committed once, its data opens only after that
   commit, opening and scoring commit nothing, and a forecast changed or a
   scoring before it is named;
@@ -138,7 +138,16 @@ class TheStamp(unittest.TestCase):
         new_model.stamp_solver(stamp, "kit_order_rod", "An order test")
         table = re.findall(r"&crate::solver_(\w+)::", stamp.pending["protocol_mcp_gateway/src/solvers.rs"])
         index = [key for key in re.findall(r'Entry \{ key: "([\w/]+)"', stamp.pending["protocol_mcp_gateway/src/find_model.rs"]) if "/" not in key]
-        self.assertEqual(index, [name for name in table if name != "probe"])
+
+        def served_as(module):
+            # A solver's entry file keeps the name its model was first served
+            # under (solver_blast_wave_tnt_air_twin.rs serves blast_wave_tnt_air).
+            rel = f"protocol_mcp_gateway/src/solver_{module}.rs"
+            text = stamp.pending.get(rel) or stamp.text(rel)
+            found = re.search(r'^\s*name: "(\w+)",', text, re.M)
+            return found.group(1) if found else module
+
+        self.assertEqual(index, [served_as(name) for name in table if name != "probe"])
         stamp = new_model.Stamp(WORKSPACE, dry=True)
         new_model.stamp_card(stamp, "kit_order_body", "energy", "An order test")
         index = re.findall(r'Entry \{ key: "([\w/]+)"', stamp.pending["protocol_mcp_gateway/src/find_model.rs"])
@@ -257,18 +266,26 @@ class TheStamp(unittest.TestCase):
         self.assertEqual((cited["kit_successor_rod"]["real_thing"], cited["kit_successor_rod"]["sources"]), (own["real_thing"], own["sources"]))
         self.assertIn("supersedes culture_trichoderma_ambr250", cited["kit_successor_rod"]["how_used"])
         self.assertIn("supersedes culture_trichoderma_ambr250", evidence.spec_line())
-        # The successor's row at the end of succession::TABLE, the old ID kept served.
-        table = stamp.pending["protocol_mcp_gateway/src/succession.rs"].split("pub const TABLE: &[Succession] = &[")[1].split("\n];")[0]
-        self.assertTrue(table.endswith('\n    Succession { model: "culture_trichoderma_ambr250", by: "kit_successor_rod" },'), table)
-        self.assertTrue(any('superseded_by "kit_successor_rod"' in line for line in stamp.by_hand), stamp.by_hand)
-        # A model superseded already is not given a second successor.
-        served = new_model.Stamp(WORKSPACE, dry=True).text("protocol_mcp_gateway/src/succession.rs")
-        taken = re.search(r'Succession \{ model: "(\w+)", by: "(\w+)" \}', served.split("pub const TABLE")[1])
-        if taken:
-            again = new_model.Stamp(WORKSPACE, dry=True)
-            new_model.succession_row(again, taken.group(1), "kit_second_rod")
-            self.assertEqual(again.pending["protocol_mcp_gateway/src/succession.rs"], served)
-            self.assertTrue(any(f"superseded already, by {taken.group(2)}" in line for line in again.by_hand), again.by_hand)
+        # The replaced solver's row at the end of retired::TABLE, after every
+        # card's: refused by name once the successor serves its object.
+        self.assertNotIn("protocol_mcp_gateway/src/succession.rs", stamp.pending)
+        table = stamp.pending["protocol_mcp_gateway/src/retired.rs"].split("pub const TABLE: &[Retired] = &[")[1].split("\n];")[0]
+        self.assertTrue(table.endswith('\n    Retired { id: "culture_trichoderma_ambr250", served_as: "kit_successor_rod" },'), table)
+        self.assertTrue(any("culture_trichoderma_ambr250 is retired by its retired.rs row" in line for line in stamp.by_hand), stamp.by_hand)
+        # A card's row goes after the last card's, before the solvers'.
+        card = new_model.Stamp(WORKSPACE, dry=True)
+        new_model.retired_row(card, "crater_ryugu_sci", "kit_successor_body")
+        table = card.pending["protocol_mcp_gateway/src/retired.rs"].split("pub const TABLE: &[Retired] = &[")[1].split("\n];")[0]
+        rows = re.findall(r'Retired \{ id: "(\w+)", served_as: "(\w+)" \}', table)
+        self.assertEqual(rows[-2], ("crater_ryugu_sci", "kit_successor_body"), rows)
+        self.assertEqual(rows[-1], ("blast_wave_tnt_air_twin", "blast_wave_tnt_air"), rows)
+        # An ID retired already is not retired twice.
+        served = new_model.Stamp(WORKSPACE, dry=True).text("protocol_mcp_gateway/src/retired.rs")
+        taken = re.search(r'Retired \{ id: "(\w+)", served_as: "(\w+)" \}', served.split("pub const TABLE")[1])
+        again = new_model.Stamp(WORKSPACE, dry=True)
+        new_model.retired_row(again, taken.group(1), "kit_second_rod")
+        self.assertEqual(again.pending.get("protocol_mcp_gateway/src/retired.rs", served), served)
+        self.assertTrue(any(f"retired already, served as {taken.group(2)}" in line for line in again.by_hand), again.by_hand)
 
     def test_the_flags_go_together_or_the_stamp_says_why_not(self):
         def run(*extra):
@@ -297,7 +314,7 @@ class TheStamp(unittest.TestCase):
         self.assertEqual(done.returncode, 0, done.stderr)
         self.assertIn("compared with 4 cultures not in the fit, within 6.1 percent rms", done.stdout)
         self.assertIn("src/spec_sheet.rs: its spec sheet", done.stdout)
-        self.assertIn("src/succession.rs: culture_trichoderma_ambr250 superseded_by kit_flags_rod", done.stdout)
+        self.assertIn("src/retired.rs: culture_trichoderma_ambr250 retired, served as kit_flags_rod", done.stdout)
         # A reference calculation needs no gap.
         self.assertEqual(run("--reference-calculation", "--compared-with", "4", "--within", "2 percent").returncode, 0)
 

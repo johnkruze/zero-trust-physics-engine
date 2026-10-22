@@ -72,6 +72,10 @@ fn the_worked_minute_lands_on_the_measured_fall() {
     assert!((lowest - 49.753).abs() < 0.002, "{lowest}");
     let t = run["final_state"]["t_s"].as_f64().unwrap();
     assert!((t - 60.0).abs() < 1e-6, "{t}");
+    // The validation record states the lowest the engine computes, to six
+    // decimals (0.15.1; 0.15.0 said 49.754).
+    let result = description["validation"]["result"].as_str().unwrap();
+    assert!(result.contains(&format!("lowest {lowest:.6} Hz against 49.753 measured")), "{lowest}: {result}");
 }
 
 /// A negative volume and a delivery time of zero are refused by name before

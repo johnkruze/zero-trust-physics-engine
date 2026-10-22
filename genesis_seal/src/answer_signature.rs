@@ -108,10 +108,10 @@ impl SignatureCause {
     /// One sentence of what was found.
     pub fn sentence(self) -> &'static str {
         match self {
-            SignatureCause::Absent => "The answer carries no signature, and a public key was given to check one with.",
+            SignatureCause::Absent => "The answer carries no signature, and a public key was given to verify one with.",
             SignatureCause::Malformed => "The signature is not of the form: alg, key_id (96 hex digits), issued_at and expires_at (YYYY-MM-DDTHH:MM:SSZ), nonce (64 hex digits) and value (the base64 of 4,627 bytes), in that order, right after the receipt.",
             SignatureCause::AlgorithmNotServed => "The signature names an algorithm other than ML-DSA-87, the one the engine signs with.",
-            SignatureCause::KeyNotGiven => "No public key was given to check the signature with.",
+            SignatureCause::KeyNotGiven => "No public key was given to verify the signature with.",
             SignatureCause::KeyMismatch => "The signature's key_id is not the SHA-384 of the public key given: it was made by another key, or claims to be.",
             SignatureCause::ReceiptDoesNotMatch => "The bytes before the receipt do not hash to it: the answer was changed after it was signed.",
             SignatureCause::DoesNotVerify => "The ML-DSA-87 signature does not verify over the receipt, the times and the nonce under the public key given.",
@@ -277,7 +277,10 @@ pub fn split(text: &str) -> Result<Option<Split>, SignatureCause> {
     Ok(found)
 }
 
-fn read_envelope(object: &str) -> Option<Envelope> {
+/// Read a signature's object, written compact with its six keys in the
+/// order [`FIELDS`] gives, into an envelope of the form; `None` when a key is
+/// missing, added or out of order, or a field is not of the form.
+pub fn read_envelope(object: &str) -> Option<Envelope> {
     let mut rest = object.strip_prefix('{')?.strip_suffix('}')?;
     let mut values = Vec::with_capacity(FIELDS.len());
     for (index, key) in FIELDS.iter().enumerate() {
@@ -410,6 +413,71 @@ pub fn check(text: &str, given: Check<'_>) -> SignatureReport {
         return broken(SignatureCause::NonceReplayed, Some(envelope), unsigned);
     }
     SignatureReport { present: true, cause: None, envelope: Some(envelope), unsigned }
+}
+
+/// Verify the signature of an answer a client wrote again: parsed and
+/// written back in its own spacing or key order, so the signature no longer
+/// stands right after the receipt in the engine's form and [`split`] finds
+/// none. The caller reads the signature and the receipt it follows from the
+/// answer's values and gives `unsigned`, the answer's text with the
+/// signature's member taken out.
+///
+/// The checks run in this order, the first that fails named: the form, the
+/// algorithm, a key given, the key's id, the ML-DSA-87 equation over the
+/// receipt the answer carries, the issue time, the expiry, the nonce, and
+/// last the receipt over the bytes (`ReceiptDoesNotMatch`). An answer that
+/// fails only the last carries a signature the key made over its receipt,
+/// and text that receipt does not cover: what changed is for the long form
+/// to name, by computing the answer again. The report is always `present`.
+pub fn check_rewritten(unsigned: &str, envelope: Option<Envelope>, receipt: &str, given: Check<'_>) -> SignatureReport {
+    let broken = |cause, envelope: Option<Envelope>| SignatureReport {
+        present: true,
+        cause: Some(cause),
+        envelope,
+        unsigned: unsigned.to_string(),
+    };
+    let Some(envelope) = envelope else {
+        return broken(SignatureCause::Malformed, None);
+    };
+    if !is_lower_hex(receipt, 96) {
+        return broken(SignatureCause::Malformed, Some(envelope));
+    }
+    let signature = match BASE64.decode(&envelope.value) {
+        Ok(bytes) if bytes.len() == SIGNATURE_LEN => bytes,
+        _ => return broken(SignatureCause::Malformed, Some(envelope)),
+    };
+    if envelope.alg != ALGORITHM {
+        return broken(SignatureCause::AlgorithmNotServed, Some(envelope));
+    }
+    let Some(key) = given.public_key else {
+        return broken(SignatureCause::KeyNotGiven, Some(envelope));
+    };
+    if envelope.key_id != key.key_id() {
+        return broken(SignatureCause::KeyMismatch, Some(envelope));
+    }
+    let signed = message(&envelope.key_id, receipt, &envelope.issued_at, &envelope.expires_at, &envelope.nonce);
+    if !key.verifies(signed.as_bytes(), &signature) {
+        return broken(SignatureCause::DoesNotVerify, Some(envelope));
+    }
+    let issued = parse_time(&envelope.issued_at).expect("read_envelope held the form");
+    let expires = parse_time(&envelope.expires_at).expect("read_envelope held the form");
+    if issued > given.now_s.saturating_add(CLOCK_ALLOWANCE_S) {
+        return broken(SignatureCause::NotYetValid, Some(envelope));
+    }
+    if given.now_s > expires {
+        return broken(SignatureCause::Expired, Some(envelope));
+    }
+    if given.seen_nonces.iter().any(|seen| seen == &envelope.nonce) {
+        return broken(SignatureCause::NonceReplayed, Some(envelope));
+    }
+    let covered = match read_receipt(unsigned.as_bytes()) {
+        Some(read) if read.matches() && read.stated == receipt => true,
+        _ => receipt_holds_inside(unsigned, receipt),
+    };
+    if !covered {
+        return broken(SignatureCause::ReceiptDoesNotMatch, Some(envelope));
+    }
+    SignatureReport { present: true, cause: None, envelope: Some(envelope), unsigned: unsigned.to_string() }
 }
 
 /// A receipt inside a larger text, as a dataset's head carries one inside an
@@ -791,6 +859,43 @@ mod tests {
         // The rows sit outside the head's receipt: a row changed is not the signature's to name.
         let row_changed = signed.replace("\"row\":0", "\"row\":1");
         assert_eq!(check(&row_changed, given(key.public_key(), ISSUED, &[])).cause, None);
+    }
+
+    /// A signed answer a client wrote again: split finds no signature in the
+    /// engine's form, and the signature read from the values is verified over
+    /// the receipt it carries, the bytes named last.
+    #[test]
+    fn a_signed_answer_written_again_is_verified_over_its_receipt_and_its_bytes_named() {
+        let key = test_key("one");
+        let public = key.public_key();
+        let now = ISSUED + 10;
+        let (unsigned, signed) = signed_answer(&key);
+        let envelope = split(&signed).unwrap().unwrap().envelope.unwrap();
+        let receipt = split(&signed).unwrap().unwrap().receipt;
+        // As a JSON client writes it back: a space after every colon and comma.
+        let spaced = signed.replace("\":", "\": ").replace(",\"", ", \"");
+        assert_eq!(split(&spaced), Ok(None), "not the engine's form");
+        assert_eq!(check(&spaced, given(public, now, &[])).cause, Some(SignatureCause::Absent), "what split alone finds");
+        let spaced_unsigned = unsigned.replace("\":", "\": ").replace(",\"", ", \"");
+        let report = check_rewritten(&spaced_unsigned, Some(envelope.clone()), &receipt, given(public, now, &[]));
+        assert!(report.present);
+        assert_eq!(report.cause, Some(SignatureCause::ReceiptDoesNotMatch));
+        // The same bytes the receipt covers: it holds.
+        assert_eq!(check_rewritten(&unsigned, Some(envelope.clone()), &receipt, given(public, now, &[])).cause, None);
+        // Each check before the bytes is named first.
+        let seen = vec![envelope.nonce.clone()];
+        let name = |envelope: Option<Envelope>, receipt: &str, check_with: Check<'_>| {
+            check_rewritten(&spaced_unsigned, envelope, receipt, check_with).cause.map(SignatureCause::name)
+        };
+        assert_eq!(name(Some(envelope.clone()), &receipt, given(public, now, &seen)), Some("SignatureNonceReplayed"));
+        assert_eq!(name(Some(envelope.clone()), &receipt, given(public, ISSUED + 3601, &[])), Some("SignatureExpired"));
+        assert_eq!(name(Some(envelope.clone()), &"0".repeat(96), given(public, now, &[])), Some("SignatureDoesNotVerify"));
+        assert_eq!(name(Some(envelope.clone()), &receipt, given(test_key("two").public_key(), now, &[])), Some("SignatureKeyMismatch"));
+        assert_eq!(name(Some(envelope.clone()), &receipt, Check { public_key: None, now_s: now, seen_nonces: &[] }), Some("SignatureKeyNotGiven"));
+        assert_eq!(name(None, &receipt, given(public, now, &[])), Some("SignatureMalformed"));
+        // The envelope as a client writes it, read back compact.
+        assert_eq!(read_envelope(&envelope.json()), Some(envelope.clone()));
+        assert_eq!(read_envelope(&envelope.json().replace("\"alg\":\"ML-DSA-87\",", "")), None);
     }
 
     #[test]

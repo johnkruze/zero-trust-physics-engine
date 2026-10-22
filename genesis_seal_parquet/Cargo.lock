@@ -400,7 +400,7 @@ dependencies = [
 
 [[package]]
 name = "genesis_seal"
-version = "0.7.0"
+version = "0.7.1"
 dependencies = [
  "base64 0.22.1",
  "curve25519-dalek",

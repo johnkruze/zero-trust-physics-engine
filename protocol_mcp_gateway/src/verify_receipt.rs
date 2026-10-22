@@ -147,12 +147,12 @@ pub fn schema() -> serde_json::Map<String, Value> {
                 "type": "string",
                 "description": "The exact text of a response as it was received, ending with the receipt, and the engine's signature after it when it carries one."
             },
-            "public_key": { "type": "string", "description": "The base64 of the ML-DSA-87 public key (2,592 bytes) to check the answer's signature with; without it, this engine's own." },
+            "public_key": { "type": "string", "description": "The base64 of the ML-DSA-87 public key (2,592 bytes) to verify the answer's signature with; without it, this engine's own." },
             "seen_nonces": { "type": "array", "items": { "type": "string", "pattern": "^[0-9a-f]{64}$" }, "description": "Nonces of signatures already seen: one of them again is SignatureNonceReplayed." }
         },
         "required": ["response_text"],
         "additionalProperties": false,
-        "description": "The text of one response from compute_step, run_trajectory or solve, or the head of a dataset written as its JSON text. A signature after the receipt is checked against public_key or else this engine's own key, and reported under signature."
+        "description": "The text of one response from compute_step, run_trajectory or solve, or the head of a dataset written as its JSON text. A signature after the receipt is verified against public_key or else this engine's own key, and reported under signature."
     }) {
         Value::Object(map) => map,
         _ => unreachable!(),

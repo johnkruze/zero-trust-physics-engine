@@ -309,7 +309,7 @@ fn reaction_record(reaction: Reaction, tolerance: f64, worst: f64, endf: &str) -
         "cross_section_range_kev": [bosch_hale::CROSS_SECTION_ENERGY_MIN_KEV, reaction.cross_section_energy_max_kev()],
         "reactivity_range_kev": [bosch_hale::REACTIVITY_TEMPERATURE_MIN_KEV, bosch_hale::REACTIVITY_TEMPERATURE_MAX_KEV],
         "energy_kev": reaction.energy_kev(),
-        "maxwellian_integral_against_the_published_reactivity_fit": { "temperatures_0p2_to_100_kev": 16, "worst_relative": worst, "tolerance": tolerance, "met": true },
+        "maxwellian_integral_against_the_published_reactivity_fit": { "temperatures_0p2_to_100_kev": 16, "worst_relative": worst, "tolerance": tolerance, "within": true },
         "against_endf_b_viii_0": endf,
     })
 }

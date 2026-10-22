@@ -175,7 +175,7 @@ fn the_full_check_of_a_chained_solve_holds_and_names_every_forgery() {
     let verified: Value = serde_json::from_str(&verified).unwrap();
     assert_eq!((verified["holds"].clone(), verified["values_hold"].clone(), verified["cause"].clone()), (json!(true), json!(true), Value::Null), "{verified}");
     assert_eq!(verified["recomputed_chain_seal"], chained["chain"]["chain_seal"]);
-    assert!(verified["chain_checked"].as_str().unwrap().contains("byte for byte"), "{verified}");
+    assert!(verified["chain_verified"].as_str().unwrap().contains("byte for byte"), "{verified}");
     // The answer alone carries no upstream request: refused by name.
     let (error, text) = door.call("verify_solution", &chained);
     assert!(error && text.contains("(AnswerCarriesNoRequest)"), "{text}");

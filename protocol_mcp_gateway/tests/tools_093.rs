@@ -29,8 +29,9 @@ const KEY: &str = "tools-093-key";
 /// 38,280 and 27,658 with reactor_spert3_ccore_plate's row.
 /// 38,187 with the JET twin's shorter row. 29,361 and 26,446 in 0.15.0: one
 /// model per real object (four card rows and a solver row fewer) and the
-/// served words that no longer name an earlier model.
-const LIST_CARDS_CHARS: usize = 29_361;
+/// served words that no longer name an earlier model. 29,442 in 0.15.1: the
+/// crater's comparison names the law fitted on all thirteen craters.
+const LIST_CARDS_CHARS: usize = 29_442;
 const LIST_SOLVERS_CHARS: usize = 26_446;
 
 /// The one card whose short form is longer than a page: thirty vector fields
@@ -424,11 +425,11 @@ fn the_tools_say_what_the_word_is_and_that_the_short_form_exists() {
     }
     // The instructions said it in one sentence from 0.10.1 to 0.14.1; since
     // 0.14.2 they say only that the short form comes before a first request,
-    // and which three tools check the proof of a run, a solution or a dataset.
+    // and which three tools verify the proof of a run, a solution or a dataset.
     let instructions = protocol_mcp_gateway::identity::instructions();
     assert!(
         instructions.contains("read describe_card or describe_solver (form \"short\") before a first request.")
-            && instructions.ends_with("verify_tape, verify_solution and verify_dataset check the proof of a run, a solution or a dataset; cite gives sources."),
+            && instructions.ends_with("verify_tape, verify_solution and verify_dataset verify the proof of a run, a solution or a dataset; cite gives sources."),
         "{instructions}"
     );
 }

@@ -164,7 +164,7 @@ async fn the_description_states_the_clock_the_totals_and_the_second_party() {
     let limits = card["validation"]["limits"].as_str().unwrap();
     assert!(!limits.contains("not yet repeated by a second party"), "{limits}");
     assert!(!limits.contains("Known defect"), "{limits}");
-    assert!(limits.contains("A second program, written from the protocol by Grok"), "{limits}");
+    assert!(limits.contains("A second program, written from the protocol by an SI that had read the record's numbers"), "{limits}");
     assert!(limits.contains("recomputes the same RMS error, 0.008129, the same final-year mean, +0.010094, and the same run proof"), "{limits}");
     // The published top is where the decay heat left is the ledger's resolution.
     let mission = card["phase_fields"]
