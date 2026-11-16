@@ -224,7 +224,7 @@ pub async fn verify(state: &crate::AppState, body: &Value, text: Option<&str>) -
     let mut report: Map<String, Value> = serde_json::from_str(&text).map_err(|error| {
         DoorError::Internal(format!("Physical Violation: the response could not be encoded. {error}"))
     })?;
-    report.insert("chain_checked".into(), Value::String(CHAIN_CHECKED.to_string()));
+    report.insert("chain_verified".into(), Value::String(CHAIN_CHECKED.to_string()));
     if let Some(chain) = &response.document.chain {
         report.insert("recomputed_chain_seal".into(), chain["chain_seal"].clone());
     }
@@ -294,9 +294,9 @@ pub struct LongSolutionReport {
     pub compared: &'static str,
     /// A chained solve sent whole with its `from`: what was compared beside
     /// the answer. Left out of every other long form.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none", rename = "chain_verified")]
     pub chain_checked: Option<&'static str>,
-    /// With `chain_checked`, when the answer holds: the chain seal of the
+    /// With `chain_verified`, when the answer holds: the chain seal of the
     /// solve computed again.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub recomputed_chain_seal: Option<Value>,

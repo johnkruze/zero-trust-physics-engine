@@ -17,7 +17,7 @@ pub const COMPANY: &str = "Protocol Company";
 pub const SITE: &str = "https://zerotrustphysics.com";
 pub const SITE_FOR_AGENTS: &str = "https://zerotrustphysics.com/llms.txt";
 /// The paper.
-pub const PAPER: &str = "https://doi.org/10.5281/zenodo.23305697";
+pub const PAPER: &str = "https://doi.org/10.5281/zenodo.23517223";
 /// The engine's own source.
 pub const ENGINE_SOURCE: &str = "https://github.com/johnkruze/zero-trust-physics-engine";
 /// The programs that confirm a cryptographic proof with no engine.
@@ -44,10 +44,11 @@ pub const MOST_CHARS_SAID: usize = 2_000;
 /// tool's description says what it does. The sentence of where a model
 /// stops is John Kruze's of 17 October 2026, word for word, as the site and
 /// Hugging Face say it. "check any proof" in the words approved was said as
-/// "check the proof of a run, a solution or a dataset":
+/// "verify the proof of a run, a solution or a dataset" (LEXICON, engine
+/// 0.15.1: verify, never check):
 /// a step's `sha384_seal` is checked by computing the step again, and a
 /// comparison's seal by `genesis_seal verify-validation`.
-pub const INSTRUCTIONS: &str = "Zero-Trust Physics: deterministic physics, a proof on every answer. Start with find_model (describe the real thing) or list_cards / list_solvers, and read describe_card or describe_solver (form \"short\") before a first request. Past what a model was compared with, it keeps going with the same equations and flags every step. It stops only at a physical limit, or where its equations, constants or tables no longer hold, and it names the reason. verify_tape, verify_solution and verify_dataset check the proof of a run, a solution or a dataset; cite gives sources.";
+pub const INSTRUCTIONS: &str = "Zero-Trust Physics: deterministic physics, a proof on every answer. Start with find_model (describe the real thing) or list_cards / list_solvers, and read describe_card or describe_solver (form \"short\") before a first request. Past what a model was compared with, it keeps going with the same equations and flags every step. It stops only at a physical limit, or where its equations, constants or tables no longer hold, and it names the reason. verify_tape, verify_solution and verify_dataset verify the proof of a run, a solution or a dataset; cite gives sources.";
 
 /// `instructions`, as `initialize` and `server/discover` carry them.
 pub fn instructions() -> String {
@@ -69,7 +70,7 @@ mod tests {
         for held in [
             "Start with find_model (describe the real thing) or list_cards / list_solvers, and read describe_card or describe_solver (form \"short\") before a first request.",
             "Past what a model was compared with, it keeps going with the same equations and flags every step. It stops only at a physical limit, or where its equations, constants or tables no longer hold, and it names the reason.",
-            "verify_tape, verify_solution and verify_dataset check the proof of a run, a solution or a dataset; cite gives sources.",
+            "verify_tape, verify_solution and verify_dataset verify the proof of a run, a solution or a dataset; cite gives sources.",
         ] {
             assert!(said.contains(held), "{held}: {said}");
         }
@@ -86,7 +87,7 @@ mod tests {
         assert!(said.contains(" cite "));
         assert!(served.iter().any(|name| name == "cite"));
         assert_eq!(said.chars().count(), said.len());
-        assert_eq!(said.len(), 563);
+        assert_eq!(said.len(), 564);
         assert_eq!(PAPER, crate::cite::PAPER_DOI_URL);
     }
 }

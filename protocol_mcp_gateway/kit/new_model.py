@@ -23,9 +23,10 @@ The evidence flags stamp the model's spec sheet from its numbers:
                             marks_words, and no spec sheet.
   --supersedes <model>      the served model of the same object this one
                             replaces: the citation takes its real object and
-                            sources, and the row { model: <model>, by: <name> }
-                            goes into src/succession.rs, so <model> stays
-                            served under its own ID with superseded_by.
+                            sources, and the row { id: <model>, served_as:
+                            <name> } goes into src/retired.rs, so <model> is
+                            refused by name (RetiredModel) once <name> serves
+                            its object: one model for each real object.
 
 A model compared with measurement gets Marks::Measured in find_model.rs and
 its row of spec_sheet::SHEETS in src/spec_sheet.rs, the six parts: what it
@@ -417,28 +418,40 @@ def sheet_row(stamp, kind, name, title, evidence):
                what="its spec sheet: a row of SHEETS, in numbers")
 
 
-def succession_row(stamp, old, new):
-    """The row { model: old, by: new } at the end of succession::TABLE: old
-    stays served under its own ID and says superseded_by new."""
-    rel = "protocol_mcp_gateway/src/succession.rs"
+def retired_row(stamp, old, new):
+    """The row { id: old, served_as: new } in retired::TABLE: once new is
+    served, a request naming old is refused by name (RetiredModel), naming
+    new. One model is served for each real object (engine 0.15.0): the
+    table lists the cards first, then the solvers, so a card's row goes
+    after the last card's and a solver's at the end."""
+    rel = "protocol_mcp_gateway/src/retired.rs"
+    row = f'    Retired {{ id: "{old}", served_as: "{new}" }},'
     try:
         text = stamp.text(rel)
     except OSError:
-        stamp.by_hand.append(f"{rel}: add Succession {{ model: \"{old}\", by: \"{new}\" }} to TABLE")
+        stamp.by_hand.append(f"{rel}: add {row.strip()} to TABLE")
         return
-    start = text.find("pub const TABLE: &[Succession] = &[")
+    start = text.find("pub const TABLE: &[Retired] = &[")
     end = text.find("\n];", start) if start >= 0 else -1
     if end < 0:
-        stamp.by_hand.append(f"{rel}: no TABLE to add a row to; add Succession {{ model: \"{old}\", by: \"{new}\" }}")
+        stamp.by_hand.append(f"{rel}: no TABLE to add a row to; add {row.strip()}")
         return
     table = text[start:end]
-    already = re.search(rf'Succession \{{ model: "{old}", by: "(\w+)" \}}', table)
+    already = re.search(rf'Retired \{{ id: "{old}", served_as: "(\w+)" \}}', table)
     if already:
-        stamp.by_hand.append(f"{rel}: {old} is superseded already, by {already.group(1)}; a model has one successor (every_row_names_two_served_models)")
+        stamp.by_hand.append(f"{rel}: {old} is retired already, served as {already.group(1)}; an ID is retired once (every_retired_id_names_a_served_model_and_is_not_served)")
         return
-    row = f'    Succession {{ model: "{old}", by: "{new}" }},'
-    stamp.pending[rel] = text[:end + 1] + row + "\n" + text[end + 1:]
-    stamp.done.append(f"edit {rel}: {old} superseded_by {new}")
+    cited = json.loads(stamp.text("protocol_mcp_gateway/data/citations.json"))["models"]
+    cards = {key.split("/")[-1] for key in cited if "/" in key}
+    old_is_card = old in cards
+    rows = list(re.finditer(r'^    Retired \{ id: "(\w+)", served_as: "(\w+)" \},$', text[:end], re.M))
+    card_rows = [found for found in rows if found.group(2) in cards]
+    if old_is_card and card_rows:
+        at = card_rows[-1].end() + 1
+    else:
+        at = end + 1
+    stamp.pending[rel] = text[:at] + row + "\n" + text[at:]
+    stamp.done.append(f"edit {rel}: {old} retired, served as {new}")
 
 
 def evidence_by_hand(stamp, name, evidence):
@@ -469,8 +482,11 @@ def evidence_by_hand(stamp, name, evidence):
         )
     if evidence.supersedes:
         stamp.by_hand.append(
-            f"{evidence.supersedes} stays served under its own ID; the succession.rs row gives it superseded_by \"{name}\" once {name} is served. "
-            f"Say in {name}'s spec sheet what it computes that {evidence.supersedes} does not."
+            f"{evidence.supersedes} is retired by its retired.rs row once {name} is served: take {evidence.supersedes} out of the served lists "
+            f"(CARDS or SOLVERS, its find_model entry and its citation; its file may stay in its crate, not compiled), or serve {name} under the "
+            f"object's original ID, {evidence.supersedes}, and retire {name}'s in its place (Retired {{ id: \"{name}\", served_as: \"{evidence.supersedes}\" }}). "
+            f"retired::tests::every_retired_id_names_a_served_model_and_is_not_served holds it. "
+            f"Say in {name}'s spec sheet what it computes that {evidence.supersedes} did not."
         )
 
 
@@ -541,8 +557,9 @@ def stamp_card(stamp, name, domain, title, evidence=None):
     stamp.hook(desc, "    Some(match (card, name) {",
                f'        ("{name}", which) if card_{name}_descriptor::meaning(which).is_some() => return card_{name}_descriptor::meaning(which),',
                what="reject_meaning (the card's own names; the gateway's own, as DtBelowFloor, fall through to their shared arms)")
-    stamp.hook(desc, '("aerospace", "crater_ryugu_sci", vec!["radius_m", "dt_s"]),',
-               f'            ("{domain}", "{name}", vec!["temperature_k", "heat_power_w", "ambient_k", "dt_s"]),', what="the descriptor test's parameter lists")
+    stamp.hook(desc, '"crater_ryugu_sci",', next_has='vec!["radius_m", "dt_s"],', skip=2, insert=
+               f'            (\n                "{domain}",\n                "{name}",\n                vec!["temperature_k", "heat_power_w", "ambient_k", "dt_s"],\n            ),',
+               what="the descriptor test's parameter lists")
     stamp.hook(desc, "crater_ryugu_sci::CraterRyuguSci::sci_impact().gate_dt_s(),",
                f'            (\n                "{name}",\n                genesis_kernel::{name}::{Name}::specimen().floor_dt_s(),\n                genesis_kernel::{name}::{Name}::specimen().gate_dt_s(),\n            ),',
                skip=1, what="the descriptor test's floors and ceilings")
@@ -558,7 +575,7 @@ def stamp_card(stamp, name, domain, title, evidence=None):
     counts(stamp, "card")
     sheet_row(stamp, "card", name, title, evidence)
     if evidence.supersedes:
-        succession_row(stamp, evidence.supersedes, name)
+        retired_row(stamp, evidence.supersedes, name)
     stamp.by_hand += [
         f"The tests that count the cards ({served(stamp, 'cards')} before this one): grep -rn '{served(stamp, 'cards')}' protocol_mcp_gateway/tests protocol_mcp_gateway/src | grep -i card",
         f"A frame quantity the template does not use needs its unit in descriptor.rs unit_of; force_torque_state names melt_margin_k for {name}.",
@@ -594,7 +611,7 @@ def stamp_solver(stamp, name, title, evidence=None):
     counts(stamp, "solver")
     sheet_row(stamp, "solver", name, title, evidence)
     if evidence.supersedes:
-        succession_row(stamp, evidence.supersedes, name)
+        retired_row(stamp, evidence.supersedes, name)
     stamp.by_hand += [
         f"The tests that count the solvers ({served(stamp, 'solvers')} before this one): grep -rn '{served(stamp, 'solvers')}' protocol_mcp_gateway/tests protocol_mcp_gateway/src | grep -i solver",
         "protocol_mcp_gateway/src/open_plan.rs OPEN_SOLVE_SECONDS: the stamp writes 0.01 s; write the solver's measured time for one solve.",
@@ -736,7 +753,7 @@ def main():
     parser.add_argument("--within", help="the accuracy on the records not in the fit, in numbers: \"2.7 percent rms, 6.1 worst\"")
     parser.add_argument("--gap", help="the largest disagreement, one line with its number")
     parser.add_argument("--reference-calculation", action="store_true", help="held to a published calculation, not a measurement")
-    parser.add_argument("--supersedes", help="the served model of the same object this one replaces; it stays served, its succession.rs row added")
+    parser.add_argument("--supersedes", help="the served model of the same object this one replaces; its retired.rs row added, so it is refused by name once this one is served")
     args = parser.parse_args()
     evidence = evidence_of(parser, args)
     if not re.fullmatch(r"[a-z][a-z0-9_]*", args.name):

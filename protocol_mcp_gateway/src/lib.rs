@@ -32,7 +32,7 @@ use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 /// A full pool fails closed. Excess calls never queue on the blocking pool.
 const PHYSICS_PERMIT_CAP: usize = 32;
 
-pub const ENGINE_VERSION: &str = "genesis_kernel_v0.13.0";
+pub const ENGINE_VERSION: &str = "genesis_kernel_v0.13.1";
 
 pub mod answer_key;
 pub mod dataset;
@@ -1645,8 +1645,8 @@ fn reactor_triga_reject(reject: reactor_triga_jsi::StepReject) -> String {
 const CAPSULE_ALTITUDE_OUTSIDE_CARD: &str =
     "altitude is above 134.7 km, the top of the drag table read by altitude (AltitudeOutsideCard).";
 const CAPSULE_BELOW_STANDARD_SEA_LEVEL: &str = "altitude is below 0 m, the sea level of the 1976 standard's air and the ellipsoid under the path: the capsule is on or under the ground (BelowStandardSeaLevel).";
-const CAPSULE_MACH_OUTSIDE_CARD: &str = "the Mach number is below 0.16, the first entry of the drag table read by Mach number, or is above 40 below 68.96 km, where that table ends (MachOutsideCard).";
-const CAPSULE_AIR_SPEED_OUTSIDE_CARD: &str = "above 68.96 km the speed through the air is below 11900 m/s or above 12620 m/s, the highest speed the drag table by altitude was computed at (AirSpeedOutsideCard).";
+const CAPSULE_MACH_OUTSIDE_CARD: &str = "the Mach number is below 0.16, the first entry of the drag table read by Mach number, or is above 40 below 68.96 km, where that table ends, at a speed through the air above 12620 m/s, the top speed any drag of the card was computed at (MachOutsideCard).";
+const CAPSULE_AIR_SPEED_OUTSIDE_CARD: &str = "above 68.96 km the speed through the air, at the state or where the step's path crosses 68.96 km, is below 11900 m/s or above 12620 m/s, the highest speed the drag table by altitude was computed at (AirSpeedOutsideCard).";
 const CAPSULE_PAST_FLIGHT_DEPLOYMENT: &str = "the state is under 31030 m and under Mach 1.23 at once, past the flown drogue deployment, where the capsule flew on a parachute (PastFlightDeployment).";
 
 fn capsule_reject(reject: capsule_stardust::StepReject) -> String {
@@ -6070,7 +6070,11 @@ fn advisory_flags(domain: &str, card: &str) -> u64 {
             generator_mmrtg_f1::FLAG_PAST_FITTING_SPAN | generator_mmrtg_f1::FLAG_PAST_RECORD
         }
         ("energy", "accumulator_sbo450") => accumulator_sbo450::FLAG_OUTSIDE_COMPARED_RUNS,
-        ("aerospace", "capsule_stardust") => capsule_stardust::FLAG_DROGUE_MACH_WINDOW,
+        ("aerospace", "capsule_stardust") => {
+            capsule_stardust::FLAG_DROGUE_MACH_WINDOW
+                | capsule_stardust::FLAG_OFF_FLOWN_ENTRY
+                | capsule_stardust::FLAG_MACH_TABLE_HELD
+        }
         ("aerospace", "satellite_lageos1") => {
             satellite_lageos1::FLAG_EARTH_SHADOW | satellite_lageos1::FLAG_BELOW_COMPARED_RADIUS
         }
@@ -7570,6 +7574,8 @@ mod armor {
         assert_eq!(
             advisory_flags("aerospace", "capsule_stardust"),
             capsule_stardust::FLAG_DROGUE_MACH_WINDOW
+                | capsule_stardust::FLAG_OFF_FLOWN_ENTRY
+                | capsule_stardust::FLAG_MACH_TABLE_HELD
         );
         assert_eq!(
             advisory_flags("aerospace", "capsule_insight"),

@@ -792,7 +792,7 @@ mod tests {
         assert!(limits.starts_with("Fitted constants: None."));
         let body = describe_value(FUSION_PB11_THERMAL.name).expect("described");
         let cross_section = &body["locked"]["cross_section"];
-        assert_eq!(cross_section["against_nacre_ii"]["met"], false);
+        assert_eq!(cross_section["against_nacre_ii"]["within"], false);
         assert_eq!(cross_section["against_nacre_ii"]["inside_its_stated_band"], 30);
     }
 }

@@ -86,3 +86,22 @@ fn the_worked_oven_run_ends_on_the_kernel_loop_state() {
     assert_eq!(last["vent_gas_held_fraction"].as_f64().unwrap().to_bits(), state.vent_gas_held_fraction.to_bits());
 }
 
+
+/// Engine 0.15.2, work orders of 21 October: the card's own worked state in
+/// hotter ovens at 10 s, refused FirstLawBreach part way on 0.15.1 (455 K at
+/// step 46, 452 K at 48, 520 K at 23, 700 K at 7), now runs its 600 steps,
+/// and each tape verifies by request.
+#[test]
+fn hot_ovens_at_ten_seconds_run_and_verify() {
+    let mut door = Door::start();
+    let description: Value = door.value("describe_card", &json!({ "domain": "energy", "card": "runaway_18650_lco" })).expect("described");
+    for oven_k in [452.0, 455.0, 458.09, 460.0, 520.0, 700.0] {
+        let mut request = description["example_run_trajectory"].clone();
+        request["segments"][0]["load"]["oven_temperature_k"] = json!(oven_k);
+        let run = door.value("run_trajectory", &request).expect("answered");
+        assert_eq!(run["outcome"], "completed", "{oven_k}: {}", run["reject_detail"]);
+        assert_eq!(run["steps_landed"], 600, "{oven_k}");
+        let verified = door.value("verify_tape", &json!({ "request": request, "run_seal": run["run_seal"] })).expect("verified");
+        assert_eq!(verified["holds"], true, "{oven_k}: {verified}");
+    }
+}

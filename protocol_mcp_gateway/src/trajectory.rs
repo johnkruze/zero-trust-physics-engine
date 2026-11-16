@@ -600,6 +600,47 @@ fn from_of(upstream: &Value, upstream_answer: &Map<String, Value>, link: &Map<St
     Value::Object(from)
 }
 
+/// A solve that is the last link, handed by a coupling into a solver: its
+/// request solved again with the `from` the links before it give (each
+/// upstream run computed again and each handed value held, as solve does),
+/// its solution_seal compared, and its whole answer compared with the link
+/// sent (0.15.1; 0.15.0 refused such a chain, "the tape does not name a card").
+async fn solve_held(state: &crate::AppState, object: &Map<String, Value>, from: Value, sent_text: &str) -> Result<TextHeld, DoorError> {
+    use crate::rebuild::{CAUSE_ANSWER_TEXT, Difference};
+    let held = |cause: Option<&'static str>, difference: Option<Difference>, computed: bool| TextHeld { values_hold: cause.is_none(), cause, difference, computed };
+    let ours = crate::solvers::engine_version();
+    if let Some(Value::String(version)) = object.get("engine_version") {
+        if *version != ours {
+            let says = crate::rebuild::another_version(version, &ours, "solution_seal");
+            return Ok(held(Some(crate::rebuild::CAUSE_ENGINE_VERSION), Some(Difference::new("engine_version", says)), false));
+        }
+    }
+    let Some(mut request) = object.get("inputs").and_then(Value::as_object).cloned() else {
+        return Ok(held(Some(CAUSE_ANSWER_TEXT), Some(Difference::new("inputs", "The answer's inputs are not a solve request.")), false));
+    };
+    request.insert(crate::chain::FROM.to_string(), from);
+    let response = match crate::solution::run(state, Value::Object(request)).await {
+        Ok(response) => response,
+        Err(DoorError::Unprocessable(sentence) | DoorError::NotFound(sentence)) => {
+            let says = format!("The engine solves nothing for these inputs with this chain: it turns them away before solving. {sentence}");
+            return Ok(held(Some(CAUSE_ANSWER_TEXT), Some(Difference::new("inputs", says)), false));
+        }
+        Err(other) => return Err(other),
+    };
+    if Some(response.document.solution_seal.as_str()) != object.get("solution_seal").and_then(Value::as_str) {
+        let says = "The request was solved again and solves to another solution_seal: its sealed parts are not the engine's solution of this request.";
+        return Ok(held(Some("solution_seal"), Some(Difference::new("solution_seal", says)), true));
+    }
+    let engine_text = serde_json::to_string(&response).map_err(|error| {
+        DoorError::Internal(format!("Physical Violation: the response could not be encoded. {error}"))
+    })?;
+    let found = crate::rebuild::compare(&engine_text, &Value::Object(object.clone()), sent_text)?;
+    Ok(match found.difference {
+        Some(difference) => TextHeld { values_hold: found.values_hold, ..held(Some(CAUSE_ANSWER_TEXT), Some(difference), true) },
+        None => held(None, None, true),
+    })
+}
+
 /// A step that is the last link: its request computed again by compute_step,
 /// its sha384_seal compared, and its whole answer compared with the link sent.
 async fn step_held(state: &crate::AppState, object: &Map<String, Value>, from: Value, sent_text: &str) -> Result<TextHeld, DoorError> {
@@ -653,6 +694,11 @@ async fn verify_chain(state: &crate::AppState, body: &Value, text: Option<&str>)
                     return Err(DoorError::NotFound(crate::CARD_NOT_RECOGNIZED.to_string()));
                 }
             }
+            if let Some(solver) = link.get("inputs").and_then(|inputs| inputs.get("solver")).and_then(Value::as_str) {
+                if !view.sees_solver(solver) || crate::solvers::find(solver).is_none() {
+                    return Err(DoorError::NotFound(format!("Solver not recognized: {solver} (UnknownSolver).")));
+                }
+            }
         }
     }
     let report = genesis_seal::chain::check_chain(body)
@@ -675,8 +721,10 @@ async fn verify_chain(state: &crate::AppState, body: &Value, text: Option<&str>)
             let Some(object) = link.as_object() else { break };
             let from = upstream.as_ref().map(|(request, answer)| from_of(request, answer, object));
             let is_step = object.contains_key("sha384_seal") && !object.contains_key("run_seal");
-            let held = match (is_step, from.clone()) {
-                (true, Some(from)) => step_held(state, object, from, link_text).await?,
+            let is_solve = object.contains_key("solution_seal") && object.get("inputs").is_some_and(|inputs| inputs.get("solver").is_some());
+            let held = match (is_step, is_solve, from.clone()) {
+                (true, _, Some(from)) => step_held(state, object, from, link_text).await?,
+                (_, true, Some(from)) => solve_held(state, object, from, link_text).await?,
                 _ => text_held(state, object, from.clone(), link_text).await?,
             };
             computed |= held.computed;

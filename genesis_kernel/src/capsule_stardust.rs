@@ -106,12 +106,25 @@
 //! entries below Mach 1.0 were read from the paper's Figure 15, and until
 //! engine 0.9 the card's floor was Mach 1.0.
 //!
-//! No table is read past its end. The Mach table stops at Mach 40, and below
-//! 68.96 km a Mach number above 40 is refused as
-//! [`StepReject::MachOutsideCard`]. The locked entry never comes near it: the
-//! Mach number falls through 40 at 43.36 s, at 69.23 km, while drag is still
-//! read by altitude, and the capsule reaches 68.96 km at 43.60 s at Mach
-//! 39.84. Through engine 0.6.0 the table's top entry was held above Mach 40.
+//! The Mach table stops at Mach 40, its top entry 1.4959, the same value as
+//! the altitude table's bottom row at 68.96 km, both from the paper's
+//! Table 4 at 12 173 m/s. Since engine 0.15.2, below 68.96 km above Mach 40
+//! that top entry is held up to 12 620 m/s through the air, the top speed any
+//! drag of the card was computed at and the top of the band the card takes
+//! just above 68.96 km, and every step whose stage or landing read it held
+//! carries [`FLAG_MACH_TABLE_HELD`] with the highest Mach number it was held
+//! at. The drag is then continuous across Mach 40 and, above Mach 40, across
+//! the switch at 68.96 km. Above 12 620 m/s below 68.96 km a state is refused
+//! as [`StepReject::MachOutsideCard`]. The locked entry never reads it held:
+//! the Mach number falls through 40 at 43.36 s, at 69.23 km, while drag is
+//! still read by altitude, and the capsule reaches 68.96 km at 43.60 s at
+//! Mach 39.84. A path steeper than the locked entry's by a few tenths of a
+//! degree crosses 68.96 km within a hundredth of Mach 40: from 0.7.0 to
+//! 0.15.1 such a state was refused, and whether a stage of a step fell below
+//! the switch above Mach 40 turned with the input, so that from 12 760 m/s
+//! across at 0.05 s a radial speed of −1905.25 m/s completed and −1905.0 and
+//! −1905.75 m/s were refused at step 827. Through engine 0.6.0 the top entry
+//! was held, unflagged and unsaid.
 //!
 //! The drag table by altitude is the paper's Table 1, computed by direct
 //! simulation at points of the 1997 design trajectory, at speeds from
@@ -121,7 +134,16 @@
 //! was computed at. Above 68.96 km the card takes an air speed from
 //! [`AIR_SPEED_BAND_MIN_M_S`], 11 900 m/s, to [`AIR_SPEED_BAND_MAX_M_S`],
 //! 12 620 m/s, the highest speed the table was computed at, and refuses any
-//! other as [`StepReject::AirSpeedOutsideCard`]. The locked entry, which met
+//! other as [`StepReject::AirSpeedOutsideCard`]. Since engine 0.15.2 the band
+//! is held to each state of the path, the incoming state and each landing,
+//! and, for a step across 68.96 km, to the speed where the path crosses it,
+//! read on the straight line between the step's two states; a Runge–Kutta
+//! stage, no state of the path, reads the table by altitude alone. Through
+//! 0.15.1 the band was held to the stages and the landings, so a path that
+//! crossed 68.96 km under 11 900 m/s was taken or refused as a stage fell
+//! inside the sliver between the two: from 12 760 m/s across at 0.05 s the
+//! runs from −1834.0 to −1835.0 m/s radial ended and were refused in turn.
+//! Now the boundary there is one, between −1835.89545 and −1835.89546 m/s. The locked entry, which met
 //! all three lines, passed through 11 911.98 to 12 573.44 m/s there, at every
 //! step from 0.05 s to 0.0005 s; from 12 575 to 12 620 m/s the card holds the
 //! source's own design speeds, which were not compared with the flight. Engines
@@ -134,6 +156,15 @@
 //! [`CORRIDOR_PATH_SINE_HIGH`]: the lowest and highest air speed and sine of
 //! the path angle it had within 500 m of each knot, every 500 m from 31 km to
 //! 69 km, widened by 1 m/s and by 0.001 (at 40 km 1147.51 to 1350.11 m/s).
+//! Since engine 0.15.2 the corridor is carried on by the same recipe from
+//! 69 km to 134 km ([`CORRIDOR_ABOVE_AIR_SPEED_LOW_M_S`] to
+//! [`CORRIDOR_ABOVE_PATH_SINE_HIGH`], `stardust_entry/corridor_0.15.2` in the
+//! research folder, whose program holds the 77 knots below to these tables
+//! value for value), and a landing off it, under 31 km or above 134 km
+//! carries [`FLAG_OFF_FLOWN_ENTRY`], one record for each bound it is past:
+//! the bound at that altitude, the value and the distance past it. Every
+//! landing of the locked entry at each of the ten steps the corridor was
+//! built from is inside it, so no run inside the corridor carries the flag.
 //! Engines 0.7 to 0.9 refused a state off that corridor as
 //! `OffComparedCorridor`. The card now computes any start inside its tables on
 //! the same RK4 and ledger; a state deep in the air at entry speed is held by
@@ -309,6 +340,81 @@ pub const CORRIDOR_PATH_SINE_HIGH: [f64; CORRIDOR_KNOTS] = [
     -0.0787, -0.0789, -0.0792, -0.0795, -0.0798, -0.0801, -0.0805, -0.0809, -0.0813, -0.0818,
     -0.0822, -0.0827, -0.0831, -0.0836, -0.0841, -0.0846, -0.0851, -0.0856, -0.0861, -0.0866,
     -0.0871, -0.0876, -0.0881, -0.0887, -0.0892, -0.0897, -0.0902,
+];
+
+/// Knots of the corridor above 69 km (engine 0.15.2): 69 500 m to 134 000 m
+/// every 500 m, the knot under 69 500 m the corridor's own top, 69 000 m.
+pub const CORRIDOR_ABOVE_KNOTS: usize = 130;
+/// Top of the corridor above 69 km, its last knot. The locked entry starts
+/// at entry interface, 133 911.49 m.
+pub const CORRIDOR_ABOVE_TOP_M: f64 = 134_000.0;
+// The four tables above 69 km, by the same recipe as the corridor below,
+// from the same ten runs from the locked entry state, on the kernel of engine
+// 0.15.2, which holds the 77 knots below to the tables above value for value:
+// `stardust_entry/corridor_0.15.2` in the research folder (out/corridor_above.csv).
+/// Lowest speed through the air at each knot above 69 km, m/s.
+pub const CORRIDOR_ABOVE_AIR_SPEED_LOW_M_S: [f64; CORRIDOR_ABOVE_KNOTS] = [
+    11915.19, 11965.33, 12012.11, 12055.66, 12096.24, 12133.94, 12169.04, 12201.55, 12231.69, 12259.58,
+    12285.42, 12309.35, 12331.45, 12351.87, 12370.74, 12388.14, 12404.21, 12419.00, 12432.62, 12445.17,
+    12456.71, 12467.31, 12477.05, 12485.99, 12494.19, 12501.71, 12508.60, 12514.90, 12520.67, 12525.93,
+    12530.74, 12535.14, 12539.15, 12542.82, 12546.16, 12549.19, 12551.94, 12554.41, 12556.64, 12558.65,
+    12560.46, 12562.08, 12563.53, 12564.82, 12565.97, 12566.99, 12567.89, 12568.68, 12569.37, 12569.98,
+    12570.50, 12570.94, 12571.32, 12571.63, 12571.89, 12572.09, 12572.24, 12572.34, 12572.41, 12572.39,
+    12572.32, 12572.23, 12572.11, 12571.98, 12571.82, 12571.64, 12571.44, 12571.23, 12571.01, 12570.77,
+    12570.52, 12570.26, 12569.99, 12569.71, 12569.42, 12569.13, 12568.83, 12568.52, 12568.21, 12567.89,
+    12567.56, 12567.23, 12566.90, 12566.57, 12566.23, 12565.88, 12565.54, 12565.19, 12564.84, 12564.49,
+    12564.14, 12563.78, 12563.42, 12563.07, 12562.71, 12562.35, 12561.99, 12561.62, 12561.26, 12560.90,
+    12560.53, 12560.17, 12559.80, 12559.44, 12559.07, 12558.70, 12558.34, 12557.97, 12557.60, 12557.23,
+    12556.86, 12556.49, 12556.12, 12555.75, 12555.38, 12555.01, 12554.64, 12554.27, 12553.90, 12553.53,
+    12553.16, 12552.79, 12552.42, 12552.05, 12551.67, 12551.30, 12550.93, 12550.56, 12550.25, 12550.25,
+];
+/// Highest speed through the air at each knot above 69 km, m/s.
+pub const CORRIDOR_ABOVE_AIR_SPEED_HIGH_M_S: [f64; CORRIDOR_ABOVE_KNOTS] = [
+    12014.07, 12057.62, 12098.21, 12135.91, 12171.01, 12203.53, 12233.66, 12261.56, 12287.40, 12311.33,
+    12333.44, 12353.86, 12372.73, 12390.13, 12406.21, 12421.00, 12434.62, 12447.17, 12458.71, 12469.30,
+    12479.05, 12487.99, 12496.19, 12503.71, 12510.60, 12516.90, 12522.67, 12527.93, 12532.74, 12537.14,
+    12541.16, 12544.83, 12548.17, 12551.20, 12553.94, 12556.42, 12558.65, 12560.66, 12562.47, 12564.08,
+    12565.53, 12566.83, 12567.98, 12569.00, 12569.90, 12570.69, 12571.38, 12571.99, 12572.51, 12572.95,
+    12573.33, 12573.64, 12573.90, 12574.10, 12574.25, 12574.35, 12574.42, 12574.45, 12574.45, 12574.45,
+    12574.44, 12574.40, 12574.33, 12574.24, 12574.12, 12573.99, 12573.83, 12573.65, 12573.45, 12573.24,
+    12573.02, 12572.78, 12572.53, 12572.27, 12572.00, 12571.72, 12571.43, 12571.14, 12570.84, 12570.53,
+    12570.22, 12569.90, 12569.57, 12569.24, 12568.91, 12568.58, 12568.24, 12567.89, 12567.55, 12567.20,
+    12566.85, 12566.50, 12566.14, 12565.79, 12565.43, 12565.07, 12564.72, 12564.36, 12564.00, 12563.63,
+    12563.27, 12562.91, 12562.54, 12562.18, 12561.81, 12561.45, 12561.08, 12560.71, 12560.34, 12559.98,
+    12559.61, 12559.24, 12558.87, 12558.50, 12558.13, 12557.76, 12557.39, 12557.02, 12556.65, 12556.28,
+    12555.91, 12555.54, 12555.17, 12554.80, 12554.43, 12554.06, 12553.68, 12553.31, 12552.94, 12552.57,
+];
+/// Lowest sine of the path angle through the air at each knot above 69 km.
+pub const CORRIDOR_ABOVE_PATH_SINE_LOW: [f64; CORRIDOR_ABOVE_KNOTS] = [
+    -0.0939, -0.0944, -0.0949, -0.0955, -0.0960, -0.0965, -0.0970, -0.0975, -0.0980, -0.0986,
+    -0.0991, -0.0996, -0.1001, -0.1006, -0.1011, -0.1016, -0.1021, -0.1026, -0.1031, -0.1036,
+    -0.1041, -0.1046, -0.1051, -0.1055, -0.1060, -0.1065, -0.1070, -0.1075, -0.1080, -0.1084,
+    -0.1089, -0.1094, -0.1098, -0.1103, -0.1108, -0.1112, -0.1117, -0.1122, -0.1126, -0.1131,
+    -0.1135, -0.1140, -0.1144, -0.1149, -0.1153, -0.1158, -0.1162, -0.1166, -0.1171, -0.1175,
+    -0.1180, -0.1184, -0.1188, -0.1193, -0.1197, -0.1201, -0.1205, -0.1210, -0.1214, -0.1218,
+    -0.1222, -0.1226, -0.1231, -0.1235, -0.1239, -0.1243, -0.1247, -0.1251, -0.1255, -0.1259,
+    -0.1263, -0.1268, -0.1272, -0.1276, -0.1280, -0.1284, -0.1288, -0.1291, -0.1295, -0.1299,
+    -0.1303, -0.1307, -0.1311, -0.1315, -0.1319, -0.1323, -0.1327, -0.1330, -0.1334, -0.1338,
+    -0.1342, -0.1346, -0.1349, -0.1353, -0.1357, -0.1361, -0.1364, -0.1368, -0.1372, -0.1376,
+    -0.1379, -0.1383, -0.1387, -0.1390, -0.1394, -0.1398, -0.1401, -0.1405, -0.1409, -0.1412,
+    -0.1416, -0.1419, -0.1423, -0.1426, -0.1430, -0.1434, -0.1437, -0.1441, -0.1444, -0.1448,
+    -0.1451, -0.1455, -0.1458, -0.1462, -0.1465, -0.1468, -0.1472, -0.1475, -0.1478, -0.1478,
+];
+/// Highest sine of the path angle through the air at each knot above 69 km.
+pub const CORRIDOR_ABOVE_PATH_SINE_HIGH: [f64; CORRIDOR_ABOVE_KNOTS] = [
+    -0.0908, -0.0913, -0.0918, -0.0923, -0.0928, -0.0934, -0.0939, -0.0944, -0.0949, -0.0954,
+    -0.0959, -0.0965, -0.0970, -0.0975, -0.0980, -0.0985, -0.0990, -0.0995, -0.1000, -0.1005,
+    -0.1010, -0.1015, -0.1020, -0.1025, -0.1030, -0.1034, -0.1039, -0.1044, -0.1049, -0.1054,
+    -0.1059, -0.1063, -0.1068, -0.1073, -0.1077, -0.1082, -0.1087, -0.1091, -0.1096, -0.1101,
+    -0.1105, -0.1110, -0.1114, -0.1119, -0.1123, -0.1128, -0.1132, -0.1137, -0.1141, -0.1145,
+    -0.1150, -0.1154, -0.1159, -0.1163, -0.1167, -0.1172, -0.1176, -0.1180, -0.1184, -0.1189,
+    -0.1193, -0.1197, -0.1201, -0.1205, -0.1210, -0.1214, -0.1218, -0.1222, -0.1226, -0.1230,
+    -0.1234, -0.1238, -0.1242, -0.1247, -0.1251, -0.1255, -0.1259, -0.1263, -0.1267, -0.1270,
+    -0.1274, -0.1278, -0.1282, -0.1286, -0.1290, -0.1294, -0.1298, -0.1302, -0.1306, -0.1309,
+    -0.1313, -0.1317, -0.1321, -0.1325, -0.1328, -0.1332, -0.1336, -0.1340, -0.1343, -0.1347,
+    -0.1351, -0.1355, -0.1358, -0.1362, -0.1366, -0.1369, -0.1373, -0.1377, -0.1380, -0.1384,
+    -0.1388, -0.1391, -0.1395, -0.1398, -0.1402, -0.1405, -0.1409, -0.1413, -0.1416, -0.1420,
+    -0.1423, -0.1427, -0.1430, -0.1434, -0.1437, -0.1441, -0.1444, -0.1447, -0.1451, -0.1454,
 ];
 
 /// Distance between knots of the air tables.
@@ -1560,6 +1666,25 @@ pub const GATE_OVER_FLOOR: f64 = 1_048_576.0;
 
 /// Mach number is from 1.2 to 1.6 on this frame.
 pub const FLAG_DROGUE_MACH_WINDOW: u64 = 1 << 0;
+/// The landing is off the entry the card was compared on (engine 0.15.2):
+/// from 31 km to 134 km, a speed through the air or a sine of the path angle
+/// through the air outside the corridor the locked entry flew at that
+/// altitude ([`CORRIDOR_AIR_SPEED_LOW_M_S`] to [`CORRIDOR_PATH_SINE_HIGH`]
+/// up to 69 km, [`CORRIDOR_ABOVE_AIR_SPEED_LOW_M_S`] to
+/// [`CORRIDOR_ABOVE_PATH_SINE_HIGH`] above, read by straight lines between
+/// knots); or under [`CORRIDOR_BOTTOM_M`] or above [`CORRIDOR_ABOVE_TOP_M`],
+/// where the entry flew no state. The step lands; the flag seals and is
+/// carried by the frame alone.
+pub const FLAG_OFF_FLOWN_ENTRY: u64 = 1 << 1;
+/// Below 68.96 km the drag was read at a Mach number above 40, the end of
+/// the table by Mach number, at a stage of the step or at its landing
+/// (engine 0.15.2): the table's top entry, 1.4959, held there, the value the
+/// table by altitude gives at 68.96 km for 11 900 to 12 620 m/s. Taken at a
+/// speed through the air of 12 620 m/s or under, the top speed any drag of
+/// the card was computed at. The step lands; the flag seals and is carried by
+/// the frame alone.
+pub const FLAG_MACH_TABLE_HELD: u64 = 1 << 2;
+
 
 /// Why a step did not advance the capsule or the frame.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -1576,9 +1701,9 @@ pub enum StepReject {
     AltitudeOutsideCard,
     /// Altitude, incoming, at a stage of the step, or landing, is below 0 m, the sea level of the 1976 standard's air and the ellipsoid under the path: the capsule is on or under the ground.
     BelowStandardSeaLevel,
-    /// Mach number, incoming, at a stage of the step, or landing, is below 0.16, the first entry of the drag table read by Mach number, or is above 40 below 68.96 km, where that table ends.
+    /// Mach number, incoming, at a stage of the step, or landing, is below 0.16, the first entry of the drag table read by Mach number, or is above 40 below 68.96 km, where that table ends, at a speed through the air above 12620 m/s, the top speed any drag of the card was computed at.
     MachOutsideCard,
-    /// Air speed, incoming, at a stage of the step, or landing, above 68.96 km is below 11900 m/s or above 12620 m/s, the highest speed the drag table by altitude was computed at.
+    /// Air speed above 68.96 km, incoming, landing, or where the step's path crosses 68.96 km, is below 11900 m/s or above 12620 m/s, the highest speed the drag table by altitude was computed at.
     AirSpeedOutsideCard,
     /// The incoming state is under 31030 m and under Mach 1.23 at once: past the flown drogue deployment.
     PastFlightDeployment,
@@ -2000,8 +2125,8 @@ fn step_as_computed(
     dt_s: f64,
 ) -> Result<(), StepReject> {
     validate(capsule, state, load, dt_s)?;
-    let predicted = integrate(capsule, recorded(state), dt_s)?;
-    commit(capsule, state, frame, dt_s, predicted)
+    let (predicted, held_mach) = integrate_held(capsule, recorded(state), dt_s)?;
+    commit_held(capsule, state, frame, dt_s, predicted, held_mach)
 }
 
 /// Each value of a landed state below the normal range written as zero
@@ -2067,10 +2192,17 @@ fn past_flight_deployment(capsule: &CapsuleStardust, air: &Air) -> bool {
 /// One classical RK4 step on `(r, v_r, v_t, θ, Q)`. A stage outside the card
 /// is refused; no density and no drag is made up outside the tables.
 fn integrate(capsule: &CapsuleStardust, y: [f64; 5], dt_s: f64) -> Result<[f64; 5], StepReject> {
-    let k1 = rates(capsule, y)?;
-    let k2 = rates(capsule, axpy(y, dt_s * 0.5, k1))?;
-    let k3 = rates(capsule, axpy(y, dt_s * 0.5, k2))?;
-    let k4 = rates(capsule, axpy(y, dt_s, k3))?;
+    integrate_held(capsule, y, dt_s).map(|(next, _)| next)
+}
+
+/// [`integrate`], and the largest Mach number at which a stage read the drag
+/// as the Mach table's top entry held, or zero where none did.
+fn integrate_held(capsule: &CapsuleStardust, y: [f64; 5], dt_s: f64) -> Result<([f64; 5], f64), StepReject> {
+    let (k1, h1) = rates_held(capsule, y)?;
+    let (k2, h2) = rates_held(capsule, axpy(y, dt_s * 0.5, k1))?;
+    let (k3, h3) = rates_held(capsule, axpy(y, dt_s * 0.5, k2))?;
+    let (k4, h4) = rates_held(capsule, axpy(y, dt_s, k3))?;
+    let held_mach = max_f64(max_f64(h1, h2), max_f64(h3, h4));
     let mut next = y;
     let mut index = 0;
     while index < 5 {
@@ -2081,10 +2213,14 @@ fn integrate(capsule: &CapsuleStardust, y: [f64; 5], dt_s: f64) -> Result<[f64; 
         index += 1;
     }
     if finite5(next) {
-        Ok(next)
+        Ok((next, held_mach))
     } else {
         Err(StepReject::NonFiniteState)
     }
+}
+
+fn max_f64(a: f64, b: f64) -> f64 {
+    if b > a { b } else { a }
 }
 
 fn commit(
@@ -2094,11 +2230,41 @@ fn commit(
     dt_s: f64,
     predicted: [f64; 5],
 ) -> Result<(), StepReject> {
+    commit_held(capsule, state, frame, dt_s, predicted, 0.0)
+}
+
+/// [`commit`] of a step whose stages read the drag held at Mach numbers up to
+/// `held_mach`, or zero where none did.
+fn commit_held(
+    capsule: &CapsuleStardust,
+    state: &mut CapsuleState,
+    frame: &mut LastStateFrame64,
+    dt_s: f64,
+    predicted: [f64; 5],
+    held_mach: f64,
+) -> Result<(), StepReject> {
     let saved = *state;
     if !finite5(predicted) {
         return Err(StepReject::NonFiniteState);
     }
     let air = air_at(capsule, predicted[0], predicted[1], predicted[2])?;
+    let held_mach = if air.drag_held { max_f64(held_mach, air.mach) } else { held_mach };
+    // A step across 68.96 km: the band is held to the speed where the path
+    // crosses it, read on the straight line between the state the step
+    // starts from and the landing. Above 68.96 km the speed through the air
+    // falls along the entry, so the crossing is where it is lowest there; a
+    // path that crossed under the band between two states was taken through
+    // 0.15.1 or refused as a stage of a step fell inside the sliver, so the
+    // outcome turned with the input (engine 0.15.2).
+    let from = air_at_stage(capsule, state.radius_m, state.radial_speed_m_s, state.transverse_speed_m_s)?;
+    let switch_m = capsule.drag_switch_altitude_m;
+    if (from.altitude_m >= switch_m) != (air.altitude_m >= switch_m) {
+        let share = (switch_m - from.altitude_m) / (air.altitude_m - from.altitude_m);
+        let crossing_m_s = from.air_speed_m_s + (air.air_speed_m_s - from.air_speed_m_s) * share;
+        if !(crossing_m_s >= capsule.air_speed_band_min_m_s && crossing_m_s <= capsule.air_speed_band_max_m_s) {
+            return Err(StepReject::AirSpeedOutsideCard);
+        }
+    }
     let scale = capsule.energy_scale_j_kg;
     if !(scale > 0.0 && scale.is_finite()) {
         return Err(StepReject::InvalidCapsule);
@@ -2129,7 +2295,68 @@ fn commit(
         return Err(StepReject::NonFiniteState);
     }
     publish(state, frame);
+    if held_mach > 0.0 {
+        frame.flags |= FLAG_MACH_TABLE_HELD;
+    }
     Ok(())
+}
+
+/// The corridor the locked entry flew at `altitude_m`, by straight lines
+/// between its knots: lowest and highest speed through the air, lowest and
+/// highest sine of the path angle through the air. `None` outside 31 km to
+/// 134 km, where it flew no state.
+fn corridor_bounds(altitude_m: f64) -> Option<[f64; 4]> {
+    if !(altitude_m >= CORRIDOR_BOTTOM_M && altitude_m <= CORRIDOR_ABOVE_TOP_M) {
+        return None;
+    }
+    let all = CORRIDOR_KNOTS + CORRIDOR_ABOVE_KNOTS;
+    let knots_up = (altitude_m - CORRIDOR_BOTTOM_M) / CORRIDOR_KNOT_SPACING_M;
+    let mut index = knots_up as usize;
+    if index >= all - 1 {
+        index = all - 2;
+    }
+    let share = knots_up - (index as f64);
+    let at = |below: &[f64; CORRIDOR_KNOTS], above: &[f64; CORRIDOR_ABOVE_KNOTS], k: usize| {
+        if k < CORRIDOR_KNOTS { below[k] } else { above[k - CORRIDOR_KNOTS] }
+    };
+    let read = |below: &[f64; CORRIDOR_KNOTS], above: &[f64; CORRIDOR_ABOVE_KNOTS]| {
+        let low = at(below, above, index);
+        low + (at(below, above, index + 1) - low) * share
+    };
+    Some([
+        read(&CORRIDOR_AIR_SPEED_LOW_M_S, &CORRIDOR_ABOVE_AIR_SPEED_LOW_M_S),
+        read(&CORRIDOR_AIR_SPEED_HIGH_M_S, &CORRIDOR_ABOVE_AIR_SPEED_HIGH_M_S),
+        read(&CORRIDOR_PATH_SINE_LOW, &CORRIDOR_ABOVE_PATH_SINE_LOW),
+        read(&CORRIDOR_PATH_SINE_HIGH, &CORRIDOR_ABOVE_PATH_SINE_HIGH),
+    ])
+}
+
+/// The sine of the path angle through the air of `state`: its radial speed,
+/// which the turning air does not change, over its speed through the air.
+fn path_sine(state: &CapsuleState) -> f64 {
+    state.radial_speed_m_s / state.air_speed_m_s
+}
+
+/// Each limit of the entry the card was compared on that `state` is past,
+/// as a record of [`FLAG_OFF_FLOWN_ENTRY`]. Read from the landed state alone.
+fn off_flown_entry(state: &CapsuleState) -> crate::exceedance::Exceedances {
+    let mut records = crate::exceedance::Exceedances::new();
+    let altitude_m = state.altitude_m;
+    let air_speed = state.air_speed_m_s;
+    if altitude_m < CORRIDOR_BOTTOM_M {
+        records.push(Exceedance::fixed(BELOW_CORRIDOR_KIND, altitude_m));
+    }
+    if altitude_m > CORRIDOR_ABOVE_TOP_M {
+        records.push(Exceedance::fixed(ABOVE_CORRIDOR_KIND, altitude_m));
+    }
+    if let Some([low, high, sine_low, sine_high]) = corridor_bounds(altitude_m) {
+        let sine = path_sine(state);
+        records.push_if(air_speed < low, Exceedance::at(CORRIDOR_SPEED_LOW_KIND, low, air_speed));
+        records.push_if(air_speed > high, Exceedance::at(CORRIDOR_SPEED_HIGH_KIND, high, air_speed));
+        records.push_if(sine < sine_low, Exceedance::at(CORRIDOR_SINE_LOW_KIND, sine_low, sine));
+        records.push_if(sine > sine_high, Exceedance::at(CORRIDOR_SINE_HIGH_KIND, sine_high, sine));
+    }
+    records
 }
 
 /// Write the fields that follow from the phase.
@@ -2154,6 +2381,9 @@ fn publish(state: &CapsuleState, frame: &mut LastStateFrame64) {
     let mut flags = 0;
     if state.drogue_mach_window {
         flags |= FLAG_DROGUE_MACH_WINDOW;
+    }
+    if !off_flown_entry(state).is_empty() {
+        flags |= FLAG_OFF_FLOWN_ENTRY;
     }
     frame.t = state.t_s;
     frame.pos[0] = state.altitude_m as f32;
@@ -2198,6 +2428,8 @@ struct Air {
     sound_speed_m_s: f64,
     mach: f64,
     drag_acceleration_m_s2: f64,
+    /// The drag was the Mach table's top entry held past its end.
+    drag_held: bool,
 }
 
 /// The air the capsule meets at this radius and these two speeds. An
@@ -2207,6 +2439,31 @@ fn air_at(
     radius_m: f64,
     radial_speed_m_s: f64,
     transverse_speed_m_s: f64,
+) -> Result<Air, StepReject> {
+    air_with_band(capsule, radius_m, radial_speed_m_s, transverse_speed_m_s, true)
+}
+
+/// The air at a stage of a Runge-Kutta step. The band of air speeds above
+/// 68.96 km is not a table's end (the drag there is read by altitude
+/// alone) but the span of speeds the card stands behind: it is held to each
+/// state the path passes through, the incoming state, each landing and,
+/// for a step across 68.96 km, the speed where the path crosses it, and not
+/// to a stage, which is no state of the path (engine 0.15.2).
+fn air_at_stage(
+    capsule: &CapsuleStardust,
+    radius_m: f64,
+    radial_speed_m_s: f64,
+    transverse_speed_m_s: f64,
+) -> Result<Air, StepReject> {
+    air_with_band(capsule, radius_m, radial_speed_m_s, transverse_speed_m_s, false)
+}
+
+fn air_with_band(
+    capsule: &CapsuleStardust,
+    radius_m: f64,
+    radial_speed_m_s: f64,
+    transverse_speed_m_s: f64,
+    band_held: bool,
 ) -> Result<Air, StepReject> {
     let altitude_m = radius_m - capsule.local_earth_radius_m;
     if !altitude_m.is_finite() || !radial_speed_m_s.is_finite() || !transverse_speed_m_s.is_finite()
@@ -2246,9 +2503,11 @@ fn air_at(
         return Err(StepReject::NonFiniteState);
     }
     let read_by_altitude = altitude_m >= capsule.drag_switch_altitude_m;
+    let mut drag_held = false;
     // Above the switch the band of air speeds is the limit, and it lies far
     // above Mach 1.0, so the Mach floor is never what refuses there.
-    if read_by_altitude
+    if band_held
+        && read_by_altitude
         && !(air_speed_m_s >= capsule.air_speed_band_min_m_s
             && air_speed_m_s <= capsule.air_speed_band_max_m_s)
     {
@@ -2267,10 +2526,21 @@ fn air_at(
         };
         value
     } else {
-        let Some(value) = drag_at_mach(capsule, mach) else {
-            return Err(StepReject::MachOutsideCard);
-        };
-        value
+        match drag_at_mach(capsule, mach) {
+            Some(value) => value,
+            // Past the Mach table's end, Mach 40, and at a speed through the
+            // air no faster than any drag of the card was computed at: the
+            // top entry held, flagged with the Mach number it was held at.
+            // The top entry is the table by altitude's 68.96 km row, which
+            // the card takes just above the switch at these speeds.
+            None if mach > capsule.drag_mach[DRAG_MACH_ENTRIES - 1]
+                && air_speed_m_s <= capsule.air_speed_band_max_m_s =>
+            {
+                drag_held = true;
+                capsule.drag_by_mach[DRAG_MACH_ENTRIES - 1]
+            }
+            None => return Err(StepReject::MachOutsideCard),
+        }
     };
     let drag_acceleration_m_s2 = 0.5
         * density_kg_m3
@@ -2291,6 +2561,7 @@ fn air_at(
         sound_speed_m_s,
         mach,
         drag_acceleration_m_s2,
+        drag_held,
     })
 }
 
@@ -2355,10 +2626,16 @@ fn drag_at_mach(capsule: &CapsuleStardust, mach: f64) -> Option<f64> {
 
 /// Rates of `(r, v_r, v_t, θ, Q)`.
 fn rates(capsule: &CapsuleStardust, y: [f64; 5]) -> Result<[f64; 5], StepReject> {
+    rates_held(capsule, y).map(|(out, _)| out)
+}
+
+/// Rates of `(r, v_r, v_t, θ, Q)`, and the Mach number at which the drag was
+/// the Mach table's top entry held, or zero where it was not.
+fn rates_held(capsule: &CapsuleStardust, y: [f64; 5]) -> Result<([f64; 5], f64), StepReject> {
     let radius_m = y[0];
     let radial_speed_m_s = y[1];
     let transverse_speed_m_s = y[2];
-    let air = air_at(capsule, radius_m, radial_speed_m_s, transverse_speed_m_s)?;
+    let air = air_at_stage(capsule, radius_m, radial_speed_m_s, transverse_speed_m_s)?;
     let drag = air.drag_acceleration_m_s2;
     let drag_radial = -drag * air.radial_m_s / air.air_speed_m_s;
     let drag_transverse = -drag * air.transverse_m_s / air.air_speed_m_s;
@@ -2372,7 +2649,7 @@ fn rates(capsule: &CapsuleStardust, y: [f64; 5]) -> Result<[f64; 5], StepReject>
         drag * air.air_speed_m_s,
     ];
     if finite5(out) {
-        Ok(out)
+        Ok((out, if air.drag_held { air.mach } else { 0.0 }))
     } else {
         Err(StepReject::NonFiniteState)
     }
@@ -2452,7 +2729,74 @@ fn state_is_finite(state: &CapsuleState) -> bool {
 pub const EXCEEDANCE_KINDS: &[crate::exceedance::ExceedanceKind] = &[
     WINDOW_LOW_KIND,
     WINDOW_HIGH_KIND,
+    BELOW_CORRIDOR_KIND,
+    ABOVE_CORRIDOR_KIND,
+    CORRIDOR_SPEED_LOW_KIND,
+    CORRIDOR_SPEED_HIGH_KIND,
+    CORRIDOR_SINE_LOW_KIND,
+    CORRIDOR_SINE_HIGH_KIND,
+    MACH_HELD_KIND,
 ];
+
+const BELOW_CORRIDOR_KIND: ExceedanceKind = ExceedanceKind::fixed(
+    "FLAG_OFF_FLOWN_ENTRY",
+    FLAG_OFF_FLOWN_ENTRY,
+    "altitude_m",
+    "m",
+    Side::Below,
+    CORRIDOR_BOTTOM_M,
+    "31 000 m, the bottom of the corridor the locked entry flew: the entry was compared down to 31.03 km",
+);
+const CORRIDOR_SPEED_LOW_KIND: ExceedanceKind = ExceedanceKind::varying(
+    "FLAG_OFF_FLOWN_ENTRY",
+    FLAG_OFF_FLOWN_ENTRY,
+    "air_speed_m_s",
+    "m/s",
+    Side::Below,
+    "the lowest speed through the air the locked entry flew within 500 m of this altitude, widened by 1 m/s, read between knots every 500 m from 31 km to 134 km (1147.51 m/s at 40 km)",
+);
+const CORRIDOR_SPEED_HIGH_KIND: ExceedanceKind = ExceedanceKind::varying(
+    "FLAG_OFF_FLOWN_ENTRY",
+    FLAG_OFF_FLOWN_ENTRY,
+    "air_speed_m_s",
+    "m/s",
+    Side::Above,
+    "the highest speed through the air the locked entry flew within 500 m of this altitude, widened by 1 m/s, read between knots every 500 m from 31 km to 134 km (1350.11 m/s at 40 km)",
+);
+const CORRIDOR_SINE_LOW_KIND: ExceedanceKind = ExceedanceKind::varying(
+    "FLAG_OFF_FLOWN_ENTRY",
+    FLAG_OFF_FLOWN_ENTRY,
+    "path_sine",
+    "1",
+    Side::Below,
+    "the lowest sine of the path angle through the air, radial speed over speed through the air, the locked entry flew within 500 m of this altitude, widened by 0.001, read between knots every 500 m from 31 km to 134 km: a path steeper than the flown one",
+);
+const CORRIDOR_SINE_HIGH_KIND: ExceedanceKind = ExceedanceKind::varying(
+    "FLAG_OFF_FLOWN_ENTRY",
+    FLAG_OFF_FLOWN_ENTRY,
+    "path_sine",
+    "1",
+    Side::Above,
+    "the highest sine of the path angle through the air the locked entry flew within 500 m of this altitude, widened by 0.001, read between knots every 500 m from 31 km to 134 km: a path shallower than the flown one",
+);
+const ABOVE_CORRIDOR_KIND: ExceedanceKind = ExceedanceKind::fixed(
+    "FLAG_OFF_FLOWN_ENTRY",
+    FLAG_OFF_FLOWN_ENTRY,
+    "altitude_m",
+    "m",
+    Side::Above,
+    CORRIDOR_ABOVE_TOP_M,
+    "134 000 m, the top knot of the corridor the locked entry flew: it began at entry interface, 133 911.49 m",
+);
+const MACH_HELD_KIND: ExceedanceKind = ExceedanceKind::fixed(
+    "FLAG_MACH_TABLE_HELD",
+    FLAG_MACH_TABLE_HELD,
+    "mach",
+    "1",
+    Side::Above,
+    40.0,
+    "Mach 40, the end of the drag table by Mach number; the value is the highest Mach number at which a stage or the landing of the step read the drag below 68.96 km, its top entry, 1.4959, held",
+);
 
 const WINDOW_WORDS: &str = "the Mach window the drogue had to open in, 1.2 to 1.6: the flag is set inside it";
 const WINDOW_LOW_KIND: ExceedanceKind = ExceedanceKind::fixed(
@@ -2485,11 +2829,27 @@ pub fn exceedances(
     load: CapsuleLoad,
     dt_s: f64,
 ) -> crate::exceedance::Exceedances {
-    let _ = (before, load, dt_s);
+    let _ = load;
     let mut records = crate::exceedance::Exceedances::new();
     if after.drogue_mach_window {
         records.push(Exceedance::at(WINDOW_LOW_KIND, capsule.drogue_mach_required_min, after.mach));
         records.push(Exceedance::at(WINDOW_HIGH_KIND, capsule.drogue_mach_required_max, after.mach));
+    }
+    for record in off_flown_entry(after).iter() {
+        records.push(*record);
+    }
+    // The held drag is a fact of the step, not of the landing alone: the step
+    // is taken again from `before`, exactly as it was, to read the highest
+    // Mach number at which a stage or the landing held the top entry.
+    if let Ok((predicted, stages)) = integrate_held(capsule, recorded(before), dt_s) {
+        let landing = match air_at(capsule, predicted[0], predicted[1], predicted[2]) {
+            Ok(air) if air.drag_held => air.mach,
+            _ => 0.0,
+        };
+        let held = max_f64(stages, landing);
+        if held > 0.0 {
+            records.push(Exceedance::fixed(MACH_HELD_KIND, held));
+        }
     }
     records
 }
@@ -2518,6 +2878,8 @@ mod tests {
         between_entries, between_knots, between_low_knots, commit, drag_at_mach, integrate, rates,
         recorded,
         rotating_frame_energy_j_kg, step, validate,
+        CORRIDOR_ABOVE_TOP_M, ENTRY_RADIUS_M, FLAG_MACH_TABLE_HELD, FLAG_OFF_FLOWN_ENTRY,
+        air_at, exceedances,
     };
     use crate::frame::LastStateFrame64;
 
@@ -3255,13 +3617,17 @@ mod tests {
     }
 
     #[test]
-    fn above_mach_40_below_the_switch_is_refused_and_nothing_is_held() {
+    fn above_mach_40_below_the_switch_the_top_entry_is_held_and_flagged() {
         // The table by Mach number stops at Mach 40. Its top entry is read at
-        // Mach 40 exactly and nothing is read above it. Through engine 0.6.0
-        // that entry was held above Mach 40.
+        // Mach 40 exactly and the table reads nothing above it. Since engine
+        // 0.15.2 the step holds that entry above Mach 40 below 68.96 km, up to
+        // 12 620 m/s through the air, and flags it (FLAG_MACH_TABLE_HELD);
+        // through engine 0.6.0 it was held unflagged and unsaid, and from
+        // 0.7.0 to 0.15.1 such a state was refused as MachOutsideCard.
         let capsule = CapsuleStardust::sample_return_capsule();
         let top_entry = DRAG_BY_MACH[DRAG_MACH.len() - 1];
         assert_eq!(top_entry.to_bits(), 1.4959_f64.to_bits());
+        assert_eq!(top_entry.to_bits(), DRAG_BY_ALTITUDE[0].to_bits());
         let at = |mach: f64| drag_at_mach(&capsule, mach);
         assert_eq!(at(40.0).unwrap().to_bits(), top_entry.to_bits());
         assert!(at(f64::from_bits(40.0_f64.to_bits() + 1)).is_none());
@@ -3271,39 +3637,32 @@ mod tests {
         assert_eq!(at(1.0).unwrap().to_bits(), 1.094_f64.to_bits());
         assert!(at(0.1).is_none());
 
-        // 65 km with the entry's two speeds is Mach 41: refused, as a start and as a step.
-        let fast_at = |altitude_m: f64| {
-            CapsuleState::anchor(
-                &capsule,
-                LOCAL_EARTH_RADIUS_M + altitude_m,
-                capsule.entry_radial_speed_m_s,
-                capsule.entry_transverse_speed_m_s,
-            )
-        };
-        assert_eq!(fast_at(65_000.0), Err(StepReject::MachOutsideCard));
-        assert!(CapsuleState::try_state(
+        // 65 km with the entry's two speeds is Mach 41 at 12 555 m/s: taken,
+        // the top entry held, and a step from it lands with the flag and a
+        // record of the Mach number it was held at.
+        let fast = CapsuleState::anchor(
             &capsule,
             LOCAL_EARTH_RADIUS_M + 65_000.0,
             capsule.entry_radial_speed_m_s,
             capsule.entry_transverse_speed_m_s,
         )
-        .is_none());
-        let mut entry = CapsuleState::try_entry_interface(&capsule).unwrap();
-        let saved = state_bits(&entry);
-        entry.radius_m = LOCAL_EARTH_RADIUS_M + 65_000.0;
-        let moved = state_bits(&entry);
+        .unwrap();
+        assert!(fast.mach > 41.0 && fast.mach < 41.01, "{}", fast.mach);
+        let held_air = air_at(&capsule, fast.radius_m, fast.radial_speed_m_s, fast.transverse_speed_m_s).unwrap();
+        assert!(held_air.drag_held);
+        let mut stepped = fast;
         let mut frame = blank_frame();
-        let held = frame.to_bytes();
-        assert_eq!(
-            step(&capsule, &mut entry, &mut frame, NO_LOAD, DT),
-            Err(StepReject::MachOutsideCard)
-        );
-        assert_eq!(state_bits(&entry), moved);
-        assert!(moved != saved);
-        assert_eq!(frame.to_bytes(), held);
+        step(&capsule, &mut stepped, &mut frame, NO_LOAD, DT).unwrap();
+        assert_eq!(frame.flags & FLAG_MACH_TABLE_HELD, FLAG_MACH_TABLE_HELD);
+        let records = exceedances(&capsule, &fast, &stepped, NO_LOAD, DT);
+        let held = records.iter().find(|record| record.kind.flag == "FLAG_MACH_TABLE_HELD").unwrap();
+        assert_eq!(held.limit(), Some(40.0));
+        assert!(held.value().unwrap() >= fast.mach - 1.0e-9 && held.extent().unwrap() > 1.0);
+        proof_intact(&frame);
 
         // A run started at 60 km at 20 km/s was sealed through engine 0.6.0
-        // at Mach 62. It is refused as a start.
+        // at Mach 62. It is refused as a start: above 12 620 m/s through the
+        // air no drag of the card was computed.
         let audit = CapsuleState::anchor(&capsule, 6429228.511478454, -2000.0, 20000.0);
         assert_eq!(audit, Err(StepReject::MachOutsideCard));
         // A single step at the same speed started at 68.96 km, where drag is
@@ -3311,21 +3670,33 @@ mod tests {
         let audit = CapsuleState::anchor(&capsule, 6438188.511478454, -2000.0, 20000.0);
         assert_eq!(audit, Err(StepReject::AirSpeedOutsideCard));
 
-        // Mach 40.1 at 60 km is refused as MachOutsideCard. Mach 39.9 there,
-        // falling straight down, is inside the table and is computed: until
-        // engine 0.9 it was off the corridor the locked entry flew.
+        // At 60 km, falling straight down: Mach 39.9 is inside the table, a
+        // speed between Mach 40 (12 603 m/s there) and 12 620 m/s is held and
+        // taken, and 12 620 m/s and a hair more is refused as MachOutsideCard,
+        // as the same speed is just above the switch as AirSpeedOutsideCard.
         let radius_m = LOCAL_EARTH_RADIUS_M + 60_000.0;
         let sound_m_s = between_knots(&capsule, &capsule.sound_speed_m_s, 60_000.0).unwrap();
-        let at_mach = |mach: f64| {
+        let at_speed = |air_speed_m_s: f64| {
             CapsuleState::anchor(
                 &capsule,
                 radius_m,
-                -mach * sound_m_s,
+                -air_speed_m_s,
                 capsule.air_rotation_rate_rad_s * radius_m,
             )
         };
-        assert!(at_mach(39.9).is_ok());
-        assert_eq!(at_mach(40.1), Err(StepReject::MachOutsideCard));
+        assert!(at_speed(39.9 * sound_m_s).is_ok());
+        assert!(40.0 * sound_m_s < AIR_SPEED_BAND_MAX_M_S);
+        assert!(at_speed(0.5 * (40.0 * sound_m_s + AIR_SPEED_BAND_MAX_M_S)).is_ok());
+        assert!(at_speed(AIR_SPEED_BAND_MAX_M_S).is_ok());
+        assert_eq!(at_speed(AIR_SPEED_BAND_MAX_M_S + 0.01), Err(StepReject::MachOutsideCard));
+        // The drag is continuous across Mach 40 below the switch, and across
+        // the switch above Mach 40: the held entry is the altitude table's
+        // 68.96 km row.
+        let below = air_at(&capsule, LOCAL_EARTH_RADIUS_M + DRAG_SWITCH_ALTITUDE_M - 1.0e-6, -12_000.0, capsule.air_rotation_rate_rad_s * (LOCAL_EARTH_RADIUS_M + DRAG_SWITCH_ALTITUDE_M)).unwrap();
+        let above = air_at(&capsule, LOCAL_EARTH_RADIUS_M + DRAG_SWITCH_ALTITUDE_M, -12_000.0, capsule.air_rotation_rate_rad_s * (LOCAL_EARTH_RADIUS_M + DRAG_SWITCH_ALTITUDE_M)).unwrap();
+        assert!(below.drag_held && !above.drag_held);
+        let ratio = below.drag_acceleration_m_s2 / above.drag_acceleration_m_s2;
+        assert!(abs_f64(ratio - 1.0) < 1.0e-6, "{ratio}");
 
         // The locked entry never reaches it. The Mach number falls through 40
         // at 43.36 s, at 69.23 km, while drag is still read by altitude. The
@@ -3340,6 +3711,7 @@ mod tests {
                 Err(StepReject::PastFlightDeployment) => break,
                 Err(other) => panic!("refused with {other:?}"),
             }
+            assert_eq!(frame.flags & (FLAG_MACH_TABLE_HELD | FLAG_OFF_FLOWN_ENTRY), 0);
             if state.mach >= 40.0 {
                 last_at_mach_40 = state;
             }
@@ -3365,6 +3737,163 @@ mod tests {
             last_at_mach_40.t_s
         );
         proof_intact(&frame);
+    }
+
+    /// Engine 0.15.2, work order of 21 October (defect 1). From 6503140 m at
+    /// 12 760 m/s across, dt 0.05 s, 1000 steps: radial speeds of -1905.0
+    /// and -1905.75 m/s were refused MachOutsideCard at step 827, Mach 40.02
+    /// to 40.04 at 68.98 to 69.01 km, while -1905.25 completed. The path
+    /// crosses 68.96 km within a hundredth of Mach 40, and whether a stage of
+    /// the step fell below the switch above Mach 40 turned with the input.
+    /// With the top entry held there (the value the table by altitude gives at
+    /// 68.96 km), every run of the sweep completes, the final state moves
+    /// smoothly and in one direction with the radial speed, and a step that
+    /// read the held entry is flagged with the Mach number it read it at.
+    #[test]
+    fn the_runs_near_the_mach_40_edge_complete_and_move_smoothly_with_the_input() {
+        let capsule = CapsuleStardust::sample_return_capsule();
+        let run = |radial_m_s: f64| {
+            let mut state = CapsuleState::anchor(&capsule, ENTRY_RADIUS_M, radial_m_s, 12_760.0).unwrap();
+            let mut frame = blank_frame();
+            let mut held = 0;
+            for count in 0..1000 {
+                step(&capsule, &mut state, &mut frame, NO_LOAD, DT)
+                    .unwrap_or_else(|e| panic!("{radial_m_s} m/s, step {}: {e:?}", count + 1));
+                if frame.flags & FLAG_MACH_TABLE_HELD != 0 {
+                    held += 1;
+                }
+            }
+            (state, held)
+        };
+        for radial_m_s in [-1905.0, -1905.75] {
+            let (_, held) = run(radial_m_s);
+            assert!(held >= 1, "{radial_m_s}");
+        }
+        let mut last: Option<CapsuleState> = None;
+        let mut radial_m_s = -1903.0;
+        while radial_m_s >= -1908.0 {
+            let (state, _) = run(radial_m_s);
+            if let Some(before) = last {
+                // 0.05 m/s steeper: lower and slower, by a small amount.
+                let lower = before.altitude_m - state.altitude_m;
+                let slower = before.air_speed_m_s - state.air_speed_m_s;
+                assert!(lower > 0.0 && lower < 5.0, "{radial_m_s}: {lower}");
+                assert!(slower > 0.0 && slower < 1.5, "{radial_m_s}: {slower}");
+            }
+            last = Some(state);
+            radial_m_s -= 0.05;
+        }
+    }
+
+    /// Engine 0.15.2, with defect 1: the band of air speeds above 68.96 km is
+    /// held to the states of the path and to the speed where a step's path
+    /// crosses 68.96 km, so that from 12 760 m/s across at 0.05 s the outcome
+    /// turns once with the radial speed, at the band's bottom and its top,
+    /// where through 0.15.1 the runs from -1834.0 to -1835.0 m/s ended and
+    /// were refused in turn.
+    #[test]
+    fn the_outcome_turns_once_at_each_edge_of_the_band() {
+        let capsule = CapsuleStardust::sample_return_capsule();
+        let outcome = |radial_m_s: f64| {
+            let mut state = CapsuleState::anchor(&capsule, ENTRY_RADIUS_M, radial_m_s, 12_760.0).unwrap();
+            let mut frame = blank_frame();
+            for _ in 0..3000 {
+                match step(&capsule, &mut state, &mut frame, NO_LOAD, DT) {
+                    Ok(()) => {}
+                    Err(reject) => return reject,
+                }
+            }
+            panic!("{radial_m_s}: no end in 3000 steps");
+        };
+        for (low, high, below, above) in [
+            (-1834.0, -1837.0, StepReject::AirSpeedOutsideCard, StepReject::PastFlightDeployment),
+            (-2175.0, -2178.0, StepReject::PastFlightDeployment, StepReject::AirSpeedOutsideCard),
+        ] {
+            let mut turns = 0;
+            let mut last = outcome(low);
+            assert_eq!(last, below, "{low}");
+            for index in 1..=300 {
+                let radial_m_s = low + (high - low) * f64::from(index) / 300.0;
+                let now = outcome(radial_m_s);
+                if now != last {
+                    turns += 1;
+                }
+                last = now;
+            }
+            assert_eq!(last, above, "{high}");
+            assert_eq!(turns, 1, "{low} to {high}");
+        }
+        assert_eq!(outcome(-1835.89545), StepReject::AirSpeedOutsideCard);
+        assert_eq!(outcome(-1835.89546), StepReject::PastFlightDeployment);
+    }
+
+    /// Engine 0.15.2, work order of 21 October (defect 2): a flag for the
+    /// distance from the entry the card was compared on. No frame of the
+    /// locked entry carries it at any of the ten steps the corridor was built
+    /// from, so no run inside the corridor moves; a steeper entry carries it
+    /// below 69 km, each record with the corridor's bound at that altitude,
+    /// the value and the distance past it.
+    #[test]
+    fn a_landing_off_the_flown_entry_is_flagged_with_its_distance() {
+        let capsule = CapsuleStardust::sample_return_capsule();
+        for dt_s in [0.05, 0.04, 0.03, 0.025, 0.02, 0.01, 0.005, 0.0025, 0.001, 0.0005] {
+            let mut state = CapsuleState::try_entry_interface(&capsule).unwrap();
+            let mut frame = blank_frame();
+            loop {
+                match step(&capsule, &mut state, &mut frame, NO_LOAD, dt_s) {
+                    Ok(()) => assert_eq!(frame.flags & FLAG_OFF_FLOWN_ENTRY, 0, "{dt_s} s at {} m", state.altitude_m),
+                    Err(StepReject::PastFlightDeployment) => break,
+                    Err(other) => panic!("{dt_s}: {other:?}"),
+                }
+            }
+        }
+        let mut state = CapsuleState::anchor(&capsule, ENTRY_RADIUS_M, -1905.0, 12_760.0).unwrap();
+        let mut frame = blank_frame();
+        let mut flagged = 0;
+        for _ in 0..1000 {
+            let before = state;
+            step(&capsule, &mut state, &mut frame, NO_LOAD, DT).unwrap();
+            let records = exceedances(&capsule, &before, &state, NO_LOAD, DT);
+            assert_eq!(records.mask(), frame.flags);
+            if frame.flags & FLAG_OFF_FLOWN_ENTRY != 0 {
+                flagged += 1;
+                for record in records.iter().filter(|record| record.kind.flag == "FLAG_OFF_FLOWN_ENTRY") {
+                    assert!(record.extent().unwrap() > 0.0, "{record:?}");
+                }
+            }
+        }
+        assert!(flagged > 200, "{flagged}");
+        // The case of the work order: from entry interface at -600 m/s radial
+        // the capsule skips out of the air; through 0.15.1 its 1,553 frames
+        // carried no flag. Each frame is off the flown entry now, by its path
+        // angle above all.
+        let mut state = CapsuleState::anchor(&capsule, ENTRY_RADIUS_M, -600.0, capsule.entry_transverse_speed_m_s).unwrap();
+        let (mut landed, mut flagged) = (0, 0);
+        let end = loop {
+            let before = state;
+            match step(&capsule, &mut state, &mut frame, NO_LOAD, DT) {
+                Ok(()) => {
+                    landed += 1;
+                    if frame.flags & FLAG_OFF_FLOWN_ENTRY != 0 {
+                        flagged += 1;
+                        let records = exceedances(&capsule, &before, &state, NO_LOAD, DT);
+                        assert!(records.iter().any(|record| record.kind.quantity == "path_sine" || record.kind.quantity == "altitude_m"));
+                    }
+                }
+                Err(reject) => break reject,
+            }
+        };
+        assert_eq!((landed, end), (1553, StepReject::AltitudeOutsideCard));
+        assert_eq!(flagged, landed);
+        assert!(CORRIDOR_ABOVE_TOP_M > ENTRY_RADIUS_M - LOCAL_EARTH_RADIUS_M);
+        // Under the corridor's bottom, above the drogue Mach: flagged by altitude.
+        let low = through_the_air(&capsule, 30_000.0, 600.0, -0.5).unwrap();
+        let mut stepped = low;
+        step(&capsule, &mut stepped, &mut frame, NO_LOAD, 0.005).unwrap();
+        let records = exceedances(&capsule, &low, &stepped, NO_LOAD, 0.005);
+        let bottom = records.iter().find(|record| record.kind.quantity == "altitude_m").unwrap();
+        assert_eq!(bottom.limit(), Some(CORRIDOR_BOTTOM_M));
+        assert!(bottom.extent().unwrap() > 900.0);
     }
 
     #[test]
@@ -4195,11 +4724,13 @@ mod tests {
         );
 
         // A stage of one step of 100 s from entry is thrown far outside the
-        // band of air speeds before it leaves the altitudes.
+        // altitudes of the card. Through engine 0.15.1 the band of air speeds
+        // was held to the stages and named it first; since 0.15.2 the band is
+        // held to the states of the path, and the altitude names it.
         refuse(
             entry,
             100.0,
-            StepReject::AirSpeedOutsideCard,
+            StepReject::AltitudeOutsideCard,
             "one step of 100 s from entry",
         );
         let late = reference(2_778);
@@ -4387,6 +4918,7 @@ mod tests {
                 sound_speed_m_s: 1.0,
                 mach,
                 drag_acceleration_m_s2: 0.0,
+                drag_held: false,
             };
             super::stagnation_pressure_pa(&air)
         };
@@ -4423,7 +4955,7 @@ mod tests {
         assert_eq!(got, Err(StepReject::NonFiniteInput));
         proof_intact(&frame);
         let got = step(&capsule, &mut state, &mut frame, NO_LOAD, 100.0);
-        assert_eq!(got, Err(StepReject::AirSpeedOutsideCard));
+        assert_eq!(got, Err(StepReject::AltitudeOutsideCard));
         proof_intact(&frame);
         let got = step_euler(&capsule, &mut state, &mut frame, DT);
         assert_eq!(got, Err(StepReject::SpontaneousGeneration));

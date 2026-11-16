@@ -239,6 +239,158 @@ fn every_computing_tool_signs_its_answer_and_each_attack_fails_by_name() {
     assert!(!said.contains(&seed_hex("engine")), "the seed is never printed");
 }
 
+/// An answer written again the way a JSON client writes it: a space after
+/// every colon and every comma, the values and their order kept.
+fn written_again(answer: &str) -> String {
+    struct Spaced;
+    impl serde_json::ser::Formatter for Spaced {
+        fn begin_object_key<W: ?Sized + Write>(&mut self, writer: &mut W, first: bool) -> std::io::Result<()> {
+            if first { Ok(()) } else { writer.write_all(b", ") }
+        }
+        fn begin_object_value<W: ?Sized + Write>(&mut self, writer: &mut W) -> std::io::Result<()> {
+            writer.write_all(b": ")
+        }
+        fn begin_array_value<W: ?Sized + Write>(&mut self, writer: &mut W, first: bool) -> std::io::Result<()> {
+            if first { Ok(()) } else { writer.write_all(b", ") }
+        }
+    }
+    let value: Value = serde_json::from_str(answer).unwrap();
+    let mut out = Vec::new();
+    serde::Serialize::serialize(&value, &mut serde_json::Serializer::with_formatter(&mut out, Spaced)).unwrap();
+    String::from_utf8(out).unwrap()
+}
+
+/// 0.15.1: a signed answer sent back byte for byte holds; sent again with
+/// its nonce seen it is refused SignatureNonceReplayed; written again by a
+/// JSON client (spaces after colons and commas) its signature is verified
+/// over the receipt it carries, never reported absent, the receipt is named
+/// as not covering the bytes sent (ReceiptDoesNotMatch, written_again), and
+/// the answer is computed again: values_hold true, holds false, differs_at
+/// the first place its text differs. A replay, another key or a value
+/// changed are named on the copy written again as on the answer as it came.
+#[test]
+fn a_signed_answer_written_again_by_a_client_names_the_true_cause() {
+    let dir = scratch("written_again");
+    let key = key_file(&dir, "engine");
+    let mut door = Door::start(&["--signing-key", &key]);
+    let (_, run) = door.call("run_trajectory", RUN);
+    let (_, solution) = door.call("solve", SOLVE);
+    let (_, dataset) = door.call("run_dataset", DATASET);
+    let dataset_parts = {
+        let body: Value = serde_json::from_str(&dataset).unwrap();
+        let head_at = dataset.find("\"head\":").unwrap() + 7;
+        let mut stream = serde_json::Deserializer::from_str(&dataset[head_at..]).into_iter::<Value>();
+        stream.next().unwrap().unwrap();
+        let head_end = head_at + stream.byte_offset();
+        format!(
+            r#"{{"head":{},"rows":{},"frames_hex":{}}}"#,
+            &dataset[head_at..head_end],
+            serde_json::to_string(&body["rows"]).unwrap(),
+            serde_json::to_string(&body["frames_hex"]).unwrap()
+        )
+    };
+    // 0.15.0 read a dataset written again with its head's signature unread,
+    // compared the engine's text with its own writing of the values, and
+    // said holds true: the bytes sent are now the bytes compared.
+    for (tool, answer) in [("verify_tape", run), ("verify_solution", solution), ("verify_dataset", dataset_parts)] {
+        let nonce = split(&answer).unwrap().unwrap().envelope.unwrap().nonce;
+        // Byte for byte: it holds, and so with the key given.
+        let (_, text) = door.call(tool, &answer);
+        assert_eq!((verdict(&text)["holds"].clone(), verdict(&text)["signature"]["holds"].clone()), (json!(true), json!(true)), "{tool}: {text}");
+        // Its nonce seen: refused by name, nothing computed.
+        let (_, text) = door.call(tool, &with_fields(&answer, &json!({ "seen_nonces": [nonce] })));
+        let said = verdict(&text);
+        assert_eq!((said["cause"].clone(), said["signature"]["cause"].clone()), (json!("signature"), json!("SignatureNonceReplayed")), "{tool}: {text}");
+
+        let again = written_again(&answer);
+        assert_ne!(again, answer);
+        assert_eq!(split(&again).unwrap(), None, "{tool}: the copy is not in the engine's form");
+        for arguments in [again.clone(), with_fields(&again, &json!({ "public_key": public("engine") }))] {
+            let (is_error, text) = door.call(tool, &arguments);
+            assert!(!is_error, "{tool}: {text}");
+            let said = verdict(&text);
+            assert_eq!(said["holds"], false, "{tool}: {text}");
+            assert_eq!(said["values_hold"], true, "{tool}: {text}");
+            assert_eq!(said["cause"], "answer_text", "{tool}: {text}");
+            assert!(said["differs_at"].is_string(), "{tool}: {text}");
+            assert_eq!(said["signature"]["cause"], "ReceiptDoesNotMatch", "{tool}: {text}");
+            assert_eq!(said["signature"]["holds"], false, "{tool}: {text}");
+            assert_eq!(said["signature"]["written_again"], true, "{tool}: {text}");
+            assert_eq!(said["signature"]["nonce"], json!(nonce), "{tool}: {text}");
+            assert_ne!(said["signature"]["cause"], "SignatureAbsent", "{tool}: {text}");
+        }
+        let named = |door: &mut Door, arguments: &str| {
+            let (_, text) = door.call(tool, arguments);
+            let said = verdict(&text);
+            assert_eq!(said["cause"], "signature", "{tool}: {text}");
+            said["signature"]["cause"].as_str().unwrap().to_string()
+        };
+        assert_eq!(named(&mut door, &written_again(&with_fields(&answer, &json!({ "seen_nonces": [nonce] })))), "SignatureNonceReplayed", "{tool}");
+        assert_eq!(named(&mut door, &written_again(&with_fields(&answer, &json!({ "public_key": public("another") })))), "SignatureKeyMismatch", "{tool}");
+        let expired = written_again(&re_signed(&answer, genesis_seal::answer_signature::now_s() - 7200, 5));
+        assert_eq!(named(&mut door, &expired), "SignatureExpired", "{tool}");
+        // A value changed on the copy: the signature still verifies over the
+        // receipt; the bytes are named, and the computation finds the value.
+        let changed = again.replacen("genesis_", "genesiS_", 1);
+        let (_, text) = door.call(tool, &changed);
+        let said = verdict(&text);
+        assert_eq!((said["holds"].clone(), said["values_hold"].clone()), (json!(false), json!(false)), "{tool}: {text}");
+        assert_eq!(said["signature"]["cause"], "ReceiptDoesNotMatch", "{tool}: {text}");
+    }
+}
+
+/// 0.15.1: a signed chained solve sent whole with its `from`, as
+/// verify_solution's long form takes it, holds: the caller's `from` stands
+/// after the signature and is not of the signed answer, so the signature is
+/// verified without it (0.15.0 named ReceiptDoesNotMatch). Its nonce seen,
+/// it is refused by name; written again by a client, the bytes are named
+/// and the values hold.
+#[test]
+fn a_signed_chained_solve_sent_whole_with_its_from_holds() {
+    let dir = scratch("chained");
+    let key = key_file(&dir, "engine");
+    let mut door = Door::start(&["--signing-key", &key]);
+    let up = json!({
+        "domain": "energy", "card": "reactor_triga_jsi",
+        "initial": { "start_temperature_k": 296.15, "rod_table_core": 231.0 },
+        "dt_s": 5.0e-5,
+        "segments": [{ "steps": 4000, "load": { "reactivity_inserted_dollar": 2.5, "rods_dropped": 0.0 } }],
+        "record_every": 200
+    });
+    let (is_error, card) = door.call("run_trajectory", &up.to_string());
+    assert!(!is_error, "{card}");
+    let card: Value = serde_json::from_str(&card).unwrap();
+    let mut times = Vec::new();
+    let mut energy = Vec::new();
+    for frame in card["frames"].as_array().unwrap() {
+        let bytes = hex::decode(frame["frame_hex"].as_str().unwrap()).unwrap();
+        times.push(f64::from_le_bytes(bytes[0..8].try_into().unwrap()));
+        energy.push(f64::from(f32::from_le_bytes(bytes[12..16].try_into().unwrap())));
+    }
+    let from = json!({ "request": up, "run_seal": card["run_seal"], "coupling": "triga_pulse_to_element_6753" });
+    let request = json!({
+        "solver": "fuel_rod_triga_jsi",
+        "parameters": { "start_temperature_k": 296.15, "time_s": times, "core_energy_released_mws": energy },
+        "from": from
+    });
+    let (is_error, chained) = door.call("solve", &request.to_string());
+    assert!(!is_error, "{chained}");
+    let nonce = split(&chained).unwrap().unwrap().envelope.unwrap().nonce;
+    let whole = format!("{},\"from\":{}}}", &chained[..chained.len() - 1], from);
+    for arguments in [whole.clone(), with_fields(&whole, &json!({ "public_key": public("engine") }))] {
+        let (_, text) = door.call("verify_solution", &arguments);
+        let said = verdict(&text);
+        assert_eq!((said["holds"].clone(), said["values_hold"].clone(), said["cause"].clone()), (json!(true), json!(true), Value::Null), "{text}");
+        assert_eq!(said["signature"]["holds"], true, "{text}");
+    }
+    let (_, text) = door.call("verify_solution", &with_fields(&whole, &json!({ "seen_nonces": [nonce] })));
+    assert_eq!(verdict(&text)["signature"]["cause"], "SignatureNonceReplayed", "{text}");
+    let (_, text) = door.call("verify_solution", &written_again(&whole));
+    let said = verdict(&text);
+    assert_eq!((said["holds"].clone(), said["values_hold"].clone()), (json!(false), json!(true)), "{text}");
+    assert_eq!((said["signature"]["cause"].clone(), said["signature"]["written_again"].clone()), (json!("ReceiptDoesNotMatch"), json!(true)), "{text}");
+}
+
 #[test]
 fn a_door_without_a_key_refuses_to_start_and_a_key_others_can_read_is_refused() {
     let output = Command::new(HOSTED)

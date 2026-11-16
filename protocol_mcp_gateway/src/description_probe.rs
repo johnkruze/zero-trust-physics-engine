@@ -457,7 +457,7 @@ async fn a_check_whose_seals_hold_over_rows_the_engine_did_not_write_does_not_ho
     other["engine_version"] = json!("genesis_kernel_v0.9.0");
     let report = answer(&state, "verify_dataset", &json!({ "head": other, "rows": made["rows"], "frames_hex": made["frames_hex"] })).await;
     assert_eq!((report["holds"].clone(), report["cause"].clone(), report["differs_at"].clone()), (json!(false), json!("engine_version"), json!("head.engine_version")), "{report}");
-    assert!(report["difference"].as_str().unwrap().starts_with("The dataset names engine_version genesis_kernel_v0.9.0, and this engine is genesis_kernel_v0.13.0."), "{report}");
+    assert!(report["difference"].as_str().unwrap().starts_with("The dataset names engine_version genesis_kernel_v0.9.0, and this engine is genesis_kernel_v0.13.1."), "{report}");
 
     // A sealed value changed: the check does not hold, and no such sentence is given.
     let mut broken = made["rows"].clone();

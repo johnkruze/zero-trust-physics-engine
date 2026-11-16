@@ -158,7 +158,7 @@ fn cite_gives_the_service_and_the_paper_first_then_the_people_whose_measurements
     // No licence and no word on passing data on: a citation says who to cite and where their work is.
     assert!(data[0].get("licence").is_none() && data[0].get("may_redistribute_measurements").is_none());
     assert_eq!(data[0]["requested_acknowledgment"], "Supported by National Energy SO Open Data");
-    assert_eq!(grid["paper"]["url"], "https://doi.org/10.5281/zenodo.23305697");
+    assert_eq!(grid["paper"]["url"], "https://doi.org/10.5281/zenodo.23517223");
     let text = grid["text"].as_str().unwrap();
     let bibtex = grid["bibtex"].as_str().unwrap();
     assert!(bibtex.starts_with("@misc{zerotrustphysics_service,") && bibtex.contains("@misc{kruze2026zerotrustphysics,") && bibtex.contains("@misc{neso2026systemfrequency,"));
@@ -169,7 +169,7 @@ fn cite_gives_the_service_and_the_paper_first_then_the_people_whose_measurements
     assert_eq!(lines.len(), data.len() + 2);
     let keys: Vec<&str> = grid.as_object().unwrap().keys().map(String::as_str).collect();
     assert_eq!(keys, ["domain", "card", "service", "paper", "real_thing", "how_used", "data", "text", "bibtex", "about"]);
-    assert_eq!(lines[0], "John Kruze (Protocol Company). Zero-Trust Physics: a physics verifier for Super Intelligence. Served at https://mcp.zerotrustphysics.com/mcp, engine genesis_kernel_v0.13.0. Accessed [the date you asked].");
+    assert_eq!(lines[0], "John Kruze (Protocol Company). Zero-Trust Physics: a physics verifier for Super Intelligence. Served at https://mcp.zerotrustphysics.com/mcp, engine genesis_kernel_v0.13.1. Accessed [the date you asked].");
     assert!(bibtex.contains("@misc{zerotrustphysics_service,"));
     // A generic specimen stands on no measured data: the service and the paper alone, and the answer says so.
     let pack = ok(&mut door, "cite", &json!({ "domain": "energy", "card": "battery_sag" }));
@@ -190,7 +190,7 @@ fn cite_gives_the_service_and_the_paper_first_then_the_people_whose_measurements
     let solvers = ok(&mut door, "list_solvers", &json!({}));
     for solver in solvers["solvers"].as_array().unwrap() {
         let answer = ok(&mut door, "cite", &json!({ "solver": solver["solver"] }));
-        assert!(answer["text"].as_str().unwrap().contains("zenodo.23305697"), "{solver}");
+        assert!(answer["text"].as_str().unwrap().contains("zenodo.23517223"), "{solver}");
     }
     // A solver's answers carry the solvers' engine version, and its citation of the service says that one.
     let atom = ok(&mut door, "cite", &json!({ "solver": "atom_dft" }));
@@ -203,18 +203,18 @@ fn cite_gives_the_service_and_the_paper_first_then_the_people_whose_measurements
     assert_eq!(service["service"]["publisher"], "Protocol Company");
     assert_eq!(service["service"]["address"], "https://mcp.zerotrustphysics.com/mcp");
     assert_eq!(service["service"]["site"], "https://zerotrustphysics.com");
-    assert_eq!(service["service"]["paper"], "https://doi.org/10.5281/zenodo.23305697");
+    assert_eq!(service["service"]["paper"], "https://doi.org/10.5281/zenodo.23517223");
     assert_eq!(service["service"]["contact"], "kruze@zerotrustphysics.com");
     // Restored in 0.14.4 beside the rest: the engine's source, the programs
     // that check a proof with no engine, the page for agents and the phone.
     assert_eq!(service["service"]["engine_source"], "https://github.com/johnkruze/zero-trust-physics-engine");
-    assert_eq!(service["service"]["proof_checkers"], "https://github.com/johnkruze/zero-trust-physics");
+    assert_eq!(service["service"]["proof_verifiers"], "https://github.com/johnkruze/zero-trust-physics");
     assert_eq!(service["service"]["site_for_agents"], "https://zerotrustphysics.com/llms.txt");
     assert_eq!(service["service"]["phone"], "928-264-7883");
-    assert_eq!(service["service"]["engine_version"], "genesis_kernel_v0.13.0 and genesis_solvers_v0.13.0");
+    assert_eq!(service["service"]["engine_version"], "genesis_kernel_v0.13.1 and genesis_solvers_v0.13.0");
     let text = service["text"].as_str().unwrap();
     assert!(text.starts_with("John Kruze (Protocol Company). Zero-Trust Physics: a physics verifier for Super Intelligence. Served at https://mcp.zerotrustphysics.com/mcp"), "{text}");
-    assert!(text.ends_with("https://doi.org/10.5281/zenodo.23305697"));
+    assert!(text.ends_with("https://doi.org/10.5281/zenodo.23517223"));
     assert!(service["about"].as_str().unwrap().starts_with("How to cite the service itself"));
     assert!(service.get("data").is_none());
     for (key, value) in service["service"].as_object().unwrap() {
@@ -419,22 +419,26 @@ fn the_earlier_answers_carry_no_new_key() {
     // receipt pinned for 0.10.0, 323535ed...7d25, with genesis_kernel_v0.9.0 the receipt pinned
     // for 0.9.0, 743c0cfb...ee52, and with genesis_kernel_v0.8.0 the receipt printed before,
     // 2329593a...515e. The run seal does not cover the version and is the seal it was.
-    assert_eq!(run["engine_version"], "genesis_kernel_v0.13.0");
-    // Moved again with kernel 0.13.0 (0.15.0): the same text with genesis_kernel_v0.12.0 put
-    // back gives the receipt pinned with seal rule v2 before, 492c71d1...b51e.
-    assert_eq!(run["receipt_sha384"], "34efa909324696334b85040510c56e9b2cc8a9a8a08460ce340774250e97cc09815ef60e8e47ba9b5e8026ee2838e243");
+    assert_eq!(run["engine_version"], "genesis_kernel_v0.13.1");
+    // Moved again with kernel 0.13.1 (0.15.2): the same text with genesis_kernel_v0.13.0 put
+    // back gives the receipt of 0.15.0 and 0.15.1, 34efa909...e243, and with
+    // genesis_kernel_v0.12.0 the receipt pinned with seal rule v2 before, 492c71d1...b51e.
+    const RECEIPT_0152: &str = "71ec30193fdbcea9a4ec811130d4dcf79158f3b61aae4a8d1eac049173c0ae5d9749e95163c89d74a0e242e21fc2412e";
+    assert_eq!(run["receipt_sha384"], RECEIPT_0152);
     let text = format!("{unlabelled_document},\"receipt_sha384\":\"{}\"}}", seal_sha(&format!("{unlabelled_document}}}")));
-    let document = text.strip_suffix(",\"receipt_sha384\":\"34efa909324696334b85040510c56e9b2cc8a9a8a08460ce340774250e97cc09815ef60e8e47ba9b5e8026ee2838e243\"}").expect("the receipt is last");
-    assert_eq!(seal_sha(&format!("{document}}}")), "34efa909324696334b85040510c56e9b2cc8a9a8a08460ce340774250e97cc09815ef60e8e47ba9b5e8026ee2838e243");
-    let before = document.replacen("genesis_kernel_v0.13.0", "genesis_kernel_v0.12.0", 1);
+    let document = text.strip_suffix(&format!(",\"receipt_sha384\":\"{RECEIPT_0152}\"}}")).expect("the receipt is last");
+    assert_eq!(seal_sha(&format!("{document}}}")), RECEIPT_0152);
+    let at_0150 = document.replacen("genesis_kernel_v0.13.1", "genesis_kernel_v0.13.0", 1);
+    assert_eq!(seal_sha(&format!("{at_0150}}}")), "34efa909324696334b85040510c56e9b2cc8a9a8a08460ce340774250e97cc09815ef60e8e47ba9b5e8026ee2838e243");
+    let before = document.replacen("genesis_kernel_v0.13.1", "genesis_kernel_v0.12.0", 1);
     assert_eq!(seal_sha(&format!("{before}}}")), "492c71d15b3d167a1c92739fbec1e5cdbe3fbb4e4144b2484ef2f5f748586e5c8f73afc80972b7463de2325cd623b51e");
-    let before = document.replacen("genesis_kernel_v0.13.0", "genesis_kernel_v0.11.0", 1);
+    let before = document.replacen("genesis_kernel_v0.13.1", "genesis_kernel_v0.11.0", 1);
     assert_eq!(seal_sha(&format!("{before}}}")), "beb57da0d227137ebe37a025dc0d85e865c75fdffc071c16fc7936161a2ee9675b9a8200f5f70b9590d20a4fecdaf691");
-    let before = document.replacen("genesis_kernel_v0.13.0", "genesis_kernel_v0.10.0", 1);
+    let before = document.replacen("genesis_kernel_v0.13.1", "genesis_kernel_v0.10.0", 1);
     assert_eq!(seal_sha(&format!("{before}}}")), "ced38362a19b9e5166801be053b2d5ecf6a950cfc20a95c60c41bac1f536757ee9f52c2de3b4d552f20f19c24f7132c5");
-    let before = document.replacen("genesis_kernel_v0.13.0", "genesis_kernel_v0.9.0", 1);
+    let before = document.replacen("genesis_kernel_v0.13.1", "genesis_kernel_v0.9.0", 1);
     assert_eq!(seal_sha(&format!("{before}}}")), "7a15b6e422994398594d9eff6a5c8773502c2dd732d487b6629f831010a8b40ddda690301ed18d4d1f7f0733db28b277");
-    let earlier = document.replacen("genesis_kernel_v0.13.0", "genesis_kernel_v0.8.0", 1);
+    let earlier = document.replacen("genesis_kernel_v0.13.1", "genesis_kernel_v0.8.0", 1);
     assert_eq!(seal_sha(&format!("{earlier}}}")), "0ea62e8e34645a010f2d51708dff4a093db20f61408f02ac921e7fbf974396635c62c5e08039b9fde550ff9ce8984667");
     let step = ok(&mut door, "verify_step", &thermal_step());
     assert_eq!(keys(&step), ["inputs", "engine_version", "state", "residual_conservation_error", "sha384_seal", "seal_rule", "receipt_sha384"]);
@@ -609,7 +613,7 @@ fn every_connection_says_who_it_is_first() {
     // keeps going and flags every step. Since 0.14.2 (John Kruze, 18 October
     // 2026) the instructions are five sentences, about 560 characters: the
     // maker, the site, the paper and the sources are in cite's answer.
-    let opening = "Zero-Trust Physics: deterministic physics, a proof on every answer. Start with find_model (describe the real thing) or list_cards / list_solvers, and read describe_card or describe_solver (form \"short\") before a first request. Past what a model was compared with, it keeps going with the same equations and flags every step. It stops only at a physical limit, or where its equations, constants or tables no longer hold, and it names the reason. verify_tape, verify_solution and verify_dataset check the proof of a run, a solution or a dataset; cite gives sources.";
+    let opening = "Zero-Trust Physics: deterministic physics, a proof on every answer. Start with find_model (describe the real thing) or list_cards / list_solvers, and read describe_card or describe_solver (form \"short\") before a first request. Past what a model was compared with, it keeps going with the same equations and flags every step. It stops only at a physical limit, or where its equations, constants or tables no longer hold, and it names the reason. verify_tape, verify_solution and verify_dataset verify the proof of a run, a solution or a dataset; cite gives sources.";
     let stdio = Stdio2::start(None);
     let local = parsed(&stdio.hello);
     let keyed = keyed();
@@ -622,7 +626,7 @@ fn every_connection_says_who_it_is_first() {
         assert_eq!(info["title"], "Zero-Trust Physics: a physics verifier for Super Intelligence", "{at}");
         assert_eq!(info["websiteUrl"], "https://zerotrustphysics.com", "{at}");
         assert_eq!(info["version"], env!("CARGO_PKG_VERSION"), "{at}");
-        assert_eq!(info["description"], "genesis_kernel_v0.13.0", "{at}");
+        assert_eq!(info["description"], "genesis_kernel_v0.13.1", "{at}");
         let said = answer["result"]["instructions"].as_str().unwrap();
         assert!(said.starts_with(opening), "{at}: {said}");
         for gone in ["John Kruze", "928-264-7883", "https://github.com/", "https://doi.org/"] {

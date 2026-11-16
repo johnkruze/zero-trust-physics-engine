@@ -387,6 +387,9 @@ fn verify_chain(chain: &str, signing: &SignatureGiven) -> Result<u8, u8> {
     if report.last_is_step {
         println!("note: the last link is a step; its answer holds no frame, so its sha384_seal is shown by sending its request again.");
     }
+    if report.last_is_solve {
+        println!("note: the last link is a solve; its solution_seal is recomputed from its answer's values, and that they are the solver's own is shown by solving its request again (verify_solution, or verify_tape given these links).");
+    }
     let mut signature_fails = false;
     for (index, link) in links.iter().enumerate() {
         signature_fails |= signing.print(Some(&format!("links[{index}]")), &signing.check(link))?;

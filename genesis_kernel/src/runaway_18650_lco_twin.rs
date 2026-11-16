@@ -85,8 +85,14 @@
 //! whose remaining heat is at or under [`SPENT_HEAT_FRACTION`] of the cell's
 //! chemical heat finishes at the start of a substep, its last heat booked
 //! and put into the temperature; a stage that carries no heat does not set
-//! the substep. A step that would need more
-//! than [`MAX_SUBSTEPS`] is [`StepReject::SubstepsAboveBudget`]. The step
+//! the substep. A step at or under the ceiling whose ledger does not close
+//! with those substeps is taken again with both bounds halved, and again, up
+//! to [`FINEST_SUBSTEPS`] times shorter, until it closes (since engine
+//! 0.15.2: in an oven above about 440 K at 10 s the separator's melt rate,
+//! steep in temperature, ran away from the rule inside a substep sized at its
+//! start, and 0.15.1 refused the step `FirstLawBreach`); a step that lands
+//! with the first substeps lands as it always did. A step that would need
+//! more than [`MAX_SUBSTEPS`] is [`StepReject::SubstepsAboveBudget`]. The step
 //! ceiling is a hundredth of the convective time constant `C / (h A)`.
 //!
 //! The ledger. Each substep books the heat each stage released in closed
@@ -283,6 +289,10 @@ pub const SUBSTEP_TEMPERATURE_CHANGE_K: f64 = 1.0;
 pub const SPENT_HEAT_FRACTION: f64 = 2.220446049250313e-16;
 /// Most substeps in one step: 2^20.
 pub const MAX_SUBSTEPS: u32 = 1_048_576;
+/// The most a step's substeps are shortened when its ledger does not close:
+/// [`SUBSTEP_LOG_CHANGE`] and [`SUBSTEP_TEMPERATURE_CHANGE_K`] over at most
+/// 2^20 (since engine 0.15.2).
+pub const FINEST_SUBSTEPS: f64 = 1_048_576.0;
 /// Step ceiling over the convective time constant `C / (h A)`.
 pub const GATE_OVER_CONVECTIVE_TIME: f64 = 0.01;
 /// Step ceiling divided by step floor: 2^20.
@@ -923,6 +933,7 @@ fn integrate(
     dt_s: f64,
     substep: Substep,
     sized: bool,
+    fineness: f64,
 ) -> Result<Trial, StepReject> {
     let mut temperature_k = state.temperature_k;
     let mut amounts = state.amounts();
@@ -970,17 +981,22 @@ fn integrate(
         }
         let mut h = left_s;
         if sized {
+            // `fineness` is 1 for a step taken as through engine 0.15.1, and
+            // 2, 4, 8, ... when the step is taken again with substeps that
+            // much shorter (`step_as_computed`); x / 1 is x, bit for bit.
+            let temperature_change_k = SUBSTEP_TEMPERATURE_CHANGE_K / fineness;
+            let log_change = SUBSTEP_LOG_CHANGE / fineness;
             let warming = first.temperature_k_s.abs();
-            if warming * h > SUBSTEP_TEMPERATURE_CHANGE_K {
-                h = SUBSTEP_TEMPERATURE_CHANGE_K / warming;
+            if warming * h > temperature_change_k {
+                h = temperature_change_k / warming;
             }
             let mut stage = 0;
             while stage < STAGES {
                 // A stage that carries no heat (the vent, its heat fitted to
                 // zero) moves nothing else and does not set the substep.
-                if live[stage] && cell.stage_heat_j[stage] != 0.0 && first.stiffness_per_s[stage] * h > SUBSTEP_LOG_CHANGE
+                if live[stage] && cell.stage_heat_j[stage] != 0.0 && first.stiffness_per_s[stage] * h > log_change
                 {
-                    h = SUBSTEP_LOG_CHANGE / first.stiffness_per_s[stage];
+                    h = log_change / first.stiffness_per_s[stage];
                 }
                 stage += 1;
             }
@@ -1103,8 +1119,33 @@ fn step_as_computed(
     dt_s: f64,
 ) -> Result<(), StepReject> {
     validate(cell, state, &load, dt_s)?;
-    let trial = integrate(cell, state, &load, dt_s, rk4, true)?;
-    commit(cell, state, frame, &load, dt_s, trial)
+    // The step with the substeps as through engine 0.15.1: a step that lands
+    // so lands as it always did.
+    let mut fineness: f64 = 1.0;
+    loop {
+        let outcome = match integrate(cell, state, &load, dt_s, rk4, true, fineness) {
+            Ok(trial) => commit(cell, state, frame, &load, dt_s, trial),
+            Err(reject) => Err(reject),
+        };
+        // The ledger did not close: inside a substep sized at its start, a
+        // stage whose rate climbs steeply with the temperature (the
+        // separator's melt in an oven above about 440 K at 10 s) ran away
+        // from the Runge-Kutta rule. The step is taken again with substeps
+        // half as long in temperature and in each stage's logarithm, and
+        // again, until it lands, a step needs more than MAX_SUBSTEPS
+        // (SubstepsAboveBudget), or the substeps are 2^20 times shorter. The
+        // ledger's limit is not changed. A step above the ceiling is not the
+        // card's and is named by the ledger, as before.
+        let refused = core::matches!(outcome, Err(StepReject::SpontaneousGeneration | StepReject::FirstLawBreach));
+        let mine = match cell.gate_dt_s() {
+            Some(gate_dt_s) => dt_s <= gate_dt_s,
+            None => false,
+        };
+        if !refused || !mine || !(fineness < FINEST_SUBSTEPS) {
+            return outcome;
+        }
+        fineness *= 2.0;
+    }
 }
 
 /// Each value of a landed state below the normal range written as zero

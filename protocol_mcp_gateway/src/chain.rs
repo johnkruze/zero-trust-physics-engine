@@ -116,9 +116,9 @@ pub(crate) fn from_schema(full: bool) -> Value {
 /// handed in through a coupling into a solver.
 pub(crate) fn solve_from_schema(full: bool) -> Value {
     let description = if full {
-        "Optional: a sealed card run handed in through a coupling into this solver (describe_solver lists them under couplings). request: that run_trajectory request as sent, less its readout; run_seal: its seal; coupling: the coupling's name. The run is computed again and its seal compared, and each handed value must equal its sealed value bit for bit in parameters. The solution_seal is that of this request without from; chain.chain_seal commits it to the upstream run."
+        "Optional: a sealed card run handed in through a coupling into this solver (describe_solver lists them under couplings). request: that run_trajectory request as sent, less its readout; run_seal: its seal; coupling: the coupling's name. The run is computed again and its seal compared, and each handed value must equal its sealed value bit for bit in parameters: read it from the run's answer as the coupling names it, from each recorded frame's frame_hex (bytes 0 to 7 the time t as a little-endian 64-bit number, each pos and vel slot a little-endian 32-bit number widened to 64 bits) or from a value's _hex, never from a decimal readout, which is rounded and is refused as CouplingLedgerBreach. The solution_seal is that of this request without from; chain.chain_seal commits it to the upstream run."
     } else {
-        "Optional: a sealed card run handed in through a coupling, as run_trajectory takes it."
+        "Optional: a sealed card run handed in through a coupling, as run_trajectory takes it. Each handed value goes into parameters bit for bit, read from the run's frame_hex or a _hex value, not a decimal (CouplingLedgerBreach)."
     };
     serde_json::json!({
         "type": "object",

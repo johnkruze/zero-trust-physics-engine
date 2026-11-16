@@ -186,7 +186,7 @@ fn a_plan_of_solves_names_the_solvers_version() {
     let one = thermal_run(3, 293.15);
     let runs = json!({ "domain": "energy", "card": "thermal", "plan": { "kind": "list", "runs": [{ "initial": one["initial"], "dt_s": one["dt_s"], "segments": one["segments"], "record_every": 3 }] }, "store": "none", "return": "inline" });
     let made = ok(&mut door, "run_dataset", &runs);
-    assert_eq!(made["head"]["engine_version"], "genesis_kernel_v0.13.0", "{made}");
+    assert_eq!(made["head"]["engine_version"], "genesis_kernel_v0.13.1", "{made}");
     let report = ok(&mut door, "verify_receipt", &json!({ "response_text": receipted(&made["head"]) }));
     assert_eq!(report["engine_version_is_this_engines"], json!(true), "{report}");
 }

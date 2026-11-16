@@ -168,7 +168,7 @@ async fn a_step_of_the_tyre_is_the_compiled_step_to_the_bit() {
     assert!((force - 1_113.26).abs() < 0.01, "{force}");
     assert!(answer["sha384_seal"].as_str().is_some_and(|seal| seal.len() == 96));
     assert!(answer["receipt_sha384"].as_str().is_some_and(|seal| seal.len() == 96));
-    assert_eq!(answer["engine_version"], "genesis_kernel_v0.13.0");
+    assert_eq!(answer["engine_version"], "genesis_kernel_v0.13.1");
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

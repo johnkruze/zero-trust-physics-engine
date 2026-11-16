@@ -229,7 +229,7 @@ pub const FLAG_LOAD_ABOVE_FITTED: u64 = 1 << 0;
 /// law and the same ledger.
 pub const FLAG_BEYOND_COMPARED: u64 = 1 << 1;
 /// The step starts less than 5 s after its slip was set, where the measured
-/// force was still rising and the card's steady force missed it: on the 60
+/// force was still rising and the card's steady force does not follow it: on the 60
 /// held-back cells the root-mean-square error of the friction ratio was
 /// 0.0449 in the first second, 0.0477 at 6.5 kN against the line of 0.045,
 /// and from 1 s to 5 s no better than a constant ratio's. The same force law
@@ -849,7 +849,7 @@ const SETTLING_KIND: ExceedanceKind = ExceedanceKind::fixed(
     "s",
     Side::Below,
     SLIP_SETTLE_S,
-    "5 s after the slip was set: before it the measured force was still rising and the card's steady force missed it",
+    "5 s after the slip was set: before it the measured force was still rising and the card's steady force does not follow it",
 );
 
 /// The limits the step from `before` to `after` under `load` over `dt_s`

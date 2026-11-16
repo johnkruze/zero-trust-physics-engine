@@ -296,7 +296,7 @@ async fn the_description_states_what_was_compared_and_its_second_scoring() {
     assert_eq!(epoch["maximum"].as_f64().unwrap(), card_itself.last_start_epoch_utc_s().unwrap());
     let limits = card["validation"]["limits"].as_str().unwrap();
     assert!(limits.contains("compared on 28 calendar days, 2026-08-23 to 2026-09-19"), "{limits}");
-    assert!(limits.contains("A second program, by Grok, another developer's model, with its own comparison and its own Earth-orientation code, recomputes the same six worst distances to the millimetre"), "{limits}");
+    assert!(limits.contains("A second program, written apart from the card, with its own comparison and its own Earth-orientation code, recomputes the same six worst distances to the millimetre"), "{limits}");
     assert!(!limits.contains("not yet repeated by a second party"), "{limits}");
     assert!(!limits.contains("six weeks of one season"), "{limits}");
     assert!(!limits.contains("Known defect"), "{limits}");

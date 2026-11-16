@@ -18,7 +18,14 @@
 //! upstream is itself a chained link, else `upstream_run_seal`), the compact
 //! JSON of `kind`, `coupling` and `handed` in that order ([`chain_tail`]),
 //! and the downstream seal as 96 hex characters (`run_seal` of a run,
-//! `sha384_seal` of a step).
+//! `sha384_seal` of a step, `solution_seal` of a solve).
+//!
+//! The last link may be a solve, handed by a coupling of a card into a
+//! solver (since 0.15.1): its seal is recomputed by the rule of
+//! [`crate::solution`], `from` may also be `frames[*].<slot>` (that slot of
+//! every recorded frame of the upstream run, in order, a 32-bit slot widened
+//! to 64 bits exactly: an array of hex), and `to` may end in `[k..]` (the
+//! handed array stands at places k to k + n - 1 of the request's array).
 //!
 //! `from` is `final_state.<name>` (the upstream's sealed final value) or
 //! `inputs.` and a request path (a value of the upstream's sealed request).
@@ -186,6 +193,9 @@ pub enum ChainCause {
     Handed,
     /// The chain seal is not rebuilt from its parts.
     ChainSeal,
+    /// The last link is a solve whose solution seal is not rebuilt from its
+    /// answer's values.
+    SolutionSeal,
 }
 
 impl ChainCause {
@@ -200,6 +210,7 @@ impl ChainCause {
             ChainCause::Pieces => "pieces",
             ChainCause::Handed => "handed",
             ChainCause::ChainSeal => "chain_seal",
+            ChainCause::SolutionSeal => "solution_seal",
         }
     }
 }
@@ -223,6 +234,10 @@ pub struct ChainReport {
     /// True when the last link is a step, whose frame is not in its answer:
     /// its `sha384_seal` is shown by sending its request again.
     pub last_is_step: bool,
+    /// True when the last link is a solve: its seal is recomputed from its
+    /// answer's values; that they are the solver's own is shown by solving
+    /// its request again.
+    pub last_is_solve: bool,
 }
 
 fn broken(index: usize, cause: ChainCause, links: usize) -> ChainReport {
@@ -233,6 +248,7 @@ fn broken(index: usize, cause: ChainCause, links: usize) -> ChainReport {
         cause: Some(cause),
         chain_seal: None,
         last_is_step: false,
+        last_is_solve: false,
     }
 }
 
@@ -245,7 +261,8 @@ pub fn check_chain_text(bytes: &[u8]) -> Result<ChainReport, Refusal> {
 /// Check a chain without the engine. The body is `{"links": [<answer>, ...]}`:
 /// the answers in order, the first a run answer with no `chain`, each later
 /// one with its `chain`. Every link but the last is a `run_trajectory`
-/// answer; the last may be a `verify_step` answer.
+/// answer; the last may be a `verify_step` answer, or a `solve` answer
+/// handed by a coupling into a solver.
 pub fn check_chain(body: &Value) -> Result<ChainReport, Refusal> {
     let object = body.as_object().ok_or(Refusal::NotAnObject)?;
     for key in object.keys() {
@@ -279,6 +296,12 @@ pub fn check_chain(body: &Value) -> Result<ChainReport, Refusal> {
         if reading.is_step {
             continue;
         }
+        if reading.is_solve {
+            if !crate::solution::check_solution(&links[index])?.holds {
+                return Ok(broken(index, ChainCause::SolutionSeal, count));
+            }
+            continue;
+        }
         let report = check_tape(&links[index])?;
         if !report.holds {
             let cause = match report.cause {
@@ -307,7 +330,7 @@ pub fn check_chain(body: &Value) -> Result<ChainReport, Refusal> {
         if !outcome_admitted || upstream.final_state.is_none() {
             return Ok(broken(index, ChainCause::Outcome, count));
         }
-        if chain.kind == KIND_CONTINUATION && upstream.pair != link.pair {
+        if chain.kind == KIND_CONTINUATION && (upstream.pair != link.pair || link.is_solve) {
             return Ok(broken(index, ChainCause::Pieces, count));
         }
         if !handed_hold(upstream, link, chain) {
@@ -328,6 +351,7 @@ pub fn check_chain(body: &Value) -> Result<ChainReport, Refusal> {
         cause: None,
         chain_seal: last_chain_seal,
         last_is_step: readings[count - 1].is_step,
+        last_is_solve: readings[count - 1].is_solve,
     })
 }
 
@@ -342,6 +366,9 @@ struct ChainPart {
 
 struct Link<'a> {
     is_step: bool,
+    is_solve: bool,
+    /// The recorded frames of a run, for a value handed from `frames[*]`.
+    frames: Option<&'a Vec<Value>>,
     pair: (String, String),
     inputs: &'a Value,
     outcome: String,
@@ -360,18 +387,33 @@ fn read_link<'a>(index: usize, link: &'a Value, last: bool) -> Result<Link<'a>, 
     let inputs = object
         .get("inputs")
         .ok_or_else(|| Refusal::Missing(field(index, "inputs")))?;
+    let solver = inputs.get("solver").and_then(Value::as_str).filter(|_| object.contains_key("solution_seal"));
     let pair = match (
         inputs.get("domain").and_then(Value::as_str),
         inputs.get("card").and_then(Value::as_str),
+        solver,
     ) {
-        (Some(domain), Some(card)) => (domain.to_string(), card.to_string()),
+        (Some(domain), Some(card), None) => (domain.to_string(), card.to_string()),
+        (None, None, Some(solver)) => ("solver".to_string(), solver.to_string()),
         _ => return Err(Refusal::NamesNoCard),
     };
-    let is_step = object.contains_key("sha384_seal") && !object.contains_key("run_seal");
+    let is_solve = solver.is_some();
+    if is_solve && (!last || index == 0) {
+        return Err(wrong(&format!("links[{index}]"), "a run_trajectory answer: only the last link may be a solve, handed by a coupling"));
+    }
+    let is_step = !is_solve && object.contains_key("sha384_seal") && !object.contains_key("run_seal");
     if is_step && !last {
         return Err(wrong(&format!("links[{index}]"), "a run_trajectory answer: only the last link may be a step"));
     }
-    let (seal, outcome, final_state) = if is_step {
+    let (seal, outcome, final_state) = if is_solve {
+        let seal = hash_field(object, index, "solution_seal")?;
+        let outcome = object
+            .get("outcome")
+            .and_then(Value::as_str)
+            .ok_or_else(|| Refusal::Missing(field(index, "outcome")))?
+            .to_string();
+        (seal, outcome, None)
+    } else if is_step {
         let seal = hash_field(object, index, "sha384_seal")?;
         let state = object
             .get("state")
@@ -399,8 +441,11 @@ fn read_link<'a>(index: usize, link: &'a Value, last: bool) -> Result<Link<'a>, 
         None => return Err(Refusal::Missing(field(index, "chain"))),
         Some(chain) => Some(read_chain(index, chain)?),
     };
+    let frames = object.get("frames").and_then(Value::as_array);
     Ok(Link {
         is_step,
+        is_solve,
+        frames,
         pair,
         inputs,
         outcome,
@@ -521,6 +566,10 @@ fn handed_hold(upstream: &Link, link: &Link, chain: &ChainPart) -> bool {
             if state.get(&format!("{name}_hex")) != Some(&entry.value_hex) {
                 return false;
             }
+        } else if let Some(slot) = entry.from.strip_prefix("frames[*].") {
+            if chain.kind != KIND_COUPLING || frame_values(upstream.frames, slot).as_ref() != Some(&entry.value_hex) {
+                return false;
+            }
         } else if let Some(path) = entry.from.strip_prefix("inputs.") {
             let Ok(values) = values_at(upstream.inputs, path) else {
                 return false;
@@ -532,6 +581,20 @@ fn handed_hold(upstream: &Link, link: &Link, chain: &ChainPart) -> bool {
             }
         } else {
             return false;
+        }
+        if let Some((path, first)) = rows_from(&entry.to) {
+            // An array handed to places first.. of the request's array.
+            let Some(handed) = entry.value_hex.as_array() else { return false };
+            let Ok(values) = values_at(link.inputs, path) else { return false };
+            let Some(Some(Value::Array(array))) = values.first() else { return false };
+            if values.len() != 1 || array.len() < first + handed.len() {
+                return false;
+            }
+            let received: Vec<Option<Value>> = array[first..first + handed.len()].iter().map(request_value_hex).collect();
+            if received.iter().zip(handed).any(|(got, want)| got.as_ref() != Some(want)) {
+                return false;
+            }
+            continue;
         }
         let Ok(values) = values_at(link.inputs, &entry.to) else {
             return false;
@@ -554,6 +617,47 @@ fn handed_hold(upstream: &Link, link: &Link, chain: &ChainPart) -> bool {
         }
     }
     true
+}
+
+/// `<path>[k..]`: the path of a request's array and the first place k.
+fn rows_from(to: &str) -> Option<(&str, usize)> {
+    let head = to.strip_suffix("..]")?;
+    let open = head.rfind('[')?;
+    let first = head[open + 1..].parse::<usize>().ok()?;
+    Some((&to[..open], first))
+}
+
+/// The bytes of each slot of the engine's 64-byte frame: its offset, its
+/// width and whether it is a 64-bit or a 32-bit float (genesis_kernel's
+/// `frame::FRAME_LAYOUT`).
+const FRAME_SLOTS: [(&str, usize, usize); 9] = [
+    ("t", 0, 8),
+    ("pos[0]", 8, 4),
+    ("pos[1]", 12, 4),
+    ("pos[2]", 16, 4),
+    ("vel[0]", 20, 4),
+    ("vel[1]", 24, 4),
+    ("vel[2]", 28, 4),
+    ("force_torque", 32, 4),
+    ("residual", 36, 4),
+];
+
+/// One slot of every recorded frame of a run, in order, each value as the
+/// hex of its 64-bit number (a 32-bit slot widened, which is exact).
+fn frame_values(frames: Option<&Vec<Value>>, slot: &str) -> Option<Value> {
+    let (_, offset, width) = FRAME_SLOTS.iter().find(|(name, _, _)| *name == slot)?;
+    let frames = frames?;
+    let mut values = Vec::with_capacity(frames.len());
+    for frame in frames {
+        let bytes = hex::decode(frame.get("frame_hex")?.as_str()?).ok()?;
+        let at = bytes.get(*offset..offset + width)?;
+        let value = match width {
+            8 => f64::from_le_bytes(at.try_into().ok()?),
+            _ => f64::from(f32::from_le_bytes(at.try_into().ok()?)),
+        };
+        values.push(Value::String(format!("{:016x}", value.to_bits())));
+    }
+    (!values.is_empty()).then_some(Value::Array(values))
 }
 
 #[cfg(test)]

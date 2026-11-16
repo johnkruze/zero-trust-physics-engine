@@ -16,7 +16,7 @@ use crate::view::View;
 const CITATIONS: &str = include_str!("../data/citations.json");
 
 /// The paper's address, said in the tool's description.
-pub const PAPER_DOI_URL: &str = "https://doi.org/10.5281/zenodo.23305697";
+pub const PAPER_DOI_URL: &str = "https://doi.org/10.5281/zenodo.23517223";
 
 const KEYS: &[&str] = &["domain", "card", "solver"];
 
@@ -42,7 +42,7 @@ const SOURCE_KEYS: &[&str] = &[
 
 const ABOUT: &str = "Cite Zero-Trust Physics: the service, then the paper. After them, data lists the people whose measurements this model stands on, each with its own citation. text and bibtex hold every entry in that order, ready to paste. requested_acknowledgment is what a source itself asks of those who use its data, and is absent where it asks nothing.";
 
-const ABOUT_THE_SERVICE: &str = "How to cite the service itself: service is its name, who made it and where it is served, the page for agents (site_for_agents), the engine's source (engine_source), the programs that check a proof with no engine (proof_checkers) and how to reach its maker (contact, phone), with a line ready to paste, and paper is the paper. For an answer, give also the card or solver, the engine_version the answer carries, its cryptographic proof (run_seal or solution_seal) and the date you asked. cite with domain and card, or solver, adds the people whose measurements that model stands on.";
+const ABOUT_THE_SERVICE: &str = "How to cite the service itself: service is its name, who made it and where it is served, the page for agents (site_for_agents), the engine's source (engine_source), the programs that verify a proof with no engine (proof_verifiers) and how to reach its maker (contact, phone), with a line ready to paste, and paper is the paper. For an answer, give also the card or solver, the engine_version the answer carries, its cryptographic proof (run_seal or solution_seal) and the date you asked. cite with domain and card, or solver, adds the people whose measurements that model stands on.";
 
 /// Where an agent writes the date it asked, in the service's citation.
 const DATE_ASKED: &str = "[the date you asked]";
@@ -65,7 +65,7 @@ fn service(engine_version: &[String]) -> Value {
         "site_for_agents": SITE_FOR_AGENTS,
         "paper": PAPER_DOI_URL,
         "engine_source": ENGINE_SOURCE,
-        "proof_checkers": CONFIRMING_PROGRAMS,
+        "proof_verifiers": CONFIRMING_PROGRAMS,
         "contact": EMAIL,
         "phone": PHONE,
         "engine_version": versions,
@@ -132,6 +132,7 @@ fn paper() -> Value {
         "publisher_or_venue": paper["publisher_or_venue"],
         "identifier": paper["identifier"],
         "url": paper["url"],
+        "identifier_all_versions": paper["doi_all_versions"],
         "citation_text": paper["citation_text"],
         "bibtex": paper["bibtex"],
     })

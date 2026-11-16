@@ -170,9 +170,9 @@ fn the_short_form_of_a_plan_of_runs_another_version_made_names_both_versions() {
         hasher.update(counts(version));
         format!("{:x}", hasher.finalize())
     };
-    assert_eq!(seal("genesis_kernel_v0.13.0"), head["dataset_seal"].as_str().unwrap());
+    assert_eq!(seal("genesis_kernel_v0.13.1"), head["dataset_seal"].as_str().unwrap());
     let report = answer(&mut door, "verify_dataset", &json!({ "request": plan, "dataset_seal": seal("genesis_kernel_v0.11.0") }));
     assert_eq!(report["holds"], json!(false));
     let said = report["not_held"].as_str().unwrap();
-    assert!(said.ends_with("The dataset_seal covers engine_version through its counts: the seal given is this plan's dataset seal with engine_version genesis_kernel_v0.11.0, another engine version's, and this engine writes genesis_kernel_v0.13.0, so it does not hold here."), "{said}");
+    assert!(said.ends_with("The dataset_seal covers engine_version through its counts: the seal given is this plan's dataset seal with engine_version genesis_kernel_v0.11.0, another engine version's, and this engine writes genesis_kernel_v0.13.1, so it does not hold here."), "{said}");
 }

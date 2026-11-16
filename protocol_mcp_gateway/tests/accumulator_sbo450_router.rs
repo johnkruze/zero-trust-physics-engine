@@ -172,7 +172,7 @@ async fn a_step_of_the_accumulator_is_the_compiled_step_to_the_bit() {
     assert!(pressure > 6.003e6 && pressure < 6.004e6, "{pressure}");
     assert!(answer["sha384_seal"].as_str().is_some_and(|seal| seal.len() == 96));
     assert!(answer["receipt_sha384"].as_str().is_some_and(|seal| seal.len() == 96));
-    assert_eq!(answer["engine_version"], "genesis_kernel_v0.13.0");
+    assert_eq!(answer["engine_version"], "genesis_kernel_v0.13.1");
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

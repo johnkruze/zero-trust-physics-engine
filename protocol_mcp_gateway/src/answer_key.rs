@@ -213,7 +213,7 @@ pub fn description(key: &AnswerKey) -> String {
     key.public_key().description_json()
 }
 
-/// Re-exported for the doors: check an answer's signature.
+/// Re-exported for the doors: verify an answer's signature.
 pub use answer_signature::{Check, SignatureCause, SignatureReport, check};
 
 // ---- Verifying an answer's signature at the door ----
@@ -238,10 +238,74 @@ pub struct Presented {
     pub value: Value,
     /// Their exact text, with the same taken out, when the connection gave one.
     pub text: Option<String>,
-    /// Each answer's check: `None` for the whole answer, `Some(i)` for link `i`.
-    pub checks: Vec<(Option<usize>, SignatureReport)>,
+    /// What each answer's signature was found to be.
+    pub checks: Vec<Checked>,
     /// A key was given in the request.
     pub key_given: bool,
+}
+
+/// What the verification of one answer's signature found: `link` is `None`
+/// for the whole answer and `Some(i)` for link `i`; `rewritten` when the
+/// answer carries a signature among its values but its text is not the
+/// engine's form, as a JSON client writes an answer back
+/// (`answer_signature::check_rewritten`).
+pub struct Checked {
+    pub link: Option<usize>,
+    pub report: SignatureReport,
+    pub rewritten: bool,
+}
+
+impl Checked {
+    /// A signature the key made over the receipt the answer carries, on an
+    /// answer whose text that receipt does not cover: the answer is computed
+    /// again and the long form names what changed.
+    fn bytes_only(&self) -> bool {
+        self.rewritten && self.report.cause == Some(SignatureCause::ReceiptDoesNotMatch)
+    }
+}
+
+/// The signature an object carries among its values, read as the engine
+/// writes it (`{"alg",…,"value"}`, each a string), whatever spacing or key
+/// order a client gave it; `None` when it is not of that form.
+fn envelope_in(signature: &Value) -> Option<answer_signature::Envelope> {
+    let fields = signature.as_object()?;
+    if fields.len() != answer_signature::FIELDS.len() {
+        return None;
+    }
+    let mut compact = String::from("{");
+    for (index, key) in answer_signature::FIELDS.iter().enumerate() {
+        let value = fields.get(*key)?.as_str()?;
+        if index > 0 {
+            compact.push(',');
+        }
+        compact.push_str(&format!("\"{key}\":\"{value}\""));
+    }
+    compact.push('}');
+    answer_signature::read_envelope(&compact)
+}
+
+/// `text` with the member `signature` taken out of the object that is the
+/// value of the top-level member `inside`, or of the top-level object when
+/// `inside` is `None`; every other byte as it was.
+fn without_signature(text: &str, inside: Option<&str>) -> Option<String> {
+    let Some(name) = inside else {
+        return without_members(text, &[answer_signature::SIGNATURE_KEY]);
+    };
+    let spans = members(text)?;
+    let (_, span) = spans.into_iter().find(|(key, _)| key == name)?;
+    let colon = span.start + text[span.start..].find(':')? + 1;
+    let start = colon + text[colon..span.end].find('{')?;
+    let inner = without_members(&text[start..span.end], &[answer_signature::SIGNATURE_KEY])?;
+    Some(format!("{}{}{}", &text[..start], inner, &text[span.end..]))
+}
+
+/// The verification of a signature an object carries among its values when
+/// its text is not in the engine's form, or `None` when it carries none.
+fn rewritten_report(object: &Map<String, Value>, text: &str, inside: Option<&str>, given: Check<'_>) -> Option<SignatureReport> {
+    let signature = object.get(answer_signature::SIGNATURE_KEY)?;
+    let receipt = object.get(genesis_seal::receipt::RECEIPT_KEY).and_then(Value::as_str).unwrap_or_default();
+    let unsigned = without_signature(text, inside).unwrap_or_else(|| text.to_string());
+    Some(answer_signature::check_rewritten(&unsigned, envelope_in(signature), receipt, given))
 }
 
 fn malformed(field: &str, what: &str) -> DoorError {
@@ -363,7 +427,10 @@ fn carries_answer(object: &Map<String, Value>) -> bool {
 }
 
 /// Read the verifier's fields, take every signature out of the answer, and
-/// check each against the key given, or else this engine's own.
+/// verify each against the key given, or else this engine's own. A signature
+/// that stands among the answer's values but not in the engine's form, as a
+/// JSON client writes an answer back, is verified over the receipt it
+/// carries (`rewritten`), never reported absent.
 pub fn present(state: &crate::AppState, value: &Value, text: Option<&str>) -> Result<Presented, DoorError> {
     let Some(object) = value.as_object() else {
         return Ok(Presented { value: value.clone(), text: text.map(str::to_string), checks: Vec::new(), key_given: false });
@@ -397,7 +464,24 @@ pub fn present(state: &crate::AppState, value: &Value, text: Option<&str>) -> Re
     let engine_key = state.answer_key().map(|key| key.public_key().clone());
     let key = given_key.or(engine_key);
     let now_s = answer_signature::now_s();
-    let check_with = |answer_text: &str| check(answer_text, Check { public_key: key.as_ref(), now_s, seen_nonces: &seen });
+    let given = Check { public_key: key.as_ref(), now_s, seen_nonces: &seen };
+    // The signature of one answer (`object` its values, `answer_text` its
+    // text), and whether it was read from the values.
+    let verify = |object: Option<&Map<String, Value>>, answer_text: &str, inside: Option<&str>| -> (SignatureReport, bool) {
+        let report = check(answer_text, given);
+        if report.present {
+            return (report, false);
+        }
+        let carrier = match (object, inside) {
+            (Some(object), Some(name)) => object.get(name).and_then(Value::as_object),
+            (object, None) => object,
+            (None, Some(_)) => None,
+        };
+        match carrier.and_then(|carrier| rewritten_report(carrier, answer_text, inside, given)) {
+            Some(rewritten) => (rewritten, true),
+            None => (report, false),
+        }
+    };
     let mut checks = Vec::new();
     if !carries_answer(&cleaned) {
         return Ok(Presented { value: Value::Object(cleaned), text, checks, key_given });
@@ -414,7 +498,7 @@ pub fn present(state: &crate::AppState, value: &Value, text: Option<&str>) -> Re
                 Some(found) => whole_text[found[index].clone()].to_string(),
                 None => serde_json::to_string(link).unwrap_or_default(),
             };
-            let report = check_with(&link_text);
+            let (report, rewritten) = verify(link.as_object(), &link_text, None);
             if let Some(found) = &elements {
                 rebuilt.push_str(&whole_text[at..found[index].start]);
                 rebuilt.push_str(&report.unsigned);
@@ -425,7 +509,7 @@ pub fn present(state: &crate::AppState, value: &Value, text: Option<&str>) -> Re
                 object.shift_remove(answer_signature::SIGNATURE_KEY);
             }
             unsigned_links.push(link);
-            checks.push((Some(index), report));
+            checks.push(Checked { link: Some(index), report, rewritten });
         }
         if elements.is_some() {
             rebuilt.push_str(&whole_text[at..]);
@@ -433,20 +517,33 @@ pub fn present(state: &crate::AppState, value: &Value, text: Option<&str>) -> Re
         }
         cleaned.insert("links".to_string(), Value::Array(unsigned_links));
     } else {
-        let report = check_with(&whole_text);
+        let inside = if cleaned.contains_key(answer_signature::SIGNATURE_KEY) { None } else { Some("head") };
+        // A chained answer sent whole carries the caller's `from` beside the
+        // engine's answer, after its signature: it is not of the signed
+        // answer, and the signature is verified without it (0.15.1).
+        let carries_from = cleaned.contains_key(crate::chain::FROM);
+        let signed_text = match carries_from {
+            true => without_members(&whole_text, &[crate::chain::FROM]).unwrap_or_else(|| whole_text.clone()),
+            false => whole_text.clone(),
+        };
+        let (report, rewritten) = verify(Some(&cleaned), &signed_text, inside);
         if text.is_some() {
-            text = Some(report.unsigned.clone());
+            text = Some(match carries_from && report.present {
+                true => without_signature(&whole_text, inside).unwrap_or_else(|| report.unsigned.clone()),
+                false => report.unsigned.clone(),
+            });
         }
         cleaned.shift_remove(answer_signature::SIGNATURE_KEY);
         if let Some(Value::Object(head)) = cleaned.get_mut("head") {
             head.shift_remove(answer_signature::SIGNATURE_KEY);
         }
-        checks.push((None, report));
+        checks.push(Checked { link: None, report, rewritten });
     }
     Ok(Presented { value: Value::Object(cleaned), text, checks, key_given })
 }
 
-fn report_value(report: &SignatureReport) -> Value {
+fn report_value(checked: &Checked) -> Value {
+    let report = &checked.report;
     let mut object = Map::new();
     let holds = match report.cause {
         None if report.present => Value::Bool(true),
@@ -465,11 +562,15 @@ fn report_value(report: &SignatureReport) -> Value {
         object.insert(key.into(), value.map_or(Value::Null, Value::from));
     }
     let sentence = match report.cause {
-        None => "The ML-DSA-87 signature verifies over the receipt, the times and the nonce under the key it was checked with, the receipt covers the answer's bytes, and the signature has not expired.".to_string(),
-        Some(SignatureCause::KeyNotGiven) => "The answer is signed and no public_key was given, and this door holds no answer key, so the signature was not checked: give public_key.".to_string(),
+        None => "The ML-DSA-87 signature verifies over the receipt, the times and the nonce under the key it was verified with, the receipt covers the answer's bytes, and the signature has not expired.".to_string(),
+        Some(SignatureCause::KeyNotGiven) => "The answer is signed and no public_key was given, and this door holds no answer key, so the signature was not verified: give public_key.".to_string(),
+        Some(SignatureCause::ReceiptDoesNotMatch) if checked.rewritten => "The ML-DSA-87 signature verifies over the receipt the answer carries, the times and the nonce under the key it was verified with, and has not expired; the answer's text is not the text that receipt covers: a client wrote the answer again, its spacing or key order its own. The answer was computed again: holds, values_hold and differs_at say whether every byte and every value is the engine's.".to_string(),
         Some(cause) => cause.sentence().to_string(),
     };
     object.insert("sentence".into(), Value::from(sentence));
+    if checked.rewritten {
+        object.insert("written_again".into(), Value::Bool(true));
+    }
     Value::Object(object)
 }
 
@@ -477,48 +578,45 @@ impl Presented {
     /// The checks that do not hold: a signature that fails, or an answer
     /// with none when a key was given. A signature left unchecked for want
     /// of a key does not fail the answer.
-    fn failing(&self) -> Option<&(Option<usize>, SignatureReport)> {
-        self.checks.iter().find(|(_, report)| match report.cause {
+    fn failing(&self) -> Option<&Checked> {
+        self.checks.iter().find(|checked| match checked.report.cause {
             None | Some(SignatureCause::KeyNotGiven) => false,
             Some(SignatureCause::Absent) => self.key_given,
-            Some(_) => true,
+            Some(_) => !checked.bytes_only(),
         })
     }
 
     fn signature_entry(&self) -> Option<(String, Value)> {
-        let reported: Vec<&(Option<usize>, SignatureReport)> = self
+        let reported: Vec<&Checked> = self
             .checks
             .iter()
-            .filter(|(_, report)| report.present || (self.key_given && report.cause.is_some()))
+            .filter(|checked| checked.report.present || (self.key_given && checked.report.cause.is_some()))
             .collect();
         if reported.is_empty() {
             return None;
         }
         match reported.as_slice() {
-            [(None, report)] => Some(("signature".to_string(), report_value(report))),
-            _ => Some((
-                "signatures".to_string(),
-                Value::Array(self.checks.iter().map(|(_, report)| report_value(report)).collect()),
-            )),
+            [checked] if checked.link.is_none() => Some(("signature".to_string(), report_value(checked))),
+            _ => Some(("signatures".to_string(), Value::Array(self.checks.iter().map(report_value).collect()))),
         }
     }
 
     /// The answer of a verification whose signature does not hold: nothing
     /// is computed.
     pub fn failure_answer(&self) -> Option<String> {
-        let (link, report) = self.failing()?;
+        let failed = self.failing()?;
         let mut object = Map::new();
         object.insert("holds".into(), Value::Bool(false));
         object.insert("values_hold".into(), Value::Bool(false));
         object.insert("cause".into(), Value::from(CAUSE_SIGNATURE));
-        if let Some(index) = link {
-            object.insert("broken_link".into(), Value::from(*index as u64));
+        if let Some(index) = failed.link {
+            object.insert("broken_link".into(), Value::from(index as u64));
         }
-        let (key, value) = self.signature_entry().unwrap_or_else(|| ("signature".to_string(), report_value(report)));
+        let (key, value) = self.signature_entry().unwrap_or_else(|| ("signature".to_string(), report_value(failed)));
         object.insert(key, value);
         object.insert(
             "compared".into(),
-            Value::from("SIGNATURE_CHECKED: the answer's signature was checked before anything else, and nothing was computed."),
+            Value::from("SIGNATURE_VERIFIED: the answer's signature was verified before anything else, and nothing was computed."),
         );
         serde_json::to_string(&Value::Object(object)).ok()
     }
@@ -623,5 +721,5 @@ pub fn receipt_signature(engine_key: Option<PublicKey>, object: &Map<String, Val
     if !report.present && !key_given {
         return Ok(None);
     }
-    Ok(Some(report_value(&report)))
+    Ok(Some(report_value(&Checked { link: None, report, rewritten: false })))
 }

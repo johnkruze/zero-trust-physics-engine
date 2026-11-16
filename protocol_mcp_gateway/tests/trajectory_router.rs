@@ -558,7 +558,7 @@ fn assert_landed(body: &Value, residual: f64, probes: &[(&str, Probe)], steps: u
     assert_eq!(body["steps_landed"], steps, "{body}");
     assert_eq!(body["steps_requested"], steps, "{body}");
     assert!(body["reject"].is_null(), "{body}");
-    assert_eq!(body["engine_version"], "genesis_kernel_v0.13.0");
+    assert_eq!(body["engine_version"], "genesis_kernel_v0.13.1");
     let got = body["final_residual_conservation_error"]
         .as_f64()
         .expect("final residual");
@@ -3298,8 +3298,8 @@ async fn the_full_capsule_entry_ends_in_the_refusal_the_kernel_gives() {
 #[tokio::test]
 async fn a_capsule_run_takes_an_empty_load_and_nothing_else() {
     const ALTITUDE: &str = "Physical Failure: altitude is above 134.7 km, the top of the drag table read by altitude (AltitudeOutsideCard). That state is not sealed.";
-    const MACH: &str = "Physical Failure: the Mach number is below 0.16, the first entry of the drag table read by Mach number, or is above 40 below 68.96 km, where that table ends (MachOutsideCard). That state is not sealed.";
-    const AIR_SPEED: &str = "Physical Failure: above 68.96 km the speed through the air is below 11900 m/s or above 12620 m/s, the highest speed the drag table by altitude was computed at (AirSpeedOutsideCard). That state is not sealed.";
+    const MACH: &str = "Physical Failure: the Mach number is below 0.16, the first entry of the drag table read by Mach number, or is above 40 below 68.96 km, where that table ends, at a speed through the air above 12620 m/s, the top speed any drag of the card was computed at (MachOutsideCard). That state is not sealed.";
+    const AIR_SPEED: &str = "Physical Failure: above 68.96 km the speed through the air, at the state or where the step's path crosses 68.96 km, is below 11900 m/s or above 12620 m/s, the highest speed the drag table by altitude was computed at (AirSpeedOutsideCard). That state is not sealed.";
     const PAST: &str = "Physical Failure: the state is under 31030 m and under Mach 1.23 at once, past the flown drogue deployment, where the capsule flew on a parachute (PastFlightDeployment). That state is not sealed.";
     let base = spawn_app().await;
     let whole = capsule_run(2, 1);
@@ -3398,8 +3398,6 @@ async fn a_capsule_run_takes_an_empty_load_and_nothing_else() {
             "Missing required parameter: 'transverse_speed_m_s' (InputMissing).",
         ),
         (above, ALTITUDE),
-        // 29 999 m at the entry's speeds: Mach 42, past the Mach table.
-        (below, MACH),
         (slow, MACH),
         (fast, MACH),
         (at_rest, AIR_SPEED),
@@ -3407,8 +3405,11 @@ async fn a_capsule_run_takes_an_empty_load_and_nothing_else() {
         (long_step, ceiling_text.as_str()),
     ];
     // Off the corridor the locked entry flew, where engines 0.7 to 0.9
-    // refused, the two runs are computed.
-    for request in [&deep, &climbing] {
+    // refused, the two runs are computed; and since engine 0.15.2, 29 999 m at
+    // the entry's speeds, Mach 41.6 at 12 556 m/s through the air, with the
+    // Mach table's top entry held (refused as MachOutsideCard from 0.7.0 to
+    // 0.15.1).
+    for request in [&deep, &climbing, &below] {
         let (text, _) = wire(request);
         let (status, response) = post(&base, "/run_trajectory", &text).await;
         assert_eq!(status, 200, "{text}: {response}");

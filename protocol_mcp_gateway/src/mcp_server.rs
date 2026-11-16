@@ -205,7 +205,7 @@ pub(crate) fn validate_series_description() -> String {
 /// What the `solve` tool says of itself.
 pub(crate) fn solve_description() -> String {
     format!(
-        "Solves one field problem with one solver and seals the solution: the outcome, the result in decimals and exact hex, its invariants, the solution_seal and a receipt. parameters holds the solver's inputs as describe_solver gives them. example, in their place, is the name of a worked example describe_solver lists (example_solve, or a key beginning example_solve_), so a long worked input need not be typed again; the request is filled with that example's parameters, and the filled request is the one solved, sealed and returned as inputs. {RECEIPT_FOLLOWS_THE_TEXT} verify_solution verifies a solution later from this request, or its inputs, and its solution_seal."
+        "Solves one field problem with one solver and seals the solution: the outcome, the result in decimals and exact hex, its invariants, the solution_seal and a receipt. parameters holds the solver's inputs as describe_solver gives them. example, in their place, is the name of a worked example describe_solver lists (example_solve, or a key beginning example_solve_), so a long worked input need not be typed again; the request is filled with that example's parameters, and the filled request is the one solved, sealed and returned as inputs. {RECEIPT_FOLLOWS_THE_TEXT} A chained solve, from a sealed card run through a coupling (from), takes each handed value in parameters bit for bit: decode it from the run's frame_hex or a _hex value, not a decimal readout, or it is refused as CouplingLedgerBreach. verify_solution verifies a solution later from this request, or its inputs, and its solution_seal."
     )
 }
 
