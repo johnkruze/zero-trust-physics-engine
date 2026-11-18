@@ -124,7 +124,7 @@ Tests that compare against private verification fixtures print `skipped: … nee
 - Website & commercial offers: https://zerotrustphysics.com · https://zerotrustphysics.com/offers/ · https://zerotrustphysics.com/llms.txt
 - Self-serve RLVR Domain Packs ($9,500) & All-Five Bundle ($39,500): https://zerotrustphysics.com/offers/fast-start/
 - Hugging Face organization (5 free sample packs, benchmarks & sealed datasets): https://huggingface.co/zero-trust-physics
-- Real-hardware model index: https://zerotrustphysics.com/things/
+- Real-hardware model index: https://zerotrustphysics.com/systems/
 - Paper (version 2.0): https://doi.org/10.5281/zenodo.23517223
 - Standalone Python SHA-384 & ML-DSA-87 proof verifiers: https://github.com/johnkruze/zero-trust-physics
 - John Kruze, CEO: kruze@zerotrustphysics.com · [WhatsApp +1 928-264-7883](https://wa.me/19282647883)
