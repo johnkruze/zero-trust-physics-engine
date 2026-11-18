@@ -21,7 +21,7 @@ Built for RL environment vendors and post-training labs (`Harbor`, `HUD`, `Inspe
   - [Group 3 · Fluids, Cryogenics, Hydraulics & Contact](https://huggingface.co/datasets/zero-trust-physics/zero-trust-physics-sample-group-3)
   - [Group 4 · Materials, Structures & RF](https://huggingface.co/datasets/zero-trust-physics/zero-trust-physics-sample-group-4)
   - [Group 5 · Nuclear & Fusion](https://huggingface.co/datasets/zero-trust-physics/zero-trust-physics-sample-group-5)
-- **[Custom & Exclusive Environments (including AI Datacenters `chip -> cooling -> grid`) & Engine Licensing](https://zerotrustphysics.com/offers/):** Bespoke coupled multi-physics suites, exclusive withheld draws, and internal runtime & verifier licensing (read-only NDA source audit available).
+- **[Custom & Exclusive Environments (including AI Datacenters `chip -> cooling -> grid`) & Engine Licensing](https://zerotrustphysics.com/offers/fast-start/):** Bespoke coupled multi-physics suites, exclusive withheld draws, and internal runtime & verifier licensing (read-only NDA source audit available).
 
 ## Architecture & guarantees
 
@@ -121,7 +121,7 @@ Tests that compare against private verification fixtures print `skipped: … nee
 
 ## Links
 
-- Website & commercial offers: https://zerotrustphysics.com · https://zerotrustphysics.com/offers/ · https://zerotrustphysics.com/llms.txt
+- Website & commercial offers: https://zerotrustphysics.com · https://zerotrustphysics.com/offers/fast-start/ · https://zerotrustphysics.com/llms.txt
 - Self-serve RLVR Domain Packs ($9,500) & All-Five Bundle ($39,500): https://zerotrustphysics.com/offers/fast-start/
 - Hugging Face organization (5 free sample packs, benchmarks & sealed datasets): https://huggingface.co/zero-trust-physics
 - Real-hardware model index: https://zerotrustphysics.com/systems/
