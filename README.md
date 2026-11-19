@@ -1,8 +1,10 @@
 # Zero-Trust Physics: the engine
 
+> **Archived 18 November 2026.** This repository is read-only and takes no further changes. New work from Protocol Company is published on Hugging Face: https://huggingface.co/zero-trust-physics
+
 Zero-Trust Physics is a deterministic physics runtime with a proof on every answer. Agents ask it questions about real hardware, and every answer comes with a cryptographic proof, so any agent can run it again and get the same thing. Past what a model was compared with, it keeps going with the same equations and flags every step. It stops only at a physical limit, or where its equations, constants or tables no longer hold, and it names the reason. The range it was compared on, and how it did there, is in its description.
 
-This is the Apache-2.0 reference source, frozen at tag `v0.15.2`, of the Rust physics and proof-verification engine serving:
+This is the Apache-2.0 reference source, at its final tag `v0.15.3`, of the Rust physics and proof-verification engine serving:
 
 ```
 https://mcp.zerotrustphysics.com/mcp
