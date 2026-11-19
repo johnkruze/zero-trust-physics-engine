@@ -32,7 +32,9 @@ const KEY: &str = "tools-093-key";
 /// served words that no longer name an earlier model. 29,442 in 0.15.1: the
 /// crater's comparison names the law fitted on all thirteen craters.
 const LIST_CARDS_CHARS: usize = 29_442;
-const LIST_SOLVERS_CHARS: usize = 26_446;
+// 27,036 in 0.15.3: tokamak_dt_beam_target's summary states the served replay and
+// the registered run's missed target; ablator_slab's states its arc-jet mean over all 31.
+const LIST_SOLVERS_CHARS: usize = 27_036;
 
 /// The one card whose short form is longer than a page: thirty vector fields
 /// and a worked run that states all thirty.

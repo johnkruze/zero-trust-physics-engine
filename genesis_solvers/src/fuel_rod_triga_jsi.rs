@@ -201,6 +201,16 @@ pub const NEWTON_IMBALANCE_TOLERANCE: f64 = 1.0e-13;
 /// Or to this many joules, whichever is larger: about a hundred times the
 /// rounding of the cells' energies in a step.
 pub const NEWTON_IMBALANCE_FLOOR_J: f64 = 1.0e-8;
+/// The floors a history is solved again at, in turn, when its run's energy
+/// account does not close at [`NEWTON_IMBALANCE_FLOOR_J`]: about the
+/// rounding of the cells' energies in a step, and a hundredth of it, where
+/// Newton's method stops on the step's own tolerance (since engine 0.15.2).
+/// Each step leaves up to the floor open, and the run's account is held to
+/// [`RUN_ENERGY_TOLERANCE`] of at least [`ENERGY_FLOOR_J`], 1e-7 J: in a weak
+/// pulse whose steps each leave just under 1e-8 J of one sign, five hundred
+/// steps open the account by more than that (1.2 dollars on core 231 from
+/// 296.15 K, 7.9e-9 of its scale at 1 s), though each step holds.
+pub const NEWTON_IMBALANCE_FLOORS_AGAIN_J: [f64; 2] = [1.0e-10, 1.0e-12];
 /// Most Newton iterations in one step.
 pub const MAX_NEWTON_ITERATIONS: u32 = 30;
 /// The energy account of a step must close to this fraction.
@@ -516,7 +526,27 @@ impl crate::normal::NormalOrZero for ElementPulse {
 /// the fit and the tests. The question is held to the declared range first.
 pub fn solve_with(question: &ElementQuestion, fitted: Fitted) -> Result<ElementPulse, FuelRodReject> {
     admit(question)?;
-    Element::new(fitted).run(question)
+    let element = Element::new(fitted);
+    // The history as through engine 0.15.1: a history that converges so
+    // converges as it always did, to the bit.
+    let first = element.run(question, NEWTON_IMBALANCE_FLOOR_J);
+    if !matches!(first, Err(FuelRodReject::EnergyLedgerBroken { .. })) {
+        return first;
+    }
+    // The run's account did not close at the Newton floor, though each step
+    // held: solved again with the steps settled closer, the account's
+    // tolerance unchanged.
+    let mut last = first;
+    for floor_j in NEWTON_IMBALANCE_FLOORS_AGAIN_J {
+        let again = element.run(question, floor_j);
+        if again.is_ok() {
+            return again;
+        }
+        if matches!(again, Err(FuelRodReject::EnergyLedgerBroken { .. })) {
+            last = again;
+        }
+    }
+    last
 }
 
 /// The volume of the meat, m3.
@@ -733,7 +763,7 @@ impl Element {
             .sum()
     }
 
-    fn run(&self, question: &ElementQuestion) -> Result<ElementPulse, FuelRodReject> {
+    fn run(&self, question: &ElementQuestion, newton_floor_j: f64) -> Result<ElementPulse, FuelRodReject> {
         let n = self.mass.len();
         let pool = question.start_temperature_k;
         // Cells, then the surface node.
@@ -763,7 +793,7 @@ impl Element {
                 let end = if piece + 1 == pieces { t_end } else { clock + interval * (piece + 1) as f64 / pieces as f64 };
                 let dt = end - start;
                 old.copy_from_slice(&t);
-                let iterations = self.step(&mut t, &old, dt, element_power_w, pool, end)?;
+                let iterations = self.step(&mut t, &old, dt, element_power_w, pool, end, newton_floor_j)?;
                 newton_total += u64::from(iterations);
                 steps += 1;
                 let (stored_change, moved) = self.stored_change(&old[..n], &t[..n]);
@@ -851,7 +881,8 @@ impl Element {
 
     /// One backward Euler step in the enthalpy, by Newton's method. Returns the
     /// iterations taken.
-    fn step(&self, t: &mut [f64], old: &[f64], dt: f64, power_w: f64, pool: f64, time_s: f64) -> Result<u32, FuelRodReject> {
+    #[allow(clippy::too_many_arguments)]
+    fn step(&self, t: &mut [f64], old: &[f64], dt: f64, power_w: f64, pool: f64, time_s: f64, newton_floor_j: f64) -> Result<u32, FuelRodReject> {
         let n = self.mass.len();
         let mut lower = vec![0.0; n + 1];
         let mut diag = vec![0.0; n + 1];
@@ -890,7 +921,7 @@ impl Element {
                 return Err(FuelRodReject::NonFiniteValue { time_s });
             }
             // Settled: the step's equations hold at the present values.
-            if imbalance <= (NEWTON_IMBALANCE_TOLERANCE * scale).max(NEWTON_IMBALANCE_FLOOR_J) {
+            if imbalance <= (NEWTON_IMBALANCE_TOLERANCE * scale).max(newton_floor_j) {
                 return Ok(iteration);
             }
             // Thomas algorithm.
@@ -1004,7 +1035,7 @@ mod tests {
         let mut old = t.clone();
         for _ in 0..4000 {
             old.copy_from_slice(&t);
-            element.step(&mut t, &old, 2.0, power_w, 300.0, 0.0).expect("step");
+            element.step(&mut t, &old, 2.0, power_w, 300.0, 0.0, NEWTON_IMBALANCE_FLOOR_J).expect("step");
         }
         let (flux, _) = water_flux(t[n], 300.0);
         assert!((flux * element.surface_area - power_w).abs() / power_w < 1e-6, "steady");
@@ -1110,7 +1141,7 @@ mod tests {
         let n = element.mass.len();
         let mut t = vec![300.0; n + 1];
         let old = t.clone();
-        element.step(&mut t, &old, 1e-3, 5.0e6, 300.0, 1e-3).expect("step");
+        element.step(&mut t, &old, 1e-3, 5.0e6, 300.0, 1e-3, NEWTON_IMBALANCE_FLOOR_J).expect("step");
         let full = element.stored(&t[..n]) - element.stored(&old[..n]);
         let short = element.stored(&t[..n - 1]) - element.stored(&old[..n - 1]);
         let q_in = 5.0e6 * 1e-3;
@@ -1118,5 +1149,57 @@ mod tests {
         let residual_short = (short - q_in).abs() / q_in;
         assert!(residual_full < 1e-9, "{residual_full}");
         assert!(residual_short > STEP_ENERGY_TOLERANCE, "{residual_short}");
+    }
+}
+
+/// Engine 0.15.2, work order of 21 October: the element chained from the
+/// reactor_triga_jsi card at 1.2 dollars (296.15 K, core 231, dt 5e-5 s,
+/// 20,000 steps, a frame every 200) was refused EnergyLedgerBroken, the run's
+/// account open by 7.9e-9 of its scale at 1 s, while 1.0 and 1.3 dollars
+/// converged. Each 2 ms step settled at Newton's floor of 1e-8 J with just
+/// under that left open, of one sign, and the five hundred steps of a weak
+/// pulse summed past the run's 1e-7 J. Solved again at the floors of
+/// NEWTON_IMBALANCE_FLOORS_AGAIN_J, it converges; a history that converged at
+/// the first floor converges as before, to the bit.
+#[cfg(test)]
+mod chained_weak_pulse {
+    use super::*;
+    use genesis_kernel::frame::LastStateFrame64;
+    use genesis_kernel::reactor_triga_jsi::{self as card, ReactorLoad, ReactorState, ReactorTrigaJsi};
+
+    fn history(dollars: f64) -> ElementQuestion {
+        let reactor = ReactorTrigaJsi::core_56_pulse_mode();
+        let mut state = ReactorState::try_start(&reactor, 296.15, 231.0).unwrap();
+        let mut frame = LastStateFrame64 { t: 0.0, pos: [0.0; 3], vel: [0.0; 3], force_torque: 0.0, residual: 0.0, flags: 0, proof: [0; 16] };
+        let load = ReactorLoad { reactivity_inserted_dollar: dollars, rods_dropped: 0.0 };
+        let (mut time_s, mut energy) = (Vec::new(), Vec::new());
+        for count in 1..=20_000 {
+            card::step(&reactor, &mut state, &mut frame, load, 5.0e-5).unwrap();
+            if count % 200 == 0 {
+                time_s.push(frame.t);
+                energy.push(f64::from(frame.pos[1]));
+            }
+        }
+        ElementQuestion { start_temperature_k: 296.15, time_s, core_energy_released_mws: energy }
+    }
+
+    #[test]
+    fn a_weak_pulse_chained_from_the_card_converges() {
+        for dollars in [1.0, 1.1, 1.2, 1.25, 1.3] {
+            let question = history(dollars);
+            let pulse = solve(&question).unwrap_or_else(|e| panic!("{dollars}: {e}"));
+            assert!(pulse.run_energy_residual <= RUN_ENERGY_TOLERANCE, "{dollars}");
+        }
+        // At 1.2 dollars the first floor leaves the run open, the second closes it.
+        let element = Element::new(FITTED);
+        let question = history(1.2);
+        assert!(matches!(element.run(&question, NEWTON_IMBALANCE_FLOOR_J), Err(FuelRodReject::EnergyLedgerBroken { .. })));
+        assert!(element.run(&question, NEWTON_IMBALANCE_FLOORS_AGAIN_J[0]).is_ok());
+        // At 1.3 dollars the first floor converges and is the answer, to the bit.
+        let question = history(1.3);
+        let first = element.run(&question, NEWTON_IMBALANCE_FLOOR_J).unwrap();
+        let served = solve_with(&question, FITTED).unwrap();
+        assert_eq!(first.field_temperature_k.iter().map(|v| v.to_bits()).collect::<Vec<_>>(), served.field_temperature_k.iter().map(|v| v.to_bits()).collect::<Vec<_>>());
+        assert_eq!(first.peak_thermocouple_temperature_k.to_bits(), served.peak_thermocouple_temperature_k.to_bits());
     }
 }

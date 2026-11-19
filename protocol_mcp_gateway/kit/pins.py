@@ -8,8 +8,7 @@ LIST_SOLVERS_CHARS (tests/tools_093.rs, since 0.14.4): the length of the text
 list_cards and list_solvers answer, whose rows give a compared model's spec
 sheet as what it computes, the comparison and the gap.
 
-Usage: python3 kit/pins.py <mcp_stdio>. Kept in the kit since 0.14.4; until
-then it was evidence/verification/next_engine_version_2026-10-15/pins.py.
+Usage: python3 kit/pins.py <mcp_stdio>. Kept in the kit since 0.14.4.
 """
 import hashlib, json, subprocess, sys
 

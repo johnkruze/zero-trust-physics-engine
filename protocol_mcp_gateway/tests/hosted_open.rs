@@ -502,6 +502,20 @@ fn what_a_remote_client_sends_is_answered_as_the_protocol_says() {
     assert_eq!(reply.status, 400, "{reply:?}");
     let refused: Value = serde_json::from_str(&reply.body).unwrap();
     assert_eq!((&refused["error"]["code"], &refused["error"]["data"]["supported"]), (&json!(-32022), &json!(hosted::SUPPORTED_VERSIONS)));
+    // A plain GET, as a browser or curl sends it, is answered with one page that points on;
+    // a GET that asks for an event stream is the 405 below.
+    for accept in [None, Some("*/*"), Some("text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")] {
+        let headers: Vec<(&str, &str)> = accept.map(|value| ("Accept", value)).into_iter().collect();
+        let reply = door.send("GET", "/mcp", &headers, "");
+        assert_eq!(reply.status, 200, "{accept:?}: {reply:?}");
+        assert_eq!(header(&reply, "content-type"), Some("text/html; charset=utf-8"));
+        assert_eq!(reply.body, protocol_mcp_gateway::open_door::ADDRESS_PAGE);
+        for link in ["https://zerotrustphysics.com/docs/", "https://zerotrustphysics.com/offers/", "https://mcp.zerotrustphysics.com/mcp", "/answer-key"] {
+            assert!(reply.body.contains(link), "{link}");
+        }
+    }
+    let reply = door.send("GET", "/mcp", &[("Accept", "text/html, text/event-stream")], "");
+    assert_eq!(reply.status, 405, "{reply:?}");
     // No event stream and no session to end.
     for method in ["GET", "DELETE", "PUT"] {
         let reply = door.send(method, "/mcp", &[("Accept", "text/event-stream")], "");

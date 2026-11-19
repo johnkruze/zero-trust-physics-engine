@@ -17,8 +17,10 @@
 //! through its volume (a constant-volume detonation): its products start at
 //! rest at the charge's density with the detonation energy E0 of the
 //! Jones-Wilkins-Lee form, times [`PRODUCTS_ENERGY_FACTOR`]. Their pressure
-//! is the JWL equation of state of TNT (Dobratz and Crawford, LLNL
-//! Explosives Handbook, UCRL-52997 Change 2, 1985):
+//! is a JWL equation of state of TNT whose constants are of unverified
+//! source, under review (`JWL_SOURCE`: the density, detonation velocity and
+//! C-J pressure are Dobratz and Crawford's, UCRL-52997 Change 2, 1985; the
+//! handbook's JWL row of TNT is not this set):
 //! p = A (1 - w/(R1 V)) exp(-R1 V) + B (1 - w/(R2 V)) exp(-R2 V) + w rho e,
 //! V = rho0/rho, with A = 373.8 GPa, B = 3.747 GPa, R1 = 4.15, R2 = 0.90,
 //! w = 0.35 and E0 = 6.00 GPa (3.681 MJ/kg); its Chapman-Jouguet state,
@@ -88,7 +90,7 @@ use std::fmt;
 
 /// Density of cast TNT, kg/m^3 (Dobratz and Crawford 1985).
 pub const TNT_DENSITY_KG_PER_M3: f64 = 1630.0;
-/// JWL A of TNT, Pa (Dobratz and Crawford 1985).
+/// JWL A of TNT, Pa (source unverified, under review: `JWL_SOURCE`).
 pub const JWL_A_PA: f64 = 373.8e9;
 /// JWL B of TNT, Pa.
 pub const JWL_B_PA: f64 = 3.747e9;
@@ -1077,7 +1079,7 @@ pub const REFERENCE_URL: &str = "https://doi.org/10.5683/SP2/WB8JKO";
 pub const SURFACE_REFERENCE_URL: &str = "https://doi.org/10.5683/SP3/CFPFRH";
 pub const REFERENCE_RETRIEVED: &str = "2026-10-14";
 /// The source of the JWL constants of TNT.
-pub const JWL_SOURCE: &str = "B. M. Dobratz and P. C. Crawford, LLNL Explosives Handbook: Properties of Chemical Explosives and Explosive Simulants, UCRL-52997 Change 2, Lawrence Livermore National Laboratory, 1985: TNT at 1.630 g/cm^3, D 6930 m/s, P_CJ 21.0 GPa, A 373.8 GPa, B 3.747 GPa, R1 4.15, R2 0.90, omega 0.35, E0 6.00 GPa";
+pub const JWL_SOURCE: &str = "TNT at 1.630 g/cm^3, D 6930 m/s, P_CJ 21.0 GPa (B. M. Dobratz and P. C. Crawford, LLNL Explosives Handbook, UCRL-52997 Change 2, Lawrence Livermore National Laboratory, 1985, Table 8-7, page 8-23); the JWL constants A 373.8 GPa, B 3.747 GPa, R1 4.15, R2 0.90, omega 0.35, E0 6.00 GPa are of unverified source, under review: they were transcribed from a secondary source that attributes them to that handbook, whose TNT row prints A 371.2 GPa, B 3.231 GPa, R1 4.15, R2 0.95, omega 0.30, E0 7.0 GPa";
 
 #[cfg(test)]
 mod tests {

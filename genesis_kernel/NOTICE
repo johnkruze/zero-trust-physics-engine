@@ -10,14 +10,14 @@ please cite the paper:
   for the physical answers of Super Intelligence (version 1.0). Protocol
   Company. Zenodo. https://doi.org/10.5281/zenodo.23305697
 
-Third-party code in this crate
+Code
 
-  src/math.rs holds functions taken from rust-lang/libm, used under the MIT
-  licence, which derive from musl libc and FreeBSD msun (Sun Microsystems and
-  others). The licence text and every copyright notice are kept in that file.
+  src/math.rs holds functions taken from rust-lang/libm, which derive from
+  musl libc and FreeBSD msun (Sun Microsystems and others). The MIT licence
+  text and every copyright notice are kept in that file.
 
-Third-party data
+Sources
 
-  A card built from or compared with published measurements names their
-  source at the head of its source file, with the licence where the source
-  states one.
+  A card built from or compared with published measurements or tables names
+  its sources at the head of its source file; the engine's NOTICE lists
+  every one.

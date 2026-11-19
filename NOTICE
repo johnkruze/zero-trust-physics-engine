@@ -14,196 +14,117 @@ please cite the paper:
   for the physical answers of Super Intelligence (version 1.0). Protocol
   Company. Zenodo. https://doi.org/10.5281/zenodo.23305697
 
-This file names the code and the numbers of other people that the source
-holds. Each entry says what it is, whose it is, where it sits, whether the
-code needs it or only a test does, and the licence in the source's own words.
-"The source states no licence" means the source's own file or page states
-none. No entry is in genesis_seal_parquet.
+The works of others the source draws on, by the file that holds them.
 
 ------------------------------------------------------------------------------
-Third-party code
+Code
 ------------------------------------------------------------------------------
 
 genesis_kernel/src/math.rs
-  Functions taken from rust-lang/libm, version 0.2.16, used under the MIT
-  licence, which derive from musl libc and FreeBSD msun (Sun Microsystems and
-  others), and cbrt from CORE-MATH (Copyright (c) 2021-2022 Alexei
-  Sibidanov; ported to Rust by Trevor Gross), also under the MIT licence.
-  The licence text and every copyright notice are kept in that file.
-  The code needs it.
+  rust-lang/libm, version 0.2.16 (from musl libc and FreeBSD msun, Sun
+  Microsystems and others), and cbrt from CORE-MATH, Alexei Sibidanov
+  (2021-2022), ported to Rust by Trevor Gross. The MIT licence text and every
+  copyright notice are kept in that file.
+
+genesis_seal
+  ed25519-dalek and curve25519-dalek, the dalek-cryptography authors
+  (dependencies; their code is not in the source).
 
 ------------------------------------------------------------------------------
-Third-party data
+Sources
 ------------------------------------------------------------------------------
 
 genesis_seal
 ============
 
 vectors/ed25519.txt
-  RFC 8032 (Josefsson and Liusvaara, 2017), section 7.1: the five Ed25519
-  test vectors. Copyright (c) 2017 IETF Trust and the persons identified as
-  the document authors.
-  The twelve cases of "Taming the many EdDSAs" (Chalkias, Garillot and
-  Nikolaenko, 2020), https://github.com/novifinancial/ed25519-speccheck,
-  cases.json. Licence: Apache License, Version 2.0.
-  Only a test reads them (tests/ed25519_vectors.rs). The verification of a
-  signed load itself is ed25519-dalek's and curve25519-dalek's (BSD-3-Clause),
-  dependencies whose code is not in the source.
+  Josefsson, S.; Liusvaara, I. (2017). Edwards-Curve Digital Signature
+  Algorithm (EdDSA). RFC 8032, section 7.1. IETF.
+  Chalkias, K.; Garillot, F.; Nikolaenko, V. (2020). Taming the many EdDSAs.
+  https://github.com/novifinancial/ed25519-speccheck (cases.json).
 
 genesis_kernel
 ==============
 
 src/cell_18650pf.rs
-  Kollmeyer, Phillip (2018). Panasonic 18650PF Li-ion Battery Data. Mendeley
-  Data, V1. https://doi.org/10.17632/wykht8y7tg.1 (University of
-  Wisconsin-Madison and McMaster University).
-  In the source: two tables read from the dataset's tests, open-circuit
-  voltage and held resistance at 195 states of charge, 390 numbers. The code
-  needs them.
-  Licence: CC BY 4.0. The dataset asks: "If this data is utilized for any
-  purpose, it should be appropriately referenced."
+  Kollmeyer, P. (2018). Panasonic 18650PF Li-ion Battery Data. Mendeley Data,
+  V1. https://doi.org/10.17632/wykht8y7tg.1 (University of Wisconsin-Madison
+  and McMaster University).
 
 src/cell_2170_m80_tables.rs
 src/cell_2170_model3_curves.rs
 src/cell_2170_model3_reference.rs
-  Kollmeyer, Phillip J.; Khanum, Fauzia; Naguib, Mina; Emadi, Ali (2023).
-  Tesla Model 3 2170 Li-ion Cell Dataset and Battery SOC Estimation Blind
-  Modeling Tool. Borealis, V3. https://doi.org/10.5683/SP3/ZVTR4B (McMaster
-  University).
-  In the source: 2,307 numbers fitted to the tests of cell m80 (capacities,
-  rest voltages, resistances, time constants) with the grids they sit on;
-  three rest-voltage curves of 211 points each; and, for the tests, the logged
-  current and case temperature of the first 300 seconds of one drive cycle of
-  cell m80, 600 numbers. The code needs the first two; the third is in a test
-  only.
-  Licence: CC-BY 4.0. The dataset page asks for the data citation above. The
-  dataset's overview slides say: "Cite this paper when using data/tool":
+  Kollmeyer, P. J.; Khanum, F.; Naguib, M.; Emadi, A. (2023). Tesla Model 3
+  2170 Li-ion Cell Dataset and Battery SOC Estimation Blind Modeling Tool.
+  Borealis, V3. https://doi.org/10.5683/SP3/ZVTR4B (McMaster University).
   Kollmeyer, P. J.; Naguib, M.; Khanum, F.; Emadi, A. (2022). A Blind Modeling
   Tool for Standardized Evaluation of Battery State of Charge Estimation
   Algorithms. 2022 IEEE Transportation Electrification Conference & Expo
-  (ITEC), pp. 243-248. https://doi.org/10.1109/ITEC53557.2022.9813996
+  (ITEC), 243-248. https://doi.org/10.1109/ITEC53557.2022.9813996
 
 src/link_gothenburg_10010.rs
-  Andersson, J. C. M.; Olsson, J.; van de Beek, C. Z.; Hansryd, J.; Andersson,
-  H.; Persson, J. (2022). The OpenMRG data set (version 1.1). Zenodo.
-  https://doi.org/10.5281/zenodo.7107689 (SMHI; Ericsson AB; Hi3G Access AB;
-  Göteborgs Stad – Kretslopp och Vatten). Described in Andersson, Olsson, van
-  de Beek and Hansryd (2022), Earth System Science Data 14, 5411-5426,
+  Andersson, J. C. M.; Olsson, J.; van de Beek, C. Z.; Hansryd, J.;
+  Andersson, H.; Persson, J. (2022). The OpenMRG data set (version 1.1).
+  Zenodo. https://doi.org/10.5281/zenodo.7107689 (SMHI; Ericsson AB; Hi3G
+  Access AB; Göteborgs Stad – Kretslopp och Vatten).
+  Andersson, J. C. M.; Olsson, J.; van de Beek, C. Z.; Hansryd, J. (2022).
+  Earth System Science Data 14, 5411-5426.
   https://doi.org/10.5194/essd-14-5411-2022
-  In the source: the frequency, length, antenna size and sent level of link
-  10010, sublink 587, which the code needs; and, in a test only, twelve
-  one-minute rain rates of the Barlastplatsen gauge and one dry level of the
-  link, from the event of 28 July 2015.
-  Licence of the data set: Creative Commons Attribution Share Alike 4.0
-  International (https://creativecommons.org/licenses/by-sa/4.0).
-  The same file holds two rain coefficients computed from Recommendation ITU-R
-  P.838-3 (International Telecommunication Union, 2005),
-  https://www.itu.int/rec/R-REC-P.838-3-200503-I/en, which the code needs, and
-  in tests the coefficients of its Tables 2 and 4 for vertical polarisation
-  and four values of its Table 5. The source states no licence; its page reads
-  "Copyright © ITU 2008 All Rights Reserved".
+  International Telecommunication Union (2005). Recommendation ITU-R P.838-3.
+  https://www.itu.int/rec/R-REC-P.838-3-200503-I/en
 
 src/tokamak_vde_mast.rs
+(and protocol_mcp_gateway: src/descriptor.rs, tests/tokamak_vde_mast_router.rs)
   Jackson, S.; Khan, S.; Cummings, N.; Hodson, J.; de Witt, S.; Pamela, S.;
   Akers, R.; Thiyagalingam, J.; the MAST Team (2024). FAIR-MAST: A fusion
   device data management system. SoftwareX 27, 101869.
-  https://doi.org/10.1016/j.softx.2024.101869 ; and the same authors (2025),
-  IEEE Transactions on Plasma Science, https://doi.org/10.1109/TPS.2025.3583419
-  (UKAEA and the MAST Team). MAST shot 15045, level 2.
-  In the source: constants derived from the data by the company (the plasma's
-  current and mass, one wall circuit and the P6 circuit, two contact heights,
-  the Alfven speed, and four Chebyshev series of 124 numbers in the
-  displacement), which the code needs. No measured trace is stored.
-  Licence of the data set: Creative Commons Attribution Share Alike 4.0
-  International (https://creativecommons.org/licenses/by-sa/4.0). The derived
-  constants are shared under the same licence, with this attribution.
-  Source: FAIR-MAST level 2,
+  https://doi.org/10.1016/j.softx.2024.101869
+  The same authors (2025). IEEE Transactions on Plasma Science.
+  https://doi.org/10.1109/TPS.2025.3583419
+  UKAEA and the MAST Team. FAIR-MAST level 2, MAST shot 15045.
   https://s3.echo.stfc.ac.uk/mast/level2/shots/15045.zarr/
-  Changes: the numbers are the company's derivation from the data, not the
-  measured data. The same derived constants, and single values of the shot,
-  are also in protocol_mcp_gateway/src/descriptor.rs (TOKAMAK_VDE_MAST_DATA)
-  and protocol_mcp_gateway/tests/tokamak_vde_mast_router.rs.
-  Only these constants are under CC BY-SA 4.0; the code around them is under
-  the Apache License 2.0. The data are provided as-is, without warranties, as
-  section 5 of CC BY-SA 4.0 states.
 
 src/grid_gb.rs
-  National Energy System Operator, System Frequency,
-  https://www.neso.energy/data-portal/system-frequency-data , and System
-  Inertia, https://www.neso.energy/data-portal/system-inertia , NESO Data
-  Portal. Elexon Limited, Generation by fuel type, BMRS dataset FUELINST,
+  National Energy System Operator. System Frequency; System Inertia. NESO Data
+  Portal. https://www.neso.energy/data-portal/system-frequency-data ,
+  https://www.neso.energy/data-portal/system-inertia
+  Elexon Limited. Generation by fuel type, BMRS dataset FUELINST.
   https://data.elexon.co.uk/bmrs/api/v1/datasets/FUELINST
-  In the source, in a test only: five measured one-second frequency samples of
-  the interconnector trip of 18 April 2019 and that trip's inputs.
-  Licences: National Energy SO Open Data Licence v1.0; Elexon's "Licence to
-  use BMRS open data". The attribution each asks for:
-      Supported by National Energy SO Open Data
-      Contains BMRS data © Elexon Limited copyright and database right 2026
 
 src/los_jwst_fine_guide_reference.rs
 (and protocol_mcp_gateway/src/descriptor.rs)
-  Guide-star data products of JWST programme 1163, OTE-26 Routine WFSC/CC
-  Jitter Maintenance (principal investigator M. Perrin), Mikulski Archive for
-  Space Telescopes, Space Telescope Science Institute, https://mast.stsci.edu
-  In the source: frames 469 to 1720 of the table FGS CENTROID PACKET of the
-  file jw01163017001_gs-fg_2022092164131_cal.fits, 1,252 frames of centroid
-  and count rate, 5,008 numbers, in a test only; the gateway's worked example
-  holds the first eight of those frames and the lock point.
-  The source states no licence. The acknowledgment the archive asks for:
-      This work is based in part on observations made with the NASA/ESA/CSA
-      James Webb Space Telescope. The data were obtained from the Mikulski
-      Archive for Space Telescopes at the Space Telescope Science Institute,
-      which is operated by the Association of Universities for Research in
-      Astronomy, Inc., under NASA contract NAS5-03127 for JWST. These
-      observations are associated with program #1163.
+  NASA/ESA/CSA James Webb Space Telescope, programme 1163, OTE-26 Routine
+  WFSC/CC Jitter Maintenance (principal investigator M. Perrin), guide-star
+  data product jw01163017001_gs-fg_2022092164131_cal.fits. Mikulski Archive
+  for Space Telescopes, Space Telescope Science Institute (operated by the
+  Association of Universities for Research in Astronomy, Inc., under NASA
+  contract NAS5-03127). https://mast.stsci.edu
 
 src/satellite_lageos1.rs
-  (a) Pavlis, N. K.; Holmes, S. A.; Kenyon, S. C.; Factor, J. K. (2008). An
-  Earth Gravitational Model to Degree 2160: EGM2008. Coefficient file
-  EGM2008.gfc from ICGEM, https://icgem.gfz.de/tom_longtime . In the source:
-  the gravitational parameter, the reference radius and 162 coefficients to
-  degree and order 12; the code needs them, and a test holds them again as 88
-  rows of text. The source states no licence.
-  (b) Petit, G.; Luzum, B. (eds.) (2010). IERS Conventions (2010). IERS
-  Technical Note No. 36. Verlag des Bundesamts für Kartographie und Geodäsie,
-  Frankfurt am Main. In the source: three zonal coefficients (Table 6.2),
-  three tide numbers (Table 6.3) and the rotation and time constants; the code
-  needs them. The source states no licence; its imprint reads "(c) Verlag des
-  Bundesamts für Kartographie und Geodäsie, Frankfurt am Main 2010".
-  (c) The short series for the Sun and the Moon of Montenbruck, O.; Gill, E.,
-  Satellite Orbits: Models, Methods, and Applications, section 3.3.2, as
-  transcribed in Orekit (CS GROUP), AnalyticalSolarPositionProvider.java and
-  AnalyticalLunarPositionProvider.java, https://github.com/CS-SI/Orekit . In
-  the source: about 170 numbers; the code needs them. The Orekit files state
-  the Apache License, Version 2.0.
-  (d) NASA/JPL Horizons On-Line Ephemeris System,
-  https://ssd.jpl.nasa.gov/horizons/ : the gravitational parameters of the Sun
-  and the Moon and the solar constant; the code needs them. The source states
-  no licence.
-  (e) International Laser Ranging Service: the mass and diameter of LAGEOS-1
-  from its mission page, which the code needs; and, in a test only, the epoch,
-  position and velocity at the start of 56 runs, 392 numbers, taken from the
-  weekly orbit files of the ILRS analysis and combination centres (Satellite
-  Laser Ranging (SLR) Final Orbit product, NASA Crustal Dynamics Data
-  Information System, https://doi.org/10.5067/SLR/SLR_ILRSORB_001 ). The ILRS
-  says: "The data and products are not copyrighted". The citation it asks for:
-  Pearlman, M.R., Noll, C.E., Pavlis, E.C. et al. The ILRS: approaching 20
-  years and planning for the future. J Geod 93, 2161–2180 (2019). DOI:
-  https://doi.org/10.1007/s00190-019-01241-1 . Keyword: SLR.
+  Pavlis, N. K.; Holmes, S. A.; Kenyon, S. C.; Factor, J. K. (2008). An Earth
+  Gravitational Model to Degree 2160: EGM2008. Coefficient file EGM2008.gfc,
+  ICGEM. https://icgem.gfz.de/tom_longtime
+  Petit, G.; Luzum, B. (eds.) (2010). IERS Conventions (2010). IERS Technical
+  Note No. 36. Verlag des Bundesamts für Kartographie und Geodäsie, Frankfurt
+  am Main.
+  Montenbruck, O.; Gill, E. Satellite Orbits: Models, Methods, and
+  Applications, section 3.3.2, as transcribed in Orekit (CS GROUP),
+  AnalyticalSolarPositionProvider.java and AnalyticalLunarPositionProvider.java.
+  https://github.com/CS-SI/Orekit
+  NASA/JPL Horizons On-Line Ephemeris System. https://ssd.jpl.nasa.gov/horizons/
+  International Laser Ranging Service. LAGEOS-1 mission page; Satellite Laser
+  Ranging (SLR) Final Orbit product, NASA Crustal Dynamics Data Information
+  System. https://doi.org/10.5067/SLR/SLR_ILRSORB_001
+  Pearlman, M. R.; Noll, C. E.; Pavlis, E. C. et al. (2019). The ILRS:
+  approaching 20 years and planning for the future. Journal of Geodesy 93,
+  2161-2180. https://doi.org/10.1007/s00190-019-01241-1
 
 src/solar_system.rs
-  The header of the JPL planetary ephemeris DE440 (Park, R. S.; Folkner, W.
-  M.; Williams, J. G.; Boggs, D. H. (2021). The JPL Planetary and Lunar
-  Ephemerides DE440 and DE441. The Astronomical Journal 161, 105.
-  https://doi.org/10.3847/1538-3881/abd414), and vector tables of the NASA/JPL
-  Horizons On-Line Ephemeris System, https://ssd.jpl.nasa.gov/horizons/ ,
-  whose source is DE441.
-  In the source: the gravitational parameters of thirteen bodies, the Earth's
-  J2 and radius, the speed of light and the astronomical unit, which the code
-  needs; and the position and velocity of the thirteen bodies at 1999-01-01,
-  78 numbers, kept for the tests and the worked example.
-  The header file and Horizons state no licence. The article is under Creative
-  Commons Attribution 4.0.
+  Park, R. S.; Folkner, W. M.; Williams, J. G.; Boggs, D. H. (2021). The JPL
+  Planetary and Lunar Ephemerides DE440 and DE441. The Astronomical Journal
+  161, 105. https://doi.org/10.3847/1538-3881/abd414
+  NASA/JPL Horizons On-Line Ephemeris System (DE441).
+  https://ssd.jpl.nasa.gov/horizons/
 
 src/reactor_spert3.rs
 src/reactor_spert3_fuel.rs
@@ -212,204 +133,128 @@ src/reactor_spert3_fuel.rs
   Oxide-Fueled, Pressurized-Water Reactor. Report IDO-17281, Phillips
   Petroleum Co., Atomic Energy Division, for the U.S. Atomic Energy
   Commission. OSTI 4792676. https://doi.org/10.2172/4792676
-  In the source: the delayed-neutron set, the generation times, the starting
-  power, the coefficients and the temperature bands the report prints, which
-  the code needs; and, in tests only, the number and coolant temperature of
-  some of its tests, with the reactivity worked from each tabulated period. No
-  measured outcome of the report is in the source.
-  The source states no licence. The report's cover reads: "Distribution of
-  this document is unlimited."
-  src/reactor_spert3_fuel.rs also holds three heat capacities of water worked
-  from the density and specific heat of water at three states, read from the
   NIST Chemistry WebBook, NIST Standard Reference Database 69, National
-  Institute of Standards and Technology, https://doi.org/10.18434/T4D303 ; the
-  code needs them. The WebBook's page reads: "© 2026 by the U.S. Secretary of
-  Commerce on behalf of the United States of America. All rights reserved."
+  Institute of Standards and Technology. https://doi.org/10.18434/T4D303
 
 src/reactor_spert3_ccore.rs
   Toole, C. R. (1964). The Effects of Pressure and Flow on Room Temperature
-  Power Excursions in Spert III. Report IDO-16918. OSTI 4042264.
-  https://doi.org/10.2172/4042264 ; Condit, C. M.; Scott, J. F.; Johnson, R.
-  L. (1967). The Effects of Coolant Temperature and Initial Power Level on the
-  Excursion Behavior of a Highly Enriched Plate Core in Spert III. Report
-  IDO-17138. OSTI 4389198. https://doi.org/10.2172/4389198 . Both: Phillips
-  Petroleum Co., Atomic Energy Division, for the U.S. Atomic Energy
-  Commission. Keepin, G. R. (1965). Physics of Nuclear Kinetics.
-  In the source: core constants of the two reports and Keepin's six-group
-  delayed-neutron set, which the code needs; and, in a test only, the
-  conditions of three of the transients of IDO-16918.
-  The sources state no licence.
+  Power Excursions in Spert III. Report IDO-16918, Phillips Petroleum Co.,
+  Atomic Energy Division, for the U.S. Atomic Energy Commission. OSTI 4042264.
+  https://doi.org/10.2172/4042264
+  Condit, C. M.; Scott, J. F.; Johnson, R. L. (1967). The Effects of Coolant
+  Temperature and Initial Power Level on the Excursion Behavior of a Highly
+  Enriched Plate Core in Spert III. Report IDO-17138, Phillips Petroleum Co.,
+  Atomic Energy Division, for the U.S. Atomic Energy Commission. OSTI 4389198.
+  https://doi.org/10.2172/4389198
+  Keepin, G. R. (1965). Physics of Nuclear Kinetics.
 
 src/reactor_triga_jsi.rs
   Švajger, I.; Čalič, D.; Pungerčič, A.; Trkov, A.; Snoj, L. (2024).
   Evaluation of reactor pulse experiments. Nuclear Engineering and Technology
-  56(4), 1165-1203. https://doi.org/10.1016/j.net.2023.11.021 . Vavtar, Ingrid
-  (2019). Analiza fizikalnih parametrov reaktorskega pulza. Master's thesis,
-  University of Ljubljana. http://hdl.handle.net/20.500.12556/RUL-109204
-  In the source: the delayed fraction, the six-group delayed-neutron set, the
-  published generation time, the fuel mass, the heat-capacity line and the
-  starting power from the article, about twenty numbers, and the hot-rod
-  factor 1.387 from the thesis. The code needs them. No measured value of the
-  pulse database of the "Jožef Stefan" Institute, https://trigapulse.ijs.si/
-  (Švajger, Snoj), is in the source.
-  Licence of the article, in its own words: "This is an open access article
-  under the CC BY-NC-ND license
-  (http://creativecommons.org/licenses/by-nc-nd/4.0/)." The thesis and the
-  pulse database state no licence.
+  56(4), 1165-1203. https://doi.org/10.1016/j.net.2023.11.021
+  Vavtar, I. (2019). Analiza fizikalnih parametrov reaktorskega pulza.
+  Master's thesis, University of Ljubljana.
+  http://hdl.handle.net/20.500.12556/RUL-109204
+  Švajger, I.; Snoj, L. TRIGA pulse database, "Jožef Stefan" Institute.
+  https://trigapulse.ijs.si/
 
 src/reactor_spert3_twin.rs
-  McCardell, R. K.; Herborn, D. I.; Houghtaling, J. E. (1969). Reactivity
-  Accident Test Results and Analyses for the SPERT III E-Core: A Small,
-  Oxide-Fueled, Pressurized-Water Reactor. Report IDO-17281, Phillips
-  Petroleum Co., Atomic Energy Division, for the U.S. Atomic Energy
-  Commission. OSTI 4792676. https://doi.org/10.2172/4792676
-  In the source: the report's design data (Appendix A), kinetics, gap,
-  heat-source and rod data (Appendix B, Table II) and the rod worth curves of
-  Fig. B-4 as two fitted numbers per temperature, which the code needs; and,
-  in tests only, the conditions of some of its 70 tests. No measured outcome
-  of the report is in the source.
-  The source states no licence. The report's cover reads: "Distribution of
-  this document is unlimited."
-  Fink, J. K. (2000). Thermophysical properties of uranium dioxide. Journal
-  of Nuclear Materials 279 (1), 1-18.
-  https://doi.org/10.1016/S0022-3115(99)00273-1 : the heat capacity and
-  conductivity of UO2, which the code needs. Wagner, W. et al. (2000). The
-  IAPWS Industrial Formulation 1997 for the Thermodynamic Properties of Water
-  and Steam. Journal of Engineering for Gas Turbines and Power 122 (1),
-  150-182. https://doi.org/10.1115/1.483186 : the ten coefficients of the
-  saturation line (region 4), which the code needs. The terms of these two
-  articles are not recorded in the company's records.
-  Four polynomials of the water's properties at 10.44 MPa, fitted to the
+  McCardell, R. K.; Herborn, D. I.; Houghtaling, J. E. (1969). Report
+  IDO-17281 (above). https://doi.org/10.2172/4792676
+  Fink, J. K. (2000). Thermophysical properties of uranium dioxide. Journal of
+  Nuclear Materials 279(1), 1-18. https://doi.org/10.1016/S0022-3115(99)00273-1
+  Wagner, W. et al. (2000). The IAPWS Industrial Formulation 1997 for the
+  Thermodynamic Properties of Water and Steam. Journal of Engineering for Gas
+  Turbines and Power 122(1), 150-182. https://doi.org/10.1115/1.483186
   NIST Chemistry WebBook, NIST Standard Reference Database 69, National
-  Institute of Standards and Technology, https://doi.org/10.18434/T4D303 ;
-  the code needs them. The WebBook's page reads: "(c) 2026 by the U.S.
-  Secretary of Commerce on behalf of the United States of America. All
-  rights reserved."
+  Institute of Standards and Technology. https://doi.org/10.18434/T4D303
 
 src/reactor_spert3_ccore_twin.rs
-  Toole, C. R. (1964). The Effects of Pressure and Flow on Room Temperature
-  Power Excursions in Spert III. Report IDO-16918. OSTI 4042264.
-  https://doi.org/10.2172/4042264 ; Condit, C. M.; Scott, J. F.; Johnson, R.
-  L. (1967). Report IDO-17138. OSTI 4389198. https://doi.org/10.2172/4389198 .
-  Both: Phillips Petroleum Co., Atomic Energy Division, for the U.S. Atomic
-  Energy Commission. Keepin, G. R. (1965). Physics of Nuclear Kinetics.
-  In the source: core constants of the two reports (IDO-17138 Table B-1,
-  IDO-16918 Table I) and Keepin's six-group delayed-neutron set, which the
-  code needs; and, in tests only, the conditions of some transients of
-  IDO-16918. No measured outcome of either report is in the source.
-  The reports state no licence; both are distributed without restriction by
-  the Department of Energy's Office of Scientific and Technical Information.
-  The saturation line of IAPWS-IF97 region 4 (Wagner et al. 2000, above) and
-  the IAPWS auxiliary equations of Wagner, W. and Pruss, A. (1993),
-  International equations for the saturation properties of ordinary water
-  substance, J. Phys. Chem. Ref. Data 22, 783; the boiling laws of Thom, of
-  Zuber and of Ivey and Morris, by their published constants. The code needs
-  them. Their terms are not recorded in the company's records.
+  Toole, C. R. (1964). Report IDO-16918 (above).
+  https://doi.org/10.2172/4042264
+  Condit, C. M.; Scott, J. F.; Johnson, R. L. (1967). Report IDO-17138
+  (above). https://doi.org/10.2172/4389198
+  Keepin, G. R. (1965). Physics of Nuclear Kinetics.
+  Wagner, W. et al. (2000), IAPWS-IF97 (above), region 4.
+  Wagner, W.; Pruss, A. (1993). International equations for the saturation
+  properties of ordinary water substance. Journal of Physical and Chemical
+  Reference Data 22, 783.
+  The boiling laws of Thom, of Zuber and of Ivey and Morris.
 
 src/reactor_msre_pump.rs
   Prince, B. E.; Engel, J. R.; Ball, S. J.; Haubenreich, P. N.; Kerlin, T. W.
   (1968). Zero-Power Physics Experiments on the Molten-Salt Reactor
-  Experiment. ORNL-4233, Oak Ridge National Laboratory. Prince, B. E. (1966).
-  Period Measurements on the Molten Salt Reactor Experiment During Fuel
-  Circulation: Theory and Experiment. ORNL-TM-1626, Oak Ridge National
-  Laboratory. Both for the U.S. Atomic Energy Commission.
-  In the source: the delayed-neutron constants (ORNL-4233 Table 2), the
-  vessel's elevations (Fig. 2) and the residence times round the loop
-  (ORNL-TM-1626 Table 1), which the code needs; and, in tests only, the
-  digitised pump-speed schedules of Figs. 22 and 23. ORNL-TM-1070 was read as
-  background and nothing of it is in the source.
-  US AEC contractor reports, distributed without restriction; the copies
-  carry the Commission's legal notice and state no licence. They were
-  fetched from the openmsr/msr-archive repository on GitHub, whose own
-  licence (GPL-3.0) covers the repository and not the reports.
+  Experiment. ORNL-4233, Oak Ridge National Laboratory, for the U.S. Atomic
+  Energy Commission.
+  Prince, B. E. (1966). Period Measurements on the Molten Salt Reactor
+  Experiment During Fuel Circulation: Theory and Experiment. ORNL-TM-1626,
+  Oak Ridge National Laboratory, for the U.S. Atomic Energy Commission.
 
 src/capsule_stardust.rs
-  NASA documents on the NASA Technical Reports Server: Mitcheltree, Wilmoth,
-  Cheatwood, Brauckmann, Greene (1997), Aerodynamics of Stardust Sample Return
-  Capsule, AIAA 97-2304, NTRS 20040105538 (the reference area and two drag
-  tables of 52 numbers); Desai, Lyons, Tooley, Kangas (2006), Entry, Descent,
-  and Landing Operations Analysis for the Stardust Re-Entry Capsule, NTRS
-  20060028186, and its preprint, NTRS 20090004445 (mass and entry state);
-  Desai and Qualls (2008), Stardust Entry Reconstruction, NTRS 20080008567
-  (azimuth and the radar altitude and Mach number at drogue deployment); U.S.
-  Standard Atmosphere, 1976, NTRS 19770009539 (the two air tables, 1,102
-  numbers, are made from it, and a test holds 55 of its printed densities).
-  The code needs all but those 55.
-  NTRS marks the first "Public Use Permitted." and the others "Work of the US
-  Gov. Public Use Permitted."
-  The file also holds four constants of World Geodetic System 1984,
-  NGA.STND.0036_1.0.0 (National Geospatial-Intelligence Agency, 2014). The
-  source states no licence.
+  Mitcheltree; Wilmoth; Cheatwood; Brauckmann; Greene (1997). Aerodynamics of Stardust Sample Return Capsule. AIAA
+  97-2304. NTRS 20040105538.
+  Desai; Lyons; Tooley; Kangas (2006). Entry, Descent,
+  and Landing Operations Analysis for the Stardust Re-Entry Capsule. NTRS
+  20060028186; preprint NTRS 20090004445.
+  Desai; Qualls (2008). Stardust Entry Reconstruction. NTRS
+  20080008567.
+  U.S. Standard Atmosphere, 1976. NTRS 19770009539.
+  National Geospatial-Intelligence Agency (2014). World Geodetic System 1984.
+  NGA.STND.0036_1.0.0.
 
 src/capsule_insight.rs
-  Edquist, Desai, Schoenenberger (2008), Aerodynamics for the Mars Phoenix
-  Entry Capsule, AIAA 2008-7219, NTRS 20080034648: two drag tables read from
-  the graph of its Figure 9a, 60 numbers. NTRS: "Work of the US Gov. Public
-  Use Permitted." Karlgaard and others (2020), NTRS 20200003204 (surface
-  pressure and landing radius), and Korzun and others (2020), NTRS 20200002812
-  (which drag table is read where). NTRS: "Public Use Permitted."
+  Edquist; Desai; Schoenenberger (2008). Aerodynamics for
+  the Mars Phoenix Entry Capsule. AIAA 2008-7219. NTRS 20080034648.
+  Karlgaard and others (2020). NTRS 20200003204.
+  Korzun and others (2020). NTRS 20200002812.
   Karatekin, O.; Banfield, D.; Ashley, J. (2020). InSight EDL Bundle. NASA
-  Planetary Data System. https://doi.org/10.17189/1518935 : the entry position
-  and velocity, the diameter and the mass (reconstruction by Karatekin and Van
-  Hove, Royal Observatory of Belgium). McCleese and Schofield, MRO Mars
-  Climate Sounder Level 5 DDR V6.2, NASA Planetary Data System,
-  https://doi.org/10.17189/6khc-s052 : the two air tables, 1,262 numbers, are
-  made from seven of its temperature profiles. Williams, D. R., Mars Fact
-  Sheet, NASA Space Science Data Coordinated Archive: three constants. The
-  pages of these three sources state no licence; the DOI records of the two
-  Planetary Data System products read: "This is a work of the U.S. Government
-  and is not subject to copyright protection in the United States. Foreign
-  copyrights may apply."
-  The code needs all of it.
+  Planetary Data System. https://doi.org/10.17189/1518935 (reconstruction by
+  Karatekin and Van Hove, Royal Observatory of Belgium).
+  McCleese; Schofield. MRO Mars Climate Sounder Level 5 DDR V6.2.
+  NASA Planetary Data System. https://doi.org/10.17189/6khc-s052
+  Williams, D. R. Mars Fact Sheet. NASA Space Science Data Coordinated Archive.
 
 src/crater_ryugu_sci.rs
+  JAXA Hayabusa2 Project, reporter briefing of 18 March 2019.
+  NASA/JPL Small-Body Database, citing Watanabe et al. (2019). Science
+  364. https://doi.org/10.1126/science.aav8032
+  Schmidt (1980). Proc. Lunar Planet. Sci. Conf. 11th, 2099-2128,
+  Table 1.
+  Gault; Wedekind (1977). In Impact and Explosion Cratering,
+  1231-1244, Fig. 4.
+
 src/generator_mmrtg_f1.rs
+  Whiting, C.; Woerner, D. (2024). Historical RTG performance data through
+  2023 [Dataset]. Dryad. https://doi.org/10.5061/dryad.1zcrjdfw2
+  Whiting, C. E.; Woerner, D. F. (2023). Chapter 8: Lifetime Performance of
+  Spaceborne RTGs. In D. F. Woerner (ed.), The Technology of Discovery:
+  Radioisotope Thermoelectric Generators and Thermoelectric Technologies for
+  Space Exploration. John Wiley & Sons. ISBN 9781119811367.
+  Woerner; Moreno; Jones; Zimmerman; Wood (2013). The Mars
+  Science Laboratory (MSL) MMRTG in-flight: a power update.
+  https://hdl.handle.net/2014/44945
+  Browne; Tuli (2007). Nuclear Data Sheets 108(3), 681-772.
+  https://doi.org/10.1016/j.nds.2007.02.003 (through NuDat 3).
+
 src/accumulator_sbo450.rs
+  Span; Lemmon; Jacobsen; Wagner; Yokozeki (2000).
+  Journal of Physical and Chemical Reference Data 29(6), 1361-1433.
+  https://doi.org/10.1063/1.1349047
+  Lemmon, E. W.; Bell, I. H.; Huber, M. L.; McLinden, M. O. Thermophysical
+  Properties of Fluid Systems. In P. J. Linstrom and W. G. Mallard (eds.),
+  NIST Chemistry WebBook, NIST Standard Reference Database Number 69, National
+  Institute of Standards and Technology, Gaithersburg MD, 20899.
+  https://doi.org/10.18434/T4D303 (retrieved 9 October 2026).
+
 src/tokamak_jet_dte1.rs
+  Bosch, H.-S.; Hale, G. M. (1992), Table VII (see genesis_solvers,
+  src/bosch_hale.rs).
+  ITER Physics Basis (1999), Chapter 2: Plasma
+  confinement and transport. Nuclear Fusion 39(12), 2175-2249.
+  https://doi.org/10.1088/0029-5515/39/12/302
+
 src/grid_node.rs
-  Single constants, each named beside its source in the file; the code needs
-  them.
-  crater_ryugu_sci: the projectile's mass and speed from the JAXA Hayabusa2
-  Project reporter briefing of 18 March 2019; Ryugu's properties from the
-  NASA/JPL Small-Body Database (citing Watanabe et al. 2019, Science 364,
-  https://doi.org/10.1126/science.aav8032). Three constants are fitted to
-  Table 1 of Schmidt (1980), Proc. Lunar Planet. Sci. Conf. 11th, 2099-2128,
-  and to Fig. 4 of Gault and Wedekind (1977), in Impact and Explosion
-  Cratering, 1231-1244; their points are not in the source. These sources
-  state no licence.
-  generator_mmrtg_f1: one value, and three constants fitted to the rest, of
-  Whiting, Christofer; Woerner, David (2024). Historical RTG performance data
-  through 2023 [Dataset]. Dryad. https://doi.org/10.5061/dryad.1zcrjdfw2 , CC0
-  1.0. Its authors ask every user to reference: C.E. Whiting and D.F. Woerner,
-  "Chapter 8: Lifetime Performance of Spaceborne RTGs," The Technology of
-  Discovery: Radioisotope Thermoelectric Generators and Thermoelectric
-  Technologies for Space Exploration, D.F. Woerner, Ed., John Wiley & Sons,
-  2023. ISBN: 9781119811367. The thermal power at landing is from Woerner,
-  Moreno, Jones, Zimmerman, Wood (2013), The Mars Science Laboratory (MSL)
-  MMRTG in-flight: a power update, https://hdl.handle.net/2014/44945 , CC0
-  1.0. The half-life of plutonium-238 is from Browne and Tuli (2007), Nuclear
-  Data Sheets 108(3), 681-772, https://doi.org/10.1016/j.nds.2007.02.003 ,
-  read through NuDat 3; the source states no licence.
-  accumulator_sbo450: four constants of nitrogen from Span, Lemmon, Jacobsen,
-  Wagner, Yokozeki (2000), J. Phys. Chem. Ref. Data 29(6), 1361-1433,
-  https://doi.org/10.1063/1.1349047 (the source states no licence), and, with
-  six more in a test, one value of the NIST Chemistry WebBook, cited as it
-  asks: Eric W. Lemmon, Ian H. Bell, Marcia L. Huber, and Mark O. McLinden,
-  "Thermophysical Properties of Fluid Systems" in NIST Chemistry WebBook, NIST
-  Standard Reference Database Number 69, Eds. P.J. Linstrom and W.G. Mallard,
-  National Institute of Standards and Technology, Gaithersburg MD, 20899,
-  https://doi.org/10.18434/T4D303, (retrieved 9 October 2026). The WebBook's
-  page reads: "© 2026 by the U.S. Secretary of Commerce on behalf of the
-  United States of America. All rights reserved."
-  tokamak_jet_dte1: nine numbers of Table VII of Bosch and Hale (1992) (see
-  genesis_solvers/src/bosch_hale.rs) and the coefficients of the IPB98(y,2)
-  scaling of ITER Physics Basis, Chapter 2: Plasma confinement and transport,
-  Nuclear Fusion 39(12), 2175-2249 (1999),
-  https://doi.org/10.1088/0029-5515/39/12/302 , "Published under licence by
-  IOP Publishing Ltd".
-  grid_node: one number of IEC 61140, International Electrotechnical
-  Commission. The source states no licence; its page reads "Copyright © IEC
-  2026. All rights reserved."
+  International Electrotechnical Commission. IEC 61140.
 
 genesis_solvers
 ===============
@@ -417,386 +262,233 @@ genesis_solvers
 src/fuel_rod_triga_jsi.rs
   Švajger, I.; Čalič, D.; Pungerčič, A.; Trkov, A.; Snoj, L. (2024).
   Evaluation of reactor pulse experiments. Nuclear Engineering and Technology
-  56(4), 1165-1203. https://doi.org/10.1016/j.net.2023.11.021 : the radii and
-  densities of the element (Table 1) and the meat's specific heat (eq. 7.2).
-  Vavtar, Ingrid (2019), master's thesis, University of Ljubljana: the
-  hot-rod factor 1.387. Ravnik, M., Description of TRIGA Reactor, Table 4:
-  the meat's length. The University of Texas NETL TRIGA safety analysis
-  report (1991), Table 4-1 and section 4.4.5.1: the meat's conductivity and
-  the thermocouple's radius. Incropera and DeWitt, Fundamentals of Heat and
-  Mass Transfer, Tables A.1, A.6 and 10.1; Churchill and Chu (1975); Rohsenow
-  (1952); Zuber: the properties and correlations of the clad, rod and water.
-  The code needs them all. No measured value of the pulse database of the
-  "Jožef Stefan" Institute, https://trigapulse.ijs.si/ (Švajger, Snoj), is in
-  the source; its two fitted constants come from 39 of its records.
-  Licence of the article, in its own words: "This is an open access article
-  under the CC BY-NC-ND license
-  (http://creativecommons.org/licenses/by-nc-nd/4.0/)." The thesis, the
-  reactor description and the pulse database state no licence; the terms of
-  the NETL report and of the textbook and correlations are not recorded in
-  the company's records.
+  56(4), 1165-1203. https://doi.org/10.1016/j.net.2023.11.021
+  Vavtar, I. (2019). Master's thesis, University of Ljubljana (above).
+  Ravnik, M. Description of TRIGA Reactor, Table 4.
+  The University of Texas at Austin, NETL TRIGA safety analysis report
+  (1991), Table 4-1 and section 4.4.5.1.
+  Incropera; DeWitt. Fundamentals of Heat and Mass Transfer,
+  Tables A.1, A.6 and 10.1.
+  Churchill and Chu (1975). Rohsenow (1952). Zuber.
+  Švajger, I.; Snoj, L. TRIGA pulse database, "Jožef Stefan" Institute.
+  https://trigapulse.ijs.si/
 
 src/tacot.rs
 (and src/wall_gas.rs, src/pica.rs, a test of src/ablator_slab.rs)
-  TACOT 3.0, Theoretical Ablative Composite for Open Testing: a made-up
-  material for comparing codes. Lachaud, Jean (University of California, Santa
-  Cruz); van Eekelen, Tom (Samtech, Belgium); Bianchi, Daniele (Sapienza
-  University of Rome, Italy); Martin, Alexandre (University of Kentucky).
-  "TACOT v3.0" (2014). Ablation Workshop: Code Comparison, 4. University of
-  Kentucky. https://doi.org/10.13023/ablation.test.TACOT . Read from
-  https://jeanlachaud.com/research/TACOT_3.0.xls
-  In the source: every number of src/tacot.rs, about 30,600: the densities and
-  volume fractions, the two decomposition reactions, specific heat and
-  conductivity of virgin material and of char at 13 temperatures, the
-  enthalpies at 298 K, the enthalpy of the decomposition gas at 152
-  temperatures, the emissivities, and the surface table in air (char
-  consumption and wall-gas enthalpy at 15,100 nodes). src/wall_gas.rs holds
-  the three element fractions of its decomposition gas, and a test of
-  src/ablator_slab.rs two enthalpy columns of 13 numbers. The code needs them:
-  TACOT 3.0 is a material of the solver ablator_slab, and the PICA materials
-  of src/pica.rs are built on its tables.
-  The source states no licence. Its first sheet says: "Free data access for
-  code and model comparison." The repository that holds the deposit says:
-  "Author retains copyright and is free to reuse the content elsewhere."
+  Lachaud, J.; van Eekelen, T.; Bianchi, D.; Martin, A. (2014). TACOT v3.0,
+  Theoretical Ablative Composite for Open Testing. Ablation Workshop: Code
+  Comparison, 4. University of Kentucky.
+  https://doi.org/10.13023/ablation.test.TACOT
+  (https://jeanlachaud.com/research/TACOT_3.0.xls)
 
 src/workshop_series_2.rs
 (and tests of src/ablator_slab.rs)
-  Reference results of the Ablation Workshop test cases as shipped in PATO
-  3.1, Porous material Analysis Toolbox based on OpenFoam, National
-  Aeronautics and Space Administration, https://github.com/nasa/pato , tag 3.1
-  (2023).
-  In the source, in tests only, 12,884 numbers: at whole seconds, FIAT on test
-  case 1 (temperature at depths, gas flux, the two fronts), Amaryllis on cases
-  2.1, 2.2 and 2.3 (temperatures, fluxes, fronts, recession) and PATO's own
-  stored results for cases 1 and 2.2; and the 1 atm surface table
-  TACOT-Earth-1atm.
-  Licence, in the release's words: "Distributed under NASA Open Source
-  Agreement Version 1.3." "Copyright © 2023 United States Government as
-  represented by the Administrator of the National Aeronautics and Space
-  Administration. All Rights Reserved." The text of the agreement is in the
-  release, documentation/legal/NASA Open Source Agreement_ARC-16680-1C.pdf
-  The conditions of those cases are in src/ablator_slab.rs, from Lachaud, J.
-  R.; Martin, A.; Cozmuta, I.; Laub, B. (2011), Test Case Series 1,
-  https://doi.org/10.13023/ablation.test.01 , and Lachaud, J.; Martin, A.; van
-  Eekelen, T.; Cozmuta, I. (2012), Ablation test-case series #2, version 2.8.
-  These sources state no licence.
+  National Aeronautics and Space Administration (2023). PATO 3.1, Porous
+  material Analysis Toolbox based on OpenFoam: reference results of the
+  Ablation Workshop test cases. https://github.com/nasa/pato , tag 3.1.
+  Lachaud, J. R.; Martin, A.; Cozmuta, I.; Laub, B. (2011). Ablation Workshop
+  Test Case Series 1. https://doi.org/10.13023/ablation.test.01
+  Lachaud, J.; Martin, A.; van Eekelen, T.; Cozmuta, I. (2012). Ablation
+  test-case series #2, version 2.8.
 
 src/wall_gas_species.rs
 src/surface_air_tacotgas.bin
-  Thermodynamic coefficients copied from thermo.inp, the database of NASA's
-  CEA code (https://github.com/nasa/cea, data/thermo.inp, commit
-  2f79a647e85737742fb08a127da00d1ea1d069da): graphite and 52 gases, 1,633
-  numbers. Their form is NASA/TP-2002-211556 (McBride, Zehe and Gordon).
-  src/surface_air_tacotgas.bin, 5.9 MB, is a surface table computed by this
-  project from them and the decomposition gas of TACOT. The code needs both.
-  Used under the Apache License, Version 2.0. The notice of CEA: "Copyright
-  (c) 2025, United States Government as represented by the Administrator of
-  the National Aeronautics and Space Administration. Licensed under the Apache
-  License, Version 2.0."
+  NASA's CEA code, thermo.inp.
+  https://github.com/nasa/cea , data/thermo.inp, commit
+  2f79a647e85737742fb08a127da00d1ea1d069da.
+  McBride; Zehe; Gordon (2002). NASA/TP-2002-211556.
 
 src/pica.rs
   Tran, H. K.; Johnson, C. E.; Rasky, D. J.; Hui, F. C. L.; Hsu, M.-T.; Chen,
   T.; Chen, Y. K.; Paragas, D.; Kobayashi, L. (1997). Phenolic Impregnated
-  Carbon Ablators (PICA) as Thermal Protection Systems for Discovery Missions.
-  NASA Technical Memorandum 110440, Ames Research Center. In the source: the
-  heat capacity (14 points) and the char conductivity (12 points) of PICA
-  against temperature, 52 numbers, read from its Figures 7 and 9 and its text;
-  the code needs them. Tests of src/ablator_slab.rs hold the conditions of
-  four of its arc-jet blocks. The source states no licence.
-  Single values of PICA from NASA documents on the NASA Technical Reports
-  Server: Monk and others (2022), NTRS 20210024735; Agrawal and others (2016),
-  NTRS 20160000305; Driver and others (2010), NTRS 20100022127; Milos, Chen
-  and Gokcen (2012), NTRS 20120017464, each marked "Public Use Permitted.";
-  and Milos and Chen (2009), NTRS 20110012891, marked "Work of the US Gov.
-  Public Use Permitted." The code needs them.
+  Carbon Ablators (PICA) as Thermal Protection Systems for Discovery
+  Missions. NASA Technical Memorandum 110440, Ames Research Center.
+  Monk and others (2022). NTRS 20210024735.
+  Agrawal and others (2016). NTRS 20160000305.
+  Driver and others (2010). NTRS 20100022127.
+  Milos; Chen; Gokcen (2012). NTRS 20120017464.
+  Milos; Chen (2009). NTRS 20110012891.
 
 src/propeller_apc_10x7e.rs
-  UIUC Propeller Database, volume 1, the APC Thin Electric 10x7: John B.
-  Brandt, Robert W. Deters, Gavin K. Ananda, Or D. Dantsker and Michael S.
-  Selig, UIUC Applied Aerodynamics Group, Department of Aerospace Engineering,
-  University of Illinois at Urbana-Champaign.
-  In the source: the blade geometry of apce_10x7_geom.txt, chord and blade
-  angle at 18 stations, 54 numbers, which the code needs and which the gateway
-  returns in the solver's description; the largest thrust and power
-  coefficient of the fitted sweeps, two numbers; and, in tests only, the 17
-  rows of the sweep at 5018 rev/min (advance ratio, thrust coefficient, power
-  coefficient, 51 numbers) and the advance ratios and rotational speeds of
-  every compared point, 123 numbers.
-  The source states no licence. Its pages read "© 1994 - 2026 UIUC Applied
-  Aerodynamics Group". The citation it asks for:
-      J.B. Brandt, R.W. Deters, G.K. Ananda, O.D. Dantsker, and M.S. Selig
-      (insert date downloaded), UIUC Propeller Database, Vols 1-4, University
-      of Illinois at Urbana-Champaign, Department of Aerospace Engineering,
-      retrieved from https://m-selig.ae.illinois.edu/props/propDB.html.
-  Date downloaded: 2026-10-09.
+  Brandt, J. B.; Deters, R. W.; Ananda, G. K.; Dantsker, O. D.; Selig, M. S.
+  (downloaded 2026-10-09). UIUC Propeller Database, Vols 1-4, University of
+  Illinois at Urbana-Champaign, Department of Aerospace Engineering.
+  https://m-selig.ae.illinois.edu/props/propDB.html (volume 1, APC Thin
+  Electric 10x7).
 
 src/pipe_flow_superpipe.rs
-  Princeton Superpipe data of A. J. Smits' group, Gas Dynamics Lab, Princeton
-  University: Zagarola Superpipe Data, https://smits.princeton.edu/zagarola/
-  (Zagarola and Smits (1998), J. Fluid Mech. 373, 33-79,
-  https://doi.org/10.1017/S0022112098002419); McKeon Superpipe data,
-  https://smits.princeton.edu/mckeon/ (McKeon, Li, Jiang, Morrison, Smits
-  (2004), J. Fluid Mech. 501, 135-147,
-  https://doi.org/10.1017/S0022112003007304); Superpipe Turbulence Data,
-  smooth pipe, https://smits.princeton.edu/superpipe-turbulence-data/
-  (Hultmark, Vallikivi, Bailey, Smits (2012), Phys. Rev. Lett. 108, 094501,
-  and (2013), J. Fluid Mech. 728, 376-395).
-  In the source: the bore and wall roughness of the pipe, which the code
-  needs; and, in tests only, the Reynolds number and friction factor stated in
-  twelve Zagarola-Smits files, 24 numbers, and the Reynolds number, pressure
-  and temperature of the 60 compared files, 180 numbers. No velocity profile
-  is in the source.
-  The sources state no licence. The data pages read "(c) 2026 The Trustees of
-  Princeton University".
+  A. J. Smits' group, Gas Dynamics Lab, Princeton University: Zagarola Superpipe
+  Data, https://smits.princeton.edu/zagarola/ ; McKeon Superpipe data,
+  https://smits.princeton.edu/mckeon/ ; Superpipe Turbulence Data, smooth
+  pipe, https://smits.princeton.edu/superpipe-turbulence-data/
+  Zagarola; Smits (1998). Journal of Fluid Mechanics 373, 33-79.
+  https://doi.org/10.1017/S0022112098002419
+  McKeon; Li; Jiang; Morrison; Smits (2004).
+  Journal of Fluid Mechanics 501, 135-147.
+  https://doi.org/10.1017/S0022112003007304
+  Hultmark; Vallikivi; Bailey; Smits (2012).
+  Physical Review Letters 108, 094501; (2013). Journal of Fluid Mechanics
+  728, 376-395.
 
 src/tokamak_dt_beam_target_reference.rs
   International Multi-Tokamak Confinement Profile Database, 2008 Public
-  Release (PR08), UKAEA Culham,
-  https://tokamak-profiledb.ccfe.ac.uk/PR08/index.htm : JET pulse 42976 at
-  13.35 s.
-  In the source, in a test only: eight radial profiles of 50 shells, 400
-  numbers, with the beam energies and shares and the database's fusion power.
-  The source states no licence. Its page says: "Anyone may make analyses,
-  presentations and publications based on the public version of the Profile
-  Database, provided that they cite the following paper(s) describing the
-  public version of the database." It names: (1) "The International
-  Multi-Tokamak Profile Database", Nuc. Fus., 40, 1958 (2000); (2) ITER
-  Physics Basis, Chapter 2, Nuc. Fus., 39, 2175 (1999); and, for single
-  discharges, the reference in the discharge's comment file. That of pulse
-  42976 names Budny et al. (2000), Physics of Plasmas 7(12), 5038-5050,
-  https://doi.org/10.1063/1.1320466 , and Sharapov et al. (1999), Nuclear
-  Fusion 39(3), 373-388, https://doi.org/10.1088/0029-5515/39/3/307
+  Release (PR08), UKAEA Culham. https://tokamak-profiledb.ccfe.ac.uk/PR08/index.htm
+  (JET pulse 42976 at 13.35 s).
+  The International Multi-Tokamak Profile Database (2000). Nuclear Fusion 40,
+  1958.
+  ITER Physics Basis (1999), Chapter 2. Nuclear Fusion 39, 2175.
+  Budny et al. (2000). Physics of Plasmas 7(12), 5038-5050.
+  https://doi.org/10.1063/1.1320466
+  Sharapov et al. (1999). Nuclear Fusion 39(3), 373-388.
+  https://doi.org/10.1088/0029-5515/39/3/307
 
 src/bosch_hale.rs
 (and genesis_kernel/src/tokamak_jet_dte1.rs)
   Bosch, H.-S.; Hale, G. M. (1992). Improved formulas for fusion
   cross-sections and thermal reactivities. Nuclear Fusion 32(4), 611-631.
-  https://doi.org/10.1088/0029-5515/32/4/I07
-  In the source: the coefficients of its fits of the D-T and D-D
-  cross-sections and reactivities (its Tables IV, VI and VII), about 60
-  numbers; the code needs them. They were read from open codes that carry
-  them: ASCOT5 and FIDASIM (cross-sections), UKAEA PROCESS and cfspopcon
-  (reactivities).
-  The article reads: "Published under licence by IOP Publishing Ltd".
+  https://doi.org/10.1088/0029-5515/32/4/I07 (Tables IV, VI and VII, as
+  carried by ASCOT5, FIDASIM, UKAEA PROCESS and cfspopcon).
 
 src/pb11_reaction.rs
 src/fusion_pb11_lhd.rs
 src/fusion_pb11_thermal.rs
-  Tentori, Alessandro; Belloni, Fabio (2023). Revisiting p-11B fusion cross
-  section and reactivity, and their analytic approximations. Nuclear Fusion
-  63(8), 086001. https://doi.org/10.1088/1741-4326/acda4b : the coefficients
-  of its cross-section fit, with the low-energy form of Nevins, W. M.; Swain,
-  R. (2000), Nuclear Fusion 40(4), 865-872,
-  https://doi.org/10.1088/0029-5515/40/4/310 . The code needs them. Tentori
-  and Belloni: "Original content from this work may be used under the terms of
-  the Creative Commons Attribution 4.0 license." Nevins and Swain: the source
-  states no licence.
+  Tentori, A.; Belloni, F. (2023). Revisiting p-11B fusion cross section and
+  reactivity, and their analytic approximations. Nuclear Fusion 63(8),
+  086001. https://doi.org/10.1088/1741-4326/acda4b
+  Nevins, W. M.; Swain, R. (2000). Nuclear Fusion 40(4), 865-872.
+  https://doi.org/10.1088/0029-5515/40/4/310
   Ogawa, K.; Isobe, M.; Nuga, H.; Seki, R.; Ohdachi, S.; Osakabe, M. (2022).
   Evaluation of Alpha Particle Emission Rate Due to the p-11B Fusion Reaction
   in the Large Helical Device. Fusion Science and Technology 78(3), 175-185.
-  https://doi.org/10.1080/15361055.2021.1973294 : a polynomial of seven
-  coefficients fitted to the boron profile read from its Figure 3, which the
-  code needs, and nine values read from its text and Figures 3 and 4, in a
-  test only. The copy read, of the NIFS repository, prints CC BY-NC-SA 3.0.
+  https://doi.org/10.1080/15361055.2021.1973294
   Ogawa, K.; Magee, R. M.; Tajima, T.; Gota, H.; McCarroll, P.; Allfrey, I.;
   Nuga, H.; Isobe, M.; Osakabe, M. (2024). Demonstration of aneutronic p-11B
   reaction in a magnetic confinement device. Nuclear Fusion 64(9), 096028.
-  https://doi.org/10.1088/1741-4326/ad6615 : values read from its Figures 6
-  and 10 and the inputs of the runs compared with them, about 150 numbers, in
-  tests only. "Original content from this work may be used under the terms of
-  the Creative Commons Attribution 4.0 license."
-  src/fusion_pb11_thermal.rs holds, as constants and in tests, values printed
-  in Ochs, Kolmes, Mlodik, Rubin, Fisch (2022), Physical Review E 106, 055215,
-  https://doi.org/10.1103/PhysRevE.106.055215 ("©2022 American Physical
-  Society"), in Putvinski, Ryutov, Yushmanov (2019), Nuclear Fusion 59(7),
-  076018, https://doi.org/10.1088/1741-4326/ab1a60 ("© 2019 IAEA, Vienna"),
-  and the bremsstrahlung fit of Svensson (1982), The Astrophysical Journal
-  258, 335, https://doi.org/10.1086/160082 (the source states no licence).
+  https://doi.org/10.1088/1741-4326/ad6615
+  Ochs; Kolmes; Mlodik; Rubin; Fisch (2022).
+  Physical Review E 106, 055215. https://doi.org/10.1103/PhysRevE.106.055215
+  Putvinski; Ryutov; Yushmanov (2019). Nuclear Fusion
+  59(7), 076018. https://doi.org/10.1088/1741-4326/ab1a60
+  Svensson (1982). The Astrophysical Journal 258, 335.
+  https://doi.org/10.1086/160082
 
 src/atom_dft.rs
-  Kotochigova, S., Levine, Z. H., Shirley, E. L., Stiles, M. D., and Clark, C.
-  W. (1997), Atomic Reference Data for Electronic Structure Calculations, NIST
+  Kotochigova, S.; Levine, Z. H.; Shirley, E. L.; Stiles, M. D.; Clark, C. W.
+  (1997). Atomic Reference Data for Electronic Structure Calculations. NIST
   Standard Reference Database 141, National Institute of Standards and
-  Technology, https://dx.doi.org/10.18434/T4ZP4F
-  In the source, in a test only: the total energy, its four parts and every
-  orbital eigenvalue of the atoms hydrogen to argon in the local-density
-  approximation, 152 numbers. The parameters of the correlation functional of
-  Vosko, Wilk and Nusair (1980), Can. J. Phys. 58, 1200, as that database
-  prints them, are in the code.
-  The database's page states no licence.
+  Technology. https://dx.doi.org/10.18434/T4ZP4F
+  Vosko, Wilk and Nusair (1980). Canadian Journal of Physics 58, 1200.
 
 src/argon_pair_gas.rs
-  Klein, M., Hanley, H. J. M., Smith, F. J., and Holland, P. (1974). Tables of
+  Klein, M.; Hanley, H. J. M.; Smith, F. J.; Holland, P. (1974). Tables of
   collision integrals and second virial coefficients for the (m,6,8)
   intermolecular potential function. NSRDS-NBS 47, National Bureau of
-  Standards. https://doi.org/10.6028/NBS.NSRDS.47 (Table 4, 40 numbers).
-  Klein, M., and Smith, F. J. (1968). Tables of collision integrals for the
-  (m,6) potential function for 10 values of m. Journal of Research of the
-  National Bureau of Standards 72A(4), 359.
-  https://doi.org/10.6028/jres.072A.033 (Table 4a, 63 numbers).
-  In the source in tests only. The sources state no licence.
+  Standards. https://doi.org/10.6028/NBS.NSRDS.47
+  Klein, M.; Smith, F. J. (1968). Tables of collision integrals for the (m,6)
+  potential function for 10 values of m. Journal of Research of the National
+  Bureau of Standards 72A(4), 359. https://doi.org/10.6028/jres.072A.033
 
 src/seawater_column.rs
-  International Association for the Properties of Water and Steam: Release on
-  the IAPWS Formulation 2008 for the Thermodynamic Properties of Seawater,
-  IAPWS R13-08; Supplementary Release on a Computationally Efficient
-  Thermodynamic Formulation for Liquid Water for Oceanographic Use, IAPWS
-  SR7-09; Revised Release on the Equation of State 2006 for H2O Ice Ih, IAPWS
-  R10-06(2009). https://iapws.org
-  In the source: the coefficients of the three formulations, which the code
-  needs, and their published check values, in tests only.
-  Each release reads: "Publication in whole or in part is allowed in all
-  countries provided that attribution is given to the International
-  Association for the Properties of Water and Steam".
-  The gravity formula's constants are those of gsw_grav in the Gibbs SeaWater
-  (GSW) Oceanographic Toolbox of TEOS-10 (McDougall, T. J. and P. M. Barker
-  (2011), SCOR/IAPSO WG127, ISBN 978-0-646-55621-5), which the code needs. The
-  toolbox's licence reads: "Copyright (c) 2011, SCOR/IAPSO WG127".
+  International Association for the Properties of Water and Steam. IAPWS
+  R13-08, Release on the IAPWS Formulation 2008 for the Thermodynamic
+  Properties of Seawater; IAPWS SR7-09, Supplementary Release on a
+  Computationally Efficient Thermodynamic Formulation for Liquid Water for
+  Oceanographic Use; IAPWS R10-06(2009), Revised Release on the Equation of
+  State 2006 for H2O Ice Ih. https://iapws.org
+  McDougall, T. J.; Barker, P. M. (2011). The Gibbs SeaWater (GSW)
+  Oceanographic Toolbox of TEOS-10. SCOR/IAPSO WG127. ISBN 978-0-646-55621-5
+  (gsw_grav).
 
 src/journal_bearing_sheffield.rs
-  Beamish, S., Li, X., Brunskill, H., Hunter, A. and Dwyer-Joyce, R. (2020).
+  Beamish, S.; Li, X.; Brunskill, H.; Hunter, A.; Dwyer-Joyce, R. (2020).
   Circumferential Film Thickness Measurement Data from a Bespoke Journal
   Bearing Test Platform (version 2). Mendeley Data.
-  https://doi.org/10.17632/txdrvd382p.2 (University of Sheffield): the
-  bearing's diameter, length and clearance and the mean of its fifty
-  viscosities, which the code needs. Licence: CC BY 4.0.
-  Raimondi, A. A. and Boyd, J. (1958). A Solution for the Finite Journal
-  Bearing and its Application to Analysis and Design. ASLE Transactions 1(1),
-  159-209, https://doi.org/10.1080/05698195808972328 (part I): 21 pairs of
-  film thickness and Sommerfeld number, 45 numbers, in a test only, read from
-  the function journal_bearing_design of PDSim
-  (https://github.com/ibell/pdsim), "© Copyright 2012, Ian Bell", MIT License.
-  Raimondi and Boyd: the source states no licence.
+  https://doi.org/10.17632/txdrvd382p.2 (University of Sheffield).
+  Raimondi, A. A.; Boyd, J. (1958). A Solution for the Finite Journal Bearing
+  and its Application to Analysis and Design. ASLE Transactions 1(1),
+  159-209. https://doi.org/10.1080/05698195808972328 (part I), as read from
+  journal_bearing_design of PDSim, Ian Bell (2012).
+  https://github.com/ibell/pdsim
 
 src/modulus_bam_s355.rs
 (and protocol_mcp_gateway: tests/modulus_bam_s355_router.rs,
  src/solver_modulus_bam_s355.rs)
-  Schilling, Markus; Glaubitz, Steffen; Matzak, Kathrin; Rehmer, Birgit;
-  Skrotzki, Birgit (2022). Full dataset of several mechanical tests on an S355
-  steel sheet as reference data for digital representations (1.0.0) [Data
-  set]. Zenodo. https://doi.org/10.5281/zenodo.6778336 (Bundesanstalt für
+  Schilling, M.; Glaubitz, S.; Matzak, K.; Rehmer, B.; Skrotzki, B. (2022).
+  Full dataset of several mechanical tests on an S355 steel sheet as
+  reference data for digital representations (1.0.0) [Data set]. Zenodo.
+  https://doi.org/10.5281/zenodo.6778336 (Bundesanstalt für
   Materialforschung und -prüfung, Berlin).
-  In the source: the mass and three dimensions of four bars, 16 numbers, which
-  the code needs; the measured frequencies of their scans and the laboratory's
-  moduli, in tests; and one scan in the gateway's worked example.
-  Licence: Creative Commons Attribution 4.0 International.
 
 src/culture_trichoderma_ambr250.rs
 src/culture_trichoderma_ambr250_reference.rs
-  Tamminen, A., Turunen, R., Barth, D., Vidgren, V. and Wiebe, M. G. (2022).
+  Tamminen, A.; Turunen, R.; Barth, D.; Vidgren, V.; Wiebe, M. G. (2022).
   Data for growth of marine Trichoderma sp. T2 in ambr250 to produce mucic
-  acid. Zenodo. https://doi.org/10.5281/zenodo.5846028 (VTT, Finland). Of: AMB
-  Express 12, 90 (2022), https://doi.org/10.1186/s13568-022-01436-4
-  In the source, in tests only: the record of one culture (feeds, samples and
-  measured biomass, glucose, galacturonate, mucic acid and carbon dioxide at
-  eleven times) and the operating records of the eight fitted cultures.
-  Licence: Creative Commons Attribution 4.0 International.
+  acid. Zenodo. https://doi.org/10.5281/zenodo.5846028 (VTT, Finland).
+  The same authors (2022). AMB Express 12, 90.
+  https://doi.org/10.1186/s13568-022-01436-4
 
 src/ln2_line_dlr_fttf.rs
 src/ln2_nitrogen.rs
 src/ln2_nitrogen_nist.tsv
+(and src/water_hammer_oil_line.rs, in a test)
   Klein, S.; Traudt, T.; Deeken, J. (2025). Liquid Nitrogen Fluid Hammer:
   PS-LN2-Set1 (Version 1.0.0) [Data set]. Zenodo.
   https://doi.org/10.5281/zenodo.15526459 (DLR Institute of Space
   Propulsion, Lampoldshausen).
-  In the source: the line's geometry and stations, the valve's measured
-  stroke, and three constants fitted to three of its tests (a roughness and
-  two of the valve), which the code needs; and, in tests, the scored values
-  of its six held-back tests. src/water_hammer_oil_line.rs holds the overview
-  table's steady and surge values of its nine tests, in a test only.
-  Licence of the data set: Creative Commons Attribution 4.0 International
-  (https://creativecommons.org/licenses/by/4.0).
-  The table src/ln2_nitrogen_nist.tsv, 43 isotherms of liquid nitrogen's
-  density, speed of sound and viscosity and its vapour pressure, which the
-  code needs, is from the NIST Chemistry WebBook, cited as it asks: Eric W.
-  Lemmon, Ian H. Bell, Marcia L. Huber, and Mark O. McLinden,
-  "Thermophysical Properties of Fluid Systems" in NIST Chemistry WebBook,
-  NIST Standard Reference Database Number 69, Eds. P.J. Linstrom and W.G.
-  Mallard, National Institute of Standards and Technology, Gaithersburg MD,
-  20899, https://doi.org/10.18434/T4D303, (retrieved 14 October 2026). It
-  evaluates the equation of state of Span, Lemmon, Jacobsen, Wagner and
-  Yokozeki (2000), J. Phys. Chem. Ref. Data 29(6), 1361-1433,
-  https://doi.org/10.1063/1.1349047 , and the viscosity of Lemmon and
-  Jacobsen (2004), Int. J. Thermophys. 25, 21-69,
-  https://doi.org/10.1023/B:IJOT.0000022327.04529.f3 ; their melting line's
-  two constants are in the source too. The WebBook's page reads: "© 2026 by
-  the U.S. Secretary of Commerce on behalf of the United States of America.
-  All rights reserved." (the same page as accumulator_sbo450's entry above).
-  Five coefficients of the fit of Young's modulus of 304 stainless steel
-  from 57 to 293 K, which the code needs, are from NIST, Material
-  Properties: 304 Stainless (UNS S30400), NIST Cryogenic Material
-  Properties Database,
+  Lemmon, E. W.; Bell, I. H.; Huber, M. L.; McLinden, M. O. Thermophysical
+  Properties of Fluid Systems. In P. J. Linstrom and W. G. Mallard (eds.),
+  NIST Chemistry WebBook, NIST Standard Reference Database Number 69, National
+  Institute of Standards and Technology, Gaithersburg MD, 20899.
+  https://doi.org/10.18434/T4D303 (retrieved 14 October 2026).
+  Span; Lemmon; Jacobsen; Wagner; Yokozeki (2000).
+  Journal of Physical and Chemical Reference Data 29(6), 1361-1433.
+  https://doi.org/10.1063/1.1349047
+  Lemmon; Jacobsen (2004). International Journal of
+  Thermophysics 25, 21-69. https://doi.org/10.1023/B:IJOT.0000022327.04529.f3
+  National Institute of Standards and Technology. Material Properties: 304
+  Stainless (UNS S30400). NIST Cryogenic Material Properties Database.
   https://trc.nist.gov/cryogenics/materials/304Stainless/304Stainless_rev.htm
-  (retrieved 14 October 2026). The licence words of that page were not
-  recorded when it was read; they are to be read again before a release.
+  (retrieved 14 October 2026).
 
 src/step_flow_armaly.rs
   Erturk, E. (2008). Numerical solutions of 2-D steady incompressible flow
   over a backward-facing step, Part I: High Reynolds number solutions.
   Computers & Fluids 37(6), 633-655.
-  https://doi.org/10.1016/j.compfluid.2007.09.003 : three reattachment lengths
-  of its Table 1, in tests only. The dimensions of the rig, which the code
-  needs, are those of Armaly, B. F., Durst, F., Pereira, J. C. F., and
-  Schönung, B. (1983), Journal of Fluid Mechanics 127, 473-496,
-  https://doi.org/10.1017/S0022112083002839 ; no measured point of that
-  article is in the source.
-  Erturk: the source states no licence; the copy read is marked "(c) 2007
-  Elsevier Ltd, all rights reserved". Armaly and others: "© 1983 Cambridge
-  University Press".
+  https://doi.org/10.1016/j.compfluid.2007.09.003
+  Armaly, B. F.; Durst, F.; Pereira, J. C. F.; Schönung, B. (1983). Journal
+  of Fluid Mechanics 127, 473-496. https://doi.org/10.1017/S0022112083002839
 
 src/air11.rs
 src/plasma_sheath_ram_c2.rs
 (and protocol_mcp_gateway: src/solver_plasma_sheath_ram_c2.rs,
  tests/plasma_sheath_ram_c2_router.rs)
-  Thermodynamic coefficients copied from thermo.inp, the database of NASA's
-  CEA code (https://github.com/nasa/cea, data/thermo.inp, commit
-  985fd33368b2334c4162a586c499e0ab41d12bd3), generated from it by script:
-  the nine-coefficient fits of the eleven species of air, 297 numbers, which
-  the code needs. Their form is NASA/TP-2002-211556 (McBride, Zehe and
-  Gordon), NTRS 20020085330, marked "GOV_PUBLIC_USE_PERMITTED". Used under
-  the Apache License, Version 2.0. The notice of CEA: "Copyright (c) 2025,
-  United States Government as represented by the Administrator of the
-  National Aeronautics and Space Administration. Licensed under the Apache
-  License, Version 2.0."
-  Dunn, M. G. and Kang, S.-W. (1973). Theoretical and Experimental Studies of
-  Reentry Plasmas. NASA CR-2232: the 26 reactions of its Table I and their
-  rate constants, which the code needs. Grantham, W. L. (1970). Flight
-  Results of a 25 000-Foot-Per-Second Reentry Experiment Using Microwave
-  Reflectometers to Measure Plasma Electron Density and Standoff Distance.
-  NASA TN D-6062, https://ntrs.nasa.gov/citations/19710004000 : the vehicle
-  and its stations (Tables I and III) and the reflectometer bands, which the
-  code needs, and in tests the trajectory and the onset altitudes (Tables IX
-  and X). U.S. Standard Atmosphere, 1962 (NASA, USAF, U.S. Weather Bureau),
-  NTRS 19630003300: its constants and layers, which the code needs, and in
-  tests its printed tables. Huber, P. W. (1963). Hypersonic Shock-Heated Flow
-  Parameters for Velocities to 46,000 Feet per Second and Altitudes to
-  323,000 Feet. NASA TR R-163, NTRS 19640014678: one row of its Table IV, in
-  a test only. Works of the United States Government; the NTRS records of
-  TP-2002-211556, TR R-163, the 1962 standard, TN D-6062 and CR-2232
-  (19730013358) read "GOV_PUBLIC_USE_PERMITTED" (evidence/research/
-  hgv_plasma_ramc2/raw/SOURCES.md and scout_2026-10-14/hgv_plasma/raw/
-  SOURCES.md).
+  NASA's CEA code, thermo.inp.
+  https://github.com/nasa/cea , data/thermo.inp, commit
+  985fd33368b2334c4162a586c499e0ab41d12bd3.
+  McBride; Zehe; Gordon (2002). NASA/TP-2002-211556. NTRS
+  20020085330.
+  Dunn, M. G.; Kang, S.-W. (1973). Theoretical and Experimental Studies of
+  Reentry Plasmas. NASA CR-2232. NTRS 19730013358.
+  Grantham, W. L. (1970). Flight Results of a 25 000-Foot-Per-Second Reentry
+  Experiment Using Microwave Reflectometers to Measure Plasma Electron
+  Density and Standoff Distance. NASA TN D-6062.
+  https://ntrs.nasa.gov/citations/19710004000
+  NASA, USAF, U.S. Weather Bureau (1962). U.S. Standard Atmosphere, 1962. NTRS
+  19630003300.
+  Huber, P. W. (1963). Hypersonic Shock-Heated Flow Parameters for Velocities
+  to 46,000 Feet per Second and Altitudes to 323,000 Feet. NASA TR R-163.
+  NTRS 19640014678.
 
 protocol_mcp_gateway
 ====================
 
 src/solver_ablator_slab_stardust.rs
-  The heating history of the Stardust capsule's entry at the near-nose core,
-  136 rows of time, wall pressure, heat-transfer coefficient, flow enthalpy
-  and radiative heating, 680 numbers; the code needs it for a worked example.
-  A computation, not a measurement.
-  From Omidy, A. D.; Panerai, F.; Martin, A.; Lachaud, J. R.; Cozmuta, I.;
+  Omidy, A. D.; Panerai, F.; Martin, A.; Lachaud, J. R.; Cozmuta, I.;
   Mansour, N. N. (2015). Code-to-Code Comparison, and Material Response
   Modeling of Stardust and MSL using PATO and FIAT. NASA/CR-2015-218960. NTRS
-  20160006963 (Appendix D, Table D3). NTRS: "Public Use Permitted." The
-  radiative heating is read from Figure 6a of Johnston, C. O. (2014), Study of
-  Aerothermodynamic Modeling Issues Relevant to High-Speed Sample Return
-  Vehicles, NTRS 20140004052. NTRS: "Work of the US Gov. Public Use
-  Permitted."
+  20160006963 (Appendix D, Table D3).
+  Johnston, C. O. (2014). Study of Aerothermodynamic Modeling Issues Relevant
+  to High-Speed Sample Return Vehicles. NTRS 20140004052 (Figure 6a).
 
-A card or a solver built from or compared with published measurements or
-tables names their source at the head of its source file, with the licence
-where the source states one.
-
-The people whose data each served model stands on are also given by the
-service's cite tool.
+Each card and solver names its sources at the head of its source file, and
+the service's cite tool gives them for every served model.

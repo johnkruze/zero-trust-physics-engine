@@ -7,7 +7,9 @@
 //! no body (a notification or a response). `GET` and `DELETE` on the endpoint
 //! answer 405 with `Allow: POST`, which the specification allows a server that
 //! offers no event stream and no sessions. The door keeps no session: it sends
-//! no `Mcp-Session-Id`, and every request stands alone. A batch (an array) is
+//! no `Mcp-Session-Id`, and every request stands alone. (On the open door a
+//! `GET` that does not ask for an event stream is answered with one page:
+//! `open_door::ADDRESS_PAGE`.) A batch (an array) is
 //! refused, as the 2025-06-18 revision removed batching. The tools run the same
 //! functions as the stdio door and return the same JSON.
 //!

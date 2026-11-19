@@ -153,7 +153,7 @@ async fn the_four_published_scans_match_the_solver_bit_for_bit() {
         let direct = direct(index);
 
         assert_eq!(body["inputs"], request);
-        assert_eq!(body["engine_version"], "genesis_solvers_v0.13.0");
+        assert_eq!(body["engine_version"], "genesis_solvers_v0.13.1");
         assert_eq!(body["outcome"], "converged");
         assert!(body["reject"].is_null());
         assert!(body["reject_detail"].is_null());
@@ -541,7 +541,7 @@ async fn the_described_example_runs_unchanged_and_the_description_holds_its_limi
     let (computes, comparison) = solvers[4]["summary"].as_str().unwrap().split_once(" Compared with ").expect("a comparison");
     let sheet = described["summary"].as_str().unwrap();
     assert!(sheet.starts_with(computes) && sheet.contains(&format!("Compared with {comparison} Refuses")), "{sheet}");
-    assert_eq!(described["engine_version"], "genesis_solvers_v0.13.0");
+    assert_eq!(described["engine_version"], "genesis_solvers_v0.13.1");
     assert_eq!(described["inputs"][0]["name"], "bar");
     assert_eq!(described["inputs"][0]["allowed"], json!(["ERX1", "ERX2", "ERY1", "ERY2"]));
     assert_eq!(described["inputs"][1]["name"], "frequencies_hz");

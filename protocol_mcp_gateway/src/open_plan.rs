@@ -139,9 +139,8 @@ pub const OPEN_SOLVE_SECONDS_UNLISTED: f64 = 10_000.0;
 /// plasma_sheath_ram_c2 17, 39692, 18 at 41967; the first five as before; the
 /// other nine solvers' 64 are answered), as RT1 measured them on rc1
 /// (rt1/out/t10_inline_measure.json). Measured on 2026-10-16 with the build of
-/// feat/words-014 (evidence/verification/words_014_2026-10-16/logs/
-/// inline_solves_five.log; every other solver's worked plan at its count is
-/// answered, inline_solves_others.log), and again on the build of next-0.14
+/// feat/words-014 (every other solver's worked plan at its count is
+/// answered), and again on the build of next-0.14
 /// with those words merged, canonical math's (integration_014's
 /// measure_014w/inline_solves_merge.txt): the same four, and
 /// water_hammer_oil_line 31, where its 32 come to 40058 characters (41146

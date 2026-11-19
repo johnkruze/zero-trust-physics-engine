@@ -152,7 +152,7 @@ async fn a_slice_matches_the_solver_bit_for_bit() {
     let direct = slice::solve(&question).expect("the solver settles");
 
     assert_eq!(body["inputs"], asked);
-    assert_eq!(body["engine_version"], "genesis_solvers_v0.13.0");
+    assert_eq!(body["engine_version"], "genesis_solvers_v0.13.1");
     assert_eq!(body["outcome"], "converged");
     assert!(body["reject"].is_null());
     assert_eq!(body["iterations"], direct.refinements);
@@ -466,7 +466,8 @@ async fn it_is_listed_and_described_and_its_example_runs_unchanged() {
     let summary = solvers[11]["summary"].as_str().unwrap();
     assert!(summary.contains("Nothing fitted"), "{summary}");
     assert!(summary.contains("Held to TRANSP's fusion power"), "{summary}");
-    assert!(summary.contains("30 of the 34 within 0.75 to 1.25 (target 0.90 of them)"), "{summary}");
+    assert!(summary.contains("25 of the 27 answered within 0.75 to 1.25, but 25 of the 34 with each refusal counted outside, against a target of 0.90 of them"), "{summary}");
+    assert!(summary.contains("30 of the 34 within 0.75 to 1.25, 0.882, and missed its target of 0.90"), "{summary}");
 
     let (status, text) = post(&base, "/describe_solver", &json!({ "solver": "tokamak_dt_beam_target" })).await;
     assert_eq!(status, 200, "{text}");

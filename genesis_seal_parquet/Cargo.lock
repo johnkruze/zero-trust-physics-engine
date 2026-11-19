@@ -414,7 +414,7 @@ dependencies = [
 
 [[package]]
 name = "genesis_seal_parquet"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "arrow-array",
  "arrow-schema",

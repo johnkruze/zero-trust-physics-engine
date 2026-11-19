@@ -16,8 +16,10 @@ const COUPLING: &str = "stardust_entry_to_pica_slab";
 /// engine_version: a55272ce...4781 on genesis_solvers 0.12.0 (hyper_chain),
 /// e7d40c9d...f150 on 0.13.0, the same run seal and the same wear.
 const WORKED_WEAR_M: f64 = 0.004647861283103977;
-// Seal rule v2 (0.15.0): SHA-384; e7d40c9d...f150 under rule v1.
-const WORKED_CHAIN_SEAL: &str = "21a8ace2dc1223ed33f32f97173269980e469ca11d23bed4ccbcf41544fee9e55a3228621dd12a52452ffec09ddf80b1";
+// Seal rule v2 (0.15.0): SHA-384; e7d40c9d...f150 under rule v1;
+// 21a8ace2...80b1 on genesis_solvers 0.13.0 (0.15.0 to 0.15.2), ae1bc82d...67ed
+// on 0.13.1 (0.15.3), the same run seal and the same wear.
+const WORKED_CHAIN_SEAL: &str = "ae1bc82defefbac901a6ac75332827011932488130142e29d443edf72dfe207a7746a04e78643d0cb889a3bd3dcc67ed";
 
 /// The card from entry interface at its ceiling step to the drogue end,
 /// a frame every 1.5 s.

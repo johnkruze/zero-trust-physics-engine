@@ -43,7 +43,7 @@ const FACES: &[&str] = &[FACE_HELD, FACE_STREAM];
 pub const HELD_BACK: &str = "Compared with 31 further arc-jet tests, not in the fit and not used to choose the surface rules.";
 
 /// The outcome of that check, as its record gives it.
-pub const HELD_BACK_RESULT: &str = "The 31 arc-jet tests outside the fit. Wear: within its target on 28 of 31 (target 25), with a mean error of −2.6 percent (target 8). Hottest face temperature: within 7 percent on 24 of 28 (target 23), 4.1 percent hot on average (target 3.5), as on the 36 development tests (3.8). One test, in pure nitrogen (416 W/cm², 17.9 kPa, 120 s), is counted outside its targets: the build of the comparison refused its stream, which had less oxygen than the solver then took. It is answered now: 0.22 mm of wear against 1.75 mm measured, 87 percent low, outside its target of ±0.57 mm; with no oxygen the model burns no char. What the gaps share: the face runs hot above about 45 kPa, most at 190 and 970 W/cm²; two long exposures in one facility are outside the wear target.";
+pub const HELD_BACK_RESULT: &str = "The 31 arc-jet tests outside the fit. Wear: within its target on 28 of 31 (target 25), with a mean error of −5.3 percent over all 31, −2.6 percent over the 30 without the pure-nitrogen test, as the record of 9 October counted (target 8). Hottest face temperature: within 7 percent on 24 of 28 (target 23), 4.1 percent hot on average (target 3.5), as on the 36 development tests (3.8). One test, in pure nitrogen (416 W/cm², 17.9 kPa, 120 s), is counted outside its targets: the build of the comparison refused its stream, which had less oxygen than the solver then took. It is answered now: 0.22 mm of wear against 1.75 mm measured, 87 percent low, outside its target of ±0.57 mm; with no oxygen the model burns no char. What the gaps share: the face runs hot above about 45 kPa, most at 190 and 970 W/cm²; two long exposures in one facility are outside the wear target.";
 
 /// What the limits say of the same tests.
 pub const HELD_BACK_SPENT: &str = "The 31 tests have now been read, and 26 of them repeat a condition and exposure from the development set.";
@@ -865,6 +865,7 @@ fn arc_jet_recipe() -> Value {
             "The question: `PICA, open record, version 5`, thickness 0.06 m, start and surroundings at 300 K, the face wears, no thermocouples, and three rows of history: at 0 s the coefficient is zero; at 0.5 s and at the end of the exposure it is the coefficient of step three. The pressure and the flow enthalpy are the test's in every row, and the radiative heating is zero.".to_string(),
             "What is read: `wear_m` against the measured wear, and `peak_face_temperature_k` against the highest measured face temperature.".to_string(),
         ],
+        "which_numbers": "Milos and Chen (AIAA 2009-0262) print two flow enthalpies for each condition, the facility's and DPLR's, and for the Ames tests (Table 2) two argon fractions, perfectly mixed and unmixed: the flow enthalpy of steps two to four is the DPLR value, which the paper calls the more reliable; the argon of step one is the midpoint of the two argon columns; the oxygen of a nitrogen-oxygen stream (Table 3, JSC TP2) is its perfectly mixed column. The 36 development tests and the 31 outside the fit were asked this way.",
         "worked": "`example_solve_arc_jet_test` is the first development test done this way: 107 W/cm², 2.3 kPa, 15.2 MJ/kg, 55 s, argon 0.276. The coefficient is 1,070,000 / (15,200,000 − 1,620.577) = 0.070402243 kg/m²/s. It returns wear of 2.0047 mm (2.33 measured) and a peak face of 2,012.5 K (2,033 measured).",
     })
 }
@@ -2621,7 +2622,7 @@ mod tests {
         }
         assert!(part("result").contains(HELD_BACK_RESULT));
         for words in [
-            "within its target on 28 of 31 (target 25), with a mean error of −2.6 percent (target 8)",
+            "within its target on 28 of 31 (target 25), with a mean error of −5.3 percent over all 31, −2.6 percent over the 30 without the pure-nitrogen test, as the record of 9 October counted (target 8)",
             "within 7 percent on 24 of 28 (target 23), 4.1 percent hot on average (target 3.5)",
             "as on the 36 development tests (3.8)",
             "One test, in pure nitrogen (416 W/cm², 17.9 kPa, 120 s), is counted outside its targets: the build of the comparison refused its stream, which had less oxygen than the solver then took.",

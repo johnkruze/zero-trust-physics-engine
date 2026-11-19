@@ -90,9 +90,10 @@ fn metadata(verified: &Verified, table: &str) -> Vec<KeyValue> {
             "source_frames_sha384",
             verified.frames_sha384.clone().unwrap_or_else(|| "not given".into()),
         ),
-        // The engine's signature on the head: absent, not checked (no key
-        // was given) or holds (checked against the key given).
-        pair("head_signature", verified.signature.said().into()),
+        // The engine's signature on the head: absent, carried and not
+        // verified (no key was given; the dataset's seals were), or holds
+        // (verified against the key given).
+        pair("head_signature", verified.signature.metadata_word().into()),
         pair(
             "head_signature_key_id",
             verified

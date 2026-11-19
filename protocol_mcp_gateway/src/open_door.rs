@@ -687,6 +687,49 @@ async fn mcp(State(door): State<Arc<OpenDoor>>, request: Request<Body>) -> Respo
     response
 }
 
+/// The page a plain `GET /mcp` is answered with on the open connection
+/// (since engine 0.15.3; until then 405): what the address is, and where the
+/// docs, the offers and the way to connect an agent are. A `GET` whose
+/// `Accept` names `text/event-stream`, as a client of the protocol sends to
+/// open a stream, is answered 405 with `Allow: POST, OPTIONS`, as before.
+pub const ADDRESS_PAGE: &str = concat!(
+    "<!doctype html>\n<html lang=\"en\"><head><meta charset=\"utf-8\">",
+    "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">",
+    "<title>Zero-Trust Physics: the open address</title>",
+    "<style>body{font:16px/1.5 system-ui,sans-serif;max-width:40em;margin:3em auto;padding:0 1em;color:#111;background:#fff}",
+    "code{background:#f2f2f2;padding:0 .25em}a{color:#0645ad}</style></head><body>",
+    "<h1>Zero-Trust Physics</h1>",
+    "<p>This is the Model Context Protocol endpoint of Zero-Trust Physics: deterministic physics for SI agents, ",
+    "every computed answer sealed SHA-384 and signed ML-DSA-87. It is open, with no key. ",
+    "An agent speaks to it with <code>POST</code>; a browser sees only this page.</p>",
+    "<ul><li>Docs: <a href=\"https://zerotrustphysics.com/docs/\">zerotrustphysics.com/docs</a></li>",
+    "<li>Offers: <a href=\"https://zerotrustphysics.com/offers/\">zerotrustphysics.com/offers</a></li>",
+    "<li>The endpoint: <code>https://mcp.zerotrustphysics.com/mcp</code>, Streamable HTTP. ",
+    "In Claude Code: <code>claude mcp add --transport http genesis https://mcp.zerotrustphysics.com/mcp</code></li>",
+    "<li>The public key every answer is signed with: <a href=\"/answer-key\">/answer-key</a></li></ul>",
+    "</body></html>\n"
+);
+
+/// True when an `Accept` header of the request names `text/event-stream`.
+fn asks_for_event_stream(headers: &axum::http::HeaderMap) -> bool {
+    headers.get_all(header::ACCEPT).iter().any(|value| {
+        value.to_str().is_ok_and(|text| {
+            text.split(',')
+                .any(|item| item.split(';').next().unwrap_or("").trim().eq_ignore_ascii_case("text/event-stream"))
+        })
+    })
+}
+
+fn address_page() -> Response {
+    let mut response = Response::new(Body::from(ADDRESS_PAGE));
+    *response.status_mut() = StatusCode::OK;
+    let headers = response.headers_mut();
+    headers.insert(header::CONTENT_TYPE, HeaderValue::from_static("text/html; charset=utf-8"));
+    headers.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+    headers.insert(HeaderName::from_static("x-content-type-options"), HeaderValue::from_static("nosniff"));
+    response
+}
+
 async fn serve_one(door: &Arc<OpenDoor>, request: Request<Body>) -> Response {
     let rules = &door.rules;
     let address = match source_address(door, &request) {
@@ -733,6 +776,12 @@ async fn serve_one(door: &Arc<OpenDoor>, request: Request<Body>) -> Response {
         );
         headers.insert(header::ACCESS_CONTROL_MAX_AGE, HeaderValue::from_static("86400"));
         return response;
+    }
+    if parts.method == Method::GET && !asks_for_event_stream(&parts.headers) {
+        // A person who opens the address: one page, pointing on. A client of
+        // the protocol that asks for an event stream is answered 405 below,
+        // as before.
+        return address_page();
     }
     if parts.method != Method::POST {
         let mut response = hosted::plain(StatusCode::METHOD_NOT_ALLOWED, "Method Not Allowed");

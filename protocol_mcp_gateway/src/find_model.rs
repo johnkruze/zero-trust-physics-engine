@@ -422,7 +422,7 @@ pub const INDEX: &[Entry] = &[
         weak: &["growth", "acid", "sugar", "vessel", "ph", "biology"],
         other: &["aspergillus", "penicillium", "yeast", "saccharomyces", "pichia", "coli", "escherichia", "bacillus", "streptomyces", "corynebacterium", "cho", "mammalian", "hybridoma", "citric acid", "penicillin", "ethanol", "insulin", "antibody"],
         own: &["trichoderma", "ambr250", "ambr", "yeast extract"] },
-    Entry { key: "tokamak_dt_beam_target", marks: Marks::Reference, marks_words: "TRANSP's fusion power from the measured profiles of 34 TFTR slices outside any fit, the median ratio 1.022 and 30 of 34 within 0.75 to 1.25; against four measured values +7, +21, -11 and about +8 percent",
+    Entry { key: "tokamak_dt_beam_target", marks: Marks::Reference, marks_words: "TRANSP's fusion power from the measured profiles of 34 TFTR slices outside any fit: as served, 27 answered and 7 refused by name, the median ratio 1.011 and 25 of the 27 within 0.75 to 1.25 (25 of 34 counting each refusal outside, against a target of 0.90 of them); the run of 9 October, before those limits, 1.022 and 30 of 34 (0.882); against four measured values +7, +21, -11 and about +8 percent",
         strong: &["tokamak", "deuterium-tritium", "fusion rate", "beam-target", "tftr", "jet", "joint european torus", "fusion"],
         plain: &["deuterium", "tritium", "neutron rate", "neutron", "neutral beam", "plasma", "fusion power", "d-t", "dt", "time slice", "culham", "princeton", "shell", "electron temperature", "ion temperature", "electron density", "steady state"],
         weak: &["beam", "reaction rate", "profile", "energy", "pulse"],

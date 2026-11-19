@@ -364,7 +364,7 @@ impl ServerHandler for McpGateway {
             .with_server_info(
                 Implementation::new(crate::identity::NAME, env!("CARGO_PKG_VERSION"))
                     .with_title(crate::identity::TITLE)
-                    .with_description(crate::ENGINE_VERSION)
+                    .with_description(crate::identity::description())
                     .with_website_url(crate::identity::SITE),
             )
             .with_instructions(crate::identity::instructions())

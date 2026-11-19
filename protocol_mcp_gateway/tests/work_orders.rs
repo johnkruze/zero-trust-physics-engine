@@ -136,7 +136,7 @@ fn a_plan_of_solves_names_the_solvers_version() {
     let mut door = Stdio2::start(None);
     let described = ok(&mut door, "describe_solver", &json!({ "solver": "propeller_apc_10x7e" }));
     let solvers = described["engine_version"].as_str().unwrap().to_string();
-    assert_eq!(solvers, "genesis_solvers_v0.13.0");
+    assert_eq!(solvers, "genesis_solvers_v0.13.1");
     let parameters = described["example_solve"]["parameters"].clone();
     let plan = json!({ "solver": "propeller_apc_10x7e", "plan": { "kind": "list", "solves": [{ "parameters": parameters }] } });
     let answer = ok(&mut door, "run_dataset", &plan);

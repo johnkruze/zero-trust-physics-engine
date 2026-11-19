@@ -1200,7 +1200,7 @@ async fn a_comparison_without_a_commitment_gives_the_bytes_the_served_0_12_0_gav
         // Those fields are this engine's: its name, and a receipt over these very bytes.
         // A comparison of solves names the solvers' version since the work
         // orders of 18 October 2026 (RT3 W1); a comparison of a run the kernel's.
-        let ours = if was.get("dataset_seal").is_some() { "genesis_solvers_v0.13.0" } else { protocol_mcp_gateway::ENGINE_VERSION };
+        let ours = if was.get("dataset_seal").is_some() { "genesis_solvers_v0.13.1" } else { protocol_mcp_gateway::ENGINE_VERSION };
         assert_eq!(now["engine_version"], ours, "{label}");
         let document = text.rsplit_once(",\"receipt_sha384\":").unwrap().0;
         assert_eq!(now["receipt_sha384"], sha384_hex(format!("{document}}}").as_bytes()), "{label}");

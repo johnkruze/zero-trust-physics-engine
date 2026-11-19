@@ -9,3 +9,16 @@ please cite the paper:
   Kruze, J., with Super Intelligence (2026). Zero-Trust Physics: a verifier
   for the physical answers of Super Intelligence (version 1.0). Protocol
   Company. Zenodo. https://doi.org/10.5281/zenodo.23305697
+
+Sources
+
+  src/solver_ablator_slab_stardust.rs: Omidy, A. D.; Panerai, F.; Martin, A.;
+  Lachaud, J. R.; Cozmuta, I.; Mansour, N. N. (2015). Code-to-Code
+  Comparison, and Material Response Modeling of Stardust and MSL using PATO
+  and FIAT. NASA/CR-2015-218960, Appendix D, Table D3; and Johnston, C. O.
+  (2014). Study of Aerothermodynamic Modeling Issues Relevant to High-Speed
+  Sample Return Vehicles. NTRS 20140004052, Figure 6a.
+
+  Every other source a served model stands on is named in the kernel's or the
+  solvers' source and in the engine's NOTICE, and the service's cite tool
+  gives them.

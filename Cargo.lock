@@ -526,7 +526,7 @@ dependencies = [
 
 [[package]]
 name = "genesis_solvers"
-version = "0.13.0"
+version = "0.13.1"
 dependencies = [
  "genesis_kernel",
 ]
@@ -1154,7 +1154,7 @@ dependencies = [
 
 [[package]]
 name = "protocol_mcp_gateway"
-version = "0.15.2"
+version = "0.15.3"
 dependencies = [
  "axum",
  "ed25519-dalek",

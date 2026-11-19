@@ -73,7 +73,7 @@ fn the_short_form_of_a_dataset_another_version_made_names_both_versions() {
     let report = answer(&mut door, "verify_dataset", &json!({ "request": solves, "dataset_seal": "0".repeat(96) }));
     assert_eq!(report["holds"], json!(false));
     let said = report["not_held"].as_str().unwrap();
-    assert!(said.ends_with("The dataset_seal covers engine_version, through its counts (genesis_solvers_v0.13.0 on this engine) and each row's solution_seal (genesis_solvers_v0.13.0): the seal of a plan another engine version solved does not hold here."), "{said}");
+    assert!(said.ends_with("The dataset_seal covers engine_version, through its counts (genesis_solvers_v0.13.1 on this engine) and each row's solution_seal (genesis_solvers_v0.13.1): the seal of a plan another engine version solved does not hold here."), "{said}");
     // This engine's plan sealed under 0.12.0's names, genesis_kernel_v0.11.0
     // in its counts and genesis_solvers_v0.10.0 in its row's solution seal
     // (`genesis_seal::dataset::dataset_seal`), is named with both versions.
@@ -100,12 +100,12 @@ fn the_short_form_of_a_dataset_another_version_made_names_both_versions() {
     let report = answer(&mut door, "verify_dataset", &json!({ "request": solves, "dataset_seal": theirs }));
     assert_eq!(report["holds"], json!(false));
     let said = report["not_held"].as_str().unwrap();
-    assert!(said.contains("The dataset_seal covers engine_version, through its counts and each row's solution_seal: the seal given is this plan's dataset seal with engine_version genesis_kernel_v0.11.0 in its counts and genesis_solvers_v0.10.0 in its solution seals, another engine version's, and this engine writes genesis_solvers_v0.13.0 in its counts and genesis_solvers_v0.13.0 in its solution seals, so it does not hold here."), "{said}");
+    assert!(said.contains("The dataset_seal covers engine_version, through its counts and each row's solution_seal: the seal given is this plan's dataset seal with engine_version genesis_kernel_v0.11.0 in its counts and genesis_solvers_v0.10.0 in its solution seals, another engine version's, and this engine writes genesis_solvers_v0.13.1 in its counts and genesis_solvers_v0.13.1 in its solution seals, so it does not hold here."), "{said}");
     assert!(said.len() < 2_000, "{}", said.len());
     // A seal of no version names only this engine's.
     let report = answer(&mut door, "verify_dataset", &json!({ "request": solves, "dataset_seal": "0".repeat(96) }));
     let said = report["not_held"].as_str().unwrap();
-    assert!(said.ends_with("The dataset_seal covers engine_version, through its counts (genesis_solvers_v0.13.0 on this engine) and each row's solution_seal (genesis_solvers_v0.13.0): the seal of a plan another engine version solved does not hold here."), "{said}");
+    assert!(said.ends_with("The dataset_seal covers engine_version, through its counts (genesis_solvers_v0.13.1 on this engine) and each row's solution_seal (genesis_solvers_v0.13.1): the seal of a plan another engine version solved does not hold here."), "{said}");
     // The engine's own seal holds, as before.
     let (_, made) = door.call("run_dataset", &solves);
     let made: Value = serde_json::from_str(&made).unwrap();

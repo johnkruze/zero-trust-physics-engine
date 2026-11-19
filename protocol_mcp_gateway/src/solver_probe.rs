@@ -771,11 +771,14 @@ mod tests {
         // 0.8.0 dddd976a...7170. Of the six parts only the version's has
         // moved. Under seal rule v2 (0.15.0) the first SHA-384 pin,
         // 4f1e88b5...de0b, hashed the version line of 0.12.0; the seal is
-        // now taken with this answer's own version, 0.13.0.
-        assert_eq!(body["engine_version"], "genesis_solvers_v0.13.0");
+        // now taken with this answer's own version, 0.13.0. With the solvers
+        // at 0.13.1 (engine 0.15.3) the same rule, worked out again with
+        // Python's hashlib from the texts above, gives f01ec727...db59 with
+        // 0.13.0 put back and the seal pinned here.
+        assert_eq!(body["engine_version"], "genesis_solvers_v0.13.1");
         assert_eq!(
             body["solution_seal"],
-            "f01ec7271632ee35873617ba3366f43c1552277dd4514dd5bb138e64077dd60e0b88602edc511ac755fc56dba0a2db59"
+            "0d3cd9bdbba0925932ca5211f499f7059e8eeb2360cc82b46b1c4c2bc4b5f4612c20b7072d1bd54b83f8517929311c21"
         );
 
         // The receipt covers the bytes before it.

@@ -441,7 +441,7 @@ pub const SHEETS: &[SpecSheet] = &[
         computes: "A flat slab of charring heat-shield material heated on one face: wear, face temperature, depth of charring and the heat and mass accounts, for a PICA model built from the open record or the test material TACOT 3.0.",
         range: "Range: PICA compared in arc-jet tests at 107 to 1,102 W/cm² and 2.3 to 84 kPa, on the Stardust entry and in thermocouple blocks; computes slabs of 0.2 mm to 1 m under any heating with the same equations.",
         fitted_on: "Fitted on 259 thermocouple samples of four arc-jet blocks: one number, a char conductivity scale of 0.71; the surface rules were set on 36 arc-jet tests.",
-        compared: "Compared with 31 arc-jet tests outside the fit: wear within its target on 28 of 31 (target 25), mean −2.6 percent; hottest face within 7 percent on 24 of 28 (target 23); Stardust wear 7.58 and 3.32 mm against 5.7 and 3.2; fed by capsule_stardust through stardust_entry_to_pica_slab, nose wear 4.65 mm and face within 156 K RMS of the airborne spectra.",
+        compared: "Compared with 31 arc-jet tests outside the fit: wear within its target on 28 of 31 (target 25), mean −5.3 percent over all 31 (−2.6 over the 30 without the pure-nitrogen test; target within 8); hottest face within 7 percent on 24 of 28 (target 23); Stardust wear 7.58 and 3.32 mm against 5.7 and 3.2; fed by capsule_stardust through stardust_entry_to_pica_slab, nose wear 4.65 mm and face within 156 K RMS of the airborne spectra.",
         gap: "Gap: the face runs 4.1 percent hot on average (target 3.5), and Stardust nose wear is a third high.",
         refuses: "Refuses a start outside 260 to 800 K (StartTemperatureOutOfRange), a temperature above the material's tables (TemperatureOutOfBounds), a face that boils (FaceBeyondSurfaceTable) and a step that does not settle (StepNotConverged).",
     },
@@ -507,7 +507,7 @@ pub const SHEETS: &[SpecSheet] = &[
         fitted_on: "Nothing fitted: the density and the sound speed are the TEOS-10 reference equations, and gravity a formula.",
         compared: "Compared with the ship's echo sounder at 632 stations of 5 legs, none used to set the comparison: depth within a median of +4.59 m (target 10), 0.804 of stations within 20 m (target 0.80), each leg's median +4.30 to +4.92 m (target 15).",
         gap: "Gap: the solver's depth reads deeper than the sounder's, about +3 m on flat sea floor and +4.6 m pooled, and the fraction within 20 m is two stations over its target, 0.789 to 0.798 with leg 9, 10 or 13 left out.",
-        refuses: "Refuses seawater below its freezing temperature (TemperatureBelowFreezing), a pressure outside 0 to 10000 dbar (PressureOutOfRange), Practical Salinity outside 0 to 41.8 (SalinityOutOfRange), a temperature above 40 degC (TemperatureOutOfRange) and a last level more than 100 m above the sea floor (HeightAboveBottomOutOfRange).",
+        refuses: "Refuses seawater below its freezing temperature (TemperatureBelowFreezing, or TemperatureOutOfRange where it is also below the floor of the water part, about -2.6575 degC at sea pressure 0), a pressure outside 0 to 10000 dbar (PressureOutOfRange), Practical Salinity outside 0 to 41.8 (SalinityOutOfRange), a temperature above 40 degC (TemperatureOutOfRange) and a last level more than 100 m above the sea floor (HeightAboveBottomOutOfRange).",
     },
     SpecSheet {
         model: "step_flow_armaly",

@@ -166,7 +166,7 @@ fn field_words() -> String {
 fn sections() -> Sections {
     Sections {
         locked: json!({
-            "model": "The Reynolds equation for an oil of one viscosity between a rigid aligned shaft and a rigid bush, film thickness c (1 + e cos(theta)), ambient pressure at both ends, rupture where pressure and its gradient reach zero together. The shaft is moved until the film carries the load: by false position with the Illinois weight on the eccentricity ratio, the miss being the natural logarithm of the Sommerfeld number the film carries less that of the one asked, from the bracket 0.05 and 0.95, settled in that order, each position's sweeps starting from the field of the position before (zero at the first), until the miss is within the load tolerance. Left out: the oil inlet and its supply pressure, elastic and thermal deformation, the change of viscosity with pressure and along the film, roughness, misalignment, any motion of the shaft centre.",
+            "model": "The Reynolds equation for an oil of one viscosity between a rigid aligned shaft and a rigid bush, film thickness c (1 + e cos(theta)), ambient pressure at both ends, rupture where pressure and its gradient reach zero together. The shaft is moved until the film carries the load: by false position with the Illinois weight on the eccentricity ratio, the miss being the natural logarithm of the Sommerfeld number the film carries less that of the one asked, from the bracket 0.05 and 0.95, settled in that order, each position's sweeps starting from the field of the position before (zero at the first), until the miss is within the load tolerance: |ln(S carried) - ln(S asked)| <= load_tolerance (convergence), verified on each new position once it has settled and never on the two ends. The Sommerfeld number carried falls as the eccentricity ratio rises, so the miss m_low at the end 0.05 must be zero or above and the miss m_high at the end 0.95 zero or below, or the request is refused as EccentricityRatioOutOfRange. Each new position is e = (e_low m_high - e_high m_low) / (m_high - m_low). A miss above zero (the film carries too large a Sommerfeld number, the shaft too near the centre) makes it the low end, e_low = e and m_low = miss; any other miss outside the tolerance makes it the high end, e_high = e and m_high = miss. The Illinois weight: when the same end is replaced twice in a row, the miss stored at the other end is halved (m_high on a second low end in a row, m_low on a second high end in a row); the first new position halves nothing. The two ends count as shaft positions, and once max_shaft_positions have been tried with the miss still outside the tolerance, the request is refused as LoadNotCarried. Left out: the oil inlet and its supply pressure, elastic and thermal deformation, the change of viscosity with pressure and along the film, roughness, misalignment, any motion of the shaft centre.",
             "bearing_diameter_m": bearing::BEARING_DIAMETER_M,
             "bearing_length_m": bearing::BEARING_LENGTH_M,
             "radial_clearance_m": bearing::RADIAL_CLEARANCE_M,
@@ -193,9 +193,9 @@ fn sections() -> Sections {
             },
             {
                 "name": "load_residual_n",
-                "rule": "The film force equals the load.",
+                "rule": "The film force equals the load. Returned as the film force less the load, in newtons, the film force being the load times the Sommerfeld number asked over the one the settled film carries. The tolerance is applied not to this value but to the miss, |ln(S carried) - ln(S asked)| <= tolerance (locked.model), so |load_residual_n| is at most (e^tolerance - 1) times the load: about the tolerance as a fraction of the load.",
                 "tolerance": bearing::LOAD_TOLERANCE,
-                "unit": "fraction of the load",
+                "unit": "natural logarithm of the Sommerfeld number carried over the one asked, about a fraction of the load",
                 "compared": "at acceptance",
                 "refusal": "LoadNotCarried",
             },
@@ -203,7 +203,7 @@ fn sections() -> Sections {
         convergence: json!({
             "settle_tolerance": bearing::SETTLE_TOLERANCE,
             "load_tolerance": bearing::LOAD_TOLERANCE,
-            "rule": "At each shaft position no grid point may move by more than the settle tolerance times the peak pressure in one sweep, and the film force must equal the load to the load tolerance, before a result is returned.",
+            "rule": "At each shaft position no grid point may move by more than the settle tolerance times the peak pressure in one sweep, and the natural logarithm of the Sommerfeld number the film carries must be within the load tolerance of that of the one asked, |ln(S carried) - ln(S asked)| <= load_tolerance, which holds the film force to about that fraction of the load, before a result is returned. A film still moving at max_sweeps is refused as FilmNotSettled; the load miss still outside the tolerance after max_shaft_positions, as LoadNotCarried.",
             "refusal": "FilmNotSettled",
         }),
         reference: json!({

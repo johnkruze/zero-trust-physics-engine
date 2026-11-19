@@ -115,6 +115,10 @@ fn the_card_s_pulse_is_handed_to_the_element_under_one_chain_proof() {
     assert_eq!(chain["kind"], "coupling");
     assert_eq!(chain["coupling"], "triga_pulse_to_element_6753");
     assert_eq!(chain["upstream_run_seal"], seal.as_str());
+    // The worked chain triga_pulse_to_element_6753's meaning states: 3ee0bd22...e527 on
+    // genesis_solvers 0.13.0 (0.15.1 and 0.15.2), dceb4902...bbd4 on 0.13.1 (0.15.3), the
+    // same run seal, iterations and peak fuel temperature.
+    assert_eq!(chain["chain_seal"], "dceb4902e4a18e115b062cf6e47d2d732b3dc1db059c3b8d3fd1c66abc7d117c21a2bfb9117aa5adac6fcceeb3bcbbd4");
     let handed: Vec<&str> = chain["handed"].as_array().unwrap().iter().map(|entry| entry["from"].as_str().unwrap()).collect();
     assert_eq!(handed, ["inputs.initial.start_temperature_k", "frames[*].t", "frames[*].pos[1]"]);
     // The same request typed by hand has the same solution seal and no chain.

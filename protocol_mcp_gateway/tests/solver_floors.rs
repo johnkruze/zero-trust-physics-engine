@@ -108,7 +108,7 @@ fn a_boron_density_under_one_nucleus_is_refused_at_once_and_zero_the_floor_and_t
         let request = with(json!(boron));
         let body = answered(&mut local, &request);
         assert_eq!(body["outcome"], "converged", "{boron}");
-        assert_eq!(body["engine_version"], "genesis_solvers_v0.13.0");
+        assert_eq!(body["engine_version"], "genesis_solvers_v0.13.1");
         let direct = lhd::solve(&LhdQuestion {
             beam_energy_kev: parameter("beam_energy_kev"),
             beam_power_w: parameter("beam_power_w"),
@@ -207,7 +207,7 @@ fn a_history_row_under_a_millisecond_after_the_one_before_is_refused_at_once_and
     let apart = slab_request(json!([0.0, 1.0, 1.001, 2.0]));
     let body = answered(&mut local, &apart);
     assert_eq!(body["outcome"], "converged", "{body}");
-    assert_eq!(body["engine_version"], "genesis_solvers_v0.13.0");
+    assert_eq!(body["engine_version"], "genesis_solvers_v0.13.1");
     assert!(body["iterations"].as_u64().unwrap() > 0);
     assert_eq!(body["result"]["time_steps"].as_f64(), body["iterations"].as_f64());
     let (error, text) = local.tool("verify_solution", &json!({ "request": apart, "solution_seal": body["solution_seal"] }));

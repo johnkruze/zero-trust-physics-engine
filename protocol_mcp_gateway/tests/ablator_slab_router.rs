@@ -719,7 +719,7 @@ fn the_list_shows_thirteen_solvers_and_the_description_publishes_fields_bounds_r
     let (computes, comparison) = summary.split_once(" Compared with ").expect("a comparison");
     let sheet = described["summary"].as_str().unwrap();
     assert!(sheet.starts_with(computes) && sheet.contains(&format!("Compared with {comparison} Refuses")), "{sheet}");
-    assert_eq!(described["engine_version"], "genesis_solvers_v0.13.0");
+    assert_eq!(described["engine_version"], "genesis_solvers_v0.13.1");
     let keys: Vec<&String> = described.as_object().unwrap().keys().collect();
     assert_eq!(
         keys,
@@ -1273,7 +1273,7 @@ fn workshop_test_case_1_lands_seals_and_is_the_same_bytes_on_three_connections_a
     let request = example.to_string();
     let (text, body) = connections.solved(&request);
     assert_eq!(body["inputs"], *example);
-    assert_eq!(body["engine_version"], "genesis_solvers_v0.13.0");
+    assert_eq!(body["engine_version"], "genesis_solvers_v0.13.1");
 
     let everything = Wanted {
         face_history: true,

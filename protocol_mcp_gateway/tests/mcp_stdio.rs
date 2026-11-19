@@ -72,7 +72,7 @@ async fn mcp_matches_http_for_a_step_a_run_and_a_violation() {
     assert_eq!(server.version, env!("CARGO_PKG_VERSION"));
     assert_eq!(
         server.description.as_deref(),
-        Some(protocol_mcp_gateway::ENGINE_VERSION)
+        Some(protocol_mcp_gateway::identity::description().as_str())
     );
 
     let listed = client.list_tools(None).await.expect("tools/list");

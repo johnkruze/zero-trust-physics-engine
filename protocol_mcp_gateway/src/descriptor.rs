@@ -7327,7 +7327,7 @@ mod tests {
         // The frame as the compared runs built it (lageos1_orbit/analysis/
         // 10_engine_comparison.py, earth_orientation.py), and what a
         // crust-fixed state costs through the engine, not the frame's cost
-        // with no flight (terminal_bench_checks_2026-10-16/lageos/out/budget.json).
+        // with no flight.
         let start_state = body["start_state"].as_str().expect("start state");
         for words in [
             "IAU 2006/2000A precession and nutation with the celestial pole offsets dX and dY of IERS Bulletin A, held fixed in the celestial frame (GCRS)",

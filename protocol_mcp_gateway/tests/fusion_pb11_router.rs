@@ -160,7 +160,7 @@ async fn two_beams_match_the_solver_bit_for_bit() {
         let direct = lhd::solve(&question).expect("the solver settles");
 
         assert_eq!(body["inputs"], request);
-        assert_eq!(body["engine_version"], "genesis_solvers_v0.13.0");
+        assert_eq!(body["engine_version"], "genesis_solvers_v0.13.1");
         assert_eq!(body["outcome"], "converged");
         assert!(body["reject"].is_null());
         assert_eq!(body["iterations"], direct.refinements);

@@ -28,6 +28,19 @@ pub const ADDRESS: &str = "https://mcp.zerotrustphysics.com/mcp";
 pub const EMAIL: &str = "kruze@zerotrustphysics.com";
 pub const PHONE: &str = "928-264-7883";
 
+/// `serverInfo.description`, one line (since engine 0.15.3; until then the
+/// kernel's name alone): what the engine is, and, last, the name every card
+/// answer carries as `engine_version`, which a client that read the kernel
+/// from this field still finds at its end. No counts: ask `list_cards` and
+/// `list_solvers`.
+pub const DESCRIPTION: &str = "Deterministic physics of real objects for SI agents: each model compared with measurement or held to a reference calculation, a conservation ledger on every step, a SHA-384 proof on every answer, and a refusal by name where its equations, constants or tables no longer hold. Cards:";
+
+/// `serverInfo.description` as `initialize` and `server/discover` carry it:
+/// [`DESCRIPTION`] and the kernel's name.
+pub fn description() -> String {
+    format!("{DESCRIPTION} {}", crate::ENGINE_VERSION)
+}
+
 /// The most characters the instructions and each tool's description come to
 /// on any connection. A client may show less than it is sent: Claude Code
 /// cuts each at 2,048 characters. What a description has no room for is said
@@ -62,6 +75,17 @@ mod tests {
     /// The words John Kruze approved on 18 October 2026, with "check any
     /// proof" said of the three proofs those tools check; nothing of the
     /// maker's, which `cite` gives.
+    /// One line of what the engine is, no counts, ending with the kernel's name.
+    #[test]
+    fn the_description_is_one_line_and_ends_with_the_kernel() {
+        let said = description();
+        assert!(!said.contains('\n') && said.len() < 400, "{said}");
+        assert!(said.ends_with(&format!(" {}", crate::ENGINE_VERSION)), "{said}");
+        for gone in ["AI ", "check", "cards and", "solvers"] {
+            assert!(!said.contains(gone), "{gone}: {said}");
+        }
+    }
+
     #[test]
     fn the_instructions_are_the_words_approved_and_name_served_tools() {
         let said = instructions();

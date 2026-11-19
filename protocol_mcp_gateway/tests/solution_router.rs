@@ -119,7 +119,7 @@ async fn hydrogen_neon_and_argon_match_the_solver_bit_for_bit() {
         let direct = atom_dft::solve(atomic_number).expect("the solver converges");
 
         assert_eq!(body["inputs"], request);
-        assert_eq!(body["engine_version"], "genesis_solvers_v0.13.0");
+        assert_eq!(body["engine_version"], "genesis_solvers_v0.13.1");
         assert_eq!(body["outcome"], "converged");
         assert!(body["reject"].is_null());
         assert!(body["reject_detail"].is_null());

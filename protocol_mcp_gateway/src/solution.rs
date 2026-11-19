@@ -1831,25 +1831,30 @@ mod tests {
     /// receipt. The first SHA-384 pins hashed the version line of 0.12.0
     /// (engine_version part 9f2ee72a...d140); they are now taken with this
     /// answer's own version, 0.13.0 (e1d5205f...694b), and only that part,
-    /// the seals and the receipts moved.
+    /// the seals and the receipts moved. In the solvers' 0.13.1 (engine
+    /// 0.15.3) the same rule, run with Python's hashlib on this test's own
+    /// texts, reproduces every 0.13.0 pin with the version put back (seal
+    /// 9f6d076a...6874, engine_version part e1d5205f...694b, receipt
+    /// af18ff48...afdc, and the five refusals' seals and receipts) and gives
+    /// the 0.13.1 values pinned here (engine_version part a5372776...d13f).
     #[test]
     fn the_proof_of_an_atom_is_bit_for_bit_the_proof_before_solvers_were_named() {
         let request = json!({ "solver": "atom_dft", "parameters": { "atomic_number": 3 } });
         let response = seal_atom(request, Ok(made_up_state())).expect("sealed");
         assert_eq!(
             response.document.solution_seal,
-            "9f6d076a8f6483ed821c90d15439ae56f0e7262880caec5e191cfb1c78d5dce159e062abecdc700f7da8a0ba2ca16874"
+            "ea39a690a73d3ea0dd8e5fba84c779590a531295ebe244fd698f6df642bd76ccf7331f19ac814448a30b8822ba647fde"
         );
         assert_eq!(
             serde_json::to_string(&response).unwrap(),
             concat!(
-                r#"{"inputs":{"solver":"atom_dft","parameters":{"atomic_number":3}},"engine_version":"genesis_solvers_v0.13.0","outcome":"converged","reject":null,"reject_detail":null,"iterations":7,"#,
+                r#"{"inputs":{"solver":"atom_dft","parameters":{"atomic_number":3}},"engine_version":"genesis_solvers_v0.13.1","outcome":"converged","reject":null,"reject_detail":null,"iterations":7,"#,
                 r#""result":{"total_energy_ha":-7.25e0,"total_energy_ha_hex":"c01d000000000000","kinetic_energy_ha":7.125e0,"kinetic_energy_ha_hex":"401c800000000000","electron_nucleus_energy_ha":-1.65e1,"electron_nucleus_energy_ha_hex":"c030800000000000","hartree_energy_ha":3.875e0,"hartree_energy_ha_hex":"400f000000000000","exchange_correlation_energy_ha":-1.75e0,"exchange_correlation_energy_ha_hex":"bffc000000000000","#,
                 r#""eigenvalue_1s_ha":-1.875e0,"eigenvalue_1s_ha_hex":"bffe000000000000","occupation_1s":2.0e0,"occupation_1s_hex":"4000000000000000","eigenvalue_2s_ha":-1.0e-1,"eigenvalue_2s_ha_hex":"bfb999999999999a","occupation_2s":1.0e0,"occupation_2s_hex":"3ff0000000000000","eigenvalue_2p_ha":-0.0e0,"eigenvalue_2p_ha_hex":"8000000000000000","occupation_2p":0.0e0,"occupation_2p_hex":"0000000000000000"},"#,
                 r#""invariants":{"electron_count":3.0000000001e0,"electron_count_hex":"4008000000036f9c","virial_residual_ha":-1.953125e-6,"virial_residual_ha_hex":"bec0624dd2f1a9fc"},"#,
                 r#""field_sha384":"9dc6e363c42bd13f21e18c52c81eb70db770967b443c6855185108f9ae8da22a7aa7ef1648e154e7cba9f02405b3f5c5","#,
-                r#""seal_parts":{"inputs":"05fa7a4c2abe6c50fe76964dd7374b5b8edef9a2c857a7a202a0636e7a2d41ff92d0fb9c72bacf739df16dfaeef40ab6","engine_version":"e1d5205f69c5c047b8c0392c50bba522e78a68efa665d8a81aa4fe4cc22a9a4b795c2b5768558d9aace9b3af0a3c694b","result":"6c06f9029b019cbccf521435dd9cfeb1385f914abc4109ac37d0c5242b5c9d254be9d7fdd1cb01976611f396b94c68ca","invariants":"4f4cea2415dc8732af268bfc4d9d6ae562e774d76ccd9057f94dde2eccf7e1a766cbe256831e7b1b301959684e4fe50c","field_sha384":"121afca9192465ce4d9774dcef41b94af0cbffe8355d40c2a621673c168f16de6e47c7d53d79cf4b8a95cbe6c85943b2","outcome":"013a8cd60aa8cf52545258a4e6e1e73645211c1c57871bd71cb3e5fb92857066c28dda80569adbc42bb0ebf9237c46f7"},"#,
-                r#""solution_seal":"9f6d076a8f6483ed821c90d15439ae56f0e7262880caec5e191cfb1c78d5dce159e062abecdc700f7da8a0ba2ca16874","seal_rule":"zero-trust-physics/seal/v2","receipt_sha384":"af18ff4869863c4b9daf0734775c3d1dbe61bfce6af778ca6c5a40cc5efe1711f3d9ed563dfca3a30a56a83aa839afdc"}"#,
+                r#""seal_parts":{"inputs":"05fa7a4c2abe6c50fe76964dd7374b5b8edef9a2c857a7a202a0636e7a2d41ff92d0fb9c72bacf739df16dfaeef40ab6","engine_version":"a5372776e9330b22db7c8221b5cf51b35efbc43aef7d5bac1721e60f0e7fdf935e2234ac3d75804f069fed2a45e1d13f","result":"6c06f9029b019cbccf521435dd9cfeb1385f914abc4109ac37d0c5242b5c9d254be9d7fdd1cb01976611f396b94c68ca","invariants":"4f4cea2415dc8732af268bfc4d9d6ae562e774d76ccd9057f94dde2eccf7e1a766cbe256831e7b1b301959684e4fe50c","field_sha384":"121afca9192465ce4d9774dcef41b94af0cbffe8355d40c2a621673c168f16de6e47c7d53d79cf4b8a95cbe6c85943b2","outcome":"013a8cd60aa8cf52545258a4e6e1e73645211c1c57871bd71cb3e5fb92857066c28dda80569adbc42bb0ebf9237c46f7"},"#,
+                r#""solution_seal":"ea39a690a73d3ea0dd8e5fba84c779590a531295ebe244fd698f6df642bd76ccf7331f19ac814448a30b8822ba647fde","seal_rule":"zero-trust-physics/seal/v2","receipt_sha384":"9f76b1e07f9d651a0e14ec7bf1552f357bba9043a6f8077964360c970855dc25e0c62ed2e94a5142779d9c416a085dd0"}"#,
             )
         );
         let report = check(&posted(&response)).unwrap_or_else(|_| panic!("the solution parses"));
@@ -1859,32 +1864,32 @@ mod tests {
             (
                 AtomReject::NotConverged { iterations: 80 },
                 "Solver Refusal: atom_dft did not return a ground state (NotConverged). not converged after 80 iterations.",
-                "b5301a8214651409e6e3477ae5ee1996e93fd3d5bf15d686ef16ed57ca8cfcbe8915bbee669f990a094262a0bf160ffd",
-                "b0f3225063a2199f6c65d23fc187733d659d7a0ed569e83ecf30d689b044e3ce6cbc7e03d467ff40e2ab02b7a99f5156",
+                "7f05eec279e6f508807bcd104bcfb34b974307cc6d7eb34481e63373945de5b052481cea0902bcf4436c4279dc37b84c",
+                "8b5333a0cba8279f21b51a8323956156bf950407669479c0906d582b50f1a8fb2167ff1034e9c3717b64c301c8c0d9c8",
             ),
             (
                 AtomReject::VirialBroken { residual_ha: 0.5 },
                 "Solver Refusal: atom_dft did not return a ground state (VirialBroken). virial residual 0.5 Ha.",
-                "c2a92c44db26a6f6e02589b4ea8f12f6cc359b8648779f297e6ef33aed1ae9f7f442af41ebca4c91e5d9dbb17260de22",
-                "b2084d3200597ac9402092df1d5accafa5109bdb51c82b8df95c8645cd8db40d7fb88d80a95e8fb13dd800cdfda585d5",
+                "1af62cf91b536955e8c49a767496dd1932a2a6141e1357e1478a89306e05ac2cad0a3f22b2be0aa58a3ba8adb76c6341",
+                "162733bc25ab663900baecd51ab97acfad8017364a5376e493a32034e821b462cb1f4067266442884a062d4f5ee812b7",
             ),
             (
                 AtomReject::ElectronCountBroken { electron_count: 4.0, atomic_number: 2 },
                 "Solver Refusal: atom_dft did not return a ground state (ElectronCountBroken). electron count 4 is not atomic number 2.",
-                "f909739b8c61f012d81b12711f512473808ed1c9b4d983f84dbcc72e21aebfe71bcac7452f0dd9f9f2ec695be178b2fa",
-                "8e2224342876f249cabc40780a82622b4b4dee8c7e0b6d4248f35c3b3706e7f0bdf1039697ba3290c8a25e6a946e81d9",
+                "5f404eabe365b57226e970254e2cb58a8a4d6ae3dbc9cc2c5309846c177b95afddea52c632e63508fa710ab5cab42c0f",
+                "b94f90669babc62e55ee2293b0aad2658d63159858be6894c2a233212ce8a456419ec3dc6594ca39b47c9d194e658f8b",
             ),
             (
                 AtomReject::NegativeDensity,
                 "Solver Refusal: atom_dft did not return a ground state (NegativeDensity). electron density was negative.",
-                "607f07fea41ecb44316c884f671eb28f1cf10b2b629650d85b4de4cc2eeabe0071e0606de798b301776d2b84e5523d6e",
-                "6bc4290e139554da56475dfe55f5ec9ae814a1984347c9b6b0eb95cb7fb49d0a1c60b3d77825d52c5a80dee721d3df08",
+                "2ae10ea98bc3d3df3c7384bf41da4833fb80c887febf91ae4cee0c8965ed210ac7b34867a9c133b8c9ef8453af71f01a",
+                "82e96520db889f53041655df7e0dde1348237671c9789ca0f4dc076f3f8d55eab7e737b549e213a99b1b71361d791b96",
             ),
             (
                 AtomReject::OrbitalNotBound { n: 3, l: 1 },
                 "Solver Refusal: atom_dft did not return a ground state (OrbitalNotBound). no bound orbital for n=3 l=1.",
-                "231c89b7abbfad77eb8bd50c7151e40251cc14d0bc130676a3dfbf7a568f0575e5ccb8df10989ddd1fd02eb29fb1eb90",
-                "fe5b7cff933a0757a80d151aab3a40f4774bdb4a4abb4d6b0b53878d4105b600e2bf9566c34154f6b2d60a86865b1aeb",
+                "b271570574da2cbd445d27251d31d9ea0ebf2452caa3a372de5767b504334e9d1429641075c1283cb0f3b1d76ccb37ea",
+                "2e89facfaadc7902e32a96ec94563ec0adbabf60cab54653c6eb67c35734a4fdea7c25430fd30c15357e275e171bc9d8",
             ),
         ];
         for (reject, detail, solution_seal, receipt) in refusals {
@@ -2002,11 +2007,11 @@ mod tests {
         let said = version_words(document, &theirs);
         assert_eq!(
             said,
-            "The solution_seal covers engine_version: the seal given is this request's solution under engine_version genesis_solvers_v0.10.0, another engine version's, and this engine writes genesis_solvers_v0.13.0, so it does not hold here. The long form, given that answer whole, compares it value by value and names both versions."
+            "The solution_seal covers engine_version: the seal given is this request's solution under engine_version genesis_solvers_v0.10.0, another engine version's, and this engine writes genesis_solvers_v0.13.1, so it does not hold here. The long form, given that answer whole, compares it value by value and names both versions."
         );
         assert_eq!(
             version_words(document, &"0".repeat(64)),
-            "The solution_seal covers engine_version, genesis_solvers_v0.13.0 on this engine: the seal of an answer another engine version gave does not hold here."
+            "The solution_seal covers engine_version, genesis_solvers_v0.13.1 on this engine: the seal of an answer another engine version gave does not hold here."
         );
     }
 

@@ -52,7 +52,7 @@ pub const ARGON_PAIR_GAS: Solver = Solver {
     kept_inside: "The two constants of the pair potential, the molar mass, the quadrature rules and their tolerances stay inside the solver.",
     result: &[
         number("reduced_temperature", "1", "Temperature over the well depth of the pair potential."),
-        number("second_virial_cm3_per_mol", "cm3/mol", "B(T). Compared with measurement through the speed of sound, which carries it in the acoustic virial coefficient, from 250 K to 349.868 K at 30.5 kPa to 467.2 kPa."),
+        number("second_virial_cm3_per_mol", "cm3/mol", "B(T), from the Mayer form of locked.quadrature, B = (2/3) pi N_A sigma³ B*; the force form is used only to verify it (virial_forms_residual_cm3_per_mol). Compared with measurement through the speed of sound, which carries it in the acoustic virial coefficient, from 250 K to 349.868 K at 30.5 kPa to 467.2 kPa."),
         number("second_virial_first_derivative_cm3_per_mol", "cm3/mol", "T dB/dT."),
         number("second_virial_second_derivative_cm3_per_mol", "cm3/mol", "T² d²B/dT²."),
         number("acoustic_virial_cm3_per_mol", "cm3/mol", "2B + (4/3) T dB/dT + (4/15) T² d²B/dT²."),
@@ -173,7 +173,7 @@ fn sections() -> Sections {
         invariants: json!([
             {
                 "name": "virial_forms_residual_cm3_per_mol",
-                "rule": "The second virial coefficient from the Mayer integral and from the force integral, which are one another's integration by parts, are the same number.",
+                "rule": "The second virial coefficient from the Mayer integral and from the force integral, which are one another's integration by parts, are the same number. Returned as B from the Mayer form less B from the force form, each (2/3) pi N_A sigma³ B*, in cm3/mol; the Mayer one is the second_virial_cm3_per_mol returned.",
                 "tolerance": argon::VIRIAL_FORMS_TOLERANCE_CM3_PER_MOL,
                 "unit": "cm3/mol",
                 "compared": "at acceptance",

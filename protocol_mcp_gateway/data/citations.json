@@ -3469,7 +3469,7 @@
           "identifier": "UCRL-52997",
           "url": null,
           "requested_acknowledgment": null,
-          "citation_text": "Dobratz, B. M., & Crawford, P. C. (1985). LLNL Explosives Handbook: Properties of Chemical Explosives and Explosive Simulants. UCRL-52997 Change 2, Lawrence Livermore National Laboratory. TNT's JWL constants at 1.630 g/cm^3 (A 373.8 GPa, B 3.747 GPa, R1 4.15, R2 0.90, omega 0.35, E0 6.00 GPa, D 6930 m/s, P_CJ 21.0 GPa), as transcribed with this source in the JWL article of the German Wikipedia (retrieved 2026-10-18); the handbook itself was not obtained.",
+          "citation_text": "Dobratz, B. M., & Crawford, P. C. (1985). LLNL Explosives Handbook: Properties of Chemical Explosives and Explosive Simulants. UCRL-52997 Change 2, Lawrence Livermore National Laboratory. TNT at 1.630 g/cm^3, D 6930 m/s, P_CJ 21.0 GPa, Table 8-7, page 8-23. The JWL constants the engine carries (A 373.8 GPa, B 3.747 GPa, R1 4.15, R2 0.90, omega 0.35, E0 6.00 GPa) are of unverified source, under review: a secondary transcription (the JWL article of the German Wikipedia, retrieved 2026-10-18) attributes them to this handbook, whose TNT row prints A 371.2 GPa, B 3.231 GPa, R1 4.15, R2 0.95, omega 0.30, E0 7.0 GPa.",
           "bibtex": "@techreport{dobratz1985llnl,\n  author = {Dobratz, B. M. and Crawford, P. C.},\n  title = {{LLNL} Explosives Handbook: Properties of Chemical Explosives and Explosive Simulants},\n  institution = {Lawrence Livermore National Laboratory},\n  number = {UCRL-52997 Change 2},\n  year = {1985}\n}"
         }
       ],

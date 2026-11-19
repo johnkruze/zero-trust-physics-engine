@@ -23,6 +23,9 @@ use genesis_seal::sealed_form::digest_hex;
 
 use crate::{BROKEN, BYTES_DIFFER, REFUSED, SIGNATURE_DOES_NOT_HOLD};
 
+/// `head_signature` when the head carries a signature and no key was given.
+pub const NOT_VERIFIED: &str = "carried, not verified: no --public-key was given; every seal of the dataset was verified";
+
 /// A dataset that holds, with every file the head names matching.
 #[derive(Debug)]
 pub struct Verified {
@@ -72,6 +75,17 @@ impl Signature {
             (true, Some(SignatureCause::KeyNotGiven)) => "not checked",
             (true, None) => "holds",
             (true, Some(_)) => "does not hold",
+        }
+    }
+
+    /// The value of the `head_signature` metadata of a converted file. With
+    /// no key the signature is carried in the head and not verified, while
+    /// every seal of the dataset is: the words say both. `absent` and `holds`
+    /// as [`Signature::said`]; a signature that does not hold converts nothing.
+    pub fn metadata_word(&self) -> &'static str {
+        match (self.report.present, self.report.cause) {
+            (true, Some(SignatureCause::KeyNotGiven)) => NOT_VERIFIED,
+            _ => self.said(),
         }
     }
 

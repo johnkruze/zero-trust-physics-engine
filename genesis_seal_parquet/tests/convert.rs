@@ -760,7 +760,8 @@ fn a_head_carrying_the_engines_signature_converts_with_the_signature_split_off()
     assert!(ran.stdout.contains(&format!("key_id: {}\nissued_at: 2026-10-18T21:04:05Z\nexpires_at: 2026-10-18T22:04:05Z\n", key.public_key().key_id())), "{}", ran.stdout);
     let (rows, metadata) = read_parquet(&out.join("rows.parquet"));
     assert_eq!(rows, unsigned_rows);
-    assert_eq!(meta(&metadata, "head_signature"), "not checked");
+    assert_eq!(meta(&metadata, "head_signature"), "carried, not verified: no --public-key was given; every seal of the dataset was verified");
+    assert_eq!(meta(&metadata, "head_signature"), genesis_seal_parquet::verify::NOT_VERIFIED);
     assert_eq!(meta(&metadata, "head_signature_key_id"), key.public_key().key_id());
     assert_eq!(meta(&metadata, "source_head_sha384"), genesis_seal::sealed_form::digest_hex(&signed));
     assert_eq!(meta(&metadata, "dataset_seal"), files.assembled.head.dataset_seal);

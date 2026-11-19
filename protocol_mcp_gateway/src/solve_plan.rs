@@ -672,10 +672,13 @@ fn version_words_of(plan: &SolvePlan, sealed: &Sealed, given: &str, ours_kernel:
 /// release follow the rule: 0.8.0 with 0.7.0 (0.8.1 to 0.9.3), 0.9.0 with
 /// 0.8.0 (0.10.x), 0.12.0 with 0.11.0 (0.13.x). A release whose pair breaks
 /// the rule adds it here; a test holds this engine's own pair to the pairs a
-/// later engine tries.
+/// later engine tries. Engine 0.15.3 moves the solvers to 0.13.1, a patch
+/// version the rule's minor versions do not reach: its plans' counts and
+/// solution seals both name it.
 const PAIRS_OFF_THE_RULE: &[(&str, &str)] = &[
     ("genesis_kernel_v0.12.0", "genesis_solvers_v0.12.0"),
     ("genesis_kernel_v0.13.0", "genesis_solvers_v0.13.0"),
+    ("genesis_solvers_v0.13.1", "genesis_solvers_v0.13.1"),
 ];
 
 /// The kernel and solvers versions a plan's seal is tried under, for an

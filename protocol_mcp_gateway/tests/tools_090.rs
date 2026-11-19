@@ -194,7 +194,7 @@ fn cite_gives_the_service_and_the_paper_first_then_the_people_whose_measurements
     }
     // A solver's answers carry the solvers' engine version, and its citation of the service says that one.
     let atom = ok(&mut door, "cite", &json!({ "solver": "atom_dft" }));
-    assert_eq!(atom["service"]["engine_version"], "genesis_solvers_v0.13.0");
+    assert_eq!(atom["service"]["engine_version"], "genesis_solvers_v0.13.1");
     // With no name: how to cite the service itself: its name, who made it,
     // where it is served, and the paper.
     let service = ok(&mut door, "cite", &json!({}));
@@ -211,7 +211,7 @@ fn cite_gives_the_service_and_the_paper_first_then_the_people_whose_measurements
     assert_eq!(service["service"]["proof_verifiers"], "https://github.com/johnkruze/zero-trust-physics");
     assert_eq!(service["service"]["site_for_agents"], "https://zerotrustphysics.com/llms.txt");
     assert_eq!(service["service"]["phone"], "928-264-7883");
-    assert_eq!(service["service"]["engine_version"], "genesis_kernel_v0.13.1 and genesis_solvers_v0.13.0");
+    assert_eq!(service["service"]["engine_version"], "genesis_kernel_v0.13.1 and genesis_solvers_v0.13.1");
     let text = service["text"].as_str().unwrap();
     assert!(text.starts_with("John Kruze (Protocol Company). Zero-Trust Physics: a physics verifier for Super Intelligence. Served at https://mcp.zerotrustphysics.com/mcp"), "{text}");
     assert!(text.ends_with("https://doi.org/10.5281/zenodo.23517223"));
@@ -626,7 +626,8 @@ fn every_connection_says_who_it_is_first() {
         assert_eq!(info["title"], "Zero-Trust Physics: a physics verifier for Super Intelligence", "{at}");
         assert_eq!(info["websiteUrl"], "https://zerotrustphysics.com", "{at}");
         assert_eq!(info["version"], env!("CARGO_PKG_VERSION"), "{at}");
-        assert_eq!(info["description"], "genesis_kernel_v0.13.1", "{at}");
+        assert_eq!(info["description"], protocol_mcp_gateway::identity::description().as_str(), "{at}");
+        assert!(info["description"].as_str().unwrap().ends_with(" genesis_kernel_v0.13.1"), "{at}");
         let said = answer["result"]["instructions"].as_str().unwrap();
         assert!(said.starts_with(opening), "{at}: {said}");
         for gone in ["John Kruze", "928-264-7883", "https://github.com/", "https://doi.org/"] {
