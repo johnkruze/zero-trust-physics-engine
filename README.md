@@ -14,7 +14,7 @@ The open MCP endpoint (`$0`, no key) serves **`v0.15.3`** across **`61` models**
 
 Built for RL environment vendors and post-training labs (`Harbor`, `HUD`, `Inspect`, and native `MCP`; `--network none` offline static binaries; continuous graded proximity rewards alongside binary pass/fail; **`0 of 2,481`** adversarial cheat attempts scored above `0` across all five packs):
 
-- **[Self-Serve Domain Packs ($9,500 per domain · $39,500 All-Five Bundle)](https://zerotrustphysics.com/offers/fast-start/):** 30 withheld calibrated multi-step tasks (`34.4%–37.5%` frontier tool `pass@1` medians) + 100,000 sealed SFT runs + static `macos-arm64`, `linux-amd64`, and `linux-arm64` runtime & verifier per domain (instant card download or net-15 invoice).
+- **[Self-Serve Domain Packs ($9,500 per domain · $39,500 All-Five Bundle)](https://zerotrustphysics.com/offers/fast-start/):** 30 withheld calibrated multi-step tasks (`34.4%–37.5%` frontier tool `pass@1` medians) + 100,000 sealed SFT runs + static `macos-arm64`, `linux-amd64`, and `linux-arm64` runtime & verifier per domain (instant card download, or an invoice on request).
 - **Free 5-task evaluation samples on Hugging Face (`sh sample/verify_sample.sh` -> `SAMPLE HOLDS`):**
   - [Group 1 · Batteries, Thermal Runaway & Grid Frequency](https://huggingface.co/datasets/zero-trust-physics/zero-trust-physics-sample-group-1)
   - [Group 2 · Orbital, Space & Atmospheric Entry](https://huggingface.co/datasets/zero-trust-physics/zero-trust-physics-sample-group-2)
